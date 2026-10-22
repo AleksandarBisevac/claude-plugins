@@ -105,6 +105,15 @@ def _cases(check):
     check("every bound setting has help text, and no help text names a key the "
           "validator does not know",
           set(M.FIELD_HELP) == _bound)
+    _pg_fields = [f for g in M.SETTINGS_GROUPS for f in g["fields"]
+                  if f["path"] == "executor.phaseGateOnly"]
+    check("pgs1 executor.phaseGateOnly has exactly one control, a list (the "
+          "value is a list of commands), whose help says the commands are left "
+          "to the phase gate and that the default is none: %r" % (_pg_fields,),
+          len(_pg_fields) == 1 and _pg_fields[0]["kind"] == "list"
+          and "left to the phase gate" in M.FIELD_HELP.get(
+              "executor.phaseGateOnly", "")
+          and "none" in M.FIELD_HELP.get("executor.phaseGateOnly", ""))
     check("no path is bound twice (a duplicate would render two controls writing "
           "the same key)", len(M._settings_paths()) == len(_bound))
     # Named by what they DO, with the key beside them. Every heading used to BE a

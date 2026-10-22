@@ -343,6 +343,14 @@ FIELD_HELP = {
         "The most one writer session may spend, in USD, passed to the session as "
         "its budget and enforced by the CLI. A positive number; required when the "
         "writer session model is set.",
+    "executor.phaseGateOnly":
+        "Gate commands a writer session is told not to run itself because they "
+        "are left to the phase gate. Add one entry at a time: a script name such as "
+        "verify.sh, matched against the words of a gate command, or several "
+        "words that must appear in a row such as playwright test. Unset or empty "
+        "means none: every gate command is listed for the writer to run, so a "
+        "gate of your own that shares a name with one of this repository's is "
+        "still run.",
     "ci.cadence.closes":
         "Dispatch CI at every N-th task close since the last dispatch: the step "
         "driver pushes the phase tip to its ci/ branch and runs the workflow "
@@ -698,6 +706,9 @@ SETTINGS_GROUPS = (
              "kind": "text", "placeholder": "unset: the executor agent"},
             {"path": "executor.writerBudgetUsd", "label": "Writer session budget (USD)",
              "kind": "number", "min": 0},
+            {"path": "executor.phaseGateOnly",
+             "label": "Gate commands the writer leaves to the phase gate",
+             "kind": "list", "placeholder": "none"},
         ),
     },
     {

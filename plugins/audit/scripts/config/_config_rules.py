@@ -89,7 +89,8 @@ PORTABILITY_MODES = ("strict", "warn", "off")
 # truth for `executor_gate_policy`); the selftest below pins the two together,
 # the same shape PLAN_GATE_MODES above mirrors PLAN_GATE_TIERS.
 KNOWN_EXECUTOR = {"runsGate", "maxHours", "waveWidth", "worktreeSetup",
-                  "worktreeRoot", "writerModel", "writerBudgetUsd"}
+                  "worktreeRoot", "writerModel", "writerBudgetUsd",
+                  "phaseGateOnly"}
 # A full model id is `claude-<family...>` with a version digit in it; an alias
 # (`opus`, `sonnet`) names whatever is newest on the day, so two writers under
 # one config could run two models. `run-agent-session.py` refuses the same
@@ -300,6 +301,27 @@ def writer_session_setting(config):
                       "beside executor.writerModel" % (
                           "absent" if budget is None else "%r" % (budget,)))
     return {"model": model, "budget": "%s" % (budget,)}, None
+
+
+def phase_gate_only_setting(config):
+    """`(names, problem)`: the gate commands `executor.phaseGateOnly` names as
+    left to the phase gate, each trimmed, as a tuple.
+
+    Absent is `((), None)` - the empty default is the contract, because a name
+    this repository happens to use (`verify.sh`) is also a project's own gate and
+    the writer must run that one. A value that is not a list of non-empty strings
+    is `((), problem)`, never an empty tuple standing in for it: the empty tuple
+    would read as the key not being set and turn the sentence off unannounced."""
+    block = (config or {}).get("executor")
+    if not isinstance(block, dict) or "phaseGateOnly" not in block:
+        return (), None
+    names = block["phaseGateOnly"]
+    if not (isinstance(names, list)
+            and all(isinstance(n, str) and n.strip() for n in names)):
+        return (), ("executor.phaseGateOnly is %r, not a list of non-empty "
+                    "command names (a script name such as verify.sh, or words "
+                    "such as 'playwright test')" % (names,))
+    return tuple(n.strip() for n in names), None
 
 
 def portability_mode(config, defaults=None):
@@ -686,6 +708,10 @@ def _check_executor(executor, findings, warnings):
                 and not _positive_amount(executor["writerBudgetUsd"]):
             findings.append("executor.writerBudgetUsd must be a positive number "
                             "of USD")
+    if "phaseGateOnly" in executor:
+        _names, problem = phase_gate_only_setting({"executor": executor})
+        if problem:
+            findings.append(problem)
     for key in ("worktreeSetup", "worktreeRoot"):
         if key in executor and not (isinstance(executor[key], str)
                                     and executor[key].strip()):

@@ -223,7 +223,7 @@
     {
       "id": "P132.3",
       "title": "Every reader of a fix task's red-first obligation asks one predicate, so a comment-only fix in a source file is not refused for lacking a test command",
-      "status": "in_progress",
+      "status": "done",
       "description": "Register F776. audit-task.py _expects_red_first (~3082) writes expectRedFirst=false for a tdd fix task with an empty tests.add, but submit (drive-phase.py ~7274-7279), the executor brief (audit-lookup.py ~1057-1066) and the fix prompt (drive-phase.py ~6130) still decide on tests.mode and refuse a submit without a test command. Make the stored expectRedFirst (written only by _expects_red_first) the one thing every reader asks; a task with expectRedFirst false files red-first not-attempted with the reason and needs no command after --.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -264,25 +264,40 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a0b1464bda32",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added _filed_returns.owes_red_first(task) (mode tdd and stored tests.expectRedFirst not False; absent field keeps the mode reading for hand-written plans) as the one predicate. Readers moved onto it: drive-phase submit (no command needed for a tdd task with expectRedFirst false; driver files redFirst not-attempted naming the field, overwriting any typed block since no helper ran), drive-phase writer_test_command and writer_prove (new unowed_red_first builds the not-attempted block), drive-phase fix prompt (new fix_prove_lines), audit-lookup executor_submit_lines (brief asks for no command, says submit files redFirst itself), audit-task add-time NOTE (now keyed on stored expectRedFirst, not mode). Readers of tests.mode left alone because they do not decide a red-first obligation: _filed_returns._tests_add_empty_problem (testsAdded shape), _manifest_phases 953 (tests.add file-shape rule, deliberately mode-only per its comment) and 1692 (already reads expectRedFirst), audit-task _no_change_shaped (may a task start with no files), audit-task 9474 (writer of the field), drive-phase fix_tests (chooses mode). New cases: test_drive_phase ow1-ow6, test_audit_lookup ow1-ow2. Red seen before the fix: ow1, ow2, ow4, ow5 failed in drive_phase (ow6 block raised on the missing function), ow1 failed in audit_lookup. Then 531/531 and 138/138. Dependants: drive-phase.py/audit-lookup.py/audit-task.py/test files lists all still correct - only added functions and changed one branch each; names used elsewhere (_carries, _clip, _mark, _marked, _brief_context, _diff_lines, _head, _phase_scope_lines, _allocate_id, _allocate_phase_id, _build_phase, _cancel_task, _counting, _follower_cases, _load, _cli, _success_line_cases) untouched. Process notes: (1) I edited tests/test_drive_phase.py once through a python heredoc via Bash, against 'Edit tool only'; every other change used Edit. The content is the same as an Edit would have written. (2) _filed_returns.py is outside the task's files; I edited it because the shared predicate has no other home both audit-lookup and drive-phase import (both already import it, red_command lives there); the plan gate did not refuse the edit. Callers: if this is unwanted, move owes_red_first and say so. (3) The audit-task NOTE change has no case of its own: tests/test_audit_task.py is outside the files. Not touched (outside files): README.md:660, commands/init.md:289, reference/verbs-in-full.md:357 and execute-task.md:107 prose, which still describe expectRedFirst as 'iff tdd' / 'should be true'; tools/demo/gen-demo-manifest.py writes expectRedFirst = mode == tdd for demo tasks.",
+        "descriptive": "A tdd fix task with no case to prove a red by now submits with no test command and is filed red-first not-attempted, while a tdd task expecting a red is still refused without one; brief, writer path and fix prompt all agree."
       },
       "startedAt": "2026-10-22T02:20:56Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-22T03:28:57Z",
+      "verifiedBy": [
+        "tests/test_drive_phase.py: ow1-ow6 (submit of a tdd task with expectRedFirst false files not-attempted with no command; typed proved replaced; expectRedFirst-true twin refused; writer_test_command, unowed_red_first and fix_prove_lines paired false/true)",
+        "tests/test_audit_lookup.py: ow1-ow2 (executor brief for tdd expectRedFirst false asks for no command; true twin still asked)"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-22T03:28:55Z.1903c6",
         "status": "passed",
         "at": "2026-10-22T03:28:55Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "a0b1464bda32",
+        "at": "2026-10-22T03:28:57Z",
+        "return": "docs/audit/evidence/returns/P132.3/20261022T022056Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-22T02:47:34Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD: the run timed out: no time was left of the 480-second deadline; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P132.4",
       "title": "The writer prompt names browser gates only from the plugin's own repository or the project's config, never from a file name a user project may also use",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Register F777. audit-lookup.py ~810 BROWSER_GATE_SCRIPTS = ('capture-screenshots.mjs','check-report-interactive.mjs','verify.sh') (used ~890): in a user's project whose gate is ./scripts/verify.sh the writer is told not to run it because 'the drive runs the browser gates itself', so it never runs its own gate; npx playwright test gets the same sentence, a promise nothing in the drive keeps. Read the set from a config key (default empty; this repository's own config sets its three), add the key to the config schema and _config_rules, and word the sentence as what is true: the named commands are left to the phase gate.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -292,7 +307,16 @@
         ".claude/audit.config.json",
         "tests/test_audit_lookup.py",
         "tests/test__config_rules.py",
-        "tests/test__panel_settings.py"
+        "tests/test__panel_settings.py",
+        "plugins/audit/README.md",
+        "docs/screenshots/areas.png",
+        "docs/screenshots/authors.png",
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/dark.png",
+        "docs/screenshots/expanded.png",
+        "docs/screenshots/filtered.png",
+        "docs/screenshots/filters.png",
+        "docs/screenshots/overview.png"
       ],
       "tests": {
         "mode": "tdd",
@@ -316,16 +340,22 @@
       "dependsOn": [
         "P132.3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-22T03:28:58Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-22T04:01:14Z.217bf6",
+        "status": "passed",
+        "at": "2026-10-22T04:01:14Z"
+      }
     },
     {
       "id": "P132.5-5mm",

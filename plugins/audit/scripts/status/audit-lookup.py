@@ -800,28 +800,32 @@ def dependants_listing(ctx, task):
 # return contract. The layout is the one the owner's baseline measured, so a
 # difference in what the session does is not a difference in what it was told.
 # Three lines differ from that measured text on purpose: the commit sentence
-# (the drive commits), the browser sentence (it names the drive as their runner)
-# and the closing line (one answer per acceptance clause).
-
-# A gate command is a browser gate when it runs one of these: the two
-# screenshot/interaction drivers, the whole-suite runner that includes them, or
-# the browser runner's own `test` subcommand. Read off the command's words, so a
-# gate renamed in `meta.buildCommands` is still seen for what it runs.
-BROWSER_GATE_SCRIPTS = ("capture-screenshots.mjs", "check-report-interactive.mjs",
-                        "verify.sh")
-BROWSER_GATE_TOKEN = ("playwright", "test")
+# (the drive commits), the sentence naming what the project left to the phase gate
+# (`executor.phaseGateOnly`; absent when it names none) and the closing line (one
+# answer per acceptance clause).
 
 WRITER_COMMIT_LINE = ("Fix whatever does not pass. When everything is green, "
                       "leave the changes uncommitted: the drive commits them.")
 
 
-def runs_browser(command):
-    """Whether a resolved gate command opens a browser: a word's basename is one
-    of `BROWSER_GATE_SCRIPTS`, or the words hold `playwright test` in a row."""
-    words = [w.strip("\"'").rsplit("/", 1)[-1] for w in str(command or "").split()]
-    token = list(BROWSER_GATE_TOKEN)
-    return (any(w in BROWSER_GATE_SCRIPTS for w in words)
-            or any(words[i:i + len(token)] == token for i in range(len(words))))
+def _command_words(text):
+    """The words of a command or an entry, quotes off and each reduced to its
+    basename, so `"./scripts/verify.sh"` and `verify.sh` are the same word."""
+    return [w.strip("\"'").rsplit("/", 1)[-1] for w in str(text or "").split()]
+
+
+def left_to_phase_gate(command, names):
+    """Whether a resolved gate command is one the project named in
+    `executor.phaseGateOnly`: the words of some entry appear in the command's
+    words in a row. No name is built in - `verify.sh` is also a user project's own
+    gate - so an empty `names` is False for every command."""
+    words = _command_words(command)
+    for name in names:
+        token = _command_words(name)
+        if token and any(words[i:i + len(token)] == token
+                         for i in range(len(words))):
+            return True
+    return False
 
 
 # The clause list is `_clause_coverage`'s: the closing line below asks for an
@@ -867,7 +871,8 @@ def _or_list(items):
         "%s or %s" % (", ".join(items[:-1]), items[-1]))
 
 
-def compose_writer_prompt(manifest, phase, task, dependants=None):
+def compose_writer_prompt(manifest, phase, task, dependants=None,
+                          phase_gate_only=()):
     """The writer session's whole prompt, as lines: plain's own text for the
     task, composed from the task alone - no brief path, no rules, no skills, no
     submit - so two calls on the same task are the same bytes.
@@ -877,18 +882,22 @@ def compose_writer_prompt(manifest, phase, task, dependants=None):
     out - the composition from the task alone, which is what the measured
     baseline the selftests compare against holds.
 
+    `phase_gate_only` is the project's `executor.phaseGateOnly` (empty when it
+    sets none, which is the default).
+
     A gate entry that names no `meta.buildCommands` key is a literal command, as
-    the gate itself runs it (`_evio.resolved_commands`); a browser entry is left
-    out of the commands to run and named, once, as the drive's. A plan whose
-    gate has no browser entry gets no browser line: naming gates the task does
-    not have would be a claim with no basis."""
+    the gate itself runs it (`_evio.resolved_commands`); one the project named in
+    `phase_gate_only` is left out of the commands to run and listed, once, as left
+    to the phase gate - the only thing the sentence says, since nothing here
+    knows who runs it. A plan whose gate has no such entry gets no sentence:
+    naming commands the task does not have would be a claim with no basis."""
     tests = task.get("tests") or {}
     files = [f for f in (task.get("files") or []) if isinstance(f, str)]
     added = [a for a in (tests.get("add") or []) if isinstance(a, str) and a.strip()]
     entries, _whose = _task_gate(manifest, phase, task)
     commands = [c for _name, c in _evio.resolved_commands(manifest, entries)]
-    browser = [c for c in commands if runs_browser(c)]
-    plain = [c for c in commands if not runs_browser(c)]
+    left = [c for c in commands if left_to_phase_gate(c, phase_gate_only)]
+    plain = [c for c in commands if not left_to_phase_gate(c, phase_gate_only)]
     lines = ["Implement the following task in this repository.", "",
              "Task: %s" % (task.get("title"),), ""]
     lines += _verbatim(task.get("description"), "The task records no description.")
@@ -900,9 +909,8 @@ def compose_writer_prompt(manifest, phase, task, dependants=None):
     lines += ["- %s" % (a,) for a in added] or ["- none"]
     lines += ["", "Before you finish, check that everything passes:"]
     lines += ["- %s" % (c,) for c in plain] or ["- none declared"]
-    if browser:
-        lines += ["", "Do not run %s: the drive runs the browser gates itself, "
-                      "after your session ends." % (_or_list(browser),)]
+    if left:
+        lines += ["", "Do not run %s: left to the phase gate." % (_or_list(left),)]
     lines += ["", WRITER_COMMIT_LINE, "", writer_closing_line(task)]
     return lines
 
@@ -1991,9 +1999,13 @@ def write_brief(manifest, manifest_path, project_arg, node_id, role):
                 "written." % (node_id, filed[0], node_id))
         lines = compose_reviewer_brief(manifest, phase, task, ctx, filed)
     elif role == "writer":
+        left, problem = _config_rules.phase_gate_only_setting(ctx["config"])
+        if problem:
+            return E_CONFIG, problem
         lines = compose_writer_prompt(
             manifest, phase, task,
-            dependant_lines(ctx, task, DEPENDANTS_ASK_WRITER))
+            dependant_lines(ctx, task, DEPENDANTS_ASK_WRITER),
+            phase_gate_only=left)
     else:
         ok, gate = runs_gate_reading(ctx["project"], ctx["hc"])
         if not ok:

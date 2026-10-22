@@ -1,7 +1,8 @@
 {
   "executor": {
     "waveWidth": 3,
-    "worktreeSetup": "npm ci --no-audit --no-fund"
+    "worktreeSetup": "npm ci --no-audit --no-fund",
+    "phaseGateOnly": ["capture-screenshots.mjs", "check-report-interactive.mjs", "verify.sh"]
   },
   "review": {
     "perTask": "signals"

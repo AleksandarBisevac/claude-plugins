@@ -503,6 +503,11 @@
           "type": "number",
           "exclusiveMinimum": 0,
           "description": "The per-session budget in USD every writer session runs under (run-agent-session.py --budget-usd, enforced by the CLI). A finite positive number; required when writerModel is set."
+        },
+        "phaseGateOnly": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "description": "Gate commands the writer's prompt leaves to the phase gate instead of listing them to run: each entry is a script name matched against the words of a gate command by basename (verify.sh), or several words that must appear in a row (playwright test). Absent or empty: none, so every gate command is listed for the writer to run - a name this repository uses may be a project's own gate. A value that is not a list of non-empty strings is refused, not read as the empty default."
         }
       }
     },

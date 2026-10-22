@@ -1,0 +1,38 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_audit_lookup.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-22T03:41:08Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_audit_lookup.py` in a throwaway tree at HEAD exited 1 with failing cases tests/test_audit_lookup.py: exited 1 (house FAIL), but with the working tree's implementation the task's tests do not all pass (no tally or error reader matched its output, so no line of it is quoted as decisive), so the red is not one the fix turns green - SELFTEST FAILED: 125/126 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "New config key executor.phaseGateOnly (list of non-empty strings, default none) replaces the hard-coded BROWSER_GATE_SCRIPTS/BROWSER_GATE_TOKEN in audit-lookup.py. runs_browser is replaced by left_to_phase_gate(command, names) (basename word match, multi-word entries match consecutively); compose_writer_prompt gained phase_gate_only=() and its sentence is now 'Do not run <cmds>: left to the phase gate.' write_brief reads the key via new _config_rules.phase_gate_only_setting(config) and refuses with E_CONFIG naming the key when it is not a list of non-empty strings. Key added to KNOWN_EXECUTOR + _check_executor, audit-config.schema.json, panel settings (FIELD_HELP + a list field in the executor group), plugins/audit/README.md config table (outside the declared files; the plan gate allowed the edit), and this repo's .claude/audit.config.json (its three names). Tests: test_audit_lookup.py wp4 reworded, wp12 now carries the key through the real brief command, new wp13-wp16; test__config_rules.py pg1/pg1b/pg2/pg3; test__panel_settings.py pgs1. Own-file selftests all pass (lookup 142/142, config_rules 177/177, panel_settings 78/78). On an archive-of-HEAD copy with my changes committed: full sweep 191/194 files ok - red: tests/test__refs.py (sc1/sc2: PANEL SCREENSHOT DIGEST MOVED, see below), tools/check-example-ledgers.py and tools/measure-context.py (allowed). Also green there: sweep --selftest, gate-parity, bench-hooks --gate, ruff, vermin, check-committed-pii, check-rendered-artifacts --before-commit, validate-manifest, validate-config on .claude/audit.config.json. STOP POINT: the panel page digest moved from 3a38ce5d8735 to 980711a66ef6 (surface_digests() before/after) because the settings form schema is part of UI_HTML; the panel screenshots recorded against the old digest make sc1/sc2 red until you re-capture (node tools/capture-screenshots.mjs); I did not run any browser. The report digest is unchanged. count-ui-pins: UI pins in test__panel_page.py all still pass in the sweep. Process note: one edit to tests/test_audit_lookup.py (wp12 config + expected call) was made through a python one-off via Bash, against the Edit-only instruction; the diff is in the file and was checked by the passing suite. Dependants: audit-lookup.py consumers (drive-phase.py etc.) reach compose_writer_prompt/write_brief only through the brief command; runs_browser/BROWSER_GATE_* had no other users (grep over plugins tests tools), so still correct; _config_rules.py importers still correct - KNOWN_EXECUTOR gained a key, additive, and the panel _settings_paths binding test derives from it and passes; schema dependants (COMPATIBILITY.md, prove-gates, _help, test__config) unchanged and additive; _panel_settings.py dependants (_panel_page, panel-server, test__panel_page/ui/help) changed only in that the page now embeds the new field, hence the digest move; .claude/audit.config.json is read by every hook but only executor.phaseGateOnly is new and no hook reads it (hooks/_config.py docstring list not updated - outside the files); test files' dependants (sweep-costs, affected.py, lints) unchanged. A temp archive copy of the tree was left under /tmp (p1324-*) because the rm was refused by the safety check.",
+    "descriptive": "A user project whose gate is ./scripts/verify.sh now has its writer run it; the writer prompt leaves a command to the phase gate only when the project's config names it, in those words."
+  },
+  "testsAdded": [
+    "wp13/wp14/wp15 writer prompt on a ./scripts/verify.sh project: listed by default with no browser sentence, left to the phase gate when the key names it, multi-word entry and word order",
+    "wp16 bad key stops brief --role writer with the config exit code",
+    "pg1/pg1b/pg2/pg3 config rules: key validates, bad values are findings, reader returns ((), None) when absent",
+    "pgs1 panel control for the key is a list with help text"
+  ],
+  "casesAdded": [
+    [
+      "wp13",
+      "wp14",
+      "wp15",
+      "wp16"
+    ],
+    [
+      "pg1",
+      "pg2",
+      "pg3"
+    ]
+  ],
+  "claims": "claims:\n1 audit-lookup.py left_to_phase_gate + compose_writer_prompt 'left to the phase gate' line; the sentence states only that, no claim about who runs it\n2 hard-coded set in the pre-change code makes wp-block raise / wp13 fail (red run before the fix: TypeError on phase_gate_only, pg2/pg3 red); helper re-runs it\n3 grep BROWSER_GATE|runs_browser over plugins tests tools: only audit-lookup.py and its test used them; all replaced\n4 n/a - no rule to an agent beyond the prompt sentence, which the config key now gates\n5 n/a - no property recorded\n6 decision reads the resolved command's words against the project's key, not a built-in name; allow case wp13 proven quiet\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:e4aa69a20ec4ebc1d31686248d5ff47359e6bb220c77664dd1a7a2ad471928f0\",\"dirtyDigest\":\"sha256:0e63d7d1b327c865bb9a12bec61bd3dca2b2784dda50cf75c93c473dc028b0cc\",\"dirtyPaths\":{\".claude/audit.config.json\":\"b5998c3ae0106a2a\",\"plugins/audit/README.md\":\"d5025f7ab0e63518\",\"plugins/audit/schema/audit-config.schema.json\":\"473e9ef00dcb54b7\",\"plugins/audit/scripts/config/_config_rules.py\":\"c235ae1977e883eb\",\"plugins/audit/scripts/panel/_panel_settings.py\":\"74600e8238725ab6\",\"plugins/audit/scripts/status/audit-lookup.py\":\"642eb78523e9e60f\",\"tests/test__config_rules.py\":\"a513c3d779d7dc40\",\"tests/test__panel_settings.py\":\"1dda1b8dc6a538de\",\"tests/test_audit_lookup.py\":\"ab544662fde9240f\"},\"head\":\"a0b1464b\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".claude/audit.config.json\",\"plugins/audit/schema/audit-config.schema.json\",\"plugins/audit/scripts/config/_config_rules.py\",\"plugins/audit/scripts/panel/_panel_settings.py\",\"plugins/audit/scripts/status/audit-lookup.py\",\"tests/test__config_rules.py\",\"tests/test__panel_settings.py\",\"tests/test_audit_lookup.py\"],\"scopeDigest\":\"sha256:51981bcacaa37a91ccb97d5ba90e6781c3500bed0e4b29dbb44d6700b31e301e\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

@@ -2127,7 +2127,9 @@ def _wp_manifest(gate=("selftests", "lint", "report", "shots", "interactive"),
         "report": "python3 plugins/audit/scripts/report/render-report.py "
                   "docs/audit/audit-plan.json --out-dir /tmp/audit-report",
         "shots": _WP_BROWSER[0],
-        "interactive": _WP_BROWSER[1]}
+        "interactive": _WP_BROWSER[1],
+        # a user project's own gate, spelled the way a project may spell it
+        "verifysh": "./scripts/verify.sh --fast"}
     task = {"id": "P1.1", "title": "Split a refund across lines",
             "status": "in_progress", "description": description,
             "files": ["src/refund.py", "tests/test_refund.py"],
@@ -2144,9 +2146,16 @@ def _wp_manifest(gate=("selftests", "lint", "report", "shots", "interactive"),
                           "tests/test_refund.py": ["P1.1"]}}
 
 
-def _wp_text(manifest):
+# What this repository's own config names as left to the phase gate; the
+# composition itself carries no such list, so a case that wants the browser
+# sentence passes it, as `brief --role writer` passes the project's.
+_WP_LEFT = ("capture-screenshots.mjs", "check-report-interactive.mjs")
+
+
+def _wp_text(manifest, left=_WP_LEFT):
     phase = manifest["phases"][0]
-    return "\n".join(M.compose_writer_prompt(manifest, phase, phase["tasks"][0])) + "\n"
+    return "\n".join(M.compose_writer_prompt(
+        manifest, phase, phase["tasks"][0], phase_gate_only=left)) + "\n"
 
 
 def _writer_prompt_cases(check):
@@ -2189,11 +2198,56 @@ def _writer_prompt_cases(check):
           and not any("capture-screenshots" in g or "check-report-interactive"
                       in g or "playwright" in g or "verify.sh" in g
                       for g in gate_items))
-    check("wp4 ONE line names the browser gates, each once, as the drive's and "
-          "not to be run in the session: %r" % (browser,),
+    check("wp4 ONE line names the commands the project left to the phase gate, "
+          "each once, and says that and nothing about who runs them: %r" % (browser,),
           len(browser) == 1
           and all(browser[0].count(c) == 1 for c in _WP_BROWSER)
-          and "drive" in browser[0])
+          and "left to the phase gate" in browser[0]
+          and "drive runs" not in browser[0] and "browser" not in browser[0])
+    # THE USER PROJECT: its gate is ./scripts/verify.sh, a name this repository's
+    # own gates share. With no config key the writer is told to run it, and is
+    # told nothing about browsers; the key naming it is what leaves it to the
+    # phase gate (the over-fire mutation: a hard-coded name set leaves it out of
+    # the commands to run in the first case).
+    user = _wp_manifest(gate=("selftests", "verifysh"))
+    user_phase = user["phases"][0]
+    user_task = user_phase["tasks"][0]
+    default_lines = M.compose_writer_prompt(user, user_phase, user_task)
+    named_lines = M.compose_writer_prompt(user, user_phase, user_task,
+                                          phase_gate_only=("verify.sh",))
+    check("wp13 a project whose gate is ./scripts/verify.sh and which sets no key "
+          "is told to run it, and nothing is said about browser gates or about "
+          "leaving anything to the drive: %r" % (default_lines[-8:],),
+          "- ./scripts/verify.sh --fast" in default_lines
+          and not [ln for ln in default_lines if ln.startswith("Do not")]
+          and not [ln for ln in default_lines
+                   if "browser" in ln or "phase gate" in ln])
+    left = [ln for ln in named_lines if ln.startswith("Do not run")]
+    check("wp14 the key naming verify.sh leaves that command to the phase gate, "
+          "in those words, and takes it out of the commands to run: %r" % (left,),
+          left == ["Do not run ./scripts/verify.sh --fast: left to the phase gate."]
+          and "- ./scripts/verify.sh --fast" not in named_lines
+          and "- python3 tools/sweep-selftests.py" in named_lines)
+    pw = _wp_manifest(gate=("selftests",))
+    pw["meta"]["buildCommands"]["pw"] = "npx playwright test --project=chromium"
+    pw["phases"][0]["tasks"][0]["tests"]["gate"] = ["selftests", "pw"]
+    pw_default = M.compose_writer_prompt(pw, pw["phases"][0],
+                                         pw["phases"][0]["tasks"][0])
+    pw_named = M.compose_writer_prompt(pw, pw["phases"][0],
+                                       pw["phases"][0]["tasks"][0],
+                                       phase_gate_only=("playwright test",))
+    check("wp15 a multi-word entry matches its words in a row, and only when the "
+          "key names it: playwright test is run by the writer by default and left "
+          "to the phase gate when named; a different word order is not it: %r"
+          % ([ln for ln in pw_named if ln.startswith("Do not")],),
+          "- npx playwright test --project=chromium" in pw_default
+          and not [ln for ln in pw_default if ln.startswith("Do not")]
+          and [ln for ln in pw_named if ln.startswith("Do not run")]
+          == ["Do not run npx playwright test --project=chromium: left to the "
+              "phase gate."]
+          and not M.left_to_phase_gate("npx test playwright", ("playwright test",))
+          and M.left_to_phase_gate("\"./a/verify.sh\" --x", ("verify.sh",))
+          and not M.left_to_phase_gate("./scripts/verify.sh", ()))
     plain = M.compose_writer_prompt(
         _wp_manifest(gate=("selftests", "lint")), _wp_manifest()["phases"][0],
         _wp_manifest(gate=("selftests", "lint"))["phases"][0]["tasks"][0])
@@ -2274,7 +2328,8 @@ def _writer_prompt_cases(check):
     os.makedirs(os.path.join(proj, ".claude"))
     with open(os.path.join(proj, ".claude", "audit.config.json"), "w",
               encoding="utf-8") as fh:
-        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+        json.dump({"manifestPath": "docs/audit/audit-plan.json",
+                   "executor": {"phaseGateOnly": list(_WP_LEFT)}}, fh)
     mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
     os.makedirs(os.path.dirname(mpath))
     with open(mpath, "w", encoding="utf-8") as fh:
@@ -2300,7 +2355,8 @@ def _writer_prompt_cases(check):
     deps = M.dependant_lines(M._brief_context(mpath, proj), phase_one["tasks"][0],
                              M.DEPENDANTS_ASK_WRITER)
     expected = "\n".join(M.compose_writer_prompt(
-        man, phase_one, phase_one["tasks"][0], deps)) + "\n"
+        man, phase_one, phase_one["tasks"][0], deps,
+        phase_gate_only=_WP_LEFT)) + "\n"
     check("wp12 `brief P1.1 --role writer` exits 0 and writes exactly the "
           "prompt, with the dependants section, to a file of its own beside "
           "the executor's: code=%r file=%s"
@@ -2309,6 +2365,26 @@ def _writer_prompt_cases(check):
           and on_disk.replace("\n\nWho depends on this:\n%s" % (
               "\n".join(deps),), "") == text
           and written in out.getvalue())
+    # A key the reader cannot use stops the brief by name; it is not read as the
+    # empty default, which would put the browser gates back in the writer's list.
+    with open(os.path.join(proj, ".claude", "audit.config.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json",
+                   "executor": {"phaseGateOnly": "verify.sh"}}, fh)
+    os.remove(written)
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        try:
+            bad_code = M.main([mpath, "brief", "P1.1", "--role", "writer",
+                               "--project", proj])
+        except SystemExit as exc:
+            bad_code = exc.code
+    check("wp16 a non-list executor.phaseGateOnly stops `brief --role writer` "
+          "with the config exit code, naming the key, and writes no brief: "
+          "code=%r said=%r"
+          % (bad_code, (out.getvalue() + err.getvalue())[:120]),
+          bad_code == M.E_CONFIG and not os.path.exists(written)
+          and "executor.phaseGateOnly" in out.getvalue() + err.getvalue())
     shutil.rmtree(root, ignore_errors=True)
 
 

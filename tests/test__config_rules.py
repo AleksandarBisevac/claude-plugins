@@ -437,6 +437,36 @@ def _cases(check):
           all(M.is_full_model_id(i) == runner.is_full_model_id(i) for i in ids)
           and M.is_full_model_id("claude-opus-5-5")
           and not M.is_full_model_id("opus"))
+    # --- executor.phaseGateOnly -------------------------------------------------
+    # The gate commands a writer session is told to leave to the phase gate. The
+    # empty default is the point: a project that names none is told nothing, so a
+    # gate it owns is run by the writer. A value the reader cannot use is refused
+    # by name rather than read as the empty list, which would quietly turn the
+    # sentence off.
+    f, w = M.validate_config({"executor": {"phaseGateOnly": [
+        "verify.sh", "playwright test"]}})
+    check("pg1 executor.phaseGateOnly as a list of non-empty strings validates "
+          "clean and is a known key: %r" % ((f, w),), not f and not w)
+    f, w = M.validate_config({"executor": {"phaseGateOnly": []}})
+    check("pg1b an empty list is the default spelled out, so it validates "
+          "clean too: %r" % ((f, w),), not f and not w)
+    for _bad in ("verify.sh", ["verify.sh", ""], ["  "], [3], [["verify.sh"]],
+                 {"verify.sh": 1}, 3, None, True):
+        f, w = M.validate_config({"executor": {"phaseGateOnly": _bad}})
+        check("pg2 executor.phaseGateOnly %r is a FINDING naming the key: %r"
+              % (_bad, f), any("executor.phaseGateOnly" in x for x in f))
+    _pg_set = M.phase_gate_only_setting(
+        {"executor": {"phaseGateOnly": ["verify.sh", " playwright test "]}})
+    _pg_none = M.phase_gate_only_setting({"executor": {"waveWidth": 2}})
+    _pg_bad = M.phase_gate_only_setting({"executor": {"phaseGateOnly": "verify.sh"}})
+    check("pg3 phase_gate_only_setting reads the list as written (trimmed), is "
+          "((), None) when the key is absent - never a name the project did not "
+          "give - and refuses a non-list with a problem naming the key: %r"
+          % ((_pg_set, _pg_none, _pg_bad),),
+          _pg_set == (("verify.sh", "playwright test"), None)
+          and _pg_none == ((), None) and _pg_bad[0] == ()
+          and "executor.phaseGateOnly" in (_pg_bad[1] or ""))
+
     f, w = M.validate_config({"journal": {"strictManifestState": "ask"}})
     check("journal.strictManifestState 'ask' is a legal, known key",
           not f and not w)
