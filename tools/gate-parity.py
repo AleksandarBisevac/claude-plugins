@@ -1088,6 +1088,12 @@ AUDITED_EXEMPTIONS = {
     # auditor - `r2` is the strongest row in this table, refusing a NEW debt and a
     # RETIRED one alike so the list may only shrink and only deliberately.
     "KNOWN_LAYER_DEBT": ("reason", "tests/test__deps.py r2"),
+    # What the sweep leaves out of the checkout's own `.claude/` it watches. `cw5`
+    # builds a `.claude/` holding every kind of entry and asks which survive the
+    # snapshot, naming the left-out ones, so a row whose subject stopped being
+    # left out is reported; whether its sentence is still true of a live session
+    # it does not judge, so this is the weaker of the two strengths.
+    "CLAUDE_UNWATCHED": ("live", "tools/sweep-selftests.py cw5"),
     "EXCLUDED": ("live", "tests/test__refs.py t2"),
 }
 

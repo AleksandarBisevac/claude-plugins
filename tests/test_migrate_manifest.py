@@ -59,9 +59,37 @@ def _legacy():
     }
 
 
+def _outside_any_checkout(prefix):
+    """A scratch directory with no `.git` above it, for a fixture that stands for
+    a plan OUTSIDE a checkout.
+
+    WHY NOT PLAIN `mkdtemp`. `_mio.checkout_of` walks up from a manifest to the
+    nearest `.git`, and the layout migration parks its restore point and its
+    ignore line under THAT checkout's `.claude/`. Most machines keep their temp
+    directory somewhere with no checkout above it; an agent sandbox points
+    `TMPDIR` at the clone it works in, and then every fixture below it resolves
+    to the clone - the restore point of a demo plan and a line in the clone's
+    `.claude/.gitignore` landed in the real checkout during a whole-tree sweep,
+    and the cases that read the fixture's own `.claude/` found nothing there.
+
+    The first candidate with no checkout above it wins; none is a loud failure,
+    never a fixture quietly built where the cases mean something else.
+    """
+    seen = []
+    for base in (tempfile.gettempdir(), "/tmp", "/var/tmp"):
+        if not os.path.isdir(base):
+            continue
+        seen.append(base)
+        if _mio.checkout_of(os.path.join(base, "probe")) is None:
+            return tempfile.mkdtemp(prefix=prefix, dir=base)
+    raise RuntimeError("no temporary directory without a checkout above it "
+                       "(looked in %r) - a plan 'outside any checkout' cannot be "
+                       "staged" % (seen,))
+
+
 # --- cases --------------------------------------------------------------------
 def _cases(check):
-    tmp = tempfile.mkdtemp(prefix="migrate-selftest-")
+    tmp = _outside_any_checkout("migrate-selftest-")
     try:
         # 1. lossless in-place migration + backup + result validates
         p = os.path.join(tmp, "c1", "audit-plan.json")
@@ -657,7 +685,7 @@ def _redact_cases(check):
     the journal, naming where and never what; a clean one says nothing."""
     import subprocess
     import _journal_io
-    tmp = tempfile.mkdtemp(prefix="migrate-redact-")
+    tmp = _outside_any_checkout("migrate-redact-")
     try:
         subprocess.call(["git", "init", "-q", tmp])
         p = os.path.join(tmp, "docs", "audit", "audit-plan.json")
