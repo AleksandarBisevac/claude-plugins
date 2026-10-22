@@ -44,9 +44,23 @@
         "file": "plugins/audit/scripts/governance/drive-phase.py:3541-3562 (settle_aside) and 3587-3606 (writer_commit)",
         "issue": "The task note and ctx['did'] line say 'the commit carries the declared work' and are written before the re-proof, the re-measured gate and the second commit have run. If the re-measured gate goes red (or the second commit refuses), the paths are already reverted and the note already filed, so the task carries a note claiming a commit the run did not make. The patch path in the note is still correct, so nothing is lost; the sentence is only premature.",
         "resolution": "Word the note as what was done ('set aside ... put back to HEAD; the drive asks the commit again') and leave the commit claim to the close line, or file the note after the second commit succeeds."
+      },
+      {
+        "id": "P135-R4",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/run-agent-session.py:78-89",
+        "issue": "contradicts task clause: the description says 'Drop the parent's Claude session variables (CLAUDECODE and every CLAUDE_CODE_* / CLAUDE_EFFORT; keep any CLAUDE_* the runner sets on purpose and name them)'. The diff drops a closed list of 14 exact names (PARENT_SESSION_VARS), not every CLAUDE_CODE_*. Any CLAUDE_CODE_* session variable the CLI exports that is not on the list (a new one in a later CLI release, or one the harness list never knew) still reaches the writer, so the writer does not reliably start like a top-level session. The executor's reasoning (a prefix drop would also take CLAUDE_CODE_USE_BEDROCK and credential switches a plain session inherits) is sound, but it is a narrowing of the clause that the task's own text does not record, and the filed outcome states the narrowing as a design choice rather than a divergence.",
+        "resolution": "Decide the scope explicitly. Either drop by prefix (CLAUDECODE, CLAUDE_EFFORT, CLAUDE_PID, AUDIT_LOCK_TOKENS and every CLAUDE_CODE_*) with a named KEEP tuple for the provider and credential switches (CLAUDE_CODE_USE_*, auth-token names), and add a case with an unlisted CLAUDE_CODE_* name to ras30; or amend the task description to say 'the names run-plain.sh unsets' so the closed list is the asked-for scope. The ras30 decoy for an unlisted CLAUDE_CODE_* name is missing either way, so the closed-list behaviour is untested in both directions."
+      },
+      {
+        "id": "P135-R5",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/run-agent-session.py:78-80, PLUGIN-BUILD-GUIDE.md:5073-5075",
+        "issue": "The comment and the guide say the list is 'the measurement harness's plain arm' list. That harness (run-plain.sh) lives in the private quality-gates-internal repo, not in this one, so a reader of the public tree cannot check the equivalence and nothing keeps the two lists together. I checked it by hand: the 14 names match run-plain.sh lines 62-64 today.",
+        "resolution": "State the list's basis in this repo (what each name is and why a top-level session starts without it) rather than pointing at a file outside the repository, or add a case that reads a committed copy of the list."
       }
     ],
-    "outcome": "[findings: 3 - 0 high, 0 med, 3 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 5 - 0 high, 1 med, 4 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -117,7 +131,7 @@
     {
       "id": "P135.2",
       "title": "On the writer path, an edit outside the task's declared files is left out of the commit and named, instead of refusing the whole task",
-      "status": "in_progress",
+      "status": "done",
       "description": "Register F783. Stage 1 runs a1 and a1b: the writer (plain prompt, which states no scope) edited PLUGIN-BUILD-GUIDE.md, which the task does not declare; commit-task-work refused the whole task. The writer prompt must stay equal to plain's, so the fix belongs in the drive: on the writer path (executor.writerModel set), before the commit, the drive reverts each undeclared changed path in the task tree after saving it as a patch under the run's state, records a task note naming each path and the patch, re-proves/re-gates if any reverted path was read by the gate, then commits the declared work. Leave the subagent-executor path unchanged (it keeps refusing). Plugin-owned paths (the table from the sibling task) are never reverted.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -149,19 +163,38 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3ab2cbce2511",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: close_task on the writer path (writer_path_on and a recorded session) goes through writer_commit: commit-task-work.py as before; on a refusal it is asked again with --json (refusal_answer) and, when the WHOLE refusal is attempt.during paths (no declaredPredates/mixed, undeclared_only), settle_aside runs: paths under _manifest_io.PLUGIN_OWNED_IN_CLAUDE (plugin_owned_paths) or cited by the writer's clause answer (aside_gap, _clause_coverage.check re-read without them) are never reverted - the refusal is relayed with a '[drive-phase] <paths> not set aside: <why>' line; otherwise set_aside writes one binary patch (scratch GIT_INDEX_FILE copy: add -A + diff --cached --binary HEAD, pathspecs via _config.plan_to_git, so the real index is untouched and new files are included) to <stateDir>/set-aside/<phase>/<task>-<utc>.patch, checks it with git apply --check -R, then checks out tracked paths from HEAD and removes created ones; a task note names each path and the project-relative patch; prove_and_hold is asked again (P131.6: re-proves only if HEAD/declared test/impl digests moved, which a set-aside of undeclared paths cannot move); the gate is ALWAYS measured again with no reuse (rerun mark + gate_step), because the ledger records no read set so 'the gate did not read it' has no basis; then the commit is asked once more in text mode. Executor path: unchanged text-mode commit (commit_args/committed_sha factored, same argv). file_writer_return's claim read factored into writer_claim. Module docstring, tree_since_proof docstring and the file_writer_return invariant comment updated. No new import edge (an earlier draft imported _scoped_commit for render, which made _deps.map_drift red against PLUGIN-BUILD-GUIDE.md's module map; replaced by relaying the verb's own text). tests/test_drive_phase.py: new block _writer_scope_cases (STAGES row xs-block after wf-block) with xs1-xs6. Gate: python3 tools/sweep-selftests.py tests/test_drive_phase.py in the task tree -> exit 0, 537 cases. Full sweep on a committed copy (git archive HEAD + the two files, committed in a scratch repo): 192/194 files ok, 16917 cases; red only tools/check-example-ledgers.py and tools/measure-context.py (the two allowed); ruff check plugins/audit tools exit 0; vermin -t=3.8- exit 0. Mutations in a throwaway copy, each red: no regate->xs4; no clause check->xs5; set-aside on executor path too->xs3; plugin-owned guard returns []->xs6; predates/mixed ignored->xs6; no note->xs1,xs2,xs4; declared file also reverted->xs1,xs2,xs4; created file kept->xs1,xs2. DEPENDANTS: tests/test_drive_phase.py - changed (the new block, nothing else). PLUGIN-BUILD-GUIDE.md - still correct: drive-phase's import list in the module map is unchanged (no new edge) and no paragraph describes the writer's undeclared-file refusal; README.md, docs/research/pipeline-cost-design.md, docs/research/pipeline-cost-levers.md - still correct, they name drive-phase/its verbs and say nothing about this refusal; plugins/audit/hooks/detect-plan-skip.py, governance/record-risk-confirmation.py, governance/stamp-verification.py, manifest/_areas.py (basename refs) - still correct, the CLI and every existing function signature are unchanged; _carries/_clip/_mark/_marked used by other suites - unchanged. tests/test_drive_phase.py's dependants: .github/sweep-costs.json - still valid (the file runs ~190 s, within its timeout; costs not re-recorded); tests/test__runner_output.py, tests/test_run_test_gate.py (_counting, _follower_cases, _head) - unchanged; tools/sweep-selftests.py - unchanged contract, sb1 stage case green; PLUGIN-BUILD-GUIDE.md, docs/research/* path mentions - still correct. LANDED CONTEXT: P131.6 - prove_and_hold/tree_since_proof asked after the revert, and the gate re-measured, before the commit; P131.7 - a clause cited to a would-be-reverted file is NOT reverted (refusal relayed with the gap), so no clause silently becomes a gap; P132.1 carried commits read by aside_gap via carried_paths; P135.1 PLUGIN_OWNED_IN_CLAUDE read by plugin_owned_paths and never reverted. Waves: a member's undeclared paths stay integrate-task's widen/discard/block decision; this change acts at close_task's commit.",
+        "descriptive": "On the writer path an edit outside the task's files is saved as a patch, put back to HEAD and noted, and the task commits its declared work after a fresh gate; the executor path still refuses."
       },
       "startedAt": "2026-10-22T13:13:59Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-22T14:55:56Z",
+      "verifiedBy": [
+        "xs1 writer edits a tracked and creates an untracked undeclared file: task done, commit holds only declared files + records, both put back, one note naming both and a project-relative patch under .claude/state holding both changes",
+        "xs2 the kept patch git-applies to the tree the commit left",
+        "xs3 twin: the same undeclared edit on the subagent executor path still refuses, edit left, no patch",
+        "xs4 the gate is measured again after the set-aside (two green ledger runs, newest after the patch)",
+        "xs5 a file the writer's clause answer cites is not set aside: refusal relayed with why, edit kept",
+        "xs6 undeclared_only reads only a pure during refusal; plugin_owned_paths names only the table's rows"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-22T14:55:54Z.3a756d",
         "status": "passed",
         "at": "2026-10-22T14:55:54Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "3ab2cbce2511",
+        "at": "2026-10-22T14:55:56Z",
+        "return": "docs/audit/evidence/returns/P135.2/20261022T131359Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-22T14:11:15Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD: the run timed out: no time was left of the 480-second deadline; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
@@ -204,7 +237,12 @@
       "startedAt": "2026-10-22T13:14:01Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-22T14:59:32Z.559df5",
+        "status": "passed",
+        "at": "2026-10-22T14:59:32Z"
+      }
     }
   ],
   "request": "Stage 1 measurement (2026-10-22): runs could not close because the commit check refused the plugin's own restore point and the writer's out-of-scope edit (register F782, F783)",

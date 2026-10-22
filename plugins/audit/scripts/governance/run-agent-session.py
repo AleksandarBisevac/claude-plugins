@@ -43,6 +43,12 @@ TMPDIR of its own under the task's scratch, so a stop reaches everything it star
 and nothing it wrote to a temp directory lands in a sibling's. The TMPDIR is left in
 place afterwards: it is the task's scratch, and removing it is the task's teardown.
 
+THE CHILD STARTS WITHOUT THE PARENT'S CLAUDE SESSION VARIABLES (`PARENT_SESSION_VARS`),
+as a top-level session does: copied through, `CLAUDECODE` and the session id would
+make the writer start as a child of the orchestrator's session, and a measured
+pipeline would not be the thing a plain session is compared against. Everything else
+in the environment (PATH, HOME, credentials, provider switches) is passed on.
+
 THE STREAM IS SAVED under `<state-dir>/sessions/`, one file per run (a resumed
 session is a second stream, which is how a transcript re-price reads a session),
 with the CLI's stderr beside it.
@@ -117,6 +123,19 @@ BUDGET_STOP = "error_max_budget_usd"
 # as a flag of its own.
 SESSION_ID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
                         r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+# The variables a parent Claude session exports to its children and a top-level
+# session starts without; the measurement harness's plain arm unsets this same
+# list. Named one by one and not as a CLAUDE_CODE_* prefix, because a prefix would
+# also take the provider and credential switches (CLAUDE_CODE_USE_BEDROCK and the
+# like) a plain top-level session inherits. This runner sets no CLAUDE_* variable of
+# its own, so nothing is exempted from the drop.
+PARENT_SESSION_VARS = ("CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_PID",
+                       "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_CHILD_SESSION",
+                       "CLAUDE_CODE_EXECPATH", "CLAUDE_CODE_MESSAGING_SOCKET",
+                       "CLAUDE_CODE_MESSAGING_TOKEN", "CLAUDE_CODE_SESSION_ATTENDED",
+                       "CLAUDE_CODE_SSE_PORT", "CLAUDE_EFFORT", "AUDIT_LOCK_TOKENS",
+                       "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL", "CLAUDE_PROJECT_DIR")
 
 ROLES = ("writer", "reviewer")
 REVIEWER = "audit-reviewer"
@@ -247,7 +266,9 @@ def _stream_path(state_dir, task, role):
 
 
 def _session_env(tmpdir):
-    env = dict(os.environ)
+    """The child's environment: the parent's, less its Claude session variables
+    (`PARENT_SESSION_VARS`), with the session's own TMPDIR."""
+    env = dict((k, v) for k, v in os.environ.items() if k not in PARENT_SESSION_VARS)
     for name in ("TMPDIR", "TEMP", "TMP"):
         env[name] = tmpdir
     return env

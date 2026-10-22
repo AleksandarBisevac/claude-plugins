@@ -5070,7 +5070,9 @@ with `--` cannot reach the argv as a flag. The budget must be a finite positive 
 **The prompt goes on stdin, never in argv**, because a sibling session's `pkill -f` matches command
 lines; the script reads its own prompt off stdin or `--prompt-file` for the same reason. The child
 runs in a process group of its own (`_proc_group.group_kwargs`, torn down whole on SIGINT/SIGTERM)
-with a TMPDIR of its own under the task's scratch, and its stream is saved under
+with a TMPDIR of its own under the task's scratch, and without the parent's Claude session
+variables (`PARENT_SESSION_VARS`, the list the measurement harness's plain arm unsets), so it
+starts as a plain top-level session does; its stream is saved under
 `<state-dir>/sessions/`, one file per run, with stderr beside it.
 
 **What it prints**: one line, `session=<id> subtype=<subtype> is_error=<is_error>

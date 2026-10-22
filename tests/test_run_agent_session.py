@@ -73,6 +73,8 @@ record = {
     "pid": os.getpid(),
     "pgrp": os.getpgrp() if hasattr(os, "getpgrp") else None,
     "agents_file": None,
+    "env": {k: v for k, v in os.environ.items()
+            if k.startswith(("CLAUDE", "AUDIT_")) or k in ("PATH", "HOME", "ORCH_KEEP_q81z")},
 }
 argv = sys.argv[1:]
 if "--agents" in argv:
@@ -128,8 +130,11 @@ def _install_stub(root):
 
 
 def _run(root, bindir, role, extra=(), mode="ok", exit_code=0, model=MODEL, tag="r",
-         budget="2.5", state_is_file=False):
+         budget="2.5", state_is_file=False, env_extra=None):
     """Run the script once. Returns (exit, stdout, stderr, record-or-None, dirs).
+
+    `env_extra` is added to the script's own environment, the parent's as the
+    orchestrator would hand it down.
 
     `state_is_file` puts a regular FILE where the state dir should be, which no
     platform lets a directory be created under - the portable unwritable path."""
@@ -147,6 +152,7 @@ def _run(root, bindir, role, extra=(), mode="ok", exit_code=0, model=MODEL, tag=
                 "STUB_RECORD": record, "STUB_MODE": mode,
                 "STUB_SESSION": SESSION, "STUB_FIRST": repr(FIRST_COST),
                 "STUB_LAST": repr(LAST_COST), "STUB_EXIT": str(exit_code)})
+    env.update(env_extra or {})
     argv = [sys.executable, SCRIPT, "--role", role, "--task", "P9.1",
             "--tree", tree, "--scratch", scratch, "--state-dir", state,
             "--model", model, "--effort", "high", "--budget-usd", budget] + list(extra)
@@ -393,6 +399,40 @@ def _cases(check):
               e_io is not None and code == e_io and e_io not in codes + [e_budget]
               and dirs["state"] in out + err and "Traceback" not in err and rec is None,
               "exit %r out %r err %r" % (code, out[-300:], err[-300:]))
+
+        # --- the environment the session starts in -------------------------------
+        # The names a top-level session starts without, as the measurement
+        # harness's plain arm unsets them - written out here, not read from the
+        # script, so the case compares two lists.
+        parent_session = ["CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_PID",
+                          "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_CHILD_SESSION",
+                          "CLAUDE_CODE_EXECPATH", "CLAUDE_CODE_MESSAGING_SOCKET",
+                          "CLAUDE_CODE_MESSAGING_TOKEN", "CLAUDE_CODE_SESSION_ATTENDED",
+                          "CLAUDE_CODE_SSE_PORT", "CLAUDE_EFFORT", "AUDIT_LOCK_TOKENS",
+                          "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL", "CLAUDE_PROJECT_DIR"]
+        # Not session state: a provider switch a plain top-level session also
+        # inherits. A drop of every CLAUDE_CODE_* prefix would take it, which is
+        # the over-drop this name is here to catch.
+        kept_decoys = {"CLAUDE_CODE_USE_BEDROCK": "1", "ORCH_KEEP_q81z": "kept",
+                       "HOME": os.path.join(root, "decoy-home")}
+        parent = dict((name, "parent-" + name) for name in parent_session)
+        parent.update(kept_decoys)
+        code, out, err, rec, dirs = _run(root, bindir, "writer", tag="env",
+                                         env_extra=parent)
+        seen = (rec or {}).get("env") or {}
+        leaked = sorted(name for name in parent_session if name in seen)
+        check("ras30 the child environment carries none of the parent's Claude session "
+              "variables (%d names written out in the case) - leaked: %r"
+              % (len(parent_session), leaked),
+              rec is not None and "env" in rec and not leaked, repr(seen))
+        lost = sorted(name for name, value in kept_decoys.items()
+                      if seen.get(name) != value)
+        check("ras31 ...while the rest of the parent's environment is kept - PATH with "
+              "the stub's directory, HOME, a provider switch and an unrelated "
+              "variable - and the runner's own TMPDIR points at the session's "
+              "directory; lost: %r" % (lost,),
+              rec is not None and not lost and bindir in seen.get("PATH", "")
+              and _under(rec["tmpdir"], dirs["scratch"]), repr(seen))
 
         # --- the --record file ---------------------------------------------------
         # One JSON line per run, appended: the same printed command run twice
