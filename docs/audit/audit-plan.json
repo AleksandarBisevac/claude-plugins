@@ -9235,7 +9235,8 @@
       "P126.11-13q",
       "P130.7",
       "P130.8",
-      "P131.1"
+      "P131.1",
+      "P132.5-5mm"
     ],
     "docs/research/guard-refusals-by-owner.md": [
       "P110.1",
@@ -10833,7 +10834,8 @@
     "tests/_harness.py": [
       "P131.1",
       "P131.2",
-      "P109.3"
+      "P109.3",
+      "P132.5-5mm"
     ],
     "tests/fixtures/pricing-page-2026-10-10.md": [
       "P131.1"
@@ -10920,7 +10922,8 @@
       "P86.1"
     ],
     "tests/test__doctor_trail.py": [
-      "P131.1"
+      "P131.1",
+      "P132.5-5mm"
     ],
     "tests/test__evidence_io.py": [
       "P131.1"
@@ -11209,7 +11212,8 @@
       "P131.1",
       "P131.2",
       "P131.13",
-      "P129.7-izt"
+      "P129.7-izt",
+      "P132.5-5mm"
     ],
     "tests/test_audit_usage.py": [
       "P131.1"
@@ -11276,7 +11280,8 @@
     ],
     "tests/test_guard_bash_writes.py": [
       "P131.1",
-      "P129.9-izt"
+      "P129.9-izt",
+      "P132.5-5mm"
     ],
     "tests/test_guard_capabilities.py": [
       "P131.1"
@@ -11466,7 +11471,8 @@
       "P131.18-dau"
     ],
     "tests/test__impact.py": [
-      "P131.18-dau"
+      "P131.18-dau",
+      "P132.5-5mm"
     ],
     ".claude/audit.config.json": [
       "P132.4"
