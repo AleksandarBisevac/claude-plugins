@@ -1,7 +1,7 @@
 {
   "id": "P135",
   "title": "A writer's task closes on its own work: the plugin's own state is never refused at commit, and an out-of-scope edit becomes a note instead of a refusal",
-  "status": "in_progress",
+  "status": "done",
   "description": "Fixes from the stage 1 confirming measurement; the writer's prompt stays equal to plain's.",
   "desiredOutcome": "A task whose gate is green commits even when the plugin itself wrote a restore point, and a writer edit outside the task's files is left out of the commit and named, so the measured pipeline can finish a task.",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "f2bcd8c785362c7612bbd134ddc38f1ae90c04f2",
   "branch": "audit/p135-a-writer-s-task-closes-on-its",
-  "mergedAt": null,
+  "mergedAt": "2026-10-22T15:29:01Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -471,5 +471,6 @@
     "runId": "2026-10-22T15:28:48Z.676f22",
     "status": "passed",
     "at": "2026-10-22T15:28:48Z"
-  }
+  },
+  "mergedHead": "956f9f13185b8a24ec84c0d0bff93100a99303c3"
 }
