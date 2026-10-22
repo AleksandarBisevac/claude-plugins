@@ -3884,7 +3884,8 @@
       "P131.1",
       "P131.2",
       "P137.1",
-      "P137.7-3y3"
+      "P137.7-3y3",
+      "P137.9-3y3"
     ],
     "plugins/audit/scripts/governance/_tree_stamp.py": [
       "P43.4",
@@ -8048,7 +8049,8 @@
       "P131.2",
       "P132.5-5mm",
       "P137.3-3y3",
-      "P137.6-3y3"
+      "P137.6-3y3",
+      "P137.8-3y3"
     ],
     "tools/ui-tests/evidence-badge.test.mjs": [
       "P32.7",
@@ -9904,7 +9906,8 @@
       "P135.2",
       "P137.1",
       "P137.2",
-      "P137.5-3y3"
+      "P137.5-3y3",
+      "P137.9-3y3"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -11183,7 +11186,8 @@
     "tests/test__scoped_commit.py": [
       "P131.1",
       "P137.1",
-      "P137.7-3y3"
+      "P137.7-3y3",
+      "P137.9-3y3"
     ],
     "tests/test__status_facts.py": [
       "P131.1",
@@ -11350,7 +11354,8 @@
       "P137.1",
       "P137.2",
       "P137.5-3y3",
-      "P137.7-3y3"
+      "P137.7-3y3",
+      "P137.9-3y3"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
