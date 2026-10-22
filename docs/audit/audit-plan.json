@@ -862,6 +862,12 @@
       "title": "The task-gate exemption flag is added only to this plugin's own audit-status",
       "status": "done",
       "shard": "phases/P133.json"
+    },
+    {
+      "id": "P134",
+      "title": "No path is made relative across drives, in tests or tools",
+      "status": "pending",
+      "shard": "phases/P134.json"
     }
   ],
   "fileIndex": {
@@ -9256,7 +9262,8 @@
       "P130.7",
       "P130.8",
       "P131.1",
-      "P132.5-5mm"
+      "P132.5-5mm",
+      "P134.1"
     ],
     "docs/research/guard-refusals-by-owner.md": [
       "P110.1",
@@ -10857,7 +10864,8 @@
       "P131.1",
       "P131.2",
       "P109.3",
-      "P132.5-5mm"
+      "P132.5-5mm",
+      "P134.1"
     ],
     "tests/fixtures/pricing-page-2026-10-10.md": [
       "P131.1"
@@ -11402,7 +11410,8 @@
     "tests/test_run_test_gate.py": [
       "P131.1",
       "P131.12",
-      "P133.1"
+      "P133.1",
+      "P134.1"
     ],
     "tests/test_set_priority.py": [
       "P131.1"

@@ -1,0 +1,75 @@
+{
+  "id": "P134",
+  "title": "No path is made relative across drives, in tests or tools",
+  "status": "pending",
+  "description": "Second instance of the cross-drive relpath class (P132.5 fixed suite_elsewhere_paths; P133.1's gtf-block fixture reintroduced it), so the class is closed by a check, not another instance fix.",
+  "desiredOutcome": "The release tier is green on Windows, and a relpath between a scratch directory (C:) and the checkout (D:) can no longer be written without a lint naming it.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P134.1",
+      "title": "Every relpath in tests/ and tools/ whose two sides can sit on different drives goes through one helper that never raises across drives, and a lint names any bare one",
+      "status": "pending",
+      "description": "CI run 39746079909 (ci/P133 @c339c804): tests/test_run_test_gate.py gtf-block raises `ValueError: path is on mount 'D:', start on mount 'C:'` while building its cases (546/547) on windows plain 2, cp1252 2 and resample - the checkout is on D:, tempfile scratch on C:. P132.5 fixed the same thing in tools/lints/_output_lints.suite_elsewhere_paths. Find every os.path.relpath / posix_rel call in tests/ and tools/ (and plugins/audit/scripts if a call can see a scratch path), classify each (both sides inside one root by construction vs a side that can be a tempfile path), route the risky ones through one helper (in tests/_harness.py for suites, _output for shipped code if needed) that returns a usable answer across drives (the absolute path, or a stated refusal) instead of raising, and add a lint case (in tools/_suite.py, the home of the removal lint) that names a bare relpath between a tempfile/mkdtemp-derived path and a repo path. Emulate Windows with ntpath on posix to prove the red.",
+      "files": [
+        "tests/test_run_test_gate.py",
+        "tests/_harness.py",
+        "tools/_suite.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/_suite.py: a planted suite that relpaths a mkdtemp-derived path against a repo path is named by the new lint, and the same call through the helper is not; and ntpath.relpath across 'C:' and 'D:' is shown to raise while the helper returns an answer"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tools/_suite.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim",
+        "reproducing-ci-locally"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ],
+  "request": "Owner rule: CI after every phase; CI on ci/P133 (run 39746079909) red on Windows from a cross-drive relpath in a new test fixture - the same class P132.5 fixed in one place",
+  "openChoices": []
+}
