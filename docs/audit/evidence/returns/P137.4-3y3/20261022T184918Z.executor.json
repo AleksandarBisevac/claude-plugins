@@ -1,0 +1,35 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_run_agent_session.py": "pass",
+    "python3 tools/sweep-selftests.py tests/test_run_agent_session.py tests/test_drive_phase.py": "pass",
+    "python3 tools/sweep-selftests.py tests/test__deps.py tests/test__output_lints.py tests/test_run_agent_session.py": "pass",
+    "ruff check run-agent-session.py + its suite": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-22T19:02:23Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_run_agent_session.py` in a throwaway tree at HEAD exited 1 with failing cases ras9 (house FAIL), ras31 (house FAIL), ras32 (house FAIL), ras32b (house FAIL), ras33 (house FAIL), ras34 (house FAIL) and 1 more, but with the working tree's implementation the task's tests do not all pass (no tally or error reader matched its output, so no line of it is quoted as decisive), so the red is not one the fix turns green - SELFTEST FAILED: 37/43 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "run-agent-session.py: _prepare now makes the session TMPDIR under tempfile.gettempdir() (honours caller TMPDIR) via new _parent_tmp(), which refuses with PreparationError (io-error, exit 5, names the temp dir and the checkout found by _manifest_io.checkout_of on the realpath) when a .git lies above it, before anything is made, with no fallback. mkdtemp keeps sessions distinct. The scratch keeps <tmpdir name>.tmpdir holding the path (the scratch keeps records and stream dir; nothing in drive-phase.py reads the TMPDIR back - grep of drive-phase.py/tests found no reader; a stop reaches the session through the process group _proc_group, unchanged and still pinned by ras10). New import _manifest_io (floor layer; no layer lint change needed, module-map fence in PLUGIN-BUILD-GUIDE.md updated by hand to match _deps.py --render). Tests: _run now gives each run its own parent temp under root (TMPDIR/TEMP/TMP) so no session dir leaks to the machine temp, takes scratch_dir; stub records TEMP/TMP; ras9 and ras31 reworded to the new location; added ras32 (scratch inside fake checkout -> TMPDIR has no .git ancestor, independent walk in the test), ras32b (scratch record names the TMPDIR), ras33 (two sessions, same role/scratch/parent temp -> two TMPDIRs, both recorded), ras34 (parent temp inside a checkout -> io-error naming it, no claude start, nothing made in it). PLUGIN-BUILD-GUIDE.md: TMPDIR clause rewritten + module map line. Results: sweep tests/test_run_agent_session.py exit 0 (43 cases); sweep tests/test_run_agent_session.py tests/test_drive_phase.py exit 0 (585 cases); sweep tests/test__deps.py tests/test__output_lints.py tests/test_run_agent_session.py exit 0 (the first run of test__deps.py was red on g1, the module map fence, until I updated the guide line); ruff exit 0. Dependants: drive-phase.py (basename) still correct - it passes --scratch <sessions>/scratch/<task> and reads only the printed line/--record, never the TMPDIR; the scratch dir is still created and now additionally holds the .tmpdir record. tests/test_drive_phase.py (basename) still correct - ran green, 542 cases; it only checks the dispatch line. write_record and exit_for unchanged (exit_for named in the guide, unchanged; new refusal reuses E_IO=5). audit-config.schema.json, _config_rules.py, _panel_settings.py, tests/test__config_rules.py (basename) - no config key or schema touched, unchanged and still correct. PLUGIN-BUILD-GUIDE.md dependants (the 25 files list) read the guide; I changed one clause and one module-map line only, test__deps g1 green. Not done: removal of the leftover TMPDIRs in the parent temp (nothing tears them down; the .tmpdir record is what a teardown would read) - flagging for the orchestrator.",
+    "descriptive": "A writer or reviewer session's TMPDIR now lies under the runner's own temp directory, never under the in-project scratch, and a temp directory inside a git checkout is refused by name."
+  },
+  "testsAdded": [
+    "ras32: scratch inside a git checkout, child TMPDIR has no .git ancestor and sits under the parent temp",
+    "ras32b: the scratch holds one record naming the TMPDIR",
+    "ras33: two sessions get distinct TMPDIRs, both recorded",
+    "ras34: a parent temp inside a checkout is refused, io-error naming it, nothing created"
+  ],
+  "casesAdded": [
+    [
+      "ras32",
+      "ras32b",
+      "ras33",
+      "ras34"
+    ]
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:430608b81b80ffe1a0a29c0445eb470dc29eaf6a5965259bbb8d8a384bb433d0\",\"dirtyDigest\":\"sha256:2aca8ebd8986f2a5f9589dd4290c57b820ea67bef82d866f10ac70e36bfcd6ed\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"292fe4d178c5ee62\",\"plugins/audit/scripts/governance/run-agent-session.py\":\"3d4ef51a5b5df4fe\",\"tests/test_run_agent_session.py\":\"0a1e9df325459e50\"},\"head\":\"b69869e2\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/scripts/governance/run-agent-session.py\",\"tests/test_run_agent_session.py\"],\"scopeDigest\":\"sha256:f68919421fc135ebfe462adcc73b82acc5734e1a8e7a3e2e6359c1ea83807528\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

@@ -463,7 +463,7 @@ L9:
   resolve-ado-parent -> _ado_parent, _manifest_io, _output, _utc_stamp
   resolve-ado-tracked -> _ado_tracked, _manifest_io, _output
   resolve-branch -> _branch, _manifest_io, _output, _worktrees
-  run-agent-session -> _claude_home, _help, _output, _proc_group
+  run-agent-session -> _claude_home, _help, _manifest_io, _output, _proc_group
   run-test-gate -> _affected_tests, _claude_home, _evidence_io, _fmt, _gate_derive, _invariants, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _runner_output, _status_facts, _task_outputs, _tree_stamp, _worktrees
   set-priority -> _claude_home, _manifest_io, _output, _panel_write, _priority, _warning_groups
   stamp-verification -> _claude_home, _evidence_io, _filed_returns, _invariants, _locks, _manifest_io, _output, _proc_group, _runner_output, _task_outputs, _tree_stamp, _worktrees
@@ -5073,7 +5073,12 @@ with `--` cannot reach the argv as a flag. The budget must be a finite positive 
 **The prompt goes on stdin, never in argv**, because a sibling session's `pkill -f` matches command
 lines; the script reads its own prompt off stdin or `--prompt-file` for the same reason. The child
 runs in a process group of its own (`_proc_group.group_kwargs`, torn down whole on SIGINT/SIGTERM)
-with a TMPDIR of its own under the task's scratch, and without the parent's Claude session
+with a TMPDIR of its own under the parent's temp directory (`tempfile.gettempdir()`, so a caller's
+TMPDIR is honoured) and not under the task's scratch, which the drive keeps inside the project — a
+TMPDIR below it put every fixture a session's suites build inside the real checkout. A parent temp
+directory with a `.git` above it (`_manifest_io.checkout_of`) is refused as `io-error:` naming it
+(exit `5`), and nothing else is tried; the scratch keeps `<TMPDIR name>.tmpdir`, holding the path.
+The child also runs without the parent's Claude session
 variables, so it starts as a top-level session does and not as a child of the orchestrator's: the
 names outside `CLAUDE_CODE_` that mark a parent (`PARENT_SESSION_VARS`: the `CLAUDECODE` marker,
 pid, effort, project directory and the plugin's lock tokens) are dropped by name, and every name

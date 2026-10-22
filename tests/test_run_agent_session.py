@@ -74,7 +74,8 @@ record = {
     "pgrp": os.getpgrp() if hasattr(os, "getpgrp") else None,
     "agents_file": None,
     "env": {k: v for k, v in os.environ.items()
-            if k.startswith(("CLAUDE", "AUDIT_")) or k in ("PATH", "HOME", "ORCH_KEEP_Q81Z")},
+            if k.startswith(("CLAUDE", "AUDIT_"))
+            or k in ("PATH", "HOME", "ORCH_KEEP_Q81Z", "TEMP", "TMP")},
 }
 argv = sys.argv[1:]
 if "--agents" in argv:
@@ -130,19 +131,29 @@ def _install_stub(root):
 
 
 def _run(root, bindir, role, extra=(), mode="ok", exit_code=0, model=MODEL, tag="r",
-         budget="2.5", state_is_file=False, env_extra=None):
+         budget="2.5", state_is_file=False, env_extra=None, scratch_dir=None):
     """Run the script once. Returns (exit, stdout, stderr, record-or-None, dirs).
 
     `env_extra` is added to the script's own environment, the parent's as the
     orchestrator would hand it down.
 
+    The parent's temp directory is one of the run's own under `root` (TMPDIR, TEMP
+    and TMP all, so every platform's lookup finds it), so the session directories
+    the script makes in it are removed with `root` and not left in the machine's
+    temp. `env_extra` can name another.
+
+    `scratch_dir` is the scratch to hand the script, when a case needs it somewhere
+    particular; it is made here, as the drive's own would be.
+
     `state_is_file` puts a regular FILE where the state dir should be, which no
     platform lets a directory be created under - the portable unwritable path."""
     tree = os.path.join(root, "tree-" + tag)
-    scratch = os.path.join(root, "scratch-" + tag)
+    scratch = scratch_dir or os.path.join(root, "scratch-" + tag)
     state = os.path.join(root, "state-" + tag)
-    for d in (tree, scratch) if state_is_file else (tree, scratch, state):
-        os.makedirs(d)
+    parent_tmp = os.path.join(root, "tmp-" + tag)
+    for d in (tree, scratch, parent_tmp) if state_is_file else (tree, scratch, state,
+                                                                parent_tmp):
+        os.makedirs(d, exist_ok=True)
     if state_is_file:
         with open(state, "w", encoding="utf-8") as fh:
             fh.write("not a directory\n")
@@ -152,6 +163,7 @@ def _run(root, bindir, role, extra=(), mode="ok", exit_code=0, model=MODEL, tag=
                 "STUB_RECORD": record, "STUB_MODE": mode,
                 "STUB_SESSION": SESSION, "STUB_FIRST": repr(FIRST_COST),
                 "STUB_LAST": repr(LAST_COST), "STUB_EXIT": str(exit_code)})
+    env.update(dict((name, parent_tmp) for name in ("TMPDIR", "TEMP", "TMP")))
     env.update(env_extra or {})
     argv = [sys.executable, SCRIPT, "--role", role, "--task", "P9.1",
             "--tree", tree, "--scratch", scratch, "--state-dir", state,
@@ -164,7 +176,7 @@ def _run(root, bindir, role, extra=(), mode="ok", exit_code=0, model=MODEL, tag=
             got = json.load(fh)
     return (proc.returncode, proc.stdout.decode("utf-8", "replace"),
             proc.stderr.decode("utf-8", "replace"), got,
-            {"tree": tree, "scratch": scratch, "state": state})
+            {"tree": tree, "scratch": scratch, "state": state, "parent_tmp": parent_tmp})
 
 
 def _after(argv, flag):
@@ -178,6 +190,32 @@ def _after(argv, flag):
 def _under(path, root):
     real, base = os.path.realpath(path), os.path.realpath(root)
     return real == base or real.startswith(base + os.sep)
+
+
+def _git_above(path):
+    """The nearest directory above `path` (itself included) holding a `.git`, or None.
+    Written out here and not asked of the script's own helper, so the case compares
+    two readings; `path` is resolved first, so a symlinked temp root is judged by
+    where it really lies."""
+    here = os.path.realpath(path)
+    while True:
+        if os.path.lexists(os.path.join(here, ".git")):
+            return here
+        up = os.path.dirname(here)
+        if up == here:
+            return None
+        here = up
+
+
+def _tmpdir_records(scratch):
+    """The session TMPDIR paths the scratch holds a record of: the content of every
+    `*.tmpdir` file in it."""
+    found = []
+    for name in sorted(os.listdir(scratch)):
+        if name.endswith(".tmpdir"):
+            with open(os.path.join(scratch, name), encoding="utf-8") as fh:
+                found.append(fh.read().strip())
+    return found
 
 
 def _fields(line):
@@ -264,11 +302,13 @@ def _cases(check):
               bool(stream) and _under(stream, dirs["state"]) and os.path.isfile(stream)
               and SESSION in open(stream, encoding="utf-8").read(), repr(stream))
         check("ras9 the session runs in the task's tree with a TMPDIR of its own under "
-              "the task's scratch",
+              "the PARENT's temp directory - not under the task's scratch, which the "
+              "drive keeps inside the project",
               rec is not None and _under(rec["cwd"], dirs["tree"])
-              and _under(rec["tmpdir"], dirs["scratch"])
-              and os.path.realpath(rec["tmpdir"]) != os.path.realpath(dirs["scratch"]),
-              repr(rec and (rec["cwd"], rec["tmpdir"])))
+              and _under(rec["tmpdir"], dirs["parent_tmp"])
+              and os.path.realpath(rec["tmpdir"]) != os.path.realpath(dirs["parent_tmp"])
+              and not _under(rec["tmpdir"], dirs["scratch"]),
+              repr(rec and (rec["cwd"], rec["tmpdir"], dirs["parent_tmp"])))
         if hasattr(os, "getpgrp"):
             check("ras10 the child is started in a process group of its own - its group "
                   "is not this suite's, and the child leads it",
@@ -453,7 +493,9 @@ def _cases(check):
               "variable - and the runner's own TMPDIR points at the session's "
               "directory; lost: %r" % (lost,),
               rec is not None and not lost and bindir in seen.get("PATH", "")
-              and _under(rec["tmpdir"], dirs["scratch"]), repr(seen))
+              and _under(rec["tmpdir"], dirs["parent_tmp"])
+              and seen.get("TEMP") == rec["tmpdir"]
+              and seen.get("TMP") == rec["tmpdir"], repr(seen))
         # What a Windows child would see: the keys of the parent's environment
         # upper-cased. Every decoy must survive that unchanged, and the stub's
         # recorder must name each kept decoy in the form it will be handed.
@@ -467,6 +509,64 @@ def _cases(check):
               "keys, and the stub's recorder filters on it; shifted: %r unrecorded: %r"
               % (shifted, unrecorded),
               decoy_names and not shifted and not unrecorded)
+
+        # --- the session TMPDIR lies outside every checkout ------------------------
+        # The drive keeps the task's scratch INSIDE the project, so a TMPDIR made under
+        # it put every fixture a session's suites build inside the real checkout.
+        checkout = os.path.join(root, "checkout")
+        os.makedirs(os.path.join(checkout, ".git"))
+        in_repo = os.path.join(checkout, ".claude", "state", "sessions", "scratch", "P9.1")
+        premise = _git_above(in_repo)
+        code, out, err, rec, dirs = _run(root, bindir, "writer", tag="gt",
+                                         scratch_dir=in_repo)
+        seen_tmp = (rec or {}).get("tmpdir") or ""
+        check("ras32 with the scratch inside a git checkout the child's TMPDIR has no "
+              ".git ancestor, is not under that checkout, and is a directory of its "
+              "own under the parent's temp (the scratch's own ancestor is the "
+              "checkout: %r)" % (premise,),
+              premise is not None and os.path.realpath(premise) == os.path.realpath(checkout)
+              and code == 0 and bool(seen_tmp) and _git_above(seen_tmp) is None
+              and not _under(seen_tmp, checkout) and _under(seen_tmp, dirs["parent_tmp"])
+              and os.path.realpath(seen_tmp) != os.path.realpath(dirs["parent_tmp"]),
+              "exit %r tmpdir %r err %r" % (code, seen_tmp, err[-300:]))
+        written = _tmpdir_records(in_repo)
+        check("ras32b ...and the session's records stay in the scratch: one file there "
+              "names the TMPDIR, so a reader finds a directory that no longer lies "
+              "under it: %r" % (written,),
+              rec is not None
+              and [os.path.realpath(w) for w in written] == [os.path.realpath(seen_tmp)])
+        shared = dict((name, os.path.join(root, "tmp-shared"))
+                      for name in ("TMPDIR", "TEMP", "TMP"))
+        os.makedirs(shared["TMPDIR"])
+        two_scratch = os.path.join(root, "scratch-two")
+        first = _run(root, bindir, "writer", tag="d1", env_extra=shared,
+                     scratch_dir=two_scratch)
+        second = _run(root, bindir, "writer", tag="d2", env_extra=shared,
+                      scratch_dir=two_scratch)
+        t1, t2 = ((x[3] or {}).get("tmpdir") or "" for x in (first, second))
+        check("ras33 two sessions of one role, one scratch and one parent temp get two "
+              "TMPDIRs (%r, %r), both under that parent temp, and the scratch names "
+              "both" % (t1, t2),
+              bool(t1) and bool(t2)
+              and os.path.realpath(t1) != os.path.realpath(t2)
+              and _under(t1, shared["TMPDIR"]) and _under(t2, shared["TMPDIR"])
+              and sorted(os.path.realpath(w) for w in _tmpdir_records(two_scratch))
+              == sorted(os.path.realpath(t) for t in (t1, t2)))
+        repo2 = os.path.join(root, "checkout2")
+        os.makedirs(os.path.join(repo2, ".git"))
+        inner_tmp = os.path.join(repo2, "tmp")
+        os.makedirs(inner_tmp)
+        code, out, err, rec, dirs = _run(
+            root, bindir, "writer", tag="it",
+            env_extra=dict((name, inner_tmp) for name in ("TMPDIR", "TEMP", "TMP")))
+        check("ras34 a parent temp directory that is itself inside a checkout is refused "
+              "with a code of its own (io-error), naming that directory, with no "
+              "fallback to another place: claude was never started, no traceback, and "
+              "nothing was made in it",
+              e_io is not None and code == e_io and inner_tmp in out + err
+              and "Traceback" not in err and rec is None and os.listdir(inner_tmp) == [],
+              "exit %r out %r err %r left %r" % (code, out[-300:], err[-300:],
+                                                  os.listdir(inner_tmp)))
 
         # The basis of the drop list is stated where the list is, in this repository:
         # the prose naming it points at no file outside the repo (nothing here could

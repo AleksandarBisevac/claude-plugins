@@ -39,9 +39,17 @@ prompt happens to contain the pattern a target. This file reads its own prompt o
 stdin or `--prompt-file` for the same reason.
 
 THE CHILD RUNS IN A PROCESS GROUP OF ITS OWN (`_proc_group.group_kwargs`) with a
-TMPDIR of its own under the task's scratch, so a stop reaches everything it started
-and nothing it wrote to a temp directory lands in a sibling's. The TMPDIR is left in
-place afterwards: it is the task's scratch, and removing it is the task's teardown.
+TMPDIR of its own, so a stop reaches everything it started and nothing it wrote to
+a temp directory lands in a sibling's. That directory is made under the PARENT's temp
+directory (`tempfile.gettempdir()`, so a caller's TMPDIR is honoured) and not under
+the task's scratch: the drive keeps the scratch inside the project, and a TMPDIR below
+it put every fixture a session's suites built inside the real checkout. A parent temp
+directory with a `.git` above it is refused, naming it, and nothing else is tried.
+The scratch keeps a record of where the TMPDIR is (`<its name>.tmpdir`, holding the
+path), since it no longer lies beneath it. The TMPDIR is left in place afterwards,
+and removing it is the task's teardown, which finds it through that record (nothing
+in the drive reads the path back today: a stop reaches the session by its process
+group).
 
 THE CHILD STARTS WITHOUT THE PARENT'S CLAUDE SESSION VARIABLES (`PARENT_SESSION_VARS`),
 as a top-level session does: copied through, `CLAUDECODE` and the session id would
@@ -112,6 +120,7 @@ _output.install_path()
 
 import _claude_home  # noqa: E402  (attach_usage_hint: a usage error names the install)
 import _help         # noqa: E402  (front_matter: the one frontmatter parser)
+import _manifest_io  # noqa: E402  (checkout_of: is a directory inside a git checkout)
 import _proc_group   # noqa: E402  (group_kwargs, tear_down, the interrupt pair)
 
 E_OK, E_SESSION, E_USAGE, E_COULD_NOT_RUN, E_BUDGET, E_IO = 0, 1, 2, 3, 4, 5
@@ -332,15 +341,45 @@ def _read_text(path):
         return fh.read()
 
 
+def _write_text(path, text):
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
+
+
 def _write_json(path, value):
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
         json.dump(value, fh, ensure_ascii=False, indent=1)
 
 
+def _parent_tmp():
+    """The temp directory this runner was handed (`tempfile.gettempdir()`, so a
+    caller's TMPDIR is honoured), when it has no `.git` above it.
+
+    The session's TMPDIR is made here and not under the scratch, because the drive
+    keeps the scratch inside the project: a TMPDIR below it put every
+    `tempfile.mkdtemp()` fixture a session's suites build inside the real checkout,
+    where `_manifest_io.checkout_of` found the project's own `.git`. A temp
+    directory that is itself inside a checkout is refused, naming it - falling back
+    to another place would be a TMPDIR the caller did not choose. The path is
+    resolved first, so a symlinked temp root is judged by where it lies."""
+    parent = _io("find the temp directory", "(tempfile.gettempdir)", tempfile.gettempdir)
+    inside = _manifest_io.checkout_of(os.path.join(os.path.realpath(parent), "x"))
+    if inside is not None:
+        raise PreparationError(
+            "the temp directory %s lies inside the git checkout %s, so a session's "
+            "TMPDIR made there would put every fixture its suites build inside a "
+            "checkout; point TMPDIR at a directory with no .git above it"
+            % (parent, inside))
+    return parent
+
+
 def _prepare(args, stream):
     """Make what the session needs before claude starts: the stream's directory,
     the scratch, the reviewer's agents file and the session's TMPDIR. Returns
-    `{"agents_file", "tmpdir", "problem"}`; raises PreparationError on I/O."""
+    `{"agents_file", "tmpdir", "problem"}`; raises PreparationError on I/O.
+
+    The parent temp directory is judged first, so a refusal leaves nothing made."""
+    parent_tmp = _parent_tmp()
     sessions = os.path.dirname(stream)
     _io("create the stream directory", sessions, os.makedirs, sessions, exist_ok=True)
     _io("create the scratch directory", args.scratch, os.makedirs, args.scratch,
@@ -355,8 +394,10 @@ def _prepare(args, stream):
                     "problem": "%s has no frontmatter to build --agents from" % source}
         agents_file = stream[:-len(".jsonl")] + ".agents.json"
         _io("write the agents file", agents_file, _write_json, agents_file, definition)
-    tmpdir = _io("create the session TMPDIR under", args.scratch, tempfile.mkdtemp,
-                 prefix="session-%s-" % args.role, dir=args.scratch)
+    tmpdir = _io("create the session TMPDIR under", parent_tmp, tempfile.mkdtemp,
+                 prefix="session-%s-" % args.role, dir=parent_tmp)
+    record = os.path.join(args.scratch, os.path.basename(tmpdir) + ".tmpdir")
+    _io("write the TMPDIR record", record, _write_text, record, tmpdir + "\n")
     return {"agents_file": agents_file, "tmpdir": tmpdir, "problem": None}
 
 
@@ -372,7 +413,9 @@ def build_parser():
     parser.add_argument("--task", required=True, help="the task id, naming the stream")
     parser.add_argument("--tree", required=True, help="the task's tree; the session's cwd")
     parser.add_argument("--scratch", required=True,
-                        help="the task's scratch; the session's TMPDIR goes under it")
+                        help="the task's scratch; it keeps the session's records, "
+                             "including where its TMPDIR is (that lies under the "
+                             "parent's temp directory, not under this)")
     parser.add_argument("--state-dir", dest="state_dir", required=True,
                         help="where the stream is saved, under sessions/")
     parser.add_argument("--model", required=True, help="a full model id, never an alias")
