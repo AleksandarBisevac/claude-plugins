@@ -1893,6 +1893,40 @@ def _writer_no_result_cases(check, M, bindir, log):
           "relative to the project, with no machine path: %r" % (note,),
           ".claude/state/sessions/drive/P1.1.x.2.jsonl" in note
           and _no_machine_path(note, root))
+    _cap_kinds_cases(check, M)
+
+
+def _cap_kinds_cases(check, M):
+    """The cap's note says what spent the budget: a clause round and a red
+    gate round are named as such, not all taken for the red gate's."""
+    stubs = os.path.realpath(_harness.fixture_root("drive-ck-stub-"))
+    bindir = _writer_stub(stubs)
+    log = os.path.join(stubs, "runs.jsonl")
+    flag_gate = '"%s" -c "import os, sys; sys.exit(1 if os.path.exists(\'bad.flag\') else 0)"' % (
+        sys.executable.replace("\\", "/"),)
+    root, mpath = _tdd_writer_repo("ck", (_wf_gate(), flag_gate), _WC_DESCRIPTION)
+    _signal_next(M, root, mpath)
+    _writer_round(M, root, mpath, bindir, log, "0.61",
+                  edit={_WF_SRC: "v = 2\n", _WF_TEST: _WF_NEW_TEST},
+                  result=_said("partial", (1, 3)))
+    _signal_next(M, root, mpath, "--answer", "resume")
+    _writer_round(M, root, mpath, bindir, log, "0.62", edit={"bad.flag": "x\n"},
+                  result=_said("all", (1, 2, 3)))
+    _signal_next(M, root, mpath, "--answer", "resume")
+    _c, last = _writer_round(M, root, mpath, bindir, log, "0.63", edit={},
+                             result=_said("all", (1, 2, 3)))
+    capped = [n for n in _notes(mpath, "P1.1") if "still red after" in n]
+    note = capped[0] if len(capped) == 1 else ""
+    check("ck1 a clause round and a red gate round that spend the budget are each "
+          "named for what they were in the cap's note: %r" % ((capped, last),),
+          "round 1 (clause coverage)" in note and "round 2 (red gate)" in note
+          and "red-first proof" in note)
+    twin = M.cap_note({"project": root, "stateDir": os.path.join(root, ".claude", "state")},
+                      {"dispatches": [{"seq": 1, "round": 1, "record": "/x/r.jsonl"}],
+                       "runs": []}, WRITER_SESSION)
+    check("ck2 THE TWIN: a round whose dispatch recorded no kind is named by its "
+          "number alone - a kind is never made up for it: %r" % (twin,),
+          "round 1: no record" in twin and "round 1 (" not in twin)
 
 
 def _writer_twice_cases(check, M, bindir, log):
@@ -9744,6 +9778,148 @@ def _unchecked_ids_cases(check):
           "never compared" not in quiet and "never compared" in shown)
 
 
+def _recorded_dispatches(root, member, key="writer"):
+    """The dispatches the drive state holds for `member`'s session under `key`
+    (`writer`, or `reviewerSession`) - each with the argv it printed and the
+    HEAD it recorded. An explain names one subject, which a wave of several
+    members does not give a run line per member."""
+    return ((((_drive_state(root).get(key) or {}).get(member) or {})
+             .get("value") or {}).get("dispatches")) or []
+
+
+def _unset_writer(root):
+    """The config with `executor.writerModel` taken out, written over the
+    committed one and left uncommitted so HEAD stays where the session was
+    dispatched."""
+    cfg_path = os.path.join(root, ".claude", "audit.config.json")
+    with open(cfg_path, encoding="utf-8") as fh:
+        cfg = json.load(fh)
+    cfg.pop("executor", None)
+    with open(cfg_path, "w", encoding="utf-8") as fh:
+        json.dump(cfg, fh)
+
+
+def _offered(text):
+    """The answers the `--answer a|b|c` word of a decision's text offers."""
+    found = re.search(r"--answer ([a-z-]+(?:\|[a-z-]+)*)", text or "")
+    return found.group(1).split("|") if found else []
+
+
+def _writer_off_cases(check):
+    """A decision that asks `resume` of a writer session is asked only while
+    the writer path is on; with `executor.writerModel unset` the same red-first
+    or clause gap offers an answer that leaves the decision, and a pending one
+    that outlived the setting names an answer it does offer - never `retry`
+    where it is not one."""
+    M, why = _load("drive_phase_writer_off")
+    if M is None:
+        check("wo1 the driver loads", False, why)
+        return
+    stubs = os.path.realpath(_harness.fixture_root("drive-wo-stub-"))
+    bindir = _writer_stub(stubs)
+    log = os.path.join(stubs, "runs.jsonl")
+    passing = _wf_suite([("old1", "mine.v >= 1"), ("new1", "mine.v >= 1")])
+    kinds = (("clauses-uncovered", _WC_DESCRIPTION,
+              {_WF_SRC: "v = 2\n", _WF_TEST: _WF_NEW_TEST}, _said("done", (1, 3))),
+             ("red-refused", None, {_WF_SRC: "v = 2\n", _WF_TEST: passing},
+              _said("done")))
+    for n, (plain, description, edit, result) in enumerate(kinds, 1):
+        root, mpath = _tdd_writer_repo("wo-%s" % (plain,), (_wf_gate(),), description)
+        _signal_next(M, root, mpath)
+        _c, block = _explain_of(M, root, mpath, "P1.1")
+        _play_session(root, _run_argv(block) or [], bindir, log, "0.4%d" % (n,),
+                      edit=edit, result=result)
+        _unset_writer(root)
+        code, line = _signal_next(M, root, mpath)
+        _c, block = _explain_of(M, root, mpath, "P1.1")
+        offered = _offered(block)
+        before = _attempts(mpath, "P1.1")
+        check("wo%da the session ran, then executor.writerModel was unset: the "
+              "%s the work earns is asked as a decision that does not send "
+              "anything to a session, and offers an answer other than block: %r"
+              % (n, plain, (code, line, block)),
+              code == 0 and ("decide %s " % (plain,)) in block
+              and "resume" not in offered and "retry" in offered)
+        code_r, line_r = _signal_next(M, root, mpath, "--answer", "retry")
+        check("wo%db that decision's own answer leaves it: one attempt is spent "
+              "and the next step is not the same decision again: %r"
+              % (n, (code_r, line_r)),
+              code_r == 0 and _attempts(mpath, "P1.1") == before + 1
+              and ("decide %s " % (plain,)) not in line_r
+              and "-writer" not in line_r)
+
+        # The decision was asked while the writer path was on and is answered
+        # after it went off: the stop names only what the decision offers.
+        root2, mpath2 = _tdd_writer_repo("wo2-%s" % (plain,), (_wf_gate(),), description)
+        _signal_next(M, root2, mpath2)
+        _writer_round(M, root2, mpath2, bindir, log, "0.5%d" % (n,), edit=edit,
+                      result=result)
+        _c, asked = _explain_of(M, root2, mpath2, "P1.1")
+        _unset_writer(root2)
+        stop_code, stop_line = _signal_next(M, root2, mpath2, "--answer", "resume")
+        _c, again = _explain_of(M, root2, mpath2, "P1.1")
+        named = re.findall(r"answer ([a-z]+)", stop_line)
+        check("wo%dc a `resume` answered after the writer path went off stops "
+              "with a word naming only answers that decision offers (%s), and "
+              "names at least one: %r"
+              % (n, "|".join(_offered(asked)), (stop_code, stop_line, again)),
+              stop_code == 1 and named and all(a in _offered(asked) for a in named)
+              and "retry" not in named)
+
+
+def _redispatch_wave_cases(check):
+    """A reviewer session dispatched again for a wave member runs in the member's
+    own tree: the command names that tree, and the dispatch records the HEAD
+    that tree is at, not the phase tree's."""
+    M, why = _load("drive_phase_redispatch_wave")
+    if M is None:
+        check("sr2 the driver loads", False, why)
+        return
+    stubs = os.path.realpath(_harness.fixture_root("drive-sr-stub-"))
+    bindir = _writer_stub(stubs)
+    log = os.path.join(stubs, "runs.jsonl")
+    root, mpath = _wave_repo("rdwave", 2, per_task="always")
+    cfg_path = os.path.join(root, ".claude", "audit.config.json")
+    with open(cfg_path, encoding="utf-8") as fh:
+        cfg = json.load(fh)
+    cfg["executor"].update(WRITER_EXECUTOR)
+    with open(cfg_path, "w", encoding="utf-8") as fh:
+        json.dump(cfg, fh)
+    _harness.git(root, "commit", "-qam", "the writer session")
+    _signal_next(M, root, mpath)
+    for n, member in enumerate(TASKS[:2], 1):
+        _play_session(root, _recorded_dispatches(root, member)[-1]["argv"], bindir,
+                      log, "0.31", session=RV_SESSIONS[n - 1],
+                      edit={"src/f%d.txt" % (n,): "changed by %s\n" % (member,)},
+                      result=_said("done", (1,), path="src/f%d.txt" % (n,)))
+    _signal_next(M, root, mpath)
+    first, member = TASKS[0], TASKS[1]
+    tree = _tree_of(root, member)
+    # The first member's reviewer returns a clean answer, so its work lands in
+    # the phase tree and moves that tree's HEAD past where the second member's
+    # tree was cut; the second's read files but ended with no return object.
+    _play_session(root, _recorded_dispatches(root, first, "reviewerSession")[-1]["argv"],
+                  bindir, log, "0.32", session=RV_SESSIONS[2],
+                  result=_review_json(mpath, first), tools=2)
+    _play_session(root, _recorded_dispatches(root, member, "reviewerSession")[-1]["argv"],
+                  bindir, log, "0.33", session=RV_SESSIONS[1],
+                  result="no object here", tools=2)
+    _code, asked = _signal_next(M, root, mpath)
+    redispatched, said = _signal_next(M, root, mpath, "--answer", "redispatch")
+    dispatches = _recorded_dispatches(root, member, "reviewerSession")
+    last = dispatches[-1] if dispatches else {}
+    member_head = _head_of(tree)
+    check("sr2 a reviewer session dispatched again for a wave member names the "
+          "member's own tree and records the HEAD that tree is at - not the "
+          "phase tree's, which a commit has moved on: %r"
+          % ((asked, redispatched, said, tree, last.get("head"), member_head),),
+          redispatched == 0 and tree and member_head and member_head != _head_of(root)
+          and last.get("head") == member_head
+          and _flag(last.get("argv"), "--tree") == tree
+          and _flag(last.get("argv"), "--role") == "reviewer"
+          and len(dispatches) == 2)
+
+
 STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("dr-block", "_refusal_cases"),
           ("ucs-block", "_unchecked_ids_cases"),
@@ -9773,7 +9949,9 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("sq3-block", "_advance_refused_cases"),
           ("sa-block", "_review_answer_cases"),
           ("da-block", "_decline_answer_cases"),
-          ("sr-block", "_redispatch_cases"), ("rr-block", "_reuse_review_cases"),
+          ("sr-block", "_redispatch_cases"),
+          ("sr2-block", "_redispatch_wave_cases"),
+          ("wo-block", "_writer_off_cases"), ("rr-block", "_reuse_review_cases"),
           ("lr-block", "_late_return_cases"),
           ("sf-block", "_fix_review_cases"),
           ("cv-block", "_converge_cases"), ("lf-block", "_low_fix_cases"),

@@ -1,0 +1,37 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-22T01:07:29Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD: the run timed out: no time was left of the 480-second deadline; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "drive-phase.py: (1) apply_answer's `redispatch` now passes the member's tree from state.wave.trees to dispatch, as the first dispatch and the resume branch do, so the reviewer session command carries --tree <member tree> and open_dispatch records that tree's HEAD. (2) red_refused and clauses_uncovered raise the -writer decision only while writer_path_on(ctx) (executor.writerModel set and reading whole); otherwise the plain red-refused / clauses-uncovered, which offer retry|block. A -writer decision already pending when the setting went away: resume_writer's stop now names a way derived from DECISIONS via without_writer_way (retry where offered, else `answer block with --reason, or set executor.writerModel again and answer resume`) instead of the unconditional 'answer retry'. apply_answer's resume branch reads the new RESUME_KINDS table. (3) open_dispatch records a `kind` on a resume dispatch (RESUME_KINDS: red gate, red-first proof, clause coverage) and cap_note names each round by it and says rounds of any kind spend the same budget; a round with no recorded kind is named by number alone. Module docstring updated. tests/test_drive_phase.py: new blocks sr2-block (_redispatch_wave_cases), wo-block (_writer_off_cases), and _cap_kinds_cases called from the ws block. Run: red before the fix (sr2, wo1a-c, wo2a-c failed on current code), green after; `python3 tools/sweep-selftests.py tests/test_drive_phase.py` exit 0, 525 cases, run in the task tree. On a committed copy (git archive HEAD plus my two files, committed): python3 tools/sweep-selftests.py -> 192/194 files ok, only tools/check-example-ledgers.py and tools/measure-context.py red (the two allowed); python3 tools/gate-parity.py exit 0; ruff check plugins/audit tools tests exit 0; vermin exit 0; python3 tools/bench-hooks.py --gate exit 0. DEPENDANTS: tests/test_drive_phase.py (dependants listed: sweep-costs.json, tests/test__runner_output.py, tests/test_run_test_gate.py, tools/sweep-selftests.py, PLUGIN-BUILD-GUIDE.md, docs/research/*): still correct - the suite only gained cases and stage rows, no helper others use was renamed or changed; its recorded cost in .github/sweep-costs.json is a hang-detector calibration and is not re-recorded here (not in my files). drive-phase.py dependants (tests/test_drive_phase.py, PLUGIN-BUILD-GUIDE.md, README.md, docs/research/pipeline-cost-design.md, detect-plan-skip.py, record-risk-confirmation.py, stamp-verification.py, _areas.py): still correct - no signature they call changed (open_dispatch only gained an optional keyword, no name was removed), the CLI surface and decisions' names are unchanged, and the docs say the plain decision is asked once the two rounds are spent, which still holds (PLUGIN-BUILD-GUIDE.md:4706-4708 is silent on the writer-off case, left). Names used elsewhere (_carries, _clip, _mark, _marked): untouched.",
+    "descriptive": "A wave member's re-dispatched reviewer session now runs in and records the member's own tree; with the writer setting off, a refused red-first or a clause gap offers retry instead of looping on resume; the cap note names what spent the resume rounds."
+  },
+  "testsAdded": [
+    "sr2: wave member's reviewer redispatched via --answer redispatch runs with --tree naming the member's tree and records the member's HEAD (phase tree HEAD moved by the first member's integration)",
+    "wo1a-c, wo2a-c: with executor.writerModel unset after the session ran, clauses-uncovered / red-refused are asked as plain decisions offering retry, retry leaves them; a pending -writer decision answered resume after the setting went away stops naming only answers it offers",
+    "ck1, ck2: cap_note names a clause round and a red gate round for what they were; a round with no kind is not given one"
+  ],
+  "casesAdded": [
+    [
+      "sr2",
+      "wo1a",
+      "wo1b",
+      "wo1c",
+      "wo2a",
+      "wo2b",
+      "wo2c",
+      "ck1",
+      "ck2"
+    ]
+  ],
+  "claims": "claims:\n1 drive-phase.py redispatch branch (apply_answer, passes wave trees tree to dispatch); red_refused/clauses_uncovered gate on writer_path_on; cap_note reads dispatches' kind; docstring rewritten to say only that writer-off or spent rounds give the plain decision\n2 sr2, wo1a-c, wo2a-c red on current code before the fix (wo1a: clauses-uncovered-writer offered resume|block; wo1c: stop said 'answer retry'; sr2: recorded head was the phase tree's); green after; over-fire direction: existing wk1/wl5/wl6 (writer on still asks -writer decisions) and ws5 (plain gate-red unchanged) stay green; ck2 is the twin that a kind is never invented\n3 grep of the bare shapes: 'answer retry' and the -writer decision names in drive-phase.py: gate-red-writer offers retry so its 'answer retry' stays right (without_writer_way derives it from DECISIONS); the `dispatch(... \"reviewer\"` sites at 2011 and 3513 already pass tree, 4798 was the only one that did not; 'resume rounds' wording at the gate-red reason (still red after N resume rounds) is true of any kind and left\n4 n/a - no rule addressed to an agent\n5 n/a - no timing or property recorded (sweep 323.5s was one run under load and is not claimed)\n6 n/a - no guard\n7 no number written into prose; round and rounds count come from MAX_RESUME_ROUNDS/RESUME_KINDS at runtime",
+  "stamp": "audit-stamp: {\"content\":\"sha256:234fa96ce068d195a1f46fdbcf4a49ad2b35a6298e18238d95e34e63bbdb11e5\",\"dirtyDigest\":\"sha256:759d7821ec55775caff3b9009f2b632a6237cbf467f3b0d51e662f8dd02b0043\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/drive-phase.py\":\"58759ba68b5f3877\",\"tests/test_drive_phase.py\":\"4c8e2125caa48eb8\"},\"head\":\"04f7dff5\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:c8f1394795bdcfedb8eb2b0f75819378ec989a4cece2c32f241a7f94c4c0d3cf\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

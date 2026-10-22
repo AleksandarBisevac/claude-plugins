@@ -224,8 +224,10 @@ clause `task_clauses` numbers, and a `delivered` answer must cite a path the dif
 touches. A gap - an unanswered or malformed clause, a path outside the diff, or no
 JSON object at all - files nothing and asks `clauses-uncovered-writer`, whose `resume`
 sends the uncovered clauses to the session as a round of `MAX_RESUME_ROUNDS`; past
-them it is the plain `clauses-uncovered`. What the writer wrote stays a claim: only
-whether each clause was answered and whether the cited file changed is checked.
+them, or with `executor.writerModel` no longer set, it is the plain
+`clauses-uncovered` (and `red-refused` for the red), whose `retry` is the way on.
+What the writer wrote stays a claim: only whether each clause was answered and
+whether the cited file changed is checked.
 Without `executor.writerModel` the executor Agent is dispatched as
 before.
 
@@ -669,6 +671,12 @@ STEPS = {
         "line": "hand back the refusal above verbatim as your whole reply",
         "rule": ()},
 }
+
+# The decisions whose `resume` goes to the recorded writer session, each with
+# the kind of round it spends; every kind spends the one `MAX_RESUME_ROUNDS`.
+RESUME_KINDS = {"gate-red-writer": "red gate",
+                "red-refused-writer": "red-first proof",
+                "clauses-uncovered-writer": "clause coverage"}
 
 # Each decision's options, and the ones that need `--reason`. A decision with no
 # options is one only the plan can change; nothing here answers it.
@@ -1814,19 +1822,23 @@ def writer_state(state, task, key="writer"):
     return dict(base, **(held if isinstance(held, dict) else {}))
 
 
-def open_dispatch(ctx, state, task, round_n, build, tree=None, key="writer"):
+def open_dispatch(ctx, state, task, round_n, build, tree=None, key="writer",
+                  kind=None):
     """Allocate the next dispatch of `task`'s writer: its record file, and the
     command `build(record)` makes for it, kept so a wait can print it again,
     beside the commit HEAD names in the tree it runs in - what a session that
-    commits is told apart by. Returns `(record, argv)`."""
+    commits is told apart by - and, for a resume round, the `kind` of round it
+    is (`RESUME_KINDS`). Returns `(record, argv)`."""
     held = writer_state(state, task, key)
     seq = held["seq"]
     record = session_record(ctx, task, seq, "writer" if key == "writer" else "reviewer")
     argv = build(record)
     held["seq"] = seq + 1
-    held["dispatches"] = list(held["dispatches"]) + [
-        {"seq": seq, "round": round_n, "record": record, "argv": argv,
-         "head": tree_head(ctx, tree)}]
+    entry = {"seq": seq, "round": round_n, "record": record, "argv": argv,
+             "head": tree_head(ctx, tree)}
+    if kind:
+        entry["kind"] = kind
+    held["dispatches"] = list(held["dispatches"]) + [entry]
     _mark(state, key, task, held)
     write_state(ctx, state)
     return record, argv
@@ -2102,14 +2114,32 @@ def resume_prompt(lines, head=None):
                          "entry per acceptance clause."]) + "\n"
 
 
+def writer_path_on(ctx):
+    """Whether `executor.writerModel` is set and reads whole, so a `resume`
+    has a session to send to."""
+    writer, problem = writer_setting(ctx["config"])
+    return bool(writer) and not problem
+
+
+def without_writer_way(name):
+    """What to answer instead of `resume` on decision `name` when the writer
+    path is off, read off the answers `DECISIONS` gives it: a fresh `retry`
+    where it offers one, else `block` - or the setting put back."""
+    options, needs = DECISIONS[name]
+    if "retry" in options:
+        return "answer retry"
+    return "answer block%s, or set executor.%s again and answer resume" % (
+        " with --reason" if "block" in needs else "", WRITER_MODEL_KEY)
+
+
 def resume_writer(ctx, state, task, pending, tree=None):
     """`--answer resume` on a red gate: the failing lines go to the recorded
     session as its prompt, in the next round, and no attempt is spent."""
     writer, problem = writer_setting(ctx["config"])
     if problem or not writer:
         return _stopped(ctx, problem or "executor.%s is no longer set, so there "
-                        "is no writer session to resume; answer retry"
-                        % (WRITER_MODEL_KEY,))
+                        "is no writer session to resume; %s" % (
+                            WRITER_MODEL_KEY, without_writer_way(pending["decision"])))
     held = writer_state(state, task)
     round_n = held["resumes"] + 1
     prompt = session_record(ctx, task, held["seq"])[:-len(".jsonl")] + ".prompt.md"
@@ -2121,7 +2151,8 @@ def resume_writer(ctx, state, task, pending, tree=None):
         return _stopped(ctx, "the resume prompt could not be written to %s (%s)"
                         % (prompt, exc))
     _record, argv = open_dispatch(ctx, state, task, round_n, lambda record: writer_argv(
-        ctx, task, writer, prompt, record, tree, resume=pending["session"]), tree)
+        ctx, task, writer, prompt, record, tree, resume=pending["session"]), tree,
+        kind=RESUME_KINDS.get(pending["decision"]))
     held = writer_state(state, task)
     held["resumes"] = round_n
     _mark(state, "writer", task, held)
@@ -2346,23 +2377,30 @@ def cap_note(ctx, held, session):
     """The note naming every resumed run when the gate is still red after the
     last round: each run's stream and cost, a run with no result by the
     runner's words, and a round whose record never appeared by that record,
-    project-relative."""
+    project-relative. Each round is named by the kind it was (`RESUME_KINDS`),
+    since a refused red-first proof and an unanswered clause spend the same
+    budget as a red gate does."""
     named = []
     for round_n in range(1, MAX_RESUME_ROUNDS + 1):
+        kinds = [d["kind"] for d in held.get("dispatches") or []
+                 if d.get("round") == round_n and d.get("kind")]
+        label = "round %d%s" % (round_n, " (%s)" % (kinds[-1],) if kinds else "")
         runs = [r for r in held.get("runs") or [] if r.get("round") == round_n]
         for run in runs:
-            named.append("round %d: stream %s, total_cost_usd=%s" % (
-                round_n, os.path.basename(run["stream"]), run["cost"])
+            named.append("%s: stream %s, total_cost_usd=%s" % (
+                label, os.path.basename(run["stream"]), run["cost"])
                 if run.get("stream") else
-                "round %d: no result (%s)" % (round_n, _clip(run["line"], 120)))
+                "%s: no result (%s)" % (label, _clip(run["line"], 120)))
         if not runs:
             records = [d["record"] for d in held.get("dispatches") or []
                        if d.get("round") == round_n]
-            named.append("round %d: %s" % (round_n, "no record at %s" % (
+            named.append("%s: %s" % (label, "no record at %s" % (
                 project_relative(ctx, records[-1]),) if records
                 else "never dispatched"))
     return ("writer session %s: the task gate is still red after its resume "
-            "rounds (%s); a retry starts a fresh session" % (session, "; ".join(named)))
+            "rounds (rounds of any kind - %s - spend the same budget): %s; a "
+            "retry starts a fresh session" % (
+                session, ", ".join(RESUME_KINDS.values()), "; ".join(named)))
 
 
 # --- after the writer's session: prove, hold, file at the green gate -------------
@@ -2691,7 +2729,8 @@ def red_refused(ctx, state, task, why):
     re-proof no longer proves: back to the session that wrote it while a round
     is left, else a fresh retry. Nothing is filed and no lock moves."""
     session = recorded_session(state, task)
-    if session and writer_state(state, task)["resumes"] < MAX_RESUME_ROUNDS:
+    if (session and writer_path_on(ctx)
+            and writer_state(state, task)["resumes"] < MAX_RESUME_ROUNDS):
         return decision(ctx, state, "red-refused-writer", task, _clip(why, 160),
                         extra={"session": session, "failing": [_clip(why, 2000)],
                                "prompt": RED_REFUSED_HEAD})
@@ -2708,7 +2747,8 @@ def clauses_uncovered(ctx, state, task, result, clauses, left=()):
     if left:
         why = "%s; carried commit(s) left out: %s" % (why, _clip("; ".join(left), 160))
     session = recorded_session(state, task)
-    if session and writer_state(state, task)["resumes"] < MAX_RESUME_ROUNDS:
+    if (session and writer_path_on(ctx)
+            and writer_state(state, task)["resumes"] < MAX_RESUME_ROUNDS):
         return decision(ctx, state, "clauses-uncovered-writer", task, why, extra={
             "session": session, "prompt": CLAUSES_UNCOVERED_HEAD,
             "failing": _cc.resume_text(result, clauses).splitlines()})
@@ -4729,9 +4769,7 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
             _mark(state, "writer", task, held)
             write_state(ctx, state)
         return None
-    if answer == "resume" and pending["decision"] in ("gate-red-writer",
-                                                      "red-refused-writer",
-                                                      "clauses-uncovered-writer"):
+    if answer == "resume" and pending["decision"] in RESUME_KINDS:
         # The task is not re-started, so no attempt is spent; the gate is not
         # marked as run, so the next `next` measures the session's fix. A
         # clause gap is asked at a GREEN gate, whose mark is spent here for it.
@@ -4795,7 +4833,10 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
     if answer == "redispatch":
         (state.get("dispatched-reviewer") or {}).pop(task["id"], None)
         write_state(ctx, state)
-        return dispatch(ctx, state, phase, task, "reviewer")
+        # A reviewer session reads the tree it runs in, and records that tree's
+        # HEAD: a wave member's is its own, as the first dispatch ran it.
+        return dispatch(ctx, state, phase, task, "reviewer", (
+            (state.get("wave") or {}).get("trees") or {}).get(task["id"]))
     if answer == "not-asked":
         return close_task(ctx, state, phase, task, intent_basis=reason)
     if answer == "confirm":

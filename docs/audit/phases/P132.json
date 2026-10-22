@@ -37,16 +37,23 @@
         "file": "plugins/audit/scripts/governance/drive-phase.py:6797-6812 (finish_task)",
         "issue": "With the 'writer' mark and reviewFixes kept, a task-scoped drive over a writer task never reaches the 'drop the state when nothing else is in it' branch. The state file now stays until a phase-level finish drops it. The docstring says so, but no case covers a task-scoped drive that is never followed by a phase drive (rw4 covers only a task with no writer record).",
         "resolution": "Either state in the docstring or the PLUGIN-BUILD-GUIDE section that a task-scoped run of a writer task leaves its state file behind by design, or drop the state when the kept marks hold no re-opened entry and the task was never handed back."
+      },
+      {
+        "id": "P132-R3",
+        "severity": "low",
+        "file": "PLUGIN-BUILD-GUIDE.md:4706-4708",
+        "issue": "The guide says a gap at a green gate is `clauses-uncovered-writer` and 'once the rounds are spent it is the plain `clauses-uncovered`'. After this diff the plain decision is also asked when executor.writerModel is unset or does not read whole (writer_path_on), and the same holds for red-refused. The module docstring was updated for this (drive-phase.py:227-230) but the guide section that documents the same decision was not. The executor's outcome notes this and leaves it.",
+        "resolution": "Add 'or with executor.writerModel no longer set' to that sentence in PLUGIN-BUILD-GUIDE.md, matching the module docstring."
       }
     ],
-    "outcome": "[findings: 2 - 0 high, 0 med, 2 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 3 - 0 high, 0 med, 3 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
     {
       "id": "P132.1",
       "title": "A task re-opened by the phase-review hand-back is judged on its own work: clause coverage reads the diff against the commit it carried, its findings reach every re-dispatch, and the record survives the task's close",
-      "status": "in_progress",
+      "status": "done",
       "description": "Register F774 (from the S1 phase code review). (1, high) diff_paths (drive-phase.py ~2473) lists only changes against HEAD, which already holds the re-opened task's first commit, so every clause the first commit delivered is path-not-in-diff (~2810) and the task can never pass clause coverage. For a re-opened start, read the changed paths against the commit the task carried (reviewFixes from / the journal's task.reopen record), so a clause cited to a file the first commit delivered still counts. (2, med) reviewFixes[tid].dispatched is keyed by task, not by start (~6092, ~1710): any re-dispatch after the first (retry, stale-brief re-issue) gets the plain brief without the confirmed findings - key it by start. (6, low) finish_task (~6738) pops reviewFixes and the writer record, losing the closed-at-no-new-commit guard and the warm session - keep them until the phase signs off.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -74,25 +81,43 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "04f7dff580df",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: (1) new carried_paths(ctx, phase, task, tree) reads the commits the task carried off the journal's task.reopen rows (reopen_record) and lists each one's paths with git diff-tree --root -r -z --name-only, spelled as diff_paths spells them, plan records excluded; file_writer_return checks clause coverage against diff_paths union carried_paths, stops loudly when the journal or git cannot say; the filed diffPaths stays this start's diff. (2) reviewFixes[tid].dispatched is now the list of start keys whose dispatch carried the findings (hand_back writes []; legacy true reads as one dispatch via _fix_dispatched); review_fix returns the entry for every dispatch while the hand-back stands, so a retry (new start) or a stale-brief re-issue carries the findings; only the first dispatch may resume the warm session, later ones start fresh with brief + findings. (3) finish_task keeps KEPT_AT_TASK_CLOSE = (reviewFixes, writer) marks until the phase's finish drops the state; other marks still dropped and an empty state still removed. tests/test_drive_phase.py: new stage rw-block (_reopened_writer_cases, _reopened_finish_cases, fixture _rw_handed_back). Runs: stage rw-block 5/5 after the fix; gate python3 tools/sweep-selftests.py tests/test_drive_phase.py exit 0, 512 cases; ruff check and vermin -t=3.8- on both files exit 0. Committed throwaway copy (/tmp/p1321-copy.Kxnh, git archive HEAD + working-tree diff, committed): python3 tools/sweep-selftests.py -> 192/194 files ok, the two red being tools/check-example-ledgers.py (fixedIn commits unresolvable in a history-less copy) and tools/measure-context.py, both allowed by the brief. Mutations in a second copy (/tmp/p1321-mut.7bXq, pycache purged each time, anchor count asserted 1): M1 carried_paths -> git ls-files (over-fire): rw0, rw1 red; M2 finish_task keeps every mark: rw3, rw4 red; M3 every fix dispatch resumes warm: rw2 red; each restored (diff -q vs project file: identical). Dependants: tests/test_drive_phase.py - changed, new stage added, all 512 cases green. PLUGIN-BUILD-GUIDE.md - still correct: its finish_task line (dt cases) states the done print, not state removal; its _clause_coverage section says check reads 'whether the cited path changed', still true with the carried commit's paths passed as changed; no edit (outside files scope). README.md, docs/research/pipeline-cost-design.md, docs/research/pipeline-cost-levers.md - still correct: grep for reviewFixes/finish_task/diff_paths/clause coverage finds no statement about these paths ('hand-back' there is the subagent hand-back). plugins/audit/hooks/detect-plan-skip.py, governance/record-risk-confirmation.py, governance/stamp-verification.py, manifest/_areas.py - still correct: they reference drive-phase.py by basename and none reads reviewFixes, the writer mark or finish_task; no exported name was renamed or removed (diff_paths, review_fix, hand_back, finish_task keep their signatures). .github/sweep-costs.json, tests/test__runner_output.py, tests/test_run_test_gate.py, tools/sweep-selftests.py - still correct: whole-sweep run on the committed copy green for each; the sweep cost entry for the file is unchanged (one new stage, timing recorded run 196.3s, within its timeout).",
+        "descriptive": "A task the phase review hands back is judged on its own work: clauses its first commit delivered still count, every re-dispatch carries the confirmed findings, and a task-scoped close keeps the hand-back record and warm session"
       },
       "startedAt": "2026-10-21T23:23:46Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-22T00:38:41Z",
+      "verifiedBy": [
+        "rw0 over-fire twin: in a hand-back fix round a clause cited to a file neither commit touched (src/f2.txt) is still path-not-in-diff",
+        "rw1 a re-opened task whose fix touches src/mine.py and its suite only, clause 2 cited to src/notes.txt its first commit wrote, is filed with that claim",
+        "rw2 after the first fix dispatch resumed the warm session, a gate-red retry starts a fresh writer whose prompt is the brief then REVIEW_FIX_HEAD and the finding id",
+        "rw3 finish_task keeps reviewFixes.from and the writer session (last_writer_session finds it), drops other marks, and a second hand-back of a no-new-commit close is refused",
+        "rw4 twin: a task with no hand-back and no writer record leaves no drive state after finish_task"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-22T00:38:39Z.e33e47",
         "status": "passed",
         "at": "2026-10-22T00:38:39Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "04f7dff580df",
+        "at": "2026-10-22T00:38:41Z",
+        "return": "docs/audit/evidence/returns/P132.1/20261021T232346Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-21T23:50:29Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD: the run timed out: no time was left of the 480-second deadline; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P132.2",
       "title": "A reviewer redispatch runs in the member's own tree, and no writer stop points at an answer its decision refuses",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Register F775. (3, med) redispatch (drive-phase.py ~4711) calls dispatch without the member's tree; since the reviewer runs as a session, a wave member's reviewer reads the phase tree without the member's work and open_dispatch records the wrong HEAD - take the tree from state.wave.trees as the resume branch (~4645) already does. (4, low-med) with executor.writerModel unset, resume on red-refused-writer / clauses-uncovered-writer stops with 'answer retry', which those decisions do not offer, and the next next re-raises the decision (~2100-2103, answers ~691/695) - offer retry on those two decisions when the writer path is off, or name what works. (5, low) cap_note (~2355) says 'still red after its resume rounds' though clause and red-first rounds spend the same budget - say what spent them.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -120,16 +145,22 @@
       "dependsOn": [
         "P132.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-22T00:38:42Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-22T01:14:56Z.cfb2f9",
+        "status": "passed",
+        "at": "2026-10-22T01:14:56Z"
+      }
     },
     {
       "id": "P132.3",
@@ -227,14 +258,20 @@
     {
       "id": "P132.5-5mm",
       "title": "The release tier is green again on Windows and the spaced-path leg: the dev-module walk is rooted at the repo it is asked about, git fixtures are removed with the read-only-aware helper, and the miss-rate tool's command line quotes its interpreter",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Release-tier CI run 39692464240 (ci/P131 @1c5ac5e0) went red on six jobs that were green on 3.5.0, from three S1 regressions (diagnosed from the job logs): (1) tools/lints/_output_lints.py ~2214-2218 suite_elsewhere_paths walks DEV_DIRS/DEV_FILES absolute under REPO_ROOT and relpaths them against a fixture repo_root - ValueError across drives on Windows (d0, e2e windows, windows plain/cp1252 2), wrong ../ paths silently on posix; root the walk at the repo asked about. (2) tests/test__output.py ~333-345 (mv11) and tests/test__output_lints.py ~1646-1675 (pn37/pn38) remove git fixtures with shutil.rmtree(ignore_errors=True), which cannot unlink git's read-only objects on Windows, so the fixture survives and the sweep's watched TMPDIR reports it; use _harness.remove_tree, and fix EVERY rmtree(..., ignore_errors=True) around a git fixture in tests/ and tools/ (grep the class, list each site). (3) tools/measure-affected-miss.py m15 (~1205-1210) builds '%s %s' % (sys.executable, ...) unquoted and the tool shlex.splits it (~743-745): backslashes eaten on Windows, a spaced interpreter split on the stress leg; quote with shlex.quote. After landing, the orchestrator re-dispatches the release tier.",
       "files": [
         "tools/lints/_output_lints.py",
         "tools/sweep-selftests.py",
         "tests/test__output.py",
         "tests/test__output_lints.py",
-        "tools/measure-affected-miss.py"
+        "tools/measure-affected-miss.py",
+        "tests/test__doctor_trail.py",
+        "tests/test_guard_bash_writes.py",
+        "tests/test_audit_task.py",
+        "tests/test__impact.py",
+        "tests/_harness.py",
+        "tools/_suite.py"
       ],
       "tests": {
         "mode": "regression",
@@ -257,16 +294,17 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-22T00:38:48Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     }
   ],
   "request": "ok preporuka usvojena (owner 2026-10-22: BF5 fixes from the S1 phase code review first, then stage 1, then S3)",
