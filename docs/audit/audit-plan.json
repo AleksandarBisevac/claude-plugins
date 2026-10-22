@@ -2015,7 +2015,8 @@
       "P130.6",
       "P130.13-ywo",
       "P130.16-ywo",
-      "P131.2"
+      "P131.2",
+      "P132.3"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -2197,7 +2198,8 @@
       "P129.1-izt",
       "P125.22",
       "P129.7-izt",
-      "P131.13"
+      "P131.13",
+      "P132.3"
     ],
     "plugins/audit/commands/layout.md": [
       "P57.1",
@@ -2924,7 +2926,8 @@
       "P130.33-ywo",
       "P131.1",
       "P131.2",
-      "P131.6"
+      "P131.6",
+      "P132.3"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -10012,7 +10015,8 @@
       "P130.50-ywo",
       "P131.1",
       "P131.2",
-      "P131.6"
+      "P131.6",
+      "P132.3"
     ],
     "plugins/audit/tests/test__filed_returns.py": [
       "P118.3",
@@ -10090,7 +10094,8 @@
       "P130.35-ywo",
       "P131.1",
       "P131.2",
-      "P131.13"
+      "P131.13",
+      "P132.3"
     ],
     "docs/research/pipeline-cost-results.md": [
       "P118.19-v7t",
@@ -10937,7 +10942,8 @@
     ],
     "tests/test__filed_returns.py": [
       "P131.1",
-      "P131.6"
+      "P131.6",
+      "P132.3"
     ],
     "tests/test__fmt.py": [
       "P131.1"
@@ -11215,7 +11221,8 @@
       "P131.2",
       "P131.13",
       "P129.7-izt",
-      "P132.5-5mm"
+      "P132.5-5mm",
+      "P132.3"
     ],
     "tests/test_audit_usage.py": [
       "P131.1"
@@ -11415,7 +11422,8 @@
       "P131.2"
     ],
     "tools/demo/gen-demo-manifest.py": [
-      "P131.2"
+      "P131.2",
+      "P132.3"
     ],
     "tools/demo/gen-demo-usage.py": [
       "P131.2"
