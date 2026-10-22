@@ -1,7 +1,7 @@
 {
   "id": "P133",
   "title": "The task-gate exemption flag is added only to this plugin's own audit-status",
-  "status": "in_progress",
+  "status": "done",
   "description": "Bugfix found by the stage 1 confirming measurement (register F780).",
   "desiredOutcome": "A project whose gate step calls a different or older audit-status.py gets its gate run as declared, with a line saying the task exemption was not applied, instead of a red gate on every run.",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "4e6c7b52019fec937afd54379a3d8ae8a39f7047",
   "branch": "audit/p133-the-task-gate-exemption-flag-i",
-  "mergedAt": null,
+  "mergedAt": "2026-10-22T08:12:38Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -129,5 +129,6 @@
     "runId": "2026-10-22T08:12:31Z.9f52a0",
     "status": "passed",
     "at": "2026-10-22T08:12:31Z"
-  }
+  },
+  "mergedHead": "de1779abc8410b7e707f10639bf411bd0d4620b8"
 }
