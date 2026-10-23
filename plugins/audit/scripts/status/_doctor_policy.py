@@ -61,6 +61,8 @@ _output.install_path()
 
 import _doctor_report as _base  # noqa: E402  (Report, the loader, the constants)
 import _branch  # noqa: E402  (the naming convention, one expansion path)
+import _claude_home  # noqa: E402  (claude_home: where the user's skills live)
+import _skill_places  # noqa: E402  (resolve_skill: where a named skill lives, shared with the launcher)
 import _manifest_io as _mio  # noqa: E402  (the derived phase status)
 import _worktrees  # noqa: E402  (contained / not-contained / unknown, one answer)
 
@@ -470,8 +472,20 @@ def check_plan_skills(rep, project, cfg, cfg_mod, manifest, _discover=None):
                  "run `audit-status.py <manifest> --json --discovery`; an empty "
                  "inventory is a broken scan, not a machine with no skills")
         return
+    # WHERE a name lives is `_skill_places`' answer - the one the launcher asks
+    # before it starts a session - with the scan as its wider mode: a bare name only
+    # the scan lists still resolves. Deciding from the scan alone said "resolves"
+    # for a name the launcher then refused, and "missing" for a plugin-qualified one
+    # it loads (the scan's keys are bare names).
+    plugin_root = _output.PLUGIN_ROOT
+    user_home = _claude_home.claude_home()
+    running = _skill_places.plugin_name(plugin_root)
+    inventory = dict((name, entry.get("path")) for name, entry in have.items())
+    resolved = dict((name, _skill_places.resolve_skill(
+        name, project, user_home, plugin_root, running, inventory=inventory))
+        for _where, name in named)
     missing = ["%r (%s)" % (name, where) for where, name in named
-               if name not in have]
+               if not resolved[name]["found"]]
     if missing:
         rep.warn("skills",
                  "named by the plan but not resolvable here: %s"
@@ -483,7 +497,7 @@ def check_plan_skills(rep, project, cfg, cfg_mod, manifest, _discover=None):
         rep.ok("skills",
                "all %d skill(s) the plan names resolve on this machine"
                % len(named))
-    _plan_skills_travel(rep, cfg, cfg_mod, named, have)
+    _plan_skills_travel(rep, cfg, cfg_mod, named, have, resolved)
 
 
 def portability_mode(cfg, cfg_mod):
@@ -498,12 +512,17 @@ def portability_mode(cfg, cfg_mod):
     return rules.portability_mode(cfg, getattr(cfg_mod, "DEFAULTS", None))
 
 
-def _plan_skills_travel(rep, cfg, cfg_mod, named, have):
+def _plan_skills_travel(rep, cfg, cfg_mod, named, have, resolved):
     """The second half: of the names that DID resolve, which would survive a clone?
 
     Split out because the row above and this one answer different questions and a
     reader has to be able to tell which one went red - not because the function was
     long.
+
+    `resolved` is `_skill_places.resolve_skill`'s answer per name. A name it found
+    that the scan did not list (a plugin-qualified one, whose scan keys are bare)
+    has no verdict to word, so it is UNKNOWN with that said - not skipped, which
+    would read as "graded and fine".
     """
     mode = portability_mode(cfg, cfg_mod)
     if mode == "off":
@@ -517,8 +536,14 @@ def _plan_skills_travel(rep, cfg, cfg_mod, named, have):
     graded, stranded, unknown = [], [], []
     for where, name in named:
         entry = have.get(name)
-        if entry is None:            # already reported as unresolvable, above
-            continue
+        if entry is None:
+            hit = resolved.get(name) or {}
+            if hit.get("found"):
+                graded.append(name)
+                unknown.append("%r (%s) - found at %s, which the scan does not "
+                               "list, so whether it travels was not graded"
+                               % (name, where, hit.get("path")))
+            continue                 # else: already reported as unresolvable, above
         travels = entry.get("travels")
         basis = entry.get("travelsBasis") or "no basis was recorded"
         graded.append(name)

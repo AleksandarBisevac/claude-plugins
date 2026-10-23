@@ -242,6 +242,7 @@ claude-plugins/                           # this repo (personal, public)
           _impact.py                      # who reads a declared file: the tracked files naming its path, import or basename, and those naming a name it defines, via git grep
           audit-version.py                # /audit:version: the running build, the marketplace and installed copies, the newest release
           _claude_home.py                 # Claude Code's own install records (installed_plugins.json, known_marketplaces.json), read fail-open
+          _skill_places.py                # where a named skill lives: personal, project, running plugin (plugin:skill from that plugin only); launcher and doctor share it
         report/                           # the report domain: the FIRST subdirectory under scripts/
           render-report.py                # self-contained HTML+MD report (CI artifact)
           _report_ui.py                   # reads the ordered parts under scripts/ui/report{,-css}/, assembles _CSS/_SCRIPT
@@ -349,6 +350,7 @@ L3:
   _priority -> _output
   _runner_collects -> _output
   _runner_output -> _output
+  _skill_places -> _output
   _task_outputs -> _output
   _ui_theme -> _output
   _worktrees -> _output
@@ -396,7 +398,7 @@ L5:
 L6:
   _affected_tests -> _evidence_io, _gate_derive, _manifest_phases, _output
   _doctor_completions -> _commit_trail, _doctor_report, _evidence_io, _journal_io, _manifest_vocab, _output
-  _doctor_policy -> _branch, _doctor_report, _manifest_io, _output, _worktrees
+  _doctor_policy -> _branch, _claude_home, _doctor_report, _manifest_io, _output, _skill_places, _worktrees
   _doctor_setup -> _claude_home, _config_rules, _doctor_report, _manifest_rules, _manifest_vocab, _merge_install, _output, _status_facts, _warning_groups
   _doctor_trail -> _doctor_report, _evidence_io, _fmt, _journal_io, _manifest_io, _manifest_vocab, _output, _worktrees
   _invariants -> _branch, _commit_trail, _evidence_io, _journal_io, _loader, _locks, _manifest_crossrefs, _manifest_io, _manifest_rules, _manifest_vocab, _output, _task_outputs, usage_ledger
@@ -463,7 +465,7 @@ L9:
   resolve-ado-parent -> _ado_parent, _manifest_io, _output, _utc_stamp
   resolve-ado-tracked -> _ado_tracked, _manifest_io, _output
   resolve-branch -> _branch, _manifest_io, _output, _worktrees
-  run-agent-session -> _claude_home, _help, _manifest_io, _output, _proc_group
+  run-agent-session -> _claude_home, _help, _manifest_io, _output, _proc_group, _skill_places
   run-test-gate -> _affected_tests, _claude_home, _evidence_io, _fmt, _gate_derive, _invariants, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _runner_output, _status_facts, _task_outputs, _tree_stamp, _worktrees
   set-priority -> _claude_home, _manifest_io, _output, _panel_write, _priority, _warning_groups
   stamp-verification -> _claude_home, _evidence_io, _filed_returns, _invariants, _locks, _manifest_io, _output, _proc_group, _runner_output, _task_outputs, _tree_stamp, _worktrees
@@ -3016,7 +3018,8 @@ sentence has carried a stale figure before: `meta.areas` roots against the tree 
 tags against the registry (v0.28), the capability policy against the plan it governs and
 against this machine's inventory (v0.30, dead patterns v0.38), `meta.buildCommands` runners
 against PATH, the branch-naming convention, and the skills the plan names — first against
-this machine and then, as a second half, against what a CLONE would load. Every row
+this machine (decided by `_skill_places.resolve_skill`, the launcher's own resolver, with the
+discovery scan as its wider mode) and then, as a second half, against what a CLONE would load. Every row
 is a WARNING at most — a missing directory or an uninstalled runner is a gap in this
 checkout or this machine, never proof the repo is broken, which is the lesson CI's manifest
 job taught by failing over a correct observation. `_leading_executable` resolves what a
@@ -3240,6 +3243,20 @@ local scope recorded for it before user scope, another project's never) when tha
 newer, with `/reload-plugins` as the way to it; an unreadable record is said to be unreadable.
 It sits here, beside the shared base modules, so every entry point can reach the one hook;
 `stamp-verification.py` carries it. Its cases are in `tests/test__claude_home.py`.
+
+### `plugins/audit/scripts/status/_skill_places.py`
+Where a named skill lives, answered once for the two callers that ask: `run-agent-session.py`,
+which loads a task's skills into the session it starts, and `/audit:doctor`'s plan-skills row,
+which says whether the plan's names would resolve. Two answers is how doctor goes green over a
+name the launcher then refuses. The order is Claude Code's documented one (code.claude.com/docs/en/skills,
+"Resolve skills that share a name": personal over project): the user's skills, the tree's
+`.claude/skills`, then the running plugin's own `skills/`. A `plugin:skill` name is read from that
+plugin alone - the docs say nothing of a local skill shadowing a plugin's, so falling back would
+load something the plan did not name. `resolve_skill` returns `found`, `path`, `source`, every
+place looked in, and `problem` (the name is no skill name), keeping "not a name" apart from "held
+nowhere". Its one mode is `inventory`: doctor passes the machine-wide scan, so a bare name only
+the scan lists still resolves, last; the launcher passes none. The module reads no environment -
+the home, tree and plugin root arrive as arguments. Its cases are in `tests/test__skill_places.py`.
 
 ### `plugins/audit/scripts/status/audit-lookup.py`
 One question, one answer, with the pointer that lets a reader check it — instead of the
@@ -5071,14 +5088,16 @@ with `--` cannot reach the argv as a flag. The budget must be a finite positive 
 `float()` also reads `inf` and `nan`.
 
 **`--skill NAME`, repeatable, starts the session with those skills already loaded.** Each name is
-found the way a session in that tree finds a skill (`skill_places`): the tree's
-`.claude/skills/<name>/SKILL.md`, then the user's (`_claude_home.claude_home()`), then this plugin's
+found by `_skill_places.resolve_skill`, the answer `/audit:doctor`'s plan-skills row asks too, in
+Claude Code's documented order ("personal over project"): the user's (`_claude_home.claude_home()`)
+`skills/<name>/SKILL.md`, then the tree's `.claude/skills/<name>/SKILL.md`, then this plugin's
 own `skills/`; a `plugin:skill` name is read only from that plugin and never falls back to a
 same-named project or user skill, and a name that could leave those directories (`SKILL_NAME`) is a
-usage error. A name found nowhere refuses to start — exit `2`, naming the skill and every place
-looked — because a skill the plan declares and the session never loads is exactly the defect that
+usage error. A name found nowhere refuses to start — exit `2`, naming the skill, every place
+looked and that only those places are searched — because a skill the plan declares and the session never loads is exactly the defect that
 cannot be seen in a cost. A `SKILL.md` that exists and cannot be read is `io-error:`, not a missing
-skill. The files are written whole, each wrapped as `<skill name="...">`, into one
+skill. The files are written whole, each wrapped as `<skill name="...">` and opening with
+`Base directory for this skill: <dir>` as the Skill tool does, into one
 `<stream name>.skills.md` under the scratch and passed as `--append-system-prompt-file`; the argv
 carries that flag only when a skill was named, and the prompt on stdin is untouched. The
 subagent-definition `skills` field was probed on claude 2.1.307 and the session did not see the

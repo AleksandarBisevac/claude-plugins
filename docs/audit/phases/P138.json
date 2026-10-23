@@ -61,32 +61,40 @@
         "severity": "med",
         "file": "plugins/audit/scripts/manifest/audit-task.py:14058-14090 (cmd_default_skills)",
         "issue": "The verb advertises a manifest positional (usage block `default-skills (--skills a,b [--replace] | --remove) [manifest]`; verbs-in-full.md `[<manifestPath>]`) but never calls `_manifest_from_positional(args)` as `cmd_reindex` (and the other id-less verbs) does. The path lands in `args.title` and is silently ignored, so the plan written is the one resolved from --project-dir / CLAUDE_PROJECT_DIR / cwd, not the one named. Checked by running both verbs against a scratch repo with a nonexistent manifest path: `reindex /nonexistent/zzz.json` exits 2 with 'manifest not found: /nonexistent/zzz.json', while `default-skills --remove /nonexistent/zzz.json` ignores the path and answers about the scratch repo's own plan. A caller who names plan X and gets plan Y written is the lock/journal/manifest split the helper's own docstring warns of. No case passes a manifest positional, so dsv1/dsv2 cannot see it.",
-        "resolution": "Call `_manifest_from_positional(args)` first in cmd_default_skills, before `_resolve_project`, and add a dsv case that passes the plan path as the positional with a different --project-dir and asserts the named plan changed and a nonexistent path is refused by name.",
-        "fixTask": "P138.3-myr"
+        "resolution": "fixed in P138.3-myr (9cab033e908e): Call `_manifest_from_positional(args)` first in cmd_default_skills, before `_resolve_project`, and add a dsv case that passes the plan path as the positional with a different --project-dir and asserts the named plan changed and a nonexistent path is refused by name.",
+        "fixTask": "P138.3-myr",
+        "commit": "9cab033e908e",
+        "status": "fixed"
       },
       {
         "id": "P138-R6",
         "severity": "med",
         "file": "plugins/audit/scripts/manifest/audit-task.py (whole diff) / docs/audit/audit-plan.json",
         "issue": "contradicts task clause: 'Declare this repository's Python house skills there through the plugin's own verb ... writing-python, before-you-claim, no-silent-pass.' The diff declares nothing; the executor's outcome says 'Not done by this task ... a post-merge step with the verb'. The clause was in the description and the phase outcome ('a plan can name house skills once') is not exercised for this repo until it is done, so the intent is not met as written. The narrowed scope is the executor's own, not the description's.",
-        "resolution": "Run `audit-task.py default-skills --skills writing-python,before-you-claim,no-silent-pass --reason ...` against the plan from the merged code (or file a dedicated follow-up task for it before P138 signs off) and record it, rather than leaving it as a prose note.",
-        "fixTask": "P138.3-myr"
+        "resolution": "fixed in P138.3-myr (9cab033e908e): Run `audit-task.py default-skills --skills writing-python,before-you-claim,no-silent-pass --reason ...` against the plan from the merged code (or file a dedicated follow-up task for it before P138 signs off) and record it, rather than leaving it as a prose note.",
+        "fixTask": "P138.3-myr",
+        "commit": "9cab033e908e",
+        "status": "fixed"
       },
       {
         "id": "P138-R7",
         "severity": "low",
         "file": "plugins/audit/reference/manifest-conventions.md:259; plugins/audit/scripts/status/audit-lookup.py:655; plugins/audit/scripts/manifest/_manifest_typos.py:244-260",
         "issue": "Three statements of the resolution order still describe two levels. manifest-conventions.md says executor skills are 'each tag's skills first, then task.skills ... area first' (a file the executor/orchestrator reads, and the one the area section points to as the rule); the executor brief prints 'No skill resolves for this task: no area default and no task skill.'; the unresolved-skills warning offers only 'set task.skills, register default skills on an area, or write null' and `_skills_in_use` ignores a plan that wrote only meta.defaultSkills. Each now omits the new first level.",
-        "resolution": "Update the conventions bullet to 'meta.defaultSkills, then each tag's skills, then task.skills'; say 'no plan default, no area default and no task skill' in the brief; add 'set meta.defaultSkills with audit-task.py default-skills' to the warning's exits.",
-        "fixTask": "P138.3-myr"
+        "resolution": "fixed in P138.3-myr (9cab033e908e): Update the conventions bullet to 'meta.defaultSkills, then each tag's skills, then task.skills'; say 'no plan default, no area default and no task skill' in the brief; add 'set meta.defaultSkills with audit-task.py default-skills' to the warning's exits.",
+        "fixTask": "P138.3-myr",
+        "commit": "9cab033e908e",
+        "status": "fixed"
       },
       {
         "id": "P138-R8",
         "severity": "low",
         "file": "tests/test_audit_task.py:4655",
         "issue": "The edit that added the default-skills flag row also changed the title `check(\"vf4 SECOND-DIRECTION CASE:` to `check(\"vf4SECOND-DIRECTION CASE:` (space lost; visible in the diff as an unrelated -/+ pair). Case ids are read by name elsewhere in this repo, so a mangled id is a case a title search no longer finds.",
-        "resolution": "Restore the space: `vf4 SECOND-DIRECTION CASE:`.",
-        "fixTask": "P138.3-myr"
+        "resolution": "fixed in P138.3-myr (9cab033e908e): Restore the space: `vf4 SECOND-DIRECTION CASE:`.",
+        "fixTask": "P138.3-myr",
+        "commit": "9cab033e908e",
+        "status": "fixed"
       },
       {
         "id": "P138-R9",
@@ -108,9 +116,30 @@
         "file": "tests/test_audit_lookup.py:2574-2603 (co1) vs tests.gate",
         "issue": "co1, the case that pins the R7 conventions bullet, lives in tests/test_audit_lookup.py, but the task's tests.gate is only `python3 tools/sweep-selftests.py tests/test_audit_task.py`. The recorded gate run (passed) therefore never ran co1. The executor ran test_audit_lookup.py by hand (143/143) but no recorded gate did.",
         "resolution": "Add tests/test_audit_lookup.py to the task's gate set (retarget --gate-set) so the run that records the evidence also runs co1."
+      },
+      {
+        "id": "P138-R12",
+        "severity": "med",
+        "file": "plugins/audit/scripts/status/_doctor_policy.py:479-486; plugins/audit/scripts/status/_skill_places.py:resolve_skill (inventory branch)",
+        "issue": "The two callers still disagree for one class of name, so the stated purpose ('Two answers is how doctor goes green over a name the launcher then refuses', PLUGIN-BUILD-GUIDE.md _skill_places section) is only half met. check_plan_skills passes `inventory=` built from `_panel_discovery.discover`, whose scan walks every installed plugin's skills/ (`_plugin_bases`, `_scan_skills(base, 'plugin', ...)`) under bare keys. A bare name that is only some other installed plugin's skill therefore resolves in doctor (source 'scan') and is refused by `run-agent-session` (no inventory), which is the exact green-then-refused shape the task set out to remove. dp52 cannot see it: its inventory (`others`) holds only 'unrelated' and 'scan-only', and neither is in the dp52 name list; dp50 locks the wider mode as 'what doctor saw before'.",
+        "resolution": "Either drop the inventory mode for bare names the session would not load, or keep it but say so: when `resolve_skill` returns source 'scan', have doctor word the row as 'found only by the machine scan at <path>; `run-agent-session --skill` will refuse it', and add a dp52 name that only the inventory lists, asserting doctor and the launcher answers differ visibly rather than silently."
+      },
+      {
+        "id": "P138-R13",
+        "severity": "med",
+        "file": "plugins/audit/scripts/status/_doctor_policy.py:536-547 (with plugins/audit/scripts/panel/_panel_discovery.py:_scan_skills, untouched)",
+        "issue": "The diff reverses the launcher's order to personal-before-project, but the portability grade in `_plan_skills_travel` is still read from `have.get(name)`, the scan entry, and the scan dedupes project before user ('project/user scanned before plugins win', `_discover_scan` scans `.claude` of the project first). For a name held by both, doctor's resolved path is now the personal copy while `travels`/`travelsBasis` describe the project copy: a plan can be graded 'travels' over a file the session does not load. The executor names this in the outcome and leaves it for another task, but it is created by this change (before it, launcher and scan agreed on project-first).",
+        "resolution": "In `_plan_skills_travel`, compare `entry.get('path')` with `resolved[name]['path']` and, when they differ, put the name in `unknown` with both paths named (the grade belongs to a different file than the one loaded), or make the scan's project/user order match `_skill_places`. Add a dp case with the same name in both tiers."
+      },
+      {
+        "id": "P138-R14",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/run-agent-session.py:217; tests/test_run_agent_session.py:ras50",
+        "issue": "The note that `claude --help` does not list `--append-system-prompt-file`, with the probe's build and date, sits in the module docstring (line 35). The only place the flag is written in code (`session_argv`, line 217) carries no comment, and ras50 reads 700 characters around the FIRST occurrence of the string only, which is the docstring. The task asked for it 'beside the flag'.",
+        "resolution": "Add a one-line comment above `argv += [\"--append-system-prompt-file\", skills_file]` pointing at the docstring probe (claude 2.1.307, 2026-10-23), and have ras50 check the last occurrence as well."
       }
     ],
-    "outcome": "[findings: 11 - 0 high, 4 med, 7 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 14 - 0 high, 6 med, 8 low; 4 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -253,7 +282,7 @@
     {
       "id": "P138.3-myr",
       "title": "The default-skills verb takes its manifest positional, the docs state the three-level order, and this plan's house skills are declared",
-      "status": "in_progress",
+      "status": "done",
       "description": "",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -290,14 +319,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9cab033e908e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task.py cmd_default_skills now calls _manifest_from_positional(args) before _resolve_project (R5). manifest-conventions.md executor-skills bullet and audit-lookup.py's import comment now state three levels: meta.defaultSkills, then each tag's area skills, then task.skills (R7). vf4 title space restored (R8). Cases: dsv3 (positional manifest, cwd in another project, no CLAUDE_PROJECT_DIR: named plan holds the list and one defaultskills.change row, the cwd project is byte-identical with no rows, and the source order of the two calls is pinned); co1 in test_audit_lookup.py (resolver gives plan, area, task; bullet names meta.defaultSkills < meta.areas[tag].skills < task.skills and no longer says 'area first'). R6: already done by the orchestrator; see meta.defaultSkills in docs/audit/audit-plan.json (writing-python, before-you-claim, no-silent-pass); no case written for that tests.add entry. NOT CHANGED, out of this task's files, still stating the old two-level order: plugins/audit/reference/execute-task.md:74-77 (pinned to _areas.SKILLS_RULE by the skills-rule anchor row, _areas.py:714), orchestrator.md:161-162, plugins/audit/README.md:408 and :854, schema/audit-plan.schema.json:1020, PLUGIN-BUILD-GUIDE.md:1314 and :3277, _areas.py:562 SKILLS_RULE (also pinned by tests/test__help.py:335 and _help.py:545). Changing them means changing SKILLS_RULE and its two pinned consumers together; I did not, since none is in this task's files. Dependants: audit-task.py/test_audit_task.py consumers unaffected, the change adds one call at the head of one verb; manifest-conventions.md dependants read it as prose, the pinned skills-rule row anchors execute-task.md not this file (test__areas 130/130, test__help 79/79); audit-lookup.py only a comment changed; _manifest_typos.py, test__manifest_typos.py (20/20), verbs-in-full.md untouched and still correct (verbs-in-full already says plan default, area, task and already shows the [<manifestPath>] positional).",
+        "descriptive": "default-skills now honours the manifest positional like its sibling verbs, and the conventions document says plan default, area, task."
       },
       "startedAt": "2026-10-23T02:12:48Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-23T02:51:08Z",
+      "verifiedBy": [
+        "dsv3: default-skills with the plan as lone positional from a cwd in another project",
+        "co1: conventions bullet names the three skill levels in resolver order",
+        "vf4 title space restored (no new case)"
+      ],
       "notes": [
         {
           "at": "2026-10-23T02:12:33Z",
@@ -339,6 +372,18 @@
         "runId": "2026-10-23T02:42:37Z.6b83ec",
         "status": "passed",
         "at": "2026-10-23T02:42:37Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "9cab033e908e",
+        "at": "2026-10-23T02:51:08Z",
+        "return": "docs/audit/evidence/returns/P138.3-myr/20261023T021248Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-23T02:24:48Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_audit_task.py` in a throwaway tree at HEAD exited 1 with failing cases dsv3 (house FAIL), tests/test_audit_task.py: exited 1 (house FAIL), but with the working tree's implementation the task's tests do not all pass (no tally or error reader matched its output, so no line of it is quoted as decisive), so the red is not one the fix turns green - SELFTEST FAILED: 1112/1113 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {

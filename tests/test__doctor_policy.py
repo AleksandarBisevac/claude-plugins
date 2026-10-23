@@ -360,10 +360,21 @@ def _cases(check):
         # the honest shape for "this machine could not say" - so these cases
         # below stay about resolution alone, and the ones after them supply a
         # verdict on purpose.
-        def _skills(mf, inv, cfg=None):
+        def _skills(mf, inv, cfg=None, home=None):
+            """check_plan_skills with the user's Claude home PINNED: the resolver
+            reads `<home>/skills`, and a machine that happens to hold a skill the
+            fixture calls missing must not change the answer."""
             r = base.Report()
-            M.check_plan_skills(r, tmp, cfg or {}, cfgmod, mf,
-                                _discover=lambda _p, home=None: inv)
+            saved = os.environ.get("CLAUDE_CONFIG_DIR")
+            os.environ["CLAUDE_CONFIG_DIR"] = home or os.path.join(tmp, "home-empty")
+            try:
+                M.check_plan_skills(r, tmp, cfg or {}, cfgmod, mf,
+                                    _discover=lambda _p, home=None: inv)
+            finally:
+                if saved is None:
+                    os.environ.pop("CLAUDE_CONFIG_DIR", None)
+                else:
+                    os.environ["CLAUDE_CONFIG_DIR"] = saved
             return r
 
         def _travels(name, travels, basis="because"):
@@ -418,6 +429,71 @@ def _cases(check):
               "phase - nineteen identical lines is the wall `_warning_groups` "
               "exists to stop: %r" % (_detail(rep, "skills"),),
               _detail(rep, "skills").count("'ghost'") == 1)
+
+        # --- where a named skill lives: ONE resolver, shared with the launcher ----
+        # `run-agent-session.py` loads the skills a task names into the session it
+        # starts; doctor says whether the plan's names would resolve. Two answers to
+        # "where does this name live" is how doctor goes green over a name the
+        # launcher then refuses, so both ask `_skill_places`. The scan inventory
+        # stays the WIDER mode: a name only the scan lists still resolves here.
+        import json as _json
+        L = _loader.load_script("run-agent-session.py", modname="run_agent_session_dp")
+        home = os.path.join(tmp, "home-dp")
+
+        def _put(base_dir, name):
+            folder = os.path.join(base_dir, name)
+            os.makedirs(folder, exist_ok=True)
+            with open(os.path.join(folder, "SKILL.md"), "w", encoding="utf-8") as fh:
+                fh.write("---\nname: %s\n---\nbody\n" % name)
+        _put(os.path.join(home, "skills"), "personal-only")
+        _put(os.path.join(home, "skills"), "both-dup")
+        _put(os.path.join(tmp, ".claude", "skills"), "project-only")
+        _put(os.path.join(tmp, ".claude", "skills"), "both-dup")
+        with open(os.path.join(M._output.PLUGIN_ROOT, ".claude-plugin",
+                               "plugin.json"), encoding="utf-8") as fh:
+            own = _json.load(fh)["name"]
+        own_skill = sorted(os.listdir(os.path.join(M._output.PLUGIN_ROOT, "skills")))[0]
+        others = {"skills": [{"name": "unrelated"}, {"name": "scan-only"}]}
+
+        def _plan_with(names):
+            mf = _manifest()
+            mf["phases"][0]["tasks"][0]["skills"] = list(names)
+            return mf
+        rep = _skills(_plan_with(["personal-only"]), others, home=home)
+        check("dp49 a skill the plan names that lives in the user's skills "
+              "directory resolves although the scan inventory does not list it: %r"
+              % (_detail(rep, "skills"),),
+              "not resolvable here" not in _detail(rep, "skills")
+              and "resolve on this machine" in _detail(rep, "skills"))
+        rep = _skills(_plan_with(["scan-only"]), others, home=home)
+        check("dp50 ...and the scan inventory is still the wider mode: a name only "
+              "the scan lists resolves, which keeps what doctor saw before the "
+              "shared resolver: %r" % (_detail(rep, "skills"),),
+              "not resolvable here" not in _detail(rep, "skills"))
+        rep = _skills(_plan_with(["%s:%s" % (own, own_skill),
+                                  "other-plugin:%s" % own_skill]), others, home=home)
+        check("dp51 `<plugin>:<skill>` resolves only from that plugin: this "
+              "plugin's own skill does, another plugin's name does not: %r"
+              % (_detail(rep, "skills"),),
+              "'other-plugin:%s'" % own_skill in _detail(rep, "skills")
+              and "'%s:%s'" % (own, own_skill) not in _detail(rep, "skills"))
+        names = ["personal-only", "project-only", "both-dup", own_skill,
+                 "%s:%s" % (own, own_skill), "other-plugin:%s" % own_skill,
+                 "%s:no-such-skill-q81z" % own, "no-such-skill-q81z", "../escape"]
+        rep = _skills(_plan_with(names), others, home=home)
+        seen = _detail(rep, "skills")
+        by_doctor = [n for n in names if ("%r (" % n) in seen]
+        by_launcher = [n for n in names
+                       if L.find_skills([n], tmp, home, M._output.PLUGIN_ROOT,
+                                        own)["problem"] is not None]
+        want = ["other-plugin:%s" % own_skill, "%s:no-such-skill-q81z" % own,
+                "no-such-skill-q81z", "../escape"]
+        check("dp52 doctor and the launcher answer the same for the same name, over "
+              "personal, project, both, the plugin's own skill bare and qualified, "
+              "another plugin's, and names that resolve nowhere or are no skill "
+              "name - doctor %r, launcher %r, expected %r"
+              % (by_doctor, by_launcher, want),
+              by_doctor == want and by_launcher == want)
 
         # --- would it survive a CLONE? the half "resolves here" cannot see ------
         # The row above is answered on the authoring machine, where every name

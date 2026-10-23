@@ -215,6 +215,13 @@ LAYERS = (
      # would be a second answer about what is installed. It reaches nothing but
      # `_output`.
      "_claude_home",
+     # `_skill_places` answers "where does a named skill live": personal, then
+     # project, then the running plugin, with `plugin:skill` read from that plugin
+     # alone. In this layer for `_claude_home`'s reason: the launcher
+     # `run-agent-session` (an entry point) and `_doctor_policy` (a layer above)
+     # ask the SAME question, and a second walk would be a second answer. It
+     # reaches nothing but `_output`; the home, tree and plugin root are arguments.
+     "_skill_places",
      # `_runner_output` reads what a test runner printed - its summary line and
      # the lines naming a failing check. Here for `_proc_group`'s reason: two entry
      # points, `run-test-gate` and `stamp-verification`, ask the same output the
@@ -894,7 +901,8 @@ LAYERS = (
      # layer's usual reason, the caller being the drive or orchestrator prose
      # reaching Python through Bash. It reaches `_proc_group` for the session's
      # own process group and the interrupt pair, `_claude_home` for the usage
-     # hint every entry point attaches, and `_help` for `front_matter`,
+     # hint every entry point attaches, `_skill_places` for where a named skill
+     # lives (the answer doctor asks too), and `_help` for `front_matter`,
      # the one frontmatter parser, to build the reviewer's `--agents` file.
      "run-agent-session",
      # `derive-phase-gate` computes a PHASE's sign-off gate from

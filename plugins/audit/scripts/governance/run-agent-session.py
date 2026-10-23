@@ -30,11 +30,18 @@ WHAT THE ARGV CARRIES, AND WHY EACH ONE:
     kilobytes of prose that a batch-file launcher would re-quote;
   * `--skill NAME`, repeatable, puts the named skills in the session's system prompt
     from its first turn: each SKILL.md is found the way a session in that tree
-    finds a skill (`skill_places`) and the bodies, each wrapped with its name, are
+    finds a skill (`_skill_places.resolve_skill`) and the bodies, each wrapped with its name, are
     written to ONE file under the scratch and passed as
-    `--append-system-prompt-file`. A subagent definition's `skills` field was probed
-    (claude 2.1.307, 2026-10-23) and the session did not see the skill, which is why
-    this appends instead; the prompt on stdin is untouched by it. A name that
+    `--append-system-prompt-file`; `claude --help` does not list that flag, though
+    the CLI accepts it, and a probe (claude 2.1.307, 2026-10-23: `--agents <file>
+    --agent <name> --append-system-prompt-file <file>` on a print-mode session)
+    had the reviewer quote a token only the appended skill held, so the reviewer
+    path delivers it as the writer's does. A subagent definition's `skills` field
+    was probed (claude 2.1.307, 2026-10-23) and the session did not see the skill,
+    which is why this appends instead; the prompt on stdin is untouched by it. The
+    order a name is searched in is the user's skills, the project's, then the
+    plugin's own (see `_skill_places`), and each skill is headed by its base
+    directory, as the Skill tool does. A name that
     resolves nowhere refuses to start, naming every place looked in, because a
     skill the plan declares and the session never loads is a defect the cost of
     which nobody sees. `--record` carries each skill's name, path and sha256, so a
@@ -134,6 +141,7 @@ import _claude_home  # noqa: E402  (attach_usage_hint: a usage error names the i
 import _help         # noqa: E402  (front_matter: the one frontmatter parser)
 import _manifest_io  # noqa: E402  (checkout_of: is a directory inside a git checkout)
 import _proc_group   # noqa: E402  (group_kwargs, tear_down, the interrupt pair)
+import _skill_places  # noqa: E402  (resolve_skill, plugin_name: where a named skill lives, shared with doctor)
 
 E_OK, E_SESSION, E_USAGE, E_COULD_NOT_RUN, E_BUDGET, E_IO = 0, 1, 2, 3, 4, 5
 
@@ -185,10 +193,6 @@ FULL_MODEL_ID = re.compile(r"^claude-[a-z][a-z0-9-]*[0-9][a-z0-9-]*$")
 # same pattern so the two cannot disagree on where the frontmatter ends.
 _FENCE = re.compile(r"^---\r?\n(.*?)\r?\n---\r?\n", re.S)
 
-# A skill name, or either half of `plugin:skill`. It becomes a directory name under
-# three roots, so a separator, a dot-only name or a leading dot never reaches a path.
-SKILL_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
-
 
 # --- the argv ------------------------------------------------------------------
 def is_full_model_id(model):
@@ -235,58 +239,33 @@ def agent_definition(text):
 
 
 # --- the skills ----------------------------------------------------------------
-def _running_plugin_name():
-    """The name in this plugin's own manifest, or None when it cannot be read - then
-    no `plugin:skill` name matches, and the refusal says so."""
-    path = os.path.join(_output.PLUGIN_ROOT, ".claude-plugin", "plugin.json")
-    try:
-        with open(path, encoding="utf-8") as fh:
-            name = json.load(fh).get("name")
-    except (OSError, ValueError, AttributeError):
-        return None
-    return name if isinstance(name, str) and name else None
-
-
-def skill_places(name, tree, user_home, plugin_root, running):
-    """`(places, problem)` for one skill name: the SKILL.md paths a session in `tree`
-    would read it from, in the order it prefers them - the project's
-    `.claude/skills`, the user's, then the running plugin's own `skills/` - or the
-    reason the name is no skill name at all. A `plugin:skill` name is read only from
-    that plugin, so it has one place when `plugin` is the running one and none when
-    it is not: falling back to a project or user skill of the same bare name would
-    load something the plan did not name."""
-    head, sep, tail = name.partition(":")
-    parts = [head, tail] if sep else [head]
-    if not all(SKILL_NAME.match(p) for p in parts):
-        return [], "%r is not a skill name (letters, digits, '.', '_' and '-', "\
-                   "optionally as plugin:skill)" % name
-    own = os.path.join(plugin_root, "skills", parts[-1], "SKILL.md")
-    if sep:
-        return ([own] if head == running else []), None
-    return [os.path.join(tree, ".claude", "skills", name, "SKILL.md"),
-            os.path.join(user_home, "skills", name, "SKILL.md"), own], None
-
-
 def find_skills(names, tree, user_home, plugin_root, running):
     """`{"found": [{"name", "path"}], "problem": str-or-None}`: the first existing
     place of each name, in the order the names came, a repeated name once. A name
-    with none stops the search with a problem naming it and every place looked."""
+    with none stops the search with a problem naming it and every place looked.
+    Where a name lives is `_skill_places.resolve_skill`'s answer, the one doctor asks
+    too - personal, then project, then the running plugin's own `skills/` (Claude
+    Code's documented "personal over project", code.claude.com/docs/en/skills,
+    "Resolve skills that share a name") - and no inventory is passed, so only a
+    SKILL.md this launcher can read counts."""
     found, seen = [], set()
     for name in names:
         if name in seen:
             continue
         seen.add(name)
-        places, problem = skill_places(name, tree, user_home, plugin_root, running)
-        if problem:
-            return {"found": found, "problem": problem}
-        hit = next((p for p in places if os.path.isfile(p)), None)
-        if hit is None:
-            where = ("looked in: %s" % ", ".join(places)) if places else (
+        hit = _skill_places.resolve_skill(name, tree, user_home, plugin_root, running)
+        if hit["problem"]:
+            return {"found": found, "problem": hit["problem"]}
+        if not hit["found"]:
+            places = hit["places"]
+            where = ("looked in, in this order: %s (only these places are searched: "
+                     "the user's skills, the tree's .claude/skills and the running "
+                     "plugin's skills/)" % ", ".join(places)) if places else (
                 "a plugin-qualified name is read only from that plugin's own skills/, "
                 "and this is plugin %s" % (running or "(its name could not be read)"))
             return {"found": found,
                     "problem": "the skill %s is not found - %s" % (name, where)}
-        found.append({"name": name, "path": hit})
+        found.append({"name": name, "path": hit["path"]})
     return {"found": found, "problem": None}
 
 
@@ -309,8 +288,12 @@ def load_skills(found):
 
 def skills_prompt(loaded):
     """The text appended to the system prompt: each skill's file, whole, wrapped in a
-    `<skill name="...">` element so a reader of the prompt can tell where one ends."""
-    return "\n".join('<skill name="%s">\n%s\n</skill>\n' % (s["name"], s["text"].rstrip("\n"))
+    `<skill name="...">` element so a reader of the prompt can tell where one ends.
+    The element opens with `Base directory for this skill: <dir>`, the line the Skill
+    tool puts above a skill it loads, so a file the skill names under `references/`
+    resolves against the skill's own directory."""
+    return "\n".join('<skill name="%s">\nBase directory for this skill: %s\n\n%s\n</skill>\n'
+                     % (s["name"], os.path.dirname(s["path"]), s["text"].rstrip("\n"))
                      for s in loaded)
 
 
@@ -640,7 +623,7 @@ def _run(args, stdin, out, refuse, ran):
         return refuse("the prompt is empty - it is read from stdin or --prompt-file")
     searched = find_skills(args.skills or [], args.tree,
                            _claude_home.claude_home(), _output.PLUGIN_ROOT,
-                           _running_plugin_name())
+                           _skill_places.plugin_name(_output.PLUGIN_ROOT))
     if searched["problem"]:
         return refuse(searched["problem"])
     try:

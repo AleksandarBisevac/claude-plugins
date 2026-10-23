@@ -690,18 +690,18 @@ def _skill_cases(check, M, root, bindir, e_io):
                                      env_extra=pinned)
     argv = (rec or {}).get("argv") or []
     held = (rec or {}).get("skills_file") or ""
-    at = [held.find(t) for t in ("USER-ONLY-BODY-k3v9", "PROJECT-DUP-BODY-k3v9",
+    at = [held.find(t) for t in ("USER-ONLY-BODY-k3v9", "USER-DUP-BODY-k3v9",
                                  plugin_text.strip()[-60:])]
     check("ras35 the resolved skills reach the session as one "
           "--append-system-prompt-file under the task's scratch, holding each body "
-          "once in the order named, the project's copy of a name that the user also "
-          "has and not the user's: %r" % ((code, argv, at, err[-200:]),),
+          "once in the order named, the personal copy of a name that the project "
+          "also has and not the project's: %r" % ((code, argv, at, err[-200:]),),
           code == 0 and rec is not None
           and _under(rec.get("skills_path") or "/", dirs["scratch"])
           and all(a >= 0 for a in at) and at == sorted(at)
           and held.count("USER-ONLY-BODY-k3v9") == 1
-          and held.count("PROJECT-DUP-BODY-k3v9") == 1
-          and held.count("USER-DUP-BODY-k3v9") == 0
+          and held.count("USER-DUP-BODY-k3v9") == 1
+          and held.count("PROJECT-DUP-BODY-k3v9") == 0
           and argv.count("--append-system-prompt-file") == 1)
     check("ras36 ...each body wrapped with its name, so a reader of the prompt can tell "
           "where one skill ends: %r" % (held[:300],),
@@ -724,14 +724,20 @@ def _skill_cases(check, M, root, bindir, e_io):
     code, out, err, rec, dirs = _run(root, bindir, "writer", tag="skm", env_extra=pinned,
                                      extra=["--skill", "user-only", "--skill",
                                             "no-such-skill-q81z"])
-    named = [os.path.join(project_dir("skm"), "no-such-skill-q81z", "SKILL.md"),
-             os.path.join(user_dir, "no-such-skill-q81z", "SKILL.md"),
+    named = [os.path.join(user_dir, "no-such-skill-q81z", "SKILL.md"),
+             os.path.join(project_dir("skm"), "no-such-skill-q81z", "SKILL.md"),
              os.path.join(plugin_dir, "no-such-skill-q81z", "SKILL.md")]
+    at = [err.find(p) for p in named]
     check("ras39 a skill that resolves nowhere refuses before claude starts: exit "
           "E_USAGE, the stub recorded nothing, and the message names the skill and "
-          "every one of the %d places looked in: %r" % (len(named), err[-600:]),
+          "every one of the %d places looked in, personal first, then the project's, "
+          "then the plugin's: %r" % (len(named), err[-600:]),
           code == M.E_USAGE and rec is None and "no-such-skill-q81z" in err
-          and all(p in err for p in named) and "Traceback" not in err)
+          and all(a >= 0 for a in at) and at == sorted(at) and "Traceback" not in err)
+    check("ras51 ...and the refusal says that ONLY those places are searched, so a "
+          "reader does not go looking for the skill in a marketplace or another "
+          "plugin: %r" % (err[-700:],),
+          "only these places are searched" in err)
 
     # --- a plugin-qualified name resolves from that plugin alone ---------------
     for tag in ("skq", "skq2"):
@@ -763,15 +769,14 @@ def _skill_cases(check, M, root, bindir, e_io):
                                             "--skill", "dup-skill"])
     lines = _record_lines(kept)
     listed = (lines[-1].get("skills") if lines else None) or []
+    user_dup = os.path.join(user_dir, "dup-skill", "SKILL.md")
     expected = [{"name": "user-only", "path": user_only, "sha256": _digest(user_only)},
-                {"name": "dup-skill", "path": project_dup,
-                 "sha256": _digest(project_dup)}]
+                {"name": "dup-skill", "path": user_dup, "sha256": _digest(user_dup)}]
     check("ras43 the --record line names each preloaded skill with its path and the "
-          "sha256 of its file, in order - the project's dup-skill, whose digest "
-          "differs from the user's: %r" % ((listed,),),
+          "sha256 of its file, in order - the personal dup-skill, whose digest "
+          "differs from the project's: %r" % ((listed,),),
           code == 0 and len(lines) == 1 and listed == expected
-          and expected[1]["sha256"] != _digest(os.path.join(user_dir, "dup-skill",
-                                                            "SKILL.md")))
+          and expected[1]["sha256"] != _digest(project_dup))
     plain = os.path.join(root, "records", "plain.jsonl")
     _run(root, bindir, "writer", tag="skp", env_extra=pinned, extra=["--record", plain])
     check("ras44 a run with no skills records none: the line has no skills key, "
@@ -795,6 +800,63 @@ def _skill_cases(check, M, root, bindir, e_io):
           and "USER-ONLY-BODY-k3v9" not in (rec.get("agents_file") or "")
           and "USER-ONLY-BODY-k3v9" in (rec.get("skills_file") or "")
           and rec["stdin"] == PROMPT)
+
+    # --- Claude Code's documented precedence: personal over project -------------
+    # (code.claude.com/docs/en/skills, "Resolve skills that share a name": "Enterprise
+    # over personal, and personal over project".) The project-only name is the other
+    # direction: a resolver that stopped looking in the project would pass the
+    # duplicate and fail this one.
+    _write_skill(project_dir("skd"), "dup-skill", dup_text)
+    proj_only = _write_skill(project_dir("skd"), "project-only",
+                             "---\nname: project-only\n---\nPROJECT-ONLY-BODY-k3v9\n")
+    code, out, err, rec, dirs = _run(root, bindir, "writer", tag="skd", env_extra=pinned,
+                                     extra=["--skill", "dup-skill", "--skill", "project-only"])
+    held = (rec or {}).get("skills_file") or ""
+    check("ras47 a name held by both the personal and the project skills loads the "
+          "PERSONAL copy once and never the project's, while a name only the project "
+          "holds still loads from there: %r" % ((code, held[:400], err[-200:]),),
+          code == 0 and held.count("USER-DUP-BODY-k3v9") == 1
+          and held.count("PROJECT-DUP-BODY-k3v9") == 0
+          and held.count("PROJECT-ONLY-BODY-k3v9") == 1)
+
+    # A personal copy of a plugin's skill name must not answer `plugin:skill`.
+    _write_skill(user_dir, plugin_one, "---\nname: x\n---\nPERSONAL-SHADOW-k3v9\n")
+    code, out, err, rec, dirs = _run(root, bindir, "writer", tag="skq3", env_extra=pinned,
+                                     extra=["--skill", "%s:%s" % (plugin_name, plugin_one)])
+    held = (rec or {}).get("skills_file") or ""
+    check("ras48 `<plugin>:<skill>` is read from that plugin alone even when the "
+          "personal skills hold a skill of the same bare name: %r" % (held[:200],),
+          code == 0 and "PERSONAL-SHADOW-k3v9" not in held
+          and plugin_text.strip()[-60:] in held)
+
+    # --- each skill is headed by its base directory, as the Skill tool does ------
+    code, out, err, rec, dirs = _run(root, bindir, "writer", tag="skd", env_extra=pinned,
+                                     extra=["--skill", "user-only", "--skill", "project-only",
+                                            "--skill", "%s:%s" % (plugin_name, plugin_one)])
+    held = (rec or {}).get("skills_file") or ""
+    wanted = [os.path.dirname(user_only), os.path.dirname(proj_only),
+              os.path.dirname(plugin_path)]
+    heads = ["Base directory for this skill: %s" % d for d in wanted]
+    at = [held.find(h) for h in heads]
+    check("ras49 every appended skill is headed by 'Base directory for this skill: "
+          "<its directory>' exactly once, ahead of its body, so a skill that names "
+          "files under references/ can be followed: %r" % ((at, held[:300]),),
+          code == 0 and all(a >= 0 for a in at) and at == sorted(at)
+          and held.count("Base directory for this skill:") == len(wanted)
+          and 0 <= at[0] < held.find("USER-ONLY-BODY-k3v9")
+          and 0 <= at[1] < held.find("PROJECT-ONLY-BODY-k3v9"))
+
+    # `claude --help` does not list the flag the skills ride on; the file must say
+    # it was probed, when, and on which build, beside the flag.
+    with open(SCRIPT, encoding="utf-8") as fh:
+        source = fh.read()
+    spot = source.find("--append-system-prompt-file")
+    near = source[max(0, spot - 700):spot + 700]
+    check("ras50 the script says beside --append-system-prompt-file that `claude "
+          "--help` does not list it and that it was probed, with the date and the "
+          "build",
+          spot >= 0 and "does not list" in near and "2026-10-23" in near
+          and "2.1.307" in near)
 
     # --- a skill file that cannot be read is an io-error, not a missing skill ---
     with open(user_only, "wb") as fh:
