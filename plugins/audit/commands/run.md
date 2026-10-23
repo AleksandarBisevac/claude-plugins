@@ -31,7 +31,9 @@ step is `next <taskId> --explain <subject>`.
   `Follow the brief this prints: python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/drive-phase.py" brief --manifest "<manifest>" --project-dir "<project>" --role <role> <id>`.
   Wait for its one-line hand-back, then `next <taskId> --task --signal`.
   With `executor.writerModel` set, a writer's `dispatch` is a `run:` line under `--explain`
-  instead: run it in background Bash and call next after it exits.
+  instead: run it in background Bash and call next after it exits. The session is its own
+  process under its own --budget-usd, set by executor.writerBudgetUsd; it is not drawn from this
+  session's budget, so launch the run: line as printed.
 - `judge`, `wait` → do `next:`; `ask` → the human first (AskUserQuestion), then `next:` with
   their option.
 - `done` → report the outcome and what is ready next (`/audit:status`), and stop.

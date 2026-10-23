@@ -1,0 +1,109 @@
+{
+  "id": "P139",
+  "title": "The orchestrator knows a writer's budget is the writer's own ceiling",
+  "status": "in_progress",
+  "description": "run-agent-session.py starts a separate claude -p process with its own --budget-usd (executor.writerBudgetUsd); its spend is not drawn from the calling session's budget. Neither commands/run.md nor the drive's dispatch line says so, and a3e's orchestrator (cap 2.0, 1.84 left) refused to launch a writer printed with 2.4 and asked a human in a headless session.",
+  "desiredOutcome": "An orchestrator following /audit:run or /audit:next launches the writer or reviewer session the drive prints without stopping to ask about money, because the printed step and the command doc both say the session's --budget-usd is that child process's own ceiling, separate from the orchestrator's",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [],
+  "baseRef": "70408d3a9b271c5ca7a206528a99f29f008350b9",
+  "branch": "audit/p139-the-orchestrator-knows-a-write",
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": [
+      {
+        "id": "P139-R1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:1480-1495",
+        "issue": "contradicts task clause \"the dispatch line and its explain carry the sentence for both roles\": a session dispatch made for a wave member never prints SESSION_BUDGET_RULE. walk_wave (drive-phase.py:4942-4955) collects each member's writer_said/reviewer_dispatch instruction and wave_said builds its print from only m[\"lines\"][0] plus STEPS[\"dispatch-wave\"][\"rule\"] (WAVE_RULE), so the second rule line added to the four STEPS entries is dropped, and the run: lines are still emitted through signal runs. An orchestrator driving a wave of writer sessions sees the large --budget-usd in the run: lines with no sentence under it, which is the exact situation the phase's desiredOutcome describes. sn4s only calls writer_said/validation_said directly, so no case reaches the wave path.",
+        "resolution": "Have wave_said carry SESSION_BUDGET_RULE once when any member's signal has runs (or append each distinct member rule line after WAVE_RULE), and add a sn4 case that builds a wave of two session members and counts the sentence in the wave print and in its --explain."
+      },
+      {
+        "id": "P139-R2",
+        "severity": "med",
+        "file": "plugins/audit/commands/phase.md:29",
+        "issue": "contradicts task clause \"and wherever else the dispatch is described to the orchestrator\": commands/phase.md step 3 still says \"`dispatch` -> a `run:` line under `--explain`: background Bash\" and gets no budget sentence. /audit:phase is the entry that drives a whole phase, the longest run an orchestrator makes, and so the likeliest place for the stop. The executor's grep for the literal phrase \"a writer's `dispatch` is a `run:` line\" found four docs and missed this one because it words the same instruction differently. sn4d selects docs by that same phrase (tests/test_drive_phase.py describing=...), so phase.md is excluded by construction and a reword of the constant cannot be seen to leave it stale.",
+        "resolution": "Add the same SESSION_BUDGET_RULE sentence to commands/phase.md step 3, and key sn4d on a broader selector (every commands/*.md that names a run: line from the drive, e.g. the substring \"`run:` line\"), so a doc worded differently is still pinned."
+      },
+      {
+        "id": "P139-R3",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:472-474",
+        "issue": "The sentence says the figure is set by executor.writerBudgetUsd, true for the reviewer and validation sessions only because reviewer_session_setting (drive-phase.py:1815-1823) copies the writer's budget and replaces only the model. An orchestrator reading a reviewer dispatch may look for a reviewer budget key that does not exist, and the sentence does not say that the same ceiling applies to each such session separately. Minor, not a stop reason by itself.",
+        "resolution": "Optionally word it 'each session ... under its own --budget-usd (executor.writerBudgetUsd, the writer's key, also used for reviewer sessions)'; or leave as is."
+      }
+    ],
+    "outcome": "[findings: 3 - 0 high, 2 med, 1 low; 0 with a recorded fix commit]"
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P139.1",
+      "title": "The drive's writer and reviewer dispatch, and the command docs, say the child session's budget is its own ceiling",
+      "status": "in_progress",
+      "description": "Where drive-phase.py prints the run-agent-session dispatch (the step line and its --explain rule) and in commands/run.md and commands/next.md (and wherever else the dispatch is described to the orchestrator), state the fact once from one source: the session runs as its own process under its own --budget-usd ceiling (executor.writerBudgetUsd), which is not taken from the calling session's budget, so the step is launched as printed. Name where the figure comes from. Cases: the dispatch line and its explain carry the sentence for both roles; the docs and the drive read it from one constant, so a reword cannot leave one stale.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/commands/run.md",
+        "plugins/audit/commands/next.md",
+        "tests/test_drive_phase.py",
+        "plugins/audit/commands/resume.md",
+        "plugins/audit/commands/review.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: the writer and reviewer dispatch step says the session's --budget-usd is its own ceiling, read from one constant the command docs carry"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-23T07:03:55Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-23T07:32:27Z.fe69bc",
+        "status": "passed",
+        "at": "2026-10-23T07:32:27Z"
+      }
+    }
+  ],
+  "request": "Stage 1 sixth attempt, a3e: the orchestrator under claude -p stopped before the writer because the drive printed --budget-usd 2.4 for the writer while its own session cap was 2.0, and it could not tell whether the child's spend counts against its own",
+  "openChoices": [],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "bf837df2-37bc-4c94-9233-61f7d70c1d7f",
+    "branch": "audit/p139-the-orchestrator-knows-a-write",
+    "at": "2026-10-23T07:03:55Z"
+  },
+  "startedAt": "2026-10-23T07:03:55Z"
+}

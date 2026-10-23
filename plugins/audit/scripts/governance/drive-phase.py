@@ -464,15 +464,23 @@ ADVANCE_LINE = "then: next %(phase)s --answer sign-off --reason <the summary>"
 ADVANCE_NOT_APPLIED = "sign-off answered in advance, not applied: %s"
 WRITER_RULE = ("Run the run: line --explain prints in Bash, in the background, "
                "and call next after it exits.")
+# The one statement of whose money a session spends. The run: line is a separate
+# process with its own --budget-usd, which an orchestrator capped by its own
+# --max-budget-usd compared with what it had left and stopped on. The text is
+# printed under every session dispatch and quoted verbatim in the command docs
+# that describe that dispatch; `sn4d` reads them against this constant.
+SESSION_BUDGET_RULE = ("The session is its own process under its own --budget-usd, "
+                       "set by executor.writerBudgetUsd; it is not drawn from this "
+                       "session's budget, so launch the run: line as printed.")
 STEPS = {
     "dispatch-writer": {
         "line": "dispatch run-agent-session.py --role writer --task %(task)s "
                 "--model %(model)s prompt=%(prompt)s",
-        "rule": (WRITER_RULE,)},
+        "rule": (WRITER_RULE, SESSION_BUDGET_RULE)},
     "resume-writer": {
         "line": "dispatch run-agent-session.py --role writer --task %(task)s "
                 "--model %(model)s --resume %(session)s prompt=%(prompt)s",
-        "rule": (WRITER_RULE,)},
+        "rule": (WRITER_RULE, SESSION_BUDGET_RULE)},
     "wait-writer": {
         "line": "wait %(task)s: the writer session has written no record at "
                 "%(record)s yet",
@@ -481,7 +489,7 @@ STEPS = {
     "dispatch-reviewer-session": {
         "line": "dispatch run-agent-session.py --role reviewer --task %(task)s "
                 "--model %(model)s prompt=%(prompt)s",
-        "rule": (WRITER_RULE,)},
+        "rule": (WRITER_RULE, SESSION_BUDGET_RULE)},
     "wait-reviewer-session": {
         "line": "wait %(task)s: the reviewer session has written no record at "
                 "%(record)s yet",
@@ -490,7 +498,7 @@ STEPS = {
     "dispatch-validation": {
         "line": "dispatch run-agent-session.py --role reviewer --task %(phase)s "
                 "--model %(model)s validates %(ids)s prompt=%(prompt)s",
-        "rule": (WRITER_RULE,)},
+        "rule": (WRITER_RULE, SESSION_BUDGET_RULE)},
     "wait-validation": {
         "line": "wait %(task)s: the validation session has written no record at "
                 "%(record)s yet",

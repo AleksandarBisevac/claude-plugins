@@ -9382,6 +9382,49 @@ def _signal_cases(check):
     check("sn4 commands/phase.md states the dispatch prompt in the driver's own "
           "words and names each verb the signal uses: %r" % ((said, missing),),
           said in phase_md and not missing and "--signal" in phase_md)
+    # THE SESSION'S BUDGET IS ITS OWN. An orchestrator running under its own
+    # --max-budget-usd read the writer's run line, saw a --budget-usd larger than
+    # what it had left, and stopped to ask whether the child's spend was its own.
+    # The child is a separate process; one sentence, from one constant, says so.
+    rule = getattr(M, "SESSION_BUDGET_RULE", None)
+    argv = ["python3", "run-agent-session.py", "--role", "writer", "--task", "P1.1"]
+    said = [("dispatch-writer", M.writer_said(None, "P1.1", "claude-x", "p", argv)),
+            ("resume-writer", M.writer_said(None, "P1.1", "claude-x", "p", argv,
+                                            resume=WRITER_SESSION, round_n=1)),
+            ("dispatch-reviewer-session", M.writer_said(
+                None, "P1.1", "claude-x", "p", argv, role="reviewer")),
+            ("dispatch-validation", M.validation_said(
+                None, "P1", "claude-x", ["P1-R1"], "p", argv))]
+    held = [(step, got["lines"].count(rule)) for step, got in said]
+    agent = M.step_text("dispatch-executor", agent=M.EXECUTOR_AGENT, task="P1.1",
+                        model="opus", brief="b")
+    check("sn4s every session dispatch the drive prints - writer, resume, per-task "
+          "reviewer, phase validation - carries the budget sentence once, read "
+          "from SESSION_BUDGET_RULE and naming executor.writerBudgetUsd and "
+          "--budget-usd, while an Agent dispatch, which has no process of its "
+          "own, carries none: %r" % ((rule, held, agent),),
+          isinstance(rule, str) and "executor.writerBudgetUsd" in rule
+          and "--budget-usd" in rule and len(held) == 4
+          and all(n == 1 for _step, n in held) and rule not in "\n".join(agent))
+    shown = os.path.join(_output.PLUGIN_ROOT, "commands")
+    docs = {}
+    for name in sorted(os.listdir(shown)):
+        if name.endswith(".md"):
+            with open(os.path.join(shown, name), "r", encoding="utf-8") as fh:
+                docs[name] = " ".join(fh.read().split())
+    describing = sorted(n for n, text in docs.items()
+                        if "a writer's `dispatch` is a `run:` line" in text)
+    # A constant that is not there yet is a failing case, never a raise: its
+    # count is -1 in every doc, which no doc can hold.
+    lacking = [(n, docs[n].count(rule) if isinstance(rule, str) else -1)
+               for n in describing
+               if not isinstance(rule, str) or docs[n].count(rule) != 1]
+    check("sn4d every command doc that tells the orchestrator a writer's dispatch is "
+          "a run: line carries SESSION_BUDGET_RULE's text once - run.md and "
+          "next.md among them - so a reword of the constant cannot leave one "
+          "stale: %r" % ((describing, lacking),),
+          isinstance(rule, str) and "run.md" in describing and "next.md" in describing
+          and not lacking)
 
 
 def _explain_cases(check):

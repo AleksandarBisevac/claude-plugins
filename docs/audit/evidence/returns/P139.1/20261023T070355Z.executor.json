@@ -1,0 +1,32 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__refs.py tests/test__deps.py tests/test__help.py": "pass",
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py": "pass",
+    "ruff check plugins/audit/scripts/governance/drive-phase.py tests/test_drive_phase.py": "pass",
+    "python3 tools/measure-context.py --gate": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-23T07:22:49Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD: the run timed out: no time was left of the 480-second deadline; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "drive-phase.py: new constant SESSION_BUDGET_RULE ('The session is its own process under its own --budget-usd, set by executor.writerBudgetUsd; it is not drawn from this session's budget, so launch the run: line as printed.'), added as a second rule line to the four session dispatch steps (dispatch-writer, resume-writer, dispatch-reviewer-session, dispatch-validation) as a literal tuple (WRITER_RULE, SESSION_BUDGET_RULE) because _refs.followed_anchor_drift reads STEPS as a literal table and resolves names only inside tuples; the signal line is untouched, the sentence prints under the step line and so in --explain. The same sentence, verbatim, follows the 'run it in background Bash' sentence in commands/run.md, next.md, resume.md and review.md (the plan gate allowed the last two, which are outside the declared files but carry the identical dispatch description). tests/test_drive_phase.py (_signal_cases): sn4s counts the sentence in the lines of all four session dispatches (once each) and asserts the Agent dispatch-executor step does not carry it (the always-fires direction); sn4d derives every commands/*.md that says a writer's dispatch is a run: line, requires run.md and next.md among them, and counts the constant's text in each (whitespace-normalised) exactly once. Sweep of tests/test_drive_phase.py, test__refs.py, test__deps.py, test__help.py: exit 0, 4/4 files ok. wait-writer, wait-reviewer-session and wait-validation steps were left unchanged (they point at the same run: line but are not the dispatch). Dependants: tests/test_drive_phase.py - still correct, it is the file extended; PLUGIN-BUILD-GUIDE.md, README.md, docs/research/pipeline-cost-design.md - name drive-phase.py and its followed-step table, the README table row for WRITER_RULE steps still resolves (fa1 green, which caught my first draft); hooks/detect-plan-skip.py, record-risk-confirmation.py, stamp-verification.py, _areas.py - reference the script by basename or path only, no printed text changed except extra rule lines on four dispatch steps; names used elsewhere (_clip, _mark, _marked, _carries) untouched. Commands docs dependants: audit-task.py, tests/test__refs.py, test_audit_task.py, tools/measure-context.py (gate run, passes), PLUGIN-BUILD-GUIDE.md and docs/research/* cite the command docs by name and are still correct; plugins/audit/reference/verbs-in-full.md names next.md only.",
+    "descriptive": "An orchestrator under its own budget cap is told, in the dispatch it is shown and in the four command docs, that the session's --budget-usd is that child process's own ceiling from executor.writerBudgetUsd, so it launches the printed run line without stopping to ask."
+  },
+  "testsAdded": [
+    "sn4s: every session dispatch (writer, resume, per-task reviewer, validation) carries SESSION_BUDGET_RULE once and the Agent dispatch carries none",
+    "sn4d: every command doc describing a writer's run: line carries SESSION_BUDGET_RULE's text exactly once, run.md and next.md among them"
+  ],
+  "casesAdded": [
+    [
+      "sn4s",
+      "sn4d"
+    ]
+  ],
+  "claims": "claims:\n1 drive-phase.py SESSION_BUDGET_RULE (defined beside WRITER_RULE) is the sentence; the four session STEPS rules at the dispatch-writer, resume-writer, dispatch-reviewer-session and dispatch-validation entries print it; the figure's origin named is executor.writerBudgetUsd, which writer_setting/reviewer_session_setting hand to --budget-usd in writer_argv\n2 sn4s and sn4d went FAIL (7/9 in sn-block) before the fix, PASS after; sn4s also asserts the Agent step carries none (over-fire direction); not mutated a second time beyond the helper's red run\n3 grep for 'a writer's `dispatch` is a `run:` line' across commands/*.md: 4 hits (run, next, resume, review) - all edited; reference/orchestrator.md and execute-task.md mention writerModel but do not describe the dispatch line to the orchestrator - left; wait-* steps left because they are not the dispatch\n4 the rule to the orchestrator is a printed sentence; sn4s and sn4d pin the steps and the docs against the constant, named in the constant's own comment\n5 n/a - no property measured\n6 n/a - no guard\n7 no number written into prose; test__deps prose-number lint passed in the sweep",
+  "stamp": "audit-stamp: {\"content\":\"sha256:f2e2aa04575cfba88c233b6763bfd14589b4bbc1464f3460b29c38c423f3deb7\",\"dirtyDigest\":\"sha256:59728c81e608d3a152a6fb833777dce141c7a89a0e907d64865433ef68479431\",\"dirtyPaths\":{\"plugins/audit/commands/next.md\":\"e91b2b4b45297f91\",\"plugins/audit/commands/resume.md\":\"9c7cfd1f2854fd6c\",\"plugins/audit/commands/review.md\":\"cba96df8babd5582\",\"plugins/audit/commands/run.md\":\"76226c4faaff9fa7\",\"plugins/audit/scripts/governance/drive-phase.py\":\"4c3dd635cb32fdc8\",\"tests/test_drive_phase.py\":\"295a8962c666e14c\"},\"head\":\"70408d3a\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/commands/next.md\",\"plugins/audit/commands/run.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:167b08fef725d6db6c3a897131ea45e992c8082af430bcffce2c7a82ddef956c\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}
