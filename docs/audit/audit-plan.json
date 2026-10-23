@@ -897,6 +897,12 @@
       "title": "A writer or reviewer session starts with the task's skills already loaded",
       "status": "done",
       "shard": "phases/P138.json"
+    },
+    {
+      "id": "P139",
+      "title": "The orchestrator knows a writer's budget is the writer's own ceiling",
+      "status": "in_progress",
+      "shard": "phases/P139.json"
     }
   ],
   "fileIndex": {
@@ -2288,7 +2294,8 @@
       "P125.65-0h5",
       "P125.82-0h5",
       "P130.45-ywo",
-      "P131.5"
+      "P131.5",
+      "P139.1"
     ],
     "plugins/audit/commands/panel.md": [
       "P57.3",
@@ -2349,7 +2356,9 @@
       "P125.84-0h5",
       "P125.82-0h5",
       "P129.7-izt",
-      "P131.5"
+      "P131.5",
+      "P139.2-6sp",
+      "P139.3-6sp"
     ],
     "plugins/audit/commands/propose.md": [
       "P31.2",
@@ -2372,7 +2381,8 @@
       "P118.14-v7t",
       "P125.65-0h5",
       "P125.82-0h5",
-      "P131.5"
+      "P131.5",
+      "P139.1"
     ],
     "plugins/audit/commands/review.md": [
       "P7.1",
@@ -2388,7 +2398,8 @@
       "P118.14-v7t",
       "P125.65-0h5",
       "P125.82-0h5",
-      "P131.5"
+      "P131.5",
+      "P139.1"
     ],
     "plugins/audit/commands/run.md": [
       "P7.1",
@@ -2404,7 +2415,8 @@
       "P124.8",
       "P125.65-0h5",
       "P125.82-0h5",
-      "P131.5"
+      "P131.5",
+      "P139.1"
     ],
     "plugins/audit/commands/status.md": [
       "P7.1",
@@ -9938,7 +9950,9 @@
       "P137.5-3y3",
       "P137.9-3y3",
       "P138.1",
-      "P138.6-myr"
+      "P138.6-myr",
+      "P139.1",
+      "P139.2-6sp"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -11400,7 +11414,9 @@
       "P137.7-3y3",
       "P137.9-3y3",
       "P138.1",
-      "P138.6-myr"
+      "P138.6-myr",
+      "P139.1",
+      "P139.2-6sp"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
