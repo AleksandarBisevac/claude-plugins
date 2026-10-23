@@ -901,7 +901,7 @@
     {
       "id": "P139",
       "title": "The orchestrator knows a writer's budget is the writer's own ceiling",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P139.json"
     }
   ],
