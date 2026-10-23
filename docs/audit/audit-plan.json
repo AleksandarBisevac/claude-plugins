@@ -903,6 +903,12 @@
       "title": "The orchestrator knows a writer's budget is the writer's own ceiling",
       "status": "done",
       "shard": "phases/P139.json"
+    },
+    {
+      "id": "P140",
+      "title": "Every release check answers the open-bug question the way the release guard does",
+      "status": "in_progress",
+      "shard": "phases/P140.json"
     }
   ],
   "fileIndex": {
@@ -8143,7 +8149,9 @@
       "P131.1",
       "P131.2",
       "P131.11",
-      "P131.15-dau"
+      "P131.15-dau",
+      "P140.1",
+      "P140.2-ohy"
     ],
     "plugins/audit/scripts/governance/_gate_derive.py": [
       "P79.2",
@@ -8292,7 +8300,8 @@
       "P123.52-64p",
       "P123.62-64p",
       "P125.11",
-      "P125.104-0h5"
+      "P125.104-0h5",
+      "P140.2-ohy"
     ],
     ".claude/hooks/arm-release-bypass.py": [
       "P80.11",
@@ -10624,7 +10633,9 @@
       "P130.2",
       "P130.8",
       "P131.1",
-      "P131.11"
+      "P131.11",
+      "P140.1",
+      "P140.2-ohy"
     ],
     "plugins/audit/hooks/hold-handback.py": [
       "P128.6-0h5"
@@ -11663,6 +11674,9 @@
     "tests/test__skill_places.py": [
       "P138.4-myr",
       "P138.5-myr"
+    ],
+    "tests/test_verify_sh.py": [
+      "P140.1"
     ]
   },
   "bugs": [
