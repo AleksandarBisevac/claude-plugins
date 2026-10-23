@@ -13909,6 +13909,7 @@ def _default_skills_names(args, out):
 
 
 def cmd_default_skills(args, out):
+    _manifest_from_positional(args)
     project = _resolve_project(args)
     if not os.path.isdir(project):
         out("[audit-task] not a directory: %s" % project)

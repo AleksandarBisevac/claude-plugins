@@ -4652,7 +4652,7 @@ def _flag_cases(check):
         _vf_ok["default-skills/--skills"] = run(
             ["default-skills", "--skills", "writing-python", "--reason", "r",
              "--json", "--project-dir", _vf_ds_proj])[0]
-        check("vf4SECOND-DIRECTION CASE: every flag a verb DOES read still "
+        check("vf4 SECOND-DIRECTION CASE: every flag a verb DOES read still "
               "works, and `--json` / `--project-dir` reach every verb - a guard "
               "that fires on a correct call is a guard somebody routes around "
               "inside the day - and the verbs covered are DERIVED off the table, "
@@ -19114,6 +19114,41 @@ def _default_skills_cases(check):
               % (sorted(table_flags), sorted(usage_flags - universal)),
               table_flags != set()
               and (usage_flags - universal) == table_flags)
+
+        # The manifest as the lone positional, with no --project-dir and the
+        # cwd inside ANOTHER project: the named manifest alone decides the
+        # root, so the list, the lock and the journal row belong to ITS
+        # project and the project the shell stands in is left as it was.
+        named_proj, named_mp = mk("dsv-named", base_manifest())
+        home_proj, home_mp = mk("dsv-elsewhere", base_manifest())
+        home_before = raw(home_mp)
+        saved_cwd = os.getcwd()
+        saved_env = os.environ.get("CLAUDE_PROJECT_DIR")
+        try:
+            os.chdir(home_proj)
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+            pos_code, pos_txt = run(["default-skills", "--skills",
+                                     "writing-python", named_mp])
+        finally:
+            os.chdir(saved_cwd)
+            if saved_env is None:
+                os.environ.pop("CLAUDE_PROJECT_DIR", None)
+            else:
+                os.environ["CLAUDE_PROJECT_DIR"] = saved_env
+        import inspect
+        door = inspect.getsource(M.cmd_default_skills)
+        moved = door.find("_manifest_from_positional(args)")
+        check("dsv3 default-skills takes the manifest as its lone positional "
+              "and that names the root before it is resolved: the named "
+              "plan holds the list and one journal row, the project the cwd "
+              "stands in is byte-identical with none, and the move comes "
+              "before `_resolve_project`: %r"
+              % ((pos_code, pos_txt[-160:], held(named_mp),
+                  len(rows(named_proj)), len(rows(home_proj))),),
+              pos_code == 0 and held(named_mp) == ["writing-python"]
+              and len(rows(named_proj)) == 1
+              and raw(home_mp) == home_before and rows(home_proj) == []
+              and 0 <= moved < door.find("_resolve_project(args)"))
     finally:
         _harness.remove_tree(tmp)
 

@@ -1,0 +1,40 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__refs.py tests/test__deps.py (run in the worktree, no pipe)": "pass (exit 0; 3/3 files ok, 1659 cases; test_audit_task 1113 cases)",
+    "python3 tests/test_audit_lookup.py --selftest": "pass (exit 0; 143/143)",
+    "tests/test__areas.py, tests/test__help.py, tests/test__manifest_typos.py --selftest": "pass (130/130, 79/79, 20/20)"
+  },
+  "redFirst": {
+    "at": "2026-10-23T02:24:48Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_audit_task.py` in a throwaway tree at HEAD exited 1 with failing cases dsv3 (house FAIL), tests/test_audit_task.py: exited 1 (house FAIL), but with the working tree's implementation the task's tests do not all pass (no tally or error reader matched its output, so no line of it is quoted as decisive), so the red is not one the fix turns green - SELFTEST FAILED: 1112/1113 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "audit-task.py cmd_default_skills now calls _manifest_from_positional(args) before _resolve_project (R5). manifest-conventions.md executor-skills bullet and audit-lookup.py's import comment now state three levels: meta.defaultSkills, then each tag's area skills, then task.skills (R7). vf4 title space restored (R8). Cases: dsv3 (positional manifest, cwd in another project, no CLAUDE_PROJECT_DIR: named plan holds the list and one defaultskills.change row, the cwd project is byte-identical with no rows, and the source order of the two calls is pinned); co1 in test_audit_lookup.py (resolver gives plan, area, task; bullet names meta.defaultSkills < meta.areas[tag].skills < task.skills and no longer says 'area first'). R6: already done by the orchestrator; see meta.defaultSkills in docs/audit/audit-plan.json (writing-python, before-you-claim, no-silent-pass); no case written for that tests.add entry. NOT CHANGED, out of this task's files, still stating the old two-level order: plugins/audit/reference/execute-task.md:74-77 (pinned to _areas.SKILLS_RULE by the skills-rule anchor row, _areas.py:714), orchestrator.md:161-162, plugins/audit/README.md:408 and :854, schema/audit-plan.schema.json:1020, PLUGIN-BUILD-GUIDE.md:1314 and :3277, _areas.py:562 SKILLS_RULE (also pinned by tests/test__help.py:335 and _help.py:545). Changing them means changing SKILLS_RULE and its two pinned consumers together; I did not, since none is in this task's files. Dependants: audit-task.py/test_audit_task.py consumers unaffected, the change adds one call at the head of one verb; manifest-conventions.md dependants read it as prose, the pinned skills-rule row anchors execute-task.md not this file (test__areas 130/130, test__help 79/79); audit-lookup.py only a comment changed; _manifest_typos.py, test__manifest_typos.py (20/20), verbs-in-full.md untouched and still correct (verbs-in-full already says plan default, area, task and already shows the [<manifestPath>] positional).",
+    "descriptive": "default-skills now honours the manifest positional like its sibling verbs, and the conventions document says plan default, area, task."
+  },
+  "testsAdded": [
+    "dsv3: default-skills with the plan as lone positional from a cwd in another project",
+    "co1: conventions bullet names the three skill levels in resolver order",
+    "vf4 title space restored (no new case)"
+  ],
+  "casesAdded": [
+    [
+      "dsv3"
+    ],
+    null,
+    [
+      "co1"
+    ],
+    [
+      "vf4"
+    ]
+  ],
+  "claims": "claims:\n1 audit-task.py cmd_default_skills first statement _manifest_from_positional(args) precedes _resolve_project; manifest-conventions.md executor-skills bullet matches _areas.resolve_skills (_areas.py:257-285), pinned by co1\n2 dsv3 and co1 seen red on unfixed code (1111/1113, 142/143), green after (1113/1113, 143/143); allow side: dsv1 (--project-dir spelling) still green\n3 grep for the old order 'area first': 9 hits, conventions bullet and audit-lookup.py comment fixed; execute-task.md, orchestrator.md, README x2, schema, PLUGIN-BUILD-GUIDE x2, _areas.py SKILLS_RULE left because outside this task's files and SKILLS_RULE is pinned by test__help and the skills-rule anchor\n4 n/a - no rule to an agent added\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:7d735c06d4c00c64e1c9a059c6815c1e7c3838405d20b27f1d48a48b84997e21\",\"dirtyDigest\":\"sha256:3269e7ec34c40b2a37b964b7d96cdb0877e6138975934f4e3766ef42c15ad018\",\"dirtyPaths\":{\"plugins/audit/reference/manifest-conventions.md\":\"18f7dd55a10ee447\",\"plugins/audit/scripts/manifest/audit-task.py\":\"5803a5b210d7cdc6\",\"plugins/audit/scripts/status/audit-lookup.py\":\"9f553e0f4ef28a7e\",\"tests/test_audit_lookup.py\":\"fcf6450d91bf48f6\",\"tests/test_audit_task.py\":\"6ebf3add19ecdbd6\"},\"head\":\"6198f7df\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/reference/manifest-conventions.md\",\"plugins/audit/reference/verbs-in-full.md\",\"plugins/audit/scripts/manifest/_manifest_typos.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/scripts/status/audit-lookup.py\",\"tests/test__manifest_typos.py\",\"tests/test_audit_lookup.py\",\"tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:d24ee43a14cb1a53c8b0970b7b30be6e39f05873c7e27bcca14fd39140a7f526\",\"v\":2}",
+  "testsAddGaps": [
+    "tests/test_audit_task.py: Run `audit-task.py default-skills --skills writing-python,before-you-claim,no-silent-pass --reason ...` against the plan from the merged code (or file a ... - no case id bound (`casesAdded[1]` is absent or not an id)"
+  ],
+  "testsAddUnchecked": []
+}

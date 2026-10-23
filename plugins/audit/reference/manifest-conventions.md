@@ -256,8 +256,8 @@ config resolution, in `execute-task.md`'s executor spawn, in `phase-signoff.md`'
 - **Review skill** — `phase.reviewSkill ?? meta.areas[tag].reviewSkill ?? meta.reviewSkill`. The
   first level that is **present** answers, and an explicit `null` **is** an answer (skip review;
   tests are the signer) rather than a fall-through.
-- **Executor skills** — each tag's `meta.areas[tag].skills` first, then `task.skills`, deduped,
-  **area first**.
+- **Executor skills** — `meta.defaultSkills` first, then each tag's `meta.areas[tag].skills`, then
+  `task.skills`: three levels, widest first, deduped with each skill kept at its first mention.
 
 When a phase carries **several tags**, WRITTEN ORDER decides: the first tag whose area declares the
 field answers. `/audit:status` prints the resolved reviewer with the basis it came from

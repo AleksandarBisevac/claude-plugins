@@ -1,0 +1,29 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "plugins/audit/scripts/status/audit-lookup.py:656; plugins/audit/scripts/manifest/_manifest_typos.py:244-260",
+   "issue": "P138-R7 is fixed for one of its three statements only. Its resolution reads 'say \"no plan default, no area default and no task skill\" in the brief; add \"set meta.defaultSkills with audit-task.py default-skills\" to the warning's exits'. The diff changes the conventions bullet and a comment at audit-lookup.py:139, but the brief line still reads 'No skill resolves for this task: no area default and no task skill.' and the unresolved-skills warning still offers only 'set task.skills, register default skills on an area in meta.areas, or write \"skills\": null'. The outcome says '_manifest_typos.py ... untouched and still correct', but the warning's exit list omits the plan-level exit the phase introduced. _skills_in_use (_manifest_typos.py:178-195) also does not count meta.defaultSkills as use.",
+   "resolution": "Reword the brief line to name the plan default, add the meta.defaultSkills exit to the warning (and its test__manifest_typos case), or record in the outcome that those two are deliberately left and why."},
+  {"id": 2, "severity": "low", "file": "tests/test_audit_task.py:19117-19150 (dsv3)",
+   "issue": "P138-R5's resolution asks for a case that 'asserts the named plan changed and a nonexistent path is refused by name'. dsv3 covers the first half and the call order, not the nonexistent-path half. I ran `default-skills --remove /nonexistent/zzz.json` outside any plan with the fixed code: exit 2, '[audit-task] not a directory: /nonexistent', so the behaviour holds, but nothing pins it. The refusal names the root, not the manifest path.",
+   "resolution": "Add a dsv case that passes a nonexistent manifest positional and asserts a non-zero exit with the path or its root in the message and the cwd project unchanged."},
+  {"id": 3, "severity": "low", "file": "tests/test_audit_lookup.py:2574-2603 (co1) vs tests.gate",
+   "issue": "co1, the case that pins the R7 conventions bullet, lives in tests/test_audit_lookup.py, but the task's tests.gate is only `python3 tools/sweep-selftests.py tests/test_audit_task.py`. The recorded gate run (passed) therefore never ran co1. The executor ran test_audit_lookup.py by hand (143/143) but no recorded gate did.",
+   "resolution": "Add tests/test_audit_lookup.py to the task's gate set (retarget --gate-set) so the run that records the evidence also runs co1."}
+ ],
+ "preExisting": [
+  {"id": 1, "severity": "low", "file": "tests/test_audit_task.py (lo-po4)",
+   "issue": "Run directly from the task worktree (`python3 tests/test_audit_task.py --selftest`, CLAUDE_PROJECT_DIR unset) the suite ends 1112/1113 with lo-po4 FAIL: its output carries a 'WARNING: you are standing in <worktree> ...' line the case does not expect. It is the same 1112/1113 the executor's red-first helper saw. It looks like a cwd-inside-a-project dependency unrelated to default-skills. I did not run it at the base, so it is unverified there. The sweep, which runs in a scratch cwd, passed.",
+   "resolution": "Check whether lo-po4 assumes a cwd outside any project, and pin its cwd if so."}
+ ],
+ "intent": {
+  "answer": "diverges",
+  "note": "The task description is empty in the brief, so I judged against the fixed findings' text (P138-R5..R8 in docs/audit/phases/P138.json) and tests.add. R5 holds: audit-task.py:13912 `_manifest_from_positional(args)` is now the first statement of cmd_default_skills, before `_resolve_project`, matching cmd_reindex. dsv3 passes the plan as the lone positional from a cwd in another project and asserts the named plan holds the list and one journal row, the cwd project is untouched, and the call order. R6 holds: meta.defaultSkills in docs/audit/audit-plan.json of the main checkout is ['writing-python','before-you-claim','no-silent-pass'], and the journal holds a defaultskills.change row with that value and a reason. R8 holds: `check(\"vf4 SECOND-DIRECTION CASE:` has its space back. R7 only partly: the conventions bullet now reads 'meta.defaultSkills first, then each tag's meta.areas[tag].skills, then task.skills' (matches _areas.resolve_skills), but the finding's other two statements (audit-lookup.py:656 brief line, _manifest_typos.py warning exits) are unchanged, and the outcome calls _manifest_typos.py 'still correct'. Claim vs diff: the outcome's statements about R5, R7's bullet, R8, and the left-alone files match the diff. The outcome lists R7 as done without saying the brief line and warning were left.",
+  "missing": ["the task's own `description` (empty in the brief)"],
+  "redFirst": "could-not-prove",
+  "redFirstBasis": "The executor's filed word is could-not-prove, with a basis that quotes a run at HEAD in a throwaway tree failing dsv3, and then states that the working-tree implementation did not reach all-pass (1112/1113). I reproduced the 1112/1113 end state when running the suite directly from the worktree: lo-po4 fails, a cwd artifact (see preExisting), not dsv3. The basis does not show the red turning green in that throwaway, so I echo could-not-prove. The executor's claims line says the cases were seen red on unfixed code (1111/1113, 142/143).",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "tests.gate is the literal `python3 tools/sweep-selftests.py tests/test_audit_task.py`, which selects only tests/test_audit_task.py (1113 cases, the sweep passed it). I read dsv1/dsv3 and the default-skills flag-table cases around :4652 and :19114. dsv1 and dsv2 use --project-dir, so they would still pass with the positional deleted, but they never claimed to cover it; dsv3 fails if the call is removed (moved == -1 and the behavioural half fails). I did not read the other cases in that file. co1 is outside the gate (finding 3)."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

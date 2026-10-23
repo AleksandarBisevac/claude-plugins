@@ -136,7 +136,7 @@ import _evidence_io as _evio  # noqa: E402  (project/config resolution)
 import _excerpt  # noqa: E402  (a red step's output is quoted both ends, never head-cut)
 import _loader  # noqa: E402  (the one way scripts/ loads hooks/_config as a library)
 import _clause_coverage as _cc  # noqa: E402  (task_clauses: the one numbering of a task's clauses)
-import _areas  # noqa: E402  (resolve_skills: area skills first, then the task's)
+import _areas  # noqa: E402  (resolve_skills: the plan default, then the area's, then the task's)
 import _filed_returns as _fr  # noqa: E402  (where `submit` filed a return, and
 #                                            which tasks a phase review owes)
 import _config_rules  # noqa: E402  (review_per_task_mode: the config's reading now)

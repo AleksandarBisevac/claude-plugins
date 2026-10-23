@@ -1,0 +1,41 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_run_agent_session.py tests/test__doctor_policy.py tests/test__skill_places.py tests/test__deps.py tests/test_drive_phase.py tests/test__output_lints.py (run in the task tree, output to a file, no pipe)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-23T02:33:54Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_run_agent_session.py tests/test__doctor_policy.py` in a throwaway tree at HEAD exited 1 with failing cases dp49 (house FAIL), dp51 (house FAIL), dp52 (house FAIL), ras35 (house FAIL), ras39 (house FAIL), ras51 (house FAIL), ras43 (house FAIL), ras47 (house FAIL) and 4 more, but with the working tree's implementation the task's tests do not all pass (no tally or error reader matched its output, so no line of it is quoted as decisive), so the red is not one the fix turns green - SELFTEST FAILED: 53/60 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "New plugins/audit/scripts/status/_skill_places.py (plugin_name, skill_places, resolve_skill with an optional inventory mode), placed in tools/lints/_deps.py LAYERS beside _claude_home. run-agent-session.py: its local skill_places, _running_plugin_name and SKILL_NAME are deleted; find_skills is built on _skill_places.resolve_skill (no inventory). Order is now personal (claude_home()/skills), project (.claude/skills), then the running plugin; plugin:skill only from that plugin. skills_prompt opens each <skill> element with 'Base directory for this skill: <dirname of SKILL.md>'. The refusal now says 'looked in, in this order: ... (only these places are searched ...)'. The docstring beside --append-system-prompt-file says claude --help does not list it and cites the probe (claude 2.1.307, 2026-10-23, --agents/--agent, reviewer quoted the token). _doctor_policy.check_plan_skills decides 'missing' through resolve_skill with the discovery scan as inventory ({name: path}); _plan_skills_travel takes the resolved map and reports a name that resolved but is not in the scan as UNKNOWN (found at <path>, not graded) instead of skipping it. PLUGIN-BUILD-GUIDE.md: tree line, layer-graph lines for _skill_places/_doctor_policy/run-agent-session, a _skill_places section, the run-agent-session --skill paragraph with the new order and base-directory line, and a clause in the _doctor_policy section. Suites: tests/test_run_agent_session.py 60 cases (ras35/39/43 flipped to personal-first; ras47-ras51 added), tests/test__doctor_policy.py 53 (dp49-dp52; _skills helper pins CLAUDE_CONFIG_DIR), tests/test__skill_places.py 16 (sp1-sp16). Gate run in the tree: python3 tools/sweep-selftests.py tests/test_run_agent_session.py tests/test__doctor_policy.py tests/test__skill_places.py tests/test__deps.py tests/test_drive_phase.py tests/test__output_lints.py -> 6/6 files ok, 1112 cases, exit 0. Red before the change: test_run_agent_session 53/60 (ras35, ras39, ras43, ras47, ras49, ras50, ras51 red), test__doctor_policy 50/56 then (dp49, dp51, dp52 red); sp1-sp16 were written before _skill_places.py existed (the module import fails without it). Cases that pass on both sides and lock kept behaviour: ras48 (a personal skill does not answer plugin:skill), dp50 (a scan-only bare name still resolves). Not done: the real reviewer-role session of tests.add entry 1 was replaced by the supplied 2026-10-23 probe; ras50 pins that the file says so beside the flag. Finding left for another task: _panel_discovery._scan_skills dedupes project before user, the reverse of the documented order, so doctor's portability grade can describe the project copy of a name the session loads from the personal one. Dependants: drive-phase.py/test_drive_phase.py (--skill interface, write_record fields unchanged; test_drive_phase passes, 560 cases); _config_rules/_panel_settings/audit-config.schema.json (basename only, no config key touched); audit-doctor.py, tests/test__doctor_report.py, CHANGELOG.md (check_plan_skills keeps its signature; doctor now also resolves personal-only and own-plugin-qualified names it used to call missing); PLUGIN-BUILD-GUIDE.md (skill_places mention replaced by _skill_places, graph lines updated); tests/test__deps.py passes (254 cases) with the new LAYERS entry.",
+    "descriptive": "The launcher and doctor now ask one resolver where a named skill lives, in Claude Code's documented personal-over-project order, and each appended skill carries its base directory."
+  },
+  "testsAdded": [
+    "run-agent-session: the order of the resolved skills and of the places named in a refusal is personal, project, plugin (ras35, ras39, ras43, ras47)",
+    "run-agent-session: a personal skill of a plugin skill's bare name does not answer plugin:skill (ras48, passes before and after)",
+    "run-agent-session: every appended skill is headed by its base directory, once, ahead of its body (ras49)",
+    "run-agent-session: the source says beside --append-system-prompt-file that --help does not list it, with the probe's build and date (ras50)",
+    "run-agent-session: the refusal says only those places are searched (ras51)",
+    "_skill_places: order, qualified names, non-names, inventory mode, plugin_name (sp1-sp16)",
+    "doctor: a personal-only skill and a qualified own-plugin skill resolve, a scan-only name still does, and doctor and the launcher agree over nine names (dp49-dp52)"
+  ],
+  "casesAdded": [
+    "ras50",
+    [
+      "ras35",
+      "ras39",
+      "ras43",
+      "ras47"
+    ],
+    "ras49",
+    [
+      "ras51",
+      "dp52"
+    ]
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:664e9b92142346da5099549948316444c2165955b216b555389793bb3e6ee4c0\",\"dirtyDigest\":\"sha256:b82456ccc79cd7671619a0abdf1fb9ebe64750c6e558cbd035952f13b7f04b61\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"f327a800b4431eea\",\"plugins/audit/scripts/governance/run-agent-session.py\":\"3c05b3d5f593cb29\",\"plugins/audit/scripts/status/_doctor_policy.py\":\"d401ffe2574d9073\",\"plugins/audit/scripts/status/_skill_places.py\":\"db4168ad9060574f\",\"tests/test__doctor_policy.py\":\"2cc37f67d6dee15b\",\"tests/test__skill_places.py\":\"6842248b108c0dcc\",\"tests/test_run_agent_session.py\":\"034ec6729e84ea88\",\"tools/lints/_deps.py\":\"dc608b631353dfea\"},\"head\":\"6198f7df\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/scripts/governance/run-agent-session.py\",\"plugins/audit/scripts/status/_doctor_policy.py\",\"plugins/audit/scripts/status/_skill_places.py\",\"tests/test__doctor_policy.py\",\"tests/test__skill_places.py\",\"tests/test_run_agent_session.py\",\"tools/lints/_deps.py\"],\"scopeDigest\":\"sha256:2eda0dcb3615fa135beee7ea707da5d067f4ee9ee29cac2f04b10b03e177fa42\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

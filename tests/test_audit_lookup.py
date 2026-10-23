@@ -2571,7 +2571,37 @@ def _selftest():
         _harness.stage(check, "wp-block", _writer_prompt_cases)
         _harness.stage(check, "rq-block", _red_command_reader_cases)
         _harness.stage(check, "ow-block", _owed_red_first_brief_cases)
+        _harness.stage(check, "co-block", _conventions_order_cases)
     return _harness.run(body)
+
+
+def _conventions_order_cases(check):
+    """The executor-skills bullet of manifest-conventions.md names the levels in
+    the order `_areas.resolve_skills` resolves them, and names all three."""
+    import _areas
+    manifest = {"meta": {"defaultSkills": ["from-plan"],
+                         "areas": {"api": {"skills": ["from-area"]}}}}
+    resolved = _areas.resolve_skills(
+        manifest, {"id": "P1", "area": "api"},
+        {"id": "P1.1", "skills": ["from-task"]})
+    path = os.path.join(_output.PLUGIN_ROOT, "reference",
+                        "manifest-conventions.md")
+    with open(path, "r", encoding="utf-8") as fh:
+        text = fh.read()
+    start = text.find("**Executor skills**")
+    end = text.find("\n- ", start + 1) if start >= 0 else -1
+    bullet = " ".join(text[start:end if end > start else None].split()) \
+        if start >= 0 else ""
+    at_plan = bullet.find("meta.defaultSkills")
+    at_area = bullet.find("meta.areas[tag].skills")
+    at_task = bullet.find("task.skills")
+    check("co1 the conventions bullet for executor skills states the three "
+          "levels in the order the resolver applies them, plan default then "
+          "each tag's area then the task, and no longer calls the area first: "
+          "%r" % (bullet,),
+          resolved == ["from-plan", "from-area", "from-task"]
+          and 0 <= at_plan < at_area < at_task
+          and "area first" not in bullet)
 
 
 def _red_command_reader_cases(check):

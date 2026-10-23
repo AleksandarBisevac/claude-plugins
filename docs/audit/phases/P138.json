@@ -29,59 +29,88 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/run-agent-session.py:211-228 (and tests/test_run_agent_session.py ras35)",
         "issue": "Unverified: the reviewer's skills are appended with --append-system-prompt-file ALONGSIDE --agents/--agent audit-reviewer, but the only live probe the phase cites (claude 2.1.307) was main-session mode without --agent. The executor states no live check was made (fake claude only). Nothing handed shows that, under --agent, the appended file still reaches the session's system prompt rather than being replaced by the agent's prompt. ras45 pins only that the argv carries both flags and that the stub saw the file, so it would pass even if claude ignored the append for an agent session. The phase's desired outcome ('every writer AND reviewer session ... from the first turn') rests on this.",
-        "resolution": "Before sign-off, run one cheap real reviewer-role session (--agent audit-reviewer plus --append-system-prompt-file holding a sentinel) and record that the session quotes the sentinel with no Skill call; if it does not, append the skills to the --agents definition's prompt for the reviewer instead. Record the probe command and result in the task or the guide paragraph."
+        "resolution": "Before sign-off, run one cheap real reviewer-role session (--agent audit-reviewer plus --append-system-prompt-file holding a sentinel) and record that the session quotes the sentinel with no Skill call; if it does not, append the skills to the --agents definition's prompt for the reviewer instead. Record the probe command and result in the task or the guide paragraph.",
+        "fixTask": "P138.4-myr"
       },
       {
         "id": "P138-R2",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/run-agent-session.py:211-228, tests/test_run_agent_session.py ras35",
         "issue": "The resolution order is project, then user, then plugin, and ras35 asserts that the project copy of a name the user also has wins. As I recall Claude Code's documented precedence for same-named skills it is enterprise, then personal (<outside-repo>), then project, with plugin skills namespaced as plugin:skill only; I did not verify this (no network, no live session), so treat it as a question the task should settle. If I recall correctly, a same-named project and user skill would be preloaded from the project while the session's own Skill tool would load the user's, i.e. two different bodies for one name. The task description states the project-first order, so this is not a contradiction of the clause; it is the clause possibly resting on a wrong premise, and a test now pins it. Also, a bare name is looked up in the plugin's skills/, whereas a session sees plugin skills only as plugin:skill.",
-        "resolution": "Check the order against the Claude Code skills documentation (verifying-external-behavior) and, if personal outranks project, swap the two entries in skill_places and the order in ras35/ras43 and the guide paragraph; if project outranks user, cite the source in the skill_places docstring."
+        "resolution": "Check the order against the Claude Code skills documentation (verifying-external-behavior) and, if personal outranks project, swap the two entries in skill_places and the order in ras35/ras43 and the guide paragraph; if project outranks user, cite the source in the skill_places docstring.",
+        "fixTask": "P138.4-myr"
       },
       {
         "id": "P138-R3",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/run-agent-session.py:271-275",
         "issue": "skills_prompt wraps the SKILL.md text as <skill name=...> but never says where the skill lives. A skill that points at sibling files gets no base directory: .claude/skills/before-you-claim/SKILL.md:117 names `references/questions.md`, and before-you-claim is one of the three Python house skills this repo's plan means to preload. The Skill tool would give the session the directory; this path does not, so the reference cannot be followed.",
-        "resolution": "Put the skill's directory in the wrapper (e.g. <skill name=\"...\" dir=\"...\">) and add a case that the attribute is the SKILL.md's folder."
+        "resolution": "Put the skill's directory in the wrapper (e.g. <skill name=\"...\" dir=\"...\">) and add a case that the attribute is the SKILL.md's folder.",
+        "fixTask": "P138.4-myr"
       },
       {
         "id": "P138-R4",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/run-agent-session.py:211-251",
         "issue": "A second resolver of 'where does this plan-named skill live': audit:doctor's check_plan_skills (status/_doctor_policy.py:385) discovers skills through installed plugins as well, while skill_places knows three places and refuses any plugin:skill whose plugin is not the running one. A plan naming an installed third-party skill (e.g. superpowers:...) that doctor reports as resolving makes the drive refuse the launch at run time, with no way out except task.skills null. The refusal is what the clause asked for; the divergence between the two resolvers and the lack of a pre-launch signal is the cost.",
-        "resolution": "Either say in the refusal message that only the project, the user's directory and this plugin are searched (and that skills: null opts out), or have doctor's check use skill_places so the two agree; consider running find_skills in the drive before starting the task so the refusal comes before the task is marked in_progress."
+        "resolution": "Either say in the refusal message that only the project, the user's directory and this plugin are searched (and that skills: null opts out), or have doctor's check use skill_places so the two agree; consider running find_skills in the drive before starting the task so the refusal comes before the task is marked in_progress.",
+        "fixTask": "P138.4-myr"
       },
       {
         "id": "P138-R5",
         "severity": "med",
         "file": "plugins/audit/scripts/manifest/audit-task.py:14058-14090 (cmd_default_skills)",
         "issue": "The verb advertises a manifest positional (usage block `default-skills (--skills a,b [--replace] | --remove) [manifest]`; verbs-in-full.md `[<manifestPath>]`) but never calls `_manifest_from_positional(args)` as `cmd_reindex` (and the other id-less verbs) does. The path lands in `args.title` and is silently ignored, so the plan written is the one resolved from --project-dir / CLAUDE_PROJECT_DIR / cwd, not the one named. Checked by running both verbs against a scratch repo with a nonexistent manifest path: `reindex /nonexistent/zzz.json` exits 2 with 'manifest not found: /nonexistent/zzz.json', while `default-skills --remove /nonexistent/zzz.json` ignores the path and answers about the scratch repo's own plan. A caller who names plan X and gets plan Y written is the lock/journal/manifest split the helper's own docstring warns of. No case passes a manifest positional, so dsv1/dsv2 cannot see it.",
-        "resolution": "Call `_manifest_from_positional(args)` first in cmd_default_skills, before `_resolve_project`, and add a dsv case that passes the plan path as the positional with a different --project-dir and asserts the named plan changed and a nonexistent path is refused by name."
+        "resolution": "Call `_manifest_from_positional(args)` first in cmd_default_skills, before `_resolve_project`, and add a dsv case that passes the plan path as the positional with a different --project-dir and asserts the named plan changed and a nonexistent path is refused by name.",
+        "fixTask": "P138.3-myr"
       },
       {
         "id": "P138-R6",
         "severity": "med",
         "file": "plugins/audit/scripts/manifest/audit-task.py (whole diff) / docs/audit/audit-plan.json",
         "issue": "contradicts task clause: 'Declare this repository's Python house skills there through the plugin's own verb ... writing-python, before-you-claim, no-silent-pass.' The diff declares nothing; the executor's outcome says 'Not done by this task ... a post-merge step with the verb'. The clause was in the description and the phase outcome ('a plan can name house skills once') is not exercised for this repo until it is done, so the intent is not met as written. The narrowed scope is the executor's own, not the description's.",
-        "resolution": "Run `audit-task.py default-skills --skills writing-python,before-you-claim,no-silent-pass --reason ...` against the plan from the merged code (or file a dedicated follow-up task for it before P138 signs off) and record it, rather than leaving it as a prose note."
+        "resolution": "Run `audit-task.py default-skills --skills writing-python,before-you-claim,no-silent-pass --reason ...` against the plan from the merged code (or file a dedicated follow-up task for it before P138 signs off) and record it, rather than leaving it as a prose note.",
+        "fixTask": "P138.3-myr"
       },
       {
         "id": "P138-R7",
         "severity": "low",
         "file": "plugins/audit/reference/manifest-conventions.md:259; plugins/audit/scripts/status/audit-lookup.py:655; plugins/audit/scripts/manifest/_manifest_typos.py:244-260",
         "issue": "Three statements of the resolution order still describe two levels. manifest-conventions.md says executor skills are 'each tag's skills first, then task.skills ... area first' (a file the executor/orchestrator reads, and the one the area section points to as the rule); the executor brief prints 'No skill resolves for this task: no area default and no task skill.'; the unresolved-skills warning offers only 'set task.skills, register default skills on an area, or write null' and `_skills_in_use` ignores a plan that wrote only meta.defaultSkills. Each now omits the new first level.",
-        "resolution": "Update the conventions bullet to 'meta.defaultSkills, then each tag's skills, then task.skills'; say 'no plan default, no area default and no task skill' in the brief; add 'set meta.defaultSkills with audit-task.py default-skills' to the warning's exits."
+        "resolution": "Update the conventions bullet to 'meta.defaultSkills, then each tag's skills, then task.skills'; say 'no plan default, no area default and no task skill' in the brief; add 'set meta.defaultSkills with audit-task.py default-skills' to the warning's exits.",
+        "fixTask": "P138.3-myr"
       },
       {
         "id": "P138-R8",
         "severity": "low",
         "file": "tests/test_audit_task.py:4655",
         "issue": "The edit that added the default-skills flag row also changed the title `check(\"vf4 SECOND-DIRECTION CASE:` to `check(\"vf4SECOND-DIRECTION CASE:` (space lost; visible in the diff as an unrelated -/+ pair). Case ids are read by name elsewhere in this repo, so a mangled id is a case a title search no longer finds.",
-        "resolution": "Restore the space: `vf4 SECOND-DIRECTION CASE:`."
+        "resolution": "Restore the space: `vf4 SECOND-DIRECTION CASE:`.",
+        "fixTask": "P138.3-myr"
+      },
+      {
+        "id": "P138-R9",
+        "severity": "low",
+        "file": "plugins/audit/scripts/status/audit-lookup.py:656; plugins/audit/scripts/manifest/_manifest_typos.py:244-260",
+        "issue": "P138-R7 is fixed for one of its three statements only. Its resolution reads 'say \"no plan default, no area default and no task skill\" in the brief; add \"set meta.defaultSkills with audit-task.py default-skills\" to the warning's exits'. The diff changes the conventions bullet and a comment at audit-lookup.py:139, but the brief line still reads 'No skill resolves for this task: no area default and no task skill.' and the unresolved-skills warning still offers only 'set task.skills, register default skills on an area in meta.areas, or write \"skills\": null'. The outcome says '_manifest_typos.py ... untouched and still correct', but the warning's exit list omits the plan-level exit the phase introduced. _skills_in_use (_manifest_typos.py:178-195) also does not count meta.defaultSkills as use.",
+        "resolution": "Reword the brief line to name the plan default, add the meta.defaultSkills exit to the warning (and its test__manifest_typos case), or record in the outcome that those two are deliberately left and why."
+      },
+      {
+        "id": "P138-R10",
+        "severity": "low",
+        "file": "tests/test_audit_task.py:19117-19150 (dsv3)",
+        "issue": "P138-R5's resolution asks for a case that 'asserts the named plan changed and a nonexistent path is refused by name'. dsv3 covers the first half and the call order, not the nonexistent-path half. I ran `default-skills --remove /nonexistent/zzz.json` outside any plan with the fixed code: exit 2, '[audit-task] not a directory: /nonexistent', so the behaviour holds, but nothing pins it. The refusal names the root, not the manifest path.",
+        "resolution": "Add a dsv case that passes a nonexistent manifest positional and asserts a non-zero exit with the path or its root in the message and the cwd project unchanged."
+      },
+      {
+        "id": "P138-R11",
+        "severity": "low",
+        "file": "tests/test_audit_lookup.py:2574-2603 (co1) vs tests.gate",
+        "issue": "co1, the case that pins the R7 conventions bullet, lives in tests/test_audit_lookup.py, but the task's tests.gate is only `python3 tools/sweep-selftests.py tests/test_audit_task.py`. The recorded gate run (passed) therefore never ran co1. The executor ran test_audit_lookup.py by hand (143/143) but no recorded gate did.",
+        "resolution": "Add tests/test_audit_lookup.py to the task's gate set (retarget --gate-set) so the run that records the evidence also runs co1."
       }
     ],
-    "outcome": "[findings: 8 - 0 high, 4 med, 4 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 11 - 0 high, 4 med, 7 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -155,7 +184,7 @@
     {
       "id": "P138.2",
       "title": "A plan names house skills once, and every phase's tasks resolve them",
-      "status": "in_progress",
+      "status": "done",
       "description": "Today a skill reaches a task only through a registered area the phase names, or the task's own list, so a plan whose phases carry no area (this one) resolves nothing. Add a plan-wide default - an existing mechanism if _areas already has one, else a new meta key read first by resolve_skills, before area defaults and the task's own (adding a key is free under COMPATIBILITY.md; document it there and in the schema and audit-config docs as appropriate) - with task.skills null still opting out. Declare this repository's Python house skills there through the plugin's own verb (no hand edit of docs/audit): writing-python, before-you-claim, no-silent-pass. Cases: a phase with no area resolves the plan default; area and task skills follow it, deduped; null opts out; the validator accepts the key and rejects a non-list.",
       "files": [
         "plugins/audit/scripts/manifest/_areas.py",
@@ -190,19 +219,197 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6198f7df59af",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Worktree P138.2 still held attempt 1's uncommitted work, kept. Added meta.defaultSkills (a new meta key; _areas had no plan-wide mechanism): _areas.plan_default_skills, resolve_skills reading plan default then area then task skills, deduped at first mention, task.skills null still opts out; _areas.validate_default_skills(meta) rejects a non-list (including null) and non-string/blank entries. Schema key meta.defaultSkills (array of strings). audit-task.py: new verb `default-skills --skills a,b [--replace] [--reason] | --remove` with journal kind defaultskills.change. Docs: verbs-in-full.md, COMPATIBILITY.md (adding the key is free), PLUGIN-BUILD-GUIDE.md. VALIDATOR WIRING IS DONE: _manifest_vocab.KNOWN_META gains defaultSkills, and _manifest_phases._check_areas calls _areas.validate_default_skills(meta) and extends findings/warnings (so test_validate_manifest dsk1-dsk3 are green). Retry fix: added a reasoned row for meta.defaultSkills to SCHEMA_EXEMPTIONS in tools/demo/gen-demo-manifest.py (via Edit). The reason was checked: grep shows defaultSkills read only by _areas, _manifest_vocab/_phases/_typos, audit-task, audit-lookup, _doctor_policy and the schema; panel/report modules do not reference it, the panel (_panel_composition._skills_of and area_skills) shows a task's own skills and an area's but never the resolved list, and _help._areas_topic resolves over a synthetic manifest. The demo fixture was NOT changed, so no committed rendered artifact moves. Gate, no pipe: `python3 tools/sweep-selftests.py tests/test_gen_demo_manifest.py tests/test__areas.py tests/test_validate_manifest.py tests/test_audit_task.py tests/test__deps.py tests/test__output_lints.py tests/test__manifest_vocab.py tests/test__manifest_phases.py` exit 0: 8/8 files ok, 2052 cases (test__areas 130, test__deps 254, test__manifest_phases 132, test__manifest_vocab 65, test__output_lints 169, test_audit_task 1112, test_gen_demo_manifest 131, test_validate_manifest 59). Dependants: _areas.py importers (_help, drive-phase, _manifest_phases, _manifest_typos, audit-task, _panel_composition, _panel_policy) still correct - resolve_skills keeps its signature and, with no meta.defaultSkills, returns what it did; _manifest_vocab/_manifest_phases dependants still correct - one key added, one call added, 8-file sweep green; schema dependants (examples, starter, tests/test__manifest_io) still validate, key is optional; validate-manifest, gen-demo-manifest (SCHEMA_EXEMPTIONS row only, fixture untouched), tests and docs: green in the sweep above. Earlier process deviation (attempt 1 applied one audit-task.py batch via a python heredoc rewrite) stands as reported; this attempt used Edit only. Not done by this task: declaring the house skills on this repo's plan through the new verb (docs/audit is not hand-edited); that is a post-merge step with the verb.",
+        "descriptive": "A plan can now name house skills once (meta.defaultSkills) and every phase's tasks resolve them, validated and documented, with the demo-schema coverage lint satisfied."
       },
       "startedAt": "2026-10-23T01:51:42Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-23T02:11:53Z",
+      "verifiedBy": [
+        "tests/test__areas.py ds1-ds11: plan default resolves for a phase with no area, loads before area and task skills deduped, task.skills null opts out, validator shape cases",
+        "tests/test_validate_manifest.py dsk1-dsk3: validator accepts the key and rejects a non-list",
+        "tests/test_audit_task.py dsv1-dsv2 and verb-grid rows for the default-skills verb"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-23T02:11:51Z.e01703",
         "status": "passed",
         "at": "2026-10-23T02:11:51Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "6198f7df59af",
+        "at": "2026-10-23T02:11:53Z",
+        "return": "docs/audit/evidence/returns/P138.2/20261023T015142Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-23T01:55:16Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__areas.py` in a throwaway tree at HEAD exited 1 with failing cases ds1 (house FAIL), ds2 (house FAIL), ds4 (house FAIL), ds5 (house FAIL), ds7 (house FAIL), tests/test__areas.py: exited 1 (house FAIL), but with the working tree's implementation the task's tests do not all pass (no tally or error reader matched its output, so no line of it is quoted as decisive), so the red is not one the fix turns green - SELFTEST FAILED: 33/39 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P138.3-myr",
+      "title": "The default-skills verb takes its manifest positional, the docs state the three-level order, and this plan's house skills are declared",
+      "status": "in_progress",
+      "description": "",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "tests/test_audit_task.py",
+        "plugins/audit/reference/manifest-conventions.md",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/reference/verbs-in-full.md",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/reference/manifest-conventions.md",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/scripts/manifest/_manifest_typos.py",
+        "tests/test_audit_task.py",
+        "tests/test_audit_lookup.py",
+        "tests/test__manifest_typos.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_audit_task.py: Call `_manifest_from_positional(args)` first in cmd_default_skills, before `_resolve_project`, and add a dsv case that passes the plan path as the positional ...",
+          "tests/test_audit_task.py: Run `audit-task.py default-skills --skills writing-python,before-you-claim,no-silent-pass --reason ...` against the plan from the merged code (or file a ...",
+          "tests/test_audit_lookup.py: Update the conventions bullet to 'meta.defaultSkills, then each tag's skills, then task.skills'",
+          "tests/test_audit_task.py: Restore the space: `vf4 SECOND-DIRECTION CASE:`"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_task.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-23T02:12:48Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-23T02:12:33Z",
+          "text": "scope: plugins/audit/scripts/manifest/audit-task.py, plugins/audit/reference/manifest-conventions.md, plugins/audit/scripts/status/audit-lookup.py, plugins/audit/scripts/manifest/_manifest_typos.py, tests/test_audit_task.py, every path the finding(s) P138-R5, P138-R6, P138-R7, P138-R8 name"
+        },
+        {
+          "at": "2026-10-23T02:12:33Z",
+          "text": "scope: tests/test_audit_task.py, the suite that tests plugins/audit/scripts/manifest/audit-task.py (python: its import closure reaches plugins/audit/scripts/manifest/audit-task.py)"
+        },
+        {
+          "at": "2026-10-23T02:12:33Z",
+          "text": "scope: tests/test_audit_lookup.py, the suite that tests plugins/audit/scripts/status/audit-lookup.py (python: its import closure reaches plugins/audit/scripts/status/audit-lookup.py)"
+        },
+        {
+          "at": "2026-10-23T02:12:33Z",
+          "text": "scope: tests/test__manifest_typos.py, the suite that tests plugins/audit/scripts/manifest/_manifest_typos.py (python: its import closure reaches plugins/audit/scripts/manifest/_manifest_typos.py)"
+        },
+        {
+          "at": "2026-10-23T02:12:33Z",
+          "text": "no suite: plugins/audit/reference/manifest-conventions.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are plugins/audit/scripts/config/_help.py, tests/test__refs.py, tools/lints/_refs.py, tools/measure-context.py, tools/prove-gates.py"
+        },
+        {
+          "at": "2026-10-23T02:12:33Z",
+          "text": "scope: dropped docs/audit/audit-plan.json, named by the finding(s) P138-R5, P138-R6, P138-R7, P138-R8 but a record this commit already carries beside the task's own files, not a task's own work"
+        },
+        {
+          "at": "2026-10-23T02:12:33Z",
+          "text": "no test runner in this task's gate for the test P138-R5, P138-R6, P138-R7, P138-R8 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test_audit_task.py'], derived as from --gate; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P138-R5",
+        "P138-R6",
+        "P138-R7",
+        "P138-R8"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-23T02:42:37Z.6b83ec",
+        "status": "passed",
+        "at": "2026-10-23T02:42:37Z"
+      }
+    },
+    {
+      "id": "P138.4-myr",
+      "title": "Skill loading follows Claude Code's documented precedence, gives each skill its base directory, and has one resolver",
+      "status": "in_progress",
+      "description": "Docs (code.claude.com/docs/en/skills, 'Resolve skills that share a name'): 'Enterprise over personal, and personal over project'; plugin skills are namespaced plugin:skill and both load. Probed 2026-10-23 on claude 2.1.307: --agents/--agent with --append-system-prompt-file delivers the appended skill to the reviewer session (the session quoted the probe skill's token); --append-system-prompt-file works though claude --help does not list it - say so beside the flag with the probe and date. Make the order personal (<home>/.claude/skills) before project (.claude/skills), with plugin:skill only from that plugin; head each appended skill with its base directory the way the Skill tool does ('Base directory for this skill: <dir>') so a skill's references/ files resolve; and make audit:doctor's check_plan_skills and run-agent-session share one resolver of where a named skill lives.",
+      "files": [
+        "plugins/audit/scripts/governance/run-agent-session.py",
+        "plugins/audit/scripts/status/_doctor_policy.py",
+        "tests/test_run_agent_session.py",
+        "tests/test__doctor_policy.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/status/_skill_places.py",
+        "tests/test__skill_places.py",
+        "tools/lints/_deps.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_run_agent_session.py: Before sign-off, run one cheap real reviewer-role session (--agent audit-reviewer plus --append-system-prompt-file holding a sentinel) and record that the ...",
+          "tests/test_run_agent_session.py: Check the order against the Claude Code skills documentation (verifying-external-behavior) and, if personal outranks project, swap the two entries in ...",
+          "tests/test_run_agent_session.py: Put the skill's directory in the wrapper (e.g",
+          "tests/test_run_agent_session.py: Either say in the refusal message that only the project, the user's directory and this plugin are searched (and that skills: null opts out), or have doctor's ..."
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_agent_session.py tests/test__doctor_policy.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-23T02:12:52Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-23T02:12:46Z",
+          "text": "scope: plugins/audit/scripts/governance/run-agent-session.py, tests/test_run_agent_session.py, every path the finding(s) P138-R1, P138-R2, P138-R3, P138-R4 name"
+        },
+        {
+          "at": "2026-10-23T02:12:46Z",
+          "text": "scope: tests/test_run_agent_session.py, the suite that tests plugins/audit/scripts/governance/run-agent-session.py (python: its import closure reaches plugins/audit/scripts/governance/run-agent-session.py)"
+        },
+        {
+          "at": "2026-10-23T02:12:46Z",
+          "text": "no test runner in this task's gate for the test P138-R1, P138-R2, P138-R3, P138-R4 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test_run_agent_session.py tests/test__doctor_policy.py'], derived as from --gate; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P138-R1",
+        "P138-R2",
+        "P138-R3",
+        "P138-R4"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-23T02:48:20Z.9062d4",
+        "status": "passed",
+        "at": "2026-10-23T02:48:20Z"
       }
     }
   ],
