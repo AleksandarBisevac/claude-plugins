@@ -1,7 +1,7 @@
 {
   "id": "P138",
   "title": "A writer or reviewer session starts with the task's skills already loaded",
-  "status": "in_progress",
+  "status": "done",
   "description": "Diagnosis (stage 1 a1d-a4d, 2026-10-23): neither the writer prompt nor the plain prompt routes skills; in both arms the only thing that leads a session to the Skill tool is the superpowers SessionStart text, and the model takes that choice on its first turn or never - a1d/a2d and a3d/a4d had byte-identical prompts and session starts and split one-and-one. Probed on CLI 2.1.307: `--agents <file> --agent <name>` with a `skills` field does NOT preload the skill in -p main-session mode (the session answered NONE, as the control did); `--append-system-prompt <SKILL.md text>` does (the session quoted the skill's token with no tool call). _areas.resolve_skills already resolves a task's skills (area defaults, then the task's) for the executor brief, but run-agent-session never uses it, and this plan declares no area and no task skills.",
   "desiredOutcome": "Every writer and reviewer session the drive starts has the full text of each skill the task resolves to in its context from the first turn, recorded by name and digest in the session's record, and a plan can name house skills once for every phase; a named skill the launcher cannot find stops the launch by name",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "03e5d0c80a271dd888e44da6ee018e1d50fb3a48",
   "branch": "audit/p138-a-writer-or-reviewer-session-s",
-  "mergedAt": null,
+  "mergedAt": "2026-10-23T03:55:04Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -681,5 +681,6 @@
     "runId": "2026-10-23T03:54:49Z.ca4734",
     "status": "passed",
     "at": "2026-10-23T03:54:49Z"
-  }
+  },
+  "mergedHead": "4c02e038fb65512d3efac65ca7efac4686e48be9"
 }
