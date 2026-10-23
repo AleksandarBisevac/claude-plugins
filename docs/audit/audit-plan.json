@@ -43,7 +43,12 @@
           "answer": "Python 3.14.7"
         }
       }
-    }
+    },
+    "defaultSkills": [
+      "writing-python",
+      "before-you-claim",
+      "no-silent-pass"
+    ]
   },
   "phases": [
     {
@@ -886,6 +891,12 @@
       "title": "One answer to what an attempt changed that no task declares, and a committed task always closes",
       "status": "done",
       "shard": "phases/P137.json"
+    },
+    {
+      "id": "P138",
+      "title": "A writer or reviewer session starts with the task's skills already loaded",
+      "status": "in_progress",
+      "shard": "phases/P138.json"
     }
   ],
   "fileIndex": {
@@ -1242,7 +1253,8 @@
       "P129.7-izt",
       "P129.8-izt",
       "P130.8",
-      "P131.1"
+      "P131.1",
+      "P138.2"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -1599,7 +1611,11 @@
       "P135.3-kux",
       "P135.5-kux",
       "P137.1",
-      "P137.4-3y3"
+      "P137.4-3y3",
+      "P138.1",
+      "P138.2",
+      "P138.4-myr",
+      "P138.5-myr"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -3001,7 +3017,8 @@
       "P125.22",
       "P125.41-0h5",
       "P125.44-0h5",
-      "P130.29-ywo"
+      "P130.29-ywo",
+      "P138.3-myr"
     ],
     "plugins/audit/reference/orchestrator.md": [
       "P7.1",
@@ -3212,7 +3229,8 @@
       "P128.40-izt",
       "P130.6",
       "P130.21-ywo",
-      "P131.13"
+      "P131.13",
+      "P138.2"
     ],
     "plugins/audit/scripts/_deps.py": [
       "P15.1",
@@ -4239,7 +4257,8 @@
       "P130.7",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P138.2"
     ],
     "plugins/audit/scripts/manifest/_branch.py": [
       "P18.2",
@@ -4376,7 +4395,8 @@
       "P130.39-ywo",
       "P131.1",
       "P131.2",
-      "P131.13"
+      "P131.13",
+      "P138.2"
     ],
     "plugins/audit/scripts/manifest/_manifest_rules.py": [
       "P18.2",
@@ -4446,7 +4466,8 @@
       "P131.1",
       "P131.2",
       "P131.15-dau",
-      "P131.13"
+      "P131.13",
+      "P138.2"
     ],
     "plugins/audit/scripts/manifest/_merge_install.py": [
       "P60.5",
@@ -4673,7 +4694,9 @@
       "P131.13",
       "P132.3",
       "P137.1",
-      "P137.7-3y3"
+      "P137.7-3y3",
+      "P138.2",
+      "P138.3-myr"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -4773,7 +4796,8 @@
       "P130.8",
       "P130.23-ywo",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P138.2"
     ],
     "plugins/audit/scripts/panel/_panel_composition.py": [
       "P18.7",
@@ -4806,7 +4830,8 @@
       "P122.8-z4y",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P138.5-myr"
     ],
     "plugins/audit/scripts/panel/_panel_page.py": [
       "P47.3",
@@ -5174,7 +5199,9 @@
       "P130.8",
       "P131.1",
       "P131.2",
-      "P131.15-dau"
+      "P131.15-dau",
+      "P138.4-myr",
+      "P138.5-myr"
     ],
     "plugins/audit/scripts/status/_doctor_report.py": [
       "P53.5",
@@ -5396,7 +5423,8 @@
       "P131.7",
       "P131.18-dau",
       "P132.3",
-      "P132.4"
+      "P132.4",
+      "P138.3-myr"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -7773,7 +7801,8 @@
       "P126.17-13q",
       "P125.27",
       "P125.67-0h5",
-      "P125.78-0h5"
+      "P125.78-0h5",
+      "P138.6-myr"
     ],
     "tools/check-example-ledgers.py": [
       "P32.10",
@@ -9907,7 +9936,9 @@
       "P137.1",
       "P137.2",
       "P137.5-3y3",
-      "P137.9-3y3"
+      "P137.9-3y3",
+      "P138.1",
+      "P138.6-myr"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -10164,7 +10195,9 @@
       "P131.1",
       "P131.2",
       "P131.13",
-      "P132.3"
+      "P132.3",
+      "P138.2",
+      "P138.3-myr"
     ],
     "docs/research/pipeline-cost-results.md": [
       "P118.19-v7t",
@@ -10247,7 +10280,8 @@
       "P122.8-z4y",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P138.3-myr"
     ],
     "plugins/audit/scripts/manifest/ado-connect.py": [
       "P122.8-z4y",
@@ -10762,7 +10796,8 @@
       "P86.4",
       "P131.15-dau",
       "P131.18-dau",
-      "P131.19-dau"
+      "P131.19-dau",
+      "P138.4-myr"
     ],
     "tools/lints/_refs.py": [
       "P130.8",
@@ -10942,7 +10977,8 @@
       "P131.1"
     ],
     "tests/test__areas.py": [
-      "P131.1"
+      "P131.1",
+      "P138.2"
     ],
     "tests/test__branch.py": [
       "P131.1"
@@ -10988,7 +11024,9 @@
       "P131.1"
     ],
     "tests/test__doctor_policy.py": [
-      "P131.1"
+      "P131.1",
+      "P138.4-myr",
+      "P138.5-myr"
     ],
     "tests/test__doctor_report.py": [
       "P131.1"
@@ -11078,7 +11116,8 @@
       "P131.1"
     ],
     "tests/test__manifest_typos.py": [
-      "P131.1"
+      "P131.1",
+      "P138.3-myr"
     ],
     "tests/test__manifest_vocab.py": [
       "P131.1",
@@ -11101,7 +11140,8 @@
       "P131.1"
     ],
     "tests/test__panel_discovery.py": [
-      "P131.1"
+      "P131.1",
+      "P138.5-myr"
     ],
     "tests/test__panel_page.py": [
       "P131.1",
@@ -11283,7 +11323,8 @@
       "P131.18-dau",
       "P132.3",
       "P132.4",
-      "P132.5-5mm"
+      "P132.5-5mm",
+      "P138.3-myr"
     ],
     "tests/test_audit_status.py": [
       "P131.1",
@@ -11298,7 +11339,9 @@
       "P132.5-5mm",
       "P132.3",
       "P137.1",
-      "P137.7-3y3"
+      "P137.7-3y3",
+      "P138.2",
+      "P138.3-myr"
     ],
     "tests/test_audit_usage.py": [
       "P131.1"
@@ -11355,7 +11398,9 @@
       "P137.2",
       "P137.5-3y3",
       "P137.7-3y3",
-      "P137.9-3y3"
+      "P137.9-3y3",
+      "P138.1",
+      "P138.6-myr"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -11493,7 +11538,8 @@
       "P131.1"
     ],
     "tests/test_validate_manifest.py": [
-      "P131.1"
+      "P131.1",
+      "P138.2"
     ],
     "tests/test_verify_invariants.py": [
       "P131.1"
@@ -11512,7 +11558,8 @@
     ],
     "tools/demo/gen-demo-manifest.py": [
       "P131.2",
-      "P132.3"
+      "P132.3",
+      "P138.2"
     ],
     "tools/demo/gen-demo-usage.py": [
       "P131.2"
@@ -11537,7 +11584,9 @@
       "P135.3-kux",
       "P135.4-kux",
       "P135.5-kux",
-      "P137.4-3y3"
+      "P137.4-3y3",
+      "P138.1",
+      "P138.4-myr"
     ],
     "tests/test_run_agent_session.py": [
       "P131.3",
@@ -11546,7 +11595,9 @@
       "P135.4-kux",
       "P135.5-kux",
       "P136.1",
-      "P137.4-3y3"
+      "P137.4-3y3",
+      "P138.1",
+      "P138.4-myr"
     ],
     "plugins/audit/scripts/governance/_clause_coverage.py": [
       "P131.7"
@@ -11588,6 +11639,14 @@
     ],
     "tests/": [
       "P137.3-3y3"
+    ],
+    "plugins/audit/scripts/status/_skill_places.py": [
+      "P138.4-myr",
+      "P138.5-myr"
+    ],
+    "tests/test__skill_places.py": [
+      "P138.4-myr",
+      "P138.5-myr"
     ]
   },
   "bugs": [
