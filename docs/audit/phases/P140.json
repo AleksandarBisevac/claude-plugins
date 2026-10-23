@@ -22,57 +22,70 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P140-R1",
         "severity": "med",
         "file": "tools/verify.sh:956-966,237-264",
         "issue": "contradicts task clause 'printing which bugs and held phases it is releasing over when a bypass is armed' on the surface the owner reads: no_open_bugs is called through run(), which in the default (non-LOUD, non-CI) mode sends the step's output to $WORKDIR/step.log and prints only 'ok' when the step passes. The 'ok: released over by #release-with-bugs armed for this session: ...' sentence that release.py permitted prints is therefore discarded in exactly the armed-green case. The same holds under release.py's verify-release step, which keeps only 'tools/verify.sh --release is green' (release.py:428-431). rl20b asserts the function's own stdout contains BUG-4, not that the verify row shows it, so the executor's claim 'names what it releases over' is true of the function and untrue of a local verify.sh --release run.",
-        "resolution": "Make the armed-green case reach the terminal: have no_open_bugs print the verdict line to stderr or to a channel run() does not capture, or have run() show the log of a step that opts in. Add a rl20 case that runs the verify.sh row quietly and asserts the 'released over' line appears in what the user sees.",
-        "fixTask": "P140.2-ohy"
+        "resolution": "fixed in P140.2-ohy (ad586f07b539): Make the armed-green case reach the terminal: have no_open_bugs print the verdict line to stderr or to a channel run() does not capture, or have run() show the log of a step that opts in. Add a rl20 case that runs the verify.sh row quietly and asserts the 'released over' line appears in what the user sees.",
+        "fixTask": "P140.2-ohy",
+        "commit": "ad586f07b539",
+        "status": "fixed"
       },
       {
         "id": "P140-R2",
         "severity": "med",
         "file": "tools/release.py:175-198 vs .claude/hooks/guard-release.py:986-1012",
         "issue": "The test that an unreadable plan still refuses has no case on the new path. The refusal branch ('could not read the release status', release.py:182) is reached by no rl case: rl17-rl20b all use a readable plan, and a grep of release.py finds no case that reads a missing or garbled plan. Deleting the `if bug_problem or phase_problem` branch would turn an unreadable plan into 'the plan carries no open bug and no held phase' (bugs and held both empty, so it returns True), and no case would go red. The executor's mutation list (bypass, session, always-refuse, held dropped, exit code, old reader) did not include it. By reading, the code refuses today; nothing keeps it so, in a release guard.",
-        "resolution": "Add a case with a plan that does not parse, and a missing plan, asserting `permitted --repo` exits 1 and the line starts 'refused: could not read'. Run that case with and without an armed slot, so the armed + unreadable direction is pinned too.",
-        "fixTask": "P140.2-ohy"
+        "resolution": "fixed in P140.2-ohy (ad586f07b539): Add a case with a plan that does not parse, and a missing plan, asserting `permitted --repo` exits 1 and the line starts 'refused: could not read'. Run that case with and without an armed slot, so the armed + unreadable direction is pinned too.",
+        "fixTask": "P140.2-ohy",
+        "commit": "ad586f07b539",
+        "status": "fixed"
       },
       {
         "id": "P140-R3",
         "severity": "low",
         "file": "tools/release.py:177-198",
         "issue": "'One predicate' holds for the readers (read_bugs, read_held_phases, bypass_armed, refusal, KEYWORD are all the guard's) but not for the decision. release_verdict restates the control flow of guard-release.py decide() (nothing held -> pass, armed -> pass, else refuse) and the two already differ: decide() lets an armed slot release over an unreadable list (`if not (bugs or bug_problem or held or phase_problem): continue; if bypass_armed: return None`), and arm-release-bypass.py's docstring tells the owner 'the armed slot releases over that refusal too'. release_verdict refuses it even when armed. The refusal is the safer direction and matches the review requirement, but the owner is told one thing at arming time and verify.sh does another. The executor named this as a known leftover; it is the one place verify.sh, release.py and the hook do not answer alike.",
-        "resolution": "Move the decision into guard-release.py as one function (e.g. a verdict(project, session_id) returning allowed + sentence) that decide() and release_verdict both call, and settle the armed-over-unreadable question once. If refusing is intended, change the arming message and decide() to match; if release is intended, pin it with a case. Either way one place states it.",
-        "fixTask": "P140.2-ohy"
+        "resolution": "fixed in P140.2-ohy (ad586f07b539): Move the decision into guard-release.py as one function (e.g. a verdict(project, session_id) returning allowed + sentence) that decide() and release_verdict both call, and settle the armed-over-unreadable question once. If refusing is intended, change the arming message and decide() to match; if release is intended, pin it with a case. Either way one place states it.",
+        "fixTask": "P140.2-ohy",
+        "commit": "ad586f07b539",
+        "status": "fixed"
       },
       {
         "id": "P140-R4",
         "severity": "med",
         "file": "tools/verify.sh:1018 (call site); tools/release.py:1634-1664 (rl23)",
         "issue": "P140-R1 is fixed at the function but not pinned at the surface the owner reads, the same shape R1 itself reported (true of the function, untrue of the run). rl23 cuts `run_noted`/`no_open_bugs` out of verify.sh and calls `run_noted` directly; nothing selects `slice_release`'s own line `run_noted \"the plan carries no open bug or held phase\" no_open_bugs`. `git grep run_noted` finds it only in verify.sh and in rl23's function list. Reverting that one call back to `run` leaves rl23, rl23b and every other case green while the armed-green row goes back to a bare `ok`. The executor's mutation list (M1 run_noted prints nothing) did not include reverting the call site.",
-        "resolution": "Add a pin that the `slice_release` body (cut like `no_open_bugs`) calls `run_noted` for the open-bug row and does not call plain `run` for it; red-first by reverting that call to `run`."
+        "resolution": "Add a pin that the `slice_release` body (cut like `no_open_bugs`) calls `run_noted` for the open-bug row and does not call plain `run` for it; red-first by reverting that call to `run`.",
+        "status": "accepted-open",
+        "acceptedReason": "P140: tools/verify.sh --release, tools/release.py and .claude/hooks/guard-release.py answer whether a release may go out over the plan through one decision function in the guard (tree_verdict), so a release the owner armed with #release-with-bugs passes every step that asks; the verify step prints what it releases over in quiet mode; an unreadable plan refuses without a slot. P140-R4 (the verify-run surface not pinned end to end) is left as recorded: the arming hook and release.py's preflight already print the list the owner releases over. Lows carried to BUG-29-dau. Per-task reviewer answers continued over: P140.1 intent diverges: owner, standing for this run: 'Radis autonomno ... ne izbacujes mi prompt-ove da ti ja nesto potvrdim'; both med findings get a follow-up task in this phase before sign-off; P140.2-ohy intent cannot-tell: owner, standing for this run: 'Radis autonomno ... ne izbacujes mi prompt-ove da ti ja nesto potvrdim'; remaining findings triaged"
       },
       {
         "id": "P140-R5",
         "severity": "low",
         "file": "tools/release.py:428-431 (step_verify_release)",
         "issue": "P140-R1 also named release.py's verify-release step (\"keeps only 'tools/verify.sh --release is green'\"). The diff does not touch it: under `release.py run`, `ctx.run` captures verify.sh's output and a passing step returns the fixed string, so the new indented release-over lines from `run_noted` are discarded on exactly the armed-green path. Only a direct `verify.sh --release` (or CI/LOUD) shows them.",
-        "resolution": "Either append the verify output's release-over lines to the step's note on a pass, or record in the finding/outcome that the pipeline surface is deliberately left and why; do not leave it implied as fixed."
+        "resolution": "Either append the verify output's release-over lines to the step's note on a pass, or record in the finding/outcome that the pipeline surface is deliberately left and why; do not leave it implied as fixed.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P140-R6",
         "severity": "low",
         "file": "executor outcome (filed return), claim about gr18/gr14",
         "issue": "The outcome says an unreadable plan with an armed slot is released over \"as the guard's gr18 and gr14 already did\". gr14 arms over a READABLE bug plan, and gr18 asserts the refusal only with no slot, so no pre-existing guard case covered unreadable plus armed; the behaviour was in `decide`'s code (`if not (...): continue; if bypass_armed: return None`), not in a case. The new gr72e is the first case to pin it. The claim describes the code truthfully but its cited evidence does not show it.",
-        "resolution": "Correct the wording to say the behaviour was in decide() and is first pinned by gr72e."
+        "resolution": "Correct the wording to say the behaviour was in decide() and is first pinned by gr72e.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       }
     ],
-    "outcome": "[findings: 6 - 0 high, 3 med, 3 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 6 - 0 high, 3 med, 3 low; 3 with a recorded fix commit]",
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "P140: tools/verify.sh --release, tools/release.py and .claude/hooks/guard-release.py answer whether a release may go out over the plan through one decision function in the guard (tree_verdict), so a release the owner armed with #release-with-bugs passes every step that asks; the verify step prints what it releases over in quiet mode; an unreadable plan refuses without a slot. P140-R4 (the verify-run surface not pinned end to end) is left as recorded: the arming hook and release.py's preflight already print the list the owner releases over. Lows carried to BUG-29-dau. Per-task reviewer answers continued over: P140.1 intent diverges: owner, standing for this run: 'Radis autonomno ... ne izbacujes mi prompt-ove da ti ja nesto potvrdim'; both med findings get a follow-up task in this phase before sign-off; P140.2-ohy intent cannot-tell: owner, standing for this run: 'Radis autonomno ... ne izbacujes mi prompt-ove da ti ja nesto potvrdim'; remaining findings triaged",
   "tasks": [
     {
       "id": "P140.1",
@@ -134,7 +147,7 @@
     {
       "id": "P140.2-ohy",
       "title": "The release check shows what it releases over, refuses an unreadable plan by case, and takes the guard's own decision",
-      "status": "in_progress",
+      "status": "done",
       "description": "",
       "files": [
         "tools/verify.sh",
@@ -160,14 +173,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ad586f07b539",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "R3: guard-release.py gains tree_verdict(why, tree, project, session_id, now) returning (VERDICT_CLEAR|VERDICT_RELEASED|VERDICT_REFUSED, text) plus _released_over(); decide() now only routes trees through it; release.py release_verdict() is two lines calling gr.tree_verdict with CLAUDE_CODE_SESSION_ID, so its own restated control flow and the 'could not read the release status' branch are gone. Consequence worth the reviewer's eye: an unreadable plan now follows the guard's own rule (refused with the guard's UNKNOWN sentence without a slot, released over with an armed slot, as the guard's gr18 and gr14 already did), where release.py used to refuse an unreadable plan even with an armed slot. R1: verify.sh gains run_noted (runs run, then prints the step log indented six spaces, as show_failure does, only when quiet, not --list, and the step passed; run sets STEP_PASSED); the release slice's 'the plan carries no open bug or held phase' row uses it. R2: release.py cases rl21 (unparsable and missing plan refused, both lists named UNKNOWN) and rl21b (armed slot releases over it, second direction). Further cases: rl22 (release_verdict names tree_verdict and none of read_bugs/read_held_phases/bypass_armed/refusal, AST), rl23 and rl23b (verify.sh functions cut out and run under sh over an open-bug plan with an armed slot: the passing step prints BUG-4 and the keyword once beneath its ok row; under --list it prints the label and no verdict), guard gr72..gr72e (decide and tree_verdict agree across open bug/no slot, armed, clean, unreadable/no slot, unreadable/armed) and gr73 (decide calls tree_verdict and not the readers). Mutations in a throwaway tree of copies (tools/, .claude/hooks) with the rest symlinked, anchors asserted to match once; baseline 65/65 and 109/109, then: M1 run_noted prints nothing -> rl23 red (64/65); M2 unreadable list read as nothing -> rl21 and rl21b red for both plan shapes (61/65), gr72d, gr72e red (103/109); M3 slot ignored -> rl21b x2, rl23, rl20b red (57/65), gr72b, gr72e red (104/109); M4 release_verdict re-reads the slot -> rl22 red (64/65); M5 decide re-reads the slot -> gr73 red (108/109); M6 verdict never refuses -> rl21 x2 red among 17 (48/65), gr72, gr72d red among 30 (79/109). The throwaway tree was removed. Gate: python3 tools/sweep-selftests.py tools/release.py .claude/hooks/guard-release.py tools/gate-parity.py tests/test__deps.py, run unpiped, exit 0, 4/4 files ok (guard-release 109 cases, test__deps 254, gate-parity 93, release 65). sh -n tools/verify.sh exit 0. I did not run release.py run or verify.sh --release. Dependants: verify.sh (other steps and run itself behave as before; only a new function, one flag variable and one call site changed; ci.yml, affected.py, gate-parity read --list output which is unchanged because run_noted calls run) still correct. release.py (release_verdict keeps its signature and (allowed, text) return, so cmd_permitted, release_permitted and tests/test_audit_task.py are untouched; only the unreadable-plan wording changed and nothing else greps the old sentence) still correct. guard-release.py (decide keeps its signature and None-or-reason return; arm-release-bypass.py, settings.json and the lints use the existing functions, none removed) still correct.",
+        "descriptive": "The release check now prints what an armed bypass releases over even when it passes, an unreadable plan is covered by cases, and the hook and release.py take one shared decision function instead of two copies."
       },
       "startedAt": "2026-10-23T11:40:58Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-23T11:59:01Z",
+      "verifiedBy": [
+        "release.py: unreadable (unparsable and missing) plan refused with both lists UNKNOWN, and released over by an armed slot",
+        "release.py: release_verdict names only tree_verdict (AST pin against a second copy)",
+        "release.py: the verify.sh release step run under sh prints the bypass's release-over sentence on a pass, and nothing under --list",
+        "guard-release.py: decide and tree_verdict agree over five plan/slot situations, and decide calls tree_verdict (AST pin)"
+      ],
       "notes": [
         {
           "at": "2026-10-23T11:40:57Z",
@@ -200,16 +218,27 @@
         "runId": "2026-10-23T11:57:03Z.a67d0c",
         "status": "passed",
         "at": "2026-10-23T11:57:03Z"
+      },
+      "intentCheck": {
+        "answer": "cannot-tell",
+        "commit": "ad586f07b539",
+        "at": "2026-10-23T11:59:01Z",
+        "return": "docs/audit/evidence/returns/P140.2-ohy/20261023T114058Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "tests.expectRedFirst is false on this tdd task: it names no case to prove a red by, so no red-first proof is owed",
+        "at": "2026-10-23T11:47:50Z"
       }
     }
   ],
   "request": "Releasing 3.6.0 with the owner's #release-with-bugs: tools/release.py's preflight honoured the armed bypass, then its verify-release step stopped on verify.sh --release's 'the plan carries no open bug' FAILED (exit 1), GATE FAILED: open-bugs (1 open bug(s)) - so a release over the sanctioned bypass can never finish",
   "openChoices": [],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "bf837df2-37bc-4c94-9233-61f7d70c1d7f",
-    "branch": "audit/p140-every-release-check-answers-th",
-    "at": "2026-10-23T11:32:19Z"
-  },
-  "startedAt": "2026-10-23T11:32:19Z"
+  "startedAt": "2026-10-23T11:32:19Z",
+  "testEvidence": {
+    "runId": "2026-10-23T12:12:17Z.205e64",
+    "status": "passed",
+    "at": "2026-10-23T12:12:17Z"
+  }
 }
