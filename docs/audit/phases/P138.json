@@ -22,7 +22,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P138-R1",
@@ -109,21 +109,27 @@
         "severity": "low",
         "file": "plugins/audit/scripts/status/audit-lookup.py:656; plugins/audit/scripts/manifest/_manifest_typos.py:244-260",
         "issue": "P138-R7 is fixed for one of its three statements only. Its resolution reads 'say \"no plan default, no area default and no task skill\" in the brief; add \"set meta.defaultSkills with audit-task.py default-skills\" to the warning's exits'. The diff changes the conventions bullet and a comment at audit-lookup.py:139, but the brief line still reads 'No skill resolves for this task: no area default and no task skill.' and the unresolved-skills warning still offers only 'set task.skills, register default skills on an area in meta.areas, or write \"skills\": null'. The outcome says '_manifest_typos.py ... untouched and still correct', but the warning's exit list omits the plan-level exit the phase introduced. _skills_in_use (_manifest_typos.py:178-195) also does not count meta.defaultSkills as use.",
-        "resolution": "Reword the brief line to name the plan default, add the meta.defaultSkills exit to the warning (and its test__manifest_typos case), or record in the outcome that those two are deliberately left and why."
+        "resolution": "Reword the brief line to name the plan default, add the meta.defaultSkills exit to the warning (and its test__manifest_typos case), or record in the outcome that those two are deliberately left and why.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P138-R10",
         "severity": "low",
         "file": "tests/test_audit_task.py:19117-19150 (dsv3)",
         "issue": "P138-R5's resolution asks for a case that 'asserts the named plan changed and a nonexistent path is refused by name'. dsv3 covers the first half and the call order, not the nonexistent-path half. I ran `default-skills --remove /nonexistent/zzz.json` outside any plan with the fixed code: exit 2, '[audit-task] not a directory: /nonexistent', so the behaviour holds, but nothing pins it. The refusal names the root, not the manifest path.",
-        "resolution": "Add a dsv case that passes a nonexistent manifest positional and asserts a non-zero exit with the path or its root in the message and the cwd project unchanged."
+        "resolution": "Add a dsv case that passes a nonexistent manifest positional and asserts a non-zero exit with the path or its root in the message and the cwd project unchanged.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P138-R11",
         "severity": "low",
         "file": "tests/test_audit_lookup.py:2574-2603 (co1) vs tests.gate",
         "issue": "co1, the case that pins the R7 conventions bullet, lives in tests/test_audit_lookup.py, but the task's tests.gate is only `python3 tools/sweep-selftests.py tests/test_audit_task.py`. The recorded gate run (passed) therefore never ran co1. The executor ran test_audit_lookup.py by hand (143/143) but no recorded gate did.",
-        "resolution": "Add tests/test_audit_lookup.py to the task's gate set (retarget --gate-set) so the run that records the evidence also runs co1."
+        "resolution": "Add tests/test_audit_lookup.py to the task's gate set (retarget --gate-set) so the run that records the evidence also runs co1.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P138-R12",
@@ -150,33 +156,42 @@
         "severity": "low",
         "file": "plugins/audit/scripts/governance/run-agent-session.py:217; tests/test_run_agent_session.py:ras50",
         "issue": "The note that `claude --help` does not list `--append-system-prompt-file`, with the probe's build and date, sits in the module docstring (line 35). The only place the flag is written in code (`session_argv`, line 217) carries no comment, and ras50 reads 700 characters around the FIRST occurrence of the string only, which is the docstring. The task asked for it 'beside the flag'.",
-        "resolution": "Add a one-line comment above `argv += [\"--append-system-prompt-file\", skills_file]` pointing at the docstring probe (claude 2.1.307, 2026-10-23), and have ras50 check the last occurrence as well."
+        "resolution": "Add a one-line comment above `argv += [\"--append-system-prompt-file\", skills_file]` pointing at the docstring probe (claude 2.1.307, 2026-10-23), and have ras50 check the last occurrence as well.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P138-R15",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/run-agent-session.py:249; tests/test__doctor_policy.py:456-458; tests/test__skill_places.py:92",
         "issue": "Three comments still describe the removed mode. run-agent-session.py:249 says 'and no inventory is passed, so only a SKILL.md this launcher can read counts' (the parameter no longer exists); test__doctor_policy.py:458 says 'The scan inventory stays the WIDER mode: a name only the scan lists still resolves here' directly above dp50, which now asserts the opposite; test__skill_places.py:92 is headed 'the scan inventory is the wider mode' over cases that assert there is none. A sentence claiming what the code does not do.",
-        "resolution": "Reword the three: the launcher and doctor ask the same resolver and there is no inventory argument; drop 'WIDER' from the dp comment and retitle the sp section 'no second mode'."
+        "resolution": "Reword the three: the launcher and doctor ask the same resolver and there is no inventory argument; drop 'WIDER' from the dp comment and retitle the sp section 'no second mode'.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P138-R16",
         "severity": "low",
         "file": "plugins/audit/scripts/status/_doctor_policy.py:109-117",
         "issue": "_scan_sighting words every scan-listed refusal as 'which a session does not load by that bare name'. The scan keys a skill by its front-matter name (_panel_discovery.py:137 `fm.get('name') or name`) while the resolver looks for a directory of that name. So a skill under <home>/skills/<dir>/SKILL.md with `name: other` is listed as 'other' at a path in a directory the launcher DOES read, and the row says a session does not load it, with no hint that the cause is the directory/name mismatch. The docstring's two causes ('another plugin's skill, or a copy in a place no session reads') omit this third one. The refusal itself is consistent with the launcher; the explanation can mislead.",
-        "resolution": "When the sighting path sits under one of resolved[name]['places']' skills directories, say the directory name differs from the skill's front-matter name (the launcher looks up the directory name); add the case next to dp53."
+        "resolution": "When the sighting path sits under one of resolved[name]['places']' skills directories, say the directory name differs from the skill's front-matter name (the launcher looks up the directory name); add the case next to dp53.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P138-R17",
         "severity": "low",
         "file": "plugins/audit/scripts/panel/_panel_write.py:2130; plugins/audit/scripts/status/audit-status.py:279",
         "issue": "R13 is closed in doctor only. The executor's descriptive outcome says 'a portability grade only counts when it describes the file a session loads', but _panel_write.py:2130 (the strict-tier refusal of a patched skill name) still reads `have.get(name).get('travels')` from the scan entry, which for a name in both tiers is the project copy while the launcher loads the personal one. audit-status.py:279 has the same shape but asks the repo-scope clone question, where the project copy is arguably the right one. The R13 finding named only _plan_skills_travel, so this is outside what was asked; it is the same class and the claim overreaches.",
-        "resolution": "Narrow the descriptive outcome to doctor, and file the strict-tier refusal in _panel_write.py as a follow-up (compare the entry path with the resolved path there too, or resolve through _skill_places)."
+        "resolution": "Narrow the descriptive outcome to doctor, and file the strict-tier refusal in _panel_write.py as a follow-up (compare the entry path with the resolved path there too, or resolve through _skill_places).",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       }
     ],
-    "outcome": "[findings: 17 - 0 high, 6 med, 11 low; 10 with a recorded fix commit]"
+    "outcome": "[findings: 17 - 0 high, 6 med, 11 low; 10 with a recorded fix commit]",
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "P138: every writer and reviewer session the drive starts has the full text of each skill the task resolves to in its system prompt from the first turn (--append-system-prompt-file, probed on claude 2.1.307), recorded by name, path and sha256; a missing skill stops the launch by name; skills resolve in Claude Code's documented order through one resolver shared with audit:doctor; a plan names house skills once (meta.defaultSkills, default-skills verb) and this plan declares writing-python, before-you-claim, no-silent-pass; a filed return never carries a machine path. Lows carried to BUG-29-dau. Per-task reviewer answers continued over: P138.2 intent diverges: owner, standing for this run: 'Radis autonomno ... ne izbacujes mi prompt-ove da ti ja nesto potvrdim'; the house skills are declared by the orchestrator through the new verb now, and the manifest positional is a fix task; P138.3-myr intent diverges: owner, standing for this run: 'Radis autonomno ... ne izbacujes mi prompt-ove da ti ja nesto potvrdim'; the findings are lows carried and doctor-side meds fixed by a follow-up task in this phase; P138.5-myr intent cannot-tell: owner, standing for this run: 'Radis autonomno ... ne izbacujes mi prompt-ove da ti ja nesto potvrdim'; remaining findings are low and carried",
   "tasks": [
     {
       "id": "P138.1",
@@ -603,7 +618,7 @@
     {
       "id": "P138.6-myr",
       "title": "A filed return never carries a machine path, and the one P138.1 committed is accounted for",
-      "status": "in_progress",
+      "status": "done",
       "description": "The phase gate's selftests went red on tools/check-committed-pii.py: docs/audit/evidence/returns/P138.1/20261023T010606Z.executor.json line 3 carries a posix-home path (column 139). drive-phase.py submit files a return verbatim, while audit-task.py add already refuses a description carrying a machine path (unexpanded-home) because the plan and the journal can never be corrected afterwards. Make submit apply the same check (reuse the existing machine-path predicate audit-task uses, do not write a second one) to every string in the return before filing, refusing by field with the remedy (write it repo-relative, or <home>/... or <scratchpad>/...); and account for the already-committed P138.1 return with a BASELINE row in tools/check-committed-pii.py naming the file, the line and why it cannot be rewritten (hash-chained evidence). Cases: submit refuses a return holding a home path in any nested string and names the field; a clean return files; the baseline row keeps the pii check green and goes stale (red) if the file stops matching.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -626,34 +641,45 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "67d0e3dc6b9d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py submit now asks every string leaf of the parsed return (nested dicts and lists, field named as outcome.technical or testsAdded[0]) the predicate audit-task.py add already uses, _journal_io.check_free_text, before the shape check, the stamp or the red-first helper; the first field's refusal carries the remedy (repo-relative, <home>/... or <scratchpad>/...), the others are named after it, and no value is echoed. The predicate already lived in the shared _machine_paths/_journal_io layer that drive-phase.py imported, so nothing moved and nothing was copied. tools/check-committed-pii.py gained one BASELINE row for the P138.1 executor return at line 3 (posix-home), reasoned by the task.return.filed row recording that file's sha256 in the hash chain. Red first: ds5r and ds5t failed on the unchanged driver (ds5r: the dirty return was filed; ds5t: the reviewer return was filed) via python3 tests/test_drive_phase.py --selftest --stage ds-block; ds5s failed only as a cascade of ds5r having filed first. Baseline staleness shown by changing the row's line to 4 temporarily: output was FOUND at line 3 plus DEAD BASELINE at line 4, then restored and the check printed OK. Sweep: python3 tools/sweep-selftests.py tests/test_drive_phase.py tools/check-committed-pii.py tests/test__deps.py tests/test_audit_task.py exited 0, 4/4 files ok, 1979 cases. Dependants: record-risk-confirmation, stamp-verification, detect-plan-skip, _areas and the docs name drive-phase.py by basename or path for other verbs and are unchanged and still correct; _carries, _clip, _mark, _marked are unrelated names; check-committed-pii.py's dependants (_machine_paths, _journal_io, _manifest_io, audit-task.py, its tests) are read, not changed, and the new row only adds an accounted finding. Not covered: dict keys are not checked, only string values.",
+        "descriptive": "A submitted return carrying a home path is refused by field with the remedy before anything is filed, and the one already committed is accounted for in the pii baseline."
       },
       "startedAt": "2026-10-23T03:23:49Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-23T03:42:15Z",
+      "verifiedBy": [
+        "ds5r: executor return with a home path in outcome.technical and testsAdded[0] is refused, naming both fields, not testsAdded[1], with the remedy, no echo of the user segment, nothing written",
+        "ds5s: allow twin, the same return spelled <home>/..., <scratchpad>/... and repo-relative is filed and reaches the file as written",
+        "ds5t: a reviewer return with a home path in intent.note is refused by field and nothing is filed"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-23T03:42:13Z.5a5b0f",
         "status": "passed",
         "at": "2026-10-23T03:42:13Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "67d0e3dc6b9d",
+        "at": "2026-10-23T03:42:15Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-23T03:34:48Z",
+        "basis": "`python3 tests/test_drive_phase.py --selftest --stage ds-block` in a throwaway tree at HEAD exited 1 with 3 of 31 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ds5r (house FAIL), ds5t (house FAIL): SELFTEST FAILED: 28/31 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     }
   ],
   "request": "Stage 1 fifth attempt: check-skills-loaded FAIL - pipeline writers a2d and a4d loaded no skill while every plain session did; the owner requires skill loading fixed before 3.6.0 ('obavezno da resimo to ucitavanje skill-ova')",
   "openChoices": [],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "bf837df2-37bc-4c94-9233-61f7d70c1d7f",
-    "branch": "audit/p138-a-writer-or-reviewer-session-s",
-    "at": "2026-10-23T01:06:06Z"
-  },
   "startedAt": "2026-10-23T01:06:06Z",
   "testEvidence": {
-    "runId": "2026-10-23T03:21:51Z.85ee40",
-    "status": "failed",
-    "at": "2026-10-23T03:21:51Z"
+    "runId": "2026-10-23T03:54:49Z.ca4734",
+    "status": "passed",
+    "at": "2026-10-23T03:54:49Z"
   }
 }
