@@ -1485,9 +1485,13 @@ def wave_said(ctx, members):
         subject = "%s+%d" % (ids[0], len(ids) - 1)
     basis = "wave of %d: %s" % (len(ids), "; ".join(sorted(set(
         m["signal"]["basis"] for m in members))))
+    # Only a member's first line is printed, so a member that is a session has its
+    # budget sentence carried here once; an Agent member has no process of its own.
+    budget = [SESSION_BUDGET_RULE] if any(
+        SESSION_BUDGET_RULE in m["lines"] for m in members) else []
     return instruction(
         "dispatch", [m["lines"][0] for m in members]
-        + list(STEPS["dispatch-wave"]["rule"]),
+        + list(STEPS["dispatch-wave"]["rule"]) + budget,
         signal_of("dispatch-wave", subject, basis,
                   "one Agent per member, in one message: brief --role <role> <id>",
                   prompts=[p for m in members for p in m["signal"]["prompts"]],

@@ -9412,8 +9412,11 @@ def _signal_cases(check):
         if name.endswith(".md"):
             with open(os.path.join(shown, name), "r", encoding="utf-8") as fh:
                 docs[name] = " ".join(fh.read().split())
+    # The marker is the phrase every doc shares, the `run:` line under
+    # `--explain`; the longer "a writer's `dispatch` is a" form is only the four
+    # prose docs' spelling, and phase.md's numbered step words it otherwise.
     describing = sorted(n for n, text in docs.items()
-                        if "a writer's `dispatch` is a `run:` line" in text)
+                        if "`run:` line under `--explain`" in text)
     # A constant that is not there yet is a failing case, never a raise: its
     # count is -1 in every doc, which no doc can hold.
     lacking = [(n, docs[n].count(rule) if isinstance(rule, str) else -1)
@@ -9424,7 +9427,47 @@ def _signal_cases(check):
           "next.md among them - so a reword of the constant cannot leave one "
           "stale: %r" % ((describing, lacking),),
           isinstance(rule, str) and "run.md" in describing and "next.md" in describing
-          and not lacking)
+          and "phase.md" in describing and not lacking)
+    # A WAVE PRINTS ITS MEMBERS' FIRST LINES ONLY, so a writer member's rule lines
+    # were dropped and the one print an orchestrator reads before launching
+    # several sessions said nothing about whose money they spend. Once, whatever
+    # the number of session members; none when no member is a session.
+    where = {"manifest": os.path.join("proj", "plan.json"), "project": "proj"}
+    sessions = [M.writer_said(where, "P1.%d" % (n,), "claude-x", "p", argv)
+                for n in (1, 2)]
+    sessions.append(M.writer_said(where, "P1.3", "claude-x", "p", argv,
+                                  role="reviewer"))
+    agents = [M.dispatch_said(where, "executor", "P1.%d" % (n,), M.EXECUTOR_AGENT,
+                              "opus", "b") for n in (4, 5)]
+    waves = [("sessions", M.wave_said(where, sessions)),
+             ("mixed", M.wave_said(where, sessions[:1] + agents)),
+             ("agents", M.wave_said(where, agents))]
+    counted = [(name, w["lines"].count(rule)) for name, w in waves]
+    check("sn4w a wave dispatch carries SESSION_BUDGET_RULE once however many of "
+          "its members are sessions, and none when every member is an Agent, "
+          "which has no process of its own: %r" % (counted,),
+          isinstance(rule, str)
+          and counted == [("sessions", 1), ("mixed", 1), ("agents", 0)])
+    # THE BUDGET A REVIEWER OR VALIDATION SESSION RUNS UNDER is the writer's:
+    # `reviewer_session_setting` swaps the model and keeps the rest, so the
+    # sentence's "set by executor.writerBudgetUsd" is true of them as worded.
+    # A setting that dropped or replaced the budget would make it false.
+    def _budgets(mod):
+        session = mod.writer_setting({"executor": {
+            "writerModel": "claude-opus-4-1", "writerBudgetUsd": 7.5}})[0]
+        return [mod.reviewer_session_setting(phase, session).get("budget")
+                for phase in ({"review": {"model": "claude-sonnet-4-5"}},
+                              {"review": {"model": "sonnet"}}, {})]
+    mutant, _why = _load("budget_mod_gap")
+    if mutant is not None:
+        mutant.reviewer_session_setting = lambda phase, session: {
+            "model": session["model"]}
+    check("sn4r a reviewer or validation session's --budget-usd is the writer "
+          "setting's, for a full-id review model, an alias and none, and a "
+          "reviewer_session_setting that dropped it is seen: %r"
+          % ((_budgets(M), mutant is not None and _budgets(mutant)),),
+          _budgets(M) == ["7.5"] * 3
+          and mutant is not None and _budgets(mutant) == [None] * 3)
 
 
 def _explain_cases(check):

@@ -1,0 +1,33 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__refs.py tests/test__help.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-23T07:55:42Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD: the run timed out: no time was left of the 480-second deadline; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "R1: wave_said now appends SESSION_BUDGET_RULE once when any member's own printed lines carry it (a session member), read from the constant; Agent-only waves print none. R2: commands/phase.md step 3 now carries the sentence verbatim after the run: line clause; sn4d's doc scan now keys on the phrase every doc shares (the run: line under --explain) and requires phase.md among the docs found. R3: reviewer_session_setting keeps the writer's budget (dict(session, model=...)) and the runner passes --budget-usd through as the session ceiling, so the sentence as worded (set by executor.writerBudgetUsd) is already true for reviewer and validation sessions; no reword, and sn4r pins it with a mutant twin (a copy whose setting drops the budget reads None for all three review-model shapes). Red before the fix, own suite on the unfixed code: sn4d FAIL (phase.md, 0 occurrences) and sn4w FAIL ([('sessions', 0), ('mixed', 0), ('agents', 0)]); sn4r passed before the fix by design, since R3 needed no code change. After: sweep of test_drive_phase, test__refs, test__help exit 0, 3/3 files ok, 938 cases; test_drive_phase alone 567/567. Left, not changed: the wait steps re-print a run: line and say run it when not started, without the sentence; they are not dispatches, so I left them. Dependants: tests/test_drive_phase.py is the changed suite; PLUGIN-BUILD-GUIDE.md, README.md and the research docs name drive-phase.py or the suite without quoting the wave print, still correct; hooks and scripts that load drive-phase.py by basename (detect-plan-skip, record-risk-confirmation, stamp-verification, _areas) read none of wave_said, still correct; phase.md's other readers (close-phase, audit-task, audit-lookup, test__refs, test_audit_lookup) passed in the sweep for test__refs and are unaffected in text they read; the research docs name phase.md but not step 3's wording. Edits were all within the declared files; the plan gate refused nothing.",
+    "descriptive": "A wave of writer or reviewer sessions now says, once, that the sessions run under their own budget, and phase.md says so too, with the doc scan guarding all five command docs."
+  },
+  "testsAdded": [
+    "sn4w: a wave of session members, a mixed wave and an Agent-only wave carry the budget sentence once, once and zero times",
+    "sn4d widened: the doc scan finds phase.md and requires it to carry the sentence once",
+    "sn4r: reviewer_session_setting keeps the writer's budget for a full-id review model, an alias and none, with a mutant twin that drops it seen"
+  ],
+  "casesAdded": [
+    [
+      "sn4w",
+      "sn4d"
+    ],
+    [
+      "sn4r"
+    ]
+  ],
+  "claims": "claims:\n1 drive-phase.py wave_said appends SESSION_BUDGET_RULE when a member's lines hold it (the wave_said body); phase.md step 3 holds the sentence once (sn4d count 1); reviewer_session_setting returns dict(session, model=...) so the budget is the writer's (sn4r)\n2 sn4w and sn4d red on unfixed code with the output shown above, green after; sn4r mutant twin reads None where real code reads 7.5, so it can fail; sn4r itself was green before the fix because the sentence was already true\n3 grep SESSION_BUDGET_RULE in plugins and tests: the four STEPS rows (writer, resume, reviewer session, validation) already carry it, the wave was the only dispatch print that dropped member rule lines; wait steps left because they are not dispatches\n4 n/a - the sentence is for the orchestrator; sn4d and sn4w are the mechanisms and are named in the case titles\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:bea571d0ad5fd6feeda8524c6d3cc12a66665bc1c6d7a9df8979b4bb5242f4bc\",\"dirtyDigest\":\"sha256:a47054e5cd9138e376da316630148c664afe94ddff91ff922b3d3ca26c19b640\",\"dirtyPaths\":{\"plugins/audit/commands/phase.md\":\"4ffd49cd778cdb31\",\"plugins/audit/scripts/governance/drive-phase.py\":\"1fa8838e6607f75a\",\"tests/test_drive_phase.py\":\"d5d2f8ee834af04e\"},\"head\":\"e4bd0447\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/commands/phase.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:484fa4b6130b3050d32c710c63971d012c598b7480894a12b9efcd9b7aeca761\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

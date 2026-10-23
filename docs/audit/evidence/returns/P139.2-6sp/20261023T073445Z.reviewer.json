@@ -1,0 +1,23 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "tests/test_drive_phase.py:9446-9453",
+   "issue": "P139-R1's resolution asked for a case that counts the sentence 'in the wave print and in its --explain'. sn4w counts SESSION_BUDGET_RULE only in w[\"lines\"] from wave_said called directly; it never reaches walk_wave nor the explain text (render() joins said[\"lines\"] into signal explain, drive-phase.py:8148 and :8300-8306), so the explain half rests on reading, not on a case.",
+   "resolution": "Add one assertion that the explain text a wave signal keeps (w[\"signal\"] via the same render/signal path) holds the sentence once for the sessions wave; or state in the case title that explain is derived from the same lines."}
+ ],
+ "preExisting": [
+  {"id": 2, "severity": "low", "file": "plugins/audit/scripts/governance/drive-phase.py:444",
+   "issue": "WAVE_RULE and the wave signal's next ('one Agent per member, in one message: brief --role <role> <id>') speak of Agents only; a wave whose members are sessions now prints the budget sentence telling the orchestrator to launch run: lines, beside a rule that says dispatch Agents. Unchanged by this diff.",
+   "resolution": "Word the wave rule for a mixed wave (Agent members by brief, session members by their run: line)."}
+ ],
+ "intent": {
+  "answer": "matches",
+  "note": "The task description is empty in the brief; judged against the three findings it fixes. R1 (drive-phase.py:1480-1495 'wave_said builds its print from only m[\"lines\"][0] plus WAVE_RULE'): diff adds `budget = [SESSION_BUDGET_RULE] if any(SESSION_BUDGET_RULE in m[\"lines\"] for m in members) else []` appended once after the wave rule, which is the finding's first named resolution; sn4w pins sessions=1, mixed=1, agents=0. R2 (phase.md:29 step 3 got no sentence): diff adds the verbatim SESSION_BUDGET_RULE text to step 3 (count of the sentence in the whitespace-normalised doc is checked once by sn4d) and re-keys sn4d from \"a writer's `dispatch` is a `run:` line\" to \"`run:` line under `--explain`\", requiring phase.md among the docs found; grep over commands/*.md shows that phrase in next, phase, resume, run and review, and no other doc naming a drive run: line, so none is missed. The marker is narrower than the finding's suggested \"`run:` line\" but is the phrase all five share. R3 (low, 'optionally word it'): executor left the wording, justified by reviewer_session_setting at drive-phase.py:1819-1823 returning dict(session, model=...) and writer_argv passing writer[\"budget\"] to --budget-usd (:1810); I confirmed both. sn4r pins the budget survives for a full-id model, an alias and none, with a mutant twin dropping it, which reads None. The claim describes the diff accurately. The outcome's statement that sn4d and sn4w were red on unfixed code is the executor's own run, not a recorded stamp (see redFirst).",
+  "missing": ["the task description (empty in the brief)"],
+  "redFirst": "could-not-prove",
+  "redFirstBasis": "The filed redFirst is could-not-prove, source red-first-helper: the sweep of tests/test_drive_phase.py at HEAD in a throwaway tree 'timed out: no time was left of the 480-second deadline'. That refusal holds. The outcome additionally says sn4d (phase.md, 0 occurrences) and sn4w ([('sessions', 0), ('mixed', 0), ('agents', 0)]) failed on the unfixed code and that sn4r passed before the fix by design; those are quoted output with no recorded command stamp, so I do not upgrade to proved. sn4r's mutant twin can fail by construction (it asserts None for the mutant).",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "Gate is the single command `python3 tools/sweep-selftests.py tests/test_drive_phase.py`, selecting tests/test_drive_phase.py only. By grep of that file, the cases that touch the behaviour (SESSION_BUDGET_RULE, writerBudgetUsd, budget) are sn4s (9389-9407, counts the sentence per STEPS dispatch, writer_said direct), sn4d, and the new sn4w and sn4r; line 1133-1134 checks the missing-budget refusal, unrelated. Each asserts a count or value that deleting the wave append or the doc sentence would change. I did not read the rest of the roughly nine-thousand-line file case by case, so this is a grep-bounded answer, not an exhaustive one."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

@@ -29,31 +29,41 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py:1480-1495",
         "issue": "contradicts task clause \"the dispatch line and its explain carry the sentence for both roles\": a session dispatch made for a wave member never prints SESSION_BUDGET_RULE. walk_wave (drive-phase.py:4942-4955) collects each member's writer_said/reviewer_dispatch instruction and wave_said builds its print from only m[\"lines\"][0] plus STEPS[\"dispatch-wave\"][\"rule\"] (WAVE_RULE), so the second rule line added to the four STEPS entries is dropped, and the run: lines are still emitted through signal runs. An orchestrator driving a wave of writer sessions sees the large --budget-usd in the run: lines with no sentence under it, which is the exact situation the phase's desiredOutcome describes. sn4s only calls writer_said/validation_said directly, so no case reaches the wave path.",
-        "resolution": "Have wave_said carry SESSION_BUDGET_RULE once when any member's signal has runs (or append each distinct member rule line after WAVE_RULE), and add a sn4 case that builds a wave of two session members and counts the sentence in the wave print and in its --explain."
+        "resolution": "Have wave_said carry SESSION_BUDGET_RULE once when any member's signal has runs (or append each distinct member rule line after WAVE_RULE), and add a sn4 case that builds a wave of two session members and counts the sentence in the wave print and in its --explain.",
+        "fixTask": "P139.2-6sp"
       },
       {
         "id": "P139-R2",
         "severity": "med",
         "file": "plugins/audit/commands/phase.md:29",
         "issue": "contradicts task clause \"and wherever else the dispatch is described to the orchestrator\": commands/phase.md step 3 still says \"`dispatch` -> a `run:` line under `--explain`: background Bash\" and gets no budget sentence. /audit:phase is the entry that drives a whole phase, the longest run an orchestrator makes, and so the likeliest place for the stop. The executor's grep for the literal phrase \"a writer's `dispatch` is a `run:` line\" found four docs and missed this one because it words the same instruction differently. sn4d selects docs by that same phrase (tests/test_drive_phase.py describing=...), so phase.md is excluded by construction and a reword of the constant cannot be seen to leave it stale.",
-        "resolution": "Add the same SESSION_BUDGET_RULE sentence to commands/phase.md step 3, and key sn4d on a broader selector (every commands/*.md that names a run: line from the drive, e.g. the substring \"`run:` line\"), so a doc worded differently is still pinned."
+        "resolution": "Add the same SESSION_BUDGET_RULE sentence to commands/phase.md step 3, and key sn4d on a broader selector (every commands/*.md that names a run: line from the drive, e.g. the substring \"`run:` line\"), so a doc worded differently is still pinned.",
+        "fixTask": "P139.2-6sp"
       },
       {
         "id": "P139-R3",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:472-474",
         "issue": "The sentence says the figure is set by executor.writerBudgetUsd, true for the reviewer and validation sessions only because reviewer_session_setting (drive-phase.py:1815-1823) copies the writer's budget and replaces only the model. An orchestrator reading a reviewer dispatch may look for a reviewer budget key that does not exist, and the sentence does not say that the same ceiling applies to each such session separately. Minor, not a stop reason by itself.",
-        "resolution": "Optionally word it 'each session ... under its own --budget-usd (executor.writerBudgetUsd, the writer's key, also used for reviewer sessions)'; or leave as is."
+        "resolution": "Optionally word it 'each session ... under its own --budget-usd (executor.writerBudgetUsd, the writer's key, also used for reviewer sessions)'; or leave as is.",
+        "fixTask": "P139.2-6sp"
+      },
+      {
+        "id": "P139-R4",
+        "severity": "low",
+        "file": "tests/test_drive_phase.py:9446-9453",
+        "issue": "P139-R1's resolution asked for a case that counts the sentence 'in the wave print and in its --explain'. sn4w counts SESSION_BUDGET_RULE only in w[\"lines\"] from wave_said called directly; it never reaches walk_wave nor the explain text (render() joins said[\"lines\"] into signal explain, drive-phase.py:8148 and :8300-8306), so the explain half rests on reading, not on a case.",
+        "resolution": "Add one assertion that the explain text a wave signal keeps (w[\"signal\"] via the same render/signal path) holds the sentence once for the sessions wave; or state in the case title that explain is derived from the same lines."
       }
     ],
-    "outcome": "[findings: 3 - 0 high, 2 med, 1 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 4 - 0 high, 2 med, 2 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
     {
       "id": "P139.1",
       "title": "The drive's writer and reviewer dispatch, and the command docs, say the child session's budget is its own ceiling",
-      "status": "in_progress",
+      "status": "done",
       "description": "Where drive-phase.py prints the run-agent-session dispatch (the step line and its --explain rule) and in commands/run.md and commands/next.md (and wherever else the dispatch is described to the orchestrator), state the fact once from one source: the session runs as its own process under its own --budget-usd ceiling (executor.writerBudgetUsd), which is not taken from the calling session's budget, so the step is launched as printed. Name where the figure comes from. Cases: the dispatch line and its explain carry the sentence for both roles; the docs and the drive read it from one constant, so a reword cannot leave one stale.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -81,19 +91,104 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e4bd04473b08",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: new constant SESSION_BUDGET_RULE ('The session is its own process under its own --budget-usd, set by executor.writerBudgetUsd; it is not drawn from this session's budget, so launch the run: line as printed.'), added as a second rule line to the four session dispatch steps (dispatch-writer, resume-writer, dispatch-reviewer-session, dispatch-validation) as a literal tuple (WRITER_RULE, SESSION_BUDGET_RULE) because _refs.followed_anchor_drift reads STEPS as a literal table and resolves names only inside tuples; the signal line is untouched, the sentence prints under the step line and so in --explain. The same sentence, verbatim, follows the 'run it in background Bash' sentence in commands/run.md, next.md, resume.md and review.md (the plan gate allowed the last two, which are outside the declared files but carry the identical dispatch description). tests/test_drive_phase.py (_signal_cases): sn4s counts the sentence in the lines of all four session dispatches (once each) and asserts the Agent dispatch-executor step does not carry it (the always-fires direction); sn4d derives every commands/*.md that says a writer's dispatch is a run: line, requires run.md and next.md among them, and counts the constant's text in each (whitespace-normalised) exactly once. Sweep of tests/test_drive_phase.py, test__refs.py, test__deps.py, test__help.py: exit 0, 4/4 files ok. wait-writer, wait-reviewer-session and wait-validation steps were left unchanged (they point at the same run: line but are not the dispatch). Dependants: tests/test_drive_phase.py - still correct, it is the file extended; PLUGIN-BUILD-GUIDE.md, README.md, docs/research/pipeline-cost-design.md - name drive-phase.py and its followed-step table, the README table row for WRITER_RULE steps still resolves (fa1 green, which caught my first draft); hooks/detect-plan-skip.py, record-risk-confirmation.py, stamp-verification.py, _areas.py - reference the script by basename or path only, no printed text changed except extra rule lines on four dispatch steps; names used elsewhere (_clip, _mark, _marked, _carries) untouched. Commands docs dependants: audit-task.py, tests/test__refs.py, test_audit_task.py, tools/measure-context.py (gate run, passes), PLUGIN-BUILD-GUIDE.md and docs/research/* cite the command docs by name and are still correct; plugins/audit/reference/verbs-in-full.md names next.md only.",
+        "descriptive": "An orchestrator under its own budget cap is told, in the dispatch it is shown and in the four command docs, that the session's --budget-usd is that child process's own ceiling from executor.writerBudgetUsd, so it launches the printed run line without stopping to ask."
       },
       "startedAt": "2026-10-23T07:03:55Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-23T07:34:31Z",
+      "verifiedBy": [
+        "sn4s: every session dispatch (writer, resume, per-task reviewer, validation) carries SESSION_BUDGET_RULE once and the Agent dispatch carries none",
+        "sn4d: every command doc describing a writer's run: line carries SESSION_BUDGET_RULE's text exactly once, run.md and next.md among them"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-23T07:32:27Z.fe69bc",
         "status": "passed",
         "at": "2026-10-23T07:32:27Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "e4bd04473b08",
+        "at": "2026-10-23T07:34:31Z",
+        "return": "docs/audit/evidence/returns/P139.1/20261023T070355Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-23T07:22:49Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD: the run timed out: no time was left of the 480-second deadline; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P139.2-6sp",
+      "title": "Every session dispatch the orchestrator reads, a wave member's included, carries the budget sentence",
+      "status": "in_progress",
+      "description": "",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/commands/phase.md",
+        "tests/test_drive_phase.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/commands/phase.md",
+        "tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: Have wave_said carry SESSION_BUDGET_RULE once when any member's signal has runs (or append each distinct member rule line after WAVE_RULE), and add a sn4 case ...",
+          "tests/test_drive_phase.py: Optionally word it 'each session"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-23T07:34:45Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-23T07:34:43Z",
+          "text": "scope: plugins/audit/scripts/governance/drive-phase.py, plugins/audit/commands/phase.md, every path the finding(s) P139-R1, P139-R2, P139-R3 name"
+        },
+        {
+          "at": "2026-10-23T07:34:43Z",
+          "text": "scope: tests/test_drive_phase.py, the suite that tests plugins/audit/scripts/governance/drive-phase.py (python: it hands drive-phase.py to a loader through a module constant)"
+        },
+        {
+          "at": "2026-10-23T07:34:43Z",
+          "text": "no suite: plugins/audit/commands/phase.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are plugins/audit/scripts/status/audit-lookup.py, tests/test__refs.py, tests/test_audit_lookup.py, tests/test_audit_task.py, tests/test_drive_phase.py and 1 more"
+        },
+        {
+          "at": "2026-10-23T07:34:43Z",
+          "text": "no tests.add clause for P139-R2: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P139-R1",
+        "P139-R2",
+        "P139-R3"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-23T08:03:05Z.d92f71",
+        "status": "passed",
+        "at": "2026-10-23T08:03:05Z"
       }
     }
   ],
