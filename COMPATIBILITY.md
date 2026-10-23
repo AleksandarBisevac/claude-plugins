@@ -267,6 +267,15 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   its `learnedAt`; `lastCaught` is written only by `audit-task.py couple --caught`, never moved
   back to an earlier moment. Ceasing to read either, or reversing what its absence means, is a
   major.
+- **`meta.defaultSkills` is under the same promise, and adding it was free.** It is a new
+  optional key: a plan that never wrote it resolves every task's skills exactly as it did
+  before, byte for byte. **`meta.defaultSkills` absent or `[]` means the plan names no
+  plan-wide default**, and when it is present its names load first — before the area's skills
+  and the task's own, deduped at the first mention — so the one thing that changes for a plan
+  that writes it is which skills a phase with no `area` resolves. An explicit
+  `task.skills: null` still opts a task out of the plan default as well as the area's.
+  Ceasing to read the key, or reading it after the area's skills instead of before them, is a
+  major.
 - **An expired mute is a warning, never a finding.** Every mutating verb refuses a plan that
   already carries a finding, and the default status gate fails on one, so a finding triggered by
   a date would freeze every verb — including `unmute`, the verb that lifts it — and fail every

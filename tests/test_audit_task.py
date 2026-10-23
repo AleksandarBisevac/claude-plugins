@@ -4469,7 +4469,10 @@ def _flag_cases(check):
                    # `build-command` names its key as the positional, and the
                    # misplaced-flag check fires before its body asks for the
                    # one flag that decides what it does.
-                   "build-command": ["build-command", "k"]}
+                   "build-command": ["build-command", "k"],
+                   # `default-skills` names its list with `--skills`, which its
+                   # own door reads, so the bare call is the row.
+                   "default-skills": ["default-skills"]}
         _vf_leaks = []
         for _vfv in sorted(M.VERB_FLAGS):
             _vfknown = set(M.VERB_FLAGS[_vfv]) | set(M.UNIVERSAL_FLAGS)
@@ -4645,7 +4648,11 @@ def _flag_cases(check):
         _vf_ok["build-command/--command"] = run(
             ["build-command", "vitest", "--command", "npx vitest run",
              "--json", "--project-dir", _vf_bc_proj])[0]
-        check("vf4 SECOND-DIRECTION CASE: every flag a verb DOES read still "
+        _vf_ds_proj, _vf_ds_mp = mk("vf-defskills", base_manifest())
+        _vf_ok["default-skills/--skills"] = run(
+            ["default-skills", "--skills", "writing-python", "--reason", "r",
+             "--json", "--project-dir", _vf_ds_proj])[0]
+        check("vf4SECOND-DIRECTION CASE: every flag a verb DOES read still "
               "works, and `--json` / `--project-dir` reach every verb - a guard "
               "that fires on a correct call is a guard somebody routes around "
               "inside the day - and the verbs covered are DERIVED off the table, "
@@ -7936,6 +7943,8 @@ def _close_cases(check):
                                 "--verified-on", "echo v-tw"]),
             ("build-command", ["build-command", "vitest", "--command",
                                "npx vitest run"]),
+            ("default-skills", ["default-skills", "--skills",
+                                "writing-python"]),
         )
         # `signoff` gets its own pair too: by its row every other row has left P2
         # with open work, which it rightly refuses.
@@ -18993,6 +19002,122 @@ def _build_command_cases(check):
         _harness.remove_tree(tmp)
 
 
+def _default_skills_cases(check):
+    """`default-skills`: the verb that sets, replaces or drops `meta.defaultSkills`
+    on a plan that exists, through the lock, the manifest writer and the
+    validator, with one journal row per write. Every refusal is compared against
+    the plan's BYTES and the row count, because a refusal that wrote is the
+    fault and exit 2 alone would pass a verb that wrote and then complained."""
+    import _areas
+    tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
+    (run, _run_on_stdin, base_manifest, mk, _mk_empty, _task_in, _pin, _unpin,
+     _PD_SHA, _pd_fixture, _pd_repo, _git) = _at_kit(tmp)
+    try:
+        def raw(path):
+            with open(path, "rb") as fh:
+                return fh.read()
+
+        def held(mpath):
+            return (_mio.load_manifest(mpath).get("meta") or {}).get(
+                "defaultSkills")
+
+        def rows(project):
+            jmod = _panel_write._journalmod()
+            return [r for r in (jmod.read_all(project) if jmod else [])
+                    if r.get("action") == "defaultskills.change"]
+
+        def details(row):
+            return row.get("details") or {}
+
+        proj, mpath = mk("dsv-write", base_manifest())
+        before_key = held(mpath)
+        set_code, _set_txt = run(["default-skills", "--skills",
+                                  "writing-python, no-silent-pass,writing-python",
+                                  "--project-dir", proj])
+        after_set = held(mpath)
+        set_rows = rows(proj)
+        findings = M._validator().validate(_mio.load_manifest(mpath))[0]
+        resolved = _areas.resolve_skills(_mio.load_manifest(mpath),
+                                         {"id": "PX"}, {"id": "PX.1"})
+
+        written = raw(mpath)
+        dup_code, dup_txt = run(["default-skills", "--skills", "other",
+                                 "--project-dir", proj])
+        blank = run(["default-skills", "--project-dir", proj])
+        null = run(["default-skills", "--skills", "null", "--replace",
+                    "--project-dir", proj])
+        spaced = run(["default-skills", "--skills", "two words", "--replace",
+                      "--project-dir", proj])
+        both = run(["default-skills", "--skills", "x", "--remove",
+                    "--project-dir", proj])
+        refused_clean = (raw(mpath) == written and len(rows(proj)) == 1
+                         and held(mpath) == after_set)
+
+        rep_code, _rep_txt = run(["default-skills", "--skills", "other",
+                                  "--replace", "--reason", "swap",
+                                  "--project-dir", proj])
+        after_rep = held(mpath)
+        rep_rows = rows(proj)
+        rm_code, _rm_txt = run(["default-skills", "--remove",
+                                "--project-dir", proj])
+        after_rm = _mio.load_manifest(mpath).get("meta") or {}
+        again = run(["default-skills", "--remove", "--project-dir", proj])
+        all_rows = rows(proj)
+        empty_proj, _empty_mp = mk("dsv-empty", base_manifest())
+        nothing_to_replace = run(["default-skills", "--skills", "x",
+                                  "--replace", "--project-dir", empty_proj])
+        sproj, smpath = mk("dsv-sharded", base_manifest(), sharded=True)
+        s_code, _s_txt = run(["default-skills", "--skills", "writing-python",
+                              "--project-dir", sproj])
+
+        check("dsv1 default-skills sets an absent list (trimmed, deduped, in "
+              "written order) that resolution then reads, journals it, refuses "
+              "an existing list without --replace, refuses an empty, null, "
+              "multi-word or --remove-contradicted spelling, replaces with "
+              "--replace and drops with --remove, writing nothing on every "
+              "refusal: %r"
+              % ((set_code, after_set, resolved, dup_code, dup_txt[-160:],
+                  after_rep, rm_code, sorted(after_rm), again[0]),),
+              before_key is None and set_code == 0
+              and after_set == ["writing-python", "no-silent-pass"]
+              and resolved == ["writing-python", "no-silent-pass"]
+              and findings == [] and len(set_rows) == 1
+              and details(set_rows[0]).get("field") == "meta.defaultSkills"
+              and details(set_rows[0]).get("from") is None
+              and details(set_rows[0]).get("to") == "writing-python,no-silent-pass"
+              and dup_code == 2 and "writing-python" in dup_txt
+              and "--replace" in dup_txt
+              and blank[0] == 2 and null[0] == 2 and spaced[0] == 2
+              and both[0] == 2 and refused_clean
+              and rep_code == 0 and after_rep == ["other"]
+              and len(rep_rows) == 2
+              and details(rep_rows[1]).get("reason") == "swap"
+              and rm_code == 0 and "defaultSkills" not in after_rm
+              and again[0] == 2 and nothing_to_replace[0] == 2
+              and len(all_rows) == 3
+              and details(all_rows[2]).get("from") == "other"
+              and details(all_rows[2]).get("to") is None
+              and s_code == 0 and held(smpath) == ["writing-python"])
+
+        usage = str(M.__doc__ or "")
+        usage_at = usage.find("audit-task.py default-skills")
+        usage_end = usage.find("\n  audit-task.py ", usage_at + 1)
+        usage_flags = set(re.findall(
+            r"--[a-z][a-z-]*", usage[usage_at:usage_end]
+            if usage_at >= 0 and usage_end > usage_at else ""))
+        spelled = M.option_dests()
+        universal = set(spelled[d] for d in M.UNIVERSAL_FLAGS)
+        table_flags = set(spelled[d] for d in
+                          M.VERB_FLAGS.get("default-skills", ()))
+        check("dsv2 the default-skills verb is in the usage block with exactly "
+              "the flags VERB_FLAGS reads: table %r, usage %r"
+              % (sorted(table_flags), sorted(usage_flags - universal)),
+              table_flags != set()
+              and (usage_flags - universal) == table_flags)
+    finally:
+        _harness.remove_tree(tmp)
+
+
 def _bcm_plan_holder_cases(check):
     """`build-command --remove` against the two plan-level lists that name
     `meta.buildCommands` keys beside a phase's `testGate` and a task's
@@ -19456,6 +19581,7 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("rl-block", "_record_listing_cases"),
           ("bcm-block", "_build_command_cases"),
           ("bcp-block", "_bcm_plan_holder_cases"),
+          ("dsv-block", "_default_skills_cases"),
           ("xf-block", "_crossfile_cases"),
           ("rf-block", "_retired_flag_cases"),
           ("gx-block", "_gate_entry_cases"),

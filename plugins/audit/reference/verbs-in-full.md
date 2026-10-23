@@ -1413,6 +1413,29 @@ rolled back on a finding and journaled. Neither touches a shard.
   task is `in_progress`, a bug already closed, a missing word or reason, and `--commit` beside
   a close that changed nothing — each exit 2, nothing written.
 
+### Subcommand: `default-skills --skills a,b [--replace]` / `default-skills --remove`
+
+A skill reaches a task through its phase's registered area or through the task's own list, so
+a plan whose phases carry no `area` resolved nothing. `meta.defaultSkills` is the level above
+both, and this is its only writer — nobody hand-edits the plan:
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" default-skills --skills writing-python,before-you-claim [--replace] [--reason TEXT] [<manifestPath>] [--json]
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" default-skills --remove [<manifestPath>] [--json]
+```
+
+What a task loads is the plan default, then its area's skills, then its own, each skill once at
+its first mention (`_areas.resolve_skills`); `task.skills: null` still opts a task out of all
+three. The list is set whole, trimmed and deduped in written order, one word per name (a plugin
+skill is `plugin:skill`). A plan that already holds a list refuses a second `--skills` without
+`--replace`, naming the list it holds; `--replace` on a plan holding none is refused as well,
+and `--remove` drops the key, so the plan resolves as it did before the key existed. `--skills
+null` is refused — a plan-wide list has nothing above it for the task-level opt-out to stop —
+as are an empty `--skills`, a name with whitespace in it and `--remove` beside `--skills` or
+`--replace`, each exit 2 with the plan's bytes untouched. The write is index-only, revalidated
+and journaled as `defaultskills.change` with the old and the new list as comma-joined `from`
+and `to`.
+
 ### Subcommand: `priority <phaseId> <tier|--clear>` — the legacy spelling
 
 **This still works.** It is what `/audit:phase priority <phaseId> <tier|--clear>` was called

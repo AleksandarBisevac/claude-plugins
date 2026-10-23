@@ -5501,6 +5501,13 @@ unless `--replace`; `--replace` or `--remove` of an absent key is refused; `--re
 refused, naming each entry, while a phase's `testGate` or a task's `tests.gate` names the key.
 The write is index-only and records `buildcommand.change` with the key, the old and the new value.
 
+`default-skills --skills a,b [--replace]` / `default-skills --remove` sets or drops
+`meta.defaultSkills`, the plan-wide list `_areas.resolve_skills` reads before the areas' skills
+and the task's own. The list is set whole, trimmed and deduped; an existing list is refused,
+naming it, unless `--replace`; `--replace` or `--remove` with nothing there is refused; `--skills
+null` is refused, since a plan-wide list has nothing above it for the task-level opt-out to stop.
+The write is index-only and records `defaultskills.change` with the old and the new list.
+
 ### `plugins/audit/scripts/usage/audit-usage.py`
 `/audit:usage` — token spend, attributed, rendering its own final ASCII output (no box
 drawing, no ANSI, no emoji) so the command file can print it verbatim without paying a model

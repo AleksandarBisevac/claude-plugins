@@ -99,6 +99,9 @@ Usage:
   audit-task.py build-command <key> (--command "<cmd>" [--replace] | --remove)
                 [manifest] [--reason TEXT|-]
                 [--project-dir DIR] [--takeover] [--json]
+  audit-task.py default-skills (--skills a,b [--replace] | --remove)
+                [manifest] [--reason TEXT|-]
+                [--project-dir DIR] [--takeover] [--json]
   audit-task.py reindex [manifest]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py mute --test <path> --reason TEXT|- --owner NAME
@@ -13856,6 +13859,148 @@ def _locked_build_command(args, project, config, mpath, key, out):
     return 0
 
 
+# --- default-skills: the plan-wide skill list, set on a plan that exists --------
+# `meta.defaultSkills` IS THE LEVEL ABOVE THE AREAS (`_areas.resolve_skills`): the
+# only one a phase carrying no `area` reaches, so a plan that tags nothing names
+# its house skills here once. Nobody hand-edits the plan, so this verb is its
+# writer, through the same lock, `_write_plan` and validator every other verb on
+# this plan uses.
+#
+# THE LIST IS SET WHOLE, NOT APPENDED TO. A list that already exists is not
+# overwritten by accident - `--replace` says it was meant, and names what it
+# replaces - and `--replace` on a plan holding none is refused, as
+# `build-command` refuses it: the caller believed they were correcting a list
+# that is not there.
+#
+# `--remove` DROPS THE KEY, which is a plan resolving exactly as it did before
+# the key existed. A skill NAME is one word (a plugin skill is `plugin:skill`):
+# the same list is read back by `resolve_skills` and loaded by name, so one with
+# whitespace in it would load nothing and say so nowhere.
+DEFAULT_SKILLS_FIELD = "meta.defaultSkills"
+
+
+def _default_skills_names(args, out):
+    """The skill names `--skills` spelled, or None after saying why not.
+
+    `null` is refused rather than read as the task-level opt-out: there is no
+    level above a plan-wide list for it to stop, and `--remove` is the verb's
+    spelling of "no default"."""
+    raw = args.skills
+    if raw is None or not raw.strip():
+        out("[audit-task] default-skills needs --skills a,b (or --remove to "
+            "drop the list) -- a list with no names loads nothing; nothing "
+            "written")
+        return None
+    if raw.strip() == "null":
+        out("[audit-task] default-skills: --skills null is the per-task "
+            "opt-out, and a plan-wide list has nothing above it to stop -- "
+            "use --remove to name no default; nothing written")
+        return None
+    names = []
+    for name in _split_csv(raw):
+        if len(name.split()) != 1:
+            out("[audit-task] default-skills: %r is not one skill name -- a "
+                "name has no whitespace in it, and one with it would load "
+                "nothing; nothing written" % (name,))
+            return None
+        if name not in names:
+            names.append(name)
+    return names
+
+
+def cmd_default_skills(args, out):
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    if args.remove:
+        if args.skills is not None or args.replace:
+            out("[audit-task] default-skills --remove drops the list and takes "
+                "no --skills or --replace -- two answers to one question, and "
+                "guessing which was meant is how a list gets lost; nothing "
+                "written")
+            return E_USAGE
+        names = None
+    else:
+        names = _default_skills_names(args, out)
+        if names is None:
+            return E_USAGE
+        machine = _journal_io.check_free_text(
+            project, "the default skills", ",".join(names))
+        if machine:
+            out("[audit-task] " + machine)
+            return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_default_skills(
+                           args, project, config, mpath, names, out))
+
+
+def _default_skills_refusal(args, was, names):
+    """Why the verb may not write `names` over `was`, or None."""
+    if args.remove:
+        if was is None:
+            return ("default-skills: meta.defaultSkills is not set -- nothing "
+                    "to remove; nothing written")
+        return None
+    if was is not None and not args.replace:
+        return ("default-skills: meta.defaultSkills already holds %s -- pass "
+                "--replace to overwrite it; nothing written"
+                % (", ".join(was) or "an empty list",))
+    if was is None and args.replace:
+        return ("default-skills: --replace names a list the plan does not "
+                "hold -- drop --replace to set it; nothing written")
+    return None
+
+
+def _locked_default_skills(args, project, config, mpath, names, out):
+    """Set, replace or drop `meta.defaultSkills`, under lock."""
+    plan = _read_plan(mpath, out)
+    if isinstance(plan, int):
+        return plan
+    raw_index, assembled, vm = plan
+    meta = dict(assembled.get("meta") or {})
+    held = meta.get("defaultSkills")
+    was = list(held) if isinstance(held, list) else None
+    refusal = _default_skills_refusal(args, was, names)
+    if refusal:
+        out("[audit-task] " + refusal)
+        return E_USAGE
+    if args.remove:
+        del meta["defaultSkills"]
+        verb = "removed"
+    else:
+        meta["defaultSkills"] = names
+        verb = "replaced" if was is not None else "set"
+    assembled["meta"] = meta
+
+    wrote = _write_plan(project, mpath, raw_index, assembled, vm, [],
+                        "the default skills", out, index_fields=("meta",))
+    if isinstance(wrote, int):
+        return wrote
+    written, written_manifest, warnings = wrote
+    reason = (args.reason or "").strip()
+    summary = "%s %s%s" % (DEFAULT_SKILLS_FIELD, verb,
+                           ": " + reason if reason else "")
+    was_text = ",".join(was) if was is not None else None
+    now_text = ",".join(names) if names is not None else None
+    details = {"field": DEFAULT_SKILLS_FIELD, "from": was_text, "to": now_text}
+    if reason:
+        details["reason"] = reason
+    jres = _journal_row(project, config, mpath, "defaultskills.change", summary,
+                        details)
+    index_note = _index_dirty_note(written, mpath, project, None)
+    if args.as_json:
+        result = {"ok": True, "change": verb, "from": was, "to": names,
+                  "written": written}
+        out(_json_tail(result, args, jres, warnings, written_manifest,
+                       index_note))
+        return 0
+    out("[audit-task] %s" % (summary,))
+    _report_tail(out, jres, "defaultskills.change", warnings, written_manifest,
+                 written, index_note)
+    return 0
+
+
 # --- next-id: the id a hand-written record takes ---------------------------------
 # A bug, a parked proposal and a bug's fix task are the records the model still
 # writes by hand (`commands/bug.md`, `init.md`), so they were also the ids the model
@@ -14274,6 +14419,11 @@ VERB_FLAGS = {
     # command's dest is `build_command` and not `command`, which the parser
     # already holds for the verb word itself.
     "build-command": ("build_command", "replace", "remove", "reason"),
+    # `default-skills` sets, replaces or drops `meta.defaultSkills`, the plan-wide
+    # list `_areas.resolve_skills` reads before the areas'. It names its list
+    # with the `--skills` flag `add` already holds, so the two verbs spell a
+    # skill list one way.
+    "default-skills": ("skills", "replace", "remove", "reason"),
 }
 
 
@@ -14307,7 +14457,8 @@ def build_parser():
                             "unblock", "note", "couple", "uncouple", "finding",
                             "resolve-finding", "correct", "bug-add",
                             "bug-close", "reindex", "mute", "unmute",
-                            "record-listing", "build-command", "file-return"])
+                            "record-listing", "build-command",
+                            "default-skills", "file-return"])
     p.add_argument("title", nargs="?", default="")
     p.add_argument("manifest", nargs="?", default=None)
     p.add_argument("--phase", default=None)
@@ -14318,7 +14469,10 @@ def build_parser():
     p.add_argument("--park", action="store_true", default=False,
                    help="add-phase: write the phase as a parked proposal instead, to "
                         "materialize on the development branch after this branch merges")
-    p.add_argument("--skills", default=None)
+    p.add_argument("--skills", default=None,
+                   help="add: the task's skills, comma-separated (the literal "
+                        "null opts the task out); default-skills: the "
+                        "plan-wide default list, comma-separated")
     p.add_argument("--model", default=None)
     p.add_argument("--files", action="append", default=None,
                    help=_list_help("repo-relative paths", "--files src/a.ts,src/b.ts",
@@ -14636,10 +14790,13 @@ def build_parser():
                         "byte for byte")
     p.add_argument("--replace", action="store_true", default=False,
                    help="build-command: overwrite a key that already exists "
-                        "(refused without it, naming the current value)")
+                        "(refused without it, naming the current value); "
+                        "default-skills: overwrite a list the plan already "
+                        "holds")
     p.add_argument("--remove", action="store_true", default=False,
                    help="build-command: drop the key (refused while a "
-                        "phase's testGate or a task's tests.gate names it)")
+                        "phase's testGate or a task's tests.gate names it); "
+                        "default-skills: drop meta.defaultSkills")
     p.add_argument("--takeover", action="store_true")
     p.add_argument("--json", action="store_true", dest="as_json")
     return _claude_home.attach_usage_hint(p)
@@ -14972,6 +15129,7 @@ def _dispatch(args, argv, out):
              "mute": cmd_mute, "unmute": cmd_unmute,
              "record-listing": cmd_record_listing,
              "build-command": cmd_build_command,
+             "default-skills": cmd_default_skills,
              "file-return": cmd_file_return}
     try:
         return doors[args.command](args, out)

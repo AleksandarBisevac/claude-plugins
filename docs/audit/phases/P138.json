@@ -51,16 +51,44 @@
         "file": "plugins/audit/scripts/governance/run-agent-session.py:211-251",
         "issue": "A second resolver of 'where does this plan-named skill live': audit:doctor's check_plan_skills (status/_doctor_policy.py:385) discovers skills through installed plugins as well, while skill_places knows three places and refuses any plugin:skill whose plugin is not the running one. A plan naming an installed third-party skill (e.g. superpowers:...) that doctor reports as resolving makes the drive refuse the launch at run time, with no way out except task.skills null. The refusal is what the clause asked for; the divergence between the two resolvers and the lack of a pre-launch signal is the cost.",
         "resolution": "Either say in the refusal message that only the project, the user's directory and this plugin are searched (and that skills: null opts out), or have doctor's check use skill_places so the two agree; consider running find_skills in the drive before starting the task so the refusal comes before the task is marked in_progress."
+      },
+      {
+        "id": "P138-R5",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:14058-14090 (cmd_default_skills)",
+        "issue": "The verb advertises a manifest positional (usage block `default-skills (--skills a,b [--replace] | --remove) [manifest]`; verbs-in-full.md `[<manifestPath>]`) but never calls `_manifest_from_positional(args)` as `cmd_reindex` (and the other id-less verbs) does. The path lands in `args.title` and is silently ignored, so the plan written is the one resolved from --project-dir / CLAUDE_PROJECT_DIR / cwd, not the one named. Checked by running both verbs against a scratch repo with a nonexistent manifest path: `reindex /nonexistent/zzz.json` exits 2 with 'manifest not found: /nonexistent/zzz.json', while `default-skills --remove /nonexistent/zzz.json` ignores the path and answers about the scratch repo's own plan. A caller who names plan X and gets plan Y written is the lock/journal/manifest split the helper's own docstring warns of. No case passes a manifest positional, so dsv1/dsv2 cannot see it.",
+        "resolution": "Call `_manifest_from_positional(args)` first in cmd_default_skills, before `_resolve_project`, and add a dsv case that passes the plan path as the positional with a different --project-dir and asserts the named plan changed and a nonexistent path is refused by name."
+      },
+      {
+        "id": "P138-R6",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py (whole diff) / docs/audit/audit-plan.json",
+        "issue": "contradicts task clause: 'Declare this repository's Python house skills there through the plugin's own verb ... writing-python, before-you-claim, no-silent-pass.' The diff declares nothing; the executor's outcome says 'Not done by this task ... a post-merge step with the verb'. The clause was in the description and the phase outcome ('a plan can name house skills once') is not exercised for this repo until it is done, so the intent is not met as written. The narrowed scope is the executor's own, not the description's.",
+        "resolution": "Run `audit-task.py default-skills --skills writing-python,before-you-claim,no-silent-pass --reason ...` against the plan from the merged code (or file a dedicated follow-up task for it before P138 signs off) and record it, rather than leaving it as a prose note."
+      },
+      {
+        "id": "P138-R7",
+        "severity": "low",
+        "file": "plugins/audit/reference/manifest-conventions.md:259; plugins/audit/scripts/status/audit-lookup.py:655; plugins/audit/scripts/manifest/_manifest_typos.py:244-260",
+        "issue": "Three statements of the resolution order still describe two levels. manifest-conventions.md says executor skills are 'each tag's skills first, then task.skills ... area first' (a file the executor/orchestrator reads, and the one the area section points to as the rule); the executor brief prints 'No skill resolves for this task: no area default and no task skill.'; the unresolved-skills warning offers only 'set task.skills, register default skills on an area, or write null' and `_skills_in_use` ignores a plan that wrote only meta.defaultSkills. Each now omits the new first level.",
+        "resolution": "Update the conventions bullet to 'meta.defaultSkills, then each tag's skills, then task.skills'; say 'no plan default, no area default and no task skill' in the brief; add 'set meta.defaultSkills with audit-task.py default-skills' to the warning's exits."
+      },
+      {
+        "id": "P138-R8",
+        "severity": "low",
+        "file": "tests/test_audit_task.py:4655",
+        "issue": "The edit that added the default-skills flag row also changed the title `check(\"vf4 SECOND-DIRECTION CASE:` to `check(\"vf4SECOND-DIRECTION CASE:` (space lost; visible in the diff as an unrelated -/+ pair). Case ids are read by name elsewhere in this repo, so a mangled id is a case a title search no longer finds.",
+        "resolution": "Restore the space: `vf4 SECOND-DIRECTION CASE:`."
       }
     ],
-    "outcome": "[findings: 4 - 0 high, 2 med, 2 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 8 - 0 high, 4 med, 4 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
     {
       "id": "P138.1",
       "title": "run-agent-session preloads the task's resolved skills into the session's system prompt and records them",
-      "status": "in_progress",
+      "status": "done",
       "description": "Give run-agent-session.py a repeatable --skill NAME (the drive passes _areas.resolve_skills(manifest, phase, task) for both the writer and the reviewer). For each name, locate SKILL.md the way Claude Code resolves a skill for a session in that tree - the project's .claude/skills/<name>/, the user's <outside-repo><name>/, then the running plugin's own skills/ (a plugin-qualified name plugin:skill only from that plugin) - and refuse to start, exit E_USAGE with the name and every place looked, when one is missing: a declared skill that does not load is the defect this phase exists for. Write the bodies, each wrapped with its name, to one file under the session's scratch and pass it as --append-system-prompt-file (keep the task prompt on stdin byte-identical). Record in the session's record line the preloaded names, paths and sha256 of each body, so a reader can tell which skills a session had without a Skill call. The reviewer keeps its --agents body; the skills append to it the same way. Cases: the argv carries the file when skills resolve and carries no such flag when none do; the file holds each body once in resolution order; a missing skill refuses with its name; the record names each skill with its digest; the prompt on stdin is unchanged.",
       "files": [
         "plugins/audit/scripts/governance/run-agent-session.py",
@@ -88,19 +116,40 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "587e287116f2",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "run-agent-session.py: repeatable --skill NAME (argparse append). find_skills/skill_places resolve each name in order to <tree>/.claude/skills/<name>/SKILL.md, then <_claude_home.claude_home()>/skills/<name>/SKILL.md, then <PLUGIN_ROOT>/skills/<name>/SKILL.md; plugin:skill resolves only from the running plugin (name read from .claude-plugin/plugin.json) with no fallback; names must match SKILL_NAME (no separators). A missing name -> refuse() -> E_USAGE naming the skill and every path looked in; an existing but undecodable/unreadable SKILL.md -> io-error, E_IO. load_skills reads bytes, sha256 of the file bytes; skills_prompt wraps each full SKILL.md as <skill name=...>...</skill>; _prepare writes one <stream>.skills.md under the scratch; session_argv adds --append-system-prompt-file only when skills were named (before --agents, so the resume pair stays last and ras17 still holds). write_record gains a skills list (name, path, sha256) only when skills were named; _run takes an out-dict `ran` so the record carries them whichever outcome follows. The stdin prompt and the reviewer's --agents body are untouched. drive-phase.py: new session_skills(ctx, task) calls the imported _areas.resolve_skills(manifest, phase, task) over load_phase(ctx); writer_argv appends one --skill per name, so the writer, the reviewer, the resume/review-fix dispatches and the validation session all carry it (no resolver copy). PLUGIN-BUILD-GUIDE.md run-agent-session section describes it. Tests: tests/test_run_agent_session.py stub records the --append-system-prompt-file path and content, HOME/USERPROFILE pinned to the suite scratch with CLAUDE_CONFIG_DIR empty; new cases ras35-ras46 via _skill_cases; tests/test_drive_phase.py new _session_skill_cases (stage sk-block, STAGES row after rv-block) with sk1-sk3, plus a skills= parameter on _tdd_writer_repo. `claude --help` lists --append-system-prompt[-file] (grep matched 'append-system-prompt' at help lines 26, 56, 240; no paid session launched). Gate: `python3 tools/sweep-selftests.py tests/test_run_agent_session.py tests/test_drive_phase.py tests/test__deps.py` run in the task tree with output to a file, exit 0: 3/3 files ok, 869 cases (test__deps 254, test_drive_phase 560, test_run_agent_session 55). ruff check on the four .py files: exit 0; vermin -t=3.8- on run-agent-session.py and its test: exit 0. Dependants: run-agent-session.py's consumers (drive-phase.py write_record is the drive's own stdout writer, unrelated; the drive's reader of the record file takes body.get('line') and ignores the new skills key) still correct; test_run_agent_session/_run and test_drive_phase/_run are their own helpers; exit_for unchanged; _config_rules / _panel_settings / audit-config.schema.json share only the basename text and no new config key was added, so unchanged; PLUGIN-BUILD-GUIDE.md updated. drive-phase.py: writer_argv signature unchanged, only the argv it returns gains --skill pairs; callers (writer, resume, review-fix, reviewer, validation) all pass through it; tests reading _flag(argv, ...) (ws*, rv*, sr2) still pass in the full run. Not done: the live check that a real claude session sees the appended skills (only the fake claude was used, per the instruction not to launch a paid session). Note: P138.2 touches _areas.py defaults; session_skills reads resolve_skills, so it picks those up without change.",
+        "descriptive": "A writer or reviewer session started by the drive now begins with each skill the task resolves to appended to its system prompt, recorded by name, path and digest, and a skill that cannot be found stops the launch by name."
       },
       "startedAt": "2026-10-23T01:06:06Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-23T01:41:01Z",
+      "verifiedBy": [
+        "run-agent-session: skills reach the session as one --append-system-prompt-file (each body once, in order, project beats user), wrapped by name, stdin prompt byte-identical",
+        "run-agent-session: no --skill means no flag and no file, and no skills key in the record",
+        "run-agent-session: a missing skill refuses E_USAGE naming it and all three places looked",
+        "run-agent-session: plugin:skill reads only that plugin (a same-named project skill is a decoy), another plugin's name refuses, a path-like name refuses",
+        "run-agent-session: the --record line names each skill with path and sha256 (project and user copies of one name differ)",
+        "run-agent-session: the reviewer keeps its --agents body and gets the skills beside it",
+        "run-agent-session: an undecodable SKILL.md is an io-error, not a missing skill",
+        "drive-phase: the writer's and the reviewer's printed commands carry one --skill per resolved skill in order, and none when the task resolves none"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-23T01:38:08Z.d7c9f6",
         "status": "passed",
         "at": "2026-10-23T01:38:08Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "587e287116f2",
+        "at": "2026-10-23T01:41:01Z",
+        "return": "docs/audit/evidence/returns/P138.1/20261023T010606Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-23T01:26:07Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_run_agent_session.py tests/test_drive_phase.py` in a throwaway tree at HEAD: the run timed out: no time was left of the 480-second deadline; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
@@ -120,7 +169,8 @@
         "plugins/audit/scripts/manifest/_manifest_vocab.py",
         "plugins/audit/scripts/manifest/_manifest_phases.py",
         "tests/test_audit_task.py",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "tools/demo/gen-demo-manifest.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -138,17 +188,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-23T01:06:09Z",
+      "startedAt": "2026-10-23T01:51:42Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-23T02:11:51Z.e01703",
+        "status": "passed",
+        "at": "2026-10-23T02:11:51Z"
+      }
     }
   ],
   "request": "Stage 1 fifth attempt: check-skills-loaded FAIL - pipeline writers a2d and a4d loaded no skill while every plain session did; the owner requires skill loading fixed before 3.6.0 ('obavezno da resimo to ucitavanje skill-ova')",

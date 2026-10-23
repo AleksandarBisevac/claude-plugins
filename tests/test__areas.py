@@ -163,6 +163,71 @@ def _cases(check):
           and M.resolve_skills({"meta": {"areas": {"a": {"skills": "conv"}}}},
                                {"area": "a"}, None) == [])
 
+    # --- (ds) the plan-wide default skill list -----------------------------------
+    # `meta.defaultSkills` is the level ABOVE the areas: a plan whose phases carry
+    # no area resolved nothing before it. The fixture's values are chosen so the
+    # three levels cannot be confused - `shared` sits in the default AND the area
+    # AND the task, so only first-occurrence-wins leaves it once and only the
+    # default-first order leaves it at the front.
+    DMAN = {"meta": {"defaultSkills": ["house", "shared"],
+                     "areas": {"api": {"root": "services/api",
+                                       "skills": ["python-conv", "shared"]}}},
+            "phases": [{"id": "P1", "area": "api"}, {"id": "P2"}]}
+    check("ds1 a phase with NO area resolves the plan default - the case that "
+          "resolved nothing before the key existed",
+          M.resolve_skills(DMAN, DMAN["phases"][1], {"id": "P2.1"})
+          == ["house", "shared"],
+          repr(M.resolve_skills(DMAN, DMAN["phases"][1], {"id": "P2.1"})))
+    check("ds2 the plan default loads FIRST, then the area's, then the task's, "
+          "each skill once at its first mention",
+          M.resolve_skills(DMAN, DMAN["phases"][0],
+                           {"skills": ["task-skill", "python-conv", "house"]})
+          == ["house", "shared", "python-conv", "task-skill"],
+          repr(M.resolve_skills(DMAN, DMAN["phases"][0],
+                                {"skills": ["task-skill", "python-conv", "house"]})))
+    check("ds3 task.skills null opts out of the plan default too - an answer, "
+          "not a miss, exactly as it stops the area default",
+          M.resolve_skills(DMAN, DMAN["phases"][1], {"skills": None}) == []
+          and M.resolve_skills(DMAN, DMAN["phases"][0], {"skills": None}) == [])
+    check("ds4 [] and absent task skills still take the plan default - the "
+          "unconsidered shapes did not change meaning",
+          M.resolve_skills(DMAN, DMAN["phases"][1], {"skills": []})
+          == ["house", "shared"]
+          and M.resolve_skills(DMAN, DMAN["phases"][1], None) == ["house", "shared"])
+    check("ds5 a junk default contributes nothing: a bare string is not iterated "
+          "per character, and non-string or blank entries are dropped",
+          M.resolve_skills({"meta": {"defaultSkills": "house"}}, {}, {}) == []
+          and M.resolve_skills({"meta": {"defaultSkills": None}}, {}, {}) == []
+          and M.resolve_skills({"meta": {"defaultSkills": [3, " ", " ok "]}},
+                               {}, {}) == ["ok"])
+    check("ds6 with the key ABSENT nothing changed - the second-direction case: "
+          "a guard that always added something would fail here",
+          M.resolve_skills(MAN, MAN["phases"][2], {"skills": ["t"]}) == ["t"]
+          and M.resolve_skills(MAN, MAN["phases"][0], {}) == ["python-conv"])
+    check("ds7 plan_skill_refs lists a default skill once, labelled by the first "
+          "task that resolves it - the doctor and the status gate see what applies",
+          M.plan_skill_refs({"meta": {"defaultSkills": ["house"]},
+                             "phases": [{"id": "P1", "tasks": [{"id": "P1.1"},
+                                                               {"id": "P1.2"}]}]})
+          == [("P1.1 skill", "house")])
+    f, w = M.validate_default_skills({"defaultSkills": ["a", "b"]})
+    check("ds8 a list of skill names validates clean, and so does an absent key "
+          "and an empty list",
+          not f and not w and M.validate_default_skills({}) == ([], [])
+          and M.validate_default_skills({"defaultSkills": []}) == ([], [])
+          and M.validate_default_skills(None) == ([], []), repr((f, w)))
+    f, _ = M.validate_default_skills({"defaultSkills": "writing-python"})
+    check("ds9 a non-list is a finding naming the key and what it was: %r" % (f,),
+          len(f) == 1 and "meta.defaultSkills" in f[0] and "str" in f[0])
+    f, _ = M.validate_default_skills({"defaultSkills": None})
+    check("ds10 ...an explicit null is a non-list too: the key is written, so "
+          "it is refused rather than read as absent: %r" % (f,),
+          len(f) == 1 and "NoneType" in f[0])
+    f, _ = M.validate_default_skills({"defaultSkills": ["ok", 3, "", None]})
+    check("ds11 non-string or blank entries are ONE finding counting them: %r"
+          % (f,),
+          len(f) == 1 and "3 bad" in f[0])
+
     # --- conflicts + unregistered tags -------------------------------------------
     check("c1 two areas declaring DIFFERENT reviewers is a conflict worth naming",
           M.review_skill_conflicts(MAN, {"area": ["api", "sec"]})

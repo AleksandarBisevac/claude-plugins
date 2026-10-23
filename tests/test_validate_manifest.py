@@ -316,6 +316,7 @@ def _cases(record):
         _cases_schema_parity(record, path2)
         _cases_never_raises(record, path2)
         _cases_directory_entries(record)
+        _cases_default_skills(record, path2)
     finally:
         if os.path.exists(path2):
             os.unlink(path2)
@@ -1049,6 +1050,35 @@ def _cases_directory_entries(record):
                repr((code_dir, code_file, warned, out_file)))
     finally:
         shutil.rmtree(root, ignore_errors=True)
+
+
+def _cases_default_skills(record, path):
+    """`meta.defaultSkills` through the command: a list is accepted and silent, a
+    non-list or a list with a non-string entry is a FINDING (exit 1), and the key
+    is a known one - it draws no 'unknown key' warning, which is what the
+    vocabulary has to say before a plan may carry it."""
+    def _run_with(value):
+        plan = _valid_manifest()
+        plan["meta"]["defaultSkills"] = value
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(plan, fh)
+        return _run([path, "--verbose"])
+
+    code_ok, out_ok = _run_with(["writing-python", "no-silent-pass"])
+    record("dsk1 a list of skill names is accepted (exit 0) and draws neither a "
+           "finding nor an unknown-key warning: %r" % (out_ok,),
+           code_ok == 0 and "defaultSkills" not in out_ok
+           and "unknown" not in out_ok)
+    code_str, out_str = _run_with("writing-python")
+    record("dsk2 a bare string is refused (exit 1) by a FINDING naming the key: %r"
+           % (out_str,),
+           code_str == 1 and any(ln.startswith("FINDING: ")
+                                 and "meta.defaultSkills" in ln
+                                 for ln in out_str.splitlines()))
+    code_num, out_num = _run_with(["ok", 7])
+    record("dsk3 a list holding a non-string entry is refused (exit 1) too - the "
+           "per-entry half of the rule, which dsk2 cannot reach: %r" % (out_num,),
+           code_num == 1 and "meta.defaultSkills" in out_num)
 
 
 def _selftest():

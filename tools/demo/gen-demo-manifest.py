@@ -986,6 +986,14 @@ SCHEMA_EXEMPTIONS = {
         "panel, not /audit:status - so a mute carried here would be a key "
         "nothing downstream shows, the same reason meta.phaseGate above is "
         "exempt. REVISIT when a rendered surface shows a muted suite.",
+    "meta.defaultSkills":
+        "the plan-wide default skill list `_areas.resolve_skills` reads before "
+        "the areas' and a task's own, so a session starts with those skills "
+        "loaded. It changes no figure the report or the panel renders - they "
+        "show a task's own skills and an area's, never the resolved list - so "
+        "a value carried here would be a lever nothing the demo shows reads, "
+        "and stamping it would move the committed rendered artifacts. REVISIT "
+        "when a rendered surface shows the resolved skill list.",
     # A planned test's former 'must fail if' line is retired: the schema still
     # accepts it so no plan that validated stops validating, and nothing reads
     # it any more - not the drive, not a rendered surface. Removing the key is

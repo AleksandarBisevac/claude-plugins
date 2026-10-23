@@ -410,6 +410,11 @@ KNOWN_META = {"version", "repo", "title", "createdISO", "node",
               # v0.28: the registry a phase's `area` tag can name (_areas.py).
               # Registration is optional in both directions — see _check_areas.
               "areas",
+              # The plan-wide default skill list `_areas.resolve_skills` reads
+              # before area defaults and a task's own, so a phase with no area
+              # still resolves skills. `_areas.validate_default_skills` is the
+              # shape check, called from `_manifest_phases._check_areas`.
+              "defaultSkills",
               # When this plan could first have recorded a test run at all, so a
               # plan adopted mid-flight reads its pre-recorder work as impossible
               # to evidence rather than as unevidenced. Written ONCE by

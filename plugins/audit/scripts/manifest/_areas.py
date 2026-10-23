@@ -22,7 +22,8 @@ What registration buys is resolution — two questions the orchestrator asks per
 phase, whose answers used to have exactly one source:
 
   review skill   phase.reviewSkill ?? areas[tag].reviewSkill ?? meta.reviewSkill
-  executor skills   area skills (tag order) + task.skills, deduped, area first
+  executor skills   meta.defaultSkills + area skills (tag order) + task.skills,
+                    deduped, widest first
 
 Both are implemented HERE, once, and every surface that shows an answer shows this
 one. `resolve_review_skill` returns the basis alongside the value — "area api", not
@@ -230,38 +231,89 @@ def skills_opted_out(task):
     return "skills" in t and t.get("skills") is None
 
 
-def resolve_skills(manifest, phase, task):
-    """The skills an executor subagent loads: area defaults first, then the task's.
+def _skill_names(skills):
+    """The usable names in a declared skills value, trimmed, in written order.
 
-    Area first because an area skill is the house style ("this service is Django,
-    read these conventions") and the task's are the specifics — a subagent that
-    reads the specifics before the conventions has already made the decisions the
-    conventions were meant to inform. Deduped, first occurrence wins, so naming a
-    skill in both places is a no-op rather than a double load.
+    A non-list container (a bare string, say) yields nothing rather than one
+    "skill" per character, and a non-string or blank entry is dropped - the
+    validator is what names those, resolution must never raise on them."""
+    if not isinstance(skills, list):
+        return []
+    return [s.strip() for s in skills if isinstance(s, str) and s.strip()]
+
+
+def plan_default_skills(manifest):
+    """`meta.defaultSkills` as resolution reads it: the plan-wide skill names
+    every task loads first, or [] when the plan names none.
+
+    Accepts a whole manifest or a bare `meta`, as `registry` does."""
+    if not isinstance(manifest, dict):
+        return []
+    meta = manifest.get("meta")
+    src = meta if isinstance(meta, dict) else manifest
+    return _skill_names(src.get("defaultSkills"))
+
+
+def resolve_skills(manifest, phase, task):
+    """The skills an executor subagent loads: the plan default, then the area
+    defaults, then the task's.
+
+    Widest first, because each level narrows the one before it: the plan's
+    default is the house style for every phase ("this repository is Python,
+    read these"), an area skill is the style of one part of it, and the task's
+    are the specifics — a subagent that reads the specifics before the
+    conventions has already made the decisions the conventions were meant to
+    inform. Deduped, first occurrence wins, so naming a skill at two levels is a
+    no-op rather than a double load.
 
     `task.skills: null` is a conscious opt-out and resolves to [] REGARDLESS of
-    what the areas declare — stopping the fallback is the point, the same
-    answer-not-a-miss rule reviewSkill and owner follow; `skills_opted_out` is
-    the basis a display can name. `[]`/absent stays "unconsidered": the area
-    default applies. An area-level null contributes nothing and stops nothing —
-    the area IS the fallback, so at that level null and [] are equivalent (the
-    schema says so too). A non-list container (a bare string, say) contributes
-    nothing rather than iterating per character, which is what `or []` used to
-    let it do.
+    what the plan or the areas declare — stopping the fallback is the point, the
+    same answer-not-a-miss rule reviewSkill and owner follow;
+    `skills_opted_out` is the basis a display can name. `[]`/absent stays
+    "unconsidered": the plan and area defaults apply. An area-level null
+    contributes nothing and stops nothing — the area IS the fallback, so at that
+    level null and [] are equivalent (the schema says so too). A non-list
+    container (a bare string, say) contributes nothing rather than iterating per
+    character, which is what `or []` used to let it do.
     """
     if skills_opted_out(task):
         return []
+    levels = [plan_default_skills(manifest)]
+    levels.extend(_skill_names(entry_of(manifest, tag).get("skills"))
+                  for tag in areas_of((phase or {}).get("area")))
+    levels.append(_skill_names((task or {}).get("skills")))
     out = []
-    for tag in areas_of((phase or {}).get("area")):
-        skills = entry_of(manifest, tag).get("skills")
-        for skill in (skills if isinstance(skills, list) else []):
-            if isinstance(skill, str) and skill.strip() and skill.strip() not in out:
-                out.append(skill.strip())
-    tskills = (task or {}).get("skills")
-    for skill in (tskills if isinstance(tskills, list) else []):
-        if isinstance(skill, str) and skill.strip() and skill.strip() not in out:
-            out.append(skill.strip())
+    for level in levels:
+        for skill in level:
+            if skill not in out:
+                out.append(skill)
     return out
+
+
+def validate_default_skills(meta):
+    """(findings, warnings) for `meta.defaultSkills`. Never raises.
+
+    Takes the META, not the value, so "not written" and "written as null" are
+    different questions: an absent key is quiet, and an explicit null is a
+    non-list like any other (unlike `task.skills`, where null is the opt-out,
+    there is nothing above a plan-wide default for a null to stop)."""
+    findings, warnings = [], []
+    if not isinstance(meta, dict) or "defaultSkills" not in meta:
+        return findings, warnings
+    skills = meta.get("defaultSkills")
+    if not isinstance(skills, list):
+        findings.append(_output.finding(
+            "areas.validate_default_skills.array-skill-names",
+            "meta.defaultSkills: must be an array of skill names, got %s"
+            % (type(skills).__name__,)))
+        return findings, warnings
+    bad = [s for s in skills if not isinstance(s, str) or not s.strip()]
+    if bad:
+        findings.append(_output.finding(
+            "areas.validate_default_skills.every-entry-non",
+            "meta.defaultSkills: every entry must be a non-empty skill name "
+            "(%d bad: %s)" % (len(bad), _output.some_of(bad, render=repr))))
+    return findings, warnings
 
 
 def plan_skill_refs(manifest):

@@ -799,6 +799,10 @@ def _check_areas(manifest):
       * do a phase's areas AGREE about its reviewer — a warning naming the
         winner, because written order decides and a silent tie-break is a
         reviewer nobody can explain.
+
+    `meta.defaultSkills`, the plan-wide level that resolves above the areas, is
+    shape-checked here beside the registry because `_areas` resolves both
+    together; a non-list or a non-string entry is a finding, like the registry's.
     """
     findings, warnings = [], []
     meta = manifest.get("meta")
@@ -807,6 +811,9 @@ def _check_areas(manifest):
         f, w = _areas.validate_registry(meta.get("areas"))
         findings.extend(f)
         warnings.extend(w)
+    f, w = _areas.validate_default_skills(meta)
+    findings.extend(f)
+    warnings.extend(w)
     for pid, tag in _areas.unregistered_tags(manifest):
         warnings.append("phase %s: area tag %r has no entry in meta.areas — it "
                         "groups and filters, but resolves to no root, no default "

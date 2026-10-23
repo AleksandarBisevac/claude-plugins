@@ -167,9 +167,16 @@
           ],
           "description": "Skill invoked at phase sign-off. null (default) => skip review; tests are the signer. A phase may override it (phase.reviewSkill), and a registered area may sit between the two — resolved phase.reviewSkill ?? meta.areas[tag].reviewSkill ?? meta.reviewSkill."
         },
+        "defaultSkills": {
+          "type": "array",
+          "description": "Plan-wide default executor skills: the names every task loads FIRST, before its area's skills and its own, deduped with the first mention winning. It is the only level a phase carrying no `area` reaches, so a plan that tags nothing can still name its house skills once. Set it with `audit-task.py default-skills`, not by hand. ABSENT or [] means the plan names no default — resolution is exactly what it was before the key existed. An explicit `task.skills: null` still opts a task out of this default as well as the area's; an explicit null here is not an opt-out and is refused, since there is nothing above a plan-wide list for it to stop.",
+          "items": {
+            "type": "string"
+          }
+        },
         "areas": {
           "type": "object",
-          "description": "Registry of the areas a phase's `area` tag can name — the monorepo half of the plugin. Optional in both directions and back-compatible by construction: a tag with no entry here stays legal (the validator warns; nothing refuses), and an entry no phase uses is legal too. Registering a tag is what gives it properties: a root directory, a description, a default sign-off reviewer, default executor skills and an advisory owner. Resolution is phase.reviewSkill ?? areas[tag].reviewSkill ?? meta.reviewSkill for the reviewer, and area skills + task.skills (deduped, area first) for the executor. When a phase carries several tags, WRITTEN ORDER decides — the first tag whose area declares the field answers.",
+          "description": "Registry of the areas a phase's `area` tag can name — the monorepo half of the plugin. Optional in both directions and back-compatible by construction: a tag with no entry here stays legal (the validator warns; nothing refuses), and an entry no phase uses is legal too. Registering a tag is what gives it properties: a root directory, a description, a default sign-off reviewer, default executor skills and an advisory owner. Resolution is phase.reviewSkill ?? areas[tag].reviewSkill ?? meta.reviewSkill for the reviewer, and meta.defaultSkills + area skills + task.skills (deduped, widest first) for the executor. When a phase carries several tags, WRITTEN ORDER decides — the first tag whose area declares the field answers.",
           "additionalProperties": {
             "$ref": "#/$defs/area"
           }
@@ -1408,7 +1415,7 @@
             "array",
             "null"
           ],
-          "description": "Skills the executor subagent loads (via the Skill tool) before writing code for this task. The area's skills load first, then these, deduped — so a house convention cannot be displaced by a task-specific one. Explicit null means 'no skills apply to this task' and STOPS the area fallback — nothing loads even when the area declares defaults; it is an answer, not a miss, exactly like reviewSkill. [] or absent means unconsidered: the area default still applies.",
+          "description": "Skills the executor subagent loads (via the Skill tool) before writing code for this task. The plan's meta.defaultSkills load first, then the area's skills, then these, deduped — so a house convention cannot be displaced by a task-specific one. Explicit null means 'no skills apply to this task' and STOPS the plan and area fallbacks — nothing loads even when the plan or the area declares defaults; it is an answer, not a miss, exactly like reviewSkill. [] or absent means unconsidered: the area default still applies.",
           "items": {
             "type": "string"
           }
