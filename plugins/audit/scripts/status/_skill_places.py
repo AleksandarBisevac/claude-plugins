@@ -20,10 +20,12 @@ THE ORDER for a bare name is the user's skills (`<claude home>/skills`), the tre
 searched: nothing here can read where a managed install keeps it, and it would outrank
 the first of these.
 
-THE ONE MODE. `inventory` is the machine-wide scan doctor already runs (a name mapped to
-the path it was found at, or None). With it, a bare name no directory above holds still
-resolves, from the scan, last. The launcher passes none and so loads only what it can
-read; a qualified name is never answered by the inventory, whose keys are bare.
+NO SECOND MODE. Doctor once passed the machine-wide scan as a wider fallback, so a bare
+name that was only some other installed plugin's skill resolved in doctor and was
+refused by the launcher - the green-then-refused shape this module exists to remove. A
+session loads a bare name from the places above and nothing else, so there is exactly
+one answer and both callers read it. What the scan can still add is a sentence
+about a name this refuses; that is doctor's wording and stays there.
 
 Nothing here reads the environment: the home, the tree and the plugin root arrive as
 arguments, and `_claude_home.claude_home()` is how a caller finds the first of them.
@@ -102,13 +104,12 @@ def skill_places(name, tree, user_home, plugin_root, running):
     return [path for _source, path in labelled], problem
 
 
-def resolve_skill(name, tree, user_home, plugin_root, running, inventory=None):
+def resolve_skill(name, tree, user_home, plugin_root, running):
     """`{"found", "path", "source", "places", "problem"}` for one name.
 
-    `found` is the answer; `path` is the SKILL.md it was found at, which only an
-    `inventory` entry that carries none leaves None; `source` is `personal`,
-    `project`, `plugin` or `scan`. `places` is every path looked in, in order, so a
-    refusal can name them, and `problem` is the reason the name is no skill name -
+    `found` is the answer; `path` is the SKILL.md it was found at; `source` is
+    `personal`, `project` or `plugin`. `places` is every path looked in, in order, so
+    a refusal can name them, and `problem` is the reason the name is no skill name -
     `found` is then False. A name nothing holds has `found` False and `problem` None:
     two different answers, kept apart.
     """
@@ -121,8 +122,5 @@ def resolve_skill(name, tree, user_home, plugin_root, running, inventory=None):
         if os.path.isfile(path):
             return {"found": True, "path": path, "source": source, "places": places,
                     "problem": None}
-    if inventory is not None and ":" not in name and name in inventory:
-        return {"found": True, "path": inventory[name], "source": "scan",
-                "places": places, "problem": None}
     return {"found": False, "path": None, "source": None, "places": places,
             "problem": None}

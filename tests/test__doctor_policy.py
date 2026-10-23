@@ -377,8 +377,27 @@ def _cases(check):
                     os.environ["CLAUDE_CONFIG_DIR"] = saved
             return r
 
-        def _travels(name, travels, basis="because"):
-            return {"name": name, "travels": travels, "travelsBasis": basis}
+        # The user's skills directory the resolver reads. A name the plan uses must
+        # live in a directory a session loads from, not only in the scan inventory,
+        # so every fixture that wants a name to RESOLVE puts it here.
+        import json as _json
+        home = os.path.join(tmp, "home-dp")
+
+        def _put(base_dir, name):
+            folder = os.path.join(base_dir, name)
+            os.makedirs(folder, exist_ok=True)
+            with open(os.path.join(folder, "SKILL.md"), "w", encoding="utf-8") as fh:
+                fh.write("---\nname: %s\n---\nbody\n" % name)
+        _put(os.path.join(home, "skills"), "personal-skill")
+        _put(os.path.join(home, "skills"), "code-review-and-quality")
+
+        def _travels(name, travels, basis="because", path=None):
+            """A scan entry carrying a verdict - and the path the scan saw it at,
+            which defaults to the personal copy the resolver loads."""
+            if path is None:
+                path = os.path.join(home, "skills", name, "SKILL.md")
+            return {"name": name, "travels": travels, "travelsBasis": basis,
+                    "path": path}
         mfs = _manifest()
         mfs["meta"]["reviewSkill"] = "code-review-and-quality"
         rep = _skills(mfs, {"skills": [{"name": "writing-python"}]})
@@ -394,7 +413,8 @@ def _cases(check):
               # nothing for as long as the case had existed.
               and "FINDING" not in _levels(rep, "skills"))
         rep = _skills(mfs, {"skills": [{"name": "writing-python"},
-                                       {"name": "code-review-and-quality"}]})
+                                       {"name": "code-review-and-quality"}]},
+                      home=home)
         check("dp28 ...and a plan whose every name resolves says so instead. THE "
               "OTHER DIRECTION: the same plan, a different machine, so an "
               "unconditional row fails one of the two: %r"
@@ -436,15 +456,7 @@ def _cases(check):
         # "where does this name live" is how doctor goes green over a name the
         # launcher then refuses, so both ask `_skill_places`. The scan inventory
         # stays the WIDER mode: a name only the scan lists still resolves here.
-        import json as _json
         L = _loader.load_script("run-agent-session.py", modname="run_agent_session_dp")
-        home = os.path.join(tmp, "home-dp")
-
-        def _put(base_dir, name):
-            folder = os.path.join(base_dir, name)
-            os.makedirs(folder, exist_ok=True)
-            with open(os.path.join(folder, "SKILL.md"), "w", encoding="utf-8") as fh:
-                fh.write("---\nname: %s\n---\nbody\n" % name)
         _put(os.path.join(home, "skills"), "personal-only")
         _put(os.path.join(home, "skills"), "both-dup")
         _put(os.path.join(tmp, ".claude", "skills"), "project-only")
@@ -466,10 +478,14 @@ def _cases(check):
               "not resolvable here" not in _detail(rep, "skills")
               and "resolve on this machine" in _detail(rep, "skills"))
         rep = _skills(_plan_with(["scan-only"]), others, home=home)
-        check("dp50 ...and the scan inventory is still the wider mode: a name only "
-              "the scan lists resolves, which keeps what doctor saw before the "
-              "shared resolver: %r" % (_detail(rep, "skills"),),
-              "not resolvable here" not in _detail(rep, "skills"))
+        check("dp50 ...and the scan inventory does NOT widen it: a bare name only "
+              "the machine scan lists (another installed plugin's skill) is no "
+              "skill a session loads, so doctor says it is not resolvable instead "
+              "of going green over a name the launcher refuses: %r"
+              % (_detail(rep, "skills"),),
+              "not resolvable here" in _detail(rep, "skills")
+              and "'scan-only'" in _detail(rep, "skills")
+              and "resolve on this machine" not in _detail(rep, "skills"))
         rep = _skills(_plan_with(["%s:%s" % (own, own_skill),
                                   "other-plugin:%s" % own_skill]), others, home=home)
         check("dp51 `<plugin>:<skill>` resolves only from that plugin: this "
@@ -479,7 +495,8 @@ def _cases(check):
               and "'%s:%s'" % (own, own_skill) not in _detail(rep, "skills"))
         names = ["personal-only", "project-only", "both-dup", own_skill,
                  "%s:%s" % (own, own_skill), "other-plugin:%s" % own_skill,
-                 "%s:no-such-skill-q81z" % own, "no-such-skill-q81z", "../escape"]
+                 "%s:no-such-skill-q81z" % own, "no-such-skill-q81z", "../escape",
+                 "scan-only"]
         rep = _skills(_plan_with(names), others, home=home)
         seen = _detail(rep, "skills")
         by_doctor = [n for n in names if ("%r (" % n) in seen]
@@ -487,13 +504,29 @@ def _cases(check):
                        if L.find_skills([n], tmp, home, M._output.PLUGIN_ROOT,
                                         own)["problem"] is not None]
         want = ["other-plugin:%s" % own_skill, "%s:no-such-skill-q81z" % own,
-                "no-such-skill-q81z", "../escape"]
+                "no-such-skill-q81z", "../escape", "scan-only"]
         check("dp52 doctor and the launcher answer the same for the same name, over "
               "personal, project, both, the plugin's own skill bare and qualified, "
-              "another plugin's, and names that resolve nowhere or are no skill "
-              "name - doctor %r, launcher %r, expected %r"
-              % (by_doctor, by_launcher, want),
+              "another plugin's, a bare name only the machine scan lists, and names "
+              "that resolve nowhere or are no skill name - doctor %r, launcher %r, "
+              "expected %r" % (by_doctor, by_launcher, want),
               by_doctor == want and by_launcher == want)
+        rep = _skills(_plan_with(["scan-only"]),
+                      {"skills": [{"name": "scan-only",
+                                   "path": "/elsewhere/scan-only/SKILL.md"}]},
+                      home=home)
+        check("dp53 ...and when the scan DOES list the refused name the row says so "
+              "- where the scan found it, and that a session does not load it from "
+              "there - rather than calling it merely missing: %r"
+              % (_detail(rep, "skills"),),
+              "/elsewhere/scan-only/SKILL.md" in _detail(rep, "skills")
+              and "does not load" in _detail(rep, "skills"))
+        rep = _skills(_plan_with(["scan-only"]), {"skills": [{"name": "unrelated"}]},
+                      home=home)
+        check("dp53b ...and a name the scan does not list draws no such sentence "
+              "(THE OTHER DIRECTION: an unconditional sentence fails here): %r"
+              % (_detail(rep, "skills"),),
+              "does not load" not in _detail(rep, "skills"))
 
         # --- would it survive a CLONE? the half "resolves here" cannot see ------
         # The row above is answered on the authoring machine, where every name
@@ -505,7 +538,8 @@ def _cases(check):
         mfp["meta"]["reviewSkill"] = "personal-skill"
         rep = _skills(mfp, {"skills": [
             _travels("personal-skill", False,
-                     "lives in a home directory, which no clone carries")]})
+                     "lives in a home directory, which no clone carries")]},
+            home=home)
         check("dp32 a name that resolves HERE and would not survive a clone is "
               "warned about, naming the skill, where the plan names it, and the "
               "basis - and never as a finding, because a solo plan nobody will "
@@ -515,7 +549,8 @@ def _cases(check):
               and "home directory" in _detail(rep, _PORT)
               and "FINDING" not in _levels(rep, _PORT))
         rep = _skills(mfp, {"skills": [
-            _travels("personal-skill", True, "committed under .claude/")]})
+            _travels("personal-skill", True, "committed under .claude/")]},
+            home=home)
         # THE SECOND-DIRECTION CASE, and the one that looks vacuous: a plan whose
         # every name travels must draw NO such warning. An unconditional row -
         # the natural way to get dp32 green - fails exactly here.
@@ -527,7 +562,7 @@ def _cases(check):
         rep = _skills(mfp, {"skills": [
             _travels("personal-skill", False,
                      "enabledPlugins names p@m but extraKnownMarketplaces does "
-                     "not carry 'm'")]})
+                     "not carry 'm'")]}, home=home)
         check("dp34 the BASIS is carried through rather than restated - here the "
               "half-declared plugin, whose repair is one named key: %r"
               % (_detail(rep, _PORT),),
@@ -535,7 +570,7 @@ def _cases(check):
         rep = _skills(mfp, {"skills": [
             _travels("personal-skill", False,
                      "extraKnownMarketplaces carries 'm' but enabledPlugins "
-                     "names no plugin of it")]})
+                     "names no plugin of it")]}, home=home)
         # THE TWIN OF dp34. A doctor that wrote its own message instead of
         # rendering the basis passes one of this pair and fails the other,
         # whichever key it happened to hard-code.
@@ -545,7 +580,8 @@ def _cases(check):
               and "extraKnownMarketplaces" in _detail(rep, _PORT))
         rep = _skills(mfp, {"skills": [
             _travels("personal-skill", None,
-                     "the committed .claude/settings.json could not be read")]})
+                     "the committed .claude/settings.json could not be read")]},
+            home=home)
         check("dp36 an UNANSWERED verdict is said as unknown and never folded "
               "into 'will not travel' - an unreadable settings file is not "
               "evidence about a plugin: %r" % (_detail(rep, _PORT),),
@@ -563,14 +599,14 @@ def _cases(check):
               "UNKNOWN" in _detail(rep, _PORT)
               and "OK" not in _levels(rep, _PORT))
         _stranded = {"skills": [_travels("personal-skill", False, "home dir")]}
-        rep_off = _skills(mfp, _stranded, {"portability": "off"})
+        rep_off = _skills(mfp, _stranded, {"portability": "off"}, home=home)
         check("dp38 'off' does not go quiet - it SAYS it did not grade, because "
               "silence and 'checked, all fine' are indistinguishable to a reader: "
               "%r" % (_detail(rep_off, _PORT),),
               "not graded" in _detail(rep_off, _PORT)
               and "will NOT survive" not in _detail(rep_off, _PORT))
-        rep_warn = _skills(mfp, _stranded, {"portability": "warn"})
-        rep_strict = _skills(mfp, _stranded, {"portability": "strict"})
+        rep_warn = _skills(mfp, _stranded, {"portability": "warn"}, home=home)
+        rep_strict = _skills(mfp, _stranded, {"portability": "strict"}, home=home)
         # The doctor DIAGNOSES at every tier that is not off; only the panel and
         # the gate act on the difference. Binding this row to strict would make
         # 'warn' mean nothing at all, which is the mutation this kills.
@@ -583,12 +619,43 @@ def _cases(check):
               % (_detail(rep_warn, _PORT),),
               "nothing is being refused" in _fix(rep_warn, _PORT)
               and "nothing is being refused" not in _fix(rep_strict, _PORT))
-        rep = _skills(mfp, _stranded, {"portability": "bogus"})
+        rep = _skills(mfp, _stranded, {"portability": "bogus"}, home=home)
         check("dp41 a tier outside the enum is treated as unset and falls back to "
               "what the plugin ships, rather than switching the check off - the "
               "validator already refuses the value, and a typo must not be the "
               "quiet way to disable this",
               "will NOT survive" in _detail(rep, _PORT))
+
+        # --- the grade must describe the copy a session LOADS ---------------------
+        # `both-dup` lives in the personal AND the project directory. The resolver
+        # loads the personal one; the scan dedupes the other way round and hands
+        # over the PROJECT copy, graded "travels". Reporting that verdict would
+        # grade a file the session never reads.
+        personal_dup = os.path.join(home, "skills", "both-dup", "SKILL.md")
+        project_dup = os.path.join(tmp, ".claude", "skills", "both-dup", "SKILL.md")
+        mfb = _manifest()
+        mfb["meta"]["reviewSkill"] = "both-dup"
+        rep = _skills(mfb, {"skills": [_travels("both-dup", True,
+                                                "committed under .claude/",
+                                                path=project_dup)]}, home=home)
+        check("dp54 a name held by both tiers is graded UNKNOWN when the scan's "
+              "verdict belongs to a different file than the one the session loads, "
+              "naming BOTH paths - never 'would survive a clone' over the wrong "
+              "copy: %r" % (_detail(rep, _PORT),),
+              "UNKNOWN" in _detail(rep, _PORT)
+              and personal_dup in _detail(rep, _PORT)
+              and project_dup in _detail(rep, _PORT)
+              and "will NOT survive" not in _detail(rep, _PORT)
+              and "OK" not in _levels(rep, _PORT))
+        rep = _skills(mfb, {"skills": [_travels("both-dup", True,
+                                                "committed under .claude/",
+                                                path=personal_dup)]}, home=home)
+        # THE OTHER DIRECTION: a verdict about the very file that is loaded stands.
+        # A comparison that always reports a mismatch fails here.
+        check("dp55 ...and a verdict about the very file the session loads stands "
+              "as graded: %r" % (_detail(rep, _PORT),),
+              "would survive a clone" in _detail(rep, _PORT)
+              and "UNKNOWN" not in _detail(rep, _PORT))
 
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

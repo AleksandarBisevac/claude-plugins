@@ -29,32 +29,40 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/run-agent-session.py:211-228 (and tests/test_run_agent_session.py ras35)",
         "issue": "Unverified: the reviewer's skills are appended with --append-system-prompt-file ALONGSIDE --agents/--agent audit-reviewer, but the only live probe the phase cites (claude 2.1.307) was main-session mode without --agent. The executor states no live check was made (fake claude only). Nothing handed shows that, under --agent, the appended file still reaches the session's system prompt rather than being replaced by the agent's prompt. ras45 pins only that the argv carries both flags and that the stub saw the file, so it would pass even if claude ignored the append for an agent session. The phase's desired outcome ('every writer AND reviewer session ... from the first turn') rests on this.",
-        "resolution": "Before sign-off, run one cheap real reviewer-role session (--agent audit-reviewer plus --append-system-prompt-file holding a sentinel) and record that the session quotes the sentinel with no Skill call; if it does not, append the skills to the --agents definition's prompt for the reviewer instead. Record the probe command and result in the task or the guide paragraph.",
-        "fixTask": "P138.4-myr"
+        "resolution": "fixed in P138.4-myr (c3ebab8a6c3b): Before sign-off, run one cheap real reviewer-role session (--agent audit-reviewer plus --append-system-prompt-file holding a sentinel) and record that the session quotes the sentinel with no Skill call; if it does not, append the skills to the --agents definition's prompt for the reviewer instead. Record the probe command and result in the task or the guide paragraph.",
+        "fixTask": "P138.4-myr",
+        "commit": "c3ebab8a6c3b",
+        "status": "fixed"
       },
       {
         "id": "P138-R2",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/run-agent-session.py:211-228, tests/test_run_agent_session.py ras35",
         "issue": "The resolution order is project, then user, then plugin, and ras35 asserts that the project copy of a name the user also has wins. As I recall Claude Code's documented precedence for same-named skills it is enterprise, then personal (<outside-repo>), then project, with plugin skills namespaced as plugin:skill only; I did not verify this (no network, no live session), so treat it as a question the task should settle. If I recall correctly, a same-named project and user skill would be preloaded from the project while the session's own Skill tool would load the user's, i.e. two different bodies for one name. The task description states the project-first order, so this is not a contradiction of the clause; it is the clause possibly resting on a wrong premise, and a test now pins it. Also, a bare name is looked up in the plugin's skills/, whereas a session sees plugin skills only as plugin:skill.",
-        "resolution": "Check the order against the Claude Code skills documentation (verifying-external-behavior) and, if personal outranks project, swap the two entries in skill_places and the order in ras35/ras43 and the guide paragraph; if project outranks user, cite the source in the skill_places docstring.",
-        "fixTask": "P138.4-myr"
+        "resolution": "fixed in P138.4-myr (c3ebab8a6c3b): Check the order against the Claude Code skills documentation (verifying-external-behavior) and, if personal outranks project, swap the two entries in skill_places and the order in ras35/ras43 and the guide paragraph; if project outranks user, cite the source in the skill_places docstring.",
+        "fixTask": "P138.4-myr",
+        "commit": "c3ebab8a6c3b",
+        "status": "fixed"
       },
       {
         "id": "P138-R3",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/run-agent-session.py:271-275",
         "issue": "skills_prompt wraps the SKILL.md text as <skill name=...> but never says where the skill lives. A skill that points at sibling files gets no base directory: .claude/skills/before-you-claim/SKILL.md:117 names `references/questions.md`, and before-you-claim is one of the three Python house skills this repo's plan means to preload. The Skill tool would give the session the directory; this path does not, so the reference cannot be followed.",
-        "resolution": "Put the skill's directory in the wrapper (e.g. <skill name=\"...\" dir=\"...\">) and add a case that the attribute is the SKILL.md's folder.",
-        "fixTask": "P138.4-myr"
+        "resolution": "fixed in P138.4-myr (c3ebab8a6c3b): Put the skill's directory in the wrapper (e.g. <skill name=\"...\" dir=\"...\">) and add a case that the attribute is the SKILL.md's folder.",
+        "fixTask": "P138.4-myr",
+        "commit": "c3ebab8a6c3b",
+        "status": "fixed"
       },
       {
         "id": "P138-R4",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/run-agent-session.py:211-251",
         "issue": "A second resolver of 'where does this plan-named skill live': audit:doctor's check_plan_skills (status/_doctor_policy.py:385) discovers skills through installed plugins as well, while skill_places knows three places and refuses any plugin:skill whose plugin is not the running one. A plan naming an installed third-party skill (e.g. superpowers:...) that doctor reports as resolving makes the drive refuse the launch at run time, with no way out except task.skills null. The refusal is what the clause asked for; the divergence between the two resolvers and the lack of a pre-launch signal is the cost.",
-        "resolution": "Either say in the refusal message that only the project, the user's directory and this plugin are searched (and that skills: null opts out), or have doctor's check use skill_places so the two agree; consider running find_skills in the drive before starting the task so the refusal comes before the task is marked in_progress.",
-        "fixTask": "P138.4-myr"
+        "resolution": "fixed in P138.4-myr (c3ebab8a6c3b): Either say in the refusal message that only the project, the user's directory and this plugin are searched (and that skills: null opts out), or have doctor's check use skill_places so the two agree; consider running find_skills in the drive before starting the task so the refusal comes before the task is marked in_progress.",
+        "fixTask": "P138.4-myr",
+        "commit": "c3ebab8a6c3b",
+        "status": "fixed"
       },
       {
         "id": "P138-R5",
@@ -122,14 +130,16 @@
         "severity": "med",
         "file": "plugins/audit/scripts/status/_doctor_policy.py:479-486; plugins/audit/scripts/status/_skill_places.py:resolve_skill (inventory branch)",
         "issue": "The two callers still disagree for one class of name, so the stated purpose ('Two answers is how doctor goes green over a name the launcher then refuses', PLUGIN-BUILD-GUIDE.md _skill_places section) is only half met. check_plan_skills passes `inventory=` built from `_panel_discovery.discover`, whose scan walks every installed plugin's skills/ (`_plugin_bases`, `_scan_skills(base, 'plugin', ...)`) under bare keys. A bare name that is only some other installed plugin's skill therefore resolves in doctor (source 'scan') and is refused by `run-agent-session` (no inventory), which is the exact green-then-refused shape the task set out to remove. dp52 cannot see it: its inventory (`others`) holds only 'unrelated' and 'scan-only', and neither is in the dp52 name list; dp50 locks the wider mode as 'what doctor saw before'.",
-        "resolution": "Either drop the inventory mode for bare names the session would not load, or keep it but say so: when `resolve_skill` returns source 'scan', have doctor word the row as 'found only by the machine scan at <path>; `run-agent-session --skill` will refuse it', and add a dp52 name that only the inventory lists, asserting doctor and the launcher answers differ visibly rather than silently."
+        "resolution": "Either drop the inventory mode for bare names the session would not load, or keep it but say so: when `resolve_skill` returns source 'scan', have doctor word the row as 'found only by the machine scan at <path>; `run-agent-session --skill` will refuse it', and add a dp52 name that only the inventory lists, asserting doctor and the launcher answers differ visibly rather than silently.",
+        "fixTask": "P138.5-myr"
       },
       {
         "id": "P138-R13",
         "severity": "med",
         "file": "plugins/audit/scripts/status/_doctor_policy.py:536-547 (with plugins/audit/scripts/panel/_panel_discovery.py:_scan_skills, untouched)",
         "issue": "The diff reverses the launcher's order to personal-before-project, but the portability grade in `_plan_skills_travel` is still read from `have.get(name)`, the scan entry, and the scan dedupes project before user ('project/user scanned before plugins win', `_discover_scan` scans `.claude` of the project first). For a name held by both, doctor's resolved path is now the personal copy while `travels`/`travelsBasis` describe the project copy: a plan can be graded 'travels' over a file the session does not load. The executor names this in the outcome and leaves it for another task, but it is created by this change (before it, launcher and scan agreed on project-first).",
-        "resolution": "In `_plan_skills_travel`, compare `entry.get('path')` with `resolved[name]['path']` and, when they differ, put the name in `unknown` with both paths named (the grade belongs to a different file than the one loaded), or make the scan's project/user order match `_skill_places`. Add a dp case with the same name in both tiers."
+        "resolution": "In `_plan_skills_travel`, compare `entry.get('path')` with `resolved[name]['path']` and, when they differ, put the name in `unknown` with both paths named (the grade belongs to a different file than the one loaded), or make the scan's project/user order match `_skill_places`. Add a dp case with the same name in both tiers.",
+        "fixTask": "P138.5-myr"
       },
       {
         "id": "P138-R14",
@@ -137,9 +147,30 @@
         "file": "plugins/audit/scripts/governance/run-agent-session.py:217; tests/test_run_agent_session.py:ras50",
         "issue": "The note that `claude --help` does not list `--append-system-prompt-file`, with the probe's build and date, sits in the module docstring (line 35). The only place the flag is written in code (`session_argv`, line 217) carries no comment, and ras50 reads 700 characters around the FIRST occurrence of the string only, which is the docstring. The task asked for it 'beside the flag'.",
         "resolution": "Add a one-line comment above `argv += [\"--append-system-prompt-file\", skills_file]` pointing at the docstring probe (claude 2.1.307, 2026-10-23), and have ras50 check the last occurrence as well."
+      },
+      {
+        "id": "P138-R15",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/run-agent-session.py:249; tests/test__doctor_policy.py:456-458; tests/test__skill_places.py:92",
+        "issue": "Three comments still describe the removed mode. run-agent-session.py:249 says 'and no inventory is passed, so only a SKILL.md this launcher can read counts' (the parameter no longer exists); test__doctor_policy.py:458 says 'The scan inventory stays the WIDER mode: a name only the scan lists still resolves here' directly above dp50, which now asserts the opposite; test__skill_places.py:92 is headed 'the scan inventory is the wider mode' over cases that assert there is none. A sentence claiming what the code does not do.",
+        "resolution": "Reword the three: the launcher and doctor ask the same resolver and there is no inventory argument; drop 'WIDER' from the dp comment and retitle the sp section 'no second mode'."
+      },
+      {
+        "id": "P138-R16",
+        "severity": "low",
+        "file": "plugins/audit/scripts/status/_doctor_policy.py:109-117",
+        "issue": "_scan_sighting words every scan-listed refusal as 'which a session does not load by that bare name'. The scan keys a skill by its front-matter name (_panel_discovery.py:137 `fm.get('name') or name`) while the resolver looks for a directory of that name. So a skill under <home>/skills/<dir>/SKILL.md with `name: other` is listed as 'other' at a path in a directory the launcher DOES read, and the row says a session does not load it, with no hint that the cause is the directory/name mismatch. The docstring's two causes ('another plugin's skill, or a copy in a place no session reads') omit this third one. The refusal itself is consistent with the launcher; the explanation can mislead.",
+        "resolution": "When the sighting path sits under one of resolved[name]['places']' skills directories, say the directory name differs from the skill's front-matter name (the launcher looks up the directory name); add the case next to dp53."
+      },
+      {
+        "id": "P138-R17",
+        "severity": "low",
+        "file": "plugins/audit/scripts/panel/_panel_write.py:2130; plugins/audit/scripts/status/audit-status.py:279",
+        "issue": "R13 is closed in doctor only. The executor's descriptive outcome says 'a portability grade only counts when it describes the file a session loads', but _panel_write.py:2130 (the strict-tier refusal of a patched skill name) still reads `have.get(name).get('travels')` from the scan entry, which for a name in both tiers is the project copy while the launcher loads the personal one. audit-status.py:279 has the same shape but asks the repo-scope clone question, where the project copy is arguably the right one. The R13 finding named only _plan_skills_travel, so this is outside what was asked; it is the same class and the claim overreaches.",
+        "resolution": "Narrow the descriptive outcome to doctor, and file the strict-tier refusal in _panel_write.py as a follow-up (compare the entry path with the resolved path there too, or resolve through _skill_places)."
       }
     ],
-    "outcome": "[findings: 14 - 0 high, 6 med, 8 low; 4 with a recorded fix commit]"
+    "outcome": "[findings: 17 - 0 high, 6 med, 11 low; 8 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -389,7 +420,7 @@
     {
       "id": "P138.4-myr",
       "title": "Skill loading follows Claude Code's documented precedence, gives each skill its base directory, and has one resolver",
-      "status": "in_progress",
+      "status": "done",
       "description": "Docs (code.claude.com/docs/en/skills, 'Resolve skills that share a name'): 'Enterprise over personal, and personal over project'; plugin skills are namespaced plugin:skill and both load. Probed 2026-10-23 on claude 2.1.307: --agents/--agent with --append-system-prompt-file delivers the appended skill to the reviewer session (the session quoted the probe skill's token); --append-system-prompt-file works though claude --help does not list it - say so beside the flag with the probe and date. Make the order personal (<home>/.claude/skills) before project (.claude/skills), with plugin:skill only from that plugin; head each appended skill with its base directory the way the Skill tool does ('Base directory for this skill: <dir>') so a skill's references/ files resolve; and make audit:doctor's check_plan_skills and run-agent-session share one resolver of where a named skill lives.",
       "files": [
         "plugins/audit/scripts/governance/run-agent-session.py",
@@ -422,14 +453,22 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c3ebab8a6c3b",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "New plugins/audit/scripts/status/_skill_places.py (plugin_name, skill_places, resolve_skill with an optional inventory mode), placed in tools/lints/_deps.py LAYERS beside _claude_home. run-agent-session.py: its local skill_places, _running_plugin_name and SKILL_NAME are deleted; find_skills is built on _skill_places.resolve_skill (no inventory). Order is now personal (claude_home()/skills), project (.claude/skills), then the running plugin; plugin:skill only from that plugin. skills_prompt opens each <skill> element with 'Base directory for this skill: <dirname of SKILL.md>'. The refusal now says 'looked in, in this order: ... (only these places are searched ...)'. The docstring beside --append-system-prompt-file says claude --help does not list it and cites the probe (claude 2.1.307, 2026-10-23, --agents/--agent, reviewer quoted the token). _doctor_policy.check_plan_skills decides 'missing' through resolve_skill with the discovery scan as inventory ({name: path}); _plan_skills_travel takes the resolved map and reports a name that resolved but is not in the scan as UNKNOWN (found at <path>, not graded) instead of skipping it. PLUGIN-BUILD-GUIDE.md: tree line, layer-graph lines for _skill_places/_doctor_policy/run-agent-session, a _skill_places section, the run-agent-session --skill paragraph with the new order and base-directory line, and a clause in the _doctor_policy section. Suites: tests/test_run_agent_session.py 60 cases (ras35/39/43 flipped to personal-first; ras47-ras51 added), tests/test__doctor_policy.py 53 (dp49-dp52; _skills helper pins CLAUDE_CONFIG_DIR), tests/test__skill_places.py 16 (sp1-sp16). Gate run in the tree: python3 tools/sweep-selftests.py tests/test_run_agent_session.py tests/test__doctor_policy.py tests/test__skill_places.py tests/test__deps.py tests/test_drive_phase.py tests/test__output_lints.py -> 6/6 files ok, 1112 cases, exit 0. Red before the change: test_run_agent_session 53/60 (ras35, ras39, ras43, ras47, ras49, ras50, ras51 red), test__doctor_policy 50/56 then (dp49, dp51, dp52 red); sp1-sp16 were written before _skill_places.py existed (the module import fails without it). Cases that pass on both sides and lock kept behaviour: ras48 (a personal skill does not answer plugin:skill), dp50 (a scan-only bare name still resolves). Not done: the real reviewer-role session of tests.add entry 1 was replaced by the supplied 2026-10-23 probe; ras50 pins that the file says so beside the flag. Finding left for another task: _panel_discovery._scan_skills dedupes project before user, the reverse of the documented order, so doctor's portability grade can describe the project copy of a name the session loads from the personal one. Dependants: drive-phase.py/test_drive_phase.py (--skill interface, write_record fields unchanged; test_drive_phase passes, 560 cases); _config_rules/_panel_settings/audit-config.schema.json (basename only, no config key touched); audit-doctor.py, tests/test__doctor_report.py, CHANGELOG.md (check_plan_skills keeps its signature; doctor now also resolves personal-only and own-plugin-qualified names it used to call missing); PLUGIN-BUILD-GUIDE.md (skill_places mention replaced by _skill_places, graph lines updated); tests/test__deps.py passes (254 cases) with the new LAYERS entry.",
+        "descriptive": "The launcher and doctor now ask one resolver where a named skill lives, in Claude Code's documented personal-over-project order, and each appended skill carries its base directory."
       },
       "startedAt": "2026-10-23T02:12:52Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-23T02:51:12Z",
+      "verifiedBy": [
+        "run-agent-session: the order of the resolved skills and of the places named in a refusal is personal, project, plugin (ras35, ras39, ras43, ras47)",
+        "run-agent-session: a personal skill of a plugin skill's bare name does not answer plugin:skill (ras48, passes before and after)",
+        "run-agent-session: every appended skill is headed by its base directory, once, ahead of its body (ras49)",
+        "run-agent-session: the source says beside --append-system-prompt-file that --help does not list it, with the probe's build and date (ras50)",
+        "run-agent-session: the refusal says only those places are searched (ras51)",
+        "_skill_places: order, qualified names, non-names, inventory mode, plugin_name (sp1-sp16)",
+        "doctor: a personal-only skill and a qualified own-plugin skill resolve, a scan-only name still does, and doctor and the launcher agree over nine names (dp49-dp52)"
+      ],
       "notes": [
         {
           "at": "2026-10-23T02:12:46Z",
@@ -455,6 +494,88 @@
         "runId": "2026-10-23T02:48:20Z.9062d4",
         "status": "passed",
         "at": "2026-10-23T02:48:20Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c3ebab8a6c3b",
+        "at": "2026-10-23T02:51:12Z",
+        "return": "docs/audit/evidence/returns/P138.4-myr/20261023T021252Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-23T02:33:54Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_run_agent_session.py tests/test__doctor_policy.py` in a throwaway tree at HEAD exited 1 with failing cases dp49 (house FAIL), dp51 (house FAIL), dp52 (house FAIL), ras35 (house FAIL), ras39 (house FAIL), ras51 (house FAIL), ras43 (house FAIL), ras47 (house FAIL) and 4 more, but with the working tree's implementation the task's tests do not all pass (no tally or error reader matched its output, so no line of it is quoted as decisive), so the red is not one the fix turns green - SELFTEST FAILED: 53/60 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P138.5-myr",
+      "title": "Doctor and the launcher give one answer for every skill name, and the portability grade describes the copy a session loads",
+      "status": "in_progress",
+      "description": "",
+      "files": [
+        "plugins/audit/scripts/status/_doctor_policy.py",
+        "plugins/audit/scripts/status/_skill_places.py",
+        "plugins/audit/scripts/panel/_panel_discovery.py",
+        "tests/test__doctor_policy.py",
+        "tests/test__skill_places.py",
+        "tests/test__panel_discovery.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__doctor_policy.py: Either drop the inventory mode for bare names the session would not load, or keep it but say so: when `resolve_skill` returns source 'scan', have doctor word ...",
+          "tests/test__doctor_policy.py: In `_plan_skills_travel`, compare `entry.get('path')` with `resolved[name]['path']` and, when they differ, put the name in `unknown` with both paths named (the ..."
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__doctor_policy.py tests/test__skill_places.py tests/test__panel_discovery.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-23T02:51:42Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-23T02:51:40Z",
+          "text": "scope: plugins/audit/scripts/status/_doctor_policy.py, plugins/audit/scripts/status/_skill_places.py, plugins/audit/scripts/panel/_panel_discovery.py, every path the finding(s) P138-R12, P138-R13 name"
+        },
+        {
+          "at": "2026-10-23T02:51:40Z",
+          "text": "scope: tests/test__doctor_policy.py, the suite that tests plugins/audit/scripts/status/_doctor_policy.py (python: its import closure reaches plugins/audit/scripts/status/_doctor_policy.py)"
+        },
+        {
+          "at": "2026-10-23T02:51:40Z",
+          "text": "scope: tests/test__skill_places.py, the suite that tests plugins/audit/scripts/status/_skill_places.py (python: its import closure reaches plugins/audit/scripts/status/_skill_places.py)"
+        },
+        {
+          "at": "2026-10-23T02:51:40Z",
+          "text": "scope: tests/test__panel_discovery.py, the suite that tests plugins/audit/scripts/panel/_panel_discovery.py (python: its import closure reaches plugins/audit/scripts/panel/_panel_discovery.py)"
+        }
+      ],
+      "fixes": [
+        "P138-R12",
+        "P138-R13"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-23T03:04:58Z.9f9e30",
+        "status": "passed",
+        "at": "2026-10-23T03:04:58Z"
       }
     }
   ],

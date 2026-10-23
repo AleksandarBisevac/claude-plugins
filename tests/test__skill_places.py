@@ -41,8 +41,8 @@ def _cases(check):
     own = _put(os.path.join(plugin, "skills"), "both", "PLUGIN\n")
     own_only = _put(os.path.join(plugin, "skills"), "only-plugin")
 
-    def where(name, inventory=None, running="house"):
-        return M.resolve_skill(name, tree, home, plugin, running, inventory=inventory)
+    def where(name, running="house"):
+        return M.resolve_skill(name, tree, home, plugin, running)
 
     check("sp1 the places of a bare name are the personal skills, then the project's, "
           "then the running plugin's - Claude Code's documented 'personal over "
@@ -90,24 +90,24 @@ def _cases(check):
           "PROBLEM, never a path: %r" % (bad,), all(bad))
 
     # --- the scan inventory is the wider mode -----------------------------------
-    inv = {"scanned": "/somewhere/scanned/SKILL.md", "ghost": None}
-    seen = where("scanned", inventory=inv)
-    check("sp10 with an inventory, a bare name only the inventory lists resolves, "
-          "from the inventory, last: %r" % (seen,),
-          seen["path"] == "/somewhere/scanned/SKILL.md" and seen["source"] == "scan")
-    listed = where("ghost", inventory=inv)
-    check("sp11 ...an entry with no path still resolves, the scan having found it "
-          "without saying where: %r" % (listed,),
-          listed["found"] is True and listed["path"] is None
-          and listed["source"] == "scan")
-    check("sp12 ...a directory still wins over the inventory, and a qualified name "
-          "is never answered by it",
-          where("only-project", inventory={"only-project": "/x/SKILL.md"})["source"]
-          == "project"
-          and where("elsewhere:scanned", inventory=inv)["found"] is False)
-    check("sp13 without the inventory the same bare name is NOT found - the mode is "
-          "the only difference",
-          where("scanned")["found"] is False)
+    gone = where("scanned")
+    check("sp10 a bare name no directory holds is NOT found, however many other "
+          "installed plugins ship it: there is one answer and no wider mode: %r"
+          % (gone,),
+          gone["found"] is False and gone["path"] is None and gone["source"] is None
+          and gone["problem"] is None and len(gone["places"]) == 3)
+    try:
+        M.resolve_skill("scanned", tree, home, plugin, "house", inventory={})
+        widened = True
+    except TypeError:
+        widened = False
+    check("sp11 ...and the resolver takes no inventory argument, so a caller cannot "
+          "ask for a second answer", not widened)
+    seen_sources = set(where(n)["source"] for n in (
+        "only-project", "only-personal", "only-plugin", "house:only-plugin", "scanned"))
+    check("sp12 the only sources the resolver ever names are the three tiers (or "
+          "none, for a name nothing holds): %r" % (sorted(seen_sources, key=str),),
+          seen_sources == set(["project", "personal", "plugin", None]))
 
     # --- the running plugin's name ----------------------------------------------
     manifest = os.path.join(plugin, ".claude-plugin", "plugin.json")

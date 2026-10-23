@@ -1,0 +1,37 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__doctor_policy.py tests/test__skill_places.py tests/test__panel_discovery.py tests/test__deps.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-23T03:01:34Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__doctor_policy.py tests/test__skill_places.py tests/test__panel_discovery.py` in a throwaway tree at HEAD exited 1 with failing cases dp50 (house FAIL), dp52 (house FAIL), dp53 (house FAIL), dp54 (house FAIL), sp11 (house FAIL), tests/test__doctor_policy.py: exited 1 (house FAIL) and 1 more, but with the working tree's implementation the task's tests do not all pass (no tally or error reader matched its output, so no line of it is quoted as decisive), so the red is not one the fix turns green - SELFTEST FAILED: 14/15 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "R12: removed the inventory mode from _skill_places.resolve_skill (signature now name, tree, user_home, plugin_root, running; source 'scan' gone), so doctor's check_plan_skills and run-agent-session read one answer for every name; doctor's missing row now appends _scan_sighting (the machine scan lists it at <path>, which a session does not load by that bare name) when the scan lists a refused name. R13 (structural choice): _plan_skills_travel skips unresolved names and compares the scan entry's path with resolved[name]['path'] via _same_file (realpath); a mismatch goes to unknown naming both paths. I chose the path binding over reordering _panel_discovery._scan_skills because the scan keeps ONE entry per name for 13 consumers across repo and machine scopes (repo scope reads no home at all, so it could never show the personal copy), its dedupe key is the front-matter name while the resolver's is the directory name, and a reorder would change the source badge on every other surface; comparing the path to the file loaded catches every divergence, not just this order. _panel_discovery.py is therefore unchanged. Tests: test__doctor_policy fixtures that relied on inventory-only resolution now place the skill under a pinned home and carry the entry path; dp50 flipped, dp52 gained 'scan-only', new dp53/dp53b (R12 wording + other direction), dp54/dp55 (R13 both-tier mismatch + same-file allow case); test__skill_places sp10-sp13 replaced by sp10-sp12 (no wider mode, no inventory argument, only three tiers). PLUGIN-BUILD-GUIDE.md (two passages describing the inventory mode) edited though outside task files; the plan gate allowed it. Gate: python3 tools/sweep-selftests.py tests/test__doctor_policy.py tests/test__skill_places.py tests/test__panel_discovery.py tests/test__deps.py -> exit 0, 4/4 files ok, 371 cases (run before the guide edit; the guide edit is prose only). Dependants: audit-doctor.py, test__doctor_report.py import _doctor_policy and use check_areas/check_build_commands/_leading_executable, untouched, still correct; check_plan_skills signature unchanged. run-agent-session.py calls resolve_skill without inventory, so still correct. _panel_discovery dependants unchanged because the file is unchanged. PLUGIN-BUILD-GUIDE.md changed as said. sweep-costs.json paths unaffected.",
+    "descriptive": "Doctor and the launcher now give the same answer for every skill name, and a portability grade only counts when it describes the file a session loads."
+  },
+  "testsAdded": [
+    "dp52 extended with a bare name only the scan lists (doctor and launcher both refuse)",
+    "dp53/dp53b doctor words a scan-listed refused name, and says nothing extra when the scan does not list it",
+    "dp54 same name in personal and project tiers: grade for the project copy becomes UNKNOWN naming both paths",
+    "dp55 grade for the very file loaded stands (other direction)",
+    "sp10-sp12 resolver has no wider mode"
+  ],
+  "casesAdded": [
+    [
+      "dp52",
+      "dp53",
+      "dp53b"
+    ],
+    [
+      "dp54",
+      "dp55"
+    ]
+  ],
+  "claims": "claims:\n1 _skill_places.py resolve_skill has no inventory branch; _doctor_policy.py check_plan_skills calls it with five args; _same_file/_plan_skills_travel compare entry path with resolved path\n2 red before fix: dp50/dp52/dp53/dp54 FAIL (53/57); allow cases dp53b/dp55 pass pre-fix by construction and guard an unconditional sentence / always-mismatch; submit re-proves in a throwaway tree\n3 grep inventory= over plugins tests tools: callers were _doctor_policy.py and tests/test__skill_places.py only, both fixed; run-agent-session passed none\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:2d3db87808aed4cf62326763f26655c864e277f275947d9f4e901f3b5341c371\",\"dirtyDigest\":\"sha256:d838ab1db77acc0aa0c87aae870a9fd68ca019eba0807b6710f10e68d8393182\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"0082393eb943f7cd\",\"plugins/audit/scripts/status/_doctor_policy.py\":\"d69dfd99ffaca19f\",\"plugins/audit/scripts/status/_skill_places.py\":\"46ae27b52445e6b2\",\"tests/test__doctor_policy.py\":\"e0c0749c3f5d9067\",\"tests/test__skill_places.py\":\"a67f933a50a2068f\"},\"head\":\"c3ebab8a\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/panel/_panel_discovery.py\",\"plugins/audit/scripts/status/_doctor_policy.py\",\"plugins/audit/scripts/status/_skill_places.py\",\"tests/test__doctor_policy.py\",\"tests/test__panel_discovery.py\",\"tests/test__skill_places.py\"],\"scopeDigest\":\"sha256:b4ee9421a5451007ca4681fa670e6a41017a341c9b5ec6810dfce8650e15e885\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

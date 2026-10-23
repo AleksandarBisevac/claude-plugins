@@ -3018,8 +3018,9 @@ sentence has carried a stale figure before: `meta.areas` roots against the tree 
 tags against the registry (v0.28), the capability policy against the plan it governs and
 against this machine's inventory (v0.30, dead patterns v0.38), `meta.buildCommands` runners
 against PATH, the branch-naming convention, and the skills the plan names — first against
-this machine (decided by `_skill_places.resolve_skill`, the launcher's own resolver, with the
-discovery scan as its wider mode) and then, as a second half, against what a CLONE would load. Every row
+this machine (decided by `_skill_places.resolve_skill`, the launcher's own resolver, alone; the
+discovery scan only adds a sentence beside a refusal, and a portability verdict counts only when it
+describes the very file the resolver found) and then, as a second half, against what a CLONE would load. Every row
 is a WARNING at most — a missing directory or an uninstalled runner is a gap in this
 checkout or this machine, never proof the repo is broken, which is the lesson CI's manifest
 job taught by failing over a correct observation. `_leading_executable` resolves what a
@@ -3254,8 +3255,9 @@ name the launcher then refuses. The order is Claude Code's documented one (code.
 plugin alone - the docs say nothing of a local skill shadowing a plugin's, so falling back would
 load something the plan did not name. `resolve_skill` returns `found`, `path`, `source`, every
 place looked in, and `problem` (the name is no skill name), keeping "not a name" apart from "held
-nowhere". Its one mode is `inventory`: doctor passes the machine-wide scan, so a bare name only
-the scan lists still resolves, last; the launcher passes none. The module reads no environment -
+nowhere". It has no second mode: doctor once passed the machine-wide scan as a wider fallback, so
+a bare name only another installed plugin shipped resolved in doctor and was refused by the
+launcher; both callers now read the one answer. The module reads no environment -
 the home, tree and plugin root arrive as arguments. Its cases are in `tests/test__skill_places.py`.
 
 ### `plugins/audit/scripts/status/audit-lookup.py`

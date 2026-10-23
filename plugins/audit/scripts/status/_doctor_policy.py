@@ -472,20 +472,19 @@ def check_plan_skills(rep, project, cfg, cfg_mod, manifest, _discover=None):
                  "run `audit-status.py <manifest> --json --discovery`; an empty "
                  "inventory is a broken scan, not a machine with no skills")
         return
-    # WHERE a name lives is `_skill_places`' answer - the one the launcher asks
-    # before it starts a session - with the scan as its wider mode: a bare name only
-    # the scan lists still resolves. Deciding from the scan alone said "resolves"
-    # for a name the launcher then refused, and "missing" for a plugin-qualified one
-    # it loads (the scan's keys are bare names).
+    # WHERE a name lives is `_skill_places`' answer and only that - the one the
+    # launcher asks before it starts a session. The scan is NOT consulted for
+    # whether a name resolves: it lists every installed plugin's skills under bare
+    # keys, so deciding from it said "resolves" for a name the launcher then refused,
+    # and "missing" for a plugin-qualified one it loads. The scan's one remaining
+    # job here is to say, beside a refusal, that it saw the name somewhere.
     plugin_root = _output.PLUGIN_ROOT
     user_home = _claude_home.claude_home()
     running = _skill_places.plugin_name(plugin_root)
-    inventory = dict((name, entry.get("path")) for name, entry in have.items())
     resolved = dict((name, _skill_places.resolve_skill(
-        name, project, user_home, plugin_root, running, inventory=inventory))
-        for _where, name in named)
-    missing = ["%r (%s)" % (name, where) for where, name in named
-               if not resolved[name]["found"]]
+        name, project, user_home, plugin_root, running)) for _where, name in named)
+    missing = ["%r (%s)%s" % (name, where, _scan_sighting(have.get(name)))
+               for where, name in named if not resolved[name]["found"]]
     if missing:
         rep.warn("skills",
                  "named by the plan but not resolvable here: %s"
@@ -498,6 +497,25 @@ def check_plan_skills(rep, project, cfg, cfg_mod, manifest, _discover=None):
                "all %d skill(s) the plan names resolve on this machine"
                % len(named))
     _plan_skills_travel(rep, cfg, cfg_mod, named, have, resolved)
+
+
+def _scan_sighting(entry):
+    """The sentence for a name the resolver refused but the machine scan lists, or
+    "" when the scan does not list it: it is another plugin's skill (or a copy in a
+    place no session reads), and a bare `name` in a plan reaches neither."""
+    if not entry:
+        return ""
+    where = entry.get("path")
+    return " - the machine scan lists it%s, which a session does not load by that " \
+           "bare name" % (" at %s" % where if where else " (no path recorded)",)
+
+
+def _same_file(first, second):
+    """True iff both paths are given and name one file, symlinks resolved."""
+    if not first or not second:
+        return False
+    return os.path.normcase(os.path.realpath(first)) == \
+        os.path.normcase(os.path.realpath(second))
 
 
 def portability_mode(cfg, cfg_mod):
@@ -523,6 +541,11 @@ def _plan_skills_travel(rep, cfg, cfg_mod, named, have, resolved):
     that the scan did not list (a plugin-qualified one, whose scan keys are bare)
     has no verdict to word, so it is UNKNOWN with that said - not skipped, which
     would read as "graded and fine".
+
+    The scan's entry is graded for ONE file, and `resolved` names the file a session
+    loads. Only a verdict about that same file is reported as graded; any other pair
+    is UNKNOWN with both paths named, whatever made them differ (the scan's own
+    dedupe order, a front-matter rename, a different home).
     """
     mode = portability_mode(cfg, cfg_mod)
     if mode == "off":
@@ -536,14 +559,25 @@ def _plan_skills_travel(rep, cfg, cfg_mod, named, have, resolved):
     graded, stranded, unknown = [], [], []
     for where, name in named:
         entry = have.get(name)
+        hit = resolved.get(name) or {}
+        if not hit.get("found"):
+            continue                 # already reported as unresolvable, above
         if entry is None:
-            hit = resolved.get(name) or {}
-            if hit.get("found"):
-                graded.append(name)
-                unknown.append("%r (%s) - found at %s, which the scan does not "
-                               "list, so whether it travels was not graded"
-                               % (name, where, hit.get("path")))
-            continue                 # else: already reported as unresolvable, above
+            graded.append(name)
+            unknown.append("%r (%s) - found at %s, which the scan does not "
+                           "list, so whether it travels was not graded"
+                           % (name, where, hit.get("path")))
+            continue
+        if not _same_file(entry.get("path"), hit.get("path")):
+            # The scan dedupes by name in its own order and keeps ONE copy; the
+            # resolver names the copy a session loads. When they are two files the
+            # verdict describes a file nobody reads.
+            graded.append(name)
+            unknown.append("%r (%s) - the verdict is for %s, but a session loads %s, "
+                           "so whether the file it loads travels was not graded"
+                           % (name, where, entry.get("path") or "a copy with no "
+                              "recorded path", hit.get("path")))
+            continue
         travels = entry.get("travels")
         basis = entry.get("travelsBasis") or "no basis was recorded"
         graded.append(name)
