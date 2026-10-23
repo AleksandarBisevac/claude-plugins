@@ -28,6 +28,17 @@ WHAT THE ARGV CARRIES, AND WHY EACH ONE:
     flag and no agent body. The definition goes in a FILE, which the CLI's help
     documents for print mode, rather than as an argv string: the body is several
     kilobytes of prose that a batch-file launcher would re-quote;
+  * `--skill NAME`, repeatable, puts the named skills in the session's system prompt
+    from its first turn: each SKILL.md is found the way a session in that tree
+    finds a skill (`skill_places`) and the bodies, each wrapped with its name, are
+    written to ONE file under the scratch and passed as
+    `--append-system-prompt-file`. A subagent definition's `skills` field was probed
+    (claude 2.1.307, 2026-10-23) and the session did not see the skill, which is why
+    this appends instead; the prompt on stdin is untouched by it. A name that
+    resolves nowhere refuses to start, naming every place looked in, because a
+    skill the plan declares and the session never loads is a defect the cost of
+    which nobody sees. `--record` carries each skill's name, path and sha256, so a
+    reader can tell which skills a session had without a Skill call;
   * `--resume <session id>` continues a recorded session and changes nothing else;
     an id that is not a UUID is refused (`SESSION_ID`), so no flag rides in as one.
   * the budget must be a finite positive number - `float()` also reads `inf` and
@@ -86,6 +97,7 @@ Exit codes (`exit_for`): 0 a result with `is_error: false` and claude exited 0 -
 subtype `error_max_budget_usd`, whatever claude exited with) - 5 io-error.
 """
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -118,7 +130,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
-import _claude_home  # noqa: E402  (attach_usage_hint: a usage error names the install)
+import _claude_home  # noqa: E402  (attach_usage_hint: a usage error names the install; claude_home: the user's skills)
 import _help         # noqa: E402  (front_matter: the one frontmatter parser)
 import _manifest_io  # noqa: E402  (checkout_of: is a directory inside a git checkout)
 import _proc_group   # noqa: E402  (group_kwargs, tear_down, the interrupt pair)
@@ -173,23 +185,32 @@ FULL_MODEL_ID = re.compile(r"^claude-[a-z][a-z0-9-]*[0-9][a-z0-9-]*$")
 # same pattern so the two cannot disagree on where the frontmatter ends.
 _FENCE = re.compile(r"^---\r?\n(.*?)\r?\n---\r?\n", re.S)
 
+# A skill name, or either half of `plugin:skill`. It becomes a directory name under
+# three roots, so a separator, a dot-only name or a leading dot never reaches a path.
+SKILL_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
 
 # --- the argv ------------------------------------------------------------------
 def is_full_model_id(model):
     return bool(FULL_MODEL_ID.match(model or ""))
 
 
-def session_argv(model, effort, budget, plugin_dir, agents_file=None, resume=None):
+def session_argv(model, effort, budget, plugin_dir, agents_file=None, resume=None,
+                 skills_file=None):
     """The arguments after the `claude` executable, for one role.
 
     `agents_file` is the reviewer's: with it come `--agents <file>` and `--agent
-    audit-reviewer`, and without it neither. `resume` appends the recorded id and
-    touches nothing before it, so a resumed argv is the plain one plus one pair.
+    audit-reviewer`, and without it neither. `skills_file` adds
+    `--append-system-prompt-file <file>` and nothing else; without it the flag is
+    absent. `resume` appends the recorded id and touches nothing before it, so a
+    resumed argv is the plain one plus one pair.
     """
     argv = ["-p", "--model", model, "--effort", effort,
             "--permission-mode", "auto",
             "--output-format", "stream-json", "--verbose",
             "--max-budget-usd", budget, "--plugin-dir", plugin_dir]
+    if skills_file is not None:
+        argv += ["--append-system-prompt-file", skills_file]
     if agents_file is not None:
         argv += ["--agents", agents_file, "--agent", REVIEWER]
     if resume is not None:
@@ -211,6 +232,91 @@ def agent_definition(text):
         "prompt": text[match.end():],
         "tools": tools,
     }}
+
+
+# --- the skills ----------------------------------------------------------------
+def _running_plugin_name():
+    """The name in this plugin's own manifest, or None when it cannot be read - then
+    no `plugin:skill` name matches, and the refusal says so."""
+    path = os.path.join(_output.PLUGIN_ROOT, ".claude-plugin", "plugin.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            name = json.load(fh).get("name")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return name if isinstance(name, str) and name else None
+
+
+def skill_places(name, tree, user_home, plugin_root, running):
+    """`(places, problem)` for one skill name: the SKILL.md paths a session in `tree`
+    would read it from, in the order it prefers them - the project's
+    `.claude/skills`, the user's, then the running plugin's own `skills/` - or the
+    reason the name is no skill name at all. A `plugin:skill` name is read only from
+    that plugin, so it has one place when `plugin` is the running one and none when
+    it is not: falling back to a project or user skill of the same bare name would
+    load something the plan did not name."""
+    head, sep, tail = name.partition(":")
+    parts = [head, tail] if sep else [head]
+    if not all(SKILL_NAME.match(p) for p in parts):
+        return [], "%r is not a skill name (letters, digits, '.', '_' and '-', "\
+                   "optionally as plugin:skill)" % name
+    own = os.path.join(plugin_root, "skills", parts[-1], "SKILL.md")
+    if sep:
+        return ([own] if head == running else []), None
+    return [os.path.join(tree, ".claude", "skills", name, "SKILL.md"),
+            os.path.join(user_home, "skills", name, "SKILL.md"), own], None
+
+
+def find_skills(names, tree, user_home, plugin_root, running):
+    """`{"found": [{"name", "path"}], "problem": str-or-None}`: the first existing
+    place of each name, in the order the names came, a repeated name once. A name
+    with none stops the search with a problem naming it and every place looked."""
+    found, seen = [], set()
+    for name in names:
+        if name in seen:
+            continue
+        seen.add(name)
+        places, problem = skill_places(name, tree, user_home, plugin_root, running)
+        if problem:
+            return {"found": found, "problem": problem}
+        hit = next((p for p in places if os.path.isfile(p)), None)
+        if hit is None:
+            where = ("looked in: %s" % ", ".join(places)) if places else (
+                "a plugin-qualified name is read only from that plugin's own skills/, "
+                "and this is plugin %s" % (running or "(its name could not be read)"))
+            return {"found": found,
+                    "problem": "the skill %s is not found - %s" % (name, where)}
+        found.append({"name": name, "path": hit})
+    return {"found": found, "problem": None}
+
+
+def load_skills(found):
+    """Each found skill with its text and the sha256 of the file's bytes. Raises
+    PreparationError, naming the path, for a file that cannot be read or is not
+    UTF-8 - a skill that is there and unreadable is not a missing one."""
+    loaded = []
+    for skill in found:
+        try:
+            with open(skill["path"], "rb") as fh:
+                raw = fh.read()
+            text = raw.decode("utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise PreparationError("could not read the skill %s from %s: %s"
+                                   % (skill["name"], skill["path"], exc))
+        loaded.append(dict(skill, text=text, sha256=hashlib.sha256(raw).hexdigest()))
+    return loaded
+
+
+def skills_prompt(loaded):
+    """The text appended to the system prompt: each skill's file, whole, wrapped in a
+    `<skill name="...">` element so a reader of the prompt can tell where one ends."""
+    return "\n".join('<skill name="%s">\n%s\n</skill>\n' % (s["name"], s["text"].rstrip("\n"))
+                     for s in loaded)
+
+
+def skills_record(loaded):
+    """What `--record` keeps of the skills: name, path and digest, never the text."""
+    return [{"name": s["name"], "path": s["path"], "sha256": s["sha256"]} for s in loaded]
 
 
 # --- reading the stream --------------------------------------------------------
@@ -373,10 +479,11 @@ def _parent_tmp():
     return parent
 
 
-def _prepare(args, stream):
+def _prepare(args, stream, loaded=()):
     """Make what the session needs before claude starts: the stream's directory,
-    the scratch, the reviewer's agents file and the session's TMPDIR. Returns
-    `{"agents_file", "tmpdir", "problem"}`; raises PreparationError on I/O.
+    the scratch, the skills file when `loaded` holds skills, the reviewer's agents
+    file and the session's TMPDIR. Returns `{"agents_file", "skills_file", "tmpdir",
+    "problem"}`; raises PreparationError on I/O.
 
     The parent temp directory is judged first, so a refusal leaves nothing made."""
     parent_tmp = _parent_tmp()
@@ -384,13 +491,20 @@ def _prepare(args, stream):
     _io("create the stream directory", sessions, os.makedirs, sessions, exist_ok=True)
     _io("create the scratch directory", args.scratch, os.makedirs, args.scratch,
         exist_ok=True)
+    skills_file = None
+    if loaded:
+        skills_file = os.path.join(os.path.abspath(args.scratch),
+                                   os.path.basename(stream)[:-len(".jsonl")]
+                                   + ".skills.md")
+        _io("write the skills file", skills_file, _write_text, skills_file,
+            skills_prompt(loaded))
     agents_file = None
     if args.role == "reviewer":
         source = os.path.join(_output.PLUGIN_ROOT, "agents", REVIEWER + ".md")
         definition = agent_definition(_io("read the agent file", source, _read_text,
                                           source))
         if definition is None:
-            return {"agents_file": None, "tmpdir": None,
+            return {"agents_file": None, "skills_file": None, "tmpdir": None,
                     "problem": "%s has no frontmatter to build --agents from" % source}
         agents_file = stream[:-len(".jsonl")] + ".agents.json"
         _io("write the agents file", agents_file, _write_json, agents_file, definition)
@@ -398,7 +512,8 @@ def _prepare(args, stream):
                  prefix="session-%s-" % args.role, dir=parent_tmp)
     record = os.path.join(args.scratch, os.path.basename(tmpdir) + ".tmpdir")
     _io("write the TMPDIR record", record, _write_text, record, tmpdir + "\n")
-    return {"agents_file": agents_file, "tmpdir": tmpdir, "problem": None}
+    return {"agents_file": agents_file, "skills_file": skills_file, "tmpdir": tmpdir,
+            "problem": None}
 
 
 def build_parser():
@@ -425,6 +540,12 @@ def build_parser():
     parser.add_argument("--resume", default=None, help="a recorded session id to continue")
     parser.add_argument("--prompt-file", dest="prompt_file", default=None,
                         help="read the prompt from this file instead of stdin")
+    parser.add_argument("--skill", dest="skills", action="append", default=None,
+                        metavar="NAME",
+                        help="a skill the session starts with, repeatable; found in the "
+                             "tree's .claude/skills, the user's, then this plugin's "
+                             "(plugin:skill only from that plugin), and a name found "
+                             "nowhere refuses to start")
     parser.add_argument("--record", default=None,
                         help="also append the printed outcome and the exit code "
                              "to this file, one JSON line per run")
@@ -453,16 +574,19 @@ def _read_prompt(args, stdin):
     return stdin.buffer.read().decode("utf-8") if hasattr(stdin, "buffer") else stdin.read()
 
 
-def write_record(path, line, code):
+def write_record(path, line, code, skills=None):
     """Append `{"line", "exit"}` to `path` as one JSON line, making its
-    directory. None, or why it could not be written. Appended, so the same
-    command run twice keeps both outcomes; the one reader takes a last line
-    that does not parse as one not written yet."""
+    directory, with a `"skills"` key beside them when the session was started with
+    skills (`skills_record`) and no such key when it was not. None, or why it could
+    not be written. Appended, so the same command run twice keeps both outcomes; the
+    one reader takes a last line that does not parse as one not written yet."""
+    body = {"line": line, "exit": code}
+    if skills:
+        body["skills"] = skills
     try:
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
         with open(path, "a", encoding="utf-8", newline="\n") as fh:
-            fh.write(json.dumps({"line": line, "exit": code}, ensure_ascii=False)
-                     + "\n")
+            fh.write(json.dumps(body, ensure_ascii=False) + "\n")
     except OSError as exc:
         return "the record %s could not be written: %s" % (path, exc)
     return None
@@ -482,17 +606,22 @@ def main(argv, stdin=None, out=print):
     def refuse(message):
         said.append("usage: %s" % message)
         return _usage(message)
-    code = _run(args, stdin, tell, refuse)
+    ran = {}
+    code = _run(args, stdin, tell, refuse, ran)
     if args.record:
-        problem = write_record(args.record, said[-1] if said else "", code)
+        problem = write_record(args.record, said[-1] if said else "", code,
+                               ran.get("skills"))
         if problem:
             sys.stderr.write("ERROR: %s\n" % problem)
     return code
 
 
-def _run(args, stdin, out, refuse):
+def _run(args, stdin, out, refuse, ran):
     """The run itself, once the arguments parsed: every outcome is one `out`
-    line, or one `refuse` - a usage refusal, which goes to stderr."""
+    line, or one `refuse` - a usage refusal, which goes to stderr. `ran` is the
+    caller's dict for what the run learned that its printed line does not carry:
+    `ran["skills"]` is `skills_record` of the skills the session was started with,
+    set as soon as they are read so every later outcome is recorded with them."""
     if not is_full_model_id(args.model):
         return refuse("--model %r is not a full model id (claude-<family>-<version>); "
                       "an alias resolves to whatever is newest on the day" % args.model)
@@ -509,6 +638,17 @@ def _run(args, stdin, out, refuse):
         return refuse("the prompt could not be read: %s" % exc)
     if not prompt.strip():
         return refuse("the prompt is empty - it is read from stdin or --prompt-file")
+    searched = find_skills(args.skills or [], args.tree,
+                           _claude_home.claude_home(), _output.PLUGIN_ROOT,
+                           _running_plugin_name())
+    if searched["problem"]:
+        return refuse(searched["problem"])
+    try:
+        loaded = load_skills(searched["found"])
+    except PreparationError as exc:
+        out("io-error: %s" % exc)
+        return E_IO
+    ran["skills"] = skills_record(loaded)
 
     claude = shutil.which("claude")
     stream = _stream_path(args.state_dir, args.task, args.role)
@@ -517,7 +657,7 @@ def _run(args, stdin, out, refuse):
         out(could_not_run_line("no `claude` on PATH", stream, stderr_path, None, 0))
         return E_COULD_NOT_RUN
     try:
-        prepared = _prepare(args, stream)
+        prepared = _prepare(args, stream, loaded)
     except PreparationError as exc:
         out("io-error: %s" % exc)
         return E_IO
@@ -525,7 +665,8 @@ def _run(args, stdin, out, refuse):
         out(could_not_run_line(prepared["problem"], stream, stderr_path, None, 0))
         return E_COULD_NOT_RUN
     session = session_argv(args.model, args.effort, args.budget, _output.PLUGIN_ROOT,
-                           agents_file=prepared["agents_file"], resume=args.resume)
+                           agents_file=prepared["agents_file"], resume=args.resume,
+                           skills_file=prepared["skills_file"])
     try:
         code, interrupted = run_session(claude, session, prompt, args.tree,
                                         _session_env(prepared["tmpdir"]), stream,

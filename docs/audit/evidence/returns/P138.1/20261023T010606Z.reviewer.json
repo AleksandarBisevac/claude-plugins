@@ -1,0 +1,43 @@
+{
+  "findings": [
+    {
+      "id": 1,
+      "severity": "med",
+      "file": "plugins/audit/scripts/governance/run-agent-session.py:211-228 (and tests/test_run_agent_session.py ras35)",
+      "issue": "Unverified: the reviewer's skills are appended with --append-system-prompt-file ALONGSIDE --agents/--agent audit-reviewer, but the only live probe the phase cites (claude 2.1.307) was main-session mode without --agent. The executor states no live check was made (fake claude only). Nothing handed shows that, under --agent, the appended file still reaches the session's system prompt rather than being replaced by the agent's prompt. ras45 pins only that the argv carries both flags and that the stub saw the file, so it would pass even if claude ignored the append for an agent session. The phase's desired outcome ('every writer AND reviewer session ... from the first turn') rests on this.",
+      "resolution": "Before sign-off, run one cheap real reviewer-role session (--agent audit-reviewer plus --append-system-prompt-file holding a sentinel) and record that the session quotes the sentinel with no Skill call; if it does not, append the skills to the --agents definition's prompt for the reviewer instead. Record the probe command and result in the task or the guide paragraph."
+    },
+    {
+      "id": 2,
+      "severity": "med",
+      "file": "plugins/audit/scripts/governance/run-agent-session.py:211-228, tests/test_run_agent_session.py ras35",
+      "issue": "The resolution order is project, then user, then plugin, and ras35 asserts that the project copy of a name the user also has wins. As I recall Claude Code's documented precedence for same-named skills it is enterprise, then personal (<outside-repo>), then project, with plugin skills namespaced as plugin:skill only; I did not verify this (no network, no live session), so treat it as a question the task should settle. If I recall correctly, a same-named project and user skill would be preloaded from the project while the session's own Skill tool would load the user's, i.e. two different bodies for one name. The task description states the project-first order, so this is not a contradiction of the clause; it is the clause possibly resting on a wrong premise, and a test now pins it. Also, a bare name is looked up in the plugin's skills/, whereas a session sees plugin skills only as plugin:skill.",
+      "resolution": "Check the order against the Claude Code skills documentation (verifying-external-behavior) and, if personal outranks project, swap the two entries in skill_places and the order in ras35/ras43 and the guide paragraph; if project outranks user, cite the source in the skill_places docstring."
+    },
+    {
+      "id": 3,
+      "severity": "low",
+      "file": "plugins/audit/scripts/governance/run-agent-session.py:271-275",
+      "issue": "skills_prompt wraps the SKILL.md text as <skill name=...> but never says where the skill lives. A skill that points at sibling files gets no base directory: .claude/skills/before-you-claim/SKILL.md:117 names `references/questions.md`, and before-you-claim is one of the three Python house skills this repo's plan means to preload. The Skill tool would give the session the directory; this path does not, so the reference cannot be followed.",
+      "resolution": "Put the skill's directory in the wrapper (e.g. <skill name=\"...\" dir=\"...\">) and add a case that the attribute is the SKILL.md's folder."
+    },
+    {
+      "id": 4,
+      "severity": "low",
+      "file": "plugins/audit/scripts/governance/run-agent-session.py:211-251",
+      "issue": "A second resolver of 'where does this plan-named skill live': audit:doctor's check_plan_skills (status/_doctor_policy.py:385) discovers skills through installed plugins as well, while skill_places knows three places and refuses any plugin:skill whose plugin is not the running one. A plan naming an installed third-party skill (e.g. superpowers:...) that doctor reports as resolving makes the drive refuse the launch at run time, with no way out except task.skills null. The refusal is what the clause asked for; the divergence between the two resolvers and the lack of a pre-launch signal is the cost.",
+      "resolution": "Either say in the refusal message that only the project, the user's directory and this plugin are searched (and that skills: null opts out), or have doctor's check use skill_places so the two agree; consider running find_skills in the drive before starting the task so the refusal comes before the task is marked in_progress."
+    }
+  ],
+  "preExisting": [],
+  "intent": {
+    "answer": "matches",
+    "note": "Clause: 'a repeatable --skill NAME ... locate SKILL.md ... project, user, then the running plugin's own skills/ (plugin:skill only from that plugin) ... refuse to start, exit E_USAGE with the name and every place looked ... write the bodies, each wrapped with its name, to one file under the session's scratch and pass it as --append-system-prompt-file ... record names, paths and sha256 ... reviewer keeps its --agents body'. Diff: run-agent-session.py adds --skill (argparse append), skill_places/find_skills (refuse() -> E_USAGE naming the skill and every path, run-agent-session.py:406-407), load_skills (sha256 of file bytes), skills_prompt wrapping each body as <skill name=...>, a <stream>.skills.md written under args.scratch, --append-system-prompt-file added only when skills exist, write_record adding a skills key only when skills were named; the reviewer still gets --agents/--agent and the stdin prompt is untouched. drive-phase.py: session_skills calls _areas.resolve_skills(manifest, phase, task) and writer_argv appends one --skill per name; every dispatch (writer, resume, review-fix, reviewer, validation session at drive-phase.py:6528) goes through writer_argv, so the reviewer is covered (sk2). The executor's outcome describes this diff accurately; its dependants answer (record reader takes body.get('line') and ignores the new key; no config key added) holds against the diff. The two things the description cannot show are in findings 1 and 2 (live behaviour under --agent; precedence order).",
+    "missing": [],
+    "redFirst": "could-not-prove",
+    "redFirstBasis": "Executor's redFirst is could-not-prove with the reason verbatim: the sweep over both test files 'timed out: no time was left of the 480-second deadline' in the throwaway tree at HEAD. The reason is stated, so the word holds. I did not run anything myself; the new cases would fail on unfixed code by reading (argparse rejects the unknown --skill, so ras35-ras46 exit usage), but that is not a seen red.",
+    "inheritedTests": "none-found",
+    "inheritedTestsBasis": "Gate is python3 tools/sweep-selftests.py tests/test_run_agent_session.py tests/test_drive_phase.py, which selects both whole files. I read the diff's added cases (ras35-ras46, sk1-sk3) and the stub change; each asserts on the argv, the file the stub read, the record line, or the exit code, so each reaches the behaviour. No swallowing try or empty filter seen in them. I did not read the remaining pre-existing cases of test_drive_phase.py; ws*/rv* only compare _flag(argv, ...) values the change leaves alone. Skills sizes for the budget question: writing-python 8823, before-you-claim 8436, no-silent-pass 12482 bytes, about 29.7 KB together (roughly 7-8k tokens appended to every writer/reviewer system prompt, a cache write once per session then cache reads); refactoring-the-assembled-ui alone is 27037 bytes, so a plan naming it would nearly double that."
+  },
+  "verdict": "findings"
+}

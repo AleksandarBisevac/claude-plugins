@@ -352,7 +352,7 @@ import _filed_returns as _fr  # noqa: E402  (where a filed return lives, and its
 #                                            the per-task review key a task holds;
 #                                            the driver's state path, needs_human)
 import _config_rules  # noqa: E402  (review_per_task_mode: the config's reading now)
-import _areas  # noqa: E402  (resolve_review_skill: whether the phase review has a skill)
+import _areas  # noqa: E402  (resolve_review_skill: whether the phase review has a skill; resolve_skills: what a session starts with)
 import _status_facts  # noqa: E402  (ready_tasks: the one readiness rule)
 import _verdict_binding as _vb  # noqa: E402  (phase_binding: whether a held phase
 #                                              gate run is still the one sign-off binds)
@@ -1779,18 +1779,28 @@ def session_record(ctx, task, seq, role="writer"):
         "" if role == "writer" else role + ".", seq))
 
 
+def session_skills(ctx, task):
+    """The skills `task`'s session starts with: `_areas.resolve_skills` over the
+    plan as it stands now - the one resolver, so the writer, the reviewer and the
+    executor subagent are given the same names."""
+    manifest, phase = load_phase(ctx)
+    return _areas.resolve_skills(manifest, phase, task)
+
+
 def writer_argv(ctx, task, writer, prompt, record, tree=None, resume=None,
                 role="writer"):
     """The command that runs `task`'s writer session - or its reviewer's, under
     `role` - in the task's own tree when it has one, else the project; its
-    scratch and its stream under `stateDir`."""
+    scratch and its stream under `stateDir`, and one `--skill` per skill the task
+    resolves to, which the runner puts in the session's system prompt."""
+    skills = [flag for name in session_skills(ctx, task) for flag in ("--skill", name)]
     argv = ["python3", _loader.script_path(WRITER_RUNNER), "--role", role,
             "--task", task["id"],
             "--tree", member_project(ctx, tree) or ctx["project"],
             "--scratch", os.path.join(sessions_dir(ctx), "scratch", task["id"]),
             "--state-dir", ctx["stateDir"], "--model", writer["model"],
             "--effort", WRITER_EFFORT, "--budget-usd", writer["budget"],
-            "--prompt-file", prompt, "--record", record]
+            "--prompt-file", prompt, "--record", record] + skills
     return argv + (["--resume", resume] if resume else [])
 
 

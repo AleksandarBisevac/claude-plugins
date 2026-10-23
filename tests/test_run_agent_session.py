@@ -36,6 +36,7 @@ WHAT IS PINNED, and why each one is here rather than trusted:
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import hashlib
 import json
 import os
 import shutil
@@ -73,6 +74,8 @@ record = {
     "pid": os.getpid(),
     "pgrp": os.getpgrp() if hasattr(os, "getpgrp") else None,
     "agents_file": None,
+    "skills_file": None,
+    "skills_path": None,
     "env": {k: v for k, v in os.environ.items()
             if k.startswith(("CLAUDE", "AUDIT_"))
             or k in ("PATH", "HOME", "ORCH_KEEP_Q81Z", "TEMP", "TMP")},
@@ -83,6 +86,12 @@ if "--agents" in argv:
     if os.path.isfile(target):
         with open(target, encoding="utf-8") as fh:
             record["agents_file"] = fh.read()
+if "--append-system-prompt-file" in argv:
+    target = argv[argv.index("--append-system-prompt-file") + 1]
+    record["skills_path"] = target
+    if os.path.isfile(target):
+        with open(target, encoding="utf-8") as fh:
+            record["skills_file"] = fh.read()
 with open(os.environ["STUB_RECORD"], "w", encoding="utf-8") as fh:
     json.dump(record, fh)
 mode = os.environ.get("STUB_MODE", "ok")
@@ -631,8 +640,172 @@ def _cases(check):
               "the run's own exit code and line as they were: %r" % ((code, out, err),),
               code == 0 and out.startswith("session=%s " % SESSION)
               and "could not be written" in err and "Traceback" not in err)
+
+        _skill_cases(check, M, root, bindir, e_io)
     finally:
         shutil.rmtree(root, ignore_errors=True)
+
+
+def _write_skill(base, name, body):
+    """`<base>/<name>/SKILL.md` holding `body`; returns the file's path."""
+    folder = os.path.join(base, name)
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, "SKILL.md")
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(body)
+    return path
+
+
+def _digest(path):
+    with open(path, "rb") as fh:
+        return hashlib.sha256(fh.read()).hexdigest()
+
+
+def _skill_cases(check, M, root, bindir, e_io):
+    """The skills a session is started with. Every body is a sentinel that cannot
+    occur by accident, and the project and user copies of `dup-skill` differ, so a
+    resolver that took the wrong one of the two is red."""
+    home = os.path.join(root, "home-sk")
+    user_dir = os.path.join(home, ".claude", "skills")
+
+    def project_dir(tag):
+        """The project skills of the tree `_run` makes for `tag`."""
+        return os.path.join(root, "tree-" + tag, ".claude", "skills")
+    plugin_dir = os.path.join(_harness._PLUGIN_DIR, "skills")
+    # An empty CLAUDE_CONFIG_DIR falls through to ~/.claude, which is HOME's.
+    pinned = {"HOME": home, "USERPROFILE": home, "CLAUDE_CONFIG_DIR": ""}
+    user_only = _write_skill(user_dir, "user-only",
+                             "---\nname: user-only\n---\nUSER-ONLY-BODY-k3v9\n")
+    _write_skill(user_dir, "dup-skill", "---\nname: dup-skill\n---\nUSER-DUP-BODY-k3v9\n")
+    dup_text = "---\nname: dup-skill\n---\nPROJECT-DUP-BODY-k3v9\n"
+    _write_skill(project_dir("sk"), "dup-skill", dup_text)
+    plugin_one = sorted(os.listdir(plugin_dir))[0]
+    plugin_path = os.path.join(plugin_dir, plugin_one, "SKILL.md")
+    with open(plugin_path, encoding="utf-8") as fh:
+        plugin_text = fh.read()
+    names = ["user-only", "dup-skill", plugin_one]
+    flags = [x for n in names for x in ("--skill", n)]
+
+    code, out, err, rec, dirs = _run(root, bindir, "writer", extra=flags, tag="sk",
+                                     env_extra=pinned)
+    argv = (rec or {}).get("argv") or []
+    held = (rec or {}).get("skills_file") or ""
+    at = [held.find(t) for t in ("USER-ONLY-BODY-k3v9", "PROJECT-DUP-BODY-k3v9",
+                                 plugin_text.strip()[-60:])]
+    check("ras35 the resolved skills reach the session as one "
+          "--append-system-prompt-file under the task's scratch, holding each body "
+          "once in the order named, the project's copy of a name that the user also "
+          "has and not the user's: %r" % ((code, argv, at, err[-200:]),),
+          code == 0 and rec is not None
+          and _under(rec.get("skills_path") or "/", dirs["scratch"])
+          and all(a >= 0 for a in at) and at == sorted(at)
+          and held.count("USER-ONLY-BODY-k3v9") == 1
+          and held.count("PROJECT-DUP-BODY-k3v9") == 1
+          and held.count("USER-DUP-BODY-k3v9") == 0
+          and argv.count("--append-system-prompt-file") == 1)
+    check("ras36 ...each body wrapped with its name, so a reader of the prompt can tell "
+          "where one skill ends: %r" % (held[:300],),
+          all(('"%s"' % n) in held for n in names)
+          and held.count("</skill>") == len(names))
+    check("ras37 ...and the prompt on stdin is the one given, byte for byte, in no "
+          "argv element, with the skills' text in no argv element either",
+          rec is not None and rec["stdin"] == PROMPT
+          and not any("PROMPT-SENTINEL" in a or "BODY-k3v9" in a for a in argv))
+
+    # The mutation this guards: a flag added unconditionally.
+    code, out, err, rec, dirs = _run(root, bindir, "writer", tag="sk0", env_extra=pinned)
+    argv = (rec or {}).get("argv") or []
+    check("ras38 with no --skill the argv carries no --append-system-prompt-file and "
+          "no skills file is written under the scratch: %r" % (argv,),
+          code == 0 and rec is not None and "--append-system-prompt-file" not in argv
+          and rec["skills_file"] is None
+          and not [f for f in os.listdir(dirs["scratch"]) if "skills" in f])
+
+    code, out, err, rec, dirs = _run(root, bindir, "writer", tag="skm", env_extra=pinned,
+                                     extra=["--skill", "user-only", "--skill",
+                                            "no-such-skill-q81z"])
+    named = [os.path.join(project_dir("skm"), "no-such-skill-q81z", "SKILL.md"),
+             os.path.join(user_dir, "no-such-skill-q81z", "SKILL.md"),
+             os.path.join(plugin_dir, "no-such-skill-q81z", "SKILL.md")]
+    check("ras39 a skill that resolves nowhere refuses before claude starts: exit "
+          "E_USAGE, the stub recorded nothing, and the message names the skill and "
+          "every one of the %d places looked in: %r" % (len(named), err[-600:]),
+          code == M.E_USAGE and rec is None and "no-such-skill-q81z" in err
+          and all(p in err for p in named) and "Traceback" not in err)
+
+    # --- a plugin-qualified name resolves from that plugin alone ---------------
+    for tag in ("skq", "skq2"):
+        _write_skill(project_dir(tag), plugin_one, "---\nname: x\n---\nSHADOW-k3v9\n")
+    with open(os.path.join(_harness._PLUGIN_DIR, ".claude-plugin", "plugin.json"),
+              encoding="utf-8") as fh:
+        plugin_name = json.load(fh)["name"]
+    code, out, err, rec, dirs = _run(root, bindir, "writer", tag="skq", env_extra=pinned,
+                                     extra=["--skill", "%s:%s" % (plugin_name, plugin_one)])
+    held = (rec or {}).get("skills_file") or ""
+    check("ras40 `<plugin>:<skill>` is read from that plugin's own skills/ and not from "
+          "a project or user skill of the same name: %r" % (held[:200],),
+          code == 0 and "SHADOW-k3v9" not in held and plugin_text.strip()[-60:] in held)
+    code, out, err, rec, dirs = _run(root, bindir, "writer", tag="skq2", env_extra=pinned,
+                                     extra=["--skill", "other-plugin:%s" % plugin_one])
+    check("ras41 ...and a name qualified by some other plugin refuses, naming it, "
+          "without falling back to the project's or the user's copy: %r" % (err[-300:],),
+          code == M.E_USAGE and rec is None and "other-plugin:%s" % plugin_one in err)
+    code, out, err, rec, dirs = _run(root, bindir, "writer", tag="skt", env_extra=pinned,
+                                     extra=["--skill", "../escape"])
+    check("ras42 a name that could leave the skills directories is refused as usage: %r"
+          % (err[-200:],), code == M.E_USAGE and rec is None and "../escape" in err)
+
+    # --- the record carries each skill's digest ---------------------------------
+    project_dup = _write_skill(project_dir("skr"), "dup-skill", dup_text)
+    kept = os.path.join(root, "records", "sk.jsonl")
+    code, out, err, rec, dirs = _run(root, bindir, "writer", tag="skr", env_extra=pinned,
+                                     extra=["--record", kept, "--skill", "user-only",
+                                            "--skill", "dup-skill"])
+    lines = _record_lines(kept)
+    listed = (lines[-1].get("skills") if lines else None) or []
+    expected = [{"name": "user-only", "path": user_only, "sha256": _digest(user_only)},
+                {"name": "dup-skill", "path": project_dup,
+                 "sha256": _digest(project_dup)}]
+    check("ras43 the --record line names each preloaded skill with its path and the "
+          "sha256 of its file, in order - the project's dup-skill, whose digest "
+          "differs from the user's: %r" % ((listed,),),
+          code == 0 and len(lines) == 1 and listed == expected
+          and expected[1]["sha256"] != _digest(os.path.join(user_dir, "dup-skill",
+                                                            "SKILL.md")))
+    plain = os.path.join(root, "records", "plain.jsonl")
+    _run(root, bindir, "writer", tag="skp", env_extra=pinned, extra=["--record", plain])
+    check("ras44 a run with no skills records none: the line has no skills key, "
+          "rather than an empty list standing for them",
+          [sorted(x) for x in _record_lines(plain)] == [["exit", "line"]])
+
+    # --- the reviewer keeps its --agents body, and the skills ride beside it ----
+    code, out, err, rec, dirs = _run(root, bindir, "reviewer", tag="skv", env_extra=pinned,
+                                     extra=["--skill", "user-only"])
+    argv = (rec or {}).get("argv") or []
+    _front, body = _reviewer_md()
+    try:
+        defn = json.loads((rec or {}).get("agents_file") or "{}").get("audit-reviewer", {})
+    except ValueError:
+        defn = {}
+    check("ras45 the reviewer gets the skills file AND keeps --agents/--agent with the "
+          "file's own body, unchanged by the skills: %r" % ((code, argv, err[-200:]),),
+          code == 0 and rec is not None
+          and _after(argv, "--agent") == "audit-reviewer"
+          and defn.get("prompt", "").strip() == body.strip()
+          and "USER-ONLY-BODY-k3v9" not in (rec.get("agents_file") or "")
+          and "USER-ONLY-BODY-k3v9" in (rec.get("skills_file") or "")
+          and rec["stdin"] == PROMPT)
+
+    # --- a skill file that cannot be read is an io-error, not a missing skill ---
+    with open(user_only, "wb") as fh:
+        fh.write(b"\xff\xfe not utf-8 \x80")
+    code, out, err, rec, dirs = _run(root, bindir, "writer", tag="skio", env_extra=pinned,
+                                     extra=["--skill", "user-only"])
+    check("ras46 a name that resolves to a SKILL.md that cannot be decoded is named as "
+          "an io-error with its own exit code and never as a missing skill: %r"
+          % ((code, out[-200:], err[-200:]),),
+          e_io is not None and code == e_io and rec is None and user_only in out + err
+          and "Traceback" not in err)
 
 
 def _record_lines(path):

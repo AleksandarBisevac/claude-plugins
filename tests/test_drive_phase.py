@@ -1187,7 +1187,7 @@ def _wf_gate():
 
 
 def _tdd_writer_repo(prefix, gate, description=None, per_task="always",
-                     review=None):
+                     review=None, skills=None):
     """A one-task plan whose task is tdd over `src/mine.py` and its suite,
     under a writer session: HEAD holds `v = 1` and a suite whose one case
     passes there. `gate` is the task's and the phase's gate; `description`
@@ -1217,6 +1217,8 @@ def _tdd_writer_repo(prefix, gate, description=None, per_task="always",
     task["description"] = description or "make v two, and prove it with a case"
     task["tests"] = {"mode": "tdd", "add": ["%s: v is two" % (_WF_TEST,)],
                      "gate": list(gate), "expectRedFirst": True}
+    if skills is not None:
+        task["skills"] = list(skills)
     plan["fileIndex"] = {_WF_SRC: ["P1.1"], _WF_TEST: ["P1.1"]}
     with open(mpath, "w", encoding="utf-8") as fh:
         json.dump(plan, fh, indent=2)
@@ -2263,6 +2265,55 @@ def _reviewer_dispatch(M, bindir, log):
                                edit={_WF_SRC: "v = 2\n", _WF_TEST: _WF_NEW_TEST},
                                result=_WF_CLAIM)
     return root, mpath, line
+
+
+def _skill_flags(argv):
+    """Every value that follows a `--skill` in `argv`, in order."""
+    argv = list(argv or [])
+    return [argv[i + 1] for i, a in enumerate(argv[:-1]) if a == "--skill"]
+
+
+def _session_skill_cases(check):
+    """The drive hands the task's resolved skills to the session runner, for the
+    writer and for the reviewer alike, and to neither when the task resolves none.
+    The skills are project skills committed into the fixture, because the stub
+    session is the real runner and a name it cannot find refuses to start."""
+    M, why = _load("drive_phase_session_skills")
+    if M is None:
+        check("sk1 the driver loads", False, why)
+        return
+    stubs = os.path.realpath(_harness.fixture_root("drive-sk-stub-"))
+    bindir = _writer_stub(stubs)
+    log = os.path.join(stubs, "runs.jsonl")
+    named = ["alpha-house", "beta-house"]
+    root, mpath = _tdd_writer_repo("sk", (_wf_gate(),), skills=named)
+    for name in named:
+        folder = os.path.join(root, ".claude", "skills", name)
+        os.makedirs(folder)
+        _write_lf(os.path.join(folder, "SKILL.md"),
+                  "---\nname: %s\n---\nbody of %s\n" % (name, name))
+    for argv in (["add", "-A"], ["commit", "-qm", "the task's skills"]):
+        _harness.git(root, *argv)
+    _signal_next(M, root, mpath)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    wargv = _run_argv(block) or []
+    _writer_round(M, root, mpath, bindir, log, "0.31",
+                  edit={_WF_SRC: "v = 2\n", _WF_TEST: _WF_NEW_TEST}, result=_WF_CLAIM)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    rargv = _run_argv(block) or []
+    check("sk1 the writer's printed command carries one --skill per skill the task "
+          "resolves to, in order: %r" % ((wargv,),),
+          _flag(wargv, "--role") == "writer" and _skill_flags(wargv) == named)
+    check("sk2 ...and the reviewer's carries the same, beside its own role: %r"
+          % ((rargv,),),
+          _flag(rargv, "--role") == "reviewer" and _skill_flags(rargv) == named)
+    root, mpath = _tdd_writer_repo("sk0", (_wf_gate(),))
+    _signal_next(M, root, mpath)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    bare = _run_argv(block) or []
+    check("sk3 a task that resolves no skill gets no --skill at all - the flag is not "
+          "added with an empty name: %r" % ((bare,),),
+          _flag(bare, "--role") == "writer" and "--skill" not in bare)
 
 
 def _reviewer_session_cases(check):
@@ -10303,6 +10354,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("dd3-block", "_rerun_cases"), ("rs-block", "_resume_cases"),
           ("ws-block", "_writer_session_cases"),
           ("rv-block", "_reviewer_session_cases"),
+          ("sk-block", "_session_skill_cases"),
           ("pv-block", "_phase_validation_cases"),
           ("pv4-block", "_phase_cold_cases"),
           ("pv7-block", "_pv_unit_cases"),

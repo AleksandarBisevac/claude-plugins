@@ -5070,6 +5070,23 @@ gets `--agents <file>`, built from `agents/audit-reviewer.md` through `_help.fro
 with `--` cannot reach the argv as a flag. The budget must be a finite positive number, since
 `float()` also reads `inf` and `nan`.
 
+**`--skill NAME`, repeatable, starts the session with those skills already loaded.** Each name is
+found the way a session in that tree finds a skill (`skill_places`): the tree's
+`.claude/skills/<name>/SKILL.md`, then the user's (`_claude_home.claude_home()`), then this plugin's
+own `skills/`; a `plugin:skill` name is read only from that plugin and never falls back to a
+same-named project or user skill, and a name that could leave those directories (`SKILL_NAME`) is a
+usage error. A name found nowhere refuses to start — exit `2`, naming the skill and every place
+looked — because a skill the plan declares and the session never loads is exactly the defect that
+cannot be seen in a cost. A `SKILL.md` that exists and cannot be read is `io-error:`, not a missing
+skill. The files are written whole, each wrapped as `<skill name="...">`, into one
+`<stream name>.skills.md` under the scratch and passed as `--append-system-prompt-file`; the argv
+carries that flag only when a skill was named, and the prompt on stdin is untouched. The
+subagent-definition `skills` field was probed on claude 2.1.307 and the session did not see the
+skill, so the reviewer's `--agents` body is left as it was and its skills ride in the same appended
+file. `--record` adds a `"skills"` key to its line — name, path and the sha256 of the file's bytes —
+and no such key when none were named. `drive-phase.py`'s `writer_argv` adds one `--skill` per name
+`_areas.resolve_skills` returns, for the writer, the reviewer and the validation session alike.
+
 **The prompt goes on stdin, never in argv**, because a sibling session's `pkill -f` matches command
 lines; the script reads its own prompt off stdin or `--prompt-file` for the same reason. The child
 runs in a process group of its own (`_proc_group.group_kwargs`, torn down whole on SIGINT/SIGTERM)

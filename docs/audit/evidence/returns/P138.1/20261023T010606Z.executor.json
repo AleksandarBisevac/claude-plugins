@@ -1,0 +1,49 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_run_agent_session.py tests/test_drive_phase.py tests/test__deps.py (run in the task tree /Users/aleksandarbisevac/dev/audit-plugin/claude-plugins-P138.1, no pipe)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-23T01:26:07Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_run_agent_session.py tests/test_drive_phase.py` in a throwaway tree at HEAD: the run timed out: no time was left of the 480-second deadline; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "run-agent-session.py: repeatable --skill NAME (argparse append). find_skills/skill_places resolve each name in order to <tree>/.claude/skills/<name>/SKILL.md, then <_claude_home.claude_home()>/skills/<name>/SKILL.md, then <PLUGIN_ROOT>/skills/<name>/SKILL.md; plugin:skill resolves only from the running plugin (name read from .claude-plugin/plugin.json) with no fallback; names must match SKILL_NAME (no separators). A missing name -> refuse() -> E_USAGE naming the skill and every path looked in; an existing but undecodable/unreadable SKILL.md -> io-error, E_IO. load_skills reads bytes, sha256 of the file bytes; skills_prompt wraps each full SKILL.md as <skill name=...>...</skill>; _prepare writes one <stream>.skills.md under the scratch; session_argv adds --append-system-prompt-file only when skills were named (before --agents, so the resume pair stays last and ras17 still holds). write_record gains a skills list (name, path, sha256) only when skills were named; _run takes an out-dict `ran` so the record carries them whichever outcome follows. The stdin prompt and the reviewer's --agents body are untouched. drive-phase.py: new session_skills(ctx, task) calls the imported _areas.resolve_skills(manifest, phase, task) over load_phase(ctx); writer_argv appends one --skill per name, so the writer, the reviewer, the resume/review-fix dispatches and the validation session all carry it (no resolver copy). PLUGIN-BUILD-GUIDE.md run-agent-session section describes it. Tests: tests/test_run_agent_session.py stub records the --append-system-prompt-file path and content, HOME/USERPROFILE pinned to the suite scratch with CLAUDE_CONFIG_DIR empty; new cases ras35-ras46 via _skill_cases; tests/test_drive_phase.py new _session_skill_cases (stage sk-block, STAGES row after rv-block) with sk1-sk3, plus a skills= parameter on _tdd_writer_repo. `claude --help` lists --append-system-prompt[-file] (grep matched 'append-system-prompt' at help lines 26, 56, 240; no paid session launched). Gate: `python3 tools/sweep-selftests.py tests/test_run_agent_session.py tests/test_drive_phase.py tests/test__deps.py` run in the task tree with output to a file, exit 0: 3/3 files ok, 869 cases (test__deps 254, test_drive_phase 560, test_run_agent_session 55). ruff check on the four .py files: exit 0; vermin -t=3.8- on run-agent-session.py and its test: exit 0. Dependants: run-agent-session.py's consumers (drive-phase.py write_record is the drive's own stdout writer, unrelated; the drive's reader of the record file takes body.get('line') and ignores the new skills key) still correct; test_run_agent_session/_run and test_drive_phase/_run are their own helpers; exit_for unchanged; _config_rules / _panel_settings / audit-config.schema.json share only the basename text and no new config key was added, so unchanged; PLUGIN-BUILD-GUIDE.md updated. drive-phase.py: writer_argv signature unchanged, only the argv it returns gains --skill pairs; callers (writer, resume, review-fix, reviewer, validation) all pass through it; tests reading _flag(argv, ...) (ws*, rv*, sr2) still pass in the full run. Not done: the live check that a real claude session sees the appended skills (only the fake claude was used, per the instruction not to launch a paid session). Note: P138.2 touches _areas.py defaults; session_skills reads resolve_skills, so it picks those up without change.",
+    "descriptive": "A writer or reviewer session started by the drive now begins with each skill the task resolves to appended to its system prompt, recorded by name, path and digest, and a skill that cannot be found stops the launch by name."
+  },
+  "testsAdded": [
+    "run-agent-session: skills reach the session as one --append-system-prompt-file (each body once, in order, project beats user), wrapped by name, stdin prompt byte-identical",
+    "run-agent-session: no --skill means no flag and no file, and no skills key in the record",
+    "run-agent-session: a missing skill refuses E_USAGE naming it and all three places looked",
+    "run-agent-session: plugin:skill reads only that plugin (a same-named project skill is a decoy), another plugin's name refuses, a path-like name refuses",
+    "run-agent-session: the --record line names each skill with path and sha256 (project and user copies of one name differ)",
+    "run-agent-session: the reviewer keeps its --agents body and gets the skills beside it",
+    "run-agent-session: an undecodable SKILL.md is an io-error, not a missing skill",
+    "drive-phase: the writer's and the reviewer's printed commands carry one --skill per resolved skill in order, and none when the task resolves none"
+  ],
+  "casesAdded": [
+    [
+      "ras35",
+      "ras36",
+      "ras37",
+      "ras38",
+      "ras39",
+      "ras40",
+      "ras41",
+      "ras42",
+      "ras43",
+      "ras44",
+      "ras45",
+      "ras46"
+    ],
+    [
+      "sk1",
+      "sk2",
+      "sk3"
+    ]
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:c738f5d6e0221e562c59e5add5034ca4a27730f4ae308feb328cd2a08bc62087\",\"dirtyDigest\":\"sha256:d818eacef00fa002d8742392735a92745bdac2b7ea60b2e89274d0ceaec63f2f\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"9b3ae7c25ec92bea\",\"plugins/audit/scripts/governance/drive-phase.py\":\"9086e918e012276f\",\"plugins/audit/scripts/governance/run-agent-session.py\":\"937edf9091a076eb\",\"tests/test_drive_phase.py\":\"4fdd4800b9f6214a\",\"tests/test_run_agent_session.py\":\"583fa1773c4d833d\"},\"head\":\"03e5d0c8\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/governance/run-agent-session.py\",\"tests/test_drive_phase.py\",\"tests/test_run_agent_session.py\"],\"scopeDigest\":\"sha256:f5fcea43a1dcfeff6ec88e156b99f0eccc7c0232ad88f5c8fe13080fbc08ad83\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

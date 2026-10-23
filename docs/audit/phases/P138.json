@@ -1,0 +1,163 @@
+{
+  "id": "P138",
+  "title": "A writer or reviewer session starts with the task's skills already loaded",
+  "status": "in_progress",
+  "description": "Diagnosis (stage 1 a1d-a4d, 2026-10-23): neither the writer prompt nor the plain prompt routes skills; in both arms the only thing that leads a session to the Skill tool is the superpowers SessionStart text, and the model takes that choice on its first turn or never - a1d/a2d and a3d/a4d had byte-identical prompts and session starts and split one-and-one. Probed on CLI 2.1.307: `--agents <file> --agent <name>` with a `skills` field does NOT preload the skill in -p main-session mode (the session answered NONE, as the control did); `--append-system-prompt <SKILL.md text>` does (the session quoted the skill's token with no tool call). _areas.resolve_skills already resolves a task's skills (area defaults, then the task's) for the executor brief, but run-agent-session never uses it, and this plan declares no area and no task skills.",
+  "desiredOutcome": "Every writer and reviewer session the drive starts has the full text of each skill the task resolves to in its context from the first turn, recorded by name and digest in the session's record, and a plan can name house skills once for every phase; a named skill the launcher cannot find stops the launch by name",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [],
+  "baseRef": "03e5d0c80a271dd888e44da6ee018e1d50fb3a48",
+  "branch": "audit/p138-a-writer-or-reviewer-session-s",
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": [
+      {
+        "id": "P138-R1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/run-agent-session.py:211-228 (and tests/test_run_agent_session.py ras35)",
+        "issue": "Unverified: the reviewer's skills are appended with --append-system-prompt-file ALONGSIDE --agents/--agent audit-reviewer, but the only live probe the phase cites (claude 2.1.307) was main-session mode without --agent. The executor states no live check was made (fake claude only). Nothing handed shows that, under --agent, the appended file still reaches the session's system prompt rather than being replaced by the agent's prompt. ras45 pins only that the argv carries both flags and that the stub saw the file, so it would pass even if claude ignored the append for an agent session. The phase's desired outcome ('every writer AND reviewer session ... from the first turn') rests on this.",
+        "resolution": "Before sign-off, run one cheap real reviewer-role session (--agent audit-reviewer plus --append-system-prompt-file holding a sentinel) and record that the session quotes the sentinel with no Skill call; if it does not, append the skills to the --agents definition's prompt for the reviewer instead. Record the probe command and result in the task or the guide paragraph."
+      },
+      {
+        "id": "P138-R2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/run-agent-session.py:211-228, tests/test_run_agent_session.py ras35",
+        "issue": "The resolution order is project, then user, then plugin, and ras35 asserts that the project copy of a name the user also has wins. As I recall Claude Code's documented precedence for same-named skills it is enterprise, then personal (<outside-repo>), then project, with plugin skills namespaced as plugin:skill only; I did not verify this (no network, no live session), so treat it as a question the task should settle. If I recall correctly, a same-named project and user skill would be preloaded from the project while the session's own Skill tool would load the user's, i.e. two different bodies for one name. The task description states the project-first order, so this is not a contradiction of the clause; it is the clause possibly resting on a wrong premise, and a test now pins it. Also, a bare name is looked up in the plugin's skills/, whereas a session sees plugin skills only as plugin:skill.",
+        "resolution": "Check the order against the Claude Code skills documentation (verifying-external-behavior) and, if personal outranks project, swap the two entries in skill_places and the order in ras35/ras43 and the guide paragraph; if project outranks user, cite the source in the skill_places docstring."
+      },
+      {
+        "id": "P138-R3",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/run-agent-session.py:271-275",
+        "issue": "skills_prompt wraps the SKILL.md text as <skill name=...> but never says where the skill lives. A skill that points at sibling files gets no base directory: .claude/skills/before-you-claim/SKILL.md:117 names `references/questions.md`, and before-you-claim is one of the three Python house skills this repo's plan means to preload. The Skill tool would give the session the directory; this path does not, so the reference cannot be followed.",
+        "resolution": "Put the skill's directory in the wrapper (e.g. <skill name=\"...\" dir=\"...\">) and add a case that the attribute is the SKILL.md's folder."
+      },
+      {
+        "id": "P138-R4",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/run-agent-session.py:211-251",
+        "issue": "A second resolver of 'where does this plan-named skill live': audit:doctor's check_plan_skills (status/_doctor_policy.py:385) discovers skills through installed plugins as well, while skill_places knows three places and refuses any plugin:skill whose plugin is not the running one. A plan naming an installed third-party skill (e.g. superpowers:...) that doctor reports as resolving makes the drive refuse the launch at run time, with no way out except task.skills null. The refusal is what the clause asked for; the divergence between the two resolvers and the lack of a pre-launch signal is the cost.",
+        "resolution": "Either say in the refusal message that only the project, the user's directory and this plugin are searched (and that skills: null opts out), or have doctor's check use skill_places so the two agree; consider running find_skills in the drive before starting the task so the refusal comes before the task is marked in_progress."
+      }
+    ],
+    "outcome": "[findings: 4 - 0 high, 2 med, 2 low; 0 with a recorded fix commit]"
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P138.1",
+      "title": "run-agent-session preloads the task's resolved skills into the session's system prompt and records them",
+      "status": "in_progress",
+      "description": "Give run-agent-session.py a repeatable --skill NAME (the drive passes _areas.resolve_skills(manifest, phase, task) for both the writer and the reviewer). For each name, locate SKILL.md the way Claude Code resolves a skill for a session in that tree - the project's .claude/skills/<name>/, the user's <outside-repo><name>/, then the running plugin's own skills/ (a plugin-qualified name plugin:skill only from that plugin) - and refuse to start, exit E_USAGE with the name and every place looked, when one is missing: a declared skill that does not load is the defect this phase exists for. Write the bodies, each wrapped with its name, to one file under the session's scratch and pass it as --append-system-prompt-file (keep the task prompt on stdin byte-identical). Record in the session's record line the preloaded names, paths and sha256 of each body, so a reader can tell which skills a session had without a Skill call. The reviewer keeps its --agents body; the skills append to it the same way. Cases: the argv carries the file when skills resolve and carries no such flag when none do; the file holds each body once in resolution order; a missing skill refuses with its name; the record names each skill with its digest; the prompt on stdin is unchanged.",
+      "files": [
+        "plugins/audit/scripts/governance/run-agent-session.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_run_agent_session.py",
+        "tests/test_drive_phase.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_run_agent_session.py: the resolved skills reach the session through --append-system-prompt-file, a missing skill refuses by name, and the record carries each skill's digest",
+          "tests/test_drive_phase.py: the drive passes the task's resolved skills to the writer and to the reviewer"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_agent_session.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-23T01:06:06Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-23T01:38:08Z.d7c9f6",
+        "status": "passed",
+        "at": "2026-10-23T01:38:08Z"
+      }
+    },
+    {
+      "id": "P138.2",
+      "title": "A plan names house skills once, and every phase's tasks resolve them",
+      "status": "in_progress",
+      "description": "Today a skill reaches a task only through a registered area the phase names, or the task's own list, so a plan whose phases carry no area (this one) resolves nothing. Add a plan-wide default - an existing mechanism if _areas already has one, else a new meta key read first by resolve_skills, before area defaults and the task's own (adding a key is free under COMPATIBILITY.md; document it there and in the schema and audit-config docs as appropriate) - with task.skills null still opting out. Declare this repository's Python house skills there through the plugin's own verb (no hand edit of docs/audit): writing-python, before-you-claim, no-silent-pass. Cases: a phase with no area resolves the plan default; area and task skills follow it, deduped; null opts out; the validator accepts the key and rejects a non-list.",
+      "files": [
+        "plugins/audit/scripts/manifest/_areas.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/manifest/validate-manifest.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "tests/test__areas.py",
+        "tests/test_validate_manifest.py",
+        "COMPATIBILITY.md",
+        "plugins/audit/reference/verbs-in-full.md",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "tests/test_audit_task.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__areas.py: a plan-wide default skill list resolves for a phase with no area, before area and task skills, and task.skills null opts out"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__areas.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-23T01:06:09Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
+    }
+  ],
+  "request": "Stage 1 fifth attempt: check-skills-loaded FAIL - pipeline writers a2d and a4d loaded no skill while every plain session did; the owner requires skill loading fixed before 3.6.0 ('obavezno da resimo to ucitavanje skill-ova')",
+  "openChoices": [],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "bf837df2-37bc-4c94-9233-61f7d70c1d7f",
+    "branch": "audit/p138-a-writer-or-reviewer-session-s",
+    "at": "2026-10-23T01:06:06Z"
+  },
+  "startedAt": "2026-10-23T01:06:06Z"
+}
