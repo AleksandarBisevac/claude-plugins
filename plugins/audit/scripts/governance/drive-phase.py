@@ -7688,6 +7688,39 @@ def submitted_shape(role, body, fills, task=None):
     return _fr.return_problems(role, held, task)
 
 
+def string_fields(value, field=""):
+    """`[(field, string)]` for every string leaf under `value`, each field named
+    the way a reader finds it again: `outcome.technical`, `testsAdded[0]`."""
+    if isinstance(value, str):
+        return [(field or "the return", value)]
+    if isinstance(value, dict):
+        return [pair for key, item in value.items()
+                for pair in string_fields(
+                    item, "%s.%s" % (field, key) if field else str(key))]
+    if isinstance(value, list):
+        return [pair for index, item in enumerate(value)
+                for pair in string_fields(item, "%s[%d]" % (field, index))]
+    return []
+
+
+def machine_path_refusal(project, body):
+    """None when no string in `body` carries a machine path, else the refusal.
+
+    The same predicate `audit-task.py add` refuses a description with,
+    `_journal_io.check_free_text`, asked of every string in the return: a filed
+    return lands in a committed, hash-chained directory, and the writer's own
+    scrub would otherwise rewrite what the agent claimed without telling it. The
+    first field's refusal carries the remedy; the rest are named after it, and
+    no value is ever echoed."""
+    refusals = [(field, why) for field, why in
+                ((field, _journal_io.check_free_text(project, field, text))
+                 for field, text in string_fields(body)) if why]
+    if not refusals:
+        return None
+    others = [field for field, _why in refusals[1:]]
+    return refusals[0][1] + ((" Also: %s." % (", ".join(others),)) if others else "")
+
+
 def already_filed(ctx, task):
     """`role_return_filed` for the executor: the one the filing verb and the
     submit's early look ask about."""
@@ -7924,6 +7957,10 @@ def submit(ctx, manifest, args, cmd, text):
     except ValueError as exc:
         return _stopped(ctx, "the return on stdin does not parse as JSON (%s). "
                         "Nothing filed." % (exc,))
+    machine = machine_path_refusal(ctx["project"], body)
+    if machine:
+        return _stopped(ctx, "the %s return for %s: %s" % (
+            args.role, args.id, machine))
     owed = task is not None and _fr.owes_red_first(task)
     executor = task is not None and args.role == "executor"
     if executor and owed and not cmd:

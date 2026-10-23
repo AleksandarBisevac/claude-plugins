@@ -4242,6 +4242,56 @@ def _submit_cases(check):
           "right after the refusal: %r" % (text,),
           code == 0 and os.path.exists(path))
 
+    # A machine path in any string of a return is refused where it is typed:
+    # the filed copy lands in a committed, hash-chained directory, and the
+    # writer's own scrub would otherwise rewrite the claim silently. The
+    # fixture path is built here, never written out, so no scan of this file
+    # reads it as a leak; the user segment is distinctive so an echo is seen.
+    leak = "/".join(["", "Users", "zq7user", "dev", "proj", "mod.py"])
+    root, mpath, _t = _started(M, "machinepath")
+    _edit(root, "P1.1", "changed\n")
+    path = _filed_path(mpath, "P1.1")
+    dirty = _executor_body("P1.1", {
+        "outcome": {"technical": "edited %s and ran it" % (leak,),
+                    "descriptive": "mod.py changed"},
+        "testsAdded": ["the case that reads %s" % (leak,), "a clean entry"]})
+    code, text = _submit(None, root, mpath, "P1.1", dirty)
+    check("ds5r a return holding a machine path in a nested string is refused "
+          "before the stamp is taken: it names each field that carries one "
+          "(outcome.technical, testsAdded[0]) and none that is clean, offers "
+          "the remedy, never echoes the path, and writes nothing: %r" % (text,),
+          code == 1 and "stamp taken" not in text
+          and "outcome.technical" in text and "testsAdded[0]" in text
+          and "testsAdded[1]" not in text and "outcome.descriptive" not in text
+          and "<home>/" in text and "zq7user" not in text
+          and not os.path.exists(path))
+    clean = _executor_body("P1.1", {
+        "outcome": {"technical": "edited <home>/dev/proj/mod.py and "
+                                 "plugins/audit/mod.py and ran it",
+                    "descriptive": "mod.py changed"},
+        "testsAdded": ["the case that reads <scratchpad>/out.txt"]})
+    code, text = _submit(None, root, mpath, "P1.1", clean)
+    filed = json.loads(_read(path).decode("utf-8")) if os.path.exists(path) else {}
+    check("ds5s THE ALLOW TWIN: the same return spelled with <home>/..., "
+          "<scratchpad>/... and a repo-relative path is filed, and those "
+          "spellings reach the file as written: %r" % (text,),
+          code == 0 and os.path.exists(path)
+          and filed.get("outcome", {}).get("technical") ==
+          clean["outcome"]["technical"]
+          and filed.get("testsAdded") == clean["testsAdded"])
+    root, mpath, _t = _started(M, "machinepath-rv")
+    described = (tasks_of(mpath).get("P1.1") or {}).get("description") or ""
+    rpath = _filed_path(mpath, "P1.1", "reviewer")
+    code, text = _submit(None, root, mpath, "P1.1", {
+        "findings": [], "verdict": "clean",
+        "intent": {"answer": "matches",
+                   "note": "as asked: %s (read in %s)" % (described, leak)}},
+        role="reviewer")
+    check("ds5t a reviewer's return is held to the same rule: a machine path "
+          "in intent.note is refused by field and nothing is filed: %r" % (text,),
+          code == 1 and "intent.note" in text and "zq7user" not in text
+          and (rpath is None or not os.path.exists(rpath)))
+
     # A tdd task: the red-first block is the helper's.
     plan = _plan(TASKS[:1], ("true",))
     task = plan["phases"][0]["tasks"][0]

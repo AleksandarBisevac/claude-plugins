@@ -130,16 +130,20 @@
         "severity": "med",
         "file": "plugins/audit/scripts/status/_doctor_policy.py:479-486; plugins/audit/scripts/status/_skill_places.py:resolve_skill (inventory branch)",
         "issue": "The two callers still disagree for one class of name, so the stated purpose ('Two answers is how doctor goes green over a name the launcher then refuses', PLUGIN-BUILD-GUIDE.md _skill_places section) is only half met. check_plan_skills passes `inventory=` built from `_panel_discovery.discover`, whose scan walks every installed plugin's skills/ (`_plugin_bases`, `_scan_skills(base, 'plugin', ...)`) under bare keys. A bare name that is only some other installed plugin's skill therefore resolves in doctor (source 'scan') and is refused by `run-agent-session` (no inventory), which is the exact green-then-refused shape the task set out to remove. dp52 cannot see it: its inventory (`others`) holds only 'unrelated' and 'scan-only', and neither is in the dp52 name list; dp50 locks the wider mode as 'what doctor saw before'.",
-        "resolution": "Either drop the inventory mode for bare names the session would not load, or keep it but say so: when `resolve_skill` returns source 'scan', have doctor word the row as 'found only by the machine scan at <path>; `run-agent-session --skill` will refuse it', and add a dp52 name that only the inventory lists, asserting doctor and the launcher answers differ visibly rather than silently.",
-        "fixTask": "P138.5-myr"
+        "resolution": "fixed in P138.5-myr (d1e8d9948576): Either drop the inventory mode for bare names the session would not load, or keep it but say so: when `resolve_skill` returns source 'scan', have doctor word the row as 'found only by the machine scan at <path>; `run-agent-session --skill` will refuse it', and add a dp52 name that only the inventory lists, asserting doctor and the launcher answers differ visibly rather than silently.",
+        "fixTask": "P138.5-myr",
+        "commit": "d1e8d9948576",
+        "status": "fixed"
       },
       {
         "id": "P138-R13",
         "severity": "med",
         "file": "plugins/audit/scripts/status/_doctor_policy.py:536-547 (with plugins/audit/scripts/panel/_panel_discovery.py:_scan_skills, untouched)",
         "issue": "The diff reverses the launcher's order to personal-before-project, but the portability grade in `_plan_skills_travel` is still read from `have.get(name)`, the scan entry, and the scan dedupes project before user ('project/user scanned before plugins win', `_discover_scan` scans `.claude` of the project first). For a name held by both, doctor's resolved path is now the personal copy while `travels`/`travelsBasis` describe the project copy: a plan can be graded 'travels' over a file the session does not load. The executor names this in the outcome and leaves it for another task, but it is created by this change (before it, launcher and scan agreed on project-first).",
-        "resolution": "In `_plan_skills_travel`, compare `entry.get('path')` with `resolved[name]['path']` and, when they differ, put the name in `unknown` with both paths named (the grade belongs to a different file than the one loaded), or make the scan's project/user order match `_skill_places`. Add a dp case with the same name in both tiers.",
-        "fixTask": "P138.5-myr"
+        "resolution": "fixed in P138.5-myr (d1e8d9948576): In `_plan_skills_travel`, compare `entry.get('path')` with `resolved[name]['path']` and, when they differ, put the name in `unknown` with both paths named (the grade belongs to a different file than the one loaded), or make the scan's project/user order match `_skill_places`. Add a dp case with the same name in both tiers.",
+        "fixTask": "P138.5-myr",
+        "commit": "d1e8d9948576",
+        "status": "fixed"
       },
       {
         "id": "P138-R14",
@@ -170,7 +174,7 @@
         "resolution": "Narrow the descriptive outcome to doctor, and file the strict-tier refusal in _panel_write.py as a follow-up (compare the entry path with the resolved path there too, or resolve through _skill_places)."
       }
     ],
-    "outcome": "[findings: 17 - 0 high, 6 med, 11 low; 8 with a recorded fix commit]"
+    "outcome": "[findings: 17 - 0 high, 6 med, 11 low; 10 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -511,7 +515,7 @@
     {
       "id": "P138.5-myr",
       "title": "Doctor and the launcher give one answer for every skill name, and the portability grade describes the copy a session loads",
-      "status": "in_progress",
+      "status": "done",
       "description": "",
       "files": [
         "plugins/audit/scripts/status/_doctor_policy.py",
@@ -541,14 +545,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d1e8d9948576",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "R12: removed the inventory mode from _skill_places.resolve_skill (signature now name, tree, user_home, plugin_root, running; source 'scan' gone), so doctor's check_plan_skills and run-agent-session read one answer for every name; doctor's missing row now appends _scan_sighting (the machine scan lists it at <path>, which a session does not load by that bare name) when the scan lists a refused name. R13 (structural choice): _plan_skills_travel skips unresolved names and compares the scan entry's path with resolved[name]['path'] via _same_file (realpath); a mismatch goes to unknown naming both paths. I chose the path binding over reordering _panel_discovery._scan_skills because the scan keeps ONE entry per name for 13 consumers across repo and machine scopes (repo scope reads no home at all, so it could never show the personal copy), its dedupe key is the front-matter name while the resolver's is the directory name, and a reorder would change the source badge on every other surface; comparing the path to the file loaded catches every divergence, not just this order. _panel_discovery.py is therefore unchanged. Tests: test__doctor_policy fixtures that relied on inventory-only resolution now place the skill under a pinned home and carry the entry path; dp50 flipped, dp52 gained 'scan-only', new dp53/dp53b (R12 wording + other direction), dp54/dp55 (R13 both-tier mismatch + same-file allow case); test__skill_places sp10-sp13 replaced by sp10-sp12 (no wider mode, no inventory argument, only three tiers). PLUGIN-BUILD-GUIDE.md (two passages describing the inventory mode) edited though outside task files; the plan gate allowed it. Gate: python3 tools/sweep-selftests.py tests/test__doctor_policy.py tests/test__skill_places.py tests/test__panel_discovery.py tests/test__deps.py -> exit 0, 4/4 files ok, 371 cases (run before the guide edit; the guide edit is prose only). Dependants: audit-doctor.py, test__doctor_report.py import _doctor_policy and use check_areas/check_build_commands/_leading_executable, untouched, still correct; check_plan_skills signature unchanged. run-agent-session.py calls resolve_skill without inventory, so still correct. _panel_discovery dependants unchanged because the file is unchanged. PLUGIN-BUILD-GUIDE.md changed as said. sweep-costs.json paths unaffected.",
+        "descriptive": "Doctor and the launcher now give the same answer for every skill name, and a portability grade only counts when it describes the file a session loads."
       },
       "startedAt": "2026-10-23T02:51:42Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-23T03:06:40Z",
+      "verifiedBy": [
+        "dp52 extended with a bare name only the scan lists (doctor and launcher both refuse)",
+        "dp53/dp53b doctor words a scan-listed refused name, and says nothing extra when the scan does not list it",
+        "dp54 same name in personal and project tiers: grade for the project copy becomes UNKNOWN naming both paths",
+        "dp55 grade for the very file loaded stands (other direction)",
+        "sp10-sp12 resolver has no wider mode"
+      ],
       "notes": [
         {
           "at": "2026-10-23T02:51:40Z",
@@ -576,6 +586,59 @@
         "runId": "2026-10-23T03:04:58Z.9f9e30",
         "status": "passed",
         "at": "2026-10-23T03:04:58Z"
+      },
+      "intentCheck": {
+        "answer": "cannot-tell",
+        "commit": "d1e8d9948576",
+        "at": "2026-10-23T03:06:40Z",
+        "return": "docs/audit/evidence/returns/P138.5-myr/20261023T025142Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-23T03:01:34Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__doctor_policy.py tests/test__skill_places.py tests/test__panel_discovery.py` in a throwaway tree at HEAD exited 1 with failing cases dp50 (house FAIL), dp52 (house FAIL), dp53 (house FAIL), dp54 (house FAIL), sp11 (house FAIL), tests/test__doctor_policy.py: exited 1 (house FAIL) and 1 more, but with the working tree's implementation the task's tests do not all pass (no tally or error reader matched its output, so no line of it is quoted as decisive), so the red is not one the fix turns green - SELFTEST FAILED: 14/15 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P138.6-myr",
+      "title": "A filed return never carries a machine path, and the one P138.1 committed is accounted for",
+      "status": "in_progress",
+      "description": "The phase gate's selftests went red on tools/check-committed-pii.py: docs/audit/evidence/returns/P138.1/20261023T010606Z.executor.json line 3 carries a posix-home path (column 139). drive-phase.py submit files a return verbatim, while audit-task.py add already refuses a description carrying a machine path (unexpanded-home) because the plan and the journal can never be corrected afterwards. Make submit apply the same check (reuse the existing machine-path predicate audit-task uses, do not write a second one) to every string in the return before filing, refusing by field with the remedy (write it repo-relative, or <home>/... or <scratchpad>/...); and account for the already-committed P138.1 return with a BASELINE row in tools/check-committed-pii.py naming the file, the line and why it cannot be rewritten (hash-chained evidence). Cases: submit refuses a return holding a home path in any nested string and names the field; a clean return files; the baseline row keeps the pii check green and goes stale (red) if the file stops matching.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "tools/check-committed-pii.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tools/check-committed-pii.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-23T03:23:49Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-23T03:42:13Z.5a5b0f",
+        "status": "passed",
+        "at": "2026-10-23T03:42:13Z"
       }
     }
   ],
@@ -587,5 +650,10 @@
     "branch": "audit/p138-a-writer-or-reviewer-session-s",
     "at": "2026-10-23T01:06:06Z"
   },
-  "startedAt": "2026-10-23T01:06:06Z"
+  "startedAt": "2026-10-23T01:06:06Z",
+  "testEvidence": {
+    "runId": "2026-10-23T03:21:51Z.85ee40",
+    "status": "failed",
+    "at": "2026-10-23T03:21:51Z"
+  }
 }

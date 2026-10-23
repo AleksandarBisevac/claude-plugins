@@ -740,6 +740,15 @@ BASELINE = (
      "posix-home", _CUT_QUOTE_WHY),
     ("docs/audit/phases/P125.json", "line-sha256:af0e37e9f5439b28",
      "posix-home", _CUT_QUOTE_WHY),
+    # AN EXECUTOR RETURN FILED BEFORE `drive-phase.py submit` REFUSED A MACHINE
+    # PATH. Its claim quotes a path under the operator's home directory.
+    ("docs/audit/evidence/returns/P138.1/20261023T010606Z.executor.json", 3,
+     "posix-home",
+     "an executor return whose sha256 the `task.return.filed` row for it "
+     "records in the hash-chained journal; rewriting the path would change "
+     "bytes that row is bound to, and the return is write-once, so it is "
+     "recorded here rather than rewritten. A return submitted from now on is "
+     "refused at the door for the same path, by field."),
 )
 
 _MIN_REASON = 60          # a reason short enough to be a label is not a reason
