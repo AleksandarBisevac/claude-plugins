@@ -88,6 +88,10 @@ BASIS_CAP = 240
 # `/audit:status` is where the whole list is read, and the arming message
 # still names every one, because that is the moment they are shipped over.
 REFUSAL_PHASE_CAP = 5
+# The three answers `tree_verdict` gives about one plan.
+VERDICT_CLEAR = "clear"
+VERDICT_RELEASED = "released"
+VERDICT_REFUSED = "refused"
 
 # What publishes. Each match is anchored at a command boundary (start of line,
 # `&&`, `;`, `|`) so a word appearing inside a filename or a commit message
@@ -983,6 +987,53 @@ def refusal(why, bugs, bug_problem, held, phase_problem):
             % (why, "; and ".join(parts), unread, KEYWORD))
 
 
+def _released_over(bugs, bug_problem, held, phase_problem):
+    """The sentence saying what an armed `KEYWORD` slot lets through: the open
+    bugs and held phases it releases over, and each list that could not be
+    read (named UNKNOWN, as `refusal` names it - the slot releases over an
+    unread list exactly as over a read one)."""
+    over = []
+    if bug_problem:
+        over.append("whether the plan carries an open bug is UNKNOWN: %s"
+                    % (bug_problem,))
+    elif bugs:
+        over.append("%d open bug(s): %s" % (len(bugs), "; ".join(
+            "%s (%s) %s" % (b[0], b[1], b[2][:70]) for b in bugs)))
+    if phase_problem:
+        over.append("whether the full run has settled each merged phase is "
+                    "UNKNOWN: %s" % (phase_problem,))
+    elif held:
+        over.append("%d held phase(s): %s" % (len(held), "; ".join(
+            "%s (%s)" % (h[0], h[1]) for h in held)))
+    return ("released over by %s armed for this session: %s"
+            % (KEYWORD, "; and ".join(over)))
+
+
+def tree_verdict(why, tree, project, session_id, now=None):
+    """`(state, text)` - THE decision this guard makes about one plan, asked by
+    `decide` here and by `tools/release.py`'s `release_verdict`, so that no
+    second reader can come to answer it differently.
+
+    `state` is `VERDICT_CLEAR` (nothing holds the release; `text` says so),
+    `VERDICT_RELEASED` (something holds it but a slot armed for `session_id`
+    releases over it; `text` names what) or `VERDICT_REFUSED` (`text` is the
+    refusal). An unreadable list counts as holding the release - it is never
+    read as nothing - so it is refused without a slot and released over with
+    one. The plan is read from `tree`, the slot from `project`: a release run
+    from one tree can answer to another's plan.
+    """
+    bugs, bug_problem = read_bugs(tree)
+    held, phase_problem = read_held_phases(tree)
+    if not (bugs or bug_problem or held or phase_problem):
+        return (VERDICT_CLEAR,
+                "the plan carries no open bug and no held phase")
+    if bypass_armed(project, session_id, now):
+        return (VERDICT_RELEASED,
+                _released_over(bugs, bug_problem, held, phase_problem))
+    return (VERDICT_REFUSED,
+            refusal(why, bugs, bug_problem, held, phase_problem))
+
+
 def decide(command, project, session_id, now=None, payload=None):
     """`reason` when the call must be denied, else None. The whole rule, in one
     pure-ish function so its cases need no hook payload.
@@ -1002,13 +1053,11 @@ def decide(command, project, session_id, now=None, payload=None):
                 "the publishing command answers to. Use a literal directory "
                 "and retry.")
     for why, tree in trees:
-        bugs, bug_problem = read_bugs(tree)
-        held, phase_problem = read_held_phases(tree)
-        if not (bugs or bug_problem or held or phase_problem):
-            continue
-        if bypass_armed(project, session_id, now):
+        state, text = tree_verdict(why, tree, project, session_id, now)
+        if state == VERDICT_REFUSED:
+            return text
+        if state == VERDICT_RELEASED:
             return None
-        return refusal(why, bugs, bug_problem, held, phase_problem)
     return None
 
 
@@ -1360,6 +1409,71 @@ def _selftest():
         check("gr20 but an unreadable manifest still does not block ordinary "
               "work - the failure is scoped to what it protects",
               decide("git push origin main", tmp, "s1") is None)
+
+        # --- ONE DECISION: `tree_verdict` is what `decide` and release.py's
+        # `release_verdict` both ask -------------------------------------------
+        # Five plans, each read twice - through `decide` and through
+        # `tree_verdict` - so the two cannot come to disagree about whether a
+        # plan may be released over, which is the drift a second copy of this
+        # control flow would introduce. The slot is the only thing that moves
+        # between the refused and the released rows.
+        def both(prepare):
+            prepare()
+            reason = decide("git push origin v2.0.2", tmp, "s1")
+            state, text = tree_verdict("pushes", tmp, tmp, "s1")
+            return reason, state, text
+
+        write_bugs([{"id": "BUG-2", "status": "open", "severity": "med",
+                     "title": "a real one"}])
+        reason, state, text = both(lambda: None)
+        check("gr72 an open bug and no slot: `decide` and `tree_verdict` both "
+              "refuse, and the refusal is the same sentence apart from the "
+              "invocation it names: %r / %r" % (state, reason),
+              state == "refused" and bool(reason) and "BUG-2" in text
+              and "BUG-2" in reason)
+        def arm():
+            with open(slot, "w", encoding="utf-8", newline="\n") as fh:
+                json.dump({"armedAtEpoch": time.time(), "ttlSeconds": 3600}, fh)
+
+        reason, state, text = both(arm)
+        check("gr72b ...armed for this session, `decide` allows and "
+              "`tree_verdict` says it is released over, naming the bug and "
+              "the keyword: %r / %r" % (state, text),
+              state == "released" and reason is None and "BUG-2" in text
+              and KEYWORD in text)
+        os.remove(slot)
+        reason, state, text = both(lambda: write_bugs([]))
+        check("gr72c ...and a plan holding nothing is clear to both - a "
+              "verdict refusing or releasing-over unconditionally fails "
+              "here: %r / %r" % (state, text),
+              state == "clear" and reason is None)
+        with open(mpath, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write("{not json")
+        reason, state, text = both(lambda: None)
+        check("gr72d an unreadable plan with no slot is refused by both, "
+              "each list UNKNOWN: %r" % (text,),
+              state == "refused" and bool(reason)
+              and "open bug is UNKNOWN" in text and "guessing" in text)
+        reason, state, text = both(arm)
+        check("gr72e ...and with the slot armed both release over it, the "
+              "verdict naming what was unread: %r" % (text,),
+              state == "released" and reason is None and "UNKNOWN" in text)
+        os.remove(slot)
+        # `decide` must call the shared function rather than carry a copy of
+        # it: the cases above agree today, this is what keeps them agreeing.
+        with open(os.path.abspath(__file__), "r", encoding="utf-8") as fh:
+            own = ast.parse(fh.read())
+        decide_fn = [n for n in own.body if isinstance(n, ast.FunctionDef)
+                     and n.name == "decide"]
+        used = {n.id for n in ast.walk(decide_fn[0])
+                if isinstance(n, ast.Name)} if decide_fn else set()
+        check("gr73 `decide` asks `tree_verdict` and reads neither the lists, "
+              "the slot nor the refusal itself: %r"
+              % (sorted(used & {"tree_verdict", "read_bugs", "read_held_phases",
+                                "bypass_armed", "refusal"}),),
+              "tree_verdict" in used
+              and not used & {"read_bugs", "read_held_phases", "bypass_armed",
+                              "refusal"})
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

@@ -148,9 +148,9 @@ def release_permitted(ctx):
     """`(True, None)` once the plan carries no open bug and no held phase, or
     a bypass was armed for the running session; `(False, refusal)` otherwise.
 
-    Built ONLY from the guard hook's own functions, loaded by path - `read_bugs`,
-    `read_held_phases`, `bypass_armed` and `refusal` - never a second copy of the
-    rule here. Asked at `preflight` and again immediately before every step that
+    Built ONLY from the guard hook's own `tree_verdict`, loaded by path - the
+    decision the hook itself makes, never a second copy of its control flow
+    here. Asked at `preflight` and again immediately before every step that
     touches a remote: time passes between the two (a CI wait can run for an
     hour), and a bug filed in that gap must stop the next push rather than let
     a preflight answer from before the bug existed keep authorising one.
@@ -169,6 +169,11 @@ def release_verdict(repo):
     it is True either that nothing holds the release or what an armed bypass
     releases over.
 
+    The decision is the guard hook's `tree_verdict`, called as it is: a plan
+    that cannot be read refuses (or is released over by an armed slot) on the
+    hook's own wording, so there is no branch of this function to disagree with
+    `decide`.
+
     THE ONE READER. `release_permitted` returns this without the sentence, and
     `release.py permitted` prints it for `tools/verify.sh --release` - so the
     pipeline's remote steps and the verify step cannot come to disagree about
@@ -176,26 +181,9 @@ def release_verdict(repo):
     shell step counted open bugs on its own and knew no bypass.
     """
     gr = load_guard_release()
-    bugs, bug_problem = gr.read_bugs(repo)
-    held, phase_problem = gr.read_held_phases(repo)
-    if bug_problem or phase_problem:
-        return False, ("could not read the release status: %s"
-                       % ("; ".join(p for p in (bug_problem, phase_problem) if p)))
-    if not (bugs or held):
-        return True, "the plan carries no open bug and no held phase"
-    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID")
-    if gr.bypass_armed(repo, session_id):
-        over = []
-        if bugs:
-            over.append("%d open bug(s): %s" % (len(bugs), "; ".join(
-                "%s (%s) %s" % (b[0], b[1], b[2][:70]) for b in bugs)))
-        if held:
-            over.append("%d held phase(s): %s" % (len(held), "; ".join(
-                "%s (%s)" % (h[0], h[1]) for h in held)))
-        return True, ("released over by %s armed for this session: %s"
-                      % (gr.KEYWORD, "; and ".join(over)))
-    return False, gr.refusal("cuts a release", bugs, bug_problem, held,
-                             phase_problem)
+    state, text = gr.tree_verdict("cuts a release", repo, repo,
+                                  os.environ.get("CLAUDE_CODE_SESSION_ID"))
+    return state != gr.VERDICT_REFUSED, text
 
 
 def load_rendered_artifacts(repo=None):
@@ -1575,6 +1563,119 @@ def _cases(check):
                   "open bug is red and names it for a session with no slot, "
                   "and green for the session whose slot is armed: %r"
                   % (codes,), codes == [(1, True), (0, True)])
+        finally:
+            for link in links:
+                if os.path.islink(link):
+                    os.unlink(link)
+            remove_tree(tmp)
+
+    # A PLAN THAT CANNOT BE READ is the refusal the guard gives, not a pass: a
+    # pushed tag is never moved, so an unread list refuses rather than guesses.
+    # The refusal names the list as UNKNOWN (the guard's own sentence), which a
+    # branch that let an unreadable plan through, or answered in its own words,
+    # would not say.
+    for how, damage in (
+            ("is not JSON", lambda plan: io.open(
+                plan, "w", encoding="utf-8").write(u"{not json")),
+            ("is missing", os.remove)):
+        tmp = _fixture_repo()
+        try:
+            damage(os.path.join(tmp, "docs", "audit", "audit-plan.json"))
+            code, said = ask(tmp, mine)
+            check("rl21 a plan that %s is refused (exit 1) and the line says "
+                  "which list is UNKNOWN: %r" % (how, said),
+                  code == 1 and said.startswith("refused: ")
+                  and "open bug is UNKNOWN" in said
+                  and "merged phase is UNKNOWN" in said)
+            # THE SECOND DIRECTION: the refusal is conditional. The guard
+            # lets an armed `#release-with-bugs` slot release over an unread
+            # list exactly as over a read one (its gr18 refuses only without
+            # one), so a verdict refusing here regardless would be a second
+            # rule.
+            arm_slot(tmp, mine)
+            code, said = ask(tmp, mine)
+            check("rl21b ...a plan that %s and an armed slot for this session "
+                  "releases over it, naming what was unread: %r"
+                  % (how, said),
+                  code == 0 and said.startswith("ok: ")
+                  and "UNKNOWN" in said)
+        finally:
+            remove_tree(tmp)
+
+    # ONE DECISION, NOT TWO: `release_verdict` takes the guard's own function
+    # and restates none of its control flow. A pin on the source because the
+    # failure is a second copy that agrees today - what it reads is what it may
+    # not call.
+    import ast
+    with io.open(os.path.join(_HERE, "release.py"), encoding="utf-8") as fh:
+        own_tree = ast.parse(fh.read())
+    verdict_fn = [n for n in own_tree.body
+                  if isinstance(n, ast.FunctionDef)
+                  and n.name == "release_verdict"]
+    named = set()
+    for node in ast.walk(verdict_fn[0] if verdict_fn else ast.Module(body=[])):
+        if isinstance(node, ast.Attribute):
+            named.add(node.attr)
+        elif isinstance(node, ast.Name):
+            named.add(node.id)
+    check("rl22 release_verdict asks the guard's tree_verdict and does not "
+          "read the lists, the slot or the refusal itself: %r"
+          % (sorted(named & {"tree_verdict", "read_bugs", "read_held_phases",
+                             "bypass_armed", "refusal"}),),
+          bool(verdict_fn) and "tree_verdict" in named
+          and not named & {"read_bugs", "read_held_phases", "bypass_armed",
+                           "refusal"})
+
+    # THE STEP'S ANSWER IS PRINTED EVEN WHEN IT PASSES. `run` keeps a passing
+    # step's log, so an armed bypass releasing over an open bug said only `ok`.
+    # The functions are cut out of verify.sh and run under `sh` over a plan
+    # with an open bug and a slot armed for the running session.
+    if os.name == "posix":
+        def cut_out(name):
+            found = re.search(r"^%s\(\) \{\n.*?^\}\n" % re.escape(name),
+                              verify_text, re.S | re.M)
+            return found.group(0) if found else ""
+
+        tmp = _fixture_repo(bugs=[bug])
+        links = [os.path.join(tmp, "plugins", "audit", name)
+                 for name in ("scripts", "hooks")]
+        try:
+            for rel in (os.path.join("tools", "release.py"),
+                        os.path.join(".claude", "hooks", "guard-release.py")):
+                os.makedirs(os.path.join(tmp, os.path.dirname(rel)),
+                           exist_ok=True)
+                shutil.copy(os.path.join(REPO, rel), os.path.join(tmp, rel))
+            for link in links:
+                os.symlink(os.path.join(REPO, "plugins", "audit",
+                                       os.path.basename(link)), link)
+            arm_slot(tmp, mine)
+            os.makedirs(os.path.join(tmp, "wd"))
+            funcs = "\n".join(cut_out(n) for n in (
+                "record", "show_failure", "run", "run_noted", "no_open_bugs"))
+            outcomes = []
+            for flags in ("LIST=0 LOUD=0", "LIST=1 LOUD=0"):
+                child_env = dict(env)
+                child_env["CLAUDE_CODE_SESSION_ID"] = mine
+                script = ("%s RESULTS= FAILED=0 WORKDIR=wd\n%s\n"
+                          "run_noted 'the plan row' no_open_bugs\n"
+                          "echo \"failed=$FAILED\"\n" % (flags, funcs))
+                proc = subprocess.run(["sh", "-c", script], cwd=tmp,
+                                     env=child_env, stdout=subprocess.PIPE,
+                                     stderr=subprocess.STDOUT)
+                outcomes.append((proc.returncode,
+                                 proc.stdout.decode("utf-8", "replace")))
+            quiet, listed = outcomes
+            check("rl23 a PASSING open-bug step prints what the armed bypass "
+                  "releases over, beneath its `ok` row: %r" % (quiet,),
+                  quiet[0] == 0 and "failed=0" in quiet[1]
+                  and re.search(r"the plan row\s+ok\n", quiet[1])
+                  and quiet[1].count("BUG-4") == 1
+                  and "#release-with-bugs" in quiet[1])
+            # THE OTHER DIRECTION: --list runs nothing, so it prints no verdict.
+            check("rl23b ...and under --list the step runs nothing and prints "
+                  "no verdict: %r" % (listed,),
+                  listed[0] == 0 and "BUG-4" not in listed[1]
+                  and "the plan row" in listed[1])
         finally:
             for link in links:
                 if os.path.islink(link):

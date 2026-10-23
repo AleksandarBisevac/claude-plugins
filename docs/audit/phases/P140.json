@@ -29,31 +29,55 @@
         "severity": "med",
         "file": "tools/verify.sh:956-966,237-264",
         "issue": "contradicts task clause 'printing which bugs and held phases it is releasing over when a bypass is armed' on the surface the owner reads: no_open_bugs is called through run(), which in the default (non-LOUD, non-CI) mode sends the step's output to $WORKDIR/step.log and prints only 'ok' when the step passes. The 'ok: released over by #release-with-bugs armed for this session: ...' sentence that release.py permitted prints is therefore discarded in exactly the armed-green case. The same holds under release.py's verify-release step, which keeps only 'tools/verify.sh --release is green' (release.py:428-431). rl20b asserts the function's own stdout contains BUG-4, not that the verify row shows it, so the executor's claim 'names what it releases over' is true of the function and untrue of a local verify.sh --release run.",
-        "resolution": "Make the armed-green case reach the terminal: have no_open_bugs print the verdict line to stderr or to a channel run() does not capture, or have run() show the log of a step that opts in. Add a rl20 case that runs the verify.sh row quietly and asserts the 'released over' line appears in what the user sees."
+        "resolution": "Make the armed-green case reach the terminal: have no_open_bugs print the verdict line to stderr or to a channel run() does not capture, or have run() show the log of a step that opts in. Add a rl20 case that runs the verify.sh row quietly and asserts the 'released over' line appears in what the user sees.",
+        "fixTask": "P140.2-ohy"
       },
       {
         "id": "P140-R2",
         "severity": "med",
         "file": "tools/release.py:175-198 vs .claude/hooks/guard-release.py:986-1012",
         "issue": "The test that an unreadable plan still refuses has no case on the new path. The refusal branch ('could not read the release status', release.py:182) is reached by no rl case: rl17-rl20b all use a readable plan, and a grep of release.py finds no case that reads a missing or garbled plan. Deleting the `if bug_problem or phase_problem` branch would turn an unreadable plan into 'the plan carries no open bug and no held phase' (bugs and held both empty, so it returns True), and no case would go red. The executor's mutation list (bypass, session, always-refuse, held dropped, exit code, old reader) did not include it. By reading, the code refuses today; nothing keeps it so, in a release guard.",
-        "resolution": "Add a case with a plan that does not parse, and a missing plan, asserting `permitted --repo` exits 1 and the line starts 'refused: could not read'. Run that case with and without an armed slot, so the armed + unreadable direction is pinned too."
+        "resolution": "Add a case with a plan that does not parse, and a missing plan, asserting `permitted --repo` exits 1 and the line starts 'refused: could not read'. Run that case with and without an armed slot, so the armed + unreadable direction is pinned too.",
+        "fixTask": "P140.2-ohy"
       },
       {
         "id": "P140-R3",
         "severity": "low",
         "file": "tools/release.py:177-198",
         "issue": "'One predicate' holds for the readers (read_bugs, read_held_phases, bypass_armed, refusal, KEYWORD are all the guard's) but not for the decision. release_verdict restates the control flow of guard-release.py decide() (nothing held -> pass, armed -> pass, else refuse) and the two already differ: decide() lets an armed slot release over an unreadable list (`if not (bugs or bug_problem or held or phase_problem): continue; if bypass_armed: return None`), and arm-release-bypass.py's docstring tells the owner 'the armed slot releases over that refusal too'. release_verdict refuses it even when armed. The refusal is the safer direction and matches the review requirement, but the owner is told one thing at arming time and verify.sh does another. The executor named this as a known leftover; it is the one place verify.sh, release.py and the hook do not answer alike.",
-        "resolution": "Move the decision into guard-release.py as one function (e.g. a verdict(project, session_id) returning allowed + sentence) that decide() and release_verdict both call, and settle the armed-over-unreadable question once. If refusing is intended, change the arming message and decide() to match; if release is intended, pin it with a case. Either way one place states it."
+        "resolution": "Move the decision into guard-release.py as one function (e.g. a verdict(project, session_id) returning allowed + sentence) that decide() and release_verdict both call, and settle the armed-over-unreadable question once. If refusing is intended, change the arming message and decide() to match; if release is intended, pin it with a case. Either way one place states it.",
+        "fixTask": "P140.2-ohy"
+      },
+      {
+        "id": "P140-R4",
+        "severity": "med",
+        "file": "tools/verify.sh:1018 (call site); tools/release.py:1634-1664 (rl23)",
+        "issue": "P140-R1 is fixed at the function but not pinned at the surface the owner reads, the same shape R1 itself reported (true of the function, untrue of the run). rl23 cuts `run_noted`/`no_open_bugs` out of verify.sh and calls `run_noted` directly; nothing selects `slice_release`'s own line `run_noted \"the plan carries no open bug or held phase\" no_open_bugs`. `git grep run_noted` finds it only in verify.sh and in rl23's function list. Reverting that one call back to `run` leaves rl23, rl23b and every other case green while the armed-green row goes back to a bare `ok`. The executor's mutation list (M1 run_noted prints nothing) did not include reverting the call site.",
+        "resolution": "Add a pin that the `slice_release` body (cut like `no_open_bugs`) calls `run_noted` for the open-bug row and does not call plain `run` for it; red-first by reverting that call to `run`."
+      },
+      {
+        "id": "P140-R5",
+        "severity": "low",
+        "file": "tools/release.py:428-431 (step_verify_release)",
+        "issue": "P140-R1 also named release.py's verify-release step (\"keeps only 'tools/verify.sh --release is green'\"). The diff does not touch it: under `release.py run`, `ctx.run` captures verify.sh's output and a passing step returns the fixed string, so the new indented release-over lines from `run_noted` are discarded on exactly the armed-green path. Only a direct `verify.sh --release` (or CI/LOUD) shows them.",
+        "resolution": "Either append the verify output's release-over lines to the step's note on a pass, or record in the finding/outcome that the pipeline surface is deliberately left and why; do not leave it implied as fixed."
+      },
+      {
+        "id": "P140-R6",
+        "severity": "low",
+        "file": "executor outcome (filed return), claim about gr18/gr14",
+        "issue": "The outcome says an unreadable plan with an armed slot is released over \"as the guard's gr18 and gr14 already did\". gr14 arms over a READABLE bug plan, and gr18 asserts the refusal only with no slot, so no pre-existing guard case covered unreadable plus armed; the behaviour was in `decide`'s code (`if not (...): continue; if bypass_armed: return None`), not in a case. The new gr72e is the first case to pin it. The claim describes the code truthfully but its cited evidence does not show it.",
+        "resolution": "Correct the wording to say the behaviour was in decide() and is first pinned by gr72e."
       }
     ],
-    "outcome": "[findings: 3 - 0 high, 2 med, 1 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 6 - 0 high, 3 med, 3 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
     {
       "id": "P140.1",
       "title": "verify.sh --release asks the release guard's own predicate for open bugs and held phases",
-      "status": "in_progress",
+      "status": "done",
       "description": "Replace no_open_bugs in tools/verify.sh with a call into the same predicate tools/release.py's release_permitted uses (the guard hook's read_open_bugs / read_held_phases / bypass_armed, read from .claude/hooks/, never restated), printing which bugs and held phases it is releasing over when a bypass is armed and refusing as today when none is. If release_permitted itself is the right single entry, expose it as a small CLI (or a --check mode of release.py) that verify.sh calls, so there is one reader. Cases: with an open bug and no bypass the verify step is red and names the bug; with an armed bypass for the session it is green and names what it releases over; an expired or other session's bypass is red; the held-phase half behaves the same.",
       "files": [
         "tools/verify.sh",
@@ -78,19 +102,104 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "0e04c2333caa",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/release.py: release_permitted is now a thin wrapper over a new release_verdict(repo) returning (allowed, sentence) built only from the guard hook's read_bugs / read_held_phases / bypass_armed / refusal / KEYWORD; the armed case names the open bugs and held phases it releases over. New subcommand `release.py permitted [--repo DIR]` (cmd_permitted, routed in route_subcommand, listed in USAGE and the module docstring) prints `ok: ...` or `refused: ...` and exits 0/1, 2 on a usage error. tools/verify.sh: no_open_bugs is now `python3 tools/release.py permitted` (the audit-status.py --fail-on open-bugs reader is deleted; the row label reads 'the plan carries no open bug or held phase'); POSIX sh kept (sh -n rc 0, verify.sh --list rc 0 shows the row). Cases live in release.py's own --selftest (tests/test_verify_sh.py does not exist and nothing needed it; tests/test_verify_invariants.py was not touched): rl17 (open bug, no slot: exit 1, names BUG-4), rl17b (armed slot for this session: exit 0, names what it releases over), rl17c (expired slot: red), rl17d (another session's live slot: red), rl17e (no session id: red), rl17f (nothing held: ok, the over-fire direction), rl18..rl18e the same five for a held phase (provisional P7), rl19 (process exit codes 1/1/0 for no session / other session / armed), rl19b (unknown argument exits 2), rl20 (verify.sh step asks release.py permitted, no --fail-on open-bugs left), rl20b (the function cut out of verify.sh run under sh over a scratch tree: red naming the bug without a slot, green with it; posix only). Reds watched: before the fix the suite printed `FAIL selftest body raised before reaching the end ... (NameError: name 'cmd_permitted' is not defined)`, 38/39 passed. After the fix, mutations run in a throwaway copy (never the shared tree): bypass ignored -> rl9, rl17b, rl18b, rl19, rl20b red; session ignored -> rl17d, rl18d, rl19, rl20b red; always-refuse -> rl17f red; held phases dropped -> rl18..rl18e red; exit code always 0 -> rl17, rl17c-e, rl18, rl18c-e, rl19, rl20b red; old shell reader restored in verify.sh -> rl20, rl20b red. Gate: python3 tools/sweep-selftests.py tools/release.py tools/gate-parity.py exit 0, 2/2 files ok (release.py 58 cases, gate-parity.py 93 cases). I did not run tools/release.py run or verify.sh --release. Dependants: .github/workflows/ci.yml, tools/affected.py, tools/check-example-pins.py, tools/lints/_refs.py, tests/test__refs.py only name or path-read release.py/verify.sh and are unchanged and still correct (existing names kept; the new names are additive; _refs.py exit 0 and verify.sh --list rc 0 after the change); tests/test_audit_task.py has no import of tools/release.py (its matches are the word release) so unaffected; .claude/hooks/guard-release.py is unchanged and still correct: its publisher reader only fires on release.py with --push, and I checked `python3 tools/release.py permitted` and `permitted --repo X` yield no publishers; the existing cases rl1, rl8-rl11 over release_permitted still pass with its (allowed, refusal-or-None) contract kept. The other files verify.sh lists (.gitattributes, derive-phase-gate.py, test__output.py, test__refs.py, check-git-pipeline.py) reference it by path only; the step label changed and nothing pins the old label (grep across the tree found only release.py, verify.sh, the guard text and the manifest). Known leftover: release_verdict, like release_permitted before it, refuses when a list cannot be read even with a bypass armed, whereas the guard hook itself would release over that; that behaviour was not changed.",
+        "descriptive": "verify.sh --release now asks the release guard's own predicate through `release.py permitted`, so an owner-armed #release-with-bugs passes the open-bug and held-phase step and names what it releases over."
       },
       "startedAt": "2026-10-23T11:32:19Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-23T11:40:48Z",
+      "verifiedBy": [
+        "release.py --selftest: the permitted subcommand over an open bug and over a held phase, each under no slot, an armed slot, an expired slot, another session's slot and no session id; the nothing-held allow case; process exit codes; the usage error; verify.sh's step text; the verify.sh function run under sh over a scratch tree"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-23T11:38:38Z.36a723",
         "status": "passed",
         "at": "2026-10-23T11:38:38Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "0e04c2333caa",
+        "at": "2026-10-23T11:40:48Z",
+        "return": "docs/audit/evidence/returns/P140.1/20261023T113219Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-23T11:37:47Z",
+        "basis": "`python3 tools/sweep-selftests.py tools/release.py` in a throwaway tree at HEAD exited 1 with failing cases tools/release.py: exited 1 (house FAIL), but with the working tree's implementation the task's tests do not all pass (no tally or error reader matched its output, so no line of it is quoted as decisive), so the red is not one the fix turns green - SELFTEST FAILED: 38/39 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P140.2-ohy",
+      "title": "The release check shows what it releases over, refuses an unreadable plan by case, and takes the guard's own decision",
+      "status": "in_progress",
+      "description": "",
+      "files": [
+        "tools/verify.sh",
+        "tools/release.py",
+        ".claude/hooks/guard-release.py",
+        "tools/verify.sh",
+        "tools/release.py",
+        ".claude/hooks/guard-release.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tools/release.py .claude/hooks/guard-release.py tools/gate-parity.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-23T11:40:58Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-23T11:40:57Z",
+          "text": "scope: tools/verify.sh, tools/release.py, .claude/hooks/guard-release.py, every path the finding(s) P140-R1, P140-R2, P140-R3 name"
+        },
+        {
+          "at": "2026-10-23T11:40:57Z",
+          "text": "no suite: tools/verify.sh - 2 test files name it and none is named for it (tests/test__config_rules.py, tests/test_audit_lookup.py); name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-23T11:40:57Z",
+          "text": "no suite: tools/release.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-23T11:40:57Z",
+          "text": "no suite: .claude/hooks/guard-release.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-23T11:40:57Z",
+          "text": "no tests.add clause for P140-R1, P140-R2, P140-R3: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P140-R1",
+        "P140-R2",
+        "P140-R3"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-23T11:57:03Z.a67d0c",
+        "status": "passed",
+        "at": "2026-10-23T11:57:03Z"
       }
     }
   ],

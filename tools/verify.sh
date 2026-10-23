@@ -260,12 +260,26 @@ run() {
   if "$@" >"$WORKDIR/step.log" 2>&1; then
     printf 'ok\n'
     record "ok    $label"
+    STEP_PASSED=1
   else
     code=$?
     printf 'FAILED (exit %s)\n' "$code"
     show_failure "$WORKDIR/step.log" 12
     record "FAIL  $label"
     FAILED=$((FAILED + 1))
+  fi
+}
+
+# A step whose PASSING output is the information: `run`, then the log beneath the row,
+# indented as `show_failure` indents a failing one. `run` keeps a passing step's log to
+# itself, which is right for a step that only says ok and wrong for one that says what
+# it let through - an armed bypass releasing over an open bug read as a bare `ok`.
+# LOUD has already streamed the output, and --list ran nothing, so neither repeats it.
+run_noted() {
+  STEP_PASSED=0
+  run "$@"
+  if [ "$LIST" -eq 0 ] && [ "$LOUD" -eq 0 ] && [ "$STEP_PASSED" -eq 1 ]; then
+    sed 's/^/      /' "$WORKDIR/step.log"
   fi
 }
 
@@ -960,7 +974,8 @@ changelog_has_section() {
 # release guard's own predicate through `release.py permitted` - open bugs, held
 # phases and an armed `#release-with-bugs` slot for the running session - rather than
 # counting open bugs here, which refused a release the owner had armed. The status
-# is the command's own (it prints its verdict and exits 0 or 1), so nothing is piped.
+# is the command's own (it prints its verdict and exits 0 or 1), so nothing is piped, and
+# it runs under `run_noted` so that a pass releasing over an open bug says so.
 no_open_bugs() {
   python3 tools/release.py permitted
 }
@@ -1000,7 +1015,7 @@ slice_release() {
   # question has an answer: does HEAD carry the pages the render found current.
   run "HEAD carries the published pages" \
     python3 tools/check-rendered-artifacts.py --against-commit
-  run "the plan carries no open bug or held phase" no_open_bugs
+  run_noted "the plan carries no open bug or held phase" no_open_bugs
   run "CHANGELOG has a [$version] section" changelog_has_section
   run "tag v$version does not exist yet" tag_is_free
   # THE ONLY GATE IN THIS FILE THAT ASKS A REMOTE, which is why it is in the release
