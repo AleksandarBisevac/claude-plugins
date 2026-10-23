@@ -22,7 +22,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P139-R1",
@@ -59,19 +59,24 @@
         "severity": "low",
         "file": "tests/test_drive_phase.py:9446-9453",
         "issue": "P139-R1's resolution asked for a case that counts the sentence 'in the wave print and in its --explain'. sn4w counts SESSION_BUDGET_RULE only in w[\"lines\"] from wave_said called directly; it never reaches walk_wave nor the explain text (render() joins said[\"lines\"] into signal explain, drive-phase.py:8148 and :8300-8306), so the explain half rests on reading, not on a case.",
-        "resolution": "Add one assertion that the explain text a wave signal keeps (w[\"signal\"] via the same render/signal path) holds the sentence once for the sessions wave; or state in the case title that explain is derived from the same lines."
+        "resolution": "Add one assertion that the explain text a wave signal keeps (w[\"signal\"] via the same render/signal path) holds the sentence once for the sessions wave; or state in the case title that explain is derived from the same lines.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P139-R5",
         "severity": "low",
         "file": "plugins/audit/commands/phase.md:44,60",
         "issue": "Two shortenings lose a gloss rather than an instruction. (a) The add heading and the argument it documents went from `--outcome \"<what success looks like>\"` to `--outcome \"<..>\"`: the placeholder no longer says what the operator writes there (the argument-hint line still says `<what success is>`, and add-phase --help prints the rest). (b) `Exit 3 (index lock held)` became `Exit 3 (lock held)`: it no longer names which lock, while audit-task.py documents exit 3 as the index lock held by a live run. Both leave the action unchanged (stop; ask before --takeover; pass an outcome), so no instruction is dropped.",
-        "resolution": "If a few bytes can be found elsewhere in the run form, restore `index lock` (6 bytes) first, since it names the thing the exit refers to. Otherwise accept: the headroom is 8 bytes, so any restoration needs a matching cut."
+        "resolution": "If a few bytes can be found elsewhere in the run form, restore `index lock` (6 bytes) first, since it names the thing the exit refers to. Otherwise accept: the headroom is 8 bytes, so any restoration needs a matching cut.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       }
     ],
-    "outcome": "[findings: 5 - 0 high, 2 med, 3 low; 3 with a recorded fix commit]"
+    "outcome": "[findings: 5 - 0 high, 2 med, 3 low; 3 with a recorded fix commit]",
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "P139: every run-agent-session dispatch the orchestrator reads (writer, resume, reviewer, validation, wave members) and the command docs (run, next, resume, review, phase) say from one constant that the session runs under its own --budget-usd (executor.writerBudgetUsd), not drawn from the calling session's budget, so the step is launched as printed; the /audit:phase run form stays under its context ceiling. Lows carried to BUG-29-dau. Per-task reviewer answers continued over: P139.1 intent diverges: owner, standing for this run: 'Radis autonomno ... ne izbacujes mi prompt-ove da ti ja nesto potvrdim'; the wave dispatch and phase.md get the sentence in a follow-up task in this phase",
   "tasks": [
     {
       "id": "P139.1",
@@ -223,7 +228,7 @@
     {
       "id": "P139.3-6sp",
       "title": "The /audit:phase run form carries the budget sentence and stays under its context ceiling",
-      "status": "in_progress",
+      "status": "done",
       "description": "The phase gate is red: tools/measure-context.py mc24/mc34/mc36 and tests/test_audit_task.py fb15 report '/audit:phase run form, before sign-off' at 4157 bytes over its ceiling of 3980, after P139.2 put the budget sentence into commands/phase.md step 3. The ceiling is the pipeline-cost design's; do not raise it. Make phase.md's run form fit with the sentence kept verbatim (sn4d counts it): tighten other wording in that form, or point step 3 at the one place the sentence lives if the docs' single-source rule allows - and keep every pin on phase.md green. Read tools/measure-context.py's docstring for what is measured.",
       "files": [
         "plugins/audit/commands/phase.md"
@@ -244,34 +249,40 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "000b07b02bff",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "commands/phase.md body cut from 4157 to 3972 bytes against the unchanged 3980 ceiling (RUN_FORM_BASIS and RUN_FORM_HEADROOM untouched; mc36 holds the sum). SESSION_BUDGET_RULE's sentence untouched, still once (sn4d green). Shortened, no instruction dropped: title line; 'A phase whose id is that word: ask which one' -> 'A phase id spelling a verb: ask (AskUserQuestion) which'; 'in your own reply' -> 'in your reply'; step 4 reason clause 'because its edits invalidate a gate taken before them' -> 'its edits invalidate an earlier gate', and 'when a gate is run by hand' -> 'for a hand-run gate' (the so3 pin sentence 'Nothing measures whether you held the order' kept); add heading '<what success looks like>' -> '<..>'; 'with this shape as its body, then a line PLAN, and print its line' -> 'with this body and a closing line PLAN; print its line'; 'Omit id' example reworded; 'On a phase branch, ask first' comma dropped; 'Exit 3 (index lock held)' -> '(lock held)'; priority heading folded '(or priority <id> --clear)' into '<tier|--clear>'; signoff 'as the drive does' dropped; cancel two sentences joined. First attempt had also reworded the VERBATIM pointer sentence and the so3 sentence; tests/test__refs.py vb1 and so3 went red (290/292), both restored verbatim, then green. Verification: python3 tools/measure-context.py --tree plugins/audit --gate exit 0 (run form 3972 / 3980); python3 tools/sweep-selftests.py tools/measure-context.py tests/test_audit_task.py tests/test_drive_phase.py tests/test__refs.py tests/test__help.py run without a pipe (output to a file) exit 0, 5/5 files ok, 2091 cases. Dependants: close-phase.py, drive-phase.py, audit-task.py, audit-lookup.py, tests/test__refs.py, tests/test_audit_lookup.py, pipeline-cost-design.md, pipeline-cost-results.md - still correct, none reads a string I changed except the pins named above (restored) and test_audit_task/test_drive_phase/test__refs which the sweep ran green; test_audit_lookup.py and test_close_phase.py were not in the given gate and were not run; the two docs were not read, they cite the ceiling (unchanged). Headroom is 8 bytes, so the next clause in the run form forces another trim.",
+        "descriptive": "The /audit:phase run form fits its 3980-byte ceiling again with the budget sentence kept verbatim and every pin green."
       },
       "startedAt": "2026-10-23T08:18:53Z",
-      "completedAt": null,
+      "completedAt": "2026-10-23T08:37:37Z",
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-23T08:36:00Z.8660dc",
         "status": "passed",
         "at": "2026-10-23T08:36:00Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "000b07b02bff",
+        "at": "2026-10-23T08:37:37Z",
+        "return": "docs/audit/evidence/returns/P139.3-6sp/20261023T081853Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "mode gate-only, expectRedFirst false: the red was the measured breach itself (run form 4157 / 3980 before the edit), no test is added",
+        "at": "before the edit: tools/measure-context.py --tree plugins/audit --gate reported BREACH 4157 / 3980"
       }
     }
   ],
   "request": "Stage 1 sixth attempt, a3e: the orchestrator under claude -p stopped before the writer because the drive printed --budget-usd 2.4 for the writer while its own session cap was 2.0, and it could not tell whether the child's spend counts against its own",
   "openChoices": [],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "bf837df2-37bc-4c94-9233-61f7d70c1d7f",
-    "branch": "audit/p139-the-orchestrator-knows-a-write",
-    "at": "2026-10-23T07:03:55Z"
-  },
   "startedAt": "2026-10-23T07:03:55Z",
   "testEvidence": {
-    "runId": "2026-10-23T08:17:15Z.ba61f9",
-    "status": "failed",
-    "at": "2026-10-23T08:17:15Z"
+    "runId": "2026-10-23T08:50:13Z.1ac152",
+    "status": "passed",
+    "at": "2026-10-23T08:50:13Z"
   }
 }
