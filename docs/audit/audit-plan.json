@@ -907,7 +907,7 @@
     {
       "id": "P140",
       "title": "Every release check answers the open-bug question the way the release guard does",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P140.json"
     }
   ],
