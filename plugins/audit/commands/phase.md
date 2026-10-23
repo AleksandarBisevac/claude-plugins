@@ -4,14 +4,14 @@ argument-hint: '<phaseId> [--dry-run] [--confirm-high-risk "<your words>"] | add
 allowed-tools: Read, Write, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
 ---
 
-# /audit:phase — add a phase, run it, order it, close it
+# /audit:phase — add, run, order, close a phase
 
 `S` below is `python3 "${CLAUDE_PLUGIN_ROOT}/scripts`.
 
 ## 0. Which verb
 
 `$ARGUMENTS`' first token: `add`, `retarget`, `priority`, `cancel`, `signoff`, `settle`, or a
-phase id to run. A phase whose id is that word: ask (AskUserQuestion) which one.
+phase id to run. A phase id spelling a verb: ask (AskUserQuestion) which.
 
 ## Run a phase — `<phaseId> [--dry-run] [--confirm-high-risk "<your words>"]`
 
@@ -21,7 +21,7 @@ phase id to run. A phase whose id is that word: ask (AskUserQuestion) which one.
    `not started yet`, never a refusal - print the plan, stop.
 1. `--confirm-high-risk "<your words>"`: run `S/governance/record-risk-confirmation.py"
    <manifest> <phaseId> --confirm-high-risk "<your words>"` first; print the ids it covers
-   verbatim in your own reply - a task off it asks unless the owner typed `#approve-high-risk`
+   verbatim in your reply - a task off it asks unless the owner typed `#approve-high-risk`
    (`#revoke-high-risk` disarms). **The operator's words go in VERBATIM**.
 2. Run `S/governance/drive-phase.py" next <phaseId> --signal` and do what its line says until
    `done`: `audit <phase> <verb> <subject> ... | <basis> | next: <command>`, whole under
@@ -34,37 +34,36 @@ phase id to run. A phase whose id is that word: ask (AskUserQuestion) which one.
    `wait` → do `next:`; `ask` → the human first (AskUserQuestion); `review` → read it whole,
    answer; `stop` → relay it whole.
 4. `done` → report what landed and where. **Phase sign-off** (orchestrator) is the drive's last
-   step: a fix task comes first, because its edits invalidate a gate taken before them. Nothing measures whether you held the order when a gate
-   is run by hand. A `chain:` line: clear context, then re-enter with `/audit:phase <next id>`.
+   step: a fix task comes first, its edits invalidate an earlier gate. Nothing measures whether you held the order
+   for a hand-run gate. A `chain:` line: clear context, then re-enter with `/audit:phase <next id>`.
 
-## Subcommand: `add "<title>" --outcome "<what success looks like>"`
+## Subcommand: `add "<title>" --outcome "<..>"`
 
 Ask what is missing, run `S/manifest/audit-task.py" add --from-file - <<'PLAN'`
-with this shape as its body, then a line `PLAN`, and print its line: `{"request": "<as typed>",
+with this body and a closing line `PLAN`; print its line: `{"request": "<as typed>",
 "openChoices": [<each choice it left open>], "phase": {"title", "desiredOutcome", "description"},
 "tasks": [{"key", "title", "description", "files", "tests": {"mode", "add": ["<path>: <what it
 asserts>"]}, "dependsOn"}]}`. A hint flag given sets the `phase` key
 `S/manifest/audit-task.py" add-phase --help` prints beside it.
-Omit `id`: over a plan holding `P0`, `P1` and `P3`, the next id is `P4`, and never the `P2` the gap makes look free.
+Omit `id`: over `P0`, `P1`, `P3` the next is `P4`, never `P2`.
 `--park`, or no tasks yet: `S/manifest/audit-task.py" add-phase "<title>" --outcome "<..>"` with the flags. On a
-phase branch, ask first: phase work is `/audit:task add --phase <id>`; new work is
+phase branch ask first: phase work is `/audit:task add --phase <id>`; new work is
 `add-phase ... --park`. **`/audit:phase add --risk` is refused** - phases carry no risk.
 No plan yet: created, no placeholder.
-Exit 3 (index lock held): stop; 4 (looks abandoned): ask the human before `--takeover`.
+Exit 3 (lock held): stop; 4 (looks abandoned): ask the human before `--takeover`.
 
 ## Subcommand: `retarget <phaseId>`
 
 `S/manifest/audit-task.py" retarget <phaseId>` with the hint's flags; relay a refusal.
 
-## Subcommand: `priority <phaseId> <tier>` (or `priority <phaseId> --clear`)
+## Subcommand: `priority <phaseId> <tier|--clear>`
 
 `S/manifest/set-priority.py" <manifest> <phaseId> <tier> [--force]`, or `--clear`. A second
 holder of tier 1 is refused by name - offer clearing before `--force`.
 
 ## Subcommand: `signoff <phaseId> --verdict passed|skipped --summary TEXT`
 
-`S/manifest/audit-task.py" signoff <phaseId> --verdict ... --summary "<..>"`, as the drive
-does; relay a refusal.
+`S/manifest/audit-task.py" signoff <phaseId> --verdict ... --summary "<..>"`; relay a refusal.
 
 ## Subcommand: `settle`
 
@@ -72,4 +71,4 @@ does; relay a refusal.
 
 ## Subcommand: `cancel <phaseId> --reason "<why>"`
 
-`commands/task.md`'s `cancel`, given a phase id. A task id is refused, naming `/audit:task cancel <taskId> --reason "<why>"`.
+`commands/task.md`'s `cancel` for a phase id; a task id is refused, naming `/audit:task cancel <taskId> --reason "<why>"`.
