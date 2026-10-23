@@ -1,7 +1,7 @@
 {
   "id": "P139",
   "title": "The orchestrator knows a writer's budget is the writer's own ceiling",
-  "status": "in_progress",
+  "status": "done",
   "description": "run-agent-session.py starts a separate claude -p process with its own --budget-usd (executor.writerBudgetUsd); its spend is not drawn from the calling session's budget. Neither commands/run.md nor the drive's dispatch line says so, and a3e's orchestrator (cap 2.0, 1.84 left) refused to launch a writer printed with 2.4 and asked a human in a headless session.",
   "desiredOutcome": "An orchestrator following /audit:run or /audit:next launches the writer or reviewer session the drive prints without stopping to ask about money, because the printed step and the command doc both say the session's --budget-usd is that child process's own ceiling, separate from the orchestrator's",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "70408d3a9b271c5ca7a206528a99f29f008350b9",
   "branch": "audit/p139-the-orchestrator-knows-a-write",
-  "mergedAt": null,
+  "mergedAt": "2026-10-23T08:50:23Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -284,5 +284,6 @@
     "runId": "2026-10-23T08:50:13Z.1ac152",
     "status": "passed",
     "at": "2026-10-23T08:50:13Z"
-  }
+  },
+  "mergedHead": "6af2f042b861bb73b7b1e7fc4571e612ab37fa36"
 }
