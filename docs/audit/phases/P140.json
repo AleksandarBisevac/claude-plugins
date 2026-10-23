@@ -1,0 +1,106 @@
+{
+  "id": "P140",
+  "title": "Every release check answers the open-bug question the way the release guard does",
+  "status": "in_progress",
+  "description": "Three readers ask whether a release may go out over the plan: .claude/hooks/guard-release.py (the hook, reading bypass_armed), tools/release.py's release_permitted (built from the hook's predicates, honours an armed bypass), and tools/verify.sh --release's no_open_bugs (runs audit-status --gate --fail-on open-bugs, knows no bypass). The third disagrees with the other two under an armed bypass, so the documented release tool cannot complete the release the owner authorised.",
+  "desiredOutcome": "A release the owner armed with #release-with-bugs passes every step that asks whether the plan carries an open bug or a held phase, because each of them asks one predicate - the release guard's own - and none re-asks the question its own way",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [],
+  "baseRef": "982d38bac08a06c1d380e4800a7cc0dbc398cae9",
+  "branch": "audit/p140-every-release-check-answers-th",
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": [
+      {
+        "id": "P140-R1",
+        "severity": "med",
+        "file": "tools/verify.sh:956-966,237-264",
+        "issue": "contradicts task clause 'printing which bugs and held phases it is releasing over when a bypass is armed' on the surface the owner reads: no_open_bugs is called through run(), which in the default (non-LOUD, non-CI) mode sends the step's output to $WORKDIR/step.log and prints only 'ok' when the step passes. The 'ok: released over by #release-with-bugs armed for this session: ...' sentence that release.py permitted prints is therefore discarded in exactly the armed-green case. The same holds under release.py's verify-release step, which keeps only 'tools/verify.sh --release is green' (release.py:428-431). rl20b asserts the function's own stdout contains BUG-4, not that the verify row shows it, so the executor's claim 'names what it releases over' is true of the function and untrue of a local verify.sh --release run.",
+        "resolution": "Make the armed-green case reach the terminal: have no_open_bugs print the verdict line to stderr or to a channel run() does not capture, or have run() show the log of a step that opts in. Add a rl20 case that runs the verify.sh row quietly and asserts the 'released over' line appears in what the user sees."
+      },
+      {
+        "id": "P140-R2",
+        "severity": "med",
+        "file": "tools/release.py:175-198 vs .claude/hooks/guard-release.py:986-1012",
+        "issue": "The test that an unreadable plan still refuses has no case on the new path. The refusal branch ('could not read the release status', release.py:182) is reached by no rl case: rl17-rl20b all use a readable plan, and a grep of release.py finds no case that reads a missing or garbled plan. Deleting the `if bug_problem or phase_problem` branch would turn an unreadable plan into 'the plan carries no open bug and no held phase' (bugs and held both empty, so it returns True), and no case would go red. The executor's mutation list (bypass, session, always-refuse, held dropped, exit code, old reader) did not include it. By reading, the code refuses today; nothing keeps it so, in a release guard.",
+        "resolution": "Add a case with a plan that does not parse, and a missing plan, asserting `permitted --repo` exits 1 and the line starts 'refused: could not read'. Run that case with and without an armed slot, so the armed + unreadable direction is pinned too."
+      },
+      {
+        "id": "P140-R3",
+        "severity": "low",
+        "file": "tools/release.py:177-198",
+        "issue": "'One predicate' holds for the readers (read_bugs, read_held_phases, bypass_armed, refusal, KEYWORD are all the guard's) but not for the decision. release_verdict restates the control flow of guard-release.py decide() (nothing held -> pass, armed -> pass, else refuse) and the two already differ: decide() lets an armed slot release over an unreadable list (`if not (bugs or bug_problem or held or phase_problem): continue; if bypass_armed: return None`), and arm-release-bypass.py's docstring tells the owner 'the armed slot releases over that refusal too'. release_verdict refuses it even when armed. The refusal is the safer direction and matches the review requirement, but the owner is told one thing at arming time and verify.sh does another. The executor named this as a known leftover; it is the one place verify.sh, release.py and the hook do not answer alike.",
+        "resolution": "Move the decision into guard-release.py as one function (e.g. a verdict(project, session_id) returning allowed + sentence) that decide() and release_verdict both call, and settle the armed-over-unreadable question once. If refusing is intended, change the arming message and decide() to match; if release is intended, pin it with a case. Either way one place states it."
+      }
+    ],
+    "outcome": "[findings: 3 - 0 high, 2 med, 1 low; 0 with a recorded fix commit]"
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P140.1",
+      "title": "verify.sh --release asks the release guard's own predicate for open bugs and held phases",
+      "status": "in_progress",
+      "description": "Replace no_open_bugs in tools/verify.sh with a call into the same predicate tools/release.py's release_permitted uses (the guard hook's read_open_bugs / read_held_phases / bypass_armed, read from .claude/hooks/, never restated), printing which bugs and held phases it is releasing over when a bypass is armed and refusing as today when none is. If release_permitted itself is the right single entry, expose it as a small CLI (or a --check mode of release.py) that verify.sh calls, so there is one reader. Cases: with an open bug and no bypass the verify step is red and names the bug; with an armed bypass for the session it is green and names what it releases over; an expired or other session's bypass is red; the held-phase half behaves the same.",
+      "files": [
+        "tools/verify.sh",
+        "tools/release.py",
+        "tests/test_verify_sh.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/release.py: the verify-release open-bug step reads the guard's predicate, honouring an armed bypass and refusing without one"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tools/release.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-23T11:32:19Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-23T11:38:38Z.36a723",
+        "status": "passed",
+        "at": "2026-10-23T11:38:38Z"
+      }
+    }
+  ],
+  "request": "Releasing 3.6.0 with the owner's #release-with-bugs: tools/release.py's preflight honoured the armed bypass, then its verify-release step stopped on verify.sh --release's 'the plan carries no open bug' FAILED (exit 1), GATE FAILED: open-bugs (1 open bug(s)) - so a release over the sanctioned bypass can never finish",
+  "openChoices": [],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "bf837df2-37bc-4c94-9233-61f7d70c1d7f",
+    "branch": "audit/p140-every-release-check-answers-th",
+    "at": "2026-10-23T11:32:19Z"
+  },
+  "startedAt": "2026-10-23T11:32:19Z"
+}

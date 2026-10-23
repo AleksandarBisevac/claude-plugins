@@ -956,15 +956,13 @@ changelog_has_section() {
 }
 
 # v2.0.0 and v2.0.1 both went out while bugs sat `open` in the plan, and every gate
-# was green and honest about it: they check the tree, not the tracker. NOT piped into
-# `tail`: a pipeline reports the LAST command's status, so the verdict would be thrown
-# away and the row would be green over an open bug. Captured, then re-emitted.
+# was green and honest about it: they check the tree, not the tracker. This asks the
+# release guard's own predicate through `release.py permitted` - open bugs, held
+# phases and an armed `#release-with-bugs` slot for the running session - rather than
+# counting open bugs here, which refused a release the owner had armed. The status
+# is the command's own (it prints its verdict and exits 0 or 1), so nothing is piped.
 no_open_bugs() {
-  _bugs_out=$(python3 plugins/audit/scripts/status/audit-status.py \
-    docs/audit/audit-plan.json --gate --fail-on open-bugs 2>&1)
-  _bugs_rc=$?
-  [ "$_bugs_rc" -eq 0 ] || echo "$_bugs_out" | tail -2
-  return "$_bugs_rc"
+  python3 tools/release.py permitted
 }
 
 tag_is_free() {
@@ -1002,7 +1000,7 @@ slice_release() {
   # question has an answer: does HEAD carry the pages the render found current.
   run "HEAD carries the published pages" \
     python3 tools/check-rendered-artifacts.py --against-commit
-  run "the plan carries no open bug" no_open_bugs
+  run "the plan carries no open bug or held phase" no_open_bugs
   run "CHANGELOG has a [$version] section" changelog_has_section
   run "tag v$version does not exist yet" tag_is_free
   # THE ONLY GATE IN THIS FILE THAT ASKS A REMOTE, which is why it is in the release

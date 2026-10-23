@@ -70,6 +70,11 @@ governs it exactly as it governs the hook: an armed, unexpired bypass slot
 for the running session (`CLAUDE_CODE_SESSION_ID`) lets it through, read
 rather than restated from the hook's own `bypass_armed`.
 
+`release.py permitted [--repo DIR]` prints that same answer - `ok: ...` naming
+what an armed bypass releases over, or `refused: ...` - and exits 0 or 1.
+`tools/verify.sh --release` runs it for its open-bug step, so that step is the
+guard's predicate and not a second reader that knows no bypass.
+
 `release.py ci <ref>` runs the CI step ALONE: a landed phase that wants CI
 run the same way this release's `wait-ci` step runs it does not need a
 version or a release in flight to ask for it. It dispatches with no input,
@@ -81,6 +86,8 @@ Exit codes: 0 the whole pipeline (or the lone `ci` step) went green -
 import io
 import json
 import os
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -105,6 +112,7 @@ REMOTE_STEPS = ("push-ci-branch", "wait-ci", "push-main-tag", "gh-release",
 
 USAGE = ("usage: release.py run --version X.Y.Z [--push] [--state PATH]\n"
          "       release.py ci <ref>\n"
+         "       release.py permitted [--repo DIR]\n"
          "       release.py --selftest\n")
 
 DEFAULT_CI_TIMEOUT = 60 * 60
@@ -151,17 +159,41 @@ def release_permitted(ctx):
     absent, no bypass is possible, matching the guard hook's own single-session
     scope for the slot.
     """
+    allowed, text = release_verdict(ctx.repo)
+    return allowed, (None if allowed else text)
+
+
+def release_verdict(repo):
+    """`(allowed, text)` - the whole open-bug / held-phase answer, with the
+    sentence that goes with it: the refusal when `allowed` is False, and when
+    it is True either that nothing holds the release or what an armed bypass
+    releases over.
+
+    THE ONE READER. `release_permitted` returns this without the sentence, and
+    `release.py permitted` prints it for `tools/verify.sh --release` - so the
+    pipeline's remote steps and the verify step cannot come to disagree about
+    whether a plan with an open bug may be released, which they did while the
+    shell step counted open bugs on its own and knew no bypass.
+    """
     gr = load_guard_release()
-    bugs, bug_problem = gr.read_bugs(ctx.repo)
-    held, phase_problem = gr.read_held_phases(ctx.repo)
+    bugs, bug_problem = gr.read_bugs(repo)
+    held, phase_problem = gr.read_held_phases(repo)
     if bug_problem or phase_problem:
         return False, ("could not read the release status: %s"
                        % ("; ".join(p for p in (bug_problem, phase_problem) if p)))
     if not (bugs or held):
-        return True, None
+        return True, "the plan carries no open bug and no held phase"
     session_id = os.environ.get("CLAUDE_CODE_SESSION_ID")
-    if gr.bypass_armed(ctx.repo, session_id):
-        return True, None
+    if gr.bypass_armed(repo, session_id):
+        over = []
+        if bugs:
+            over.append("%d open bug(s): %s" % (len(bugs), "; ".join(
+                "%s (%s) %s" % (b[0], b[1], b[2][:70]) for b in bugs)))
+        if held:
+            over.append("%d held phase(s): %s" % (len(held), "; ".join(
+                "%s (%s)" % (h[0], h[1]) for h in held)))
+        return True, ("released over by %s armed for this session: %s"
+                      % (gr.KEYWORD, "; and ".join(over)))
     return False, gr.refusal("cuts a release", bugs, bug_problem, held,
                              phase_problem)
 
@@ -714,12 +746,30 @@ def cmd_ci(argv, repo=None, runner=None, out=None):
     return 0 if ok else 1
 
 
+def cmd_permitted(argv, out=None):
+    """Print `ok: ...` or `refused: ...` for `release_verdict` and exit 0 or 1.
+
+    What `tools/verify.sh --release` runs for its open-bug step, so that step
+    is the guard's own answer - bypass included - and not a count of its own.
+    `--repo DIR` asks another tree's plan; the default is this repository."""
+    out = out if out is not None else sys.stdout
+    repo = REPO
+    if len(argv) == 2 and argv[0] == "--repo":
+        repo = argv[1]
+    elif argv:
+        sys.stderr.write(USAGE)
+        return 2
+    allowed, text = release_verdict(repo)
+    out.write("%s: %s\n" % ("ok" if allowed else "refused", text))
+    return 0 if allowed else 1
+
+
 def route_subcommand(argv):
     """`(subcommand, rest)` - `run` is implicit, so `release.py --push` reads
     exactly as `release.py run --push` does. Both forms run the same `cmd_run`,
     which asks `release_permitted` the same question regardless of which
     spelling a reader typed."""
-    if argv and argv[0] in ("run", "ci"):
+    if argv and argv[0] in ("run", "ci", "permitted"):
         return argv[0], argv[1:]
     return "run", argv
 
@@ -731,6 +781,8 @@ def main(argv=None):
     sub, rest = route_subcommand(argv)
     if sub == "ci":
         return cmd_ci(rest)
+    if sub == "permitted":
+        return cmd_permitted(rest)
     return cmd_run(rest)
 
 
@@ -887,11 +939,12 @@ def _workflow_tier_input(text):
     return {"default": keys.get("default"), "options": options}
 
 
-def _fixture_repo(bugs=None):
+def _fixture_repo(bugs=None, meta=None, phases=None):
     """A scratch tree carrying just what the steps under test read: the plan
     (for `preflight`), `plugin.json` (for `bump-version`), `CHANGELOG.md` and
-    the README. Never touches the real repository and is removed by the
-    caller."""
+    the README. `meta` is merged into the plan's `meta` and `phases` replaces
+    its phase list, for a case that needs a held phase. Never touches the
+    real repository and is removed by the caller."""
     root = tempfile.mkdtemp(prefix="release-fixture-")
     os.makedirs(os.path.join(root, "docs", "audit"))
     os.makedirs(os.path.join(root, os.path.dirname(PLUGIN_JSON_REL)),
@@ -899,8 +952,8 @@ def _fixture_repo(bugs=None):
     os.makedirs(os.path.join(root, os.path.dirname(README_REL)), exist_ok=True)
     with io.open(os.path.join(root, "docs", "audit", "audit-plan.json"),
                 "w", encoding="utf-8") as fh:
-        json.dump({"meta": {"version": 2}, "phases": [],
-                   "bugs": bugs or []}, fh)
+        json.dump({"meta": dict({"version": 2}, **(meta or {})),
+                   "phases": phases or [], "bugs": bugs or []}, fh)
     with io.open(os.path.join(root, PLUGIN_JSON_REL), "w",
                 encoding="utf-8") as fh:
         json.dump({"name": "audit", "version": "1.0.0"}, fh)
@@ -1362,6 +1415,171 @@ def _cases(check):
                 os.environ["CLAUDE_CODE_SESSION_ID"] = prior
     finally:
         remove_tree(tmp)
+
+    # --- `permitted`: the ONE question `verify.sh --release` asks about open bugs
+    # and held phases. Each case below is the same plan read under a different
+    # bypass slot, so the only thing that separates a green from a red is the
+    # slot - which is what a reader that re-asked the question its own way
+    # (counting open bugs and knowing no slot) would get wrong.
+    mine, other = "permitted-selftest-mine", "permitted-selftest-other"
+    bug = {"id": "BUG-4", "status": "open", "severity": "high",
+           "title": "left open on purpose"}
+    held_meta = {"fullGate": ["full"], "buildCommands": {"full": "echo full"}}
+    held_phases = [{"id": "P7", "title": "p", "status": "done",
+                    "mergedAt": "2026-01-01T00:00:00Z",
+                    "mergedHead": "a" * 40, "tasks": []}]
+
+    def arm_slot(repo, session, age=0):
+        state_dir = os.path.join(repo, ".claude", "state")
+        if not os.path.isdir(state_dir):
+            os.makedirs(state_dir)
+        with io.open(os.path.join(state_dir,
+                                 "release-bypass-%s.json" % (session,)),
+                    "w", encoding="utf-8") as fh:
+            json.dump({"armedAtEpoch": time.time() - age,
+                      "ttlSeconds": 3600}, fh)
+
+    def ask(repo, session):
+        prior = os.environ.get("CLAUDE_CODE_SESSION_ID")
+        if session is None:
+            os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
+        else:
+            os.environ["CLAUDE_CODE_SESSION_ID"] = session
+        try:
+            printed = io.StringIO()
+            code = cmd_permitted(["--repo", repo], out=printed)
+            return code, printed.getvalue()
+        finally:
+            if prior is None:
+                os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
+            else:
+                os.environ["CLAUDE_CODE_SESSION_ID"] = prior
+
+    for half, name_of, build in (
+            ("open bug", "BUG-4", lambda: _fixture_repo(bugs=[bug])),
+            ("held phase", "P7", lambda: _fixture_repo(meta=held_meta,
+                                                       phases=held_phases))):
+        tag = "rl17" if half == "open bug" else "rl18"
+        tmp = build()
+        try:
+            code, said = ask(tmp, mine)
+            check("%s a plan carrying %s and no bypass slot at all is "
+                  "refused (exit 1) and the line names it: %r"
+                  % (tag, ("an open bug" if half == "open bug"
+                           else "a held phase"), said),
+                  code == 1 and name_of in said
+                  and said.startswith("refused: "))
+            arm_slot(tmp, mine)
+            code, said = ask(tmp, mine)
+            check("%sb ...an unexpired slot armed for THIS session releases "
+                  "it (exit 0) and the line names what it releases over: %r"
+                  % (tag, said),
+                  code == 0 and name_of in said and "#release-with-bugs" in said
+                  and said.startswith("ok: "))
+            arm_slot(tmp, mine, age=7200)
+            code, said = ask(tmp, mine)
+            check("%sc ...an EXPIRED slot for this session refuses again: %r"
+                  % (tag, said), code == 1 and name_of in said)
+            arm_slot(tmp, mine, age=7200)
+            arm_slot(tmp, other)
+            code, said = ask(tmp, mine)
+            check("%sd ...a live slot armed for ANOTHER session does not "
+                  "release this one: %r" % (tag, said),
+                  code == 1 and name_of in said)
+            code, said = ask(tmp, None)
+            check("%se ...and with no session id at all no slot can be looked "
+                  "up, so it refuses: %r" % (tag, said),
+                  code == 1 and name_of in said)
+        finally:
+            remove_tree(tmp)
+
+    # ALLOW, the mutation this is here for: `permitted` refusing every plan.
+    tmp = _fixture_repo()
+    try:
+        code, said = ask(tmp, mine)
+        check("rl17f a plan with no open bug and no held phase is permitted "
+              "with no slot at all, and says it is: %r" % (said,),
+              code == 0 and said.startswith("ok: ") and "no open bug" in said)
+    finally:
+        remove_tree(tmp)
+
+    # THE COMMAND LINE, through `main` and as a process: the exit status is
+    # what `verify.sh` reads, so a function that returned the right number
+    # but was never routed from argv would pass every case above.
+    tmp = _fixture_repo(bugs=[bug])
+    try:
+        arm_slot(tmp, mine)
+        env = dict(os.environ)
+        env.pop("CLAUDE_CODE_SESSION_ID", None)
+        script = os.path.join(_HERE, "release.py")
+        got = []
+        for session in (None, other, mine):
+            child_env = dict(env)
+            if session is not None:
+                child_env["CLAUDE_CODE_SESSION_ID"] = session
+            proc = subprocess.run([sys.executable, script, "permitted",
+                                  "--repo", tmp], env=child_env,
+                                 stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT)
+            got.append(proc.returncode)
+        check("rl19 `release.py permitted --repo DIR` run as a process exits "
+              "1 with no session, 1 for another session's slot and 0 for the "
+              "armed one: %r" % (got,), got == [1, 1, 0])
+        check("rl19b `permitted` with an unknown argument is a usage error "
+              "(exit 2), not a pass",
+              main(["permitted", "--wat"]) == 2)
+    finally:
+        remove_tree(tmp)
+
+    # THE SH STEP ITSELF: the function `verify.sh --release` runs, cut out of
+    # the file and run under `sh` over a scratch tree holding a copy of this
+    # script and of the guard, so it asks that tree's plan and never this
+    # repository's. POSIX only: it needs `sh` and a symlink to scripts/.
+    with io.open(os.path.join(REPO, "tools", "verify.sh"),
+                encoding="utf-8") as fh:
+        verify_text = fh.read()
+    step = re.search(r"^no_open_bugs\(\) \{\n.*?^\}\n", verify_text,
+                    re.S | re.M)
+    body = step.group(0) if step else ""
+    check("rl20 verify.sh's open-bug step asks `release.py permitted` and no "
+          "longer runs its own `--fail-on open-bugs` reader: %r"
+          % (body[:160],),
+          "release.py permitted" in body
+          and "--fail-on open-bugs" not in verify_text
+          and "audit-status.py" not in body)
+    if os.name == "posix":
+        tmp = _fixture_repo(bugs=[bug])
+        links = [os.path.join(tmp, "plugins", "audit", name)
+                 for name in ("scripts", "hooks")]
+        try:
+            for rel in (os.path.join("tools", "release.py"),
+                        os.path.join(".claude", "hooks", "guard-release.py")):
+                os.makedirs(os.path.join(tmp, os.path.dirname(rel)),
+                           exist_ok=True)
+                shutil.copy(os.path.join(REPO, rel), os.path.join(tmp, rel))
+            for link in links:
+                os.symlink(os.path.join(REPO, "plugins", "audit",
+                                       os.path.basename(link)), link)
+            arm_slot(tmp, other)
+            codes = []
+            for session in (mine, other):
+                child_env = dict(env)
+                child_env["CLAUDE_CODE_SESSION_ID"] = session
+                proc = subprocess.run(["sh", "-c", body + "\nno_open_bugs\n"],
+                                     cwd=tmp, env=child_env,
+                                     stdout=subprocess.PIPE,
+                                     stderr=subprocess.STDOUT)
+                codes.append((proc.returncode,
+                              b"BUG-4" in proc.stdout))
+            check("rl20b the cut-out step run under `sh` over a plan with an "
+                  "open bug is red and names it for a session with no slot, "
+                  "and green for the session whose slot is armed: %r"
+                  % (codes,), codes == [(1, True), (0, True)])
+        finally:
+            for link in links:
+                if os.path.islink(link):
+                    os.unlink(link)
+            remove_tree(tmp)
 
     # --- the `ci` step runs alone ------------------------------------------------
     calls = []

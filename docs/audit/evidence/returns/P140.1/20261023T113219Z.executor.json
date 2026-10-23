@@ -1,0 +1,43 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tools/release.py tools/gate-parity.py": "pass",
+    "ruff check tools/release.py": "pass",
+    "sh -n tools/verify.sh": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-23T11:37:47Z",
+    "basis": "`python3 tools/sweep-selftests.py tools/release.py` in a throwaway tree at HEAD exited 1 with failing cases tools/release.py: exited 1 (house FAIL), but with the working tree's implementation the task's tests do not all pass (no tally or error reader matched its output, so no line of it is quoted as decisive), so the red is not one the fix turns green - SELFTEST FAILED: 38/39 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "tools/release.py: release_permitted is now a thin wrapper over a new release_verdict(repo) returning (allowed, sentence) built only from the guard hook's read_bugs / read_held_phases / bypass_armed / refusal / KEYWORD; the armed case names the open bugs and held phases it releases over. New subcommand `release.py permitted [--repo DIR]` (cmd_permitted, routed in route_subcommand, listed in USAGE and the module docstring) prints `ok: ...` or `refused: ...` and exits 0/1, 2 on a usage error. tools/verify.sh: no_open_bugs is now `python3 tools/release.py permitted` (the audit-status.py --fail-on open-bugs reader is deleted; the row label reads 'the plan carries no open bug or held phase'); POSIX sh kept (sh -n rc 0, verify.sh --list rc 0 shows the row). Cases live in release.py's own --selftest (tests/test_verify_sh.py does not exist and nothing needed it; tests/test_verify_invariants.py was not touched): rl17 (open bug, no slot: exit 1, names BUG-4), rl17b (armed slot for this session: exit 0, names what it releases over), rl17c (expired slot: red), rl17d (another session's live slot: red), rl17e (no session id: red), rl17f (nothing held: ok, the over-fire direction), rl18..rl18e the same five for a held phase (provisional P7), rl19 (process exit codes 1/1/0 for no session / other session / armed), rl19b (unknown argument exits 2), rl20 (verify.sh step asks release.py permitted, no --fail-on open-bugs left), rl20b (the function cut out of verify.sh run under sh over a scratch tree: red naming the bug without a slot, green with it; posix only). Reds watched: before the fix the suite printed `FAIL selftest body raised before reaching the end ... (NameError: name 'cmd_permitted' is not defined)`, 38/39 passed. After the fix, mutations run in a throwaway copy (never the shared tree): bypass ignored -> rl9, rl17b, rl18b, rl19, rl20b red; session ignored -> rl17d, rl18d, rl19, rl20b red; always-refuse -> rl17f red; held phases dropped -> rl18..rl18e red; exit code always 0 -> rl17, rl17c-e, rl18, rl18c-e, rl19, rl20b red; old shell reader restored in verify.sh -> rl20, rl20b red. Gate: python3 tools/sweep-selftests.py tools/release.py tools/gate-parity.py exit 0, 2/2 files ok (release.py 58 cases, gate-parity.py 93 cases). I did not run tools/release.py run or verify.sh --release. Dependants: .github/workflows/ci.yml, tools/affected.py, tools/check-example-pins.py, tools/lints/_refs.py, tests/test__refs.py only name or path-read release.py/verify.sh and are unchanged and still correct (existing names kept; the new names are additive; _refs.py exit 0 and verify.sh --list rc 0 after the change); tests/test_audit_task.py has no import of tools/release.py (its matches are the word release) so unaffected; .claude/hooks/guard-release.py is unchanged and still correct: its publisher reader only fires on release.py with --push, and I checked `python3 tools/release.py permitted` and `permitted --repo X` yield no publishers; the existing cases rl1, rl8-rl11 over release_permitted still pass with its (allowed, refusal-or-None) contract kept. The other files verify.sh lists (.gitattributes, derive-phase-gate.py, test__output.py, test__refs.py, check-git-pipeline.py) reference it by path only; the step label changed and nothing pins the old label (grep across the tree found only release.py, verify.sh, the guard text and the manifest). Known leftover: release_verdict, like release_permitted before it, refuses when a list cannot be read even with a bypass armed, whereas the guard hook itself would release over that; that behaviour was not changed.",
+    "descriptive": "verify.sh --release now asks the release guard's own predicate through `release.py permitted`, so an owner-armed #release-with-bugs passes the open-bug and held-phase step and names what it releases over."
+  },
+  "testsAdded": [
+    "release.py --selftest: the permitted subcommand over an open bug and over a held phase, each under no slot, an armed slot, an expired slot, another session's slot and no session id; the nothing-held allow case; process exit codes; the usage error; verify.sh's step text; the verify.sh function run under sh over a scratch tree"
+  ],
+  "casesAdded": [
+    [
+      "rl17",
+      "rl17b",
+      "rl17c",
+      "rl17d",
+      "rl17e",
+      "rl17f",
+      "rl18",
+      "rl18b",
+      "rl18c",
+      "rl18d",
+      "rl18e",
+      "rl19",
+      "rl19b",
+      "rl20",
+      "rl20b"
+    ]
+  ],
+  "claims": "claims:\n1 tools/release.py release_verdict is the single reader (release_permitted wraps it; cmd_permitted prints it); tools/verify.sh no_open_bugs calls release.py permitted; the docstring sentence about verify.sh is backed by rl20 and rl20b\n2 six mutations in a throwaway copy, each turned named cases red (bypass ignored, session ignored, always refuse, held dropped, exit 0, old shell reader back); the restore was the discarded copy, the shared tree was never mutated\n3 grep for 'carries no open bug' and 'open-bugs' across tools, tests, .github and CONTRIBUTING: the only other readers of the gate are audit-status's own suites, which test that gate and are left because they are not the release step\n4 n/a - no rule addressed to an agent\n5 n/a - no property recorded\n6 n/a - no guard written or widened; guard-release.py unchanged and checked to treat `permitted` as no publisher\n7 n/a - no number written in prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:33feff3b7a448ffb9d5cd05761dd12b5ac86dd60aa821a3692db725954d899f3\",\"dirtyDigest\":\"sha256:1d5f490d3b1a9c2c81367fa83245746692981a45ca7e6099099480e36f3fe939\",\"dirtyPaths\":{\"tools/release.py\":\"9fa0201d183fe34f\",\"tools/verify.sh\":\"77325d6bfecfa7ae\"},\"head\":\"982d38ba\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tests/test_verify_sh.py\",\"tools/release.py\",\"tools/verify.sh\"],\"scopeDigest\":\"sha256:3511b707b290d2bb1e97e793f9a4f48cb40f601d211de85bb1283900d339d1ff\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}
