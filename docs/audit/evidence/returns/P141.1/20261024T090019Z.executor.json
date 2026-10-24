@@ -1,0 +1,28 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py": "pass",
+    "python3 tools/sweep-selftests.py --spaced tests/test_drive_phase.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "Regression task, expectRedFirst false, and the fix lives in the test file's own generator, so a HEAD throwaway with the test files copied over cannot show a red. The red was watched in the working tree before the generator fix: `python3 tests/test_drive_phase.py --selftest --stage wl-block` exited 1 with 'FAIL wl3 nothing is filed while the gate is red; ...', 'FAIL wl4 ...and the close commits: in_progress' and 'SELFTEST FAILED: 12/14 cases passed' while the new probe case wl3p passed (sizes 6/6, mtime_ns equal). After the generator fix the same command exited 0: 'ALL PASS: 14/14 cases passed'.",
+    "at": "2026-10-24, before the generator edit"
+  },
+  "outcome": {
+    "technical": "tests/test_drive_phase.py: (1) wl3 now splits the resume round so that src/mine.py's mtime is restored with os.utime(ns=) to its pre-session value between the resume writer session and the next signal; new case wl3p asserts the two versions are the same size, the new bytes landed (v = 2), and the mtime took (equal st_mtime_ns). (2) _wf_suite emits sys.dont_write_bytecode = True before import mine. (3) the near-duplicate _house_suite and its _TALLY were removed: their generated text was identical line for line apart from the tally constant, which had the same value, so _house_suite is now an alias of _wf_suite and no case's assertion changes. Gates: `python3 tools/sweep-selftests.py tests/test_drive_phase.py` exit 0 (1/1 files ok, 568 cases); `python3 tools/sweep-selftests.py --spaced tests/test_drive_phase.py` exit 0 (1/1 files ok, 568 cases). Dependants: sweep-costs.json, drive-phase.py, test__runner_output.py, test_run_test_gate.py, sweep-selftests.py, PLUGIN-BUILD-GUIDE.md and the two docs/research files only reference the suite or names _counting/_follower_cases/_head/_load, none of which I touched, so still correct; _house_suite and _TALLY are the only removed/changed names and a grep of tests/test_drive_phase.py showed no use of _TALLY outside the removed generator. I did not grep other files for _TALLY or _house_suite (the brief lists none as used elsewhere).",
+    "descriptive": "The drive's generated fixture suites no longer run stale bytecode, and wl3 forces the same-second same-size rewrite so the fix is proven."
+  },
+  "testsAdded": [
+    "wl3p: forces the same-size, restored-mtime rewrite of src/mine.py in the resume round and asserts the sizes match, the new bytes landed and the mtime took; the existing wl3/wl4 then prove the resumed gate runs the new code"
+  ],
+  "casesAdded": [
+    [
+      "wl3p",
+      "wl3"
+    ]
+  ],
+  "claims": "claims:\n1 tests/test_drive_phase.py _wf_suite docstring and the line sys.dont_write_bytecode = True before import mine; wl3 comment describes the os.utime restore done a few lines below it\n2 generator fix absent -> wl3 and wl4 FAIL, 12/14, exit 1; fix present -> 14/14, exit 0; wl3p passed in both, proving the probe applied. Mutation of the probe itself (dropping utime) not run\n3 grep -n 'import mine\\|dont_write_bytecode' tests/test_drive_phase.py showed two generators, both now one; other fixtures importing modules under test were not swept\n4 n/a - no rule to an agent\n5 n/a - the forced timing is deterministic by os.utime, no property recorded\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:781f06d94e0a5dbfb10e92aa5b67c76f60bafc6cb7bfa09d1b943a898f56ae44\",\"dirtyDigest\":\"sha256:1808bb0f638266519c691f870c399c131e8dd8e29a20c542c81367291ea15994\",\"dirtyPaths\":{\"tests/test_drive_phase.py\":\"6d23ad96b1cefbe2\"},\"head\":\"df67104b\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:25bf36d94c6bcf0bec6efc66104a4a72160cdcedf27270ab00f41765cd79dac9\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

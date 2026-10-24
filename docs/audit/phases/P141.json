@@ -1,0 +1,90 @@
+{
+  "id": "P141",
+  "title": "The drive's fixture suites never run stale bytecode",
+  "status": "in_progress",
+  "description": "Proven in a scratch copy: with round 1's mtime set back to round 0's (os.utime) wl3/wl4 fail every time with CI's exact signature; with PYTHONDONTWRITEBYTECODE, or with the generated suite setting sys.dont_write_bytecode before its import, they pass. The gate verdict reuse is content-keyed and not involved; P139 did not touch the path.",
+  "desiredOutcome": "tests/test_drive_phase.py's generated fixture suites run exactly what their source says whatever the timing of two rewrites, and a case forces the same-second, same-size rewrite so the fix is proven, not hoped",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [],
+  "baseRef": "df67104b478472fdd73e65c6403ccc18d4c57d80",
+  "branch": "audit/p141-the-drive-s-fixture-suites-nev",
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": [
+      {
+        "id": "P141-R1",
+        "severity": "low",
+        "file": "tests/test_drive_phase.py:1736-1747",
+        "issue": "wl3p asserts only the probe's preconditions (same size, v = 2 bytes, mtime put back). It does not assert that a stale bytecode file was ever there to be trusted. wl3/wl4 only go red when the round-0 gate's interpreter actually writes bytecode. Nothing in tools/sweep-selftests.py or tests/_harness.py scrubs PYTHONDONTWRITEBYTECODE (grep found no hit), so a developer or runner that exports it makes the hazard absent. Then wl3/wl4 would pass with the generator switch deleted, and wl3p would not notice.",
+        "resolution": "Add to wl3p (or a sibling case) a direct assertion that no mine bytecode exists after round 0, under src/__pycache__ and under PYTHONPYCACHEPREFIX if set. That goes red on a regression of the generator switch whatever the timing or ambient env, and the mtime probe stays as the end-to-end check."
+      }
+    ],
+    "outcome": "[findings: 1 - 0 high, 0 med, 1 low; 0 with a recorded fix commit]"
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P141.1",
+      "title": "The fixture suite generators turn bytecode writing off, and wl3 forces the same-second rewrite",
+      "status": "in_progress",
+      "description": "In tests/test_drive_phase.py, make the generated fixture test (the _wf_suite and _house_suite generators, ~1163 and ~9766) set sys.dont_write_bytecode = True before it imports the module under test - one generator if the two can be one without changing what any case asserts. In wl3, between the round-1 writer session and the next signal, restore src/mine.py's mtime to its pre-round-1 value with os.utime, and assert the two versions are the same size and the mtime took, so the probe cannot silently stop applying. Red first: with the generator unchanged the frozen-mtime wl3/wl4 fail; with it they pass.",
+      "files": [
+        "tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test_drive_phase.py: wl3 forces a same-second, same-size rewrite of the imported module and the resumed round's gate runs the new code"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-24T09:00:19Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-24T09:15:56Z.f34615",
+        "status": "passed",
+        "at": "2026-10-24T09:15:56Z"
+      }
+    }
+  ],
+  "request": "The 3.6.0 release commit's CI went red on tests/test_drive_phase.py wl3/wl4 (linux stress leg, run 40076895652; also P139's run 39927547285): diagnosed as a fixture flake - two same-size rewrites of src/mine.py inside one whole second leave a .pyc Python still trusts, so the gate runs the old code",
+  "openChoices": [],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "bf837df2-37bc-4c94-9233-61f7d70c1d7f",
+    "branch": "audit/p141-the-drive-s-fixture-suites-nev",
+    "at": "2026-10-24T09:00:19Z"
+  },
+  "startedAt": "2026-10-24T09:00:19Z"
+}

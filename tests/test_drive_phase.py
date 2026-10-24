@@ -1162,8 +1162,11 @@ _WF_CLAIM = "All clauses done.\n%s\n  " % (_answer_json((1,)),)
 
 def _wf_suite(cases):
     """A house suite over `src/mine.py`: one PASS/FAIL line per `(label, cond)`
-    and the tally, exiting 1 on any failure."""
-    body = ["import os, sys",
+    and the tally, exiting 1 on any failure. Bytecode writing is off before
+    the import: the cache is keyed on the source's mtime in whole seconds and
+    its size, so two same-size rewrites inside one second would otherwise run
+    the first version's code."""
+    body = ["import os, sys", "sys.dont_write_bytecode = True",
             "sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath("
             "__file__)), '..', 'src'))", "import mine", "results = []"]
     for label, cond in cases:
@@ -1721,9 +1724,27 @@ def _writer_lock_cases(check):
     early = _filed_body(mpath_r, "P1.1")
     _signal_next(M, root_r, mpath_r, "--answer", "resume")
     moved = _WF_NEW_TEST + "# the resume round touched the suite\n"
-    code_s, line_s = _writer_round(M, root_r, mpath_r, bindir, log, "0.43",
-                                   edit={_WF_SRC: "v = 2\n", _WF_TEST: moved},
-                                   result=_said("second try"))
+    # The module under test is imported by the gate's suite, so the round-0
+    # gate left bytecode for `v = 3` keyed on the source's mtime (whole
+    # seconds) and size. Two rewrites inside one second of the same size are
+    # what CI produced by chance; here the mtime is put back after the resume
+    # session so every run meets it, and the probe checks it applied.
+    src_r = os.path.join(root_r, *_WF_SRC.split("/"))
+    before = os.stat(src_r)
+    _c, block_r = _explain_of(M, root_r, mpath_r, "P1.1")
+    _play_session(root_r, _run_argv(block_r) or [], bindir, log, "0.43",
+                  edit={_WF_SRC: "v = 2\n", _WF_TEST: moved},
+                  result=_said("second try"))
+    after = os.stat(src_r)
+    os.utime(src_r, ns=(before.st_atime_ns, before.st_mtime_ns))
+    pinned = os.stat(src_r)
+    check("wl3p the resume session rewrote src/mine.py to the same size with new "
+          "bytes, and its mtime was put back to the value the round-0 gate's "
+          "bytecode was keyed on, so the probe applies: %r"
+          % ((before.st_size, after.st_size, before.st_mtime_ns, pinned.st_mtime_ns),),
+          after.st_size == before.st_size and _read(src_r) == b"v = 2\n"
+          and pinned.st_mtime_ns == before.st_mtime_ns)
+    code_s, line_s = _signal_next(M, root_r, mpath_r)
     listed = [n for n in _notes(mpath_r, "P1.1")
               if _WF_TEST in n and "re-prove" in n and "proved" in n]
     late = _filed_body(mpath_r, "P1.1") or {}
@@ -9751,24 +9772,9 @@ def _brief_crlf_cases(check):
           and cli.returncode == 0 and cli.stdout == wrote)
 
 
-_TALLY = "%s: %d/%d cases " + "passed"
-
-
-def _house_suite(cases):
-    """A house-style suite over `src/mine.py`: one line per `(label, cond)` and
-    the tally, which is BUILT because a spelled one reads as a suite of its own."""
-    body = ["import os, sys",
-            "sys.path.insert(0, os.path.join(os.path.dirname("
-            "os.path.abspath(__file__)), '..', 'src'))",
-            "import mine", "results = []"]
-    for label, cond in cases:
-        body += ["ok = bool(%s)" % (cond,), "results.append(ok)",
-                 "print('%%s %s' %% ('PASS' if ok else 'FAIL'))" % (label,)]
-    body += ["n = sum(results)",
-             "print(%r %% ('ALL PASS' if n == len(results) else 'SELFTEST FAILED',"
-             " n, len(results)))" % (_TALLY,),
-             "sys.exit(0 if n == len(results) else 1)"]
-    return "\n".join(body) + "\n"
+# The same generator under the name the later cases use: both built the same
+# suite line for line, so one definition carries the bytecode switch.
+_house_suite = _wf_suite
 
 
 CARRY_CLAUSE = ("tests/test_drive_phase.py: a pause with a filed "
