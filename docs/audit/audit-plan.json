@@ -909,6 +909,12 @@
       "title": "Every release check answers the open-bug question the way the release guard does",
       "status": "done",
       "shard": "phases/P140.json"
+    },
+    {
+      "id": "P141",
+      "title": "The drive's fixture suites never run stale bytecode",
+      "status": "in_progress",
+      "shard": "phases/P141.json"
     }
   ],
   "fileIndex": {
@@ -11427,7 +11433,8 @@
       "P138.1",
       "P138.6-myr",
       "P139.1",
-      "P139.2-6sp"
+      "P139.2-6sp",
+      "P141.1"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
