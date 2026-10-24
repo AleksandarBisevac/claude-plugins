@@ -1,7 +1,7 @@
 {
   "id": "P141",
   "title": "The drive's fixture suites never run stale bytecode",
-  "status": "in_progress",
+  "status": "done",
   "description": "Proven in a scratch copy: with round 1's mtime set back to round 0's (os.utime) wl3/wl4 fail every time with CI's exact signature; with PYTHONDONTWRITEBYTECODE, or with the generated suite setting sys.dont_write_bytecode before its import, they pass. The gate verdict reuse is content-keyed and not involved; P139 did not touch the path.",
   "desiredOutcome": "tests/test_drive_phase.py's generated fixture suites run exactly what their source says whatever the timing of two rewrites, and a case forces the same-second, same-size rewrite so the fix is proven, not hoped",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "df67104b478472fdd73e65c6403ccc18d4c57d80",
   "branch": "audit/p141-the-drive-s-fixture-suites-nev",
-  "mergedAt": null,
+  "mergedAt": "2026-10-24T09:32:21Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -102,5 +102,6 @@
     "runId": "2026-10-24T09:32:13Z.13e433",
     "status": "passed",
     "at": "2026-10-24T09:32:13Z"
-  }
+  },
+  "mergedHead": "9b2f2b9c2758b6c5f1ac45d12af93512c64e3ec6"
 }
