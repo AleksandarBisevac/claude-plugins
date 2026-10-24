@@ -37,7 +37,7 @@ steps:
 
   - script: |
       set -e
-      git clone --depth 1 --branch v3.5.0 \
+      git clone --depth 1 --branch v3.6.0 \
         https://github.com/AleksandarBisevac/claude-plugins.git \
         "$(Agent.TempDirectory)/plugin-src"
     displayName: Fetch the audit plugin's scripts/ tree (pinned tag)
