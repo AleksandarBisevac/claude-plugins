@@ -915,6 +915,12 @@
       "title": "The drive's fixture suites never run stale bytecode",
       "status": "done",
       "shard": "phases/P141.json"
+    },
+    {
+      "id": "P142",
+      "title": "The gate ladder: affected checks per task, the full gate and tree scanners per phase, CI under eight minutes",
+      "status": "in_progress",
+      "shard": "phases/P142.json"
     }
   ],
   "fileIndex": {
@@ -1008,7 +1014,8 @@
       "P130.37-ywo",
       "BF4.2",
       "BF4.3-p5e",
-      "P131.14"
+      "P131.14",
+      "P142.7"
     ],
     ".gitignore": [
       "P4.4",
@@ -1185,7 +1192,8 @@
       "P130.53-ywo",
       "P130.57-ywo",
       "P130.59-ywo",
-      "P131.2"
+      "P131.2",
+      "P142.1"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1334,7 +1342,9 @@
       "P131.1",
       "P131.2",
       "P131.16-dau",
-      "P137.6-3y3"
+      "P137.6-3y3",
+      "P142.3",
+      "P142.5"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -1633,7 +1643,8 @@
       "P138.1",
       "P138.2",
       "P138.4-myr",
-      "P138.5-myr"
+      "P138.5-myr",
+      "P142.1"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1727,7 +1738,8 @@
       "P125.39-0h5",
       "P125.132-0h5",
       "P130.8",
-      "P131.1"
+      "P131.1",
+      "P142.1"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -1786,7 +1798,8 @@
       "P63.12",
       "P67.2",
       "P109.8",
-      "P103.7"
+      "P103.7",
+      "P142.1"
     ],
     "docs/index.html": [
       "P13.3",
@@ -2088,7 +2101,8 @@
       "P130.16-ywo",
       "P131.2",
       "P132.3",
-      "P132.4"
+      "P132.4",
+      "P142.1"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -2394,7 +2408,8 @@
       "P125.65-0h5",
       "P125.82-0h5",
       "P131.5",
-      "P139.1"
+      "P139.1",
+      "P142.1"
     ],
     "plugins/audit/commands/review.md": [
       "P7.1",
@@ -2706,7 +2721,8 @@
       "P130.8",
       "P130.40-ywo",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P142.1"
     ],
     "plugins/audit/hooks/guard-capabilities.py": [
       "P15.4",
@@ -3005,7 +3021,8 @@
       "P131.1",
       "P131.2",
       "P131.6",
-      "P132.3"
+      "P132.3",
+      "P142.1"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -3042,7 +3059,8 @@
       "P125.41-0h5",
       "P125.44-0h5",
       "P130.29-ywo",
-      "P138.3-myr"
+      "P138.3-myr",
+      "P142.1"
     ],
     "plugins/audit/reference/orchestrator.md": [
       "P7.1",
@@ -3127,7 +3145,8 @@
       "P130.35-ywo",
       "P131.2",
       "P131.3",
-      "P131.5"
+      "P131.5",
+      "P142.1"
     ],
     "plugins/audit/reference/phase-signoff.md": [
       "P61.5",
@@ -3171,7 +3190,9 @@
       "P130.33-ywo",
       "P131.1",
       "P131.2",
-      "P131.9"
+      "P131.9",
+      "P142.1",
+      "P142.6"
     ],
     "plugins/audit/schema/audit-config.schema.json": [
       "P41.1",
@@ -3601,7 +3622,8 @@
       "P130.5",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P142.1"
     ],
     "plugins/audit/scripts/git/close-phase.py": [
       "P18.3",
@@ -3659,7 +3681,8 @@
       "P130.8",
       "P130.40-ywo",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P142.1"
     ],
     "plugins/audit/scripts/git/manage-worktrees.py": [
       "P18.4",
@@ -3680,7 +3703,8 @@
       "P130.4",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P142.1"
     ],
     "plugins/audit/scripts/governance/_evidence_io.py": [
       "P29.4",
@@ -3799,7 +3823,8 @@
       "P130.8",
       "P130.40-ywo",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P142.1"
     ],
     "plugins/audit/scripts/governance/_journal_io.py": [
       "P29.3",
@@ -3852,7 +3877,8 @@
       "P130.5",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P142.1"
     ],
     "plugins/audit/scripts/governance/_locks.py": [
       "P22.11",
@@ -3927,7 +3953,8 @@
       "P131.2",
       "P137.1",
       "P137.7-3y3",
-      "P137.9-3y3"
+      "P137.9-3y3",
+      "P142.1"
     ],
     "plugins/audit/scripts/governance/_tree_stamp.py": [
       "P43.4",
@@ -3943,7 +3970,8 @@
       "P130.8",
       "P130.40-ywo",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P142.1"
     ],
     "plugins/audit/scripts/governance/audit-journal.py": [
       "BF1.1",
@@ -4013,7 +4041,8 @@
       "P130.4",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P142.1"
     ],
     "plugins/audit/scripts/governance/commit-manifest-index.py": [
       "P29.5",
@@ -4039,7 +4068,8 @@
       "P130.4",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P142.1"
     ],
     "plugins/audit/scripts/governance/commit-task-work.py": [
       "P71.1",
@@ -4079,7 +4109,8 @@
       "P131.2",
       "P135.1",
       "P135.2",
-      "P137.1"
+      "P137.1",
+      "P142.1"
     ],
     "plugins/audit/scripts/governance/record-risk-confirmation.py": [
       "P42.6",
@@ -4177,7 +4208,9 @@
       "P131.1",
       "P131.2",
       "P131.12",
-      "P133.1"
+      "P133.1",
+      "P142.1",
+      "P142.4"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -4250,7 +4283,8 @@
       "P131.1",
       "P131.2",
       "P131.6",
-      "P131.10"
+      "P131.10",
+      "P142.2"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -4282,7 +4316,8 @@
       "P130.8",
       "P131.1",
       "P131.2",
-      "P138.2"
+      "P138.2",
+      "P142.1"
     ],
     "plugins/audit/scripts/manifest/_branch.py": [
       "P18.2",
@@ -4720,7 +4755,8 @@
       "P137.1",
       "P137.7-3y3",
       "P138.2",
-      "P138.3-myr"
+      "P138.3-myr",
+      "P142.1"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -7826,7 +7862,8 @@
       "P125.27",
       "P125.67-0h5",
       "P125.78-0h5",
-      "P138.6-myr"
+      "P138.6-myr",
+      "P142.8"
     ],
     "tools/check-example-ledgers.py": [
       "P32.10",
@@ -7871,7 +7908,8 @@
       "P128.13-0h5",
       "P128.56-izt",
       "P130.22-ywo",
-      "P130.37-ywo"
+      "P130.37-ywo",
+      "P142.1"
     ],
     "tools/check-prohibitions.py": [
       "P32.8",
@@ -7965,7 +8003,9 @@
       "P132.5-5mm",
       "P135.1",
       "P137.3-3y3",
-      "P137.6-3y3"
+      "P137.6-3y3",
+      "P142.5",
+      "P142.7"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -8061,7 +8101,9 @@
       "P130.54-ywo",
       "P131.1",
       "P131.2",
-      "P134.1"
+      "P134.1",
+      "P142.1",
+      "P142.6"
     ],
     "tools/redfirst.sh": [
       "P55.13",
@@ -8103,7 +8145,9 @@
       "P132.5-5mm",
       "P137.3-3y3",
       "P137.6-3y3",
-      "P137.8-3y3"
+      "P137.8-3y3",
+      "P142.2",
+      "P142.8"
     ],
     "tools/ui-tests/evidence-badge.test.mjs": [
       "P32.7",
@@ -8157,7 +8201,9 @@
       "P131.11",
       "P131.15-dau",
       "P140.1",
-      "P140.2-ohy"
+      "P140.2-ohy",
+      "P142.5",
+      "P142.7"
     ],
     "plugins/audit/scripts/governance/_gate_derive.py": [
       "P79.2",
@@ -8176,7 +8222,8 @@
       "P130.30-ywo",
       "P130.38-ywo",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P142.4"
     ],
     "plugins/audit/tests/test__gate_derive.py": [
       "P79.2",
@@ -9290,7 +9337,9 @@
       "P130.8",
       "P131.1",
       "P131.2",
-      "P131.16-dau"
+      "P131.16-dau",
+      "P142.3",
+      "P142.5"
     ],
     "docs/audit/phases/P85.json": [
       "P91.1"
@@ -9388,7 +9437,8 @@
       "P130.33-ywo",
       "P130.35-ywo",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P142.2"
     ],
     "plugins/audit/tests/test__runner_output.py": [
       "P102.3",
@@ -9967,7 +10017,9 @@
       "P138.1",
       "P138.6-myr",
       "P139.1",
-      "P139.2-6sp"
+      "P139.2-6sp",
+      "P142.1",
+      "P142.6"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -10226,7 +10278,8 @@
       "P131.13",
       "P132.3",
       "P138.2",
-      "P138.3-myr"
+      "P138.3-myr",
+      "P142.1"
     ],
     "docs/research/pipeline-cost-results.md": [
       "P118.19-v7t",
@@ -10597,7 +10650,10 @@
       "P130.8",
       "P130.9",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P142.1",
+      "P142.7",
+      "P142.8"
     ],
     "docs/audit/phases/P127.json": [
       "P127.8-bgr"
@@ -10614,7 +10670,9 @@
       "P130.8",
       "P130.10-ywo",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P142.4",
+      "P142.5"
     ],
     "plugins/audit/tests/test__affected_tests.py": [
       "P125.8",
@@ -10828,7 +10886,8 @@
       "P131.15-dau",
       "P131.18-dau",
       "P131.19-dau",
-      "P138.4-myr"
+      "P138.4-myr",
+      "P142.1"
     ],
     "tools/lints/_refs.py": [
       "P130.8",
@@ -11005,7 +11064,9 @@
       "P131.1"
     ],
     "tests/test__affected_tests.py": [
-      "P131.1"
+      "P131.1",
+      "P142.4",
+      "P142.5"
     ],
     "tests/test__areas.py": [
       "P131.1",
@@ -11043,7 +11104,9 @@
       "P131.1",
       "P131.2",
       "P86.4",
-      "P131.19-dau"
+      "P131.19-dau",
+      "P142.1",
+      "P142.8"
     ],
     "tests/test__doctor_ado.py": [
       "P131.1"
@@ -11089,7 +11152,8 @@
       "P131.1"
     ],
     "tests/test__gate_derive.py": [
-      "P131.1"
+      "P131.1",
+      "P142.4"
     ],
     "tests/test__gate_feed.py": [
       "P131.1"
@@ -11105,10 +11169,12 @@
       "P131.1"
     ],
     "tests/test__invariants.py": [
-      "P131.1"
+      "P131.1",
+      "P142.1"
     ],
     "tests/test__journal_io.py": [
-      "P131.1"
+      "P131.1",
+      "P142.1"
     ],
     "tests/test__json_schema.py": [
       "P131.1"
@@ -11165,7 +11231,8 @@
       "P131.2",
       "P131.15-dau",
       "P131.19-dau",
-      "P132.5-5mm"
+      "P132.5-5mm",
+      "P142.8"
     ],
     "tests/test__panel_composition.py": [
       "P131.1"
@@ -11249,7 +11316,8 @@
     ],
     "tests/test__runner_output.py": [
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P142.2"
     ],
     "tests/test__scope_companions.py": [
       "P131.1"
@@ -11258,7 +11326,8 @@
       "P131.1",
       "P137.1",
       "P137.7-3y3",
-      "P137.9-3y3"
+      "P137.9-3y3",
+      "P142.1"
     ],
     "tests/test__status_facts.py": [
       "P131.1",
@@ -11372,7 +11441,8 @@
       "P137.1",
       "P137.7-3y3",
       "P138.2",
-      "P138.3-myr"
+      "P138.3-myr",
+      "P142.1"
     ],
     "tests/test_audit_usage.py": [
       "P131.1"
@@ -11387,17 +11457,20 @@
       "P131.1"
     ],
     "tests/test_commit_audit_state.py": [
-      "P131.1"
+      "P131.1",
+      "P142.1"
     ],
     "tests/test_commit_manifest_index.py": [
-      "P131.1"
+      "P131.1",
+      "P142.1"
     ],
     "tests/test_commit_task_work.py": [
       "P131.1",
       "P135.1",
       "P135.2",
       "P137.1",
-      "P137.7-3y3"
+      "P137.7-3y3",
+      "P142.1"
     ],
     "tests/test_derive_phase_gate.py": [
       "P131.1"
@@ -11434,7 +11507,9 @@
       "P138.6-myr",
       "P139.1",
       "P139.2-6sp",
-      "P141.1"
+      "P141.1",
+      "P142.1",
+      "P142.6"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -11456,7 +11531,8 @@
     "tests/test_guard_bash_writes.py": [
       "P131.1",
       "P129.9-izt",
-      "P132.5-5mm"
+      "P132.5-5mm",
+      "P142.1"
     ],
     "tests/test_guard_capabilities.py": [
       "P131.1"
@@ -11553,7 +11629,9 @@
       "P131.1",
       "P131.12",
       "P133.1",
-      "P134.1"
+      "P134.1",
+      "P142.1",
+      "P142.4"
     ],
     "tests/test_set_priority.py": [
       "P131.1"
@@ -11562,7 +11640,9 @@
       "P131.1",
       "P131.2",
       "P131.6",
-      "P131.10"
+      "P131.10",
+      "P142.2",
+      "P142.8"
     ],
     "tests/test_usage_ledger.py": [
       "P131.1",
@@ -11659,7 +11739,8 @@
     "tools/measure-affected-miss.py": [
       "P131.16-dau",
       "P131.19-dau",
-      "P132.5-5mm"
+      "P132.5-5mm",
+      "P142.3"
     ],
     "plugins/audit/scripts/status/_impact.py": [
       "P131.18-dau"

@@ -637,7 +637,8 @@ DEFAULT_TIMEOUT = 480
 # ONE deadline, `--timeout`, starts before anything runs and covers every git
 # call that builds or reads the throwaway and every run - HEAD's own, the task's,
 # the second (`--introduces`) and the fix run: each stage gets what the earlier
-# ones left. `_isolated_run` makes no run, and `_isolate` starts neither of the
+# ones left - except that a sweep-shaped command holds the fix run's recorded
+# cost back from the stages before it (`sweep_budget`). `_isolated_run` makes no run, and `_isolate` starts neither of the
 # reset's git calls, with less than a whole second left, so none of those is
 # started past the deadline on the one-second floor a timeout is given. The
 # git calls before the throwaway exists (listing and reading HEAD's files,
@@ -1826,13 +1827,36 @@ def fix_problem(fix, cmd, task_tally):
     tally = _runner_output.read_run_tally(fix["text"], cmd)
     if fix["code"] != 0 or tally is None or tally["runner"] is None or tally["failed"]:
         return ("with the working tree's implementation the task's tests do not all "
-                "pass (%s), so the red is not one the fix turns green"
-                % (_decisive_line(fix["text"], tally),))
+                "pass (%s%s), so the red is not one the fix turns green"
+                % (_decisive_line(fix["text"], tally),
+                   _sweep_failed_clause(fix["text"])))
     if tally["collected"] < task_tally["collected"]:
         return ("the fix run collected %d case(s) and the task's run %d, so a "
                 "failing case may be missing rather than passing"
                 % (tally["collected"], task_tally["collected"]))
     return None
+
+
+def _failing_cases(text, runner, cmd):
+    """The failing cases of a run `red` graded. A sweep-shaped command's house
+    cases are read per file, each carrying the script whose block printed it;
+    any other run is `run_failing_cases`'s."""
+    if runner == "house" and sweep_suites(cmd) is not None:
+        swept = _runner_output.sweep_failing_cases(text)
+        if swept is not None:
+            return swept
+    return _runner_output.run_failing_cases(text, runner)
+
+
+def _sweep_failed_clause(text):
+    """`; the sweep failed A (why), B (why)` for a run that is the sweep's and
+    printed a `FAIL` line for every file its summary counts red, else ''. The
+    runner tally of the failing file says WHICH case failed; this says which
+    file the sweep graded red, as it printed it."""
+    swept = _runner_output.sweep_failures(text)
+    if not swept:
+        return ""
+    return "; the sweep failed %s" % (", ".join("%s (%s)" % pair for pair in swept),)
 
 
 def _is_named(failure, name):
@@ -1945,7 +1969,7 @@ def case_site(failure, runner, tests, cmd, roots=(), others=()):
                             real_path=True)
         return (rel, chain[:-1], chain[-1]) if rel and chain else None
     name = (failure.get("id") or "").split("[")[0]
-    script = _as_rel(_house_script(cmd), roots)
+    script = _as_rel(failure.get("script") or _house_script(cmd), roots)
     if runner == "pytest":
         parts = (failure.get("label") or "").split("::")
         rel = _one_declared(_as_rel(parts[0], roots), tests, others, real_path=True)
@@ -3285,7 +3309,8 @@ def _run_in(path, cmd, timeout, env):
 
 
 _TALLY_KEYS = {"house": "cases ", "pytest": " in ", "unittest": "Ran ",
-               "jest": "Tests:", "vitest": "Tests "}
+               "jest": "Tests:", "vitest": "Tests ",
+               _runner_output.SWEEP_RUNNER: " files ok, "}
 # Said in place of a decisive line when neither reader matched. A line chosen
 # by its position - the last one is often a package manager's update notice
 # printed after the run - would name an unrelated line as the run's cause.
@@ -3348,6 +3373,7 @@ def red_verdict(run, ctx):
         env_clause += ("; kept, naming the shared root: %s - the run may have read "
                        "shared-tree files through it" % (", ".join(ctx["naming"]),))
     env_clause += deps_clause(ctx.get("deps"))
+    env_clause += budget_clause(ctx.get("budget"))
     env_clause = withdrawn_clause(run.get("withdrawn")) + env_clause
     if run["problem"] is not None:
         return E_CANNOT_PROVE, V_NOT_RUN, {
@@ -3377,7 +3403,7 @@ def red_verdict(run, ctx):
             "it proves nothing yet; fix the test, there is no redFirst word to "
             "record for this%s" % (where, line, ", ".join(ctx["dropped"]) or "nothing",
                                    deps_clause(ctx.get("deps"))))
-    failing = (_runner_output.run_failing_cases(text, tally["runner"])
+    failing = (_failing_cases(text, tally["runner"], run["cmd"])
                if tally is not None and tally["runner"] is not None else [])
     fresh = new_stage_baseline(run.get("head"), run["cmd"], ctx.get("stages"))
     how = ("HEAD's own tests on HEAD's code failing only the unknown-stage check "
@@ -3647,6 +3673,93 @@ def _left(deadline):
     return int(deadline - time.time())
 
 
+# --- a sweep-shaped command: the fix run's share of the deadline ---
+# The sweep records what each suite cost in `.github/sweep-costs.json`, and a
+# command that runs the sweep over named suites has its own answer to how long
+# its fix run needs. The fix run is the last of the deadline's runs, so it gets
+# what the earlier ones left; held back for it is the recorded cost of the
+# suites the command names, so a baseline or a task run that ran long cannot
+# spend the time the proof's last step needed. A suite the table does not time
+# holds nothing back and is named as having no recorded cost - there is no
+# default figure to stand in for a measurement nobody made.
+SWEEP_SCRIPT = "sweep-selftests.py"
+SWEEP_COSTS_REL = ".github/sweep-costs.json"
+
+
+def sweep_suites(cmd):
+    """The suites a sweep-shaped command names - repo-relative, forward-slashed,
+    each once, in the order given - or None when the command is not the sweep or
+    names no suite (a whole-tree sweep has no list to size a budget from)."""
+    args = [str(a).replace("\\", "/") for a in cmd or ()]
+    starts = [i for i, a in enumerate(args) if a.rsplit("/", 1)[-1] == SWEEP_SCRIPT]
+    if not starts:
+        return None
+    suites = []
+    for arg in args[starts[0] + 1:]:
+        rel = posixpath.normpath(arg)
+        if arg.endswith(".py") and rel not in suites:
+            suites.append(rel)
+    return suites or None
+
+
+def load_sweep_costs(root):
+    """`({path: slot-seconds}, problem)` off the project's cost table; problem is
+    None when it was read, else the sentence saying why nothing was."""
+    path = os.path.join(root, *SWEEP_COSTS_REL.split("/"))
+    try:
+        with open(path, encoding="utf-8") as fh:
+            costs = json.load(fh).get("costs")
+    except (OSError, ValueError, AttributeError) as exc:
+        return {}, "no cost table read from %s (%s)" % (SWEEP_COSTS_REL,
+                                                        type(exc).__name__)
+    if not isinstance(costs, dict) or not all(
+            isinstance(v, (int, float)) and not isinstance(v, bool)
+            for v in costs.values()):
+        return {}, "%s carries no `costs` object of numbers" % (SWEEP_COSTS_REL,)
+    return costs, None
+
+
+def sweep_budget(cmd, costs, problem, timeout):
+    """What a sweep-shaped command's fix run holds back, or None for a command
+    that is not one. `costs` is the table, `problem` why it could not be read,
+    `timeout` the one deadline in seconds.
+
+    `reserve` is the recorded slot-seconds of the suites that HAVE a cost,
+    rounded up and never more than half the deadline, so the baseline and the
+    task's run keep the rest; `recorded` is that sum before the cap. A suite
+    with no recorded cost is in `uncosted` and adds nothing."""
+    suites = sweep_suites(cmd)
+    if suites is None:
+        return None
+    costed = dict((s, costs[s]) for s in suites if s in costs)
+    recorded = int(-(-sum(costed.values()) // 1))
+    return {"suites": suites, "costed": costed,
+            "uncosted": [s for s in suites if s not in costs],
+            "recorded": recorded, "timeout": timeout, "problem": problem,
+            "reserve": 0 if problem else min(recorded, timeout // 2)}
+
+
+def budget_clause(budget):
+    """The basis clause saying what was held back for the fix run, from which
+    table and for which suites, and which suite has no recorded cost."""
+    if budget is None:
+        return ""
+    if budget["problem"]:
+        return "; fix run: no time held back, %s" % (budget["problem"],)
+    missing = ("; no recorded cost for %s" % (", ".join(budget["uncosted"]),)
+               if budget["uncosted"] else "")
+    if not budget["costed"]:
+        return ("; fix run: no time held back, no recorded cost for %s in %s"
+                % (", ".join(budget["suites"]), SWEEP_COSTS_REL))
+    capped = (" (the recorded %ds, capped at half the %ds deadline)"
+              % (budget["recorded"], budget["timeout"])
+              if budget["reserve"] < budget["recorded"] else "")
+    return ("; fix run: held back %ds of the deadline%s, the recorded slot-seconds "
+            "of %s in %s%s" % (budget["reserve"], capped,
+                               ", ".join(sorted(budget["costed"])),
+                               SWEEP_COSTS_REL, missing))
+
+
 def _red_scope(args, cmd, deadline):
     """`(scope, problem)` - everything `red` needs before it builds anything."""
     if not cmd:
@@ -3706,6 +3819,11 @@ def run_red(args, cmd, out):
         sys.stderr.write("ERROR: %s\n" % (problem,))
         return E_USAGE
     root = scope["root"]
+    costs, cost_problem = (load_sweep_costs(root) if sweep_suites(cmd)
+                           else ({}, None))
+    budget = sweep_budget(cmd, costs, cost_problem, args.timeout)
+    # The runs before the fix run end where the fix run's held-back time begins.
+    early = deadline - (budget["reserve"] if budget else 0)
     overlays, inline, inline_problem = inline_overlays(root, scope["tests"], deadline)
     # An inline suite is a source too: the symbols it adds are read off it, and
     # a missing module may be it.
@@ -3779,13 +3897,13 @@ def run_red(args, cmd, out):
                                   "the %s-second deadline" % (args.timeout,))
             if run["problem"] is None:
                 run["head"], _c = _isolated_run(
-                    root, path, [], cmd, deadline, args.timeout, env, holder,
+                    root, path, [], cmd, early, args.timeout, env, holder,
                     "baseline", stubs=[rel for rel in state["new"]
                                        if rel not in state["absent"]], deps=deps)
                 run["head"]["absent"] = state["absent"]
             if run["problem"] is None:
                 task, copied = _isolated_run(root, path, scope["declared"], cmd,
-                                             deadline, args.timeout, env, holder,
+                                             early, args.timeout, env, holder,
                                              "task", deps=deps, texts=overlays)
                 run["code"], run["text"], run["problem"] = (
                     task["code"], task["text"], task["problem"])
@@ -3794,7 +3912,7 @@ def run_red(args, cmd, out):
                 # What was pulled in may be the fix the new case tests, so a
                 # pass with it cannot be credited: run again with it held back.
                 task, _c = _isolated_run(
-                    root, path, scope["declared"], cmd, deadline, args.timeout,
+                    root, path, scope["declared"], cmd, early, args.timeout,
                     env, holder, "task-held", deps=deps,
                     texts=dict((rel, n["plain"]) for rel, n in inline.items()))
                 run["code"], run["text"], run["problem"] = (
@@ -3805,7 +3923,7 @@ def run_red(args, cmd, out):
                     _roots(root, path)):
                 run["second"], _c = _isolated_run(
                     root, path, scope["declared"] + scope["implementation"], cmd,
-                    deadline, args.timeout, env, holder, "second", deps=deps)
+                    early, args.timeout, env, holder, "second", deps=deps)
             verdict1 = (classify_run(run["code"], run["text"], cmd)[0]
                         if run["problem"] is None and run["code"] is not None
                         else None)
@@ -3828,7 +3946,7 @@ def run_red(args, cmd, out):
             "head_modules": state["head_modules"],
             "head_js": state["head_js"], "path": path, "stages": state["stages"],
             "deadline": deadline, "deps": deps, "sources": sources,
-            "inline": inline})
+            "inline": inline, "budget": budget})
     finally:
         # A junction left in the throwaway is one git's removal may descend
         # through into the shared tree's dependencies: the removal is skipped

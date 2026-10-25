@@ -29,7 +29,7 @@
     {
       "id": "P142.1",
       "title": "One commit verb writes the index and the shard together, so adding a task mid-phase never leaves the plan uncommittable",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fold commit-manifest-index.py and commit-audit-state.py into commit-task-work.py's one verb: the index rows and the shard they name are staged and committed together, so the sequence add a task mid-phase, then commit a task, needs no hand-run index commit. The two folded entry points are deleted with their suites, their tree lines and their sections; every caller (drive-phase.py, close-phase.py, commands/resume.md) calls the one verb. Acceptance: (1) on a fixture, add a task to a running phase and then commit a task: the commit succeeds with no other verb run; (2) commit-manifest-index.py and commit-audit-state.py are gone and nothing calls them; (3) the state commit after an interrupted run is made by the same verb; (4) tools/check-git-pipeline.py passes against a real git repository (run by the orchestrator, it is not a gate key).",
       "files": [
         "plugins/audit/scripts/governance/commit-task-work.py",
@@ -104,19 +104,37 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "f683786beb36",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "ONE INVARIANT replaces the per-case index code: `_invariants.owned_index(base_index, source_index, shard_now, shard_parent, phase_id)` returns base_index with the part the phase owns set to what its shard derives - its tasks' fileIndex rows as a SET (owned task ids = those shard_now holds or shard_parent held, so a dropped file or a moved task loses its row; `_owned_rows`), each bug shard_now links whose source entry names the task back (taken whole), and its stub's `_manifest_io._STUB_KEYS` mirrored from the shard (stub taken from source for a new phase); everything else is base_index's bytes unchanged. `index_needs` is deleted. Writer: `_scoped_commit.index_to_carry` only DECIDES (owned_index of HEAD's index vs the working shard); the bytes come from `_scoped_commit.blob_builder`, a builder `stage_blobs(git_root, blobs, head)` runs against the HEAD `stage_and_commit` reads - the parent `commit_from_index` commits onto and refuses to move past - so no window remains (F1). `stage_and_commit`/`commit_with_rows` `blobs` is now `{rel: build}`. Task commit: `with_index` hands the builder. State commit: `state_index` returns (mode, build, notes); whole mode = working index with the owned part derived, needs mode = parent with the owned part derived - both carry the phase's stub (F3); the index no longer counts in `pending`, the decision is state_index's. The answer gains `indexLeft` (what of the index stayed uncommitted and why) and `indexDropped`; close-phase `_commit_stamp` returns `landingCommitLeft` and both renderers print it (`_render_left`); drive-phase `keep_record`/`commit_signoff` add `index left uncommitted: ...` did-lines (`_state_answer`) (F3). Grader: `_commit_carries_needs` = committed == owned_index(parent index, committed index, committed shard, parent's shard).doc, the same function. History (F2): hist2.py over this repo's plan - 15 task commits staged the index; OLD breach set (completed_bug_links rule) = NEW breach set = 14 commits [P15.4 24da908, P18.10 fad5cd9, P2.7 49741c4, P20.6 fad5cd9, P27.1 d04c313130, P53.4/P53.5/P53.6 3fd21d0, P53.9/P54.4/P54.5/P54.6/P54.7 49bacaa, P99.1 8158b402]; new-not-in-old []; P128.38 bdab2ce0c5 clean under both. Deleted drive-phase `commit_scope_index` and its two call sites. test_drive_phase w1 pin updated to the session-file grouping. Fixtures: the verb suite's `Repos.make` now commits stubs mirroring their shards (`_mirrored`) and test__invariants' bug-link fixture mirrors its stub, since the shared builder commits stale stubs no plugin writer leaves; ctw-ir6/ir7 now drop ANOTHER phase's row (the phase's own rows are re-derived); check-git-pipeline g21/g23/g24 fixtures declare the widened file in the shard as `/audit:task scope` does (`_widen_p11`). Prose updated in the guide, commit-task-work and _scoped_commit docstrings, _invariants comments and the commit-scope breach sentence, _deps, audit-task, execute-task.md, orchestrator.md (61919 bytes, under its ceiling: measure-context --gate exit 0), verbs-in-full.md, CHANGELOG. New cases oi1-oi5 (oi-block). Counts: test_commit_task_work 206/206 exit 0; 12-suite sweep 12/12 files ok, 4101 cases, exit 0; check-git-pipeline 41 checks exit 0.",
+        "descriptive": "One owned-part invariant, computed against the parent the commit is actually made on, replaces the per-case index carrying: race closed, history grading unchanged, needs-mode stamps carried, moved tasks lose their rows, grader equality proven"
       },
       "startedAt": "2026-10-25T11:36:02Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-25T12:22:14Z",
+      "verifiedBy": [
+        "oi1: another session's index commit landing between the read and the commit survives, the task's derived row beside it, the commit's parent being that commit",
+        "oi2: a needs-mode state commit carries this phase's stub status from its shard, leaves the other phase's row out, and names it in indexLeft",
+        "oi3: after /audit:task move, P1's state commit drops the moved task's row and validates; P2's carries it under the new id, valid too",
+        "oi4: a task commit with its derived rows plus one unrelated index edit is a commit-scope breach",
+        "oi5: close-phase _commit_stamp/_render_left and drive-phase _state_answer surface indexLeft, and say nothing when there is none"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-25T12:21:51Z.7a977a",
         "status": "passed",
         "at": "2026-10-25T12:21:51Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "f683786beb36",
+        "at": "2026-10-25T12:22:14Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-25T12:07:43Z",
+        "basis": "`python3 tests/test_commit_task_work.py --selftest` in a throwaway tree at HEAD exited 1 with 39 of 176 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ctw11 (house FAIL), ctw-ir1 (house FAIL), ctw-ir2 (house FAIL), ctw-ir6 (house FAIL), ctw-ir7 (house FAIL), ov1 (house FAIL), ov2 (house FAIL), ov3 (house FAIL) and 31 more: SELFTEST FAILED: 134/176 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -171,9 +189,9 @@
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-25T10:45:39Z.385cb1",
-        "status": "failed",
-        "at": "2026-10-25T10:45:39Z"
+        "runId": "2026-10-25T12:35:08Z.bdb595",
+        "status": "passed",
+        "at": "2026-10-25T12:35:08Z"
       }
     },
     {

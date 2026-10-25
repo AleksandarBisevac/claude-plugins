@@ -315,6 +315,50 @@ def sweep_failures(text):
     return named
 
 
+def sweep_tally(text):
+    """The tally of a sweep that graded every file it ran ok, else None.
+
+    A green file is printed by the sweep as one line and its own output is
+    dropped, so a passing sweep carries no tally of any runner - only its
+    summary. That summary is read here, for a run that swept at least one file
+    and counted at least one case: `0/0 files ok` is a sweep that ran nothing,
+    which is not a pass. A sweep with a red file has no tally here on purpose -
+    the failing file's own output is printed whole and is read as its own
+    runner's, which is what names the case that failed."""
+    summary = sweep_summary(text)
+    if summary is None or not summary["files"] or not summary["cases"] \
+            or summary["ok"] != summary["files"]:
+        return None
+    return {"runner": SWEEP_RUNNER, "collected": summary["cases"], "failed": 0,
+            "assertions": 0, "files": summary["files"]}
+
+
+# A red file's output is printed whole under `--- <path>: <why> ---`; which file a
+# `FAIL <label>` line belongs to is the header above it, and nothing else in the
+# output says.
+_SWEEP_BLOCK = re.compile(r"^--- (\S(?:.*?\S)?): (\S.*?) ---[ \t]*$", re.M)
+
+
+def sweep_failing_cases(text):
+    """`[{"id", "label", "assertion", "why", "script"}]` - the house cases the
+    sweep's red files printed, each carrying the `script` (the path the sweep
+    printed) whose block it was read from; None for output with no sweep summary.
+
+    A house run located its cases in the one script its command ran, and a
+    sweep-shaped command runs the sweep, not the suite: the file a case belongs
+    to has to be read off the block that printed it."""
+    body = plain_text(text)
+    if sweep_summary(body) is None:
+        return None
+    heads = list(_SWEEP_BLOCK.finditer(body))
+    out = []
+    for i, head in enumerate(heads):
+        end = heads[i + 1].start() if i + 1 < len(heads) else len(body)
+        out.extend(dict(case, script=head.group(1))
+                   for case in _house_cases(body[head.end():end]))
+    return out
+
+
 # --- which case failed an assertion: the tally and cases `red` reads -------
 # `red` needs a COUNT and a NAME: at least one test collected, and at least one
 # named case failing an ASSERTION. A non-zero exit alone is not that - a compile
@@ -377,7 +421,9 @@ def printed_labels(text, cmd=None):
 def _house_cases(text):
     out = []
     for ln in text.splitlines():
-        if ln.startswith("FAIL ") and not any(m in ln for m in HOUSE_ESCAPES):
+        # Two spaces after FAIL is the sweep's own per-file line, not a case.
+        if ln.startswith("FAIL ") and not ln.startswith("FAIL  ") \
+                and not any(m in ln for m in HOUSE_ESCAPES):
             label = ln[len("FAIL "):].strip()
             out.append({"id": house_case_id(label), "label": label,
                         "assertion": True, "why": "house FAIL"})
@@ -853,7 +899,8 @@ def read_run_tally(text, cmd=None):
     """The tally `red` reads for one run: `read_tally` first - house, pytest,
     unittest, jest, vitest's line reporter - then the two reporters it carries
     no row for, playwright (its JSON reporter, else its line one) and vitest's
-    JSON reporter."""
+    JSON reporter; last, a clean sweep's own summary (`sweep_tally`), which is
+    all a passing sweep prints."""
     tally = read_tally(text, cmd)
     if tally is not None:
         return tally
@@ -863,7 +910,7 @@ def read_run_tally(text, cmd=None):
             got = reader(obj)
             if got is not None:
                 return got
-    return playwright_line_tally(text)
+    return playwright_line_tally(text) or sweep_tally(text)
 
 
 def run_failing_cases(text, runner):

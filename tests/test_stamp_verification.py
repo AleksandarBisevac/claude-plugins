@@ -5784,6 +5784,7 @@ STAGES = (
     ("sl-block", "_success_line_cases"),
     ("ct-block", "_case_title_cases"),
     ("sdr-block", "_drive_red_cases"),
+    ("swc-block", "_sweep_cases"),
 )
 
 
@@ -5863,6 +5864,218 @@ def _drive_red_cases(check):
           digest.get("files") == [{"path": "tests/test_mine.py", "sha256": want}]
           and re.match(r"^sha256:[0-9a-f]{64}$", str(digest.get("sha256") or ""))
           and set(drive_block) == set(("status", "basis", "at")))
+
+
+# --- a sweep-shaped command: the suites it names, and the time they were recorded to take ---
+# The sweep prints a green file as ONE line and a red file's whole output, so a
+# fix run that passes carries no runner tally at all - only its own summary.
+# This stand-in prints exactly those shapes (the real output, captured, is in
+# `_SWEEP_GREEN` and `_SWEEP_RED`), because the real sweep resolves its files
+# against the repository it lives in and cannot be pointed at a fixture.
+_TALLY_RE = r"(\d+)/(\d+) cases " + "passed"
+_FAKE_SWEEP = """\
+import re, subprocess, sys
+rows, bad, cases = [], [], 0
+for rel in [a for a in sys.argv[1:] if a.endswith(".py")]:
+    proc = subprocess.run([sys.executable, rel], stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT, universal_newlines=True)
+    found = re.findall(%r, proc.stdout)
+    n = int(found[-1][1]) if found else 0
+    rows.append(rel)
+    if proc.returncode == 0:
+        cases += n
+        print("  ok      %%s  %%d cases  [0.1s]" %% (rel, n))
+    else:
+        bad.append((rel, proc.returncode, proc.stdout))
+        print("  FAILED  %%s  exited %%d  [0.1s]" %% (rel, proc.returncode))
+print()
+for rel, code, out in bad:
+    print("--- %%s: exited %%d ---" %% (rel, code))
+    print(out)
+for rel, code, _out in bad:
+    print("FAIL  %%s: exited %%d" %% (rel, code))
+print("%%d/%%d files ok, %%d cases" %% (len(rows) - len(bad), len(rows), cases))
+sys.exit(1 if bad else 0)
+""" % (_TALLY_RE,)
+
+def _sweep_row(path, count):
+    """One green file as the sweep prints it."""
+    return "  ok      %-58s %d cases  [0.3s]\n" % (path, count)
+
+
+def _sweep_total(ok, files, count):
+    """The sweep's last line; built, because the line is a contract CI reads and
+    a spelled one in a fixture reads as a claim about this repository."""
+    return "%d/%d files ok, %d cases\n" % (ok, files, count)
+
+
+# The shapes `tools/sweep-selftests.py` printed for two suites, header notes cut.
+_SWEEP_GREEN = ("budget: 8 slots; 0 staged suites hold 6 each (none); per-file "
+                "timeout 300s, up to 300s for a file the cost table times as heavy\n"
+                "sweep: 2 files, 8 workers\n"
+                + _sweep_row("tools/check-example-pins.py", 24)
+                + _sweep_row("tools/release.py", 43) + "\n"
+                + _sweep_total(2, 2, 67))
+_SWEEP_RED = ("sweep: 2 files, 8 workers\n"
+              + _sweep_row("tools/check-example-pins.py", 18)
+              + "  FAILED  %-58s exited 1  [0.2s]\n\n" % ("tools/release.py",)
+              + "--- tools/release.py: exited 1 ---\n"
+              "AttributeError: module 'release_example_pins' has no attribute "
+              "'repin_examples'\n"
+              "FAIL selftest body raised before reaching the end\n\n"
+              "SELFTEST FAILED: 0/1 cases " + "passed\n\n"
+              "FAIL  tools/release.py: exited 1\n"
+              + _sweep_total(1, 2, 18))
+_COSTS_REL = ".github/sweep-costs.json"
+
+
+def _sweep_repo(prefix, wt_test, costs=None):
+    """`_red_repo` with the stand-in sweep and a cost table COMMITTED at HEAD,
+    so the throwaway holds them; `costs=None` leaves the table out."""
+    root, man = _red_repo(prefix, wt_test)
+    extra = {"tools/sweep-selftests.py": _FAKE_SWEEP}
+    if costs is not None:
+        extra[_COSTS_REL] = json.dumps({"costs": costs})
+    paths = sorted(extra)
+    for rel in paths:
+        dst = os.path.join(root, *rel.split("/"))
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        _write(dst, extra[rel])
+    _git(root, "add", *paths)
+    _git(root, "commit", "-q", "-m", "sweep", "--", *paths)
+    return root, man
+
+
+def _sweep_cases(check):
+    py = sys.executable
+    cmd = [py, "tools/sweep-selftests.py", "tests/test_mine.py"]
+    root, man = _sweep_repo("stamp-sweep-pass-", _red_test("import mine", "mine.v == 2"))
+    code, got = _red(root, man, cmd)
+    block = got.get("redFirst") or {}
+    check("swc1 a sweep-shaped command whose suite passes in the task tree and whose "
+          "new case is red at HEAD reads proved - the fix run's only output is the "
+          "sweep's own green summary, which is a pass, not an unread run: %r"
+          % ((code, block.get("status"), (block.get("basis") or "")[:300]),),
+          code == M.E_PROVED and block.get("status") == "proved")
+
+    bad_root, bad_man = _sweep_repo("stamp-sweep-fail-",
+                                    _red_test("import mine", "mine.v == 3"))
+    bad_code, bad = _red(bad_root, bad_man, cmd)
+    bad_block = bad.get("redFirst") or {}
+    basis = bad_block.get("basis") or ""
+    check("swc2 the same command with a suite that still fails in the task tree "
+          "reads could-not-prove, and the basis names the failing FILE as the "
+          "sweep printed it: %r" % ((bad_code, bad_block.get("status"), basis[:400]),),
+          bad_code != M.E_PROVED and bad_block.get("status") == "could-not-prove"
+          and "the sweep failed tests/test_mine.py (exited 1)" in basis)
+
+    # The deny and allow lines for the reader, on text rather than a run: a
+    # weakening that accepts any exit 0 as a pass turns the deny lines red.
+    ok = M.fix_problem({"code": 0, "text": _SWEEP_GREEN, "problem": None},
+                       cmd, {"collected": 1})
+    no_summary = M.fix_problem({"code": 0, "text": "all done\n", "problem": None},
+                               cmd, {"collected": 1})
+    short = M.fix_problem({"code": 0, "problem": None, "text":
+                           _sweep_row("a.py", 1) + "\n" + _sweep_total(1, 2, 1)},
+                          cmd, {"collected": 1})
+    empty = M.fix_problem({"code": 0, "text": _sweep_total(0, 0, 0),
+                           "problem": None}, cmd, {"collected": 1})
+    check("swc3 a clean sweep summary is a pass (%r); exit 0 with no sweep summary, "
+          "with a summary short of its files, or with no file swept is not"
+          % (ok,),
+          ok is None and no_summary is not None and short is not None
+          and empty is not None)
+
+    green = _runner_output.sweep_tally(_SWEEP_GREEN)
+    check("swc4 the tally of a green sweep is its summary's cases and no failure, "
+          "a red sweep has none (its failing file's own tally is what is read), "
+          "and `read_run_tally` falls back to it only when no runner printed one: %r"
+          % (green,),
+          green == {"runner": _runner_output.SWEEP_RUNNER, "collected": 67,
+                    "failed": 0, "assertions": 0, "files": 2}
+          and _runner_output.sweep_tally(_SWEEP_RED) is None
+          and _runner_output.sweep_tally(_sweep_total(0, 0, 0)) is None
+          and _runner_output.read_run_tally(_SWEEP_GREEN, cmd) == green
+          and _runner_output.read_run_tally(_SWEEP_RED, cmd)["runner"] == "house")
+
+    # tests.add 2: the time held back for the fix run comes from the cost table.
+    costs = {"tests/a.py": 12.4, "tests/b.py": 30.0, "tests/z.py": 99.0}
+    sweep = ["tools/sweep-selftests.py"]
+    budget = M.sweep_budget([py] + sweep + ["tests/a.py", "./tests/b.py", "tests/c.py",
+                                            "--jobs", "4"], costs, None, 480)
+    check("swc5 a sweep-shaped command's fix-run budget is the recorded cost of "
+          "the suites it names, rounded up, and a suite with no recorded cost is "
+          "listed as having none rather than given a figure: %r" % (budget,),
+          budget is not None and budget["reserve"] == 43
+          and budget["costed"] == {"tests/a.py": 12.4, "tests/b.py": 30.0}
+          and budget["uncosted"] == ["tests/c.py"])
+    capped = M.sweep_budget([py] + sweep + ["tests/z.py"], costs, None, 100)
+    none_costed = M.sweep_budget([py] + sweep + ["tests/c.py"], costs, None, 480)
+    unread = M.sweep_budget([py] + sweep + ["tests/a.py"], {}, "no table", 480)
+    check("swc6 the budget never takes more than half the deadline from the runs "
+          "before the fix run, a command whose suites all lack a cost holds "
+          "nothing back and says so, an unreadable table says why, and a command "
+          "that is not the sweep has no budget: %r"
+          % ((capped, none_costed, unread),),
+          capped["reserve"] == 50 and capped["recorded"] == 99
+          and none_costed["reserve"] == 0 and none_costed["uncosted"] == ["tests/c.py"]
+          and unread["reserve"] == 0 and unread["problem"] == "no table"
+          and M.sweep_budget([py, "tests/test_mine.py"], costs, None, 480) is None
+          and M.sweep_budget([py] + sweep, costs, None, 480) is None)
+    clause = M.budget_clause(budget)
+    check("swc7 the basis says how much time was held back, from which table, for "
+          "which suites, and which suite has no recorded cost: %r" % (clause,),
+          "held back 43s" in clause and _COSTS_REL in clause
+          and "tests/a.py" in clause and "no recorded cost for tests/c.py" in clause
+          and M.budget_clause(None) == ""
+          and "no time held back, no recorded cost for tests/c.py"
+          in M.budget_clause(none_costed)
+          and "no table" in M.budget_clause(unread))
+
+    cost_root, cost_man = _sweep_repo("stamp-sweep-cost-",
+                                      _red_test("import mine", "mine.v == 2"),
+                                      costs={"tests/test_mine.py": 7.0})
+    _c, costed = _red(cost_root, cost_man, cmd)
+    free_root, free_man = _sweep_repo("stamp-sweep-nocost-",
+                                      _red_test("import mine", "mine.v == 2"),
+                                      costs={"tests/other.py": 7.0})
+    _c, free = _red(free_root, free_man, cmd)
+    cost_basis = (costed.get("redFirst") or {}).get("basis") or ""
+    free_basis = (free.get("redFirst") or {}).get("basis") or ""
+    check("swc8 end to end, the basis of a proved sweep red carries the held-back "
+          "time read from the fixture's own cost table, and a suite that table "
+          "does not time is reported as having none: %r"
+          % ((cost_basis[-260:], free_basis[-260:]),),
+          "held back 7s" in cost_basis and "no recorded cost" not in cost_basis
+          and "no recorded cost for tests/test_mine.py" in free_basis
+          and (costed.get("redFirst") or {}).get("status") == "proved")
+
+    # What the clause says is also what the runs got: the stages before the fix
+    # run end `reserve` seconds earlier, and with no cost to read all end together.
+    real = M._isolated_run
+
+    def deadlines(repo, manifest):
+        seen = {}
+
+        def spy(*args, **kwargs):
+            seen[args[8]] = args[4]
+            return real(*args, **kwargs)
+        M._isolated_run = spy
+        try:
+            _red(repo, manifest, cmd)
+        finally:
+            M._isolated_run = real
+        return seen
+    held = deadlines(cost_root, cost_man)
+    flat = deadlines(free_root, free_man)
+    check("swc9 the runs before the fix run end the recorded cost earlier than the "
+          "fix run does - baseline and task alike - and a command whose suites "
+          "have no recorded cost gives every run one deadline: %r"
+          % ((sorted(held), sorted(flat)),),
+          sorted(held) == sorted(flat) == ["baseline", "fix", "task"]
+          and round(held["fix"] - held["task"], 3) == 7
+          and held["task"] == held["baseline"]
+          and flat["fix"] == flat["task"] == flat["baseline"])
 
 
 def _cli(argv, stdin_text=None):

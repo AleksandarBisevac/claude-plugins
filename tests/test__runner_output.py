@@ -254,6 +254,11 @@ def _sweep_line(ok, files, migrated, cases, slash=""):
             % (ok, files, migrated, slash, cases))
 
 
+def _plain_line(ok, files, cases):
+    """The sweep's summary line as it spells it now, with no `migrated` clause."""
+    return "%d/%d files ok, %d cases" % (ok, files, cases)
+
+
 _SWEEP_EXITED = "\n".join((
     "PASS sb1m RED TWIN: a block lifted into a stage while its caller still "
     "calls it reads as doubled, a block no [truncated]",
@@ -317,6 +322,36 @@ def _sweep_cases(check):
           "and a one-space FAIL line are NOT KNOWABLE (None) - never a partial "
           "or an empty answer: %r" % (got,),
           got == ([], None, None, None))
+    # A red file is printed whole under its header, and a case belongs to the
+    # header above it - the same label in two files stays two cases.
+    red = "\n".join((
+        "  FAILED  a.py   exited 1", "", "--- a.py: exited 1 ---",
+        "PASS x1 first", "FAIL x5 second", "SELFTEST FAILED: 1/2 cases passed",
+        "", "--- b.py: exited 1 ---", "FAIL x5 second", "",
+        "FAIL  a.py: exited 1", "FAIL  b.py: exited 1", _plain_line(0, 2, 1)))
+    swept = M.sweep_failing_cases(red)
+    plain = M.failing_cases(red, "house")
+    check("rs3 the sweep's failing cases are read per file, each tagged with the "
+          "script of the header above it, and its own two-space FAIL lines are "
+          "not cases; output with no sweep summary has none to read: %r / %r"
+          % (swept, plain),
+          [(c["id"], c["script"]) for c in swept or ()]
+          == [("x5", "a.py"), ("x5", "b.py")]
+          and [c["id"] for c in plain] == ["x5", "x5"]
+          and M.sweep_failing_cases("FAIL x5 second\n") is None)
+    clean = M.sweep_tally(_plain_line(2, 2, 9))
+    check("rs4 a sweep that graded every file ok has a tally of its summary's "
+          "cases; one with a red file, one that ran no file and one that counted "
+          "no case have none, and `read_run_tally` reads the clean one last, "
+          "behind any runner's own: %r" % (clean,),
+          clean == {"runner": M.SWEEP_RUNNER, "collected": 9, "failed": 0,
+                    "assertions": 0, "files": 2}
+          and M.sweep_tally(_plain_line(1, 2, 9)) is None
+          and M.sweep_tally(_plain_line(0, 0, 0)) is None
+          and M.sweep_tally(_plain_line(2, 2, 0)) is None
+          and M.read_run_tally(_plain_line(2, 2, 9)) == clean
+          and M.read_run_tally("=== 1 passed in 0.01s ===\n"
+                               + _plain_line(2, 2, 9))["runner"] == "pytest")
 
 
 def _layer_cases(check):
