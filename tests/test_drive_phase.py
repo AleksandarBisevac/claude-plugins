@@ -8597,13 +8597,19 @@ PINNED_320_DID = [
 # right after the executor's return is written, so it sits beside every
 # `task.start` here - the row that lets a filing stay "once" even once its
 # file is deleted, which the exclusive create alone could not do.
+#
+# The two `audit.state.committed` rows - the sign-off's state commit and the
+# landing's - carry the session id like every other row the session's verbs
+# write, so they land in the session's file; `phase.merged` alone is filed by
+# the landing under the checkout's writer token.
 PINNED_320_ACTIONS = sorted([
-    ("audit.state.committed", "phase.merged", "audit.state.committed"),
+    ("phase.merged",),
     ("task.start", "task.return.filed", "test.evidence.recorded",
      "task.testEvidence", "meta.evidenceSince", "audit.task.committed",
      "task.done", "task.start", "task.return.filed", "test.evidence.recorded",
      "task.testEvidence", "audit.task.committed", "task.done",
-     "test.evidence.recorded", "phase.testEvidence", "phase.verdict"),
+     "test.evidence.recorded", "phase.testEvidence", "phase.verdict",
+     "audit.state.committed", "audit.state.committed"),
 ])
 
 

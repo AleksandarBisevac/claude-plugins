@@ -897,7 +897,7 @@ UNANCHORED_SECTIONS = {
     # reader's call meets; so each section is declared rather than anchored.
     "What the run commands leave behind": (
         "DOCUMENTATION OF STEPS A SCRIPT PERFORMS. Every guard and record it "
-        "describes is done by drive-phase.py and commit-audit-state.py, whose own "
+        "describes is done by drive-phase.py and commit-task-work.py, whose own "
         "cases hold the behaviour; an anchor would only assert a sentence about "
         "them is present. Anchoring it needs a row reading those scripts' "
         "constants, which nothing here has needed yet."),

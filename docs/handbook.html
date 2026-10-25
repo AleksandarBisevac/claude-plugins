@@ -885,9 +885,9 @@ python3 "$CLAUDE_PLUGIN_ROOT/scripts/governance/run-test-gate.py" \
       <p>A task commit stages the evidence directory, so a run that fails at attempt one and succeeds
         at attempt two is already durable, failure included. What is <em>not</em> durable is a run
         whose task or phase never commits at all &mdash; a task going <code>blocked</code>, an
-        infrastructure stop, a red sign-off gate. <code>commit-audit-state.py</code> covers exactly
-        those points, staging the phase's manifest file, the journal and the evidence directory
-        &mdash; and <strong>never the task's own files</strong>: the index is read back and compared
+        infrastructure stop, a red sign-off gate. <code>commit-task-work.py --state</code> covers
+        exactly those points, staging the phase's manifest file, the manifest index, the journal and
+        the evidence directory &mdash; and <strong>never the task's own files</strong>: the index is read back and compared
         against that list, and anything else refuses the commit rather than riding along. A failed
         task's code stays uncommitted; only the record of the failure lands.</p>
     </div>
@@ -1887,7 +1887,7 @@ GATE FAILED: failing-tests (2 subject(s): task P2.3 failed; task BF1.1 no-checks
     <div class="tip">
       <div class="label">Not on the table, and worth knowing</div>
       <p>Nothing under <code>scripts/governance/</code> has a slash command &mdash;
-        <code>run-test-gate.py</code>, <code>commit-audit-state.py</code>,
+        <code>run-test-gate.py</code>, <code>commit-task-work.py</code>,
         <code>verify-invariants.py</code>, <code>audit-journal.py</code> and
         <code>audit-lock.py</code>. The pipeline invokes them; running one yourself means repairing
         something a run left behind. There is no <code>/audit:run-gate</code> verb &mdash; it is not

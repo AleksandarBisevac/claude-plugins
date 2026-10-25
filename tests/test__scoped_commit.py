@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """
-The cases for `_scoped_commit.py` — what the three committing commands share.
+The cases for `_scoped_commit.py` — what the two scoped commits share.
 
-WHAT THIS FILE IS ABOUT. `commit-audit-state.py`, `commit-manifest-index.py` and
-`commit-task-work.py` each stage a fixed allow-list and refuse everything else,
-and the parts that decide "refuse" - and how each path is staged, and how the
-index is put back - are here rather than in any of them. The suites beside those
-commands prove each verb end to end; this one proves the shared parts in both
-directions, because a helper that is only ever seen agreeing with its caller may
-be asserting nothing.
+WHAT THIS FILE IS ABOUT. `commit-task-work.py`'s task commit and its `--state`
+commit each stage a fixed allow-list and refuse everything else, and the parts
+that decide "refuse" - and how each path is staged, and how the index is put
+back - are here rather than in that command. Its suite proves both commits end
+to end; this one proves the shared parts in both directions, because a helper
+that is only ever seen agreeing with its caller may be asserting nothing.
 
 EVERY GIT CASE RUNS AGAINST A REAL REPOSITORY. The claims are claims about what
 git prints — a rename's two names, an untracked directory that porcelain would

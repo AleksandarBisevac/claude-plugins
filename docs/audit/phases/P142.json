@@ -1,0 +1,515 @@
+{
+  "id": "P142",
+  "title": "The gate ladder: affected checks per task, the full gate and tree scanners per phase, CI under eight minutes",
+  "status": "in_progress",
+  "description": "The same full set of checks runs per task, per phase, locally and in CI several times, and the set is large because the product carries its own tree lints as tests. Measured: a task gate in the dogfood plan took 716 s, of which the sweep was 384 s and the panel browser gate 282 s; a narrow task gate measured 1,327 s because derived affected steps re-ran 506 s of suites its own full-sweep key had already run; the sweep is 6 min 36 s of wall and 34.6 min of CPU, and CI runs take 12 to 15 minutes. The CI half of this ladder (one executable gate description, skip of a green SHA, the codec cells) is already the earlier F1 phase's; this phase adds the per-task and per-phase rungs and the remaining speed.",
+  "desiredOutcome": "A task's gate is the selection of checks its change affects, trusted only after its miss rate was measured on this repository's history; tree scanners and the full gate, browser steps included, run once per phase and on push, never per task; a probe of the guarded lints runs at sign-off only when the phase changed them; the sweep's wall clock is under four minutes and CI is under eight minutes and 55 runner-minutes, each measured with the same command before and after; one commit verb writes the index and the shard together, so adding a task mid-phase never leaves the plan uncommittable; and red-first through a sweep-shaped command proves when the task's suites pass.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": "0dfae3e71be7d405626e62b95bab66ce743a3c69",
+  "branch": "audit/p142-the-gate-ladder-affected-check",
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P142.1",
+      "title": "One commit verb writes the index and the shard together, so adding a task mid-phase never leaves the plan uncommittable",
+      "status": "in_progress",
+      "description": "Fold commit-manifest-index.py and commit-audit-state.py into commit-task-work.py's one verb: the index rows and the shard they name are staged and committed together, so the sequence add a task mid-phase, then commit a task, needs no hand-run index commit. The two folded entry points are deleted with their suites, their tree lines and their sections; every caller (drive-phase.py, close-phase.py, commands/resume.md) calls the one verb. Acceptance: (1) on a fixture, add a task to a running phase and then commit a task: the commit succeeds with no other verb run; (2) commit-manifest-index.py and commit-audit-state.py are gone and nothing calls them; (3) the state commit after an interrupted run is made by the same verb; (4) tools/check-git-pipeline.py passes against a real git repository (run by the orchestrator, it is not a gate key).",
+      "files": [
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/scripts/governance/commit-manifest-index.py",
+        "plugins/audit/scripts/governance/commit-audit-state.py",
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/commands/resume.md",
+        "tools/check-git-pipeline.py",
+        "tools/lints/_deps.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tests/test_commit_task_work.py",
+        "tests/test_commit_manifest_index.py",
+        "tests/test_commit_audit_state.py",
+        "tests/test__scoped_commit.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/governance/_invariants.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/manifest/_areas.py",
+        "plugins/audit/hooks/guard-bash-writes.py",
+        "plugins/audit/scripts/git/_worktrees.py",
+        "plugins/audit/scripts/git/manage-worktrees.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/scripts/governance/_tree_stamp.py",
+        "tools/prove-gates.py",
+        "tests/test__deps.py",
+        "tests/test__invariants.py",
+        "tests/test__journal_io.py",
+        "tests/test_audit_task.py",
+        "tests/test_guard_bash_writes.py",
+        "tests/test_run_test_gate.py",
+        ".github/sweep-costs.json",
+        "plugins/audit/README.md",
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/reference/manifest-conventions.md",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/reference/phase-signoff.md",
+        "plugins/audit/reference/verbs-in-full.md",
+        "SECURITY.md",
+        "docs/handbook.html",
+        "CHANGELOG.md",
+        "tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_commit_task_work.py: after a task is added to a running phase, the next task commit carries the index rows and the shard together and succeeds with no other verb run",
+          "tests/test_commit_task_work.py: the state commit after an interrupted run is made by the same verb and never stages a task's files"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 2,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-25T11:36:02Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-25T12:21:51Z.7a977a",
+        "status": "passed",
+        "at": "2026-10-25T12:21:51Z"
+      }
+    },
+    {
+      "id": "P142.2",
+      "title": "Red-first through a sweep-shaped command proves when the task's suites pass and its new cases were red at HEAD",
+      "status": "in_progress",
+      "description": "Reproduce on the filed P131.11 case (stamp-verification.py red --project <tree> --task P131.11 -- python3 tools/sweep-selftests.py tools/release.py tools/check-example-pins.py) and find which reader rejects the fix-side output, which today reads 'the task's tests do not all pass (no tally or error reader matched its output)' while the same command exits 0 in the task tree. The cause is not established: the candidates are the fix-side run's environment (the sweep's isolation inside the helper's throwaway), the per-file versus summary reader, and the time budget. Fix it so a sweep-shaped command proves when its suites pass and its new cases were red at HEAD, and size the fix-side time budget from the sweep's own per-file cost table (.github/sweep-costs.json) rather than a fixed figure. tools/sweep-selftests.py is touched only if the fix-side reader needs its output shape changed. Acceptance: (1) on a fixture, a sweep-shaped red command whose suites pass in the task tree and whose new case is red at HEAD reads proved, and the same case reads could-not-prove on the code before the fix (red first); (2) a sweep-shaped command whose suite fails in the task tree still reads not proved and names the failing file, and the case goes red when the reader is weakened to accept any exit 0; (3) the fix-side time budget is read from the sweep's per-file cost table, and a suite with no recorded cost is reported as having none rather than given a default; (4) the filed P131.11 case, re-run with its own command on the fixed tree, reads proved (run by the orchestrator, it is not a gate key).",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/scripts/governance/_runner_output.py",
+        "tools/sweep-selftests.py",
+        "tests/test_stamp_verification.py",
+        "tests/test__runner_output.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_stamp_verification.py: a sweep-shaped red command whose suites pass in the task tree and whose new case was red at HEAD reads proved, and one whose suite fails in the task tree reads not proved with the failing file named",
+          "tests/test_stamp_verification.py: the fix-side time budget comes from the sweep's per-file cost table, and a suite with no recorded cost is reported as having none"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-25T10:10:32Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-25T10:45:39Z.385cb1",
+        "status": "failed",
+        "at": "2026-10-25T10:45:39Z"
+      }
+    },
+    {
+      "id": "P142.3",
+      "title": "The affected selection's miss rate is measured on this repository's history before any task gate trusts it",
+      "status": "in_progress",
+      "description": "Add tools/measure-affected-miss.py. Mutation half: for each of the last N task commits (default 20), in a scratch worktree at that commit, apply each of two mutations to every changed .py (an import-time raise, and a house-style violation the tree lints read), run the full sweep, and count the suites that went red that tools/affected.py --base <parent> did not select. CI half: for each failed CI run in the window, read its failing suites (gh run view --log-failed) and check them against the selection for that SHA's diff. It prints 'misses M of N commits (mutation); K of J runs (CI)' with every miss named; a CI half that could not ask prints could-not-ask and is never read as zero. It never edits the checkout: every mutation happens in its own scratch worktree, removed in finally. Acceptance: (1) on a fixture repository where a suite depends on a changed module the selection omits, the miss is counted and named; (2) a selection that includes every red suite counts zero misses; (3) no gh, or no network, prints could-not-ask for the CI half; (4) the checkout's status is unchanged after a run; (5) the measured result over 20 commits is recorded in the task outcome with the commit range.",
+      "files": [
+        "tools/measure-affected-miss.py",
+        "tools/affected.py",
+        "CONTRIBUTING.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/measure-affected-miss.py: on a fixture repository a suite that depends on a changed module the selection omits is counted as a miss and named, and a selection holding every red suite counts zero",
+          "tools/measure-affected-miss.py: with no gh on PATH the CI half prints could-not-ask and is never counted as zero misses, and the checkout's git status is unchanged after a run"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim",
+        "choosing-what-to-optimize",
+        "verifying-external-behavior"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-25T10:10:35Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-25T11:00:59Z.bf960f",
+        "status": "failed",
+        "at": "2026-10-25T11:00:59Z"
+      }
+    },
+    {
+      "id": "P142.4",
+      "title": "A task's gate is the affected selection, and no derived step re-runs what a declared key already runs in full",
+      "status": "pending",
+      "description": "run-test-gate.py measures a task's declared non-suite entries plus the suites the selection names for its changed paths; an unrecognised path class widens to the phase gate and says so. A declared key whose command is the unscoped sweep (the dogfood plan's selftests) counts as already wide for the Python arm, so no affected/python or affected/related step is added beside it: today such steps re-run suites the key already ran. The recorded row commits with no override. Acceptance: (1) a task gate holding the full-sweep key adds no affected/python or affected/related step; (2) a narrow declared gate gets the affected suites for its changed paths and none for an unchanged tree; (3) an unrecognised path widens to the phase gate, saying so; (4) the green row commits without override; (5) the selection is used only after the miss-rate task's result is recorded with zero misses, or with each miss's path class widened to the full set.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/_affected_tests.py",
+        "plugins/audit/scripts/governance/_gate_derive.py",
+        "tests/test_run_test_gate.py",
+        "tests/test__affected_tests.py",
+        "tests/test__gate_derive.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__affected_tests.py: a task gate holding a key whose command is the unscoped sweep is already wide for the Python arm, so no affected/python or affected/related step is added",
+          "tests/test_run_test_gate.py: a narrow declared gate records the affected suites for its changed paths, an unrecognised path widens to the phase gate saying so, and the green row commits without override"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P142.3"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P142.5",
+      "title": "Whole-tree scanners run once per phase and on push, never in a task's gate",
+      "status": "pending",
+      "description": "The suites that lint the whole tree (TREE_SCANNERS in tools/affected.py) leave the per-task selection: a .py change no longer pulls them into a task's gate. The phase gate and verify.sh's per-run tier keep every one of them, so CI and sign-off still run them. Acceptance: (1) a task changing one .py selects no tree scanner; (2) the phase gate and verify.sh's per-run tier include every tree scanner; (3) tools/gate-parity.py is green; (4) CONTRIBUTING.md says where the scanners run.",
+      "files": [
+        "tools/affected.py",
+        "plugins/audit/scripts/governance/_affected_tests.py",
+        "tools/verify.sh",
+        "tools/gate-parity.py",
+        "CONTRIBUTING.md",
+        "tests/test__affected_tests.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/affected.py: a task changing one .py selects no tree scanner, while the phase listing includes every tree scanner",
+          "tests/test__affected_tests.py: the per-task selection excludes TREE_SCANNERS and the phase gate keeps them"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim",
+        "choosing-what-to-optimize"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P142.4"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P142.6",
+      "title": "Sign-off runs the full gate once, and a probe of a guarded lint only when the phase changed that lint",
+      "status": "pending",
+      "description": "At sign-off the phase gate runs once with its browser steps. When the phase diff touches a file that holds a lint tools/prove-gates.py derives a row for, those rows run in both directions before sign-off; a phase touching no such file runs none and says so. A surviving mutation stops sign-off with the row named. Acceptance: (1) a phase diff touching a lint's file runs that lint's rows in both directions at sign-off; (2) a phase touching no lint file runs none and prints that it ran none; (3) a surviving mutation stops sign-off naming the row; (4) the probe restores the tree in finally and the checkout's status is unchanged.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tools/prove-gates.py",
+        "plugins/audit/reference/phase-signoff.md",
+        "tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/prove-gates.py: --changed <paths> runs only the rows whose lint lives in those paths, in both directions, and an empty set runs none and says so",
+          "tests/test_drive_phase.py: sign-off on a phase whose diff touches a lint file runs that lint's rows and stops on a surviving mutation naming the row"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P142.7",
+      "title": "CI runs under eight minutes and 55 runner-minutes: the manifest-validation chain in parallel and Windows on four shards",
+      "status": "pending",
+      "description": "Split the serial manifest-validation job (validator, shards, doctor, report smoke, rendered artifacts) into verify.sh slices that run as parallel jobs, move Windows to four shards, and re-record .github/sweep-costs.json from the new CI logs with --costs-from-log. Acceptance: (1) the median wall of at least five per-run CI runs is at most 8 minutes and their median runner-minutes at most 55, measured with the command in the plan; (2) the manifest-validation work finishes within 5 minutes; (3) shard_matrix_drift and gate-parity are green; (4) the cost table's recorded date is after this change.",
+      "files": [
+        ".github/workflows/ci.yml",
+        ".github/sweep-costs.json",
+        "tools/verify.sh",
+        "tools/gate-parity.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tools/gate-parity.py: every manifest-validation slice ci.yml names exists in verify.sh --list, and the Windows shards cover 1..4"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim",
+        "reproducing-ci-locally",
+        "choosing-what-to-optimize"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P142.5"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P142.8",
+      "title": "The sweep's wall clock is under four minutes: the critical-path suites split into blocks the workers share",
+      "status": "pending",
+      "description": "The sweep's critical path is a few long suites (on 2026-10-17: test__deps.py 158 s, test_stamp_verification.py 119 s, test__output.py 84 s, check-committed-pii.py 64 s). Split each into staged blocks so the sweep spreads them across workers, and re-record the cost table. Each split keeps every case: the case count per file before and after is compared. Acceptance: (1) time python3 tools/sweep-selftests.py is under 240 s wall on this machine twice, at least 20 minutes apart, both figures recorded; (2) no suite's case count falls; (3) total CPU of the sweep is not higher than before; (4) the sweep's own selftest is green.",
+      "files": [
+        "tests/test__deps.py",
+        "tests/test_stamp_verification.py",
+        "tests/test__output.py",
+        "tools/check-committed-pii.py",
+        "tools/sweep-selftests.py",
+        ".github/sweep-costs.json"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tools/sweep-selftests.py: a staged suite split into blocks reports the same total case count as before the split, and a block that asserts nothing is red"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim",
+        "choosing-what-to-optimize"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ],
+  "request": "neka njihov dokument bude osnova! I u odnosu na to treba napraviti plan implementacije",
+  "openChoices": [
+    "The selection's miss rate is read from two sources: a mutation replay over recent task commits and the real red runs in CI's history. Whether a miss in either blocks trusting the selection, or only a real one, is the owner's call; the recommendation is either",
+    "Tree scanners leave task gates: a task that breaks a whole-tree lint lands red on its phase branch until the phase gate catches it before merge",
+    "The sweep target of four minutes may need CPU to fall as well, because total CPU over the local worker count bounds the wall clock from below",
+    "The browser gates stay with the orchestrator and run serially; a task gate includes them only when the selection says the surface changed"
+  ],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "482d7bf5-025e-4eb9-acc8-1383e2a9aaa8",
+    "branch": "audit/p142-the-gate-ladder-affected-check",
+    "at": "2026-10-25T10:10:28Z"
+  },
+  "startedAt": "2026-10-25T10:10:28Z"
+}

@@ -5270,7 +5270,8 @@ def _cases(check):
           "is a half-made one nobody reviewed, on the one path where nobody is "
           "going to look - so the sentence names the sweep that makes it durable "
           "instead: %r" % (rtext[-90:],),
-          "committed by nobody" in rtext and "commit-audit-state.py" in rtext
+          "committed by nobody" in rtext
+          and "commit-task-work.py --state" in rtext
           and "/audit:resume" in rtext)
 
     rl2 = []
@@ -8396,7 +8397,7 @@ def _interrupt_cases(check):
     porcelain = _harness.git(sigroot, "status", "--porcelain", prefix=_PLAIN_GIT)
     check("is6 AND NOTHING WAS COMMITTED. The interrupt path writes and returns; "
           "HEAD has not moved and the row is sitting in the working tree, which "
-          "is exactly the state `commit-audit-state.py` sweeps at the next "
+          "is exactly the state the state commit sweeps at the next "
           "/audit:resume. A commit made while stopping is the half-made one "
           "nobody reviews: %r" % (head_after == head_before,),
           head_after == head_before and head_before

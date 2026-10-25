@@ -51,10 +51,9 @@ either layout (the scripts and hooks assemble transparently), but WRITES must ta
   `fileIndex`, `bugs[]`, `proposals[]`) go to the **index** under the index lock, through
   `audit-task.py` (`add`, `bug-add`, `bug-close`, `reindex` and the rest), never by an Edit. A phase run therefore touches
   **only its own shard** — which is exactly why two phase branches merge without a manifest conflict.
-  The one exception is a task commit whose shard completes a **bug link**: `task.bugId` lives in
-  the shard and `bug.taskId` in the index, the validator refuses either alone, so
-  `commit-task-work.py` carries the index in that commit and names the link it completes;
-  `verify-invariants.py`'s `commit-scope` reads the same link off git and allows exactly that.
+  The exception is the part of the index a phase owns - its `fileIndex` rows, a **bug link**, its
+  stub: either half alone fails validation, so `commit-task-work.py` derives that part from the
+  shard over the parent's index, and `commit-scope` allows exactly that.
   A structural write is the opposite case: it appends to the index, so two branches that each add a
   record conflict there unless the merge driver is installed (`/audit:layout merge-driver`), which
   merges by record and leaves only a genuine collision — one field changed two ways, or one id
@@ -459,7 +458,7 @@ evidence directory, so it carries every row written since the last one: a run th
 whose task or phase **never subsequently commits**. Run this at those points, and only those:
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/commit-audit-state.py" <manifestPath> <phaseId>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/commit-task-work.py" <manifestPath> <phaseId> --state
 ```
 
 1. a task moves to **`blocked`** (attempts exhausted) — the main case;
@@ -469,7 +468,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/commit-audit-state.py" <manife
 
 **It is idempotent and safe to call when nothing is wrong** — with nothing uncommitted it makes no
 commit and says so, so calling it spuriously costs a line of output. It stages the phase's manifest
-file, the journal and the evidence directory and **never the task's `files`**: the implementation
+file, the manifest index, the journal and the evidence directory and **never the task's `files`**: the implementation
 stays unstaged, which is what makes committing a failed task's *state* possible at all.
 `verify-invariants.py`'s `audit-state-scope` grades those commits afterwards, and a staged
 implementation file is a breach.

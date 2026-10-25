@@ -755,7 +755,7 @@ def _cases(check):
         os.makedirs(_cliproj)
         _clipath = M.append_from_cli(_cliproj, {
             "action": "state.committed", "target": "",
-            "actor": {"via": "commit-audit-state"}}, config=_pwcfg)
+            "actor": {"via": "commit-task-work"}}, config=_pwcfg)
         _clislot = M.plugin_write_sidecar(_cliproj, _pwcfg, M.CLI_JOURNAL_WRITER)
         _cliheld = _claimed(_clislot) if _clislot and os.path.exists(_clislot) \
             else {}
@@ -779,7 +779,7 @@ def _cases(check):
         # pinning that one command would have left the class open and the next
         # writer added would reopen it in silence.
         _unclaimed, _sites = _unclaimed_journal_writers(os.path.basename(M.__file__))
-        _anchors = set(["commit-audit-state.py", "audit-task.py",
+        _anchors = set(["commit-task-work.py", "audit-task.py",
                         "close-phase.py", "_panel_write.py"])
         _seen = set(os.path.basename(p) for p, _l, _n in _sites)
         check("pw6 every journal append under `scripts/` leaves the write guard "

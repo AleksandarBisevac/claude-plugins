@@ -664,16 +664,16 @@ LAYERS = (
      # `_refs` holds the rule that compares it and sits far below, so it asks
      # this file as a command instead of importing it.
      "_surface_digest",
-     # `_scoped_commit` is everything two commit-a-narrow-allow-list commands
-     # share: the stderr-keeping git runner, the working-tree read that decides
-     # before staging, the index read that refuses after it, and the one answer
-     # shape and renderer both print. Here because it reads `_invariants`
-     # for `_under` - the one answer to "is this path inside that entry", which
-     # both the writer and the after-the-fact checker have to agree on. It is
-     # here rather than beside either command because `commit-audit-state` and
-     # `commit-manifest-index` are hyphenated ENTRY POINTS: nothing may import
-     # one, so this is the only place the two halves can meet, and a second copy
-     # of a refusal rule is how one commit comes to carry what the other forbids.
+     # `_scoped_commit` is everything the two commit-a-narrow-allow-list commits
+     # `commit-task-work` makes share: the stderr-keeping git runner, the
+     # working-tree read that decides before staging, the index read that
+     # refuses after it, the blob route, and the one answer shape and renderer
+     # both print. Here because it reads `_invariants` for `_under` - the one
+     # answer to "is this path inside that entry", which both the writer and the
+     # after-the-fact checker have to agree on - and for `owned_index`, which
+     # index a commit carrying a shard carries. It is a module rather than part
+     # of that command because other entry points read pieces of it, and
+     # nothing may import a hyphenated entry point.
      "_scoped_commit"),
     ("_panel_write", "_report_page",
      # `_live_copy` is the one reader of a phase in flight elsewhere - which copy
@@ -783,37 +783,19 @@ LAYERS = (
      # Bash, and a `python3 -c` naming a source path is the shape
      # `guard-secrets-read` refuses.
      "verify-invariants",
-     # `commit-audit-state` is the WRITE that `verify-invariants` then grades: it
-     # commits the phase's manifest file, the journal and the evidence, and
-     # nothing else, so a run whose task never commits still leaves its failed
-     # gate in git. An entry point for the reason every command in this layer is
-     # one - the caller is orchestrator PROSE reaching Python through Bash - and
-     # here that is load-bearing rather than conventional: the staging rule is
-     # exactly the thing prose cannot be trusted to remember on the path where the
-     # gate went red. It reaches `_invariants` for the phase lookup, the git
-     # root and the action name the pair share.
-     "commit-audit-state",
-     # `commit-manifest-index` is its sibling over the one path that command may
-     # never carry. The sharded INDEX holds `fileIndex`, `bugs[]` and the
-     # phase stubs; step 4c forbids a task commit from staging it and
-     # `commit-audit-state` refuses it too, both correctly and for the same
-     # reason - so until this existed nothing committed the index at all and the
-     # structural edits piled up in a working tree. It carries the index and
-     # NOTHING else, which is what keeps two parallel phases off one another's
-     # commits, and it takes the index lock (`_panel_write`) because unlike a
-     # shard the index is the file every structural command writes. It reaches
-     # `_invariants` for the layout test and the action name, and
-     # `_scoped_commit` for the staging discipline it shares with its
-     # sibling.
-     "commit-manifest-index",
-     # `commit-task-work` is the third of the scoped commits, over the path the
-     # other two refuse: the task's own declared files. It is the one git
-     # operation this plugin described in prose and did not script, and prose
-     # cannot refuse -- four scope breaches on one program came from an agent
-     # generalising two words of step 4c at the end of a task. Same layer and
-     # same shape as its siblings: it derives its OWN allow-list (a shared
-     # builder taking a flag would be one function holding three safety
-     # properties) and shares only `_scoped_commit`'s staging discipline.
+     # `commit-task-work` is the WRITE that `verify-invariants` then grades, in
+     # two scoped commits: a task commit over the task's own declared files,
+     # its phase's shard and the index rows that shard needs, and a `--state`
+     # commit of the phase's record and the index that never carries a task's
+     # files, so a run whose task never commits still leaves its failed gate in
+     # git. It is the one git operation this plugin described in prose and did
+     # not script, and prose cannot refuse -- four scope breaches on one
+     # program came from an agent generalising two words of step 4c at the end
+     # of a task. Each commit derives its OWN allow-list (a shared builder
+     # taking a flag would be one function holding both safety properties); it
+     # reaches `_scoped_commit` for the staging discipline, `_invariants` for
+     # the phase lookup, the git root and the action names, and `_panel_write`
+     # for the index lock a state commit takes.
      "commit-task-work",
      # `close-phase` is the same shape one step LATER, and for the sharpest version
      # of the same reason: sign-off steps 5c-5e were git commands in prose, and
@@ -1947,10 +1929,11 @@ GIT_PATH_BASE_EXEMPT = (
     ("_scoped_commit.py", "snapshot", _SCOPED_COMMIT),
     ("_scoped_commit.py", "stage", _SCOPED_COMMIT),
     ("_scoped_commit.py", "stage_and_commit", _SCOPED_COMMIT),
+    ("_scoped_commit.py", "stage_blobs", _SCOPED_COMMIT),
     ("_scoped_commit.py", "status_paths", _SCOPED_COMMIT),
     ("audit-journal.py", "cmd_archive",
      "journal files named inside their own directory, which git runs in"),
-    ("commit-manifest-index.py", "_changed_shards", _RECORD_PATHS),
+    ("commit-task-work.py", "_changed_shards", _RECORD_PATHS),
     ("drive-phase.py", "carry_commit", _SAME_CHECKOUT),
     ("drive-phase.py", "restore_carry", _SAME_CHECKOUT),
     ("drive-phase.py", "tree_holds_only_integrated", _SAME_CHECKOUT),
@@ -2888,26 +2871,22 @@ def explorer_contract_drift(agent_path=None, init_path=None):
 
 
 # --- commit_spelling_drift: every governance writer's guide paragraph vs its code --
-# The fixed, uncollidable commit literal moved from `commit-audit-state.py`'s
-# TYPE into its SCOPE - `chore(audit-state):` rather than `audit-state(P1):` -
+# The fixed, uncollidable commit literal of the state commit moved once from the
+# TYPE into the SCOPE - `chore(audit-state):` rather than `audit-state(P1):` -
 # because commitlint's default type-enum has to accept the type or a repository
 # with husky rejects the commit AFTER the file is already staged. The guide's
 # paragraph kept saying "the type is the fixed literal `audit-state`": both
 # properties it names survived the reversal (a distinct spelling, one a task
-# commit's own scope - its phase id - can never collide with), so the REASONING
-# held while the NOUN did not, and that is the durable kind of stale claim -
-# everything around the wrong word still reads correctly, so nobody re-checks it.
+# commit's own scope can never collide with), so the REASONING held while the
+# NOUN did not, and that is the durable kind of stale claim - everything around
+# the wrong word still reads correctly, so nobody re-checks it.
 #
-# ONE INSTANCE OF A TWO-INSTANCE CLASS, AND THE CLASS IS WHAT THIS CHECKS.
-# `commit-manifest-index.py` fixes its own commit's scope for the identical
-# reason and its guide paragraph has always been correct - the
-# asymmetry (one stale, one not) is exactly why a check aimed at a single file
-# would have been the wrong shape: it would have proven nothing about the second
-# writer, and a THIRD one added later would ship undocumented with nothing here
-# to notice. So the set of writers is DERIVED from `scripts/governance/` itself -
-# every `.py` there defining BOTH `COMMIT_TYPE` and `COMMIT_SCOPE` - rather than
-# named by hand, the same reason `_governance_commit_writers` reads the directory
-# instead of a table of the two names above.
+# THE CLASS IS WHAT THIS CHECKS, NOT THE INSTANCE. A check aimed at the one file
+# whose paragraph went stale would prove nothing about another writer, and one
+# added later would ship undocumented with nothing here to notice. So the set of
+# writers is DERIVED from `scripts/governance/` itself - every `.py` there
+# defining BOTH `COMMIT_TYPE` and `COMMIT_SCOPE` (today `commit-task-work.py`,
+# whose state commit fixes them) - rather than named by hand.
 #
 # ANCHORED ON THE SECTION HEADING AND THE DOC'S OWN BACKTICK LITERAL, never a line
 # number, so a reflow of a paragraph is not itself drift. Each writer's section is
@@ -2972,7 +2951,7 @@ def _governance_commit_writers(governance_dir=None):
 
     `writers` is `[(basename, COMMIT_TYPE, COMMIT_SCOPE), ...]`. A script
     defining zero or one of the two constants is simply not a writer and is left
-    out IN SILENCE - `run-test-gate.py` sits beside the two that are, and "does
+    out IN SILENCE - `run-test-gate.py` sits beside the one that is, and "does
     not emit a conventional-commit prefix" is a real, common answer for a
     governance script. A script this could not even OPEN or PARSE is a
     DIFFERENT claim, though, and is never folded into that silence: it lands in

@@ -12,13 +12,13 @@ phase it flags resumable is the one to continue. None flagged → say so and sto
 **Sweep the interrupted session's record first**, before anything else touches the tree:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/commit-audit-state.py" <manifestPath> <phaseId>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/commit-task-work.py" <manifestPath> <phaseId> --state
 ```
 
-It commits the phase's manifest file, the journal and the evidence directory, and never a task's
-`files` - so the rows a torn-down gate wrote reach git, and the interrupted task's own edits stay
-untrusted and unstaged. With nothing uncommitted it says so and commits nothing; run it on every
-resume rather than deciding first.
+It commits the phase's manifest file with the manifest index beside it, the journal and the
+evidence directory, and never a task's `files` - so the rows a torn-down gate wrote reach git, and the
+interrupted task's own edits stay untrusted and unstaged. With nothing uncommitted it says so and
+commits nothing; run it on every resume rather than deciding first.
 
 **Then the step driver continues the phase.** It keeps its state per phase, so a task in progress
 resumes at the step it stopped on - an agent that filed nothing becomes a named decision rather

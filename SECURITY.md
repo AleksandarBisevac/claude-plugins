@@ -906,8 +906,8 @@ point:
   host name.
 - **A row's free text is redacted; a caller's is refused before it is ever
   written.** Every writer that appends a row — the hooks, the panel, and the
-  argument-taking scripts behind `commit-task-work`, `commit-manifest-index`,
-  `audit-journal`'s own append, `commit-audit-state`,
+  argument-taking scripts behind `commit-task-work` (both its commits),
+  `audit-journal`'s own append,
   `record-risk-confirmation` and `close-phase` — passes a row's free text
   through the same redaction before it is hashed: a machine path inside it is
   replaced, the row still lands, and the append is never lost over wording. None

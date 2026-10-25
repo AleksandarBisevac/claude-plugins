@@ -107,7 +107,8 @@ def porcelain(project):
     is not a corner: a subject tree nobody has committed yet, a first audit run,
     a brand-new source directory are all exactly it. Every other porcelain reader
     in this plugin already passes the flag and says why beside it
-    (`_journal_io._git_status_sets`, `commit-audit-state`, `guard-bash-writes`);
+    (`_journal_io._git_status_sets`, `_scoped_commit.uncommitted`,
+    `guard-bash-writes`);
     this was the reader that did not.
 
     AND IT DOES NOT MAKE THE BRACKET CONTENT-AWARE, which is the reading the flag

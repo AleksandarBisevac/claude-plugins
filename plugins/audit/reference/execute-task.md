@@ -719,12 +719,14 @@ verb writes and refuses, and what the run commands leave behind, is
         HEAD moved underneath the script refuses, names both SHAs and resets nothing); a tracked file under
         a gitignored directory is staged as the tracked file it is, and so are the tracked files of
         a declared directory git ignores as a whole; a conflict resolved in the working tree is
-        resolved by the staging, as plain `git add` would; the manifest **index** is refused with a
-        sentence of its own — **except** when the shard links a bug whose index half is written and
-        not yet committed (`task.bugId` in the shard, `bug.taskId` in the index, as `add --bug`
-        writes them): the validator refuses either half alone, so that one commit carries the
-        index too and prints an `index: carried` line naming the link, and `commit-scope` reads
-        the same link off git and calls it clean; the staged list is read back after staging as well as before it; and
+        resolved by the staging, as plain `git add` would; a manifest **index** somebody staged is
+        refused with a sentence of its own, and what the commit carries of the index instead is
+        built by the script — the parent's index with the part this phase owns derived from the
+        shard: its tasks' `fileIndex` rows, a bug link it completes (`task.bugId` in the shard,
+        `bug.taskId` in the index, as `add --bug` writes them), its stub's mirrored keys. The validator
+        refuses either half alone, so the commit carries those and prints an `index: carried`
+        line naming them, and `commit-scope` reads the same answer off git and calls it clean;
+        the staged list is read back after staging as well as before it; and
         any refusal after staging puts the allowed paths' index entries back as they were found —
         an entry you had staged at its own bytes, a conflict's stages and an intent-to-add path
         included, in a SHA-256 repository as in a SHA-1 one; stat data and a skip-worktree bit are
@@ -733,34 +735,29 @@ verb writes and refuses, and what the run commands leave behind, is
         afterwards, so these commits are graded by something that did not make them.
 
         The rest of this step is still yours:
-        - **A widened scope cannot pair with `fileIndex` at this commit, and that is
-          expected.** `task.files` lives in the shard you just staged; `fileIndex` lives in the index
-          you may not. So a task whose scope you corrected mid-run commits a state where the two
-          disagree — measured on live runs at 39 and 93 occurrences — and `manifest-revalidated`
-          records those as **deferred** rather than as breaches. It then asks the pairing of the
-          manifest **as it stands**, so the debt is real and is settled once: land the index change
-          in its own commit before sign-off, with the script that already does this correctly —
-          `/audit:task scope` re-derives `fileIndex` for you (`audit-task.py reindex` does it for
-          the whole plan after a shard edited by hand), and
+        - **The index rides with the shard it names.** `task.files` lives in the shard; the
+          `fileIndex` rows naming those files live in the index, and the validator refuses either
+          half alone. So the task commit carries, beside the shard, the parent's index with the
+          phase's own rows, bug links and stub derived from that shard - rows as a set, so a file
+          dropped or a task moved away takes its row with it - and a scope widened mid-run or a
+          task added to the running phase is committed by the next task commit with no other command run -
+          and leaves any other index edit in the working tree, because the rest of the shared index
+          is what parallel phases would meet on. `/audit:task scope` re-derives `fileIndex` for you
+          (`audit-task.py reindex` does it for the whole plan after a shard edited by hand); a row
+          the working index lacks as well is refused by the task commit, naming `reindex`. The rest
+          of the index lands with the phase's state commit,
           ```
-          python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/commit-manifest-index.py" \
-              <manifestPath> <phaseId>
+          python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/commit-task-work.py" \
+              <manifestPath> <phaseId> --state
           ```
-          commits the index and the one journal file holding the row that names the commit, and
-          **nothing else**, under the lock, and refuses rather than committing nothing
-          or committing it beside work that does not belong with it. Its name used to reach a human
-          only inside `commit-task-work.py`'s refusal — after a task commit had already been turned
-          away for staging the index — which is too late for a caller who commits by hand instead:
-          a hand commit that sweeps up the index without the shard it now names leaves the manifest
-          invalid **at that commit**, because the index then names a task the checked-out shard does
-          not carry. `/audit:task add`, `add-phase`, `scope`, `retarget`, `cancel`, `start` and
-          `done` each print this same pointer themselves, the moment a write of theirs leaves the
-          index dirty, so the tool is discoverable before that mistake and not only after it.
-          **The order is the shard first.** The script itself committed an index ahead of its
-          shard until it learned not to: it now refuses an index that names a task or phase the
-          shard committed at HEAD does not hold yet, names each reference and the shard, and asks
-          for the shard to be committed first - the task commit, which carries it, or
-          `commit-audit-state.py`.
+          which commits the phase's manifest file, the index, the journal and the evidence under
+          the index lock, and never a task's files; it carries the whole index only when every
+          reference in it is held by a shard as the commit leaves them, and otherwise names what it
+          left and which shard to commit first. A hand commit that sweeps up the index without the
+          shard it names leaves the manifest invalid **at that commit**, because the index then
+          names a task the checked-out shard does not carry. `/audit:task add`, `add-phase`,
+          `scope`, `retarget`, `cancel`, `start` and `done` each print this same pointer
+          themselves, the moment a write of theirs leaves the index dirty.
         - **The journal and the evidence travel in this commit, and the script stages both** —
           `journal.dir` (default `<manifest dir>/journal`) and `evidence.dir` (default
           `<manifest dir>/evidence`), each only if it exists inside `<gitRoot>`, and each reported
@@ -829,8 +826,8 @@ verb writes and refuses, and what the run commands leave behind, is
           `task.bugId`) reads as **fixed** once the task is `done` — the rollup derives it (with
           `fixedIn` = this `task.commit`) — and `/audit:task done` stores both values on the bug in
           the same write, under the index lock. That is the one write a task close makes to the
-          index, and the verb says so with the `commit-manifest-index.py` line that lands it on its
-          own; a close of a task no bug links to leaves the index untouched. (`/audit:bug close` records a human `wontfix` / `not_a_bug` / `fixed`
+          index, and the verb says so with the `commit-task-work.py --state` line that lands it
+          with the shard; a close of a task no bug links to leaves the index untouched. (`/audit:bug close` records a human `wontfix` / `not_a_bug` / `fixed`
           through `audit-task.py bug-close`, under the index lock — a structural decision, not part of a run.)
         - The `task.commit` write rides along with the next task's commit (or the sign-off commit) — do NOT amend.
      d. **ADO echo** — now that the SHA is captured, echo the done transition

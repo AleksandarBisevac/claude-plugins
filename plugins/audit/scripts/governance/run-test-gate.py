@@ -4370,8 +4370,8 @@ def _render_verdict(res, out):
             "past the signal and no verdict here covers it."
             % (res["cancelledBy"],))
         out("  the row is written locally and committed by nobody: git belongs to "
-            "the orchestrator, and commit-audit-state.py at the next "
-            "/audit:resume is what makes this durable.")
+            "the orchestrator, and the state commit (commit-task-work.py "
+            "--state) at the next /audit:resume is what makes this durable.")
         code = E_FAIL
     # TWO SETS, TWO MEANINGS, TWO RESPONSES - see `classify_mutations` for
     # what each one can and cannot claim, and `attributed_mutations` for the

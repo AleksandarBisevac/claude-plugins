@@ -1620,7 +1620,7 @@ def append_from_cli(project, entry, config=None):
     WHAT NOT CLAIMING COSTS is a notice about the plugin's own write. An append
     puts a journal file into `git status`, and `guard-bash-writes` reports an
     unclaimed journal file as a shell write into the append-only trail -- so
-    running `commit-audit-state.py` made the NEXT Bash command draw "that shell
+    running a state commit made the NEXT Bash command draw "that shell
     command wrote into the append-only audit journal", with `audit-journal.py
     verify` reporting the chain clean behind it. Nothing was broken and only a
     manual check could say so, which is the worst shape a warning takes.

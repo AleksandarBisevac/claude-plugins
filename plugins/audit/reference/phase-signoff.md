@@ -648,9 +648,9 @@ sign-off they are refused, naming it, with nothing written. Then, in this order:
    `--fail-on no-test-evidence` reads it as the member's evidence. A copied pointer is the one
    pointer no run records for its subject, so `--reconcile` does not restore it.
 6. **Commit** the sign-off with the lines the record prints — in the sharded layout one
-   `commit-audit-state.py` per member and then `commit-manifest-index.py`, because one commit
-   carrying two members' shards reads as a scope breach for each; in the single-file layout one
-   `commit-audit-state.py`, because there is one file.
+   `commit-task-work.py --state` per member, because one commit carrying two members' shards
+   reads as a scope breach for each, the last of them carrying the rest of the index once every
+   member's shard is committed; in the single-file layout one, because there is one file.
 7. **Land each phase** with the `close-phase.py --branch` lines, in order. The first merges the
    whole branch and keeps it (`--keep-worktree --keep-branch`); each later one finds it already
    contained and stamps its own `mergedAt`; only the last may take the branch and its worktree

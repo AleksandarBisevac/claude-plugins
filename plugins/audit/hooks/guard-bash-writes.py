@@ -1011,7 +1011,7 @@ def _plugin_wrote(state_dir, session_id):
     claim exactly as it fragmented the journal.
 
     THE PLUGIN'S CLI SCRIPTS ARE A WRITER OF THEIR OWN, and they were the one this
-    guard went on flagging: `commit-audit-state.py` appends a row, the
+    guard went on flagging: `commit-task-work.py --state` appends a row, the
     journal file goes dirty, and the next Bash command drew the notice about a
     write the plugin had just made -- with `audit-journal.py verify` reporting
     the chain clean behind it. A script run from Bash is handed no session id, so

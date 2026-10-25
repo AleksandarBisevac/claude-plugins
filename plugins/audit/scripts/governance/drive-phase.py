@@ -59,7 +59,7 @@ import another entry point, so each verb is resolved by basename through
 finding, done), `audit-lookup.py brief`, `run-test-gate.py --record`,
 `stamp-verification.py compare` and `commit-task-work.py`; at sign-off
 `derive-phase-gate.py`, `verify-invariants.py`, `audit-task.py signoff` and
-`add --fixes`, `commit-audit-state.py`, `commit-manifest-index.py` and
+`add --fixes`, `commit-task-work.py --state` and
 `close-phase.py`. Nothing here
 re-decides what a verb decides; the driver reads exit codes and the one line a
 verb prints, and a verb that refuses stops the drive with its own words printed
@@ -3152,28 +3152,6 @@ def owed_followers(ctx, text):
                             if isinstance(f, dict) and isinstance(f.get("path"), str)]
 
 
-def commit_scope_index(ctx, subject):
-    """Commit the index a `scope` the drive ran rewrote, in a sharded plan;
-    None, or the stop. `scope` writes the path's fileIndex row into the index
-    and the task's own shard, and the task commit carries the shard alone - it
-    refuses a shard declaring a path the index HEAD holds has no row for. So
-    the index is committed here, on its own, as a hand `scope` is followed by
-    it; the index is shared by every phase, and a task commit carrying it
-    would carry other phases' rows with it. A plan in one file has no index
-    apart from the task's own declaration, so nothing is committed."""
-    try:
-        sharded = _mio.is_sharded(_mio.read_json(ctx["manifest"]))
-    except Exception as exc:                                   # noqa: BLE001
-        return _stopped(ctx, "%s cannot be read to tell its layout (%s)"
-                        % (ctx["manifest"], exc))
-    if not sharded:
-        return None
-    _out, stop = _verb_or_stop(ctx, "commit-manifest-index.py", [
-        ctx["manifest"], ctx["phase"], "--project", ctx["project"],
-        "--subject", subject, "--json"])
-    return stop
-
-
 def widen_task(ctx, state, task, paths, basis):
     """Declare `paths` beside the task's files with `basis` noted, and accept
     that scope so no scope-changed decision asks about it. None, or the stop."""
@@ -3189,9 +3167,6 @@ def widen_task(ctx, state, task, paths, basis):
     _out, stop = _verb_with_text(
         ctx, "audit-task.py", _task_args(ctx, "note", task["id"]), "--text",
         "files widened by %s: %s" % (", ".join(new), basis))
-    if stop is not None:
-        return stop
-    stop = commit_scope_index(ctx, "%s widened by %s" % (task["id"], ", ".join(new)))
     if stop is not None:
         return stop
     accept_scope(ctx, state, task, basis)
@@ -5194,20 +5169,32 @@ def triage_refusal(pending, answer):
 
 def keep_record(ctx, phase):
     """Commit a failed run's record - the plan, the journal and the evidence the
-    gate wrote, never the task's files - through the audit-state verb. A blocked
-    task gets no task commit, so nothing else would carry the rows that say why
-    it stopped. None, or the stop."""
-    out, stop = _verb_or_stop(ctx, "commit-audit-state.py", [
-        ctx["manifest"], phase["id"], "--project", ctx["project"], "--json"])
+    gate wrote, never the task's files - through the commit verb's state
+    commit. A blocked task gets no task commit, so nothing else would carry the
+    rows that say why it stopped. None, or the stop."""
+    out, stop = _verb_or_stop(ctx, "commit-task-work.py", [
+        ctx["manifest"], phase["id"], "--state", "--project", ctx["project"],
+        "--json"])
     if stop is not None:
         return stop
-    try:
-        made = json.loads(out).get("commit")
-    except ValueError:
-        made = None
+    made, left = _state_answer(out)
     ctx["did"].append("record committed at %s" % (made[:7],) if made
                       else "record: nothing to commit")
+    ctx["did"].extend(left)
     return None
+
+
+def _state_answer(out):
+    """`(sha or None, lines)` off a state commit's `--json` answer: the commit
+    it made, and one did-line per part of the index it left uncommitted
+    (`indexLeft`), so a committed record is never reported as carrying an
+    index it left behind."""
+    try:
+        answer = json.loads(out)
+    except ValueError:
+        return None, []
+    return answer.get("commit"), ["index left uncommitted: %s" % (_clip(
+        line, 160),) for line in answer.get("indexLeft") or []]
 
 
 def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
@@ -5296,9 +5283,6 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
             files.append(pending["config"])
         _out, stop = _verb_or_stop(ctx, "audit-task.py", _task_args(
             ctx, "scope", task["id"], "--files", ",".join(files)))
-        if stop is None:
-            stop = commit_scope_index(ctx, "%s widened by %s" % (
-                task["id"], pending["config"]))
         if stop is None:
             ctx["did"].append("%s widened by %s" % (task["id"], pending["config"]))
         return stop
@@ -7167,26 +7151,17 @@ def run_signoff(ctx, state, phase):
 
 
 def commit_signoff(ctx, phase):
-    """The sign-off committed through the audit-state verb, and the index verb
-    after it in a sharded plan; `(sha or None, None)`, or `(None, stop)`."""
-    commits = [("commit-audit-state.py", "sign-off")]
-    try:
-        if _mio.is_sharded(_mio.read_json(ctx["manifest"])):
-            commits.append(("commit-manifest-index.py", "sign-off"))
-    except Exception as exc:                                   # noqa: BLE001
-        return None, _stopped(ctx, "%s cannot be read to tell its layout (%s)"
-                              % (ctx["manifest"], exc))
-    made = None
-    for script, subject in commits:
-        out, stop = _verb_or_stop(ctx, script, [
-            ctx["manifest"], phase["id"], "--project", ctx["project"],
-            "--subject", subject, "--json"])
-        if stop is not None:
-            return None, stop
-        try:
-            made = made or json.loads(out).get("commit")
-        except ValueError:
-            pass
+    """The sign-off committed through the commit verb's state commit - the
+    phase's file and, in a sharded plan, the index beside it, in one commit;
+    `(sha or None, None)`, or `(None, stop)`; what of the index it left
+    uncommitted is added to the did-lines (`_state_answer`)."""
+    out, stop = _verb_or_stop(ctx, "commit-task-work.py", [
+        ctx["manifest"], phase["id"], "--state", "--project", ctx["project"],
+        "--subject", "sign-off", "--json"])
+    if stop is not None:
+        return None, stop
+    made, left = _state_answer(out)
+    ctx["did"].extend(left)
     return made, None
 
 

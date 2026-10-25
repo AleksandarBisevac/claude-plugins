@@ -124,11 +124,12 @@ NA = "not-applicable"
 # beside, and they are placed next to `commit-scope` rather than at the end for
 # that reason. Each asks `commit-scope`'s question -- what did this commit stage,
 # and was it allowed to -- about a DIFFERENT commit, and the three allow-lists
-# differ entry by entry: a task commit may stage the task's `files` and the audit
-# state commit may not, and a manifest-index commit may stage the one path both
-# the others forbid and nothing whatever besides. A reader comparing three
-# commit-shaped rules needs them adjacent; separated, the differences that matter
-# read as omissions.
+# differ entry by entry: a task commit may stage the task's `files` and only the
+# part of the index its phase owns, the audit-state commit may not stage those files
+# and may carry the index, and a manifest-index commit - a class history holds
+# and nothing writes now - staged the index and nothing whatever besides. A reader
+# comparing three commit-shaped rules needs them adjacent; separated, the
+# differences that matter read as omissions.
 #
 # `landing-committed` comes last because it is the last thing a phase does: the
 # landing, and the record of it reaching git.
@@ -389,19 +390,21 @@ COMMIT_SCOPE_BASIS = ("git show --name-only <task.commit>, against that task's "
                       "`files`, its phase's manifest file, the journal directory "
                       "and the evidence directory - the four things "
                       "orchestrator.md step 4c allows a task commit to stage - "
-                      "plus the index when the commit completes a bug link")
+                      "plus the index when it is exactly its parent's with this "
+                      "phase's owned part derived from the committed shard "
+                      "(`owned_index`)")
 
 
 def completed_bug_links(index_now, index_before, phase_body):
     """`[(bugId, taskId)]` - each bug link `phase_body` carries whose index
     half `index_now` holds and `index_before` did not.
 
-    THE ONE REASON A TASK COMMIT CARRIES THE INDEX. A bug link has a half in
-    each file - the task's `bugId` in the shard, the bug's `taskId` in the
-    index - and the validator refuses either half alone, so a commit carrying
-    the shard without the index records a manifest that does not validate. A
-    link whose index half was already committed completes nothing here, which
-    keeps every other index change outside a task commit.
+    A BUG LINK HAS A HALF IN EACH FILE (`owned_index` carries it). A bug link
+    has a half in each file - the task's `bugId` in the shard, the bug's
+    `taskId` in the index - and the validator refuses either half alone, so a
+    commit carrying the shard without the index records a manifest that does
+    not validate. A link whose index half was already committed completes
+    nothing here.
     """
     def taken(index):
         return dict((b.get("id"), b.get("taskId"))
@@ -435,12 +438,174 @@ def json_at(git_root, rev, rel):
     return doc if isinstance(doc, dict) else None
 
 
-def _commit_bug_links(git_root, sha, parent, index_rel, phase_file_rel):
-    """The bug links commit `sha` completes, read off git: the index and the
-    shard as it recorded them, against the index its parent held."""
-    return completed_bug_links(json_at(git_root, sha, index_rel),
-                               json_at(git_root, parent, index_rel),
-                               json_at(git_root, sha, phase_file_rel))
+def index_rows_owed(index_doc, shard_doc):
+    """`[(path, taskId)]` - each file a task of `shard_doc` declares whose
+    fileIndex row in `index_doc` does not name that task, in declaration order.
+
+    A path is matched with its `:line-range` suffix dropped on both sides,
+    which is the validator's own pairing rule, so this is empty exactly when
+    that rule finds nothing missing for these tasks. An index with no
+    fileIndex owes every declared file.
+    """
+    file_index = (index_doc or {}).get("fileIndex")
+    named = {}
+    for key, refs in (file_index.items() if isinstance(file_index, dict)
+                      else ()):
+        if isinstance(refs, list):
+            named.setdefault(_vocab._strip_line_suffix(key), set()).update(
+                r for r in refs if isinstance(r, str))
+    owed = []
+    for task in ((shard_doc or {}).get("tasks") or []):
+        tid = task.get("id") if isinstance(task, dict) else None
+        if not isinstance(tid, str) or not tid:
+            continue
+        for entry in (task.get("files") or []):
+            if not isinstance(entry, str) or not entry.strip():
+                continue
+            path = _vocab._strip_line_suffix(entry)
+            if tid not in named.get(path, ()) and (path, tid) not in owed:
+                owed.append((path, tid))
+    return owed
+
+
+def _task_ids_of(shard_doc):
+    return [t.get("id") for t in ((shard_doc or {}).get("tasks") or [])
+            if isinstance(t, dict) and isinstance(t.get("id"), str)
+            and t.get("id")]
+
+
+def _derived_rows(shard_doc):
+    """`[(path, taskId)]` - every file the shard's tasks declare, the
+    `:line-range` suffix dropped, in declaration order, each once."""
+    rows = []
+    for task in ((shard_doc or {}).get("tasks") or []):
+        tid = task.get("id") if isinstance(task, dict) else None
+        if not isinstance(tid, str) or not tid:
+            continue
+        for entry in (task.get("files") or []):
+            if isinstance(entry, str) and entry.strip():
+                row = (_vocab._strip_line_suffix(entry), tid)
+                if row not in rows:
+                    rows.append(row)
+    return rows
+
+
+def _owned_rows(file_index, owned, derived):
+    """`(fileIndex, added, dropped)` - `file_index` with the rows of the task
+    ids in `owned` set to exactly `derived`: a row of an owned task the shard no
+    longer declares is removed, a declared one it lacks is appended, every other
+    task's entry keeps its place, and a key left naming nobody goes."""
+    out, added, dropped, placed = {}, [], [], set()
+    wanted = set(derived)
+    for key, refs in (file_index or {}).items():
+        path = _vocab._strip_line_suffix(key)
+        refs = list(refs) if isinstance(refs, list) else refs
+        if not isinstance(refs, list):
+            out[key] = refs
+            continue
+        kept = []
+        for ref in refs:
+            if ref in owned and (path, ref) not in wanted:
+                dropped.append((path, ref))
+                continue
+            if ref in owned:
+                placed.add((path, ref))
+            kept.append(ref)
+        for row in derived:
+            if row[0] == path and row not in placed:
+                kept.append(row[1])
+                placed.add(row)
+                added.append(row)
+        if kept:
+            out[key] = kept
+    for row in derived:
+        if row not in placed:
+            out.setdefault(row[0], []).append(row[1])
+            placed.add(row)
+            added.append(row)
+    return out, added, dropped
+
+
+def owned_index(base_index, source_index, shard_now, shard_parent, phase_id):
+    """`(changes, doc)` - `base_index` with the part of it phase `phase_id` OWNS
+    set to what its shard derives, and `changes` saying what that moved.
+
+    THE ONE INVARIANT a commit carrying a shard holds the index to, asked by
+    the writer (`commit-task-work.py`, against the parent it commits onto) and
+    by the grader (`commit_scope`, against a commit's parent and the commit).
+    The owned part is:
+      - the fileIndex rows of this phase's tasks - every task `shard_now` holds
+        or `shard_parent` held, so a task moved away or a file dropped takes
+        its row with it - set to exactly the files `shard_now` declares;
+      - each bug `shard_now` links (`task.bugId`) whose entry in
+        `source_index` names that task back, taken whole from `source_index`;
+      - this phase's stub: its `_manifest_io._STUB_KEYS` mirrored from
+        `shard_now`, and the stub taken from `source_index` when `base_index`
+        has none (a new phase).
+    Everything else is `base_index`'s, unchanged - the shared part of the index
+    two parallel phases would meet on. `changes` is `{"rows", "dropped",
+    "bugLinks", "stub"}`; `doc` is None when `base_index` is not an object.
+    """
+    changes = {"rows": [], "dropped": [], "bugLinks": [], "stub": []}
+    if not isinstance(base_index, dict):
+        return changes, None
+    source = source_index if isinstance(source_index, dict) else {}
+    doc = json.loads(json.dumps(base_index))
+    owned = set(_task_ids_of(shard_now)) | set(_task_ids_of(shard_parent))
+    if isinstance(doc.get("fileIndex"), dict) or _derived_rows(shard_now):
+        doc["fileIndex"], changes["rows"], changes["dropped"] = _owned_rows(
+            doc.get("fileIndex") if isinstance(doc.get("fileIndex"), dict)
+            else {}, owned, _derived_rows(shard_now))
+    linked = dict((t.get("bugId"), t.get("id"))
+                  for t in ((shard_now or {}).get("tasks") or [])
+                  if isinstance(t, dict) and isinstance(t.get("bugId"), str))
+    whole = dict((b.get("id"), b) for b in (source.get("bugs") or [])
+                 if isinstance(b, dict) and b.get("id") in linked
+                 and b.get("taskId") == linked[b.get("id")])
+    bugs = list(doc.get("bugs") or [])
+    held = [b.get("id") for b in bugs if isinstance(b, dict)]
+    for i, bug in enumerate(bugs):
+        if isinstance(bug, dict) and bug.get("id") in whole \
+                and bug != whole[bug["id"]]:
+            bugs[i] = json.loads(json.dumps(whole[bug["id"]]))
+            changes["bugLinks"].append((bug["id"], linked[bug["id"]]))
+    for bid in [b for b in whole if b not in held]:
+        bugs.append(json.loads(json.dumps(whole[bid])))
+        changes["bugLinks"].append((bid, linked[bid]))
+    if bugs or "bugs" in doc:
+        doc["bugs"] = bugs
+    if isinstance(shard_now, dict):
+        stubs = list(doc.get("phases") or [])
+        at = [i for i, s in enumerate(stubs) if isinstance(s, dict)
+              and str(s.get("id")) == str(phase_id)]
+        fresh = [s for s in (source.get("phases") or []) if isinstance(s, dict)
+                 and str(s.get("id")) == str(phase_id)]
+        if at or fresh:
+            stub = json.loads(json.dumps(stubs[at[0]] if at else fresh[0]))
+            for key in _mio._STUB_KEYS:
+                if key in shard_now and stub.get(key) != shard_now[key]:
+                    stub[key] = shard_now[key]
+                    changes["stub"].append(key)
+            if at:
+                stubs[at[0]] = stub
+            else:
+                stubs.append(stub)
+                changes["stub"].append("new")
+            doc["phases"] = stubs
+    return changes, doc
+
+
+def _commit_carries_needs(git_root, sha, parent, index_rel, phase_file_rel,
+                          phase_id):
+    """True when the index the commit `sha` recorded is exactly its parent's
+    with this phase's owned part derived from the shard it recorded
+    (`owned_index`), read off git."""
+    committed = json_at(git_root, sha, index_rel)
+    _changes, doc = owned_index(
+        json_at(git_root, parent, index_rel), committed,
+        json_at(git_root, sha, phase_file_rel),
+        json_at(git_root, parent, phase_file_rel), phase_id)
+    return doc is not None and doc == committed
 
 
 def _project_of(git_root, git_root_rel):
@@ -479,11 +644,14 @@ def commit_scope(phase, git_root, git_root_rel, phase_file_rel, index_rel,
     that is not allowed" line would report the expensive mistake in the same
     words as a stray README.
 
-    ONE EXCEPTION, READ OFF GIT: a commit that completes a bug link of this
-    phase's shard (`completed_bug_links`, the index and shard it recorded
-    against the index its parent held). The link's halves live one in each
-    file, so that commit is the only one recording a manifest that validates,
-    and `commit-task-work.py` carries the index for exactly that reason.
+    ONE EXCEPTION, READ OFF GIT: a commit whose index is exactly its parent's
+    with this phase's owned part - its tasks' fileIndex rows, the bug links its
+    shard completes, its stub's mirrored keys - derived from the shard it
+    recorded (`owned_index`, the function the writer builds the index with).
+    Those halves live one in each file, so that commit is the only one
+    recording a manifest that validates, and `commit-task-work.py` carries the
+    index for exactly that reason; any other index change in a task commit is
+    the breach.
     """
     breaches, gaps = [], []
     tasks = [t for t in (phase.get("tasks") or [])
@@ -543,15 +711,17 @@ def commit_scope(phase, git_root, git_root_rel, phase_file_rel, index_rel,
             if _under(path, journal_rel) or _under(path, evidence_rel):
                 continue
             if index_rel and path == index_rel and index_rel != phase_file_rel:
-                if _commit_bug_links(git_root, sha, parent, index_rel,
-                                     phase_file_rel):
+                if _commit_carries_needs(git_root, sha, parent, index_rel,
+                                         phase_file_rel, phase.get("id")):
                     continue
                 breaches.append(found(
-                    "%s: commit %s staged the manifest INDEX (%s), and it "
-                    "completes no bug link of this phase's shard - the one "
-                    "change a task commit carries the index for. A task commit "
-                    "changes only its own phase's shard - the index is what "
-                    "parallel phases would then conflict on"
+                    "%s: commit %s staged the manifest INDEX (%s), and it is "
+                    "not its parent's with only this phase's own part - its "
+                    "tasks' fileIndex rows, the bug links it completes, its "
+                    "stub - derived from the shard it committed, the one "
+                    "change a task commit carries the index for. Beyond that "
+                    "part, the index is what parallel phases would then "
+                    "conflict on"
                     % (tid, sha[:12], index_rel), "%s %s" % (tid, index_rel), sha))
                 continue
             breaches.append(found(
@@ -564,8 +734,8 @@ def commit_scope(phase, git_root, git_root_rel, phase_file_rel, index_rel,
 
 # --- audit-state scope --------------------------------------------------------
 # The action an audit-state commit records, spelled ONCE and read from here by the
-# writer and by the reader below. The writer is `commit-audit-state.py`, an ENTRY
-# POINT: nothing may import a hyphenated command, so the constant cannot live
+# writer and by the reader below. The writer is `commit-task-work.py --state`, an
+# ENTRY POINT: nothing may import a hyphenated command, so the constant cannot live
 # beside the code that appends the row, and this module is the lowest one both
 # halves can reach. A second spelling would not fail loudly -- the reader would
 # simply find no rows and answer `not-applicable` for ever, which is the calmest
@@ -575,11 +745,11 @@ ACTION_STATE_COMMITTED = "audit.state.committed"
 AUDIT_STATE_SCOPE_BASIS = (
     "git show --name-only <commit> for every `%s` journal row naming this phase - "
     "the rows are how such a commit is found at all, since nothing in the "
-    "manifest points at one - against the phase's manifest file, the journal "
-    "directory and the evidence directory. The task's `files` are deliberately "
-    "NOT on that list: this commit exists to preserve the record of a run that "
-    "failed, and the implementation it failed on must stay out of git"
-    % (ACTION_STATE_COMMITTED,))
+    "manifest points at one - against the phase's manifest file, the manifest "
+    "index, the journal directory and the evidence directory. The task's `files` "
+    "are deliberately NOT on that list: this commit exists to preserve the record "
+    "of a run that failed, and the implementation it failed on must stay out of "
+    "git" % (ACTION_STATE_COMMITTED,))
 
 
 # --- the commit a row is inside -----------------------------------------------
@@ -891,10 +1061,13 @@ def audit_state_scope(phase, git_root, project, phase_file_rel, index_rel,
     appearing here is implementation reaching git on a run that was never signed
     off, which is the failure the whole verb exists to make impossible.
 
-    THE INDEX KEEPS ITS OWN SENTENCE, for `commit_scope`'s reason one commit over:
-    staging the shared index is what makes two parallel phases conflict on merge,
-    and reporting it in the same words as a stray file would price the expensive
-    mistake as the cheap one.
+    THE INDEX IS ON THE LIST. The state commit is the one that lands the plan's
+    structural edits - the rows and stubs `/audit:task add` and `/audit:phase
+    add` write into the shared index - together with the shard they name,
+    because either half committed alone records a plan that does not validate.
+    Whether the pair it recorded validates is `manifest-revalidated`'s
+    question, asked of every commit; this check asks only that no work rode
+    along.
     """
     breaches, gaps = [], []
     shas, unnamed, why, unresolved, absorbed = audit_state_commits(
@@ -943,17 +1116,13 @@ def audit_state_scope(phase, git_root, project, phase_file_rel, index_rel,
                 continue
             if _under(path, journal_rel) or _under(path, evidence_rel):
                 continue
-            if index_rel and path == index_rel and index_rel != phase_file_rel:
-                breaches.append(found(
-                    "audit-state commit %s staged the manifest INDEX (%s). It "
-                    "carries this phase's own file and the two records beside it "
-                    "- the index is what parallel phases would then conflict on"
-                    % (sha[:12], index_rel), index_rel, sha))
+            if index_rel and path == index_rel:
                 continue
             breaches.append(found(
                 "audit-state commit %s staged %s, which is neither this phase's "
-                "manifest file nor anything in the journal or the evidence "
-                "directory. An audit-state commit carries the RECORD of a run and "
+                "manifest file, the manifest index nor anything in the journal "
+                "or the evidence directory. An audit-state commit carries the "
+                "RECORD of a run and "
                 "never the work it ran on, so this is implementation reaching git "
                 "on a run that was never signed off" % (sha[:12], path),
                 path, sha))
@@ -962,11 +1131,13 @@ def audit_state_scope(phase, git_root, project, phase_file_rel, index_rel,
 
 
 # --- manifest-index scope -----------------------------------------------------
-# The action a manifest-index commit records, spelled ONCE and read from here by
-# the writer and by the reader below, for `ACTION_STATE_COMMITTED`'s reason word
-# for word: the writer is `commit-manifest-index.py`, an ENTRY POINT nothing may
-# import, so the constant cannot live beside the code that appends the row, and
-# this module is the lowest one both halves can reach.
+# The action a manifest-index commit records. NO WRITER MAKES THIS CLASS ANY
+# MORE: the index now rides with the shard it names, in a task commit
+# (`owned_index`) or a state commit (`commit-task-work.py --state`), whose
+# subject opens with `STATE_HEADER`. The reader below stays because history
+# holds commits of this class and their rows, and a phase whose trail names one
+# is still graded by it; the action and `INDEX_HEADER` are the spellings those
+# commits were written with, so they cannot change.
 ACTION_INDEX_COMMITTED = "audit.index.committed"
 
 INDEX_SCOPE_BASIS = (
@@ -1021,8 +1192,8 @@ def index_scope(phase, git_root, project, index_rel, phase_file_rel,
 
     IN THE SINGLE-FILE LAYOUT `manifest_files` returns the identity pair, so the
     index IS the phase's file and the sentence above has no subject. The writer
-    refuses to make this commit there at all, so the rows this reads should not
-    exist; the guard is kept anyway, because a check that would convict a
+    this class had refused to make it there at all, so the rows this reads should
+    not exist; the guard is kept anyway, because a check that would convict a
     hand-made commit of staging the only manifest there is would be reporting the
     layout rather than a breach.
     """

@@ -221,7 +221,7 @@ def _audit_state(root, audit, index_path, kind, with_evidence=True):
         _write_json(index_path, index)
         staged.append("docs/audit/audit-plan.json")
     _git(root, "add", *staged)
-    # The spelling `commit-audit-state.py` really writes: the fixed literal
+    # The spelling `commit-task-work.py --state` really writes: the fixed literal
     # is the SCOPE, so the type is one commitlint accepts. Nothing here parses the
     # subject - `audit_state_commits` finds these through the journal trail - but a
     # fixture that spells it the old way is a second answer waiting to be believed.
@@ -282,10 +282,11 @@ def _index_commit(root, index_path, kind):
         _write(os.path.join(root, "src", "a.py"), "a = 3  # swept in\n")
         staged.append("src/a.py")
     _git(root, "add", *staged)
-    # The spelling `commit-manifest-index.py` really writes: `chore` so
-    # commitlint takes it, the fixed literal in the SCOPE where no manifest can
-    # reach it. Nothing here parses the subject - the rows are how these commits
-    # are found - but a fixture spelling it another way is a second answer.
+    # The spelling the retired index commit wrote, and history still holds:
+    # `chore` so commitlint took it, the fixed literal in the SCOPE where no
+    # manifest could reach it. Nothing here parses the subject - the rows are how
+    # these commits are found - but a fixture spelling it another way is a
+    # second answer.
     _git(root, "commit", "-q", "-m", "chore(audit-index): P1 - fixture")
     sha = _head(root)
     _index_row(root, sha)
@@ -308,12 +309,11 @@ def build(root, rogue=False, index_in_task=False, haiku=False, bad_base=False,
     is comparing.
 
     `audit_state`, `evidence_outside`, `journal_off` and `leave_dirty` ARE ALSO
-    `test_commit_audit_state.py`'s FIXTURE, and `leave_dirty` is
-    `test_commit_manifest_index.py`'s too - which is why they are here rather
-    than in a second builder over there. Those suites drive the commands that
-    MAKE these commits and this one grades the commits they make, so the three
-    must start from one repository or the grader would be reading a shape the
-    writer never produces.
+    `test_commit_task_work.py`'s FIXTURE for its state commit - which is why
+    they are here rather than in a second builder over there. That suite drives
+    the command that MAKES these commits and this one grades the commits it
+    makes, so the two must start from one repository or the grader would be
+    reading a shape the writer never produces.
     """
     audit = os.path.join(root, "docs", "audit")
     os.makedirs(os.path.join(audit, "phases"))
@@ -376,6 +376,11 @@ def build(root, rogue=False, index_in_task=False, haiku=False, bad_base=False,
         _write_json(shard_path, shard)
         index["bugs"] = [{"id": "BUG-1", "title": "b", "status": "in_progress",
                           "taskId": "P1.1"}]
+        # ...and the phase's stub mirroring its shard, as the plugin's writers
+        # keep it: an index carried with a shard carries the phase's own part
+        # of it whole, the stub included (`owned_index`).
+        index["phases"][0].update(
+            dict((k, shard[k]) for k in ("title", "status") if k in shard))
         _write_json(index_path, index)
         staged.append("docs/audit/audit-plan.json")
     elif index_in_task:
@@ -806,13 +811,14 @@ def _cases(check):
 
         indexed_state = repos.get(audit_state="index")
         state = _check(_phase_answer(indexed_state), "audit-state-scope")
-        check("iv46 ...and the manifest INDEX keeps its own sentence here too, "
-              "for the reason it has one in commit-scope: it is what parallel "
-              "phases conflict on, and reporting it as 'an unexpected path' would "
-              "price the expensive mistake as a stray file: %r"
-              % (state["breaches"],),
-              len(state["breaches"]) == 1 and "INDEX" in state["breaches"][0]
-              and state["verdict"] == M.BREACH)
+        check("iv46 ...and the manifest INDEX is NOT a breach here: the state "
+              "commit is the one that lands the index with the shard it names, "
+              "since either half alone records a plan that does not validate - "
+              "the commit is still examined, so this is no check that stopped "
+              "looking, and the work file beside it is iv45's breach: %r"
+              % ((state["breaches"], state["examined"]),),
+              state["breaches"] == [] and state["examined"] == 1
+              and state["verdict"] == M.CLEAN)
 
         gone = repos.get(audit_state="unresolvable")
         state = _check(_phase_answer(gone), "audit-state-scope")

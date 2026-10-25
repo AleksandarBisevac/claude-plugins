@@ -2,28 +2,25 @@
 """
 What a commit-a-narrow-allow-list command is made of, in one place.
 
-WHY THIS IS A MODULE RATHER THAN A PARAGRAPH IN EACH COMMAND. The entry points that
-stage a fixed set of paths and commit them -- `commit-audit-state.py` (the
-phase's manifest file, the journal and the evidence), `commit-manifest-index.py`
-(the manifest INDEX and the one journal file holding the row that names the
-commit, and nothing else) and `commit-task-work.py` (a
-task's declared files and the records beside them) -- and everything except the
-list itself is the same in each of them: stage EXPLICITLY, each path by what git
-holds for it (`classify`, `stage`), never `git add -A`; read the index back;
-refuse when anything outside the allow-list is in it; commit with the list as
-the pathspec; put the index back as it was found on any refusal after staging
+WHY THIS IS A MODULE RATHER THAN A PARAGRAPH IN EACH COMMIT. `commit-task-work.py`
+makes two scoped commits - a task commit (a task's declared files and the records
+beside them) and a `--state` commit (the phase's manifest file, the journal, the
+evidence and the index, never a task's files) - and everything except the list
+itself is the same in both: stage EXPLICITLY, each path by what git holds for it
+(`classify`, `stage`), never `git add -A`; read the index back; refuse when
+anything outside the allow-list is in it; commit with the list as the pathspec;
+put the index back as it was found on any refusal after staging
 (`stage_and_commit`); and report the outcome in one shape whichever of the ways
-it went. No command can import another, because nothing may import a hyphenated
-entry point, so a copy in each was the only alternative -- and a second copy of
-a refusal rule is how one commit comes to carry what the other forbids.
+it went. Other entry points read pieces of it (`classify`, the attempt record),
+and nothing may import a hyphenated entry point, so this module is where they
+find them - a second copy of a refusal rule is how one commit comes to carry
+what the other forbids.
 
-WHAT IS DELIBERATELY NOT HERE: THE ALLOW-LIST ITSELF. Each command derives its
-own, and they differ in exactly the entries that matter -- one may stage the
-phase's shard and the records beside it and never the shared index, another may
-stage only the shared index and the row naming its commit, and never a phase's
-file. A shared builder taking a
-flag would be one function holding several safety properties, which is the
-shape in which a widened list stops being noticed.
+WHAT IS DELIBERATELY NOT HERE: THE ALLOW-LIST ITSELF. Each commit derives its
+own, in a function of its own, and they differ in exactly the entries that
+matter - a task commit may stage the task's files and a state commit may never.
+A shared builder taking a flag would be one function holding several safety
+properties, which is the shape in which a widened list stops being noticed.
 
 THE GIT RUNNER IS NOT `_commit_trail._git`, and the difference is a decision
 rather than an oversight -- see `run_git` below. `under_any` is likewise built on
@@ -584,7 +581,49 @@ def commit_from_index(git_root, paths, paragraphs, head):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def stage_and_commit(git_root, paths, kinds, paragraphs, refuse_foreign):
+def write_blob(git_root, rel, data):
+    """`(oid, why)` - `data` (bytes) written into git's object store as the
+    blob `rel` would hold, through the filters git applies to `rel` on `git
+    add` (`hash-object --path`), so a line-ending rule is honoured as it is for
+    a staged file."""
+    code, out, err = run_git(git_root, ["hash-object", "-w", "--stdin",
+                                        "--path", rel], stdin=data)
+    if code is None or code != 0 or not out.strip():
+        return "", "git would not store the blob for %s (%s)" % (
+            rel, _excerpt.reason_of(err, out))
+    return out.strip(), ""
+
+
+def stage_blobs(git_root, blobs, head):
+    """`""` when each `{rel: build}` entry was written into the git index at the
+    blob `build(head)` answers - `(bytes, why)` - else the reason. The mode is
+    the one the index already holds for the path, or a plain file's.
+
+    THE BLOB IS BUILT HERE, FROM `head`, and not by the caller earlier: `head`
+    is the commit `commit_from_index` builds onto and refuses to move past, so
+    what the blob was derived from is exactly the parent the commit gets. A
+    blob built from an earlier read would lay that read's index over whatever
+    another session committed in between, and undo it in silence."""
+    for rel in sorted(blobs or {}):
+        data, why = blobs[rel](head)
+        if why:
+            return why
+        oid, why = write_blob(git_root, rel, data)
+        if why:
+            return why
+        code, out, _err = run_git(git_root, ["ls-files", "-s", "--", rel])
+        mode = out.split()[0] if code == 0 and out.split() else "100644"
+        code, out, err = run_git(git_root, [
+            "update-index", "--add", "--cacheinfo",
+            "%s,%s,%s" % (mode, oid, rel)])
+        if code is None or code != 0:
+            return "`git update-index --cacheinfo` refused %s (%s)" % (
+                rel, _excerpt.reason_of(err, out))
+    return ""
+
+
+def stage_and_commit(git_root, paths, kinds, paragraphs, refuse_foreign,
+                     blobs=None):
     """Stage `paths` by kind, read the index back, commit; undo on any failure.
 
     Returns `{"committed", "sha", "staged", "refused", "foreign"}`. `refused` is
@@ -597,12 +636,16 @@ def stage_and_commit(git_root, paths, kinds, paragraphs, refuse_foreign):
 
     AN EXPLICIT PATHSPEC, which is not redundant with the read-back: the index
     does not arrive empty, and a bare `git commit` carries whatever else is in it
-    even after both reads passed. The one exception is a `DELETED_ON_DISK` path,
-    whose deletion only the index holds, and that commit is built by
-    `commit_from_index` against the HEAD read here, before anything was staged.
+    even after both reads passed. The exceptions are a `DELETED_ON_DISK` path,
+    whose deletion only the index holds, and a path in `blobs` (`{rel:
+    build}`, each one of `paths`), committed at the blob `build(head)` answers
+    for the HEAD read here (`stage_blobs`) rather than at the bytes the working
+    tree holds - a pathspec'd commit would take the working file instead. Those
+    commits are built by `commit_from_index` against that same HEAD.
     """
     out = {"committed": False, "sha": "", "staged": [], "refused": "",
            "foreign": []}
+    blobs = dict(blobs or {})
     code, head_out, _err = run_git(git_root, ["rev-parse", "--verify", "-q",
                                               "HEAD"])
     head = head_out.strip() if code == 0 else ""
@@ -610,7 +653,8 @@ def stage_and_commit(git_root, paths, kinds, paragraphs, refuse_foreign):
     if why:
         out["refused"] = why
         return out
-    why = stage(git_root, paths, kinds)
+    why = (stage(git_root, [p for p in paths if p not in blobs], kinds)
+           or stage_blobs(git_root, blobs, head))
     if why:
         out["refused"] = restored(git_root, snap, paths,
                                   "git refused to stage: %s" % (why,))
@@ -628,7 +672,7 @@ def stage_and_commit(git_root, paths, kinds, paragraphs, refuse_foreign):
                                   % (_excerpt.reason_of(staged_err, staged_out),))
         return out
     out["staged"] = [p for p in lines(staged_out) if under_any(p, paths)]
-    if any(kinds.get(p) == DELETED_ON_DISK for p in paths):
+    if blobs or any(kinds.get(p) == DELETED_ON_DISK for p in paths):
         sha, why = commit_from_index(git_root, paths, paragraphs, head)
         if why and not sha:
             out["refused"] = restored(git_root, snap, paths, why)
@@ -705,10 +749,9 @@ def carry(git_root, paths, kinds, files):
     """`(paths, kinds, outside)` - the allow-list widened by each row file.
 
     A row file already under an allowed entry changes nothing; the journal
-    directory is on the audit-state and task lists and holds it. One that is
-    not - the index commit's list begins as the index by itself, and a journal
-    directory that did not
-    exist until this row created it is on no list - is added by name and
+    directory is on the state and task lists and holds it. One that is not - a
+    journal directory that did not exist until this row created it is on no
+    list - is added by name and
     classified the way every allowed path is. `outside` names the row files that
     cannot be carried at all (outside the git root, or ignored), which the caller
     reports rather than letting a row read as inside a commit it is not in.
@@ -754,8 +797,9 @@ def withdraw(project, config, nonce, via, ids, reason):
 
 
 def commit_with_rows(git_root, paths, kinds, paragraphs, refuse_foreign,
-                     write_rows, withdraw_rows):
+                     write_rows, withdraw_rows, blobs=None):
     """`stage_and_commit`, carrying the journal rows that name the commit.
+    `blobs` is passed through to it.
 
     `write_rows(nonce)` appends the rows keyed by `nonce` and returns
     `(files, refusal)`: the files they landed in, the anchoring row's first (an
@@ -791,7 +835,8 @@ def commit_with_rows(git_root, paths, kinds, paragraphs, refuse_foreign,
         return out
     paths, kinds, outside = carry(git_root, paths, kinds, files)
     message = with_row_trailer(paragraphs, nonce) if files else list(paragraphs)
-    done = stage_and_commit(git_root, paths, kinds, message, refuse_foreign)
+    done = stage_and_commit(git_root, paths, kinds, message, refuse_foreign,
+                            blobs=blobs)
     rels = [_invariants._rel(f, git_root) for f in files]
     done["nonce"] = nonce if files else ""
     done["journalled"] = bool(files)
@@ -1438,39 +1483,13 @@ def close_evidence_refusal(task, project, executor, changed, declared=None,
 
 # --- the committed pair -------------------------------------------------------
 # A commit carrying a plan record leaves the index and the shards git holds
-# afterwards, and that pair has to validate. The fileIndex half of it is the one
-# a scoped commit can break on its own: a task commit carries a shard whose
-# `files` grew while the rows naming them stay in an uncommitted index, and an
-# index commit carries rows removed while the shard still declaring them stays
-# uncommitted. Both ask the one question below, each of its own pair.
-def index_rows_owed(index_doc, shard_doc):
-    """`[(path, taskId)]` - each file a task of `shard_doc` declares whose
-    fileIndex row in `index_doc` does not name that task, in declaration order.
-
-    A path is matched with its `:line-range` suffix dropped on both sides,
-    which is the validator's own pairing rule, so this is empty exactly when
-    that rule finds nothing missing for these tasks. An index with no
-    fileIndex owes every declared file.
-    """
-    file_index = (index_doc or {}).get("fileIndex")
-    named = {}
-    for key, refs in (file_index.items() if isinstance(file_index, dict)
-                      else ()):
-        if isinstance(refs, list):
-            named.setdefault(_vocab._strip_line_suffix(key), set()).update(
-                r for r in refs if isinstance(r, str))
-    owed = []
-    for task in ((shard_doc or {}).get("tasks") or []):
-        tid = task.get("id") if isinstance(task, dict) else None
-        if not isinstance(tid, str) or not tid:
-            continue
-        for entry in (task.get("files") or []):
-            if not isinstance(entry, str) or not entry.strip():
-                continue
-            path = _vocab._strip_line_suffix(entry)
-            if tid not in named.get(path, ()) and (path, tid) not in owed:
-                owed.append((path, tid))
-    return owed
+# afterwards, and that pair has to validate. A shard's tasks declare files whose
+# fileIndex rows live in the index, a bug link has a half in each file, and a new
+# phase's stub mirrors its shard - so the commit carrying a shard carries the
+# part of the index its phase owns, derived from that shard and laid over the
+# index of the parent the commit is made on (`_invariants.owned_index`, the one
+# function the grader re-derives the commit with from git afterwards).
+index_rows_owed = _invariants.index_rows_owed
 
 
 def rows_named(rows):
@@ -1478,60 +1497,96 @@ def rows_named(rows):
     return ", ".join("%s (%s)" % (path, tid) for path, tid in rows)
 
 
-def owed_index_rows(phase, manifest_path, git_root):
-    """`(owed, unheld)` - the fileIndex rows the working shard needs and the
-    index HEAD holds lacks, and the part of them the working index lacks too.
-    Both empty in the single-file layout, where one file carries both halves,
-    and when HEAD holds no index or no stub for this phase, since then no
-    committed pair reads this shard at all.
+def index_to_carry(phase, manifest_path, git_root):
+    """`{"rel", "shardRel", "phaseId", "head", "now", "nowBytes", "body",
+    "needs", "doc", "unheld"}` - what the working shard of `phase` moves in the
+    part of the index the phase owns, read against HEAD now, or None in the
+    single-file layout (one file holds both halves) and when the index or the
+    shard lives outside the git root.
 
-    ONLY ROWS OF TASKS HEAD'S SHARD ALREADY HOLDS. A row for a task the shard
-    adds in this very commit cannot go first: `commit-manifest-index.py`
-    refuses an index naming a task no committed shard holds, so refusing it
-    here too would leave no order that commits either file.
+    `head` is the index HEAD holds (None when it holds none), `now` the working
+    index parsed and `nowBytes` its bytes (both None when it cannot be read),
+    `body` the working shard. `needs` and `doc` are `_invariants.owned_index`
+    of HEAD's index against the working shard - `doc` None when that moves
+    nothing - and `unheld` the rows it adds that the WORKING index lacks too.
+    Those no commit should paper over: the working plan itself fails
+    validation there, and `audit-task.py reindex` is the repair, so a caller
+    refuses on them.
 
-    SHARED BY EVERY COMMIT THAT CARRIES A SHARD WITHOUT THE INDEX, so they
-    refuse the same rows: a second filter is how one of them comes to commit
-    the plan the other refuses.
+    THIS IS THE DECISION, NOT THE BYTES. Whether the index rides is decided
+    here; what it carries is `blob_builder`'s answer at the parent the commit
+    is actually made on.
     """
     index_abs, phase_file_abs = _invariants.manifest_files(manifest_path, phase)
     if os.path.abspath(index_abs) == os.path.abspath(phase_file_abs):
-        return [], []
-    index_rel = _invariants._rel(index_abs, git_root)
+        return None
+    rel = _invariants._rel(index_abs, git_root)
     shard_rel = _invariants._rel(phase_file_abs, git_root)
-    head_index = _invariants.json_at(git_root, "HEAD", index_rel)
-    if head_index is None or str(phase.get("id")) not in [
-            str(s.get("id")) for s in (head_index.get("phases") or [])
-            if isinstance(s, dict)]:
-        return [], []
-    held = set(t.get("id") for t in ((_invariants.json_at(
-        git_root, "HEAD", shard_rel) or {}).get("tasks") or [])
-        if isinstance(t, dict))
+    if rel is None or shard_rel is None:
+        return None
+    try:
+        with open(index_abs, "rb") as fh:
+            now_bytes = fh.read()
+        now = json.loads(now_bytes.decode("utf-8"))
+    except (OSError, ValueError):
+        now_bytes, now = None, None
     try:
         body = _mio.read_json(phase_file_abs)
-        index_now = _mio.read_json(index_abs)
     except Exception:
-        return [], []
-    owed = [row for row in index_rows_owed(head_index, body) if row[1] in held]
-    lacking = index_rows_owed(index_now, body)
-    return owed, [row for row in owed if row in lacking]
+        body = None
+    pid = str((phase or {}).get("id"))
+    head = _invariants.json_at(git_root, "HEAD", rel)
+    needs, doc = _invariants.owned_index(
+        head, now, body, _invariants.json_at(git_root, "HEAD", shard_rel), pid)
+    lacking = index_rows_owed(now, body) if isinstance(now, dict) else []
+    return {"rel": rel, "shardRel": shard_rel, "phaseId": pid, "head": head,
+            "now": now if isinstance(now, dict) else None,
+            "nowBytes": now_bytes if isinstance(now, dict) else None,
+            "body": body, "needs": needs,
+            "doc": doc if doc is not None and doc != head else None,
+            "unheld": [row for row in needs["rows"] if row in lacking]}
 
 
-def index_rows_refusal(owed, unheld, manifest_path, phase_id, command):
-    """The sentence a shard owing the committed index rows earns, or None.
-    `command` is the script the caller runs again once the index is in."""
-    if not owed:
+def blob_builder(git_root, carry, base=None):
+    """`build(head) -> (bytes, why)`: the index to commit onto `head`, for
+    `stage_and_commit`'s `blobs`. The owned part (`_invariants.owned_index`) is
+    derived from the working shard against `head`'s own index and shard;
+    everything else is `head`'s index - or `base`, a document the caller
+    decided to carry whole."""
+    def build(head):
+        parent = _invariants.json_at(git_root, head, carry["rel"])
+        _changes, doc = _invariants.owned_index(
+            base if base is not None else parent, carry["now"], carry["body"],
+            _invariants.json_at(git_root, head, carry["shardRel"]),
+            carry["phaseId"])
+        if doc is None:
+            return None, ("the index %s holds at %s could not be read, so the "
+                          "part this phase owns cannot be laid over it"
+                          % (carry["rel"], (head or "HEAD")[:12]))
+        return index_bytes(doc, carry), ""
+    return build
+
+
+def index_bytes(doc, carry):
+    """The bytes of the index `doc`: the working file's own when `doc` is what
+    it already holds, so the commit leaves no difference of spelling behind,
+    else `_manifest_io.json_document`, the plugin's one spelling of a plan."""
+    if carry.get("now") is not None and doc == carry["now"]:
+        return carry["nowBytes"]
+    return _mio.json_document(doc).encode("utf-8")
+
+
+def unheld_rows_refusal(unheld):
+    """The sentence a shard declaring files no index has a row for earns, or
+    None."""
+    if not unheld:
         return None
-    first = ("The working index lacks %s as well, so re-derive it "
-             "(audit-task.py reindex), then commit"
-             % (rows_named(unheld),) if unheld else "Commit")
-    return ("the shard this commit carries declares %s, and the index HEAD "
-            "holds has no fileIndex row for %s - committed now, it would "
-            "record a plan that does not validate ('missing from fileIndex'). "
-            "%s the index first (commit-manifest-index.py %s %s), then run "
-            "%s again. Nothing was staged"
-            % (rows_named(owed), "it" if len(owed) == 1 else "them", first,
-               manifest_path, phase_id, command))
+    return ("the shard this commit carries declares %s, and neither the index "
+            "HEAD holds nor the working index has a fileIndex row for %s - the "
+            "working plan does not validate ('missing from fileIndex'), so "
+            "re-derive the index (audit-task.py reindex), then commit. Nothing "
+            "was staged" % (rows_named(unheld),
+                            "it" if len(unheld) == 1 else "them"))
 
 
 # --- what happened ------------------------------------------------------------

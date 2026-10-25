@@ -4,6 +4,28 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [Unreleased]
+
+### Changed
+- **One commit verb writes the index and the shard together.** A commit carrying a phase's shard
+  (`commit-task-work.py <manifest> <taskId>`) now carries the part of the manifest index that
+  phase owns - its tasks' fileIndex rows, the bug links its shard completes, its stub's mirrored
+  fields - derived from the shard and laid over the index of the parent the commit is made on, so
+  a task added mid-phase, a scope widened during an attempt or a task moved away is committed by
+  the next commit with no other command run; an unrelated index edit stays in the working tree,
+  and another session's index commit landing in between is kept. `verify-invariants`'
+  `commit-scope` accepts such a commit only when its index is its parent's with that part derived
+  the same way, and `audit-state-scope` no longer calls the index in a state commit a breach.
+
+### Removed
+- **`commit-audit-state.py` and `commit-manifest-index.py`.** Both are folded into
+  `commit-task-work.py`: `commit-task-work.py <manifest> <phaseId> --state` commits a phase's
+  manifest file, journal, evidence and index - never a task's files - carrying the whole index
+  when the plan it then records validates and otherwise only the part that phase owns, naming
+  what it left (`indexLeft`, which `close-phase.py` and the step driver print). `/audit:resume`, the step driver, `close-phase.py` and the sign-off
+  commands `audit-task.py` prints all call it. Commits of the retired index class in history are
+  still read and graded.
+
 ## [3.6.0]
 
 ### Removed

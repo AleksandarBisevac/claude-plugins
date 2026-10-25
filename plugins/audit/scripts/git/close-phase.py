@@ -33,7 +33,7 @@ ever skipped by a person typing it. It never deletes a branch that did not reach
 parent. And it never runs the second half of a cleanup when the first half was
 refused.
 
-DECIDE, THEN WRITE, THEN READ BACK -- `commit-audit-state.py`'s shape. Every
+DECIDE, THEN WRITE, THEN READ BACK -- `commit-task-work.py --state`'s shape. Every
 precondition is resolved into a plan before the first mutation, so a refusal leaves
 the repository exactly as it was found. After the merge the parent SHA is re-read AND
 the ancestry re-asked: two computations rather than one, because comparing the
@@ -1433,7 +1433,7 @@ def surviving_copy(manifest_path, project, git_root, observation, the_plan,
     with it for the same reason.
 
     A path outside the git root is DEGRADED PAST, not failed on -- the same sentence
-    `commit-audit-state` writes for a journal directory it cannot commit: say which
+    a state commit writes for a journal directory it cannot commit: say which
     copy was written and carry on, because a merge that happened must not be reported
     as not having happened.
     """
@@ -1552,9 +1552,9 @@ LANDING_SUBJECT = "landed on %s"
 
 
 def _commit_verb(script, manifest_path, phase_id, project, subject):
-    """`(answer, None)` - the verb's `--json` answer - or `(None, why)`."""
+    """`(answer, None)` - the state commit's `--json` answer - or `(None, why)`."""
     argv = [sys.executable, _loader.script_path(script), manifest_path, phase_id,
-            "--project", project, "--subject", subject, "--json"]
+            "--state", "--project", project, "--subject", subject, "--json"]
     try:
         done = subprocess.run(argv, cwd=project, stdout=subprocess.PIPE,
                               stderr=subprocess.PIPE, timeout=300)
@@ -1782,24 +1782,24 @@ def ignored_stamp_refusal(manifest_path, project, git_root):
 
 
 def _commit_stamp(target, phase_id, project, parent):
-    """The stamp committed by the audit-state verb, and the index verb after it
-    in a sharded plan, run in `project`."""
-    subject = LANDING_SUBJECT % (parent,)
-    scripts = ["commit-audit-state.py"]
-    try:
-        if _mio.is_sharded(_mio.read_json(target)):
-            scripts.append("commit-manifest-index.py")
-    except Exception as exc:
-        return {"landingCommits": [], "landingCommitWhy": (
-            "%s cannot be read to tell its layout (%s)" % (target, exc))}
-    made = []
-    for script in scripts:
-        answer, why = _commit_verb(script, target, phase_id, project, subject)
-        if why:
-            return {"landingCommits": made, "landingCommitWhy": why}
-        if answer.get("commit"):
-            made.append(answer["commit"])
-    return {"landingCommits": made, "landingCommitWhy": ""}
+    """The stamp committed by the one commit verb's state commit, run in
+    `project` - the phase's file and, in a sharded plan, the index beside it,
+    in one commit. `landingCommitLeft` carries the verb's `indexLeft`: what of
+    the index it left uncommitted and why, which the close prints beside the
+    commit rather than reporting the index as landed with it."""
+    answer, why = _commit_verb("commit-task-work.py", target, phase_id, project,
+                               LANDING_SUBJECT % (parent,))
+    if why:
+        return {"landingCommits": [], "landingCommitWhy": why}
+    return {"landingCommits": [answer["commit"]] if answer.get("commit") else [],
+            "landingCommitWhy": "",
+            "landingCommitLeft": list(answer.get("indexLeft") or [])}
+
+
+def _render_left(answer, out):
+    """One line per part of the index a landing's state commit left behind."""
+    for line in answer.get("landingCommitLeft") or []:
+        out("  %s" % (line,))
 
 
 # --- the verdict at the head it would merge ---------------------------------------
@@ -3134,6 +3134,7 @@ def render(answer, out=print):
             out("  the stamp committed in %s as %s"
                 % (answer.get("landingCommitIn"),
                    ", ".join(c[:12] for c in answer["landingCommits"])))
+            _render_left(answer, out)
         elif "landingCommits" in answer:
             out("  the stamp was already committed in %s"
                 % (answer.get("landingCommitIn"),))
@@ -3340,6 +3341,7 @@ def main(argv, out=print):
             out("  the stamp committed in %s as %s"
                 % (kept.get("landingCommitIn"),
                    ", ".join(c[:12] for c in kept["landingCommits"])))
+            _render_left(kept, out)
         return E_FAIL if (filled.get("planUnrestored")
                           or kept.get("landingCommitWhy")) else E_OK
     # ...AND A COMPOSED NAME NOTHING HOLDS IS NOT AN ANCESTRY QUESTION. Asked of git,

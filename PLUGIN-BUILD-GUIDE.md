@@ -182,10 +182,8 @@ claude-plugins/                           # this repo (personal, public)
           audit-journal.py                # the CLI over both records: append/verify/show/archive, plus merge and sessions
           _invariants.py                  # the orchestrator's rules, re-derived from git + shard + journal + ledger
           verify-invariants.py            # the CLI over it: one phase or --all, breach = exit 1
-          _scoped_commit.py               # what both commit-a-narrow-allow-list commands share: the git runner, the two index reads, the answer
-          commit-audit-state.py           # commits the phase's manifest file + journal + evidence and NOTHING else, or says there is none
-          commit-manifest-index.py        # commits the manifest INDEX and the row naming the commit, NOTHING else, under the index lock; refuses in the single-file layout
-          commit-task-work.py             # commits ONE task's declared files + the phase file + the records, naming any staged path outside that list
+          _scoped_commit.py               # what both commit-a-narrow-allow-list commits share: the git runner, the two index reads, the blob route, the answer
+          commit-task-work.py             # commits ONE task's declared files + the phase file + the index rows it needs + the records, naming any staged path outside that list; --state commits a phase's record + the index and never a task's files
           run-test-gate.py                # runs a phase's gate bracketed by a tree snapshot; counts what ran; states what it touched
           propose-gates.py                # a plan proposal from what evidence history caught, not the tree alone - and says which it drew on
           record-risk-confirmation.py     # the high-risk gate answered BEFORE the run, bounded to named task ids and written to the trail
@@ -439,9 +437,7 @@ L9:
   audit-version -> _claude_home, _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
   close-phase -> _branch, _claude_home, _config_rules, _evidence_io, _excerpt, _filed_returns, _invariants, _journal_io, _loader, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _scoped_commit, _tree_stamp, _utc_stamp, _verdict_binding, _worktrees
-  commit-audit-state -> _claude_home, _evidence_io, _invariants, _journal_io, _manifest_io, _output, _scoped_commit
-  commit-manifest-index -> _claude_home, _invariants, _journal_io, _manifest_io, _output, _panel_write, _scoped_commit
-  commit-task-work -> _claude_home, _evidence_io, _filed_returns, _invariants, _journal_io, _loader, _manifest_io, _manifest_vocab, _output, _scoped_commit, _verdict_binding
+  commit-task-work -> _claude_home, _evidence_io, _filed_returns, _invariants, _journal_io, _loader, _manifest_io, _manifest_vocab, _output, _panel_write, _scoped_commit, _verdict_binding
   derive-phase-gate -> _claude_home, _evidence_io, _gate_derive, _invariants, _loader, _machine_paths, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _utc_stamp
   drive-phase -> _areas, _claude_home, _clause_coverage, _config_rules, _doctor_setup, _evidence_io, _excerpt, _filed_returns, _gate_derive, _invariants, _journal_io, _loader, _manifest_io, _manifest_phases, _output, _runner_collects, _scope_companions, _scoped_commit, _status_facts, _tree_stamp, _verdict_binding, _wave, _worktrees
   explain-ado-drift -> _ado_drift, _manifest_io, _output
@@ -1068,8 +1064,8 @@ before the first write, and each result read back by asking a *different* questi
 answered. The merge is an input of the phase's derived status, so the stamp stores that status in
 the same write (`done`, for a signed-off phase with every task terminal) and `mirror_stub`
 re-mirrors the index stub from the shard. **The stamp is then committed where it was written**
-(`commit_landing`): in the parent's checkout through `commit-audit-state.py`, and
-`commit-manifest-index.py` after it in a sharded plan, run as subprocesses with the subject
+(`commit_landing`): in the parent's checkout through `commit-task-work.py --state` - the phase's
+file and, in a sharded plan, the index beside it, in one commit - run as a subprocess with the subject
 `landed on <parent>`; or, with the parent checked out nowhere and the stamp in the tree holding
 the phase branch, on that branch, with the parent fast-forwarded to it once more and the
 ancestry read back. A stamp in a tree holding any other branch is left there and said
@@ -3777,8 +3773,8 @@ tree, so its answer is about the tree it runs in. The `ln` cases in
 `test_verify_invariants.py` through the CLI.
 
 ### `plugins/audit/scripts/governance/_scoped_commit.py`
-Everything the three **commit-a-narrow-allow-list** commands (`commit-audit-state.py`,
-`commit-manifest-index.py`, `commit-task-work.py`) share, so that none holds a second copy of it:
+Everything the two **commit-a-narrow-allow-list** commits `commit-task-work.py` makes - a task
+commit and a `--state` commit - share, so that neither holds a second copy of it:
 the git runner that keeps stderr (a refusal is the only thing a human can act on, so
 `_commit_trail._git`'s `DEVNULL` is wrong here), git's own line shape, `under_any` over
 `_invariants._under`, the working-tree read that decides **before** anything is staged, the index
@@ -3804,7 +3800,11 @@ pointing at it, so it carries exactly the allow-list and the project's `pre-comm
 `commit-msg` hooks run on it as on every other commit; a refusing hook leaves the real index
 untouched. HEAD is checked against the one read before staging just before the commit, and the new
 commit's first parent after it; a mismatch there is refused with both SHAs named, and nothing is
-reset.
+reset. The same route commits a path at a blob rather than at the working file's bytes
+(`stage_blobs`, the `blobs` argument): the caller hands a builder, and `stage_blobs` runs it
+against the HEAD read here - the parent `commit_from_index` builds onto and refuses to move past -
+so the index committed is derived from exactly that parent (`blob_builder`), never from an earlier
+read that another session's commit could have overtaken.
 
 **The start head has one reader and one test.** `start_head_of()` reads the HEAD an attempt's
 newest `task.start` journal row recorded, and is the only code that does: `commit-task-work.py`
@@ -3823,17 +3823,16 @@ HEAD's history, and `ncm7` drives the `--no-change` close through the command af
 recorded start head out of HEAD's history.
 
 **No command can import another** — nothing may import a hyphenated entry point — so this
-module is the only place they meet, and a second spelling of a refusal rule is how one commit
-comes to carry what another forbids. It sits a layer above `_invariants` and reads it for `_under`,
-which is the one answer to "is this path inside that entry" that the writer and the after-the-fact
-checker both have to give.
+module is where other entry points reach these pieces, and a second spelling of a refusal rule is
+how one commit comes to carry what another forbids. It sits a layer above `_invariants` and reads
+it for `_under`, which is the one answer to "is this path inside that entry" that the writer and
+the after-the-fact checker both have to give, and for `owned_index`, the one answer to which index
+a commit carrying a shard carries.
 
-**What is deliberately not here: the allow-lists.** Each command derives its own, and they differ
-in exactly the entries that matter — one may stage the phase's shard and the records beside it and
-never the shared index, another may stage only the shared index and the journal file holding
-the row that names its commit, and never a phase's file. A shared builder taking a flag would be
-one function holding several safety properties, which is the shape in which a widened list stops
-being noticed.
+**What is deliberately not here: the allow-lists.** Each commit derives its own, and they differ
+in exactly the entries that matter — a task commit may stage the task's files and a state commit
+never may. A shared builder taking a flag would be one function holding several safety properties,
+which is the shape in which a widened list stops being noticed.
 
 **What one attempt changed.** A task commit carries exactly its attempt, and the only way to tell
 an attempt's change from older dirt afterwards is a record taken when it began. `record_attempt()`
@@ -3851,143 +3850,12 @@ apart (`pluginOwned`), so a path the commit leaves out as plugin-owned is never 
 refuses. `commit-task-work.py` refuses older dirt in a declared file and a stray made during the
 attempt; `done --commit` refuses the stray too.
 
-### `plugins/audit/scripts/governance/commit-audit-state.py`
-`commit-audit-state.py <manifest> <phaseId>` — **commit any uncommitted audit state, or say
-there is none.** Idempotent and safe to call unconditionally; `--project` names the directory
-holding `.claude/` and the records, `--subject` supplies the commit subject after the
-conventional prefix, `--json` prints the whole answer. Exit 0 it ran (committed, or nothing was
-uncommitted), 1 it could not, 2 usage error.
-
-**The gap it closes.** Evidence is written beside the manifest and is meant to be committed, but
-the orchestrator commits on success and only on success: a red gate leaves `in_progress` and
-step 4 says *do not commit*, an infrastructure failure STOPs without committing, and the
-sign-off commit waits for green. The gap is **narrower than "every failure"** — a task commit
-stages the evidence directory, so a run that fails at attempt one and succeeds at attempt two is
-already durable, its failure included. What is not durable is a run whose task or phase never
-subsequently commits at all.
-
-**What it stages, and what it can never stage.** The phase's manifest file (the shard when
-sharded, else the single manifest), the journal directory, the evidence directory. The task's
-`files` are not on that list and cannot be put on it — a failed task's code stays out of git,
-which is the entire point of a separate verb. Paths are staged **explicitly** (`git add --
-<path>…`, never `git add -A`) and the index is read back with `git diff --cached --name-only`
-and compared against the same allow-list **before** the commit. The index is read **before**
-staging too, so work somebody else had already staged is refused while the index is still
-exactly as it was found rather than unpicked afterwards. A directory outside `<gitRoot>` is
-degraded past and named, the sentence step 4c already writes for the journal.
-
-**Never an empty commit**, and a fixed literal in the **scope** position. Nothing staged means no
-commit and a line saying so — a stream of empty commits is how a record stops being read. The
-commit itself reads `chore(audit-state):` — `chore` because commitlint's default type-enum has to
-accept it or a repository with husky rejects the commit *after* the file is staged, and
-`audit-state` sits in the scope because a task commit's scope is its phase id while its type comes
-from `meta.commit.type`, which a manifest may set to anything. `git log --grep audit-state`
-therefore separates the two commit classes for ever.
-
-**And the subject after the colon opens with a fixed lowercase word** — the line reads
-`chore(audit-state): phase P6 — …`. This is the second half of the same repair: `chore` satisfied
-commitlint's default `type-enum`, and the very next default rule refused the commit anyway.
-`subject-case` forbids a subject that *is* sentence-case, start-case, pascal-case or upper-case,
-and a phase id leading an otherwise lowercase sentence is sentence-case exactly. Aiming at every
-one of those cases rather than at the one that bit is the point, because meeting the defaults a
-rule at a time is what made this a second visit: each of them is computed by a transform that
-capitalises the subject's first character, so a lowercase-initial subject is out of reach of all
-of them. The word is this command's and not the caller's — it sits ahead of `--subject`, so
-nothing a caller passes can put a capital back in first position — and the phase id stays
-**uppercase** one word further in, since the id was never what the rule objected to, its position
-was. The shape is unconditional and deliberately **not** read from `meta.commit`: that block holds
-a default type and a trailer, records nothing about which commitlint rules a repository
-configures, and a fixed spelling no manifest can move is exactly what this buys.
-
-**It anchors itself in the trail, from inside the commit.** Before committing it appends an
-`audit.state.committed` journal row whose `details` carry `commitNonce` and `phaseId`, ends the
-commit message with an `Audit-Row: <nonce>` trailer, and stages the row with the rest — so the
-row is in the commit it names and the run leaves no trail behind (`_scoped_commit.commit_with_rows`,
-shared by every scoped commit). A row inside a commit cannot hold that commit's SHA, which is
-why it holds the nonce; `_invariants.audit_state_scope()` resolves it with `git log --grep`, which a
-rebase does not break. A commit carrying the trailer is graded only when its subject opens with the
-class header (`_invariants.STATE_HEADER`, `INDEX_HEADER`) and the trailer is in its last paragraph;
-any other carrier - a squash merge, or a commit that gained a paragraph after its trailer - is
-reported as a gap naming it and the test it failed, and is never graded. A commit refused after the row was written — a hook, git itself — leaves an
-`audit.commit.withdrawn` row naming the nonce, and a reader drops a withdrawn nonce instead of
-reporting a commit that does not exist. Because the row is inside its commit, a journal holding
-only other writers' rows is committed like the other two records; a second run finds nothing
-uncommitted. The row's target is the **evidence directory** and deliberately not the phase's
-manifest file, because `_recorded_states()` reads every row naming that file as a *write* to it
-and a commit is not an edit. The append is fail-soft (`_journal_io.append`'s contract) and a row
-that could not be written is printed: a commit that happened must not be reported as not having
-happened.
-
-### `plugins/audit/scripts/governance/commit-manifest-index.py`
-`commit-manifest-index.py <manifest> <phaseId>` — **commit the manifest INDEX on its own, or say
-there is nothing to commit.** `--project` names the directory holding `.claude/` and the
-records, `--subject` supplies the commit subject after the conventional prefix, `--takeover` takes
-a lock a human has confirmed is dead, `--json` prints the whole answer. Exit 0 it ran, 1 it could
-not, 2 usage error, 3 the lock is held by a live process, 4 the lock is stale.
-
-**The gap it closes.** In the sharded layout the index holds `meta`, `fileIndex`, `bugs[]`,
-`deferred`, `proposals` and the phase stubs. `/audit:task add --files …` writes `fileIndex` there
-and `/audit:phase add` appends a stub — while step 4c forbids a **task** commit from staging the
-index and `commit-audit-state.py` refuses it too, both correctly and for the same reason. So
-nothing committed it: the structural edits accumulated in a working tree until somebody noticed.
-Reported from a live project, committed by hand three times in one evening.
-
-**Why a commit of its own rather than a wider allow-list somewhere else.** The sharded layout
-exists so two phases can run in parallel without meeting on one file. A commit carrying a phase's
-work **and** the shared index cannot be landed, reordered or dropped without taking the work with
-it; a commit carrying the shared file **alone** can be landed, cherry-picked or thrown away and
-re-derived (`/audit:task scope` rebuilds `fileIndex`), and its conflicts stay confined to the file
-it carries. Widening `commit-audit-state.py`'s list would have satisfied that script's own
-verification — its allow-list and its staged set are one list, so nothing there could notice —
-while destroying the property both scope checks exist to defend.
-
-**What it stages: the index, and the one journal file holding the row that names the commit, and
-nothing else.** Not the shard, not the rest of the journal, not the evidence, not the task's
-`files`. The allow-list is the index; `commit_with_rows` adds the row's file to it, and nothing
-else widens it. Each path is staged **explicitly** (`git add -- <path>`, never `git add -A`), and the index is read back
-with `git diff --cached --name-only` and compared against the same list **before** the commit —
-and read **before** staging too, so work somebody else had already staged is refused while the git
-index is still exactly as it was found. Both reads are `_scoped_commit`'s, shared with its sibling.
-
-**Under the index lock, which its sibling does not take** — the asymmetry is the point. That
-command commits a phase's own shard, which only that phase writes; this one commits the file every
-structural command writes, so a concurrent `/audit:task add` between the read and the commit would
-put half an edit into git. It is the same lock `audit-task.py` and `set-priority.py` take, borrowed
-rather than retaken when the caller already holds it.
-
-**In the single-file layout it refuses, by name.** There the manifest *is* the index —
-`_invariants.manifest_files()` returns the identity pair — so the ordinary commits already carry it
-and this route would commit the same bytes twice. The identity pair is the test, never a filename
-guess. It refuses by declining and saying which state it is in, and still exits 0: a single-file
-project has done nothing wrong by calling this, and a non-zero exit would make every single-file
-sign-off read as failed and get the step deleted within a day.
-
-**Never an empty commit**, and a fixed literal in the **scope** position. `chore(audit-index):` —
-`chore` because commitlint's default enum has to accept the type or a repository with husky refuses
-the commit *after* the file is staged, and `audit-index` in the scope because a task commit's
-scope is its phase id and its type comes from `meta.commit.type`, which a manifest may set to
-anything. `git log --grep audit-index` therefore separates the three commit classes for ever.
-
-**And its subject opens with the same fixed lowercase word**, against the identical defect:
-with the phase id first the subject *is* sentence-case, which commitlint's default `subject-case`
-refuses along with start-case, pascal-case and upper-case. The reasoning is spelled out under
-`commit-audit-state.py` above and is not restated here; what is specific to this writer is that
-the word names the phase **without** claiming to be scoped to it — the conventional scope says
-`audit-index`, and that is what the commit is scoped to, while the subject's phase is attribution.
-
-**It anchors itself in the trail, from inside the commit.** Before committing it appends an
-`audit.index.committed` journal row whose `details` carry `commitNonce` and `phaseId` — both on
-`_journal_io.DETAILS_KEYS`, checked by a case rather than assumed, because that allow-list drops an
-unknown key in silence — and adds the ONE journal file that row landed in to its allow-list, so the
-commit carries the index and the row naming it. A journal file is named for one writer and one
-worktree, so it is not a file two phases meet on. The row is the only handle anything has on such a
-commit, and it is what `_invariants.index_scope()` resolves through the `Audit-Row` trailer to find
-these commits and grade them. `<phaseId>` throughout is **attribution and not scope**: the index is
-shared, and the phase id says which run made the structural change.
-
 ### `plugins/audit/scripts/governance/commit-task-work.py`
 `commit-task-work.py <manifest> <taskId>` — **commit one task's work, staging what that task
-declares and refusing the rest.**
+declares and refusing the rest** — and `commit-task-work.py <manifest> <phaseId> --state` —
+**commit a phase's record and none of its work, or say there is none.** One verb, two scoped
+commits, each with its own allow-list in a function of its own (`stage_targets`, `state_targets`):
+a shared builder taking a flag would be one function holding both safety properties.
 
 **Why it exists.** The successful task commit was the one git operation this plugin described in
 prose and did not script. `reference/orchestrator.md` step 4c spells the staging list, the
@@ -3997,12 +3865,26 @@ position is generalisation. Four scope breaches on one program came from widenin
 a file "obviously" part of the change, a sibling the editor had also touched, the shared index
 because the phase file was allowed. Prose cannot refuse; this can.
 
-**What it stages.** Exactly the four things step 4c allows, each named in the output: the task's
-own `files` (a `:line-range` suffix stripped, because git has never heard of one), the phase's
-manifest file, the journal directory and the evidence directory. Nothing else, and the manifest
-**index** explicitly not — a task commit carrying the index is what makes two parallel phases
-conflict on merge. `_invariants.commit_scope()` re-derives that same list from git afterwards, so
-these commits are graded by something that did not make them.
+**What a task commit stages.** Exactly the four things step 4c allows, each named in the output:
+the task's own `files` (a `:line-range` suffix stripped, because git has never heard of one), the
+phase's manifest file, the journal directory and the evidence directory — and, beside the shard,
+the part of the manifest **index** its phase owns, and nothing else of it.
+
+**One invariant holds the index** (`_invariants.owned_index`): the part a phase owns — its tasks'
+fileIndex rows, the bug links its shard completes, its stub's mirrored `_STUB_KEYS` — equals what
+its shard derives, and everything else is the parent's, unchanged. Rows are a set: the owned tasks
+are those the shard holds or its parent copy held, so a file a task stopped declaring, or a task
+moved to another phase, takes its row with it. The validator refuses either half of a pair alone,
+so a task added mid-phase — `/audit:task add` writes both files — a scope widened during the
+attempt, or a stamp written into the shard is committed by the next commit with no other verb
+run, while an unrelated index edit — another phase's row, a title — stays in the working tree:
+the rest of the shared index is what two parallel phases would meet on. The decision is taken
+early (`_scoped_commit.index_to_carry`); the bytes are built by `stage_and_commit` against the
+parent the commit is actually made on (`blob_builder`), so another session's index commit landing
+in between is kept rather than undone. A row the working index lacks as well is refused, naming
+`audit-task.py reindex`, because the working plan itself does not validate there.
+`_invariants.commit_scope()` grades with the same function from git afterwards: the committed
+index must equal its parent's with the owned part derived from the committed shard.
 
 **How the exclusion is enforced rather than intended.** Paths are staged explicitly (never
 `git add -A`), the git index is read *before* staging so work somebody else had already staged
@@ -4049,9 +3931,43 @@ the row — and an override's row — is written before the commit and carried b
 commit's `Audit-Row` trailer, and an override whose row cannot be written is refused before
 anything is staged.
 
-**It takes no lock**, and that is the asymmetry with `commit-manifest-index.py` rather than an
-omission: this commit touches the phase's own shard, which only that phase's run writes, and the
-task's own files, which the plan gate has already bound to one task.
+**A task commit takes no lock**: it touches the phase's own shard, which only that phase's run
+writes, the task's own files, which the plan gate has already bound to one task, and an index blob
+built from HEAD's and its own shard.
+
+**The state commit (`--state`) closes the gap a red run leaves.** Evidence is meant to be
+committed, but the orchestrator commits on success and only on success: a red gate leaves
+`in_progress`, an infrastructure failure STOPs without committing, and the sign-off commit waits
+for green. A task commit stages the evidence directory, so a run that fails at attempt one and
+succeeds at attempt two is already durable; what is not is a run whose task or phase never commits
+at all. `/audit:resume` runs it first, `drive-phase.py` after a block and at sign-off, and
+`close-phase.py` for a landing's stamp. It stages the phase's manifest file, the journal
+directory, the evidence directory and the index — **never a task's `files`**, which is the entire
+point: a failed task's code stays out of git. The index is carried **whole** when every reference
+in it is held by the shards as this commit leaves them (this phase's own counts as committed) and
+it drops no row a committed shard still declares; otherwise only the part this phase owns is
+carried, laid over the parent, and `indexLeft` - printed by `close-phase.py` beside the stamp it
+reports and added to the step driver's did-lines - names what was left and which shard to commit
+first. In both modes the phase's owned part is derived from its shard, so a landing's or a
+sign-off's stamp reaches its stub whichever mode the commit took. It takes the
+index lock (`_panel_write`, `--takeover`, exit 3 for a live holder and 4 for a stale one), because
+it may commit the file every structural command writes. Idempotent: with nothing uncommitted it
+says so and commits nothing.
+
+**Its spelling is a fixed literal in the scope position**: `chore(audit-state):` — `chore`
+because commitlint's default type-enum has to accept the type or a repository with husky rejects
+the commit *after* the files are staged, and `audit-state` in the scope because a task commit's
+scope is its task id while its type comes from `meta.commit.type`. The subject after the colon
+opens with the fixed lowercase word `phase`, so it is out of reach of every case commitlint's
+default `subject-case` forbids — each is a transform that capitalises the first character — and
+the phase id stays uppercase one word further in; `COMMIT_TYPE`, `COMMIT_SCOPE` and
+`state_header()` bound the whole header to `header-max-length`. The row it writes first and
+carries is `audit.state.committed`, its target the **evidence directory** and not the phase's
+manifest file, because `_recorded_states()` reads a row naming that file as a write to it.
+`_invariants.audit_state_scope()` resolves the commit from the row's `Audit-Row` trailer and grades
+that no work rode along. The index class that used to be committed on its own, under the
+`audit-index` scope, is written by nothing now; `_invariants.index_scope()` still grades the
+commits history holds.
 
 ### `plugins/audit/scripts/governance/run-test-gate.py` (v1.4.2)
 Runs a phase's `testGate` and answers the two questions an exit code cannot.
@@ -4085,7 +4001,7 @@ Without it git collapses a **wholly untracked** directory to one `?? dir/` entry
 fix-in-place gate that *creates* a file inside one moves no porcelain line and the bracket
 answers `treeMutated: []` — the value that means KNOWN CLEAN. That is the day-one shape of a
 subject tree nobody has committed yet, and of a new source directory in one that has; the three
-other porcelain readers here (`_journal_io._git_status_sets`, `commit-audit-state`,
+other porcelain readers here (`_journal_io._git_status_sets`, `_scoped_commit.uncommitted`,
 `guard-bash-writes`) already pass it. What the flag does **not** buy is content awareness:
 porcelain reports status, never bytes, so a *rewrite* of a file that was already untracked keeps
 its one `?? path` entry and is invisible to this comparison with the flag exactly as without it —
@@ -4506,8 +4422,8 @@ through `audit-task.py add --fixes` (`add_fix_tasks`), which the drive runs like
 answer the landing takes from a recorded fix task - and the triage is printed again. `--answer sign-off --reason
 <summary>` runs the rest as one step (`signoff_step`): the phase gate (`derive-phase-gate.py`
 first when `meta.phaseGate.mode` is set, then `run-test-gate.py --record`), `verify-invariants.py`,
-`audit-task.py signoff --verdict passed`, the commit (`commit-audit-state.py`, and
-`commit-manifest-index.py` in a sharded plan), the landing (`close-phase.py`, skipped for a phase
+`audit-task.py signoff --verdict passed`, the commit (`commit-task-work.py --state`, which
+carries the index beside the shard in a sharded plan), the landing (`close-phase.py`, skipped for a phase
 that records no branch), and the lock release. **A red phase gate stops before the sign-off verb**
 (`red_gate_stop`): the invariants still run and are printed beside it, with the fix-task command
 carrying the run's id for `--failing-from`, and the next `next` prints the triage again. Sign-off's other
@@ -4551,7 +4467,7 @@ its reason, a held lock, what to do with any other stop - is printed at that ste
 `_refs.followed_anchor_drift()` holds that every step the README's followed table names is here
 with a rule. A red gate offers `rerun` beside `retry` and `block`: `rerun` measures again without
 re-starting the task, so a gate that could not run spends no attempt; `block` runs
-`commit-audit-state.py` after the block verb (`keep_record`), since a blocked task gets no task
+`commit-task-work.py --state` after the block verb (`keep_record`), since a blocked task gets no task
 commit to carry the rows its gate wrote, and a blocked task's stop and a stalled phase both print
 each blocked task's own remedy (`blocked_remedy`): `start <id>` while it has attempts left,
 `unblock <id> --reason` once they are spent (`attempts_spent`; `unblock` also clears a block while

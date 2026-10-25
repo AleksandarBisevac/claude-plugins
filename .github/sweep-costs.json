@@ -113,8 +113,6 @@
   "tests/test_audit_version.py": 0.5,
   "tests/test_check_ado_item.py": 0.2,
   "tests/test_close_phase.py": 330.3,
-  "tests/test_commit_audit_state.py": 64.0,
-  "tests/test_commit_manifest_index.py": 26.2,
   "tests/test_commit_task_work.py": 222.9,
   "tests/test_derive_phase_gate.py": 21.0,
   "tests/test_detect_plan_skip.py": 0.2,

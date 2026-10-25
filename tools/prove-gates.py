@@ -1000,33 +1000,20 @@ TABLE = (
  # copy gains a field the command-side copy has never heard of.
  ("explorer_contract_drift", "plugins/audit/agents/audit-explorer.md", "after",
   '"suggestedTests": ["...", ...], ', '"confidence": "0-1", ', DEP, "ec1"),
- # THREE WAYS, because the lint has three ways to stop being true. First the
- # document: the paragraph reverts to its earlier, already-shipped wording, which
- # is the historical bug and encodes no checkable claim at all.
+ # TWO WAYS, because the lint has two ways to stop being true. First the
+ # document: the state commit's paragraph reverts to the wording an earlier
+ # writer's paragraph shipped with, which is the historical bug and encodes no
+ # checkable claim at all.
  ("commit_spelling_drift", "PLUGIN-BUILD-GUIDE.md", "replace",
-  "**Never an empty commit**, and a fixed literal in the **scope** position. Nothing staged means no\n"
-  "commit and a line saying so \u2014 a stream of empty commits is how a record stops being read. The\n"
-  "commit itself reads `chore(audit-state):` \u2014 `chore` because commitlint's default type-enum has to\n"
-  "accept it or a repository with husky rejects the commit *after* the file is staged, and\n"
-  "`audit-state` sits in the scope because a task commit's scope is its phase id while its type comes\n"
-  "from `meta.commit.type`, which a manifest may set to anything. `git log --grep audit-state`\n"
-  "therefore separates the two commit classes for ever.",
-  "**Never an empty commit**, and a distinct conventional type. Nothing staged means no commit and\n"
-  "a line saying so \u2014 a stream of empty commits is how a record stops being read. The type is the\n"
-  "fixed literal `audit-state`, which is the only spelling a task commit cannot collide with\n"
-  "(`meta.commit.type` may be anything), so `git log --grep` separates the two for ever.",
+  "**Its spelling is a fixed literal in the scope position**: `chore(audit-state):`",
+  "**Its spelling is a distinct conventional type**: the fixed literal `audit-state`",
   DEP, "cs1"),
- # Then the SIBLING writer, which is the half the first version of this lint could
- # not see: `commit-manifest-index.py` has the same two constants and its own
- # paragraph, and a lint naming one file by hand covered one instance of a class.
- ("commit_spelling_drift", "PLUGIN-BUILD-GUIDE.md", "replace",
-  "`chore(audit-index):`", "`chore(audit-index-WRONG):`", DEP, "cs1"),
- # Then the DERIVATION, which is what makes it a class rather than two rows: drop a
- # writer out of the discovery and the lint goes quiet about it. This is the shape
- # that would let a third writer ship undocumented.
+ # Then the DERIVATION, which is what makes it a class rather than a row per
+ # file: drop a writer out of the discovery and the lint goes quiet about it.
+ # This is the shape that would let a second writer ship undocumented.
  ("commit_spelling_drift", L + "_deps.py", "after",
   "        found = _commit_constants_in(tree)",
-  '\n        if name == "commit-manifest-index.py":\n            found = {}',
+  '\n        if name == "commit-task-work.py":\n            found = {}',
   DEP, "cs1b"),
  # `orchestrator.md` governed every run with ONE anchored sentence, and each
  # of its fourteen sections was deleted in turn without a single gate noticing. So
@@ -1734,10 +1721,13 @@ ALLOW = (
  # This lint's over-fire, and it is the reason the subsection bound reads the heading
  # LEVEL rather than a literal `## `. Bound it on `## ` and one script's
  # subsection swallows the next sibling script's paragraph, so every writer is
- # convicted of claiming its neighbour's commit spelling.
+ # convicted of claiming its neighbour's commit spelling. `cs9`, over a fixture
+ # whose level-3 siblings carry spellings of their own: the real guide holds one
+ # writer now, whose swallowed neighbours quote no spelling, so `cs1` stays green
+ # under this mutation and would prove nothing.
  ("commit_spelling_drift", L + "_deps.py", "replace",
   '    pattern = re.compile(r"\\n#{1,%d} " % (level,))',
-  '    pattern = re.compile(r"\\n## ")', DEP, "cs1"),
+  '    pattern = re.compile(r"\\n## ")', DEP, "cs9"),
  # This lint's over-fire. Anchors are section-SCOPED: drop the
  # scoping and every anchor matches text anywhere in the document, so a neighbour's
  # sentence launders a section that no longer states its own rule.

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Commit ONE task's work, staging what that task declares and refusing the rest.
+"""Commit ONE task's work, staging what that task declares and refusing the rest -
+or, with `--state`, a phase's record and none of its work.
 
 WHY THIS EXISTS. The successful task commit was the one git operation this plugin
 described in prose and did not script. `reference/orchestrator.md` step 4c spells
@@ -14,38 +15,51 @@ by.
 
 Prose cannot refuse. This can.
 
-THE THIRD SCOPED COMMIT, AND THE SHAPE IS ITS SIBLINGS'. `commit-audit-state.py`
-carries the RECORD of a run and never the work; `commit-manifest-index.py`
-carries the shared index and the one journal file holding the row that names
-the commit, and nothing else; this one carries the WORK. Each
-derives its own allow-list and none of them shares a builder, because a shared
-builder taking a flag would be one function holding three safety properties -
-the shape in which a widened list stops being noticed. What they do share is
-`_scoped_commit`: how each path is staged, the two index reads, the pathspec'd
-commit, putting the index back on a refusal, and the answer shape, so no two of
-them can disagree about what "refused" means.
+ONE VERB, TWO SCOPED COMMITS. A task commit (`<taskId>`) carries the WORK; a state
+commit (`<phaseId> --state`) carries the RECORD of a run and never the work - the
+one an interrupted or failed run leaves behind, and the one sign-off and a
+landing make. Each derives its own allow-list in a function of its own
+(`stage_targets`, `state_targets`) and neither shares a builder, because a
+shared builder taking a flag would be one function holding both safety
+properties - the shape in which a widened list stops being noticed. What they
+do share is `_scoped_commit`: how each path is staged, the two index reads, the
+pathspec'd commit, putting the index back on a refusal, and the answer shape,
+so the two cannot disagree about what "refused" means.
 
-WHAT IT STAGES. Exactly the four things step 4c allows, each named in the output:
-the task's own `files`, the phase's manifest file (the shard when sharded), the
-journal directory and the evidence directory. Nothing else, and the manifest
-INDEX not - a task commit carrying the index is what makes two parallel phases
-conflict on merge, which is the property the sharded layout was introduced to
-buy - with ONE exception: a shard that links a bug whose index half is written
-and not committed (`_invariants.completed_bug_links`). The task's `bugId` and
-the bug's `taskId` live one in each file and the validator refuses either
-alone, so that commit carries the index or records a manifest that does not
-validate; the output names the link.
+WHAT A TASK COMMIT STAGES. Exactly the four things step 4c allows, each named in
+the output: the task's own `files`, the phase's manifest file (the shard when
+sharded), the journal directory and the evidence directory - and, beside the
+shard, the part of the manifest INDEX the phase owns and nothing else of it.
 
-THE COMMITTED PAIR VALIDATES (`_scoped_commit.owed_index_rows`). A shard whose tasks declare a
-file the index HEAD holds has no fileIndex row for - a scope widened during the
-attempt - would leave a plan at HEAD that fails "missing from fileIndex", so
-the commit is refused before anything is staged, naming each row, and the
-index goes first through `commit-manifest-index.py`. The question is
-`_scoped_commit.index_rows_owed`, the one that command asks in the other
-direction. `_invariants.commit_scope` re-derives that same list from git
-afterwards, so the commits this makes are graded by something that did not make
-them, and the two lists are written against one paragraph rather than against
-each other.
+THE INDEX RIDES WITH THE SHARD IT NAMES - ONE INVARIANT (`_invariants.owned_index`).
+The part of the index a phase owns - its tasks' fileIndex rows, the bug links its
+shard completes, its stub's mirrored keys - equals what its shard derives, and
+everything else is the parent's, unchanged. Rows are a set: a file a task stopped
+declaring, or a task moved to another phase, takes its row with it. So a task
+added mid-phase (`/audit:task add` writes both files), a scope widened during the
+attempt, or a stamp written into the shard is committed by the next commit with
+no other verb run, and an unrelated index edit - another phase's row, a title -
+stays in the working tree: the rest of the shared index is what two parallel
+phases would meet on. The bytes are built by `stage_and_commit` against the
+parent the commit is ACTUALLY made on (`_scoped_commit.blob_builder`), never an
+earlier read, so another session's index commit landing in between is kept, not
+undone. `_invariants.commit_scope` grades with the same function from git
+afterwards. A row the working index lacks as well is refused, naming
+`audit-task.py reindex`: the working plan itself does not validate there.
+
+WHAT A STATE COMMIT STAGES. The phase's manifest file, the journal directory, the
+evidence directory and the index - never a task's `files`, which is the whole
+design: a failed task's code is not committed, and a verb that could sweep it in
+on the way to preserving a record would be a commit nobody reviewed. The index
+is carried WHOLE (the working index, its owned part derived) when every
+reference in it is held by the shards as this commit leaves them and it drops no
+row a committed shard still declares; otherwise only the phase's owned part is
+carried, laid over the parent as in a task commit, and the answer's `indexLeft`
+names what was left and which shard to commit first. Either way the phase's own
+stub is carried, so a stamp the caller reports committed is. It takes the index
+lock, because it may commit the file every structural command writes; a task
+commit takes none, because the index it carries is the parent's with its own
+part derived.
 
 HOW THE EXCLUSION IS ENFORCED RATHER THAN INTENDED. Paths are staged EXPLICITLY
 (never `git add -A`), the git index is read BEFORE staging so work somebody else
@@ -127,7 +141,9 @@ because a stream of empty commits is how a record stops being read.
 
 Usage:
   commit-task-work.py <manifest> <taskId> [--project DIR] [--subject TEXT]
-                      [--override-verdict REASON] [--json]
+                      [--override-verdict REASON] [--json] [--verbose]
+  commit-task-work.py <manifest> <phaseId> --state [--project DIR]
+                      [--subject TEXT] [--takeover] [--json] [--verbose]
 
 Exit codes:
   0  it ran - it committed, or there was nothing to commit and it said which
@@ -135,15 +151,16 @@ Exit codes:
      may not carry (each one named), a declared file or a record path is
      ignored, the index could not be read to be put back, the task's newest
      gate verdict does not bind the work being committed, or the shard declares
-     a file the committed index has no row for (each row named)
-  2  usage error - the manifest will not load, there is no such task, or an
-     override carries no reason
+     a file no index has a row for (each row named)
+  2  usage error - the manifest will not load, there is no such task or phase,
+     or an override carries no reason or was given with `--state`
+  3  `--state` only: the index lock is held by a process that is alive - try
+     again after it
+  4  `--state` only: the lock is stale; a human confirms the holder is gone,
+     then `--takeover`
 
-IT TAKES NO LOCK, and that is the asymmetry with `commit-manifest-index.py`
-rather than an omission: this commit touches the phase's own shard, which only
-that phase's run writes, and the task's own files, which the plan gate has
-already bound to one task. The index lock exists for the file every structural
-command in the repository writes, and this commit refuses that file.
+Three and four are `_locks`' own codes, passed through rather than folded into
+one: "wait" and "somebody must look" are different instructions.
 
 This module carries no `--selftest` of its own; its cases live in
 `tests/test_commit_task_work.py`.
@@ -187,30 +204,29 @@ import _journal_io  # noqa: E402  (where the trail lives, and the append)
 import _loader  # noqa: E402  (load_hooks_config: where the start snapshot lives)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR shards)
 import _manifest_vocab as _vocab  # noqa: E402  (one reading of a `files` entry's line suffix)
-import _scoped_commit  # noqa: E402  (the staging discipline and the answer shape, shared with the other two scoped commits)
+import _panel_write  # noqa: E402  (the index lock a state commit takes, the way every structural write takes it)
+import _scoped_commit  # noqa: E402  (the staging discipline and the answer shape, shared by both commits)
 import _verdict_binding as _vb  # noqa: E402  (the one rule for whether a recorded verdict binds the work)
 
 E_OK, E_FAIL, E_USAGE = 0, 1, 2
 
-# What every line this command prints is stamped with. A constant because the
-# renderer is `_scoped_commit`'s and takes it as an argument -- the lines are
-# shared with the other two scoped commits and the NAME is the only thing that
-# differs.
+# What every line this command prints is stamped with, in both modes. A constant
+# because the renderer is `_scoped_commit`'s and takes it as an argument.
 PREFIX = "[commit-task-work]"
 
 # The default conventional type when the manifest names none. A TASK commit's type
-# is the manifest's to choose (`meta.commit.type`) -- unlike the other two scoped
-# commits, whose types are fixed literals so `git log` can tell those classes apart
-# -- because this commit carries implementation and a project's own convention is
+# is the manifest's to choose (`meta.commit.type`) -- unlike a state commit, whose
+# type and scope are fixed literals so `git log` can tell the classes apart --
+# because this commit carries implementation and a project's own convention is
 # the right one for it. `feat` is not the default: a fallback that claims a feature
 # on work nobody described would be a wrong word written by a default.
 DEFAULT_COMMIT_TYPE = "chore"
 
-# The word the subject opens with, ahead of anything a caller passes. Its siblings
-# carry the same constant for the same reason: with the id first the subject after
-# the colon IS sentence-case, which commitlint's default `subject-case` refuses
-# along with start-case, pascal-case and upper-case. A fixed lowercase word this
-# command owns is out of reach of all of them.
+# The word the subject opens with, ahead of anything a caller passes. The state
+# commit carries one for the same reason: with the id first the subject after the
+# colon IS sentence-case, which commitlint's default `subject-case` refuses along
+# with start-case, pascal-case and upper-case. A fixed lowercase word this command
+# owns is out of reach of all of them.
 SUBJECT_LEAD = "audit"
 
 DEFAULT_SUBJECT = "the task's own files, and the record beside them"
@@ -223,7 +239,6 @@ MANIFEST_LABEL = "the phase's manifest file"
 JOURNAL_LABEL = "the journal directory"
 EVIDENCE_LABEL = "the evidence directory"
 DECLARED_LABEL = "the task's declared file"
-INDEX_LABEL = "the manifest index, for the bug link it completes"
 
 # The action the trail records for this commit. LOCAL to this file, unlike
 # `_invariants.ACTION_STATE_COMMITTED` and `ACTION_INDEX_COMMITTED`, and the
@@ -356,9 +371,9 @@ def stage_targets(manifest, phase, task, manifest_path, project, git_root,
             continue
         if _invariants.is_record_path(rel, records):
             skipped.append("%s %s is a record, not the task's work - the "
-                           "manifest index rides a task commit only for a bug "
-                           "link it completes, and another phase's shard never "
-                           "does - so it is not staged as declared"
+                           "manifest index rides a task commit only for the "
+                           "part its phase owns, and another phase's shard "
+                           "never does - so it is not staged as declared"
                            % (DECLARED_LABEL, name))
             continue
         if rel in [c[0] for c in candidates]:
@@ -384,9 +399,6 @@ def stage_targets(manifest, phase, task, manifest_path, project, git_root,
         # conflict on. Naming it here would refuse the manifest this commit is
         # required to carry.
         index_rel = None
-    links = bug_links(index_abs, phase_file_abs, index_rel, git_root)
-    if links and index_rel not in [c[0] for c in candidates]:
-        candidates.append((index_rel, INDEX_LABEL, True, False))
 
     # ONE CLASSIFICATION FOR THE WHOLE LIST, asked of git in a fixed number of
     # calls rather than one per path, so a task declaring many files does not pay
@@ -423,24 +435,50 @@ def stage_targets(manifest, phase, task, manifest_path, project, git_root,
     return {"paths": paths, "declared": declared, "work": work,
             "kinds": dict((rel, kinds[rel]) for rel in paths),
             "ignored": ignored, "ignoredRecords": ignored_records,
-            "skipped": skipped, "indexRel": index_rel, "records": records,
-            "bugLinks": links if index_rel in paths else []}
+            "skipped": skipped, "indexRel": index_rel, "records": records}
 
 
-def bug_links(index_abs, phase_file_abs, index_rel, git_root):
-    """The bug links the working shard carries whose index half is written and
-    not yet committed - `_invariants.completed_bug_links` over the files as
-    they stand against the index HEAD holds. Empty in the single-file layout,
-    where the one file carries both halves already."""
-    if index_rel is None:
-        return []
-    try:
-        index_now = _mio.read_json(index_abs)
-        body = _mio.read_json(phase_file_abs)
-    except Exception:
-        return []
-    return _invariants.completed_bug_links(
-        index_now, _invariants.json_at(git_root, "HEAD", index_rel), body)
+def with_index(git_root, targets, carry):
+    """`(targets, blobs)` - `targets` with the index added to `paths` and
+    `kinds`, and `blobs` (`{rel: build}`) the builder `stage_and_commit` runs
+    against the parent the commit is made on; `targets` unchanged and `blobs`
+    empty when the shard moves nothing the phase owns of the index.
+
+    THE BLOB IS THE PARENT'S INDEX WITH THE PHASE'S OWNED PART DERIVED FROM ITS
+    SHARD (`_scoped_commit.blob_builder`), never the working file: an index edit
+    the shard does not derive stays where it is."""
+    if not carry or carry.get("doc") is None:
+        return targets, {}
+    rel = carry["rel"]
+    out = dict(targets)
+    out["paths"] = list(targets["paths"]) + [rel]
+    out["kinds"] = dict(targets["kinds"])
+    out["kinds"][rel] = _scoped_commit.IN_INDEX
+    return out, {rel: _scoped_commit.blob_builder(git_root, carry)}
+
+
+def index_lines(needs):
+    """The lines saying WHY the index rode along - what of the part the phase
+    owns its shard moved - since a commit carrying the shared index is
+    otherwise the mistake its own refusal describes."""
+    out = []
+    if needs.get("rows"):
+        out.append("index: carried with the fileIndex row(s) %s the shard "
+                   "declares - one without the other records a manifest that "
+                   "does not validate"
+                   % (_scoped_commit.rows_named(needs["rows"]),))
+    if needs.get("dropped"):
+        out.append("index: carried without the fileIndex row(s) %s, which this "
+                   "phase's tasks no longer declare"
+                   % (_scoped_commit.rows_named(needs["dropped"]),))
+    for bid, tid in needs.get("bugLinks") or []:
+        out.append("index: carried, because this shard links %s to %s and the "
+                   "index holds that link's other half - one without the other "
+                   "records a manifest that does not validate" % (bid, tid))
+    if needs.get("stub"):
+        out.append("index: carried with this phase's stub mirrored from its "
+                   "shard (%s)" % (", ".join(needs["stub"]),))
+    return out
 
 
 def foreign_refusal(foreign, targets):
@@ -459,10 +497,12 @@ def foreign_refusal(foreign, targets):
     index_rel = targets.get("indexRel")
     if index_rel and index_rel in foreign:
         return ("the manifest INDEX (%s) is staged, and a task commit may not "
-                "carry it. A task commit changes only its own phase's shard - "
-                "the index is what two parallel phases would then conflict on, "
-                "which is the whole reason the sharded layout exists. Unstage "
-                "it and commit it with commit-manifest-index.py" % (index_rel,))
+                "carry what somebody staged of it. A task commit carries only "
+                "the part of the index its own phase owns, derived from its "
+                "shard over the parent's - the rest is what two parallel phases would then "
+                "conflict on, which is the whole reason the sharded layout "
+                "exists. Unstage it; the phase's `--state` commit carries the "
+                "rest" % (index_rel,))
     return ("the git index holds paths this commit may not carry: %s. A task "
             "commit carries that task's declared `files`, its phase's manifest "
             "file, the journal and the evidence - and refuses rather than "
@@ -806,9 +846,18 @@ def build_parser():
     parser = argparse.ArgumentParser(
         prog="commit-task-work.py", add_help=True, allow_abbrev=False,
         description="Commit one task's work, staging what that task declares "
-                    "and refusing the rest.")
+                    "and refusing the rest - or, with --state, a phase's record "
+                    "and none of its work.")
     parser.add_argument("manifest")
-    parser.add_argument("task")
+    parser.add_argument("task", metavar="id",
+                        help="the task to commit, or with --state the phase")
+    parser.add_argument("--state", action="store_true",
+                        help="commit the phase's record - its manifest file, "
+                             "the index, the journal and the evidence - and "
+                             "never a task's files")
+    parser.add_argument("--takeover", action="store_true",
+                        help="with --state: take the index lock from a holder "
+                             "a human has confirmed is dead")
     parser.add_argument("--project", default=None,
                         help="the directory holding .claude/ and the records "
                              "(default: the project the manifest is in - "
@@ -911,20 +960,15 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
     if not pending:
         return E_OK, _scoped_commit.answer(skipped, quiet=NOTHING_UNCOMMITTED)
 
-    # THE COMMITTED PAIR, still before staging: a shard whose declared files
-    # grew past the rows the committed index holds would leave a plan at HEAD
-    # that does not validate, so the index goes first and the refusal names
-    # each row it owes. A commit that carries the working index for a bug link
-    # carries the rows that index holds, so only the ones it lacks are owed.
-    owed, unheld = _scoped_commit.owed_index_rows(phase, manifest_path,
-                                                  git_root)
-    if targets["bugLinks"]:
-        owed = unheld
-    refusal = _scoped_commit.index_rows_refusal(
-        owed, unheld, manifest_path, phase_id, "commit-task-work.py")
+    # THE COMMITTED PAIR, still before staging: what the shard needs of the
+    # index rides with it, so the plan HEAD records validates. A row the working
+    # index lacks as well is refused: the working plan is broken there and
+    # `reindex` is its repair, not this commit.
+    carry = _scoped_commit.index_to_carry(phase, manifest_path, git_root)
+    refusal = _scoped_commit.unheld_rows_refusal((carry or {}).get("unheld"))
     if refusal:
         answer = _scoped_commit.answer(skipped, refused=refusal)
-        answer["indexRows"] = [list(row) for row in owed]
+        answer["indexRows"] = [list(row) for row in carry["unheld"]]
         return E_FAIL, answer
 
     # WHAT THE CLOSE STANDS ON, still before staging: the records alone are
@@ -1002,6 +1046,9 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
                                      journal_rows)
     if why:
         return E_FAIL, _scoped_commit.answer(skipped, refused=why)
+    # The part of the index the phase owns, when its shard moved it: built by
+    # `stage_and_commit` from the parent it commits onto, not from this read.
+    carrying, blobs = with_index(git_root, targets, carry)
 
     def rows(nonce):
         """The rows naming this commit, written before it: the anchor, and the
@@ -1022,13 +1069,14 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
         return files + [recorded], ""
 
     done = _scoped_commit.commit_with_rows(
-        git_root, allowed, targets["kinds"],
+        git_root, carrying["paths"], carrying["kinds"],
         _scoped_commit.commit_message(
             *message_parts(task_id, subject, manifest), claims=claims),
         lambda paths: foreign_refusal(paths, targets), rows,
         lambda nonce, why: _scoped_commit.withdraw(
             project, config, nonce, "commit-task-work",
-            {"taskId": task_id, "phaseId": phase_id}, why))
+            {"taskId": task_id, "phaseId": phase_id}, why), blobs=blobs)
+    needs = (carry or {}).get("needs") if blobs else {}
     if not done["committed"]:
         answer = _scoped_commit.answer(skipped, staged=done["staged"],
                                        foreign=done["foreign"],
@@ -1062,29 +1110,519 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
                                    journalled=done["journalled"], done=done)
     answer["verdict"] = verdict
     answer["overridden"] = overriding
-    answer["bugLinks"] = [list(link) for link in targets["bugLinks"]]
+    answer.update(needs_fields(needs))
+    return E_OK, answer
+
+
+def needs_fields(needs):
+    """The answer's account of what the index carried, as read against HEAD
+    when the commit was decided: `bugLinks`, `indexRows` (added) and
+    `indexDropped` as lists, `indexStub` the stub keys mirrored - all empty
+    when it rode for nothing."""
+    needs = needs or {}
+    return {"bugLinks": [list(link) for link in needs.get("bugLinks") or []],
+            "indexRows": [list(row) for row in needs.get("rows") or []],
+            "indexDropped": [list(row) for row in needs.get("dropped") or []],
+            "indexStub": list(needs.get("stub") or [])}
+
+
+# --- the state commit: the record of a run, never its work ----------------------
+# A FIXED LITERAL SEPARATES THIS FROM A TASK COMMIT, and it is not decoration. A
+# task commit's type comes from `meta.commit.type`, which a manifest may set to
+# anything -- so the separator has to be something nothing in the manifest can
+# reach, and `git log --grep audit-state` then tells the two apart for ever.
+#
+# THE LITERAL IS THE SCOPE, NOT THE TYPE: a literal in the TYPE position is an
+# unknown conventional-commit type, and a repository with husky+commitlint
+# rejects the commit AFTER the files are staged. `chore` is in commitlint's
+# default type-enum, and the scope is where `meta.commit.type` cannot reach.
+# `_invariants.STATE_HEADER` is the same spelling, which the readers check a
+# carrier by; a case pins the two equal. The names are the ones
+# `_deps.commit_spelling_drift` derives a governance writer by, so the guide's
+# paragraph about this commit is checked against them.
+COMMIT_TYPE = "chore"
+COMMIT_SCOPE = "audit-state"
+STATE_DEFAULT_SUBJECT = "the record of a run, without the work it ran on"
+# THE SUBJECT OPENS WITH A FIXED LOWERCASE WORD, ahead of `--subject`, for
+# `SUBJECT_LEAD`'s reason: commitlint's default `subject-case` refuses a subject
+# that IS sentence-case, start-case, pascal-case or upper-case, and each is
+# computed by a transform that capitalises the first character - so a subject
+# whose first character is a lowercase letter cannot equal any of them. It is not
+# read from `meta.commit`: that block records nothing about which commitlint
+# rules a repository configures. The phase id stays uppercase, one word further
+# in, where `git log` still finds it.
+STATE_SUBJECT_LEAD = "phase"
+
+# The do-nothing answer of a state commit.
+STATE_NOTHING_UNCOMMITTED = ("nothing uncommitted: the phase's manifest file, "
+                             "the index, the journal and the evidence are "
+                             "already in git. No commit was made, because an "
+                             "empty one records nothing and buries the ones "
+                             "that do.")
+
+
+def state_header(phase_id, subject):
+    """The header line of a state commit: a conventional subject, bounded by
+    commitlint's default `header-max-length` (`_scoped_commit.fitted_header`),
+    since a repository that refuses it does so after the files are staged."""
+    return _scoped_commit.fitted_header(
+        "%s(%s): %s %s - " % (COMMIT_TYPE, COMMIT_SCOPE, STATE_SUBJECT_LEAD,
+                              phase_id),
+        subject or STATE_DEFAULT_SUBJECT)
+
+
+def state_targets(phase, manifest_path, project, git_root, config=None):
+    """`{"paths", "skipped", "kinds"}` - a state commit's allow-list for THIS
+    phase, resolved, before the index: the phase's manifest file, the journal
+    directory and the evidence directory, each existing and inside the git root.
+
+    THE LIST IS THE SAFETY PROPERTY. Nothing downstream widens it but the index
+    (`state_index`) and the row naming the commit - so a file a task owns has no
+    route into the commit even while it sits modified in the working tree.
+    A skip is REPORTED and never silent. A journal directory that does not exist
+    yet is not a skip while the journal is on: the row this commit writes
+    creates it.
+    """
+    config = _journal_io.load_config(project) if config is None else config
+    _index_abs, phase_file_abs = _invariants.manifest_files(manifest_path, phase)
+    wanted = [(MANIFEST_LABEL, phase_file_abs),
+              (JOURNAL_LABEL, _journal_io.journal_dir(project, config)),
+              (EVIDENCE_LABEL, _evidence_io.evidence_dir(project, config))]
+    paths, skipped = [], []
+    for label, absolute in wanted:
+        rel = _invariants._rel(absolute, git_root)
+        if rel is None:
+            skipped.append("%s lives outside the git root, so it cannot be "
+                           "committed - proceeding without it" % (label,))
+            continue
+        if not os.path.exists(absolute):
+            if not (label == JOURNAL_LABEL and _journal_io.enabled(config)):
+                skipped.append("%s does not exist yet, so there is nothing of it "
+                               "to stage" % (label,))
+            continue
+        if rel not in paths:
+            paths.append(rel)
+    kinds = _scoped_commit.classify(git_root, [(rel, True) for rel in paths])
+    # A directory `classify` leaves unclassified holds no file git would
+    # commit, and as a pathspec it would fail the whole commit.
+    for rel in [p for p in paths if p not in kinds]:
+        skipped.append("%s is a directory holding no file git would commit, so "
+                       "there is nothing of it to stage" % (rel,))
+    return {"paths": [p for p in paths if p in kinds], "skipped": skipped,
+            "kinds": kinds}
+
+
+# --- which index a state commit carries -----------------------------------------
+# `/audit:task add` writes a task into its phase's shard and its files into the
+# index; `/audit:phase add` writes a stub into the index and a new shard beside
+# it. A state commit carries the WHOLE working index only when the plan it then
+# records validates: no reference the index makes is held only by a shard this
+# commit leaves uncommitted, and no row a committed shard still declares is
+# dropped. This phase's own shard counts as committed - it is in this commit.
+def _shard_at_head(git_root, rel):
+    """The shard as HEAD holds it, parsed, or None when HEAD holds none."""
+    code, out, _err = _scoped_commit.run_git(git_root, ["show", "HEAD:%s" % rel])
+    if code != 0:
+        return None
+    try:
+        return json.loads(out)
+    except ValueError:
+        return None
+
+
+def _changed_shards(git_root, rels):
+    """The shard paths git reports as differing from HEAD (modified, added or
+    untracked), or None when git would not say - then every shard is read."""
+    if not rels:
+        return set()
+    code, out, _err = _scoped_commit.run_git(
+        git_root, ["status", "--porcelain", "--untracked-files=all", "--"] + rels)
+    if code != 0:
+        return None
+    return set(line[3:].strip().strip('"') for line in out.splitlines()
+               if len(line) > 3)
+
+
+def _task_ids(doc):
+    return set(t.get("id") for t in ((doc or {}).get("tasks") or [])
+               if isinstance(t, dict) and t.get("id"))
+
+
+def committed_shards(git_root, manifest_path, index_doc, own_rel=None):
+    """[(stub, shardRel, now, committed)] - each shard the index names that is
+    on disk, as the working tree holds it and as git will hold it once this
+    commit lands: HEAD's copy (None when HEAD holds none), or the working copy
+    for `own_rel`, the shard this commit carries.
+
+    ONE `git status` over every shard, and a `git show` only for the ones it
+    names: an unchanged shard IS its committed copy, and this runs under the
+    index lock, where a read per phase would make every state commit wait on the
+    size of the whole plan rather than on the change.
+    """
+    if not isinstance(index_doc, dict):
+        return []
+    base = os.path.dirname(os.path.abspath(manifest_path))
+    stubs = []
+    for stub in index_doc.get("phases") or []:
+        if not isinstance(stub, dict) or not stub.get("shard"):
+            continue
+        path = os.path.join(base, stub["shard"])
+        rel = os.path.relpath(path, git_root).replace(os.sep, "/")
+        try:
+            with open(path, encoding="utf-8") as fh:
+                now = json.load(fh)
+        except (OSError, ValueError):
+            continue               # a shard that is not there is the validator's
+        stubs.append((stub, rel, now))
+    changed = _changed_shards(git_root, [rel for _s, rel, _n in stubs])
+    return [(stub, rel, now,
+             now if rel == own_rel or (changed is not None and rel not in changed)
+             else _shard_at_head(git_root, rel))
+            for stub, rel, now in stubs]
+
+
+def ahead_of_shards(index_doc, shards):
+    """[(reference, shardRel)] - what the index would record that only an
+    UNCOMMITTED shard supports, each with the shard to commit first."""
+    if not isinstance(index_doc, dict):
+        return []
+    ahead, now_ids, held_ids = [], {}, {}
+    for stub, rel, now, held in shards:
+        for tid in _task_ids(now):
+            now_ids[tid] = rel
+        if held is None:
+            ahead.append(("phase %s" % (stub.get("id"),), rel))
+            continue
+        held_ids.update((tid, rel) for tid in _task_ids(held))
+    for path_key, ids in sorted((index_doc.get("fileIndex") or {}).items()):
+        for tid in ids if isinstance(ids, list) else []:
+            if tid in now_ids and tid not in held_ids:
+                ahead.append(("task %s (fileIndex %r)" % (tid, path_key),
+                              now_ids[tid]))
+    for bug in index_doc.get("bugs") or []:
+        tid = bug.get("taskId") if isinstance(bug, dict) else None
+        if tid in now_ids and tid not in held_ids:
+            ahead.append(("task %s (%s's fix)" % (tid, bug.get("id")),
+                          now_ids[tid]))
+    return ahead
+
+
+def rows_dropped(head_index, index_doc, shards):
+    """[(rows, shardRel)] - the fileIndex rows a committed shard still needs
+    that `index_doc` would no longer carry, per shard. Only rows the index HEAD
+    holds are counted, so a gap HEAD already had is not charged to this
+    commit."""
+    if not isinstance(index_doc, dict) or not isinstance(head_index, dict):
+        return []
+    found = []
+    for _stub, rel, _now, held in shards:
+        if not isinstance(held, dict):
+            continue
+        before = _scoped_commit.index_rows_owed(head_index, held)
+        rows = [row for row in _scoped_commit.index_rows_owed(index_doc, held)
+                if row not in before]
+        if rows:
+            found.append((rows, rel))
+    return found
+
+
+def state_index(phase, manifest_path, git_root, carry):
+    """`(mode, build, notes)` - which index a state commit carries: `"whole"`
+    (the working index), `"needs"` (the parent's) or None (nothing of it), and
+    in both modes the part this phase owns derived from its shard
+    (`_invariants.owned_index`) - so a stamp written into the shard always
+    reaches the stub it mirrors. `build` is the builder `stage_and_commit`
+    runs against the parent the commit is made on. `notes` name what was left
+    in the working tree and why, so a reader is told rather than finding a
+    dirty index afterwards.
+    """
+    if not carry or carry.get("now") is None:
+        return None, None, []
+    _changes, whole = _invariants.owned_index(
+        carry["now"], carry["now"], carry["body"],
+        _invariants.json_at(git_root, "HEAD", carry["shardRel"]),
+        carry["phaseId"])
+    if whole is None or whole == carry.get("head"):
+        return None, None, []
+    _index_abs, phase_file_abs = _invariants.manifest_files(manifest_path, phase)
+    shards = committed_shards(git_root, manifest_path, whole,
+                              own_rel=_invariants._rel(phase_file_abs, git_root))
+    ahead = ahead_of_shards(whole, shards)
+    dropped = rows_dropped(carry.get("head"), whole, shards)
+    if not ahead and not dropped:
+        return "whole", _scoped_commit.blob_builder(git_root, carry,
+                                                    base=carry["now"]), []
+    why = []
+    if ahead:
+        why.append("it names %s, which the shard committed at HEAD does not "
+                   "hold yet - commit %s first"
+                   % ("; ".join(what for what, _rel in ahead),
+                      ", ".join(sorted(set(rel for _what, rel in ahead)))))
+    if dropped:
+        why.append("it no longer carries %s, which the shard committed at HEAD "
+                   "still declares - commit the change to %s that stops "
+                   "declaring it first, or restore the row (audit-task.py "
+                   "reindex)"
+                   % ("; ".join(_scoped_commit.rows_named(rows)
+                                for rows, _r in dropped),
+                      ", ".join(rel for _rows, rel in dropped)))
+    left = ("the rest of the manifest index stays uncommitted in the working "
+            "tree: %s" % ("; and ".join(why),))
+    if carry.get("doc") is None:
+        return None, None, [left]
+    return "needs", _scoped_commit.blob_builder(git_root, carry), [left]
+
+
+def record_state_row(project, phase_id, nonce, config=None):
+    """Anchor a state commit in the trail. Returns the file the row landed in,
+    or False.
+
+    WRITTEN BEFORE THE COMMIT AND CARRIED BY IT, keyed by `nonce`, the commit's
+    `Audit-Row` trailer - the SHA does not exist yet.
+
+    THE TARGET IS THE EVIDENCE DIRECTORY AND DELIBERATELY NOT THE PHASE'S
+    MANIFEST FILE: `_invariants._recorded_states` reads every row naming that
+    file as a WRITE to it, and this row records a commit, not an edit. Redacted
+    through `repo_relative_or_token`, so an evidence directory configured
+    outside the repository writes no absolute path into a file that goes to a
+    client. Fail-soft, and `append_from_cli` because this runs from Bash.
+    """
+    config = _journal_io.load_config(project) if config is None else config
+    target = _journal_io.repo_relative_or_token(
+        project, _evidence_io.evidence_dir(project, config))
+    return _journal_io.append_from_cli(project, {
+        "action": _invariants.ACTION_STATE_COMMITTED,
+        "actor": {"sessionId": _journal_io.env_session_id(),
+                  "via": "commit-task-work"},
+        "target": target,
+        "summary": "audit state for %s committed as the commit carrying "
+                   "`%s` - the record of a run with none of its work"
+                   % (phase_id, _scoped_commit.row_trailer(nonce)),
+        "details": {_invariants.NONCE_KEY: nonce, "phaseId": str(phase_id)},
+    }, config=config)
+
+
+def commit_state(manifest, phase, manifest_path, project, git_root, subject=None,
+                 config=None):
+    """`(exitCode, answer)` - a state commit made, or why not. Prints nothing.
+
+    `answer` is `_scoped_commit.answer`'s shape plus `needs_fields`,
+    `indexCarried` - `"whole"`, `"needs"` or None - and `indexLeft`, the
+    sentences naming what of the index stayed uncommitted and why, for a
+    caller to print beside the commit it reports (they are among `skipped`
+    too, but a caller printing a stamp as committed must not have to pick
+    them out of every degraded line).
+    """
+    config = _journal_io.load_config(project) if config is None else config
+    code, answer = _commit_state(manifest, phase, manifest_path, project,
+                                 git_root, subject, config)
+    for key, value in needs_fields(None).items():
+        answer.setdefault(key, value)
+    answer.setdefault("indexCarried", None)
+    answer.setdefault("indexRows", [])
+    answer.setdefault("indexLeft", [])
+    return code, answer
+
+
+def _commit_state(manifest, phase, manifest_path, project, git_root, subject,
+                  config):
+    targets = state_targets(phase, manifest_path, project, git_root,
+                            config=config)
+    allowed, skipped = targets["paths"], targets["skipped"]
+    phase_id = str((phase or {}).get("id"))
+    carry = _scoped_commit.index_to_carry(phase, manifest_path, git_root)
+
+    # BEFORE STAGING, so a refusal leaves the git index exactly as it was found.
+    # The index is not among `allowed` here: what somebody staged of it is not
+    # what this commit decides to carry.
+    foreign, why = _scoped_commit.foreign_staged(git_root, allowed)
+    if why:
+        return E_FAIL, _scoped_commit.answer(skipped, refused=why)
+    if foreign:
+        return E_FAIL, _scoped_commit.answer(
+            skipped, foreign=foreign,
+            refused="the git index already holds paths this commit may not "
+                    "carry. A state commit stages the record and never the "
+                    "work, so it refuses rather than sweeping them in - "
+                    "unstage them and re-run")
+    # AHEAD OF THE DO-NOTHING ANSWERS: `git status` does not list an ignored
+    # file, so an ignored record would otherwise read as "nothing uncommitted".
+    ignored = _scoped_commit.ignored_records(targets["kinds"])
+    if ignored:
+        return E_FAIL, _scoped_commit.answer(skipped, refused=ignored)
+    refusal = _scoped_commit.unheld_rows_refusal((carry or {}).get("unheld"))
+    if refusal:
+        answer = _scoped_commit.answer(skipped, refused=refusal)
+        answer["indexRows"] = [list(row) for row in carry["unheld"]]
+        return E_FAIL, answer
+
+    mode, build, notes = state_index(phase, manifest_path, git_root, carry)
+    skipped = skipped + notes
+    paths, kinds, blobs = list(allowed), dict(targets["kinds"]), {}
+    if mode is not None:
+        rel = carry["rel"]
+        paths.append(rel)
+        kinds.update(_scoped_commit.classify(git_root, [(rel, True)]))
+        ignored = _scoped_commit.ignored_records({rel: kinds.get(rel)})
+        if ignored:
+            return E_FAIL, _scoped_commit.answer(skipped, refused=ignored)
+        blobs[rel] = build
+    if not paths:
+        return E_OK, _scoped_commit.answer(skipped,
+                                           quiet=STATE_NOTHING_UNCOMMITTED)
+
+    # DECIDED BEFORE ANYTHING IS STAGED: the do-nothing answer is reached with
+    # the git index untouched, so declining costs nothing and undoes nothing.
+    # The index is decided by `state_index`, not by the working file's status.
+    pending, why = _scoped_commit.uncommitted(
+        git_root, [p for p in paths if p not in blobs])
+    if why:
+        return E_FAIL, _scoped_commit.answer(skipped, refused=why)
+    if not pending and mode is None:
+        return E_OK, _scoped_commit.answer(skipped,
+                                           quiet=STATE_NOTHING_UNCOMMITTED)
+
+    # STAGED, READ BACK AND COMMITTED BY `_scoped_commit.commit_with_rows`: the
+    # row naming the commit written first and carried, each path staged by what
+    # git holds for it, the index read back against this same list, a commit
+    # with the list as its pathspec, the index put back as it was found on any
+    # refusal after staging, and the row withdrawn when no commit was made.
+    done = _scoped_commit.commit_with_rows(
+        git_root, paths, kinds,
+        _scoped_commit.commit_message(state_header(phase_id, subject),
+                                      _scoped_commit.coauthor_of(manifest)),
+        lambda found: ("staging produced paths outside the allow-list (%s), so "
+                       "nothing was committed" % (", ".join(found),)),
+        lambda nonce: ([record_state_row(project, phase_id, nonce,
+                                         config=config)], ""),
+        lambda nonce, why: _scoped_commit.withdraw(
+            project, config, nonce, "commit-task-work",
+            {"phaseId": phase_id}, why), blobs=blobs)
+    staged = done["staged"]
+    if not done["committed"]:
+        return E_FAIL, _scoped_commit.answer(skipped, staged=staged,
+                                             foreign=done["foreign"],
+                                             refused=done["refused"], done=done)
+    sha = done["sha"]
+    if sha and done["refused"]:
+        # Committed on a HEAD that moved underneath: reported, never undone.
+        return E_FAIL, _scoped_commit.answer(skipped, committed=True, commit=sha,
+                                             staged=staged,
+                                             refused=done["refused"],
+                                             journalled=done["journalled"],
+                                             done=done)
+    if not sha:
+        return E_FAIL, _scoped_commit.answer(
+            skipped, committed=True, staged=staged,
+            journalled=done["journalled"], done=done,
+            refused="%s; the row inside it names it by `%s`"
+                    % (done["refused"], _scoped_commit.row_trailer(
+                        done["nonce"]) if done["nonce"] else "nothing"))
+    answer = _scoped_commit.answer(skipped, committed=True, commit=sha,
+                                   staged=staged, journalled=done["journalled"],
+                                   done=done)
+    answer["indexCarried"] = mode
+    answer["indexLeft"] = list(notes)
+    if mode is not None:
+        answer.update(needs_fields(carry["needs"]))
     return E_OK, answer
 
 
 def success_line(lines):
-    """A commit's one line: the SHA it wrote, how many paths it carries, and
-    the verdict it rests on.
+    """A commit's one line: the SHA it wrote, how many paths it carries, the
+    verdict it rests on, and that the index rode along when it did; or, for a
+    state commit with nothing to carry, that nothing was uncommitted.
 
     None - the long form - for a run that committed with anything beside those
-    to say: a degraded step, a journal row outside the commit or never written.
+    to say: a degraded step, a part of the index left in the working tree, a
+    journal row outside the commit or never written.
     """
     head = lines[0].strip() if lines else ""
+    if head == "%s %s" % (PREFIX, STATE_NOTHING_UNCOMMITTED) and len(lines) == 1:
+        return "%s nothing uncommitted - no commit was made" % (PREFIX,)
     if not head.startswith("%s committed " % (PREFIX,)):
         return None
     carried = _scoped_commit.ROW_CARRIED.split("%")[0]
     paths = [ln for ln in lines[1:] if ln.startswith("    ") and ln.strip()]
     rest = [ln.strip() for ln in lines[1:] if ln.strip() and ln not in paths]
     verdict = [ln for ln in rest if ln.startswith("verdict: ")]
-    if any(not ln.startswith((carried, "verdict: ")) for ln in rest):
+    index = [ln for ln in rest if ln.startswith("index: carried")]
+    if any(not ln.startswith((carried, "verdict: ", "index: carried"))
+           for ln in rest):
         return None
-    return "%s (%d path(s), its journal row inside it)%s" % (
-        head, len(paths),
+    return "%s (%d path(s), its journal row inside it%s)%s" % (
+        head, len(paths), "; the index part its phase owns with it"
+        if index else "",
         "; %s" % (verdict[0].split(" - ")[0],) if verdict else "")
+
+
+def _usage(message):
+    sys.stderr.write("ERROR: %s\n" % (message,))
+    return E_USAGE
+
+
+def _load(path):
+    """`(manifest, None)` or `(None, exitCode)` with the reason on stderr."""
+    try:
+        manifest = _mio.load_manifest(path)
+    except Exception as exc:
+        return None, _usage("cannot read/parse %s: %s" % (path, exc))
+    if not isinstance(manifest, dict):
+        return None, _usage("manifest %s is not a JSON object" % (path,))
+    return manifest, None
+
+
+def main_state(args, manifest, project, git_root, out):
+    """The `--state` half of `main`: the phase looked up, the index lock taken
+    in a sharded plan - the commit may carry the file every structural command
+    writes, so a `/audit:task add` running beside it must not land half an edit
+    in it - and the answer printed."""
+    phase = _invariants.phase_of(manifest, args.task)
+    if phase is None:
+        known = [str(p.get("id")) for p in (manifest.get("phases") or [])
+                 if isinstance(p, dict)]
+        return _usage("no phase %r in %s (have: %s)"
+                      % (args.task, args.manifest, ", ".join(known)))
+    if not shutil.which("git"):
+        out("%s git is not on PATH, so nothing can be committed at all. Nothing "
+            "was staged." % (PREFIX,))
+        return E_FAIL
+    lock = None
+    if _mio.is_sharded(manifest):
+        lock = _panel_write.acquire_index_lock(
+            project, _panel_write.read_config(project),
+            os.path.abspath(args.manifest), args.takeover, out, PREFIX,
+            "commit the phase's record and the manifest index")
+        if isinstance(lock, int):
+            # `_locks`' own code, passed through: E_LIVE says wait, E_STALE
+            # says a human has to look. The lock module printed its message.
+            return lock
+    try:
+        code, answer = commit_state(manifest, phase, args.manifest, project,
+                                    git_root, subject=args.subject)
+    finally:
+        if lock is not None:
+            # A release the lock declines says another run took this over
+            # while the commit was being made; under `--json` it goes to
+            # stderr, where it cannot break the one object stdout carries.
+            _panel_write.release_index_lock(
+                lock, out=(_panel_write.stderr_line if args.as_json else out))
+    return _print(answer, code, args, out)
+
+
+def _print(answer, code, args, out):
+    """The answer as `--json` or as lines, and `code` back."""
+    if args.as_json:
+        out(json.dumps(answer, indent=2, sort_keys=True))
+        return code
+    _scoped_commit.render(answer, PREFIX, out=out)
+    if answer.get("committed") and not answer.get("refused"):
+        for line in index_lines({"rows": answer.get("indexRows"),
+                                 "dropped": answer.get("indexDropped"),
+                                 "bugLinks": answer.get("bugLinks"),
+                                 "stub": answer.get("indexStub")}):
+            out("  %s" % (line,))
+    return code
 
 
 def main(argv, out=print):
@@ -1093,26 +1631,13 @@ def main(argv, out=print):
         args = parser.parse_args(argv)
     except SystemExit as exc:
         return E_USAGE if exc.code else E_OK
+    if args.state and args.override is not None:
+        return _usage("--override-verdict binds a task commit to its gate; a "
+                      "--state commit carries no work and has no verdict")
 
-    try:
-        manifest = _mio.load_manifest(args.manifest)
-    except Exception as exc:
-        sys.stderr.write("ERROR: cannot read/parse %s: %s\n"
-                         % (args.manifest, exc))
-        return E_USAGE
-    if not isinstance(manifest, dict):
-        sys.stderr.write("ERROR: manifest %s is not a JSON object\n"
-                         % (args.manifest,))
-        return E_USAGE
-
-    phase, task = None, None
-    for candidate_phase, candidate_task in _mio.iter_tasks(manifest):
-        if str(candidate_task.get("id")) == str(args.task):
-            phase, task = candidate_phase, candidate_task
-            break
-    if task is None:
-        sys.stderr.write("ERROR: no task %r in %s\n" % (args.task, args.manifest))
-        return E_USAGE
+    manifest, code = _load(args.manifest)
+    if manifest is None:
+        return code
 
     # The manifest's own project, never the shell's cwd, unless a root was
     # named: the remedy this command prints names the gate without a project
@@ -1120,6 +1645,19 @@ def main(argv, out=print):
     project = os.path.abspath(args.project) if args.project \
         else _output.project_of_manifest(args.manifest)
     git_root = _invariants.git_root_for(manifest, project)
+    if args.state:
+        return main_state(args, manifest, project, git_root, out)
+
+    phase, task = None, None
+    for candidate_phase, candidate_task in _mio.iter_tasks(manifest):
+        if str(candidate_task.get("id")) == str(args.task):
+            phase, task = candidate_phase, candidate_task
+            break
+    if task is None:
+        return _usage("no task %r in %s%s" % (
+            args.task, args.manifest,
+            " - a phase id commits its record with --state"
+            if _invariants.phase_of(manifest, args.task) is not None else ""))
     if not shutil.which("git"):
         out("%s git is not on PATH, so nothing can be committed at all. Nothing "
             "was staged." % (PREFIX,))
@@ -1127,21 +1665,16 @@ def main(argv, out=print):
 
     override = args.override
     if override is not None and not override.strip():
-        sys.stderr.write("ERROR: --override-verdict needs a reason - it is the "
-                         "whole of what the journal row records\n")
-        return E_USAGE
+        return _usage("--override-verdict needs a reason - it is the whole of "
+                      "what the journal row records")
     code, answer = commit_work(manifest, phase, task, args.manifest, project,
                                git_root, subject=args.subject,
                                override=override.strip() if override else None)
     if args.as_json:
         out(json.dumps(answer, indent=2, sort_keys=True))
         return code
-    _scoped_commit.render(answer, PREFIX, out=out)
+    _print(answer, code, args, out)
     verdict = answer.get("verdict") or {}
-    for bid, tid in answer.get("bugLinks") or []:
-        out("  index: carried, because this shard links %s to %s and the "
-            "index holds that link's other half - one without the other "
-            "records a manifest that does not validate" % (bid, tid))
     if answer.get("committed") and not answer.get("refused"):
         if answer.get("overridden"):
             out("  verdict: OVERRIDDEN, and the journal records it with the "

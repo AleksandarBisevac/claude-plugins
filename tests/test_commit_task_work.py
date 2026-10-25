@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Cases for `governance/commit-task-work.py` — the verb that commits ONE task's
-work and refuses the rest.
+work and refuses the rest, and with `--state` a phase's record and none of its
+work.
 
 WHAT THIS FILE IS ABOUT, in one line: the commit carries what the task DECLARES
 and nothing else. Every case proving it carried a declared file is paired with
@@ -30,10 +31,12 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
+import _output                                     # noqa: E402
 from _output import safe_stdio                     # noqa: E402
 import _evidence_io                                # noqa: E402
 import _invariants                                 # noqa: E402
@@ -42,11 +45,6 @@ import _loader                                     # noqa: E402
 import _manifest_io as _mio                        # noqa: E402
 import _scoped_commit                              # noqa: E402
 import test__invariants as TI                      # noqa: E402  (the ONE git fixture)
-# commitlint's default `subject-case`, transcribed ONCE and imported: the rule is
-# commitlint's and belongs to none of the three writers, so a second
-# transcription here is how they would come to be graded against two readings of
-# it.
-from test_commit_audit_state import HEADER_MAX_LENGTH, header_offences  # noqa: E402
 
 M = _loader.load_script("commit-task-work.py", "ctw")
 # THE REAL RECORDER, driven in-process. A verdict the commit is bound to has to be
@@ -70,6 +68,70 @@ IGN_UNTRACKED = "ign/new.md"
 RENAMED = "src/a2.py"
 
 
+# --- commitlint's default `subject-case`, transcribed --------------------------
+# THE RULE, NOT A READING OF IT, transcribed once for both commits this verb
+# makes. `@commitlint/config-conventional` sets `subject-case` to `never` these
+# four: sentence-case, start-case, pascal-case, upper-case. `ensureCase` in
+# `@commitlint/ensure` decides each one by TRANSFORMING the subject and asking
+# whether the result IS the subject, so the transforms are what is written below
+# and the assertion is the question commitlint asks.
+#
+# THE WORD SPLIT IS lodash's ONLY NEAR ENOUGH, AND IT CANNOT PRODUCE A FALSE PASS:
+# each of the four transforms capitalises the subject's FIRST character, so a
+# lowercase-initial subject differs from all four under any word split
+# whatsoever. The only error a rougher splitter can make is a false RED.
+_LODASH_WORDS_RE = re.compile(r"[A-Z]+(?![a-z])|[A-Z][a-z]*|[a-z]+|[0-9]+")
+
+
+def _upper_first(text):
+    return text[:1].upper() + text[1:]
+
+
+def _sentence_case(text):
+    return _upper_first(text.lower())
+
+
+def _start_case(text):
+    return " ".join(_upper_first(word)
+                    for word in _LODASH_WORDS_RE.findall(text))
+
+
+def _camel_case(text):
+    words = [word.lower() for word in _LODASH_WORDS_RE.findall(text)]
+    if not words:
+        return ""
+    return "".join([words[0]] + [_upper_first(w) for w in words[1:]])
+
+
+def _pascal_case(text):
+    return _upper_first(_camel_case(text))
+
+
+def _upper_case(text):
+    return text.upper()
+
+
+FORBIDDEN_CASES = (("sentence-case", _sentence_case),
+                   ("start-case", _start_case),
+                   ("pascal-case", _pascal_case),
+                   ("upper-case", _upper_case))
+
+# `header-max-length`, another of the same default set.
+HEADER_MAX_LENGTH = 100
+
+
+def header_offences(header):
+    """The names of the cases commitlint's default `subject-case` refuses
+    `header`'s subject for. `[]` is the pass; `["no-subject"]` for a header
+    with no `: ` or an empty subject, which equals every transform above and
+    would otherwise read as four case violations."""
+    subject = header.split(": ", 1)[1] if ": " in header else None
+    if not subject:
+        return ["no-subject"]
+    return [name for name, transform in FORBIDDEN_CASES
+            if transform(subject) == subject]
+
+
 # --- fixtures -----------------------------------------------------------------
 class Repos(object):
     """A fresh repository per call, torn down at the end.
@@ -88,13 +150,39 @@ class Repos(object):
         self.made += 1
         root = os.path.join(self.tmp, "r%d" % (self.made,), "repo")
         os.makedirs(root)
-        return TI.build(root, **opts)
+        return _mirrored(TI.build(root, **opts))
 
     def scratch(self, name):
         return os.path.join(self.tmp, "scratch-%s" % (name,))
 
     def close(self):
         _harness.remove_tree(self.tmp)
+
+
+def _mirrored(fx):
+    """`fx` with each index stub mirroring its committed shard, in a fixture
+    commit of the index alone - the state the plugin's own writers keep
+    (`_manifest_io.stale_stubs` reports any other). The shared builder commits
+    stubs that disagree with their shards, and under the owned-part invariant
+    every commit carrying a shard would then carry its stub's mirror too,
+    which is right for a plan in that state and noise for a case about
+    something else. The working tree is left as the builder left it."""
+    index = _mio.read_json(fx["manifest"])
+    moved = False
+    for stub in index.get("phases") or []:
+        shard = _invariants.json_at(fx["root"], "HEAD",
+                                    "docs/audit/" + str(stub.get("shard", "")))
+        for key in _mio._STUB_KEYS:
+            if isinstance(shard, dict) and key in shard \
+                    and stub.get(key) != shard[key]:
+                stub[key] = shard[key]
+                moved = True
+    if moved and not TI._git(fx["root"], "status", "--porcelain", "--",
+                             INDEX_REL).strip():
+        TI._write_json(fx["manifest"], index)
+        TI._git(fx["root"], "commit", "-q", "-m",
+                "fixture: the stubs mirror their shards", "--", INDEX_REL)
+    return fx
 
 
 def _own_repos(fn):
@@ -227,9 +315,9 @@ def _set_task(fx, files=None, gate=None, phase_gate=None, basis=None,
     that widened its scope mid-run looks like.
 
     A widened `files` also writes the fileIndex rows it needs and, with
-    `rows`, commits the index alone - what `/audit:task scope` followed by
-    `commit-manifest-index.py` leaves, and the order a close requires so the
-    committed pair validates. `rows=False` leaves the index as it was."""
+    `rows`, commits the index alone in a fixture commit, so a case about
+    something else starts from a HEAD whose pair already validates.
+    `rows=False` leaves the index as it was."""
     shard = _mio.read_json(fx["shard"])
     task = [t for t in shard["tasks"] if t.get("id") == TASK][0]
     if files is not None:
@@ -413,8 +501,8 @@ def _ordinary_cases(check, repos):
     # --- the subject a commitlint repository will take ---------------------
     subject = TI._git(fx["root"], "log", "-1", "--format=%s").strip()
     check("ctw8 the scope is the TASK id and the type is the manifest's - "
-          "which is what tells this class from its two siblings, whose scope "
-          "is a phase id and whose type is a fixed literal: %r" % (subject,),
+          "which is what tells this class from the state commit, whose scope "
+          "is a fixed literal with the phase id after it: %r" % (subject,),
           subject.startswith("chore(%s): %s" % (TASK, M.SUBJECT_LEAD))
           and TASK in subject)
     check("ctw9 ...and the SUBJECT git recorded is out of reach of every case "
@@ -456,7 +544,7 @@ def _ordinary_cases(check, repos):
           "introduced to buy, and reporting that in the same words as a "
           "stray README is what makes a reader skim past it: %r" % (text,),
           code == 1 and INDEX_REL in text
-          and "commit-manifest-index" in text)
+          and "--state" in text)
     check("ctw12 ...and it refused BEFORE staging, so the git index is "
           "exactly as it was found and no commit was made - a refusal that "
           "had already staged the work would leave the tree in a state the "
@@ -477,7 +565,7 @@ def _ordinary_cases(check, repos):
     check("ctw14 ...and that sentence is NOT the index one - the two "
           "mistakes cost different things and a reader must be able to tell "
           "at a glance which they made",
-          "commit-manifest-index" not in text, repr(text))
+          "--state" not in text, repr(text))
 
     # --- nothing to do, and the two ways of it -----------------------------
     fx = repos.make()
@@ -708,8 +796,8 @@ def _records_cases(check, repos):
 
     check("ctw26 the conventional TYPE comes from `meta.commit.type` - a "
           "task commit carries implementation, so a project's own convention "
-          "is the right one for it, unlike its two siblings whose types are "
-          "fixed literals so `git log` can tell those classes apart",
+          "is the right one for it, unlike a state commit whose type and "
+          "scope are fixed literals so `git log` can tell the classes apart",
           task_message(TASK, "s", {"meta": {"commit": {"type": "fix"}}})[0]
           .startswith("fix(%s): " % (TASK,)),
           repr(task_message(TASK, "s",
@@ -730,21 +818,18 @@ def _records_cases(check, repos):
           repr(task_message(TASK, "s",
                                 {"meta": {"commit": {"coauthor": "Co: x"}}})))
 
-    # --- the three commands' messages, as they were before they shared one ---
+    # --- both commits' messages, as they were before they shared one -------
     # THE EXPECTED LISTS ARE LITERALS read off the code at 571becfd, not built
-    # from the constants the commands own: a case that composed its expectation
+    # from the constants the command owns: a case that composed its expectation
     # from `SUBJECT_LEAD` would pass for a command that changed the lead. The
-    # long subject separates a bounded header from an unbounded one -- the
-    # audit-state and index commands cut it to fit, a task commit never has.
-    _cas = _loader.load_script("commit-audit-state.py", "cas_for_ctw")
+    # long subject separates a bounded header from an unbounded one -- a state
+    # commit cuts it to fit, a task commit never has.
     _long = "y" * 200
     _claims = "claims:\n1 x"
     _seen = [
-        _scoped_commit.commit_message(_cas.subject_header("P9", "why"), "Co: x"),
-        _scoped_commit.commit_message(_cas.subject_header("P9", None), None),
-        _scoped_commit.commit_message(_cas.subject_header("P9", _long), "Co: x"),
-        _scoped_commit.commit_message(CMI.subject_header("P9", "why"), "Co: x"),
-        _scoped_commit.commit_message(CMI.subject_header("P9", None), None),
+        _scoped_commit.commit_message(M.state_header("P9", "why"), "Co: x"),
+        _scoped_commit.commit_message(M.state_header("P9", None), None),
+        _scoped_commit.commit_message(M.state_header("P9", _long), "Co: x"),
         task_message("P9.1", "why", {"meta": {"commit": {
             "type": "fix", "coauthor": "Co: x"}}}, claims=_claims),
         task_message("P9.1", None, {}),
@@ -755,16 +840,13 @@ def _records_cases(check, repos):
         ["chore(audit-state): phase P9 - the record of a run, without the "
          "work it ran on"],
         ["chore(audit-state): phase P9 - " + "y" * 57 + " [truncated]", "Co: x"],
-        ["chore(audit-index): phase P9 - why", "Co: x"],
-        ["chore(audit-index): phase P9 - the shared index and the row naming "
-         "it, no phase's work"],
         ["fix(P9.1): audit - why", _claims, "Co: x"],
         ["chore(P9.1): audit - the task's own files, and the record beside "
          "them"],
         ["chore(P9.1): audit - " + _long],
     ]
     check("the shared commit_message gives the 571becfd message for a task "
-          "commit, an audit-state commit and an index commit",
+          "commit and a state commit",
           _seen == _want,
           repr([(got, want) for got, want in zip(_seen, _want) if got != want]))
 
@@ -865,7 +947,7 @@ def _bug_link_cases(check, repos):
     after = _head(fx)
     check("ctw85 SECOND-DIRECTION CASE: an index edited for any other reason "
           "is left out of the task commit and left dirty in the working tree "
-          "for commit-manifest-index.py: %r" % ((code, text[-200:]),),
+          "for the phase's --state commit: %r" % ((code, text[-200:]),),
           code == 0 and after != before
           and INDEX_REL not in _carried(fx, after)
           and INDEX_REL in TI._git(fx["root"], "status", "--porcelain"))
@@ -873,21 +955,6 @@ def _bug_link_cases(check, repos):
 
 WIDENED = "src/new.py"
 OTHER_ROW = "src/d.py"
-CMI = _loader.load_script("commit-manifest-index.py", "cmi_for_ctw")
-
-
-def _index_commit(fx):
-    """`(code, text)` of `commit-manifest-index.py` on the fixture, in-process
-    - the remedy a close owing the index rows names."""
-    lines = []
-    held = sys.stderr
-    sys.stderr = io.StringIO()
-    try:
-        code = CMI.main([fx["manifest"], PHASE, "--project", fx["root"]],
-                        out=lines.append)
-    finally:
-        sys.stderr = held
-    return code, "\n".join(lines)
 
 
 def _widen(fx, row=True):
@@ -915,40 +982,31 @@ def _validates_at(fx, sha, scratch):
 @_own_repos
 def _index_row_cases(check, repos):
     """A task whose scope was widened during its attempt is closed: the close
-    refuses while the index HEAD holds lacks the rows its shard needs, naming
-    each, so the committed pair never stops validating; the index commit it
-    names goes first, and then the close commits. An index row another phase
-    has not committed stays out of the close."""
+    carries the rows its shard needs beside it, so the committed pair never
+    stops validating and no other verb runs first. An index row another phase
+    has not committed stays out of the close, and a state commit carries the
+    whole index only when the plan it records validates."""
     fx = repos.make()
     _widen(fx)
     _gate(fx)
     before = _head(fx)
-    found = _index_entries(fx)
-    code, text = _run(fx)
-    check("ctw-ir1 RED-FIRST: a task widened by scope during its attempt, whose "
-          "fileIndex row is not committed, is REFUSED at its close - committed, "
-          "the shard declaring %s beside an index without its row fails "
-          "'missing from fileIndex' at HEAD - and the refusal names the row "
-          "and the task, leaving HEAD and the git index as they were: %r"
-          % (WIDENED, (code, text[-400:]),),
-          code == 1 and "%s (%s)" % (WIDENED, TASK) in text
-          and "commit-manifest-index.py" in text and _head(fx) == before
-          and _index_entries(fx) == found)
-    icode, itext = _index_commit(fx)
-    _gate(fx)
-    mid = _head(fx)
     code, text = _run(fx)
     after = _head(fx)
-    findings, _committed = _validates_at(fx, after, repos.scratch("ir-after"))
-    mid_findings, _ = _validates_at(fx, mid, repos.scratch("ir-mid"))
-    check("ctw-ir2 ...and the order it names leaves every commit valid: the "
-          "index commit first, then the close, each read off a fresh clone "
-          "where validate-manifest finds nothing: %r"
-          % ((icode, itext[-200:], code, text[-200:], mid_findings[:2],
-              findings[:2]),),
-          icode == 0 and code == 0 and after != mid and mid != before
-          and findings == [] and mid_findings == []
-          and WIDENED in _carried(fx, after))
+    carried = _carried(fx, after) if after != before else []
+    check("ctw-ir1 a task widened by scope during its attempt, whose fileIndex "
+          "row is not committed, COMMITS at its close in one commit, carrying "
+          "the index beside the shard, and says why the index rode along, "
+          "naming the row and the task: %r" % ((code, carried, text[-400:]),),
+          code == 0 and _commits_between(fx, before, after) == 1
+          and INDEX_REL in carried and SHARD_REL in carried
+          and WIDENED in carried and "%s (%s)" % (WIDENED, TASK) in text)
+    findings, committed = (_validates_at(fx, after, repos.scratch("ir-after"))
+                           if after != before else (["no commit"], {}))
+    check("ctw-ir2 ...and the commit is valid on its own, read off a fresh "
+          "clone where validate-manifest finds nothing and the row names the "
+          "task, with nothing left staged: %r" % ((findings[:2], _staged(fx)),),
+          findings == [] and _staged(fx) == []
+          and (committed.get("fileIndex") or {}).get(WIDENED) == [TASK])
 
     # THE ROWS ARE COMMITTED, and another phase's row is not.
     fx = repos.make()
@@ -999,26 +1057,40 @@ def _index_row_cases(check, repos):
           "matches it: %r" % (answer,),
           answer == ([(WIDENED, TASK)], []))
 
-    # THE INDEX COMMIT, in the other direction: a row a committed shard needs.
+    # THE STATE COMMIT, in the other direction: a row ANOTHER phase's committed
+    # shard needs. This phase's own rows are re-derived from its shard, so only
+    # another phase's can be dropped.
+    other_path, other_task = "src/c.py", "P2.1"
     fx = repos.make()
     index = _mio.read_json(fx["manifest"])
-    del index["fileIndex"][OWNED]
-    TI._write_json(fx["manifest"], index)
-    before = _head(fx)
-    icode, itext = _index_commit(fx)
-    check("ctw-ir6 an index commit that would drop a row the shard committed "
-          "at HEAD still declares is refused, naming the row - the same "
-          "question the close asks, of the other pair: %r"
-          % ((icode, itext[-400:]),),
-          icode == 1 and "%s (%s)" % (OWNED, TASK) in itext
-          and _head(fx) == before)
-    index["fileIndex"][OWNED] = [TASK]
+    del index["fileIndex"][other_path]
     index["meta"]["title"] = "touched"
     TI._write_json(fx["manifest"], index)
-    icode, itext = _index_commit(fx)
-    check("ctw-ir7 ALLOW: the same index keeping that row commits: %r"
-          % ((icode, itext[-200:]),),
-          icode == 0 and _head(fx) != before)
+    before = _head(fx)
+    scode, stext = _state(fx)
+    after = _head(fx)
+    held = (_mio.read_json(os.path.join(_clone_at(
+        fx, after, repos.scratch("ir-drop")), *INDEX_REL.split("/")))
+        if after != before else {})
+    check("ctw-ir6 a state commit whose working index would drop a row another "
+          "phase's committed shard still declares carries only the part this "
+          "phase owns, naming the row: the committed index still holds the row "
+          "and the title it had: %r" % ((scode, stext[-400:]),),
+          scode == 0 and after != before
+          and "%s (%s)" % (other_path, other_task) in stext
+          and (held.get("fileIndex") or {}).get(other_path) == [other_task]
+          and (held.get("meta") or {}).get("title") != "touched")
+    index["fileIndex"][other_path] = [other_task]
+    TI._write_json(fx["manifest"], index)
+    scode, stext = _state(fx)
+    later = _head(fx)
+    whole = (_mio.read_json(os.path.join(_clone_at(
+        fx, later, repos.scratch("ir-whole")), *INDEX_REL.split("/")))
+        if later != after else {})
+    check("ctw-ir7 ALLOW: the same index keeping that row is carried WHOLE by "
+          "the next state commit, title included: %r" % ((scode, stext[-200:]),),
+          scode == 0 and later != after and INDEX_REL in _carried(fx, later)
+          and (whole.get("meta") or {}).get("title") == "touched")
 
 
 @_own_repos
@@ -2769,6 +2841,1058 @@ def _clean_at_start_cases(check, repos):
           and attempt.get("basis") != _scoped_commit.BASIS_SNAPSHOT)
 
 
+# --- one verb: the index rows ride with the shard, and the state commit -------
+ADDED = "src/added.py"
+
+
+def _add_task(fx, path=ADDED):
+    """`(code, newTaskId)` of the real `/audit:task add` putting a task declaring
+    `path` into the running phase - what it writes is the shard AND the index,
+    both left uncommitted, and a hand-written fixture of that would grade the
+    committer against a shape the verb never produces."""
+    lines = []
+    held = sys.stderr
+    sys.stderr = io.StringIO()
+    try:
+        code = AT.main(["add", "Added mid-phase", "--phase", PHASE, "--files",
+                        path, "--project-dir", fx["root"]], out=lines.append)
+    finally:
+        sys.stderr = held
+    added = [t.get("id") for t in _mio.read_json(fx["shard"])["tasks"]
+             if path in (t.get("files") or [])]
+    return code, (added[0] if added else None)
+
+
+def _state(fx, *extra):
+    """`(code, text)` of the one verb asked for a phase's STATE commit, in-process.
+    A usage error is caught as its exit code so a build without the mode fails
+    its own assertion instead of taking the stage down."""
+    lines = []
+    held = sys.stderr
+    sys.stderr = io.StringIO()
+    try:
+        code = M.main([fx["manifest"], PHASE, "--state", "--project",
+                       fx["root"]] + list(extra), out=lines.append)
+    except SystemExit as exc:
+        code = exc.code
+    finally:
+        sys.stderr = held
+    return code, "\n".join(str(x) for x in lines)
+
+
+def _commits_between(fx, older, newer):
+    return int(TI._git(fx["root"], "rev-list", "--count",
+                       "%s..%s" % (older, newer)).strip())
+
+
+@_own_repos
+def _one_verb_cases(check, repos):
+    """A task added mid-phase writes the shard and the index; the next task
+    commit carries both, the index limited to the rows the shard needs, and no
+    other verb runs. The state commit after an interrupted run is the same verb,
+    and it never carries a task's files."""
+    # --- a task added to a running phase, then a task committed ---------------
+    fx = repos.make()
+    acode, added = _add_task(fx)
+    _dirty_work(fx)
+    # An index edit no shard needs, beside the added rows: it must stay out.
+    index = _mio.read_json(fx["manifest"])
+    index["meta"]["title"] = "touched"
+    TI._write_json(fx["manifest"], index)
+    _gate(fx)
+    before = _head(fx)
+    code, text = _run(fx)
+    after = _head(fx)
+    carried = _carried(fx, after) if after != before else []
+    findings, committed = (_validates_at(fx, after, repos.scratch("ov-added"))
+                           if after != before else (["no commit"], {}))
+    check("ov1 RED-FIRST: after `/audit:task add` put %s into the running "
+          "phase, the next task commit SUCCEEDS as one commit with no other "
+          "verb run, carrying the shard and the index together, the committed "
+          "index holding the added task's row and validating on a fresh clone: "
+          "%r" % (added, (acode, code, carried, findings[:2], text[-300:]),),
+          acode == 0 and bool(added) and code == 0
+          and _commits_between(fx, before, after) == 1
+          and SHARD_REL in carried and INDEX_REL in carried
+          and (committed.get("fileIndex") or {}).get(ADDED) == [added]
+          and findings == [])
+    check("ov2 SECOND-DIRECTION CASE: the index the task commit carries is "
+          "the parent's with the phase's own part derived, not the working "
+          "file - the "
+          "unrelated title edit is absent from the commit and still sitting "
+          "in the working tree: %r"
+          % ((committed.get("meta") or {}).get("title"),),
+          after != before and INDEX_REL in carried
+          and (committed.get("meta") or {}).get("title") != "touched"
+          and _mio.read_json(fx["manifest"])["meta"]["title"] == "touched")
+    _manifest, phase, task = _phase_and_task(fx)
+    task["commit"] = after
+    graded = _invariants.commit_scope(
+        phase, fx["root"], ".", SHARD_REL, INDEX_REL,
+        "docs/audit/journal", "docs/audit/evidence")
+    check("ov3 ...and the grader reads the same commit and calls it clean: an "
+          "index carried for the rows its shard needs is in scope: %r"
+          % (graded.get("breaches"),),
+          after != before and INDEX_REL in carried
+          and not graded.get("breaches"))
+
+    # --- the state commit after an interrupted run --------------------------
+    fx = repos.make()
+    acode, added = _add_task(fx)
+    _dirty_work(fx)
+    before = _head(fx)
+    code, text = _state(fx)
+    after = _head(fx)
+    carried = _carried(fx, after) if after != before else []
+    subject = TI._git(fx["root"], "log", "-1", "--format=%s").strip()
+    findings, committed = (_validates_at(fx, after, repos.scratch("ov-state"))
+                           if after != before else (["no commit"], {}))
+    check("ov4 RED-FIRST: the state commit after an interrupted run is made by "
+          "the same verb (`--state` with a phase id): one commit, an "
+          "audit-state subject, carrying the shard and the index rows it needs, "
+          "validating on a fresh clone: %r"
+          % ((code, subject, carried, findings[:2], text[-300:]),),
+          code == 0 and after != before
+          and _commits_between(fx, before, after) == 1
+          and subject.startswith("chore(audit-state): phase %s" % (PHASE,))
+          and SHARD_REL in carried and INDEX_REL in carried
+          and (committed.get("fileIndex") or {}).get(ADDED) == [added]
+          and findings == [])
+    clone = _clone_at(fx, after, repos.scratch("ov-state-files")) \
+        if after != before else None
+    check("ov5 ...and it never stages a task's files: the declared file, the "
+          "sibling's and the stray are absent from the commit, their old bytes "
+          "on the clone, and still modified in the working tree: %r"
+          % (carried,),
+          clone is not None
+          and not any(p in carried for p in (OWNED, SIBLING, "src/stray.py"))
+          and _read(os.path.join(clone, OWNED)) == "a = 1\n"
+          and _read(os.path.join(fx["root"], OWNED))
+          == "a = 2  # the task's own work\n"
+          and _staged(fx) == [])
+
+    # --- the folded entry points are gone, and nothing ships naming them -----
+    gone = ("commit-" + "manifest-index.py", "commit-" + "audit-state.py")
+    present = [n for n in gone
+               if os.path.exists(os.path.join(_output.SCRIPTS_DIR,
+                                              "governance", n))]
+    naming = []
+    for base, dirs, names in os.walk(_output.PLUGIN_ROOT):
+        dirs[:] = [d for d in dirs if d != "__pycache__"]
+        for name in names:
+            path = os.path.join(base, name)
+            with open(path, "rb") as fh:
+                raw = fh.read()
+            naming.extend("%s: %s" % (os.path.relpath(path, _output.PLUGIN_ROOT),
+                                      n) for n in gone
+                          if n[:-3].encode("ascii") in raw)
+    check("ov6 the two folded entry points are deleted, and no file the plugin "
+          "ships names either of them: %r" % ((present, naming[:6]),),
+          present == [] and naming == [])
+
+
+# --- the owned part of the index, against the parent the commit is made on ---
+def _index_at(fx, sha):
+    return _invariants.json_at(fx["root"], sha, INDEX_REL) or {}
+
+
+def _commit_head_index(fx, edit, message):
+    """Another session's commit of the index alone, on top of HEAD: HEAD's
+    index with `edit` applied, committed, and the working file put back as it
+    was - the shape of a commit that lands between this session's read of HEAD
+    and its own commit."""
+    working = _read(fx["manifest"])
+    index = _index_at(fx, "HEAD")
+    edit(index)
+    TI._write_json(fx["manifest"], index)
+    TI._git(fx["root"], "commit", "-q", "-m", message, "--", INDEX_REL)
+    _write(fx["manifest"], working)
+    return _head(fx)
+
+
+def _move(fx, tid, target):
+    """`(code, newId)` of the real `/audit:task move`."""
+    lines = []
+    held = sys.stderr
+    sys.stderr = io.StringIO()
+    try:
+        code = AT.main(["move", tid, "--to", target, "--project-dir",
+                        fx["root"]], out=lines.append)
+    finally:
+        sys.stderr = held
+    p2 = _mio.read_json(os.path.join(os.path.dirname(fx["shard"]),
+                                     "%s.json" % (target,)))
+    moved = [t.get("id") for t in p2.get("tasks") or []
+             if ADDED in (t.get("files") or [])]
+    return code, (moved[0] if moved else None)
+
+
+@_own_repos
+def _owned_index_cases(check, repos):
+    """The one invariant: the part of the index a phase owns - its tasks'
+    fileIndex rows, the bug links its shard completes, its stub's mirrored
+    keys - equals what its shard derives, laid over the parent the commit is
+    actually made on; everything else is that parent's."""
+    # --- another session's index commit lands between the read and the commit
+    fx = repos.make()
+    _acode, added = _add_task(fx)
+    _dirty_work(fx)
+    _gate(fx)
+    before = _head(fx)
+    real = _scoped_commit.commit_with_rows
+    moved = []
+
+    def other_session_first(*args, **kwargs):
+        moved.append(_commit_head_index(
+            fx, lambda ix: ix["meta"].update({"title": "other session"}),
+            "chore(audit-index): phase P2 - another session's index commit"))
+        return real(*args, **kwargs)
+    _scoped_commit.commit_with_rows = other_session_first
+    try:
+        code, text = _run(fx)
+    finally:
+        _scoped_commit.commit_with_rows = real
+    after = _head(fx)
+    landed = _index_at(fx, after)
+    check("oi1 RED-FIRST: when another session's index commit lands after this "
+          "commit read HEAD and before it commits, the index it carries is "
+          "built on THAT commit - the other session's edit survives, beside the "
+          "row this task's shard derives, and the commit's parent is the other "
+          "session's: %r" % ((code, (landed.get("meta") or {}).get("title"),
+                              (landed.get("fileIndex") or {}).get(ADDED),
+                              text[-300:]),),
+          code == 0 and bool(moved) and after not in (before, moved[0])
+          and TI._git(fx["root"], "rev-parse", after + "^").strip() == moved[0]
+          and (landed.get("meta") or {}).get("title") == "other session"
+          and (landed.get("fileIndex") or {}).get(ADDED) == [added])
+
+    # --- a state commit in its fallback carries this phase's stub mirror -----
+    fx = repos.make()
+    p2 = os.path.join(os.path.dirname(fx["shard"]), "P2.json")
+    other = _mio.read_json(p2)
+    other["tasks"].append(dict(other["tasks"][0], id="P2.2", status="pending",
+                               files=["src/p22.py"]))
+    TI._write_json(p2, other)
+    index = _mio.read_json(fx["manifest"])
+    index["fileIndex"]["src/p22.py"] = ["P2.2"]
+    TI._write_json(fx["manifest"], index)
+    shard = _mio.read_json(fx["shard"])
+    shard["status"] = "done"
+    TI._write_json(fx["shard"], shard)
+    before = _head(fx)
+    code, text = _state(fx, "--json")
+    answer = json.loads(text) if text.startswith("{") else {}
+    landed = _index_at(fx, _head(fx))
+    stub = [s for s in landed.get("phases") or [] if s.get("id") == PHASE]
+    check("oi2 RED-FIRST: a state commit whose working index is ahead of "
+          "another phase's shard - so only this phase's part rides - still "
+          "carries this phase's stub mirrored from its shard (the stamp a "
+          "landing or sign-off writes), leaves the other phase's row out, and "
+          "names what it left in `indexLeft` for its caller: %r"
+          % ((code, stub[:1], answer.get("indexCarried"),
+              answer.get("indexLeft")),),
+          code == 0 and _head(fx) != before
+          and answer.get("indexCarried") == "needs"
+          and bool(stub) and stub[0].get("status") == "done"
+          and "src/p22.py" not in (landed.get("fileIndex") or {})
+          and any("P2.2" in line for line in answer.get("indexLeft") or []))
+
+    # --- a task moved away takes its row with it ----------------------------
+    fx = repos.make()
+    _acode, added = _add_task(fx)
+    _state(fx)
+    mcode, new_id = _move(fx, added, "P2")
+    code1, text1 = _state(fx)
+    first = _head(fx)
+    f1, idx1 = _validates_at(fx, first, repos.scratch("oi-move-1"))
+    code2, _text2 = _state_main([fx["manifest"], "P2", "--state", "--project",
+                                 fx["root"]])
+    f2, idx2 = _validates_at(fx, _head(fx), repos.scratch("oi-move-2"))
+    check("oi3 RED-FIRST: after `/audit:task move` takes %s to P2, P1's state "
+          "commit drops the row naming it - its shard held the task and no "
+          "longer derives it - and the plan it records validates; P2's then "
+          "carries the row under the new id, valid too: %r"
+          % (added, ((mcode, new_id, code1, code2), f1[:2], f2[:2],
+                     (idx1.get("fileIndex") or {}).get(ADDED),
+                     (idx2.get("fileIndex") or {}).get(ADDED), text1[-200:]),),
+          mcode == 0 and bool(new_id) and code1 == 0 and code2 == 0
+          and f1 == [] and f2 == []
+          and added not in ((idx1.get("fileIndex") or {}).get(ADDED) or [])
+          and (idx2.get("fileIndex") or {}).get(ADDED) == [new_id])
+
+    # --- the grader's equality: needs plus one unrelated edit is a breach ----
+    fx = repos.make()
+    _acode, added = _add_task(fx)
+    _dirty_work(fx)
+    _gate(fx)
+    code, _text = _run(fx)
+    made = _head(fx)
+    smuggled = _index_at(fx, made)
+    smuggled["meta"]["title"] = "smuggled beside the rows"
+    TI._write_json(fx["manifest"], smuggled)
+    TI._git(fx["root"], "add", "--", INDEX_REL)
+    TI._git(fx["root"], "commit", "-q", "--amend", "--no-edit")
+    amended = _head(fx)
+    _manifest, phase, task = _phase_and_task(fx)
+    task["commit"] = amended
+    graded = _invariants.commit_scope(
+        phase, fx["root"], ".", SHARD_REL, INDEX_REL,
+        "docs/audit/journal", "docs/audit/evidence")
+    check("oi4 a task commit whose index carries the rows its shard derives AND "
+          "one unrelated edit is a commit-scope breach naming the index - the "
+          "derived part being right does not license the rest: %r"
+          % (graded.get("breaches"),),
+          code == 0 and amended != made
+          and len(graded.get("breaches") or []) == 1
+          and INDEX_REL in graded["breaches"][0])
+
+    # --- the callers say what a state commit left ---------------------------
+    cp = _loader.load_script("close-phase.py", "cp_for_ctw_left")
+    dp = _loader.load_script("drive-phase.py", "dp_for_ctw_left")
+    left = ["the rest of the manifest index stays uncommitted in the working "
+            "tree: it names task P2.2"]
+    real_verb = cp._commit_verb
+    cp._commit_verb = lambda *a: ({"commit": "c" * 40, "indexLeft": left}, None)
+    try:
+        stamp = cp._commit_stamp("m.json", PHASE, "/nowhere", "main")
+    finally:
+        cp._commit_verb = real_verb
+    printed = []
+    cp._render_left(stamp, printed.append)
+    sha, lines = dp._state_answer(json.dumps({"commit": "d" * 40,
+                                              "indexLeft": left}))
+    check("oi5 a landing's and a sign-off's caller print what the state commit "
+          "left of the index beside the commit they report, and say nothing "
+          "when it left nothing: %r" % ((stamp, printed, sha, lines),),
+          stamp.get("landingCommitLeft") == left and len(printed) == 1
+          and "P2.2" in printed[0] and sha == "d" * 40 and len(lines) == 1
+          and "P2.2" in lines[0]
+          and dp._state_answer(json.dumps({"commit": "e" * 40}))[1] == [])
+
+
+# --- the state commit: the record of a run, without the work it ran on -------
+# Every assertion about what was preserved is made against a FRESH CLONE at the
+# commit, and every case proving it carried the record is paired with one
+# proving it left the work alone: the clone still holds the committed baseline of
+# `src/a.py`, the working tree still holds the failed fix, and the index is empty
+# afterwards. Any one of those alone passes for a command that committed
+# everything, or for one that committed nothing.
+EVIDENCE_REL = "docs/audit/evidence/" + TI.EVIDENCE_NAME
+
+
+def _porcelain(fx):
+    return [ln for ln in TI._git(fx["root"], "status",
+                                 "--porcelain").splitlines() if ln.strip()]
+
+
+def _state_rows(fx):
+    return [r for r in _journal_io.read_all(fx["root"])
+            if r.get("action") == _invariants.ACTION_STATE_COMMITTED]
+
+
+def _exhaust(fx):
+    """Mark P1.2 blocked with its attempts spent, and record why - what step 4
+    leaves when the gate stayed red to the last retry: the manifest moved, the
+    code did not, and nothing commits."""
+    shard = _mio.read_json(fx["shard"])
+    task = shard["tasks"][1]
+    task["status"] = "blocked"
+    task["attempts"] = task["maxAttempts"]
+    task["outcome"]["technical"] = "the gate stayed red on every attempt"
+    TI._write_json(fx["shard"], shard)
+    return shard
+
+
+def _state_main(argv):
+    """`(code, lines)` of `M.main(argv)`, stderr swallowed."""
+    lines = []
+    held = sys.stderr
+    sys.stderr = io.StringIO()
+    try:
+        code = M.main(argv, out=lines.append)
+    finally:
+        sys.stderr = held
+    return code, lines
+
+
+@_own_repos
+def _state_cases(check, repos):
+    """A failed run's record committed by `--state`, its work left alone; the
+    subject a commitlint repository takes; the do-nothing answers; a record
+    outside the repository; the allow-list as a list; usage; the row."""
+    fx = repos.make(leave_dirty=True)
+    _exhaust(fx)
+    before = _head(fx)
+    code, text = _state(fx)
+    after = _head(fx)
+    check("cas1 a task that ran out of attempts leaves a red gate's evidence "
+          "and a moved manifest with nothing to commit them - `--state` makes "
+          "one commit and reports its SHA: %r / %r" % (code, text),
+          code == 0 and after != before and after[:12] in text)
+
+    clone = _clone_at(fx, after, repos.scratch("exhausted"))
+    carried = _read(os.path.join(clone, EVIDENCE_REL))
+    carried_row = json.loads(carried) if carried else {}
+    check("cas2 ...and the failure rows are IN THE COMMIT, asserted from a "
+          "fresh clone checked out at it: %r" % (carried_row,),
+          carried_row.get("status") == "failed"
+          and carried_row.get("runId") == TI.FAILED_RUN_ID
+          and carried_row.get("taskId") == "P1.2")
+    cloned_shard = json.loads(_read(os.path.join(clone, SHARD_REL)))
+    check("cas3 ...and so is the manifest state that says why: the committed "
+          "shard has P1.2 blocked with its attempts spent: %r"
+          % (cloned_shard["tasks"][1]["status"],),
+          cloned_shard["tasks"][1]["status"] == "blocked"
+          and cloned_shard["tasks"][1]["attempts"]
+          == cloned_shard["tasks"][1]["maxAttempts"])
+    cloned_impl = _read(os.path.join(clone, OWNED))
+    working_impl = _read(os.path.join(fx["root"], OWNED))
+    check("cas4 ...and the WORK is not. The clone still holds the baseline "
+          "`src/a.py` while the working tree holds the fix that failed - the "
+          "pair, because 'the clone lacks the fix' also passes for a command "
+          "that deleted it: %r / %r" % (cloned_impl, working_impl),
+          cloned_impl == "a = 1\n"
+          and working_impl == "a = 2  # the fix that failed\n")
+    check("cas5 ...and it was never staged either: the index is empty and the "
+          "tree still reports the file as modified: %r / %r"
+          % (_staged(fx), _porcelain(fx)),
+          _staged(fx) == []
+          and any(ln.endswith(OWNED) and ln[:2].strip()
+                  for ln in _porcelain(fx)))
+
+    rows = _state_rows(fx)
+    details = rows[0].get("details") if rows else {}
+    nonce = details.get(_invariants.NONCE_KEY)
+    resolved, _why = _invariants.commits_carrying(fx["root"], [nonce])
+    check("cas6 the commit anchors itself with exactly one journal row "
+          "carrying a nonce and the phase, and the nonce resolves to THIS "
+          "commit through its trailer: %r -> %r" % (details, resolved),
+          len(rows) == 1 and (resolved or {}).get(nonce) == [after]
+          and _trailer_of(fx, after) == [nonce]
+          and details.get("phaseId") == PHASE)
+    check("cas7 ...and both keys are on `_journal_io.DETAILS_KEYS`, checked "
+          "rather than assumed: the allow-list silently DROPS a key it does "
+          "not know",
+          _invariants.NONCE_KEY in _journal_io.DETAILS_KEYS
+          and "phaseId" in _journal_io.DETAILS_KEYS)
+
+    subject = TI._git(fx["root"], "log", "-1", "--format=%s").strip()
+    check("cas8 the separating literal is a fixed SCOPE, not "
+          "`meta.commit.type` - only a literal nothing in the manifest reaches "
+          "can never collide with a task commit; the phase id stays in the "
+          "subject: %r" % (subject,),
+          subject.startswith("%s(%s): %s %s"
+                             % (M.COMMIT_TYPE, M.COMMIT_SCOPE,
+                                M.STATE_SUBJECT_LEAD, PHASE))
+          and M.COMMIT_SCOPE not in ("", None) and PHASE in subject)
+    check("cas8b ...and the type is one conventional-commit tooling accepts - "
+          "a repo with husky+commitlint refuses an unknown type AFTER the files "
+          "are staged: %r" % (M.COMMIT_TYPE,),
+          M.COMMIT_TYPE in ("build", "chore", "ci", "docs", "feat", "fix",
+                                  "perf", "refactor", "revert", "style", "test"))
+    check("cas40 the header the scope reader checks a carrier by is the one "
+          "this command writes, spelled from its own type and scope - two "
+          "spellings would grade every real state commit as absorbed: %r"
+          % (_invariants.STATE_HEADER,),
+          _invariants.STATE_HEADER == "%s(%s): " % (M.COMMIT_TYPE,
+                                                   M.COMMIT_SCOPE))
+    was = "%s(%s): %s - %s" % (M.COMMIT_TYPE, M.COMMIT_SCOPE,
+                               PHASE, M.STATE_DEFAULT_SUBJECT)
+    check("cas8c ...and the SUBJECT git recorded is out of reach of every case "
+          "commitlint's default `subject-case` forbids - the phase id leading a "
+          "lowercase sentence IS sentence-case, so it opens with a fixed "
+          "lowercase word: %r -> %r / the shape it replaced -> %r"
+          % (subject, header_offences(subject), header_offences(was)),
+          header_offences(subject) == []
+          and header_offences(was) == ["sentence-case"])
+    fired = dict((label, header_offences("chore(x): " + body))
+                 for label, body in (
+                     ("sentence-case", "P1 - the record of a run"),
+                     ("start-case", "The Record Of A Run"),
+                     ("pascal-case", "TheRecordOfARun"),
+                     ("upper-case", "THE RECORD OF A RUN")))
+    check("cas8d ...and that judgement can fire on each of the four, or cas8c "
+          "is a green light from a check that may be asserting nothing: %r"
+          % (fired,),
+          all(label in names for label, names in fired.items())
+          and fired["sentence-case"] == ["sentence-case"]
+          and len(fired) == len(FORBIDDEN_CASES))
+    composed = [M.state_header(PHASE, body) for body in
+                ("preserved by hand after a red gate",
+                 "Preserved by hand after a red gate")]
+    check("cas8e ...and no `--subject` can put a capital, or the id, back in "
+          "first position, and the id and the scope are still there: %r"
+          % (composed,),
+          all(header_offences(header) == [] and PHASE in header
+              and header.startswith("%s(%s): %s %s - "
+                                    % (M.COMMIT_TYPE, M.COMMIT_SCOPE,
+                                       M.STATE_SUBJECT_LEAD, PHASE))
+              for header in composed))
+    check("cas8f ...and the header still fits commitlint's default "
+          "`header-max-length`: %d against a limit of %d"
+          % (len(subject), HEADER_MAX_LENGTH),
+          len(subject) <= HEADER_MAX_LENGTH)
+    spent = M.state_header(PHASE, "y" * (HEADER_MAX_LENGTH * 2))
+    check("cas8g ...and a `--subject` longer than the whole budget is CUT "
+          "rather than carried past it, and says it was cut: %r" % (spent,),
+          len(spent) <= HEADER_MAX_LENGTH and header_offences(spent) == []
+          and PHASE in spent
+          and spent.startswith("%s(%s): %s %s - "
+                               % (M.COMMIT_TYPE, M.COMMIT_SCOPE,
+                                  M.STATE_SUBJECT_LEAD, PHASE))
+          and spent.endswith(_scoped_commit.SUBJECT_TRUNCATED))
+
+    code, text = _state(fx)
+    check("cas9 called again it makes NO commit and says nothing is "
+          "uncommitted - the row that anchored the last commit is inside it: "
+          "%r / %r" % (code, text),
+          code == 0 and _head(fx) == after
+          and M.STATE_NOTHING_UNCOMMITTED in text
+          and [ln for ln in _porcelain(fx) if "docs/audit/journal" in ln] == [])
+
+    red = repos.make(leave_dirty=True)
+    code, _text = _state(red)
+    red_clone = _clone_at(red, _head(red), repos.scratch("red-gate"))
+    red_shard = json.loads(_read(os.path.join(red_clone, SHARD_REL)))
+    check("cas10 a phase whose sign-off gate went red commits its evidence "
+          "while STAYING in_progress: %r" % (red_shard["status"],),
+          code == 0 and red_shard["status"] == "in_progress"
+          and _read(os.path.join(red_clone, EVIDENCE_REL)) is not None)
+
+    quiet = repos.make()
+    TI._git(quiet["root"], "add", SHARD_REL)
+    TI._git(quiet["root"], "commit", "-q", "-m", "chore: settle the shard")
+    settled = _head(quiet)
+    code, text = _state(quiet)
+    check("cas11 with nothing uncommitted no commit is made, and it SAYS so: "
+          "%r / %r" % (code, text),
+          code == 0 and _head(quiet) == settled
+          and M.STATE_NOTHING_UNCOMMITTED in text)
+    check("cas12 ...and it wrote no journal row either - the pair for cas6: %r"
+          % (_state_rows(quiet),),
+          _state_rows(quiet) == [])
+
+    blocked = repos.make(leave_dirty=True)
+    TI._git(blocked["root"], "add", OWNED)
+    blocked_head = _head(blocked)
+    code, text = _state(blocked)
+    check("cas13 work already in the index is REFUSED rather than swept into "
+          "the commit: %r / %r" % (code, text),
+          code == 1 and _head(blocked) == blocked_head
+          and OWNED in text and "REFUSED" in text)
+    check("cas14 ...and the refusal changed nothing: the file somebody else "
+          "staged is still staged and the evidence is NOT: %r"
+          % (_staged(blocked),),
+          _staged(blocked) == [OWNED])
+
+    away = repos.make(evidence_outside=True)
+    TI._evidence_file(away["audit"], "failed")
+    code, text = _state(away)
+    away_head = _head(away)
+    away_clone = _clone_at(away, away_head, repos.scratch("outside"))
+    check("cas15 an evidence directory outside the git root is degraded past "
+          "and NAMED, and the commit still carries the manifest state: %r"
+          % (text,),
+          code == 0 and "degraded" in text
+          and M.EVIDENCE_LABEL in text and "outside the git root" in text
+          and _read(os.path.join(away_clone, SHARD_REL)) is not None)
+    check("cas16 ...and the directory sitting at `docs/audit/evidence` was NOT "
+          "carried instead - it is not this manifest's evidence: %r"
+          % (_carried(away, away_head),),
+          _read(os.path.join(away_clone, EVIDENCE_REL)) is None)
+
+    listed = repos.make(leave_dirty=True)
+    manifest = _mio.load_manifest(listed["manifest"])
+    phase = _invariants.phase_of(manifest, PHASE)
+    targets = M.state_targets(phase, listed["manifest"], listed["root"],
+                              listed["root"])
+    check("cas17 the allow-list is the safety property, asserted as a LIST: "
+          "the phase's shard and the evidence directory are on it, the task's "
+          "files are not, and the index is not on it before `state_index` "
+          "decides what of it rides: %r" % (targets["paths"],),
+          SHARD_REL in targets["paths"]
+          and "docs/audit/evidence" in targets["paths"]
+          and INDEX_REL not in targets["paths"]
+          and OWNED not in targets["paths"]
+          and all(not _invariants._under(OWNED, rel)
+                  for rel in targets["paths"]))
+    single_path = os.path.join(listed["audit"], "single.json")
+    single = _mio.load_manifest(listed["manifest"])
+    for stub in single["phases"]:
+        stub.pop("shard", None)
+    TI._write_json(single_path, single)
+    flat = M.state_targets(_invariants.phase_of(single, PHASE), single_path,
+                           listed["root"], listed["root"])
+    check("cas18 ...and under the SINGLE-FILE layout the one manifest is what "
+          "gets staged, because there the index is the phase's file: %r"
+          % (flat["paths"],),
+          "docs/audit/single.json" in flat["paths"]
+          and SHARD_REL not in flat["paths"] and OWNED not in flat["paths"])
+    with_trail = M.state_targets(
+        _invariants.phase_of(_mio.load_manifest(fx["manifest"]), PHASE),
+        fx["manifest"], fx["root"], fx["root"])
+    check("cas19 the journal is on the list once it exists, and a journal that "
+          "does not exist yet is NOT reported as skipped while the journal is "
+          "on: %r / %r" % (with_trail["paths"], targets["skipped"]),
+          "docs/audit/journal" in with_trail["paths"]
+          and "docs/audit/journal" not in targets["paths"]
+          and not any(M.JOURNAL_LABEL in line for line in targets["skipped"]))
+
+    nowhere = os.path.dirname(listed["root"])
+    code, answer = M.commit_state(manifest, phase, listed["manifest"],
+                                  listed["root"], nowhere)
+    check("cas21 pointed at a directory git will not describe, it refuses and "
+          "says so - it does not read 'no foreign paths' out of an answer it "
+          "never got: %r" % (answer["refused"],),
+          code == 1 and answer["refused"] and not answer["committed"]
+          and answer["quiet"] == "")
+
+    graded = _invariants.check_phase(
+        _mio.load_manifest(fx["manifest"]), PHASE, fx["manifest"],
+        fx["root"], fx["root"])
+    state = [c for c in graded["checks"] if c["name"] == "audit-state-scope"][0]
+    check("cas22 the commit `--state` made is graded CLEAN by the check that "
+          "did not make it, `examined` asserted so a reader that stopped "
+          "finding the row could not pass this: %r" % (state["verdict"],),
+          state["verdict"] == _invariants.CLEAN and state["examined"] == 1
+          and state["breaches"] == [], state["gaps"])
+
+    code, _text = _state(fx, "--nope")
+    check("cas23 an unknown flag is a usage error (exit 2) and not a failure "
+          "to commit (exit 1)", code == 2)
+    missing, said = _state_main([fx["manifest"], "P404", "--state", "--project",
+                                 fx["root"]])
+    unreadable, said2 = _state_main([os.path.join(fx["root"], "no-such.json"),
+                                     PHASE, "--state", "--project", fx["root"]])
+    overriding, said3 = _state_main([fx["manifest"], PHASE, "--state",
+                                     "--override-verdict", "why", "--project",
+                                     fx["root"]])
+    check("cas24 ...and so are a phase id that is not there, a manifest that "
+          "will not load, and an override given to a commit that has no "
+          "verdict - each exit 2 with nothing printed: %r"
+          % ((missing, unreadable, overriding),),
+          (missing, unreadable, overriding) == (2, 2, 2)
+          and said == said2 == said3 == [])
+
+    code, text = _state(quiet, "--json")
+    payload = json.loads(text)
+    check("cas25 --json prints the whole answer for a DO-NOTHING outcome too: "
+          "%r" % (sorted(payload),),
+          code == 0 and payload["committed"] is False
+          and payload["quiet"] == M.STATE_NOTHING_UNCOMMITTED
+          and payload["commit"] is None)
+
+    row_target = _state_rows(fx)[0].get("target")
+    check("cas26 the row's target is the EVIDENCE directory and deliberately "
+          "not the phase's manifest file, which `_recorded_states` reads as a "
+          "write: %r" % (row_target,),
+          row_target == _journal_io.repo_relative_or_token(
+              fx["root"], _evidence_io.evidence_dir(fx["root"]))
+          and row_target != SHARD_REL)
+
+    fresh = repos.make(leave_dirty=True)
+    _exhaust(fresh)
+    code, text = _state(fresh)
+    nonce = _trailer_of(fresh, _head(fresh))
+    check("cas27 the run that commits says the row naming the commit is INSIDE "
+          "it and by which trailer, and the working tree agrees: %r" % (text,),
+          code == 0 and len(nonce) == 1
+          and _scoped_commit.ROW_CARRIED % (_invariants.ROW_TRAILER,
+                                            nonce[0]) in text
+          and [ln for ln in _porcelain(fresh)
+               if "docs/audit/journal" in ln] == [])
+    _journal_io.append(fresh["root"], {
+        "action": "task.note", "actor": {"via": "fixture"},
+        "target": "P1.2", "summary": "a row another writer left",
+        "details": {"taskId": "P1.2", "phaseId": PHASE}})
+    was = _head(fresh)
+    code, text = _state(fresh)
+    now = _head(fresh)
+    again_code, again = _state(fresh)
+    check("cas28 a journal holding only another writer's row is committed, and "
+          "a second run finds nothing uncommitted: %r / %r" % (text, again),
+          code == 0 and now != was and again_code == 0
+          and _head(fresh) == now and M.STATE_NOTHING_UNCOMMITTED in again)
+
+    silent = repos.make(leave_dirty=True, journal_off=True)
+    _exhaust(silent)
+    before_silent = _head(silent)
+    code, text = _state(silent)
+    check("cas29 ...and when NO row was written the commit says the trail "
+          "could not be written, and claims no row and no trailer: %r"
+          % (text,),
+          code == 0 and _head(silent) != before_silent
+          and _state_rows(silent) == []
+          and _scoped_commit.ROW_NOT_WRITTEN in text
+          and _invariants.ROW_TRAILER not in text
+          and _trailer_of(silent, _head(silent)) == [])
+
+
+@_own_repos
+def _state_staging_cases(check, repos):
+    """The shared staging driven through `--state`: a rename from outside the
+    list, a commit a hook refuses after staging, an ignored record directory;
+    and a phase ending clean after a task commit and a state commit."""
+    fx = repos.make(leave_dirty=True)
+    _exhaust(fx)
+    TI._git(fx["root"], "mv", SIBLING, "docs/audit/evidence/moved.jsonl")
+    before = _head(fx)
+    code, text = _state(fx)
+    check("cas30 a staged rename from OUTSIDE the allow-list into it is refused "
+          "and its SOURCE named: %r / %r" % (code, text),
+          code == 1 and SIBLING in text and _head(fx) == before)
+
+    fx = repos.make(leave_dirty=True)
+    _exhaust(fx)
+    _hook(fx, "pre-commit", "exit 1")
+    found = TI._git(fx["root"], "ls-files", "-s")
+    before = _head(fx)
+    code, text = _state(fx)
+    check("cas31 a commit refused AFTER staging leaves the index exactly as it "
+          "was found and says so: %r / %r" % (code, text),
+          code == 1 and _head(fx) == before
+          and TI._git(fx["root"], "ls-files", "-s") == found
+          and _scoped_commit.INDEX_RESTORED in text)
+    claimed = [(r.get("details") or {}).get(_invariants.NONCE_KEY)
+               for r in _state_rows(fx)]
+    withdrawn = _invariants.withdrawn_nonces(_journal_io.read_all(fx["root"]))
+    graded = _invariants.check_phase(
+        _mio.load_manifest(fx["manifest"]), PHASE, fx["manifest"], fx["root"],
+        fx["root"])
+    state = [c for c in graded["checks"] if c["name"] == "audit-state-scope"][0]
+    check("cas36 ...and the row written for that commit before it was refused "
+          "is WITHDRAWN by a row naming its nonce, and the reader grades "
+          "nothing: %r / %r / %r" % (claimed, sorted(withdrawn),
+                                     state["verdict"]),
+          len(claimed) == 1 and claimed[0] in withdrawn
+          and _scoped_commit.ROW_WITHDRAWN % (claimed[0],) in text
+          and state["verdict"] == _invariants.NA and state["gaps"] == [])
+
+    fx = repos.make(leave_dirty=True)
+    _exhaust(fx)
+    root = fx["root"]
+    TI._git(root, "add", "-f", "--", EVIDENCE_REL)
+    TI._git(root, "commit", "-q", "-m", "fixture: the evidence, tracked",
+            "--", EVIDENCE_REL)
+    _write(os.path.join(root, ".gitignore"), "docs/audit/evidence\n")
+    TI._git(root, "add", "--", ".gitignore")
+    TI._git(root, "commit", "-q", "-m", "fixture: ignore the evidence", "--",
+            ".gitignore")
+    with io.open(os.path.join(root, EVIDENCE_REL), "a", encoding="utf-8") as fh:
+        fh.write('{"v":1,"runId":"another"}\n')
+    before = _head(fx)
+    code, text = _state(fx)
+    after = _head(fx)
+    check("cas33 a record DIRECTORY git ignores as a whole, holding a tracked "
+          "edited file, is committed with it: %r / %r" % (code, text),
+          code == 0 and after != before
+          and EVIDENCE_REL in _carried(fx, after))
+
+    fx = repos.make()
+    _dirty_work(fx)
+    _gate(fx)
+    code_task, _text_task = _run(fx)
+    _exhaust(fx)
+    code, text = _state(fx)
+    head = _head(fx)
+    check("cas34 after a task commit and then a state commit the journal row "
+          "naming the LAST commit is not left in the working tree: task %r / "
+          "state %r / %r" % (code_task, code, text),
+          code_task == 0 and code == 0
+          and [ln for ln in _porcelain(fx) if "docs/audit/journal" in ln] == [])
+    nonces = _trailer_of(fx, head)
+    clone = _clone_at(fx, head, repos.scratch("clean-end"))
+    in_clone = [r for r in _journal_io.read_all(clone)
+                if r.get("action") == _invariants.ACTION_STATE_COMMITTED]
+    check("cas35 ...and the row is IN that commit, read from a fresh clone, "
+          "keyed by the one nonce the commit's trailer carries: %r / %r"
+          % (nonces, [(r.get("details") or {}) for r in in_clone]),
+          len(nonces) == 1 and len(in_clone) == 1
+          and (in_clone[0].get("details") or {}).get("commitNonce") == nonces[0]
+          and "commit" not in (in_clone[0].get("details") or {}))
+
+
+def _set_session(value):
+    """Name the session the command-line writers read, or take the name away;
+    returns what was there, for the restore - the suite runs inside a real
+    session and would otherwise leave later cases writing under a fixture's
+    session id."""
+    held = os.environ.get(_journal_io.ENV_SESSION_VAR)
+    if value is None:
+        os.environ.pop(_journal_io.ENV_SESSION_VAR, None)
+    else:
+        os.environ[_journal_io.ENV_SESSION_VAR] = value
+    return held
+
+
+def _writers(fx, config):
+    """The writer id each journal file's NAME carries - the file name is the
+    claim, since where a row landed is what splits a session's trail."""
+    directory = _journal_io.journal_dir(fx["root"], config)
+    return sorted(set(_journal_io.writer_of(os.path.basename(path))
+                      for path in _journal_io.journal_files(directory)))
+
+
+def _structural_edit(fx, tid="P1.2", path="src/widened.py"):
+    """What `/audit:task scope` leaves for an existing task: its file on the
+    shard and the fileIndex row on the index, neither committed."""
+    index = _mio.read_json(fx["manifest"])
+    index["fileIndex"][path] = [tid]
+    TI._write_json(fx["manifest"], index)
+    shard = _mio.read_json(fx["shard"])
+    task = [t for t in shard["tasks"] if t["id"] == tid][0]
+    task["files"] = list(task["files"]) + [path]
+    TI._write_json(fx["shard"], shard)
+
+
+@_own_repos
+def _state_index_cases(check, repos):
+    """Which index a state commit carries: the whole working file when the plan
+    it records validates, else only what this phase's shard needs, the rest
+    named and left; the session the row is filed under; the history the
+    retired index class left behind."""
+    fx = repos.make()
+    _structural_edit(fx)
+    before = _head(fx)
+    code, text = _state(fx)
+    after = _head(fx)
+    carried = _carried(fx, after) if after != before else []
+    findings, committed = (_validates_at(fx, after, repos.scratch("ix-whole"))
+                           if after != before else (["no commit"], {}))
+    check("st-ix1 a structural edit - a fileIndex row and the shard declaring "
+          "it - is committed by one state commit carrying the index beside the "
+          "shard, the pair validating on a fresh clone with the row in it: %r"
+          % ((code, carried, findings[:2]),),
+          code == 0 and INDEX_REL in carried and SHARD_REL in carried
+          and findings == [] and "src/widened.py" in (
+              committed.get("fileIndex") or {})
+          and _staged(fx) == [] and INDEX_REL not in "\n".join(_porcelain(fx)))
+
+    # ANOTHER PHASE'S SHARD, UNCOMMITTED, NAMED BY THE INDEX.
+    fx = repos.make()
+    p2 = os.path.join(os.path.dirname(fx["shard"]), "P2.json")
+    other = _mio.read_json(p2)
+    other["tasks"].append(dict(other["tasks"][0], id="P2.2", status="pending",
+                               files=["src/p22.py"]))
+    TI._write_json(p2, other)
+    index = _mio.read_json(fx["manifest"])
+    index["fileIndex"]["src/p22.py"] = ["P2.2"]
+    TI._write_json(fx["manifest"], index)
+    before = _head(fx)
+    code, text = _state(fx)
+    after = _head(fx)
+    check("st-ix2 an index naming a task another phase's UNCOMMITTED shard "
+          "holds is left out of this phase's state commit - committed, it "
+          "would record a plan that does not validate - and the output names "
+          "the task and the shard to commit first, while the rest commits: %r"
+          % ((code, text[-500:]),),
+          code == 0 and after != before
+          and INDEX_REL not in _carried(fx, after)
+          and "P2.2" in text and "docs/audit/phases/P2.json" in text)
+    scode, stext = _state_main([fx["manifest"], "P2", "--state", "--project",
+                                fx["root"]])
+    p2_head = _head(fx)
+    check("st-ix3 SECOND DIRECTION: the state commit of the phase that holds it "
+          "carries its shard and the whole index together: %r"
+          % ((scode, stext[-3:]),),
+          scode == 0 and p2_head != after
+          and INDEX_REL in _carried(fx, p2_head)
+          and "docs/audit/phases/P2.json" in _carried(fx, p2_head))
+
+    # A NEW PHASE'S STUB, ITS SHARD NOT COMMITTED.
+    fx = repos.make()
+    index = _mio.read_json(fx["manifest"])
+    index["phases"].append({"id": "P3", "title": "new phase",
+                            "shard": "phases/P3.json"})
+    TI._write_json(fx["manifest"], index)
+    TI._write_json(os.path.join(os.path.dirname(fx["shard"]), "P3.json"),
+                   {"id": "P3", "title": "new phase", "status": "pending",
+                    "tasks": []})
+    code, text = _state(fx)
+    check("st-ix4 ...and so is a new phase's stub whose shard is not "
+          "committed, named with that shard: %r" % ((code, text[-400:]),),
+          code == 0 and INDEX_REL not in _carried(fx, _head(fx))
+          and "P3" in text and "phases/P3.json" in text)
+    scode, _stext = _state_main([fx["manifest"], "P3", "--state", "--project",
+                                 fx["root"]])
+    p3 = _carried(fx, _head(fx))
+    check("st-ix5 ...and the new phase's own state commit carries its shard and "
+          "its stub together: %r" % ((scode, p3),),
+          scode == 0 and INDEX_REL in p3 and "docs/audit/phases/P3.json" in p3)
+
+    # A ROW NAMING A TASK NO SHARD HOLDS IS DANGLING, NOT AHEAD.
+    fx = repos.make()
+    index = _mio.read_json(fx["manifest"])
+    index["fileIndex"]["src/orphan.py"] = ["P9.9"]
+    index["meta"]["title"] = "only the title moved"
+    TI._write_json(fx["manifest"], index)
+    shows = []
+    real_git = _scoped_commit.run_git
+
+    def counting(root, argv, *rest, **kw):
+        if argv[:1] == ["show"]:
+            shows.append(argv)
+        return real_git(root, argv, *rest, **kw)
+    _scoped_commit.run_git = counting
+    try:
+        code, text = _state(fx)
+    finally:
+        _scoped_commit.run_git = real_git
+    check("st-ix6 git is asked to show a shard at HEAD only where that shard "
+          "CHANGED and is not the one this commit carries - so P2's committed "
+          "copy is never read: the cost is the change's, not the plan's: %r"
+          % (shows,),
+          code == 0 and not any("P2.json" in " ".join(a) for a in shows))
+    check("st-ix7 ...and an index naming a task NO shard holds is not ahead of "
+          "a shard - it is dangling, the validator's to report - so the index "
+          "is carried whole: %r" % (text[-300:],),
+          code == 0 and INDEX_REL in _carried(fx, _head(fx))
+          and "P9.9" not in text)
+
+    # THE SESSION THE ROW IS FILED UNDER.
+    joined = repos.make()
+    _structural_edit(joined)
+    sid = "5cf0d3a2-1111-4c2b-9a77-9f0c1b2d3e4f"
+    held = _set_session(sid)
+    try:
+        joined_code, _joined = _state(joined)
+        joined_cfg = _journal_io.load_config(joined["root"])
+        _journal_io.append_from_cli(joined["root"], {
+            "action": "task.add",
+            "actor": {"author": None, "sessionId": sid, "via": "cli"},
+            "target": INDEX_REL, "summary": "a structural edit by the other "
+            "command-line writer of this same session",
+            "details": {"phaseId": PHASE}}, config=joined_cfg)
+        joined_writers = _writers(joined, joined_cfg)
+        joined_rows = _journal_io.read_all(joined["root"])
+    finally:
+        _set_session(held)
+    check("st-ix8 a state commit and a structural edit made by the same "
+          "session land in the SAME journal file, named for that session, and "
+          "each row records it: %r / %r"
+          % (joined_writers,
+             [r.get("actor", {}).get("sessionId") for r in joined_rows]),
+          joined_code == 0
+          and joined_writers == [_journal_io.writer_id({"sessionId": sid})]
+          and [r.get("actor", {}).get("sessionId") for r in joined_rows]
+          == [sid, sid])
+    lone = repos.make()
+    _structural_edit(lone)
+    held = _set_session(None)
+    try:
+        lone_code, _lone = _state(lone)
+        lone_cfg = _journal_io.load_config(lone["root"])
+        lone_writers = _writers(lone, lone_cfg)
+        lone_token = _journal_io.writer_token(lone["root"], lone_cfg)
+    finally:
+        _set_session(held)
+    check("st-ix9 ...and with no session named the row lands in the file named "
+          "for the CHECKOUT's writer token: %r / %r" % (lone_writers,
+                                                       lone_token),
+          lone_code == 0 and bool(lone_token) and lone_writers == [lone_token])
+
+    # THE HISTORY A RETIRED CLASS LEFT: index commits stay readable.
+    old = repos.make()
+    _structural_edit(old)
+    TI._nonce_row(old["root"], _invariants.ACTION_INDEX_COMMITTED,
+                  "0d0d000000000001", INDEX_REL)
+    carrier = TI._commit_carrying(
+        old["root"], [INDEX_REL, "docs/audit/journal"],
+        "chore(audit-index): phase P1 - the shared index, carried alone so no "
+        "phase's work rides with it", "0d0d000000000001")
+    read = _invariants.index_commits(old["root"], PHASE, git_root=old["root"])
+    graded = [c for c in _invariants.check_phase(
+        _mio.load_manifest(old["manifest"]), PHASE, old["manifest"],
+        old["root"], old["root"])["checks"] if c["name"] == "index-scope"][0]
+    check("st-ix10 a manifest-index commit history holds - no writer makes the "
+          "class any more - still resolves from its row and is graded clean "
+          "by index-scope through the header those commits were written "
+          "with: %r / %r / examined %r"
+          % (read[0], graded["verdict"], graded["examined"]),
+          read[0] == [carrier] and graded["verdict"] == _invariants.CLEAN
+          and graded["examined"] == 1
+          and _invariants.INDEX_HEADER == "chore(audit-index): ")
+
+    # THE WORKING INDEX LACKS A ROW THE SHARD DECLARES.
+    fx = repos.make(leave_dirty=True)
+    _exhaust(fx)
+    shard = _mio.read_json(fx["shard"])
+    shard["tasks"][1]["files"] = list(shard["tasks"][1]["files"]) + [WIDENED]
+    TI._write_json(fx["shard"], shard)
+    before = _head(fx)
+    code, text = _state(fx)
+    _jcode, jtext = _state(fx, "--json")
+    rows = json.loads(jtext).get("indexRows") if jtext.startswith("{") else None
+    check("cas61 a shard declaring a file neither index has a row for is "
+          "refused naming the row and `reindex`, HEAD unmoved and nothing "
+          "staged: %r / %r" % ((code, text[-300:]), rows),
+          code == 1 and "%s (P1.2)" % (WIDENED,) in text
+          and "reindex" in text and _head(fx) == before and _staged(fx) == []
+          and rows == [[WIDENED, "P1.2"]])
+    # THE SECOND DIRECTION: a guard that fired unconditionally would refuse
+    # every state commit, and only a shard owing nothing can show it.
+    clean = repos.make(leave_dirty=True)
+    _exhaust(clean)
+    was = _head(clean)
+    code, text = _state(clean)
+    check("cas62 ...and a shard owing nothing commits with no refusal and no "
+          "remedy named: %r" % ((code, text[-300:]),),
+          code == 0 and _head(clean) != was and "reindex" not in text)
+
+
+def _as_state_command(fx, *extra):
+    """`(exitCode, stdout)` of `--state` run as the command `/audit:resume`
+    runs on every resume - through `__main__`, where the one-line success
+    output is wired and an in-process `main()` never reaches."""
+    env = dict((k, v) for k, v in os.environ.items()
+               if not k.startswith("CLAUDE") and k != "AUDIT_LOCK_TOKENS")
+    done = subprocess.run([sys.executable, _loader.script_path(
+        "commit-task-work.py"), fx["manifest"], PHASE, "--state", "--project",
+        fx["root"]] + list(extra), env=env, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, timeout=120)
+    return done.returncode, done.stdout.decode("utf-8", "replace")
+
+
+@_own_repos
+def _state_terse_cases(check, repos):
+    """The main loop reads this verb's stdout on every resume, so a state
+    commit is one line naming the commit; whatever the caller must still act
+    on keeps the long form."""
+    fx = repos.make(leave_dirty=True)
+    _exhaust(fx)
+    code, out = _as_state_command(fx)
+    lines = out.splitlines()
+    check("cas50 a state commit run as a command prints ONE line, carrying the "
+          "SHA it made and how many paths it holds: %r" % (out,),
+          code == 0 and len(lines) == 1 and _head(fx)[:12] in lines[0]
+          and "path(s)" in lines[0]
+          and _scoped_commit.ROW_CARRIED.split("%")[0] not in out)
+    verbose = repos.make(leave_dirty=True)
+    _exhaust(verbose)
+    vcode, vout = _as_state_command(verbose, "--verbose")
+    check("cas51 ...and `--verbose` prints the long form - the path list and "
+          "the sentence saying the row is inside the commit: %r" % (vout,),
+          vcode == 0 and len(vout.splitlines()) > 2
+          and _head(verbose)[:12] in vout
+          and _scoped_commit.ROW_CARRIED.split("%")[0] in vout)
+    away = repos.make(evidence_outside=True)
+    TI._evidence_file(away["audit"], "failed")
+    acode, aout = _as_state_command(away)
+    check("cas52 THE OVER-FIRE TWIN: a commit made past a degraded record keeps "
+          "every line, the `degraded:` one first: %r" % (aout,),
+          acode == 0 and "degraded:" in aout and len(aout.splitlines()) > 1
+          and _head(away)[:12] in aout)
+    quiet = repos.make()
+    TI._evidence_file(quiet["audit"], "passed")
+    TI._git(quiet["root"], "add", "-A")
+    TI._git(quiet["root"], "commit", "-q", "-m", "chore: settle the records")
+    qcode, qout = _as_state_command(quiet)
+    check("cas53 nothing to commit is one line too, still saying that nothing "
+          "was committed: %r" % (qout,),
+          qcode == 0 and len(qout.splitlines()) == 1
+          and "nothing uncommitted" in qout)
+
+
 STAGES = (("nm-block", "_no_maintenance_cases"),
           ("fg-block", "_fixture_git_cases"),("or-block", "_ordinary_cases"),("dc-block", "_declared_cases"),
           ("rc-block", "_records_cases"), ("ix-block", "_index_cases"),
@@ -2787,7 +3911,13 @@ STAGES = (("nm-block", "_no_maintenance_cases"),
           ("ir-block", "_index_row_cases"),
           ("ce-block", "_close_evidence_cases"),
           ("ro-block", "_records_only_cases"),
-          ("ec-block", "_earlier_commit_cases"))
+          ("ec-block", "_earlier_commit_cases"),
+          ("ov-block", "_one_verb_cases"),
+          ("oi-block", "_owned_index_cases"),
+          ("st-block", "_state_cases"),
+          ("ss-block", "_state_staging_cases"),
+          ("si-block", "_state_index_cases"),
+          ("tr-block", "_state_terse_cases"))
 
 
 if __name__ == "__main__":

@@ -900,22 +900,22 @@ def _add_cases(check):
                             "--project-dir", ixp])
         check("ix1 a brand-new phase writes BOTH its shard and the index in "
               "one call, and the write says the index is now dirty and names "
-              "the tool that lands it -- before now that tool's name reached "
-              "a human only in the refusal that follows the mistake: %r"
-              % (ix_txt[-320:],),
-              code == 0 and "commit-manifest-index.py" in ix_txt
+              "the one commit verb that lands it with the shard, at the moment "
+              "the state is made: %r" % (ix_txt[-320:],),
+              code == 0 and "commit-task-work.py" in ix_txt
               and "DIRTY" in ix_txt)
-        check("ix1b ...and it gives the ORDER: the shard it names is committed "
-              "first, the index after - the other order records a plan that does "
-              "not validate, and commit-manifest-index refuses it: %r"
+        check("ix1b ...and it says the two go TOGETHER, through the state "
+              "commit - a shard committed alone records a plan that does not "
+              "validate, and an index-first order is no longer offered: %r"
               % (ix_txt[-320:],),
-              "AFTER the shard" in ix_txt and "before or beside" not in ix_txt)
+              "together" in ix_txt and "--state" in ix_txt
+              and "AFTER the shard" not in ix_txt)
         ix_phase = [p for p in _mio.load_manifest(ixmp)["phases"]
                     if p.get("title") == "Second wave"][0]
         check("ix2 ...and the invocation it prints names THIS write's phase "
               "id, not a stale one left over from an earlier call in the "
               "same process: %r" % (ix_txt[-200:],),
-              ix_phase["id"] in ix_txt.rsplit("commit-manifest-index.py", 1)[-1])
+              ix_phase["id"] in ix_txt.rsplit("commit-task-work.py", 1)[-1])
         code, ix_json_txt = run(["add-phase", "Third wave", "--outcome",
                                  "ships", "--project-dir", ixp, "--json"])
         ix_json = json.loads(ix_json_txt)
@@ -924,7 +924,7 @@ def _add_cases(check):
               "one to make, so a machine caller can act on it without "
               "scraping human prose: %r" % (ix_json.get("indexDirtyNote"),),
               code == 0 and bool(ix_json.get("indexDirtyNote"))
-              and "commit-manifest-index.py" in ix_json["indexDirtyNote"])
+              and "commit-task-work.py" in ix_json["indexDirtyNote"])
         # SECOND-DIRECTION CASE, and the one that decides whether this can
         # ship: an ordinary write that touches only the shard must say
         # NOTHING about the index, or the note becomes a line every plain
@@ -934,7 +934,7 @@ def _add_cases(check):
         check("ix4 SECOND-DIRECTION CASE: a write that dirties only the "
               "shard names no tool and no index, because there is nothing "
               "to land: %r" % (ix_quiet_txt[-200:],),
-              code == 0 and "commit-manifest-index.py" not in ix_quiet_txt
+              code == 0 and "commit-task-work.py" not in ix_quiet_txt
               and "DIRTY" not in ix_quiet_txt)
         code, ix_quiet_json_txt = run(["add", "Quiet add json", "--phase",
                                        "P2", "--project-dir", ixp, "--json"])
@@ -954,7 +954,7 @@ def _add_cases(check):
         check("ix6 the SINGLE-FILE layout never carries this note: there is "
               "one file and not two, so nothing was left dirty BESIDE "
               "anything: %r" % (ixf_txt[-160:],),
-              code == 0 and "commit-manifest-index.py" not in ixf_txt)
+              code == 0 and "commit-task-work.py" not in ixf_txt)
 
         # ---- (bn) a write naming another phase's shard says which branch ------
         # The sharded layout promises a phase RUN touches only its own shard,
@@ -8685,14 +8685,14 @@ def _group_cases(check):
         g12_proj = gs_fixture("gs-plan-sharded", sharded=True)[0]
         _gs_plan_lines = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
                               "--project-dir", g12_proj])[1]
-        check("gs18 the plan prints the commit step's commands too - one "
-              "commit-audit-state per member and the index commit in the sharded "
-              "layout - and the gate spelled with --also: %s" % (_gs_plan_lines,),
-              ('commit-audit-state.py" docs/audit/audit-plan.json P1'
+        check("gs18 the plan prints the commit step's commands too - one state "
+              "commit per member, the last carrying the rest of the index in "
+              "the sharded layout - and the gate spelled with --also: %s"
+              % (_gs_plan_lines,),
+              ('commit-task-work.py" docs/audit/audit-plan.json P1 --state'
                in _gs_plan_lines
-               and 'commit-audit-state.py" docs/audit/audit-plan.json P2'
+               and 'commit-task-work.py" docs/audit/audit-plan.json P2 --state'
                in _gs_plan_lines
-               and "commit-manifest-index.py" in _gs_plan_lines
                and 'run-test-gate.py" docs/audit/audit-plan.json P1 --also P2'
                in _gs_plan_lines))
         # --- sign-off's gate evidence on the single-phase path too --------------
@@ -9286,7 +9286,7 @@ def _record_cases(check):
               and _bf["BUG-2"]["fixedIn"] is None
               and "stored bug BUG-1.status: triaged -> fixed" in txt
               and "fix task P2.4 is done" in txt
-              and "commit-manifest-index.py" in txt)
+              and "commit-task-work.py" in txt)
 
         # A plan carrying stale values from before the verbs stored them: a
         # parent-branch phase signed off at in_progress, a stub mirroring an old

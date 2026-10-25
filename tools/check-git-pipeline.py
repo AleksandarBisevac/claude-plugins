@@ -1751,17 +1751,36 @@ def _sharded(fx):
     return index
 
 
-def check_index_commit_carries_only_the_index(fx):
-    """A manifest-index commit lands the shared file and leaves the shard behind.
+def _widen_p11(fx, path="src/widened.ts"):
+    """What `/audit:task scope` leaves: `path` declared by P1.1 in the shard
+    AND its fileIndex row in the index, neither committed - both halves, since
+    a row no shard declares is not the phase's to carry and the commit leaves
+    it out."""
+    index = read_manifest(fx)
+    index["fileIndex"][path] = ["P1.1"]
+    write_manifest(fx, index)
+    shard_path = os.path.join(fx["root"], SHARD_REL.replace("/", os.sep))
+    with io.open(shard_path, encoding="utf-8") as fh:
+        shard = json.load(fh)
+    for task in shard.get("tasks") or []:
+        if task.get("id") == "P1.1":
+            task["files"] = list(task.get("files") or []) + [path]
+    with io.open(shard_path, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps(shard, indent=1, sort_keys=True))
+
+
+def check_state_commit_carries_index_and_shard(fx):
+    """A state commit lands the shared index and the shard it names together,
+    and leaves a source file beside them behind.
 
     THE CLAIM IS ABOUT GIT AND CANNOT BE MADE ANYWHERE ELSE. The command's own
     suite proves the allow-list and the refusals; what only a real repository can
-    say is that staging the index and committing produces a commit whose entire
-    file list is that path and the one journal file holding the row naming the
-    commit, while a shard modified in the same tree at the same moment stays
-    uncommitted and no journal file is left dirty. Both halves are asserted,
-    because "the index is in the commit" also passes for a commit that swept in
-    everything.
+    say is that `commit-task-work.py --state` produces a commit whose entire file
+    list is the index, the shard and the one journal file holding the row naming
+    the commit, while a source file modified in the same tree at the same moment
+    stays uncommitted and no journal file is left dirty. Both halves are
+    asserted, because "the index is in the commit" also passes for a commit that
+    swept in everything.
 
     AND THE ROW STILL NAMES ITS COMMIT AFTER A REAL REBASE. The row is inside the
     commit, so it names it by the nonce the commit's `Audit-Row` trailer carries
@@ -1769,30 +1788,28 @@ def check_index_commit_carries_only_the_index(fx):
     and `git log --grep` finds that one and only that one.
     """
     before = git(fx, "rev-parse", "HEAD")[1].strip()
+    stray = "src/stray-beside-the-record.ts"
     try:
         _sharded(fx)
         git(fx, "add", "-A")
         git(fx, "commit", "-q", "-m", "fixture: the sharded layout")
         settled = git(fx, "rev-parse", "HEAD")[1].strip()
 
-        index = read_manifest(fx)
-        index["fileIndex"]["src/widened.ts"] = ["P1.1"]
-        write_manifest(fx, index)
-        shard_path = os.path.join(fx["root"], SHARD_REL.replace("/", os.sep))
-        with io.open(shard_path, encoding="utf-8") as fh:
-            shard = json.load(fh)
-        shard["title"] = "touched in the same tree"
-        with io.open(shard_path, "w", encoding="utf-8") as fh:
-            fh.write(json.dumps(shard, indent=1, sort_keys=True))
+        _widen_p11(fx)
+        stray_path = os.path.join(fx["root"], stray.replace("/", os.sep))
+        if not os.path.isdir(os.path.dirname(stray_path)):
+            os.makedirs(os.path.dirname(stray_path))
+        with io.open(stray_path, "w", encoding="utf-8") as fh:
+            fh.write("export const stray = 1\n")
 
-        code, out = script(fx, "commit-manifest-index.py", MANIFEST_REL, "P1",
-                           "--project", ".")
+        code, out = script(fx, "commit-task-work.py", MANIFEST_REL, "P1",
+                           "--state", "--project", ".")
         head = git(fx, "rev-parse", "HEAD")[1].strip()
         carried = [ln.strip() for ln in
                    git(fx, "show", "--name-only", "--pretty=format:",
                        head)[1].splitlines() if ln.strip()]
         porcelain = git(fx, "status", "--porcelain")[1].splitlines()
-        dirty = [ln for ln in porcelain if ln.strip().endswith(SHARD_REL)]
+        dirty = [ln for ln in porcelain if ln.strip().endswith(stray)]
         trail_dirty = [ln for ln in porcelain if "docs/audit/journal/" in ln]
         trail = [p for p in carried if p.startswith("docs/audit/journal/")]
         prefix = "Audit-Row: "
@@ -1800,20 +1817,19 @@ def check_index_commit_carries_only_the_index(fx):
                   git(fx, "log", "-1", "--format=%B", head)[1].splitlines()
                   if ln.startswith(prefix)]
         ok = (code == 0 and head != settled
-              and sorted(carried) == sorted([MANIFEST_REL] + trail)
+              and sorted(carried) == sorted([MANIFEST_REL, SHARD_REL] + trail)
               and len(trail) == 1 and len(dirty) == 1 and trail_dirty == []
               and len(nonces) == 1)
         if not ok:
-            return False, ("exit %r; the commit carried %r (want [%r] and one "
-                           "journal file); the shard is still dirty=%r (want "
-                           "one line); journal left dirty=%r (want none); "
+            return False, ("exit %r; the commit carried %r (want [%r, %r] and "
+                           "one journal file); the stray is still dirty=%r "
+                           "(want one line); journal left dirty=%r (want none); "
                            "trailer %r; output %r"
-                           % (code, carried, MANIFEST_REL, dirty, trail_dirty,
-                              nonces, (out or "").strip()[:200]))
+                           % (code, carried, MANIFEST_REL, SHARD_REL, dirty,
+                              trail_dirty, nonces, (out or "").strip()[:200]))
+        os.remove(stray_path)
 
-        # A REAL REBASE: a commit slid in beneath the index commit. The shard
-        # edit rides along untouched - the new base is committed by pathspec,
-        # and `--autostash` sets the edit aside while git replays.
+        # A REAL REBASE: a commit slid in beneath the state commit.
         git(fx, "checkout", "-q", "--detach", settled)
         with io.open(os.path.join(fx["root"], "rebase-base.txt"), "w",
                      encoding="utf-8") as fh:
@@ -1836,10 +1852,11 @@ def check_index_commit_carries_only_the_index(fx):
         # its record separator and trailer parsing, run over a history git
         # really rewrote rather than one amended in-process.
         import _invariants
-        read = _invariants.index_commits(fx["root"], "P1", git_root=fx["root"])
+        read = _invariants.audit_state_commits(fx["root"], "P1",
+                                               git_root=fx["root"])
         ok = (code == 0 and rebased != head and found == [rebased]
               and read[0] == [rebased] and read[3] == [])
-        return ok, ("the index commit %s was rebased to %s (exit %r: %s); `git "
+        return ok, ("the state commit %s was rebased to %s (exit %r: %s); `git "
                     "log --grep` for its trailer found %r and the reader "
                     "resolved %r (want exactly the rebased commit from both)"
                     % (head[:12], rebased[:12], code,
@@ -1851,28 +1868,28 @@ def check_index_commit_carries_only_the_index(fx):
         write_manifest(fx, manifest_body())
 
 
-def check_squashed_index_commit_is_a_gap(fx):
-    """A real `git merge --squash` of a branch holding a work commit and an
-    index commit is reported as a gap naming the squash, never as a breach."""
-    return _squashed_index_commit(fx, scoped_first=False)
+def check_squashed_state_commit_is_a_gap(fx):
+    """A real `git merge --squash` of a branch holding a work commit and a
+    state commit is reported as a gap naming the squash, never as a breach."""
+    return _squashed_state_commit(fx, scoped_first=False)
 
 
 def check_squash_ending_in_the_trailer_is_a_gap(fx):
-    """...and so is one of a branch holding the index commit FIRST and work
-    after it, whose squash message therefore ENDS with the index commit's
+    """...and so is one of a branch holding the state commit FIRST and work
+    after it, whose squash message therefore ENDS with the state commit's
     trailer: only the subject header tells that squash from the commit it
     absorbed."""
-    return _squashed_index_commit(fx, scoped_first=True)
+    return _squashed_state_commit(fx, scoped_first=True)
 
 
-def _squashed_index_commit(fx, scoped_first):
+def _squashed_state_commit(fx, scoped_first):
     """The squash check, the scoped commit made before or after the work.
 
     THE CLAIM ONLY GIT CAN MAKE: that the squash message git writes carries the
-    index commit's trailer, so the row resolves to the squash commit - whose
-    file list holds the work too - and that index-scope then declines to grade
-    that commit as the index commit it absorbed. The branch is graded clean
-    first, so the gap is the squash's and not the fixture's.
+    state commit's trailer, so the row resolves to the squash commit - whose
+    file list holds the work too - and that audit-state-scope then declines to
+    grade that commit as the state commit it absorbed. The branch is graded
+    clean first, so the gap is the squash's and not the fixture's.
     """
     import _invariants
     before = git(fx, "rev-parse", "HEAD")[1].strip()
@@ -1892,11 +1909,9 @@ def _squashed_index_commit(fx, scoped_first):
 
         if not scoped_first:
             the_work()
-        index = read_manifest(fx)
-        index["fileIndex"]["src/widened.ts"] = ["P1.1"]
-        write_manifest(fx, index)
-        code, out = script(fx, "commit-manifest-index.py", MANIFEST_REL, "P1",
-                           "--project", ".")
+        _widen_p11(fx)
+        code, out = script(fx, "commit-task-work.py", MANIFEST_REL, "P1",
+                           "--state", "--project", ".")
         if scoped_first:
             the_work()
 
@@ -1906,7 +1921,7 @@ def _squashed_index_commit(fx, scoped_first):
             return [c for c in _invariants.check_phase(
                 manifest, "P1", os.path.join(fx["root"], MANIFEST_REL),
                 fx["root"], fx["root"])["checks"]
-                if c["name"] == "index-scope"][0]
+                if c["name"] == "audit-state-scope"][0]
 
         on_side = scope()
         git(fx, "checkout", "-q", FIXTURE_BRANCH)
@@ -1920,7 +1935,7 @@ def _squashed_index_commit(fx, scoped_first):
               and ends == scoped_first
               and after["breaches"] == [] and after["examined"] == 0
               and any(squash[:12] in g for g in after["gaps"]))
-        return ok, ("index commit exit %r (%s); on the branch %r; squash "
+        return ok, ("state commit exit %r (%s); on the branch %r; squash "
                     "message ends with the trailer %r; after the squash %s: %r "
                     "breaches %r gaps %r"
                     % (code, (out or "").strip()[:120], on_side["verdict"], ends,
@@ -2128,17 +2143,18 @@ CHECKS = (
      check_sweep_leaves_strangers),
     ("g20 the sweep reaps the worktree the plugin created and leaves the "
      "hand-made one beside it", check_sweep_only_reaps_what_it_created),
-    ("g21 an index commit lands the shared file and the row naming it, leaves "
-     "the shard behind, and the row still names it after a real rebase",
-     check_index_commit_carries_only_the_index),
+    ("g21 a state commit lands the shared index, the shard it names and the "
+     "row naming it, leaves a source file behind, and the row still names it "
+     "after a real rebase",
+     check_state_commit_carries_index_and_shard),
     ("g22 a ledger file two branches appended to conflicts in a real merge, and "
      "`audit-journal.py merge` resolves it from the index into a chain that "
      "verifies and completes the merge",
      check_evidence_ledger_merge),
-    ("g23 an index commit squash-merged together with work is a gap naming the "
+    ("g23 a state commit squash-merged together with work is a gap naming the "
      "squash commit, never a breach over the work it absorbed",
-     check_squashed_index_commit_is_a_gap),
-    ("g24 ...and so is a squash of the index commit FIRST and work after it, "
+     check_squashed_state_commit_is_a_gap),
+    ("g24 ...and so is a squash of the state commit FIRST and work after it, "
      "whose message ends with the trailer - only the subject header stops it",
      check_squash_ending_in_the_trailer_is_a_gap),
 )

@@ -667,7 +667,7 @@ def _cases(check):
           "(k) group is about", _pw_both, _pw_detail)
 
     # (cw) THE PLUGIN'S OWN CLI SCRIPTS ARE THE WRITER THIS GUARD WENT ON
-    # FLAGGING. Reported from a live project: `commit-audit-state.py` ran, the
+    # FLAGGING. Reported from a live project: the state commit ran, the
     # journal file it appended to went dirty, and the NEXT Bash command drew "that
     # shell command wrote into the append-only audit journal ... an edit tool would
     # have been REFUSED here" - while `audit-journal.py verify` reported the chain
@@ -684,8 +684,8 @@ def _cases(check):
     # and `_journal_io.CLI_JOURNAL_WRITER` are two literals in two files a hook may
     # not share an import with, so a case that planted the sidecar by hand would
     # pin the guard against itself and go on passing after either side drifted.
-    _cas = _loader.load_script("commit-audit-state.py",
-                               modname="commit_audit_state_for_cw", cache=False)
+    _ctw = _loader.load_script("commit-task-work.py",
+                               modname="commit_task_work_for_cw", cache=False)
     cwproj = tmp / "cliwriter"
     (cwproj / "docs" / "audit").mkdir(parents=True, exist_ok=True)
     plant_plan(cwproj)
@@ -697,7 +697,8 @@ def _cases(check):
     try:
         for _sid in ("bw-cw1", "bw-cw2"):
             seed(_sid, use_cfg=cwcfg, state_dir=cwsd, cwd=cwproj)
-        _cwpath = _cas.record_row(str(cwproj), "P1", "a" * 40, config=cwcfg)
+        _cwpath = _ctw.record_state_row(str(cwproj), "P1", "a" * 40,
+                                        config=cwcfg)
         _cwrel = _config.rel_path(cwproj, _cwpath) if _cwpath else None
         _cwv, _cwd = M.decide({"tool_name": "Bash", "tool_input": {"command": "x"},
                                "session_id": "bw-cw1", "cwd": str(cwproj)},
@@ -737,7 +738,7 @@ def _cases(check):
     finally:
         os.environ["CLAUDE_PROJECT_DIR"] = str(tmp)
     check("cw1 a row a plugin CLI appended is SILENT on the next Bash pass - "
-          "`commit-audit-state.py` leaves its own claim through "
+          "`commit-task-work.py --state` leaves its own claim through "
           "`_journal_io.append_from_cli`, and the guard subtracts it",
           _cw_silent, _cw_detail)
     check("cw2 ...while a journal file no writer claims still warns, with the "
@@ -2395,7 +2396,7 @@ def _journal_origin_cases(check):
         jdir = repo / "docs" / "audit" / "journal"
         brought = jdir / "2026-09.8775a6bed318e390.jsonl"
         brought.write_text(json.dumps({"action": "audit.state.committed",
-                                       "actor": {"via": "commit-audit-state"}})
+                                       "actor": {"via": "commit-task-work"}})
                            + "\n", encoding="utf-8")
         run_git("add", "-A")
         run_git("commit", "-qm", "branch row")

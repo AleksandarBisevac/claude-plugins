@@ -2314,15 +2314,13 @@ def _same_bytes(path, text):
         return False
 
 
-# THE SECOND-ORDER TRAP `commit-task-work.py` DOES NOT CLOSE. That script
-# refuses a task commit that stages the index, on purpose (two phases must be
-# able to merge without meeting on one file) -- so a write here that dirtied
-# BOTH the shard and the index leaves the index sitting uncommitted, and
-# nothing said so at the moment it happened. A caller who commits the shard by
-# hand and never runs the one script that lands the index alone produces a
+# THE TRAP A HAND COMMIT FALLS INTO. `commit-task-work.py` carries the part of
+# the index a phase owns beside its shard, so its commits keep the pair valid -- but a
+# write here that dirtied BOTH the shard and the index leaves the index sitting
+# uncommitted, and a caller who commits the shard by hand without it produces a
 # manifest that fails to validate AT that commit, because the index then names
 # a task the checked-out shard does not carry -- reproduced in a scratch
-# repository rather than assumed.
+# repository rather than assumed. So the state is said at the moment it is made.
 def _index_dirty_note(written, mpath, project, phase_id):
     """The note owed when THIS write left the shared index dirty beside the
     phase shard it also touched -- or None when this write is one file, not
@@ -2334,25 +2332,21 @@ def _index_dirty_note(written, mpath, project, phase_id):
     index-precedent order, so the index sitting LAST behind a first entry is
     exactly what a dual write with the index looks like from here.
 
-    NAMED HERE, NOT ONLY IN THE REFUSAL THAT FOLLOWS THE MISTAKE.
-    `commit-task-work.py`'s own refusal already names `commit-manifest-
-    index.py` -- but only once a caller has staged the index and been turned
-    away for it, by which point a hand commit may already have carried the
-    shard on alone. This is the same name at the moment the state is CREATED.
+    NAMED HERE, AT THE MOMENT THE STATE IS CREATED, with the one commit verb
+    that keeps the pair together, so a hand commit of the shard alone is not
+    the next thing anybody types.
     """
     index_rel = _output.posix_rel(mpath, project)
     if len(written) < 2 or written[-1] != index_rel:
         return None
     return (
         "  the manifest index (%s) is now DIRTY alongside the shard this "
-        "wrote, and a task commit will not carry it -- orchestrator.md step "
-        "4c refuses to stage the index in a task commit on purpose, which is "
-        "what lets two phases merge with no conflict there. Land it on its "
-        "own, AFTER the shard it names is committed (the task commit carries "
-        "the shard) - committed first, it records a plan that does not "
-        "validate, and the command below refuses that:\n"
-        "    python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/governance/commit-manifest-index.py\" "
-        "%s %s" % (index_rel, mpath, phase_id))
+        "wrote. Commit them together: the next task commit carries the rows "
+        "this shard needs beside it, and the phase's state commit carries the "
+        "rest of the index with the shard - a shard committed alone records a "
+        "plan that does not validate:\n"
+        "    python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/governance/commit-task-work.py\" "
+        "%s %s --state" % (index_rel, mpath, phase_id))
 
 
 def _index_dirty_key(note):
@@ -11928,16 +11922,13 @@ def gate_command(mrel, plan, ids):
 
 
 def commit_commands(mrel, ids, sharded):
-    """The sign-off commit, spelled as the plugin's own committers: one audit-state
-    commit per member - one commit carrying two members' shards reads as a scope
-    breach for each - and, sharded, the index alone after them."""
-    if not sharded:
-        return [_plugin_cmd("governance/commit-audit-state.py", mrel, ids[0],
-                            "--project", ".")]
-    return ([_plugin_cmd("governance/commit-audit-state.py", mrel, pid,
-                         "--project", ".") for pid in ids]
-            + [_plugin_cmd("governance/commit-manifest-index.py", mrel, ids[-1],
-                           "--project", ".")])
+    """The sign-off commit, spelled as the plugin's own committer: one state
+    commit per member - one commit carrying two members' shards reads as a
+    scope breach for each. Sharded, each carries what its shard needs of the
+    index, and the last, every member's shard then committed, carries the rest
+    of it; in one file there is only the one manifest to commit."""
+    return [_plugin_cmd("governance/commit-task-work.py", mrel, pid, "--state",
+                        "--project", ".") for pid in (ids if sharded else ids[:1])]
 
 
 def _group_door(args, project, ids, out):

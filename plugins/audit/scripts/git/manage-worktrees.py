@@ -26,7 +26,7 @@ the reason printed beside it.
 
 AND IT MAY ONLY TOUCH WHAT THE PLAN NAMES. The branch names come from `_branch` over
 this manifest's phases; every worktree git lists that is not on that list is REPORTED
-as a stranger and left alone. That is `commit-audit-state`'s rule -- build the
+as a stranger and left alone. That is `commit-task-work`'s rule -- build the
 allow-list, read the state back, refuse rather than widen -- transposed onto a
 filesystem.
 

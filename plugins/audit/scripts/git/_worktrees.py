@@ -515,7 +515,7 @@ def phase_trees(trees, wanted_branches, resolve=None):
 
     `strangers` is the safety property and it is RETURNED rather than dropped. A
     worktree this plan does not name is reported and never touched, the way
-    `commit-audit-state` reports foreign staged paths rather than sweeping them in.
+    `commit-task-work` reports foreign staged paths rather than sweeping them in.
     A filter would make the same decision and say nothing about it, and a silent
     skip over somebody's unrelated worktree is indistinguishable from not having
     looked.
@@ -734,7 +734,7 @@ def merge_plan(trees, branch, parent, contained, parent_exists, parent_dirty,
     """{"mode", "where", "argv", "refusal", "basis"} -- HOW this merge must be done,
     decided in full before a single git write.
 
-    Every precondition is validated here, which is `commit-audit-state.py`'s rule
+    Every precondition is validated here, which is `commit-task-work.py`'s rule
     applied to a merge: a plan that refuses has written nothing, so there is no
     half-made state to unpick.
 
@@ -1239,7 +1239,7 @@ def sweep_plan(trees, wanted_branches, parent_of, contained_by_branch,
     rather than an empty `actions` list. "There was no linked worktree to look at" and
     "every worktree was examined and none needed anything" are two states of the
     world that a falsy list renders identically, and only one of them describes a
-    repository somebody should feel good about. `commit-audit-state` words the same
+    repository somebody should feel good about. `commit-task-work` words the same
     pair apart; this is that rule on a filesystem.
 
     `kept` CARRIES A REASON PER WORKTREE LEFT ALONE -- dirty, locked, not contained,

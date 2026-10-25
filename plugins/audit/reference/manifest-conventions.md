@@ -376,8 +376,8 @@ finding.
 The bug ↔ task link has the same shape — `task.bugId` in the shard, `bug.taskId` in the
 index — and is written by `audit-task.py add --bug`, both halves in one write; a bug is
 reported with `bug-add` and closed with `bug-close`. A task commit whose shard completes
-such a link carries the index with it (`commit-task-work.py`), since either half alone
-fails validation.
+such a link carries that half of the index with it (`commit-task-work.py`), as it does the
+`fileIndex` rows the shard declares, since either half alone fails validation.
 
 ## Immutable history
 
@@ -596,7 +596,7 @@ are. `phase.gateDerived` is written **in process** by `derive-phase-gate.py`, it
 for the identical reason. `phase.merged` and `phase.mergedHead.recorded` are written **in process** by
 `close-phase.py`, for the same reason again: it writes the plan with `os.replace` from a script
 the hook never sees, and its merges are `git` commands, not edit tools. The evidence actions are written **in process** by `_evidence_io` and
-`commit-audit-state.py`, because the hook sees edit *tools* and those writers use `os.replace` and
+`commit-task-work.py`, because the hook sees edit *tools* and those writers use `os.replace` and
 `git commit` — the same blindness `audit-task.py` already works around.
 Tokens are deliberately absent from these rows (metering lands on Stop/SessionEnd);
 spend is joined from the ledger by `taskId`.

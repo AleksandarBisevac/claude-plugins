@@ -660,29 +660,25 @@ def _cases(check):
         shutil.rmtree(ec_tmp, ignore_errors=True)
 
     # -------------------------------------------- commit_spelling_drift
-    # The fixed literal moved once, from commit-audit-state.py's TYPE into its
+    # The state commit's fixed literal moved once, from the TYPE into the
     # SCOPE; the guide kept saying "the type is the fixed literal `audit-state`"
     # for as long as nothing compared the two. GENERALIZED OVER THE CLASS: the
-    # real tree carries TWO governance writers that do this
-    # (`commit-audit-state.py`, `commit-manifest-index.py`), the second one's
-    # guide paragraph has always been correct, and that asymmetry is why a
-    # per-file check would have proven nothing about it and nothing about a
-    # third writer added later. `cs1`/`cs1b` prove the current, fixed pairing
-    # over BOTH real writers; the rest exercise the comparison directly against
-    # fixtures so the proof does not rest on the real tree staying correct by
-    # luck.
+    # writers are derived from the directory, so a writer added later is
+    # checked without a row here. `cs1`/`cs1b` prove the current pairing over
+    # the real writer (`commit-task-work.py`, whose state commit fixes the two
+    # constants); the rest exercise the comparison directly against fixtures so
+    # the proof does not rest on the real tree staying correct by luck.
     check("cs1 the shipped guide's paragraphs match COMMIT_TYPE/COMMIT_SCOPE "
           "for every governance writer today: %r" % (M.commit_spelling_drift(),),
           M.commit_spelling_drift() == [])
 
     real_writers, real_writer_findings = M._governance_commit_writers()
-    check("cs1b the real tree derives EXACTLY the two known governance "
-          "writers, by basename and by the constants each one actually emits "
-          "- a third writer, or a renamed one, would change this rather than "
+    check("cs1b the real tree derives EXACTLY the one known governance "
+          "writer, by basename and by the constants it actually emits - a "
+          "second writer, or a renamed one, would change this rather than "
           "hide behind cs1's already-passing verdict: %r / %r"
           % (real_writers, real_writer_findings),
-          real_writers == [("commit-audit-state.py", "chore", "audit-state"),
-                           ("commit-manifest-index.py", "chore", "audit-index")]
+          real_writers == [("commit-task-work.py", "chore", "audit-state")]
           and real_writer_findings == [])
 
     cs_tmp = tempfile.mkdtemp(prefix="audit-deps-commitspell-")
@@ -891,58 +887,54 @@ def _cases(check):
               "into either comparison - the boundary is the next heading, "
               "not the next writer: %r" % (cs9_hits,), cs9_hits == [])
 
-        # ---- real-content proofs: the sibling this task is actually about ----
-        # Never a write to `commit-manifest-index.py` itself (read-only for
-        # this task) - both proofs work from a COPY of its real, on-disk
-        # content, mutated in memory or on a scratch path.
+        # ---- real-content proofs: the real writer and the real guide ----
+        # Never a write to the tracked files - both proofs work from a COPY of
+        # their real, on-disk content, mutated in memory or on a scratch path.
         real_gov_dir = M._governance_dir()
         real_guide_text = open(M._guide_path(), encoding="utf-8").read()
-
-        sibling_noun_guide_text = real_guide_text.replace(
-            "`chore(audit-index):`", "`chore(audit-index-WRONG):`", 1)
-        check("cs10setup the sibling-noun replacement actually changed the "
-              "real guide text (so the case below tests a real mutation, "
-              "not a no-op on a stale anchor)",
-              sibling_noun_guide_text != real_guide_text)
-        sibling_noun_guide = _cs_write(
-            cs_tmp, "guide-sibling-noun.md", sibling_noun_guide_text)
-        cs10_hits = M.commit_spelling_drift(sibling_noun_guide, real_gov_dir)
-        check("cs10 THE SIBLING'S SPELLING MUTATED IN THE GUIDE (a copy, "
-              "never the tracked file): commit-manifest-index.py's own real "
-              "COMMIT_TYPE/COMMIT_SCOPE catch a reworded paragraph the same "
-              "way commit-audit-state.py's did, naming the sibling and only "
-              "the sibling, and both the wrong and the right spelling by "
-              "name: %r" % (cs10_hits,),
+        writer_heading = M._GOVERNANCE_HEADING_TMPL % ("commit-task-work.py",)
+        at = real_guide_text.find(writer_heading)
+        noun_guide_text = (real_guide_text[:at] + real_guide_text[at:].replace(
+            "`chore(audit-state):`", "`chore(audit-state-WRONG):`", 1)
+            if at != -1 else real_guide_text)
+        check("cs10setup the noun replacement actually changed the real guide "
+              "text inside the writer's own section (so the case below tests "
+              "a real mutation, not a no-op on a stale anchor)",
+              noun_guide_text != real_guide_text)
+        noun_guide = _cs_write(cs_tmp, "guide-noun.md", noun_guide_text)
+        cs10_hits = M.commit_spelling_drift(noun_guide, real_gov_dir)
+        check("cs10 THE WRITER'S SPELLING MUTATED IN THE GUIDE (a copy, never "
+              "the tracked file): commit-task-work.py's real "
+              "COMMIT_TYPE/COMMIT_SCOPE catch the reworded paragraph, naming "
+              "the writer and both the wrong and the right spelling: %r"
+              % (cs10_hits,),
               len(cs10_hits) == 1
-              and "commit-manifest-index.py" in cs10_hits[0][1]
-              and "commit-audit-state.py" not in cs10_hits[0][1]
-              and "chore(audit-index-WRONG)" in cs10_hits[0][1]
-              and "chore(audit-index)" in cs10_hits[0][1])
+              and "commit-task-work.py" in cs10_hits[0][1]
+              and "chore(audit-state-WRONG)" in cs10_hits[0][1]
+              and "chore(audit-state)" in cs10_hits[0][1])
 
-        real_sibling_path = os.path.join(real_gov_dir,
-                                         "commit-manifest-index.py")
-        real_sibling_text = open(real_sibling_path, encoding="utf-8").read()
-        mutated_sibling_text = real_sibling_text.replace(
-            'COMMIT_SCOPE = "audit-index"', 'COMMIT_SCOPE = "audit-index-x"',
+        real_writer_path = os.path.join(real_gov_dir, "commit-task-work.py")
+        real_writer_text = open(real_writer_path, encoding="utf-8").read()
+        mutated_writer_text = real_writer_text.replace(
+            'COMMIT_SCOPE = "audit-state"', 'COMMIT_SCOPE = "audit-state-x"',
             1)
         check("cs11setup the COMMIT_SCOPE replacement actually changed the "
               "real script text",
-              mutated_sibling_text != real_sibling_text)
-        mutated_sibling_gov = os.path.join(cs_tmp, "gov-sibling-code-wrong")
-        os.mkdir(mutated_sibling_gov)
-        _cs_write(mutated_sibling_gov, "commit-manifest-index.py",
-                 mutated_sibling_text)
-        cs11_hits = M.commit_spelling_drift(governance_dir=mutated_sibling_gov)
-        check("cs11 THE SIBLING'S COMMIT_SCOPE MUTATED IN THE CODE (a copy in "
-              "a scratch directory, never the tracked file), checked against "
+              mutated_writer_text != real_writer_text)
+        mutated_writer_gov = os.path.join(cs_tmp, "gov-writer-code-wrong")
+        os.mkdir(mutated_writer_gov)
+        _cs_write(mutated_writer_gov, "commit-task-work.py", mutated_writer_text)
+        cs11_hits = M.commit_spelling_drift(governance_dir=mutated_writer_gov)
+        check("cs11 THE WRITER'S COMMIT_SCOPE MUTATED IN THE CODE (a copy in a "
+              "scratch directory, never the tracked file), checked against "
               "the REAL guide: the real paragraph still claims "
-              "`chore(audit-index):` while the mutated copy would emit "
-              "`chore(audit-index-x):`, and that is the one finding: %r"
+              "`chore(audit-state):` while the mutated copy would emit "
+              "`chore(audit-state-x):`, and that is the one finding: %r"
               % (cs11_hits,),
               len(cs11_hits) == 1
-              and "commit-manifest-index.py" in cs11_hits[0][1]
-              and "chore(audit-index)" in cs11_hits[0][1]
-              and "chore(audit-index-x)" in cs11_hits[0][1])
+              and "commit-task-work.py" in cs11_hits[0][1]
+              and "chore(audit-state)" in cs11_hits[0][1]
+              and "chore(audit-state-x)" in cs11_hits[0][1])
 
         # ---- mutation proof: bound on "## " alone and the real guide over-fires ----
         def _weakened_md_subsection(text, head):
@@ -953,8 +945,11 @@ def _cases(check):
             hit = re.search(r"\n## ", rest)
             return rest if hit is None else rest[:hit.start()]
 
-        weak_heading = M._GOVERNANCE_HEADING_TMPL % ("commit-audit-state.py",)
-        weak_section = _weakened_md_subsection(real_guide_text, weak_heading)
+        # Over the isolation fixture, whose level-3 siblings carry their own
+        # pairs: the real guide now holds one writer's pair in this section, so
+        # a weakened boundary there would sweep in nothing to show.
+        isolation_text = open(isolation_guide, encoding="utf-8").read()
+        weak_section = _weakened_md_subsection(isolation_text, heading_a)
         weak_hits = []
         weak_seen = set()
         for pair in M._COMMIT_PREFIX_RE.findall(weak_section or ""):
@@ -963,11 +958,14 @@ def _cases(check):
                 weak_hits.append(pair)
         check("cs12 mutation proof: bound the section on a bare `\\n## ` (the "
               "way `_section_text` does for a level-2 heading) instead of the "
-              "next heading at this LEVEL, and the real guide sweeps in "
-              "commit-manifest-index.py's own `chore(audit-index):` claim - "
-              "more than the one pair this level-3 section actually carries "
-              "(red proves cs1's boundary is load-bearing): %r" % (weak_hits,),
-              len(weak_hits) > 1)
+              "next heading at this LEVEL, and the isolation guide sweeps in "
+              "its siblings' own claims - more than the one pair writer-a's "
+              "level-3 section actually carries (red proves the boundary cs9 "
+              "relies on is load-bearing): %r" % (weak_hits,),
+              len(weak_hits) > 1
+              and M._COMMIT_PREFIX_RE.findall(
+                  M._md_subsection(isolation_text, heading_a) or "")
+              == [("chore", "scope-a")])
         check("cs13 mutation proof: the real, unweakened commit_spelling_drift() "
               "still agrees over the identical real guide - nothing was left "
               "mutated behind",

@@ -98,16 +98,17 @@ reaches `done` — so when it ends `blocked` with its attempts exhausted, and on
 infrastructure path that stops without committing, the rows just written sit in the working
 tree with nothing coming behind them. Both are named points in the orchestrator's
 *Keeping a failed run's record*; run
-`commit-audit-state.py` at them. It stages the phase's manifest file, the journal and the
-evidence directory and **never the task's `files`** — the implementation stays unstaged,
-which is what makes committing a failed task's state possible at all.
+`commit-task-work.py <manifestPath> <phaseId> --state` at them. It stages the phase's manifest
+file, the manifest index, the journal and the evidence directory and **never the task's
+`files`** — the implementation stays unstaged, which is what makes committing a failed task's
+state possible at all.
 
 Under the step driver a task blocked over its red gate is committed this way at once: answering
-`block` runs `commit-audit-state.py` after the block, so the rows the gate wrote reach git.
+`block` runs the state commit after the block, so the rows the gate wrote reach git.
 
 ### The resume sweep
 
-`/audit:resume` runs `commit-audit-state.py <manifestPath> <phaseId>` before it continues.
+`/audit:resume` runs `commit-task-work.py <manifestPath> <phaseId> --state` before it continues.
 **This is the point the record of an interrupted run depends on.** A gate that was torn down
 records its row and returns — git belongs to the orchestrator, and a commit made while
 stopping is how a half-made one happens — so what a lost session leaves behind is a row in
@@ -172,14 +173,16 @@ phase shard it also touched** — `add-phase` always does; `add`/`scope`/`retarg
 `start`/`done`/`reopen`/`block`/`note` do it whenever a mirrored stub key (`status`, `title`, …)
 or `fileIndex` moves, and `move` whenever it rewrites a `fileIndex` row, a bug's `taskId` or a
 parked proposal.
-A task commit will not carry that index (`orchestrator.md` step 4c refuses it on purpose, so
-two phases can merge without a conflict there), so it needs its own commit —
-`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/commit-manifest-index.py" <manifestPath>
-<phaseId>` lands it alone, under the same lock, **after** the shard it names is committed - it
-refuses an index that names a task or phase the committed shard does not hold yet, because
-that commit would record a plan that does not validate. **The script prints this itself, naming that
-exact command, the moment its own write leaves the index dirty** — read it off the output
-rather than remembering the rule here. It is printed only when the index **bytes** changed:
+The next task commit carries the part of that index its phase owns - the `fileIndex` rows, bug
+links and stub its shard derives, laid over the parent's index - and nothing else of it, so two phases
+can merge without a conflict there; the phase's state commit,
+`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/commit-task-work.py" <manifestPath>
+<phaseId> --state`, lands the rest with the shard, under the same lock, and carries the whole
+index only when every task or phase it names is held by a shard as that commit leaves them -
+otherwise it names what it left and which shard to commit first, because committing it would
+record a plan that does not validate. **The script prints this itself, naming that exact
+command, the moment its own write leaves the index dirty** — read it off the output rather
+than remembering the rule here. It is printed only when the index **bytes** changed:
 a write whose index would come out identical does not rewrite it, and `scope` touches only
 the `fileIndex` rows it claims or releases, so a shared row keeps its order on a call that
 moves nothing.
@@ -1486,7 +1489,7 @@ first run was standing inside. Its `--dry-run` shows exactly that before you com
 
 **The landing commits the stamp it writes.** `mergedAt` and the stored `done` go into the
 parent's copy of the plan, and `close-phase.py` commits them there through
-`commit-audit-state.py` (and `commit-manifest-index.py` in a sharded plan), subject `landed on
+`commit-task-work.py --state` (the index beside the shard in a sharded plan), subject `landed on
 <parent>`. With the parent checked out nowhere and the main tree on the phase branch, the commit
 goes on that branch and the parent is fast-forwarded to it once more. A re-run commits a stamp an
 earlier landing left uncommitted, and makes no commit when there is none.
@@ -1654,7 +1657,7 @@ pointer that reaches a clone without the row it names points at nothing, and
 **A red sign-off gate is where a phase run stops committing.** The phase stays
 `in_progress`, nothing is committed, and the rows the gate just wrote have nothing behind
 them — a named point in the orchestrator's *Keeping a failed run's record*, where
-`commit-audit-state.py` makes them durable without staging any implementation. Read the
+`commit-task-work.py --state` makes them durable without staging any implementation. Read the
 gate's own lines before signing off rather than reading the exit code alone: a rewritten
 tree and a gate that checked nothing each turn the run red and say which, while
 `NO OVERLAP WITH THIS WORK` **moves the exit code not at all** — the gate ran, it passed, and
@@ -2006,8 +2009,8 @@ the tasks' `commit`s**, which must be every commit the branch carries past its f
 journaled audit-state or index commit); **one gate run** over the union of the members'
 `testGate`, carried by the member whose gate holds all of it and owning every member's files
 (the gate's `--also`); **one invariants run**; the record, which needs that run to be
-current for `passed`; the commit — sharded, one `commit-audit-state.py` per member and then the
-index; single-file, one; and **one
+current for `passed`; the commit — sharded, one `commit-task-work.py --state` per member, the
+last carrying the rest of the index; single-file, one; and **one
 `close-phase.py --branch` per phase** — every one but the last keeps the branch and its worktree,
 because the first landing merges the whole branch. It refuses — naming every reason — a member with
 open work or already signed off, a member recording another branch, members that resolve to
