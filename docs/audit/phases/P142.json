@@ -965,7 +965,7 @@
     {
       "id": "P142.13-6yq",
       "title": "Every reader of a runner's output reads it through the one normalisation, so no private pattern sees Windows line ends",
-      "status": "in_progress",
+      "status": "blocked",
       "description": "The previous task normalised `\\r\\n` and lone `\\r` in `_runner_output.plain_text()` and routed every public reader of that module through it. The same class survives outside it: run-test-gate.py matches its private `_FAILURE_READERS` and `_VITEST_FAIL_LINE` patterns against raw run output (around its lines 972, 1048-1052 and 3366), so on a Windows run a pytest FAILED line yields `tests/test_x.py::test_a\\r` as the failing name.\n\nFix the class, not the three call sites: run-test-gate must read runner output only through `_runner_output.plain_text()` (or through `_runner_output`'s public readers, deleting a private copy that duplicates one). Then make it enforceable: one predicate in tools/lints/_output_lints.py that reports a module under plugins/audit/scripts which compiles a `re.M` pattern anchored at `$` and applies it to text that did not pass through `plain_text` - scope it narrowly enough to be honest (read the before-you-claim and no-silent-pass skills; state in its docstring what it cannot see), give it a row tools/prove-gates.py derives, and red-first both the deny and the allow case.\n\nRed-first every case against today's code. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -1005,7 +1005,8 @@
         "runId": "2026-10-26T12:38:50Z.69b645",
         "status": "failed",
         "at": "2026-10-26T12:38:50Z"
-      }
+      },
+      "blockedReason": "Gate red only on tests/test__output_lints.py te11/ln1, red at HEAD d4a26f13 (tests/test__runner_output.py:469, from P142.9) and fixed by P142.16-6yq; held until it lands, then unblocked and re-gated."
     },
     {
       "id": "P142.14-6yq",
