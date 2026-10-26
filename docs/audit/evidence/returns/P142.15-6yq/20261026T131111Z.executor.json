@@ -1,0 +1,39 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_run_agent_session.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-26T13:22:34Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_run_agent_session.py` in a throwaway tree at HEAD exited 1 with 7 of 67 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ras52 (house FAIL), ras53 (house FAIL), ras54 (house FAIL), ras58 (house FAIL), ras55 (house FAIL), ras56 (house FAIL), ras57 (house FAIL): SELFTEST FAILED: 60/67 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; fix run: no time held back, no recorded cost for tests/test_run_agent_session.py in .github/sweep-costs.json",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "run-agent-session.py: the session TMPDIR is now removed in _run's finally via _output.remove_tree (new drop_session_tmp; a failed removal is named on stderr and the exit code is left as the session made it). SIGINT/SIGTERM are armed (_proc_group.arm_interrupt) from before _prepare makes the directory until the outcome is printed, so a stop outside run_session's own window reaches the finally; a KeyboardInterrupt there prints could-not-run and exits E_COULD_NOT_RUN. The run body after _prepare moved into _in_session unchanged. _prepare removes the directory itself when the .tmpdir record write fails (or a stop lands) before it hands the path back. Module docstring: the paragraph that said the TMPDIR is left for the task's teardown now says it is removed, on which paths, that nothing a caller is told to read lives in it (stream/stderr/agents file under state dir, skills file and record under scratch) so nothing is copied, and that a SIGKILL still leaves it. tests/test_run_agent_session.py: the stub writes a nested non-empty fixture into its TMPDIR and records tmp_wrote, writes its record atomically, has a hang mode; _run takes stop=<signal> (Popen, prompt from a file, signal sent once the stub's record exists); new cases ras52-ras58. Gates: `python3 tools/sweep-selftests.py tests/test_run_agent_session.py` exit 0, 67 cases. `python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__output_lints.py tests/test__deps.py tests/test__doctor_policy.py` exit 1: test_drive_phase 574 cases ok, test__deps 254 ok, test__doctor_policy 57 ok, test__output_lints 167/169 with only te11 and ln1 failing, both on tests/test__runner_output.py:469 (not my file; known red at HEAD). ruff check on both files exit 0; vermin -t=3.8- on both exit 0. Mutations, run in a scratch copy of the tree (never this tree), pycache purged each time: no removal -> 61/67, FAIL ras52-57; non-recursive removal (rmdir of an empty dir only) -> 61/67, FAIL ras52-57; _prepare's own cleanup dropped -> 65/67, FAIL ras58 ras57; unmutated copy 67/67. Not covered by any case: the outer arm in _run (a stop landing between mkdtemp and the child's start), which is a window no deterministic case can hit; with that arm removed the suite stays green. Dependants: tests/test_run_agent_session.py - changed by this task (cases above; _under/_cases/_selftest names kept). tools/affected.py - still correct: its rows naming run-agent-session.py and the suite are historical commit fixtures, and no name it reads (_usage, _cases, _selftest) was renamed. PLUGIN-BUILD-GUIDE.md - still correct but silent: its section (line 5034) says the scratch keeps <TMPDIR name>.tmpdir holding the path, which is still true, and says nothing about the removal; the guide is not in this task's files, so a sentence there saying the TMPDIR is removed when the run ends is left for a follow-up; exit_for and _under unchanged. drive-phase.py - still correct: it only prints the dispatch command and reads --record lines, never the TMPDIR (grep for TMPDIR/tmpdir in it: no hits); test_drive_phase 574 ok. audit-config.schema.json, _config_rules.py, _panel_settings.py, _skill_places.py - still correct: they name the script for the model-id rule, the model setting and skill resolution, none of which changed. test__doctor_policy.py (find_skills) - unchanged, 57 ok. test_drive_phase.py's _read_text is its own helper; the script's _read_text is unchanged.",
+    "descriptive": "An agent session's own temp directory is removed when the session ends, whether it succeeded, failed, hit its budget, was stopped by SIGINT/SIGTERM or failed to record the directory."
+  },
+  "testsAdded": [
+    "ras52 a writer session that ends cleanly leaves no session temp directory, though its suites wrote a nested fixture into it",
+    "ras53 the same for a reviewer session",
+    "ras54 failing sessions (claude exit 1 for writer and reviewer, no result event, a budget stop) exit non-zero and leave none",
+    "ras55 a session stopped by SIGTERM mid-run (what a timeout does), writer and reviewer, leaves none",
+    "ras56 the same for SIGINT",
+    "ras57 across every run the suite makes (every exit path it drives), no parent temp directory holds a session directory",
+    "ras58 a run whose TMPDIR record cannot be written exits io-error and leaves none"
+  ],
+  "casesAdded": [
+    [
+      "ras52",
+      "ras53",
+      "ras54",
+      "ras55",
+      "ras56",
+      "ras57",
+      "ras58"
+    ]
+  ],
+  "claims": "claims:\n1 run-agent-session.py docstring 'THE TMPDIR IS REMOVED WHEN THE RUN ENDS' -> _run finally (drop_session_tmp, ~line 683) and _prepare's handed/finally (~504-513); 'armed ... until the outcome is printed' -> arm_interrupt ~669, disarm in the finally before the removal; 'nothing a caller is told to read lives in it' -> _stream_path under state_dir, agents_file beside the stream, skills_file and record under args.scratch (_prepare); 'a SIGKILL still leaves it' stated as a limit\n2 drop removal -> FAIL ras52-57 (61/67); rmdir-only removal -> FAIL ras52-57 (61/67); _prepare cleanup dropped -> FAIL ras58, ras57 (65/67); restored copy 67/67; all in a scratch copy, pycache purged. Gap: removing the outer arm in _run stays green (window not deterministically reachable)\n3 grep -rn '.tmpdir|session-writer|session-reviewer' plugins tools tests: only run-agent-session.py:66 (docstring, rewritten) and :496 (the record write, kept) outside the suite; grep 'TMPDIR|tmpdir' drive-phase.py: no hits; PLUGIN-BUILD-GUIDE.md:5034 left, not in this task's files, still true but silent on removal; ras57 sweeps every exit path the suite drives rather than the instances named\n4 n/a - no rule addressed to an agent\n5 n/a - no property recorded; sweep timings not claimed\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:a9cd853a0d471119a581949cd2cd1ea834adf024382da0e63b3f240af2c53f43\",\"dirtyDigest\":\"sha256:c35a5a2d73ccf3b4ead361427c750a0ea44cd4826acdaaaba715f7cdc9ac075d\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/run-agent-session.py\":\"d8e3277c78c3c1f4\",\"tests/test_run_agent_session.py\":\"1bf36537278fd9d1\"},\"head\":\"d92b9c64\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/run-agent-session.py\",\"tests/test_run_agent_session.py\"],\"scopeDigest\":\"sha256:8d270e692ba4960caf8956d34f1c6686c8aa1e15007c7e294e65fc923c98bfc4\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

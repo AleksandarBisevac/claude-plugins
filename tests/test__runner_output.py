@@ -15,7 +15,7 @@ import inspect
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
-from _output import safe_stdio                     # noqa: E402
+from _output import safe_stdio, some_of            # noqa: E402
 import _runner_output as M                         # noqa: E402
 
 # The runners `run-test-gate.py`'s two tables held on the day they moved here,
@@ -463,10 +463,11 @@ def _line_end_cases(check):
     check("ru17 every public reader whose first parameter is the run's text "
           "answers a fixture's CRLF twin, and its lone-CR twin, exactly as it "
           "answers the LF text, and each has a fixture it reads something from: "
-          "readers %r; floor missing %r; differing (%d) %r; never answered %r; "
+          "readers %r; floor missing %r; differing (%d) [%s]; never answered %r; "
           "a required parameter the case cannot fill %r"
           % (names, sorted(set(_LINE_END_FLOOR) - set(names)), len(differ),
-             differ[:4], sorted(set(names) - answered), unknown),
+             some_of(differ, render=repr), sorted(set(names) - answered),
+             unknown),
           set(_LINE_END_FLOOR) <= set(names) and not differ and not unknown
           and answered == set(names))
 

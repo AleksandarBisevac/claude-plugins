@@ -1057,7 +1057,7 @@
     {
       "id": "P142.15-6yq",
       "title": "An agent session removes the temp directory it was given when it ends",
-      "status": "pending",
+      "status": "in_progress",
       "description": "run-agent-session.py creates a session-writer-* / session-reviewer-* temp directory per session and never removes it. Remove it in finally on every exit path (success, failure, timeout, interrupt), keeping anything a caller is told to read out of it by copying first. Red-first the case against today's code. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/governance/run-agent-session.py",
@@ -1079,22 +1079,28 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-26T13:11:11Z",
       "completedAt": null,
       "verifiedBy": [],
-      "bugId": "BUG-30-6yq"
+      "bugId": "BUG-30-6yq",
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-26T13:28:07Z.48e22b",
+        "status": "failed",
+        "at": "2026-10-26T13:28:07Z"
+      }
     },
     {
       "id": "P142.16-6yq",
       "title": "The CRLF reader case reports what it left out of the differing readers it prints",
-      "status": "pending",
+      "status": "in_progress",
       "description": "At HEAD tests/test__output_lints.py is red (te11 and ln1, 167 of 169) on tests/test__runner_output.py around line 469: the ru17 label prints len(differ) beside differ[:4], a count of the whole set beside a bounded slice with nothing saying what was left out. Render the list through _output.some_of() (as the lint says) or drop the count. Both suites must be green: python3 tools/sweep-selftests.py tests/test__runner_output.py tests/test__output_lints.py. No other change.",
       "files": [
         "tests/test__runner_output.py"
@@ -1113,16 +1119,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-26T13:11:14Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-26T13:22:25Z.ae0478",
+        "status": "passed",
+        "at": "2026-10-26T13:22:25Z"
+      }
     },
     {
       "id": "P142.17-6yq",

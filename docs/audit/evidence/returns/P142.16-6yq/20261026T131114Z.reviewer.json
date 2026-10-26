@@ -1,0 +1,15 @@
+{
+ "findings": [],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clause: 'Render the list through _output.some_of() (as the lint says) or drop the count ... No other change.' Diff (tests/test__runner_output.py:466-470) replaces differ[:4] with some_of(differ, render=repr) inside [%s], keeping len(differ); the import gains some_of. The predicate (set(_LINE_END_FLOOR) <= set(names) and not differ and not unknown and answered == set(names)) is byte-identical, so ru17 asserts exactly what it did. git status/diff in the task tree lists only tests/test__runner_output.py (+4/-3). some_of(items, budget, sep, render) exists in _output.py:481 and its tail 'and N more' makes the printed count and the list agree. The claim matches the diff: same +4/-3, same render=repr, same unchanged predicate; dependants (sweep-costs.json path key, _runner_output.py untouched, tools/affected.py names _cases/_selftest unchanged, PLUGIN-BUILD-GUIDE.md path unchanged) each hold. Green status of test__runner_output.py and test__output_lints.py is taken from the recorded gate run (runId 2026-10-26T13:22:25Z.ae0478, passed) and the executor's two exit-0 runs; I did not re-run the gate (reviewer may not).",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Executor filed not-attempted for a gate-only fix; tests.add is none and no test was added, so none is owed. Basis given: the fixing file is the test itself.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "tests.gate is the literal command python3 tools/sweep-selftests.py tests/test__runner_output.py tests/test__output_lints.py, selecting those two files. Read the ru17 case in tests/test__runner_output.py:440-475: the assertion still requires differ and unknown empty and answered == names, so it would fail if CRLF/CR reader behaviour were removed. The label change only affects the message. te11/ln1 in test__output_lints.py scan the tree for count-beside-slice shapes and went from naming this site to passing; not read in full but not touched by the diff."
+ },
+ "verdict": "clean",
+ "tasks": []
+}

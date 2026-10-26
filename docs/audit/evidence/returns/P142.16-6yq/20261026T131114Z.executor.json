@@ -1,0 +1,19 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__runner_output.py tests/test__output_lints.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "gate-only fix of a lint finding in a test file; the fixing file is the test itself, so a throwaway at HEAD with this file is the fix",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "tests/test__runner_output.py only (+4/-3; git status --short in the task worktree lists only that file): the ru17 label kept its len(differ) count and now renders the differing list through _output.some_of(differ, render=repr) inside [%s] instead of differ[:4], so a truncated list ends with 'and N more'; the import line became 'from _output import safe_stdio, some_of'. The case's predicate is unchanged. At base d92b9c64 the gate command printed 'SELFTEST FAILED: 167/169 cases passed' with te11 and ln1 both naming ('test__runner_output.py', 469, ...some_of()). After the edit, run twice in the task tree: python3 tools/sweep-selftests.py tests/test__runner_output.py tests/test__output_lints.py exited 0 both times, '2/2 files ok, 192 cases'. ruff check tests/test__runner_output.py exited 0. Probe of the rendering: some_of over three 250-char tuples with the default budget printed the first tuple's repr followed by 'and 2 more'. Dependants: .github/sweep-costs.json (path key) still correct - the file path is unchanged; plugins/audit/scripts/governance/_runner_output.py still correct - not touched, and ru8 constrains that module's imports, not the test's; tools/affected.py still correct - it uses _cases and _selftest, whose names and signatures are unchanged; PLUGIN-BUILD-GUIDE.md still correct - it names the path, which is unchanged.",
+    "descriptive": "The CRLF reader case now says how many differing readers it left out instead of printing a whole-set count beside a silently cut slice, turning test__output_lints green again."
+  },
+  "testsAdded": [],
+  "claims": "claims:\n1 n/a - no prose claiming behaviour added; the label text change is the rendering itself (tests/test__runner_output.py:466-470)\n2 n/a - no check touched; the case's predicate is unchanged and only its message moved to some_of\n3 the lint (te11 over the real tree) is the class scanner; after the fix it reports none of the shape anywhere in the tree - test__output_lints 169 cases ok in the sweep above\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:3e135d4dd09be10b27ac0a447f01c5562055fa51fdd0b18be522cfe9ffbdcf23\",\"dirtyDigest\":\"sha256:cee69af3f09c511386ef6ec5cbccc4fcde2f86e0d8ec198662dddc2d7dad909d\",\"dirtyPaths\":{\"tests/test__runner_output.py\":\"94431ccdb8ae5075\"},\"head\":\"d92b9c64\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tests/test__runner_output.py\"],\"scopeDigest\":\"sha256:32d81483cd263e9d55fe3128d7a3be2e3e54e0cf2f78c2c995783953e696614b\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}
