@@ -1,0 +1,60 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tools/affected.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-26T10:38:49Z",
+    "basis": "`python3 tools/sweep-selftests.py tools/affected.py` in a throwaway tree at HEAD exited 1 on \"NameError: name 'reach_graph' is not defined\" (read as python), and the task introduces 'reach_graph': absent from HEAD's tools/measure-affected-miss.py, tools/affected.py and present in the working tree's tools/affected.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; fix run: held back 21s of the deadline, the recorded slot-seconds of tools/affected.py in .github/sweep-costs.json",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "tools/affected.py: the hand-kept TREE_SCANNERS tuple, the `.py -> test__output.py` mapping, the shipped-only `_deps.import_graph()` closure and the regex `_suites_importing()` are replaced by reach_graph(): one AST walk per `.py` under scripts/, hooks/, tests/ and tools/ records imports, `_loader` load/load_script/script_path and hooks `_config.find_script` calls read through the module alias (wrapper call sites included, module-level `NAME = \"x.py\"` constants resolved), and - for development code only (tests/, tools/) - every `.py` literal inside a call (subprocess argv, os.path.join of a read source). A computed resolver target in dev code reads as every scripts/ module. reached_by() closes the reverse walk transitively; a suite is a sink except through an import of it. Tree scanners are derived: functions in _output.py and tools/lints/ that reach os.walk (fixpoint), and every suite/tool calling one through that module; any changed `.py` selects them. select(paths, graph=None) builds the graph once per call when a `.py` is present; _cases build it once. Tools reached get `python3 <tool> --selftest` gates. A tests/ helper (e.g. _harness.py) is no longer added as a suite named after itself. New cases a18a..a18m (one per measured commit, data inline: commit, changed files, missed suites), a18z (the two missed suites the tree retired stay retired), a19 (leaf narrows). a16/a17 now use the leaf module because _output.py is reached by every suite. tools/measure-affected-miss.py: CLI kept; new `--selector FILE` writes that selector over the scratch tree's tools/affected.py for the selection only and restores the commit's own copy (or removes it) before anything is mutated or swept, so one selector can be measured across history; cases m19, m19b. Runs: `python3 tools/sweep-selftests.py tools/affected.py` exit 0 (41 cases); dependants subset `python3 tools/sweep-selftests.py tools/affected.py tools/measure-affected-miss.py tests/test__gate_derive.py tests/test_derive_phase_gate.py tests/test__refs.py tests/test__output_lints.py tests/test__deps.py tools/gate-parity.py tools/bench-hooks.py` exit 0, 9/9 files ok, 984 cases; ruff and vermin -t=3.8- clean on both files. Leaf-module selection (plugins/audit/scripts/governance/record-outside-run.py): before 12 of 164 suites and NOT its own suite; after 24 of 164 suites (`tools/affected.py --list-related <leaf> | wc -l`) plus 14 tool selftest gates, full=False. Dropped from the .py selection because no shared walk reaches them: test__config_rules, test__manifest_rules, test__report_page, test__ui_theme (raw os.walk for def names only), test_remind_tdd, test_validate_manifest - the re-measurement should watch these. Selector wall time ~5s, measured back to back once (old `_deps.import_graph()` ~5.2s the same way).",
+    "descriptive": "The affected selection now selects every suite the 2026-10-25 miss measurement recorded, derived from the code's imports, loads, runs and shared tree walks, while a leaf module still narrows."
+  },
+  "testsAdded": [
+    "a18a..a18m: per measured commit, the selection for its changed files names every suite the measurement saw go red unselected (data inline)",
+    "a18z: the measured suites the tree has since retired are still absent",
+    "a19: a module nothing imports or runs still narrows below the full set and selects its own suite",
+    "measure m19/m19b: --selector measures the handed file and restores the commit's own copy"
+  ],
+  "casesAdded": [
+    [
+      "a18a",
+      "a18b",
+      "a18c",
+      "a18d",
+      "a18e",
+      "a18f",
+      "a18g",
+      "a18h",
+      "a18i",
+      "a18j",
+      "a18k",
+      "a18l",
+      "a18m",
+      "a18z",
+      "a19"
+    ]
+  ],
+  "claims": "claims:\n1 tools/affected.py reach_graph()/_scan()/_file_edges() implement the docstring's WHAT A SUITE REACHES paragraph; _walk_names()+_scans_tree() the derived scanners; select()'s touched_py block adds graph['scanners']; measure-affected-miss.py select_in_tree() writes and restores the selector\n2 in-process mutations (scratchpad mutate.py, nothing on disk): scanners emptied -> a15,a16,a18b red; run edges dropped -> a16,a18a,a18c-a18i,a18l,a18m,a19 red; reach one hop only -> a18a,a18f,a18g,a18i red; every .py widened to full -> a9b,a10,a10a,a15,a16,a17,a19 red; climbing past suites (over-fire) -> no case red, unguarded. measure: selector ignored -> m19,m19b red; restore skipped -> m19b red\n3 class: grep TREE_SCANNERS / _suites_importing / _reverse_imports in tools/affected.py: 0 hits left; the six hand-listed suites no shared walk reaches were left out on purpose (named in outcome) for the re-measurement to judge\n4 n/a - no rule to an agent\n5 selector time ~5s, two back-to-back runs in one window, not written into any document\n6 n/a - no guard; the reach reads calls through their module alias (json.load is not a loader call), not text\n7 the leaf count is printed at runtime by a19's label (%d), no number in prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:8b51f86ea5f5015912ad5e75358420d971323d654c8316a5df3e2d448fcf9c3b\",\"dirtyDigest\":\"sha256:df26e90cd1349c81cb6a6186aeba240c1424a3b3352d61cd09501fa0510a8b9e\",\"dirtyPaths\":{\"tools/affected.py\":\"8555a7d74aac3bbc\",\"tools/measure-affected-miss.py\":\"a35ab00dcefbfc2f\"},\"head\":\"46a6e095\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tools/affected.py\",\"tools/measure-affected-miss.py\"],\"scopeDigest\":\"sha256:b96826c927be1a36d6927b7d9b884441167327cb8458c8e482b2969c79932e00\",\"v\":2}",
+  "testsAddGaps": [
+    "tools/affected.py: each miss the 2026-10-25 measurement named is selected for its commit's changed files - bound to `a18a`, which the suite did not print",
+    "tools/affected.py: each miss the 2026-10-25 measurement named is selected for its commit's changed files - bound to `a18b`, which the suite did not print",
+    "tools/affected.py: each miss the 2026-10-25 measurement named is selected for its commit's changed files - bound to `a18c`, which the suite did not print",
+    "tools/affected.py: each miss the 2026-10-25 measurement named is selected for its commit's changed files - bound to `a18d`, which the suite did not print",
+    "tools/affected.py: each miss the 2026-10-25 measurement named is selected for its commit's changed files - bound to `a18e`, which the suite did not print",
+    "tools/affected.py: each miss the 2026-10-25 measurement named is selected for its commit's changed files - bound to `a18f`, which the suite did not print",
+    "tools/affected.py: each miss the 2026-10-25 measurement named is selected for its commit's changed files - bound to `a18g`, which the suite did not print",
+    "tools/affected.py: each miss the 2026-10-25 measurement named is selected for its commit's changed files - bound to `a18h`, which the suite did not print",
+    "tools/affected.py: each miss the 2026-10-25 measurement named is selected for its commit's changed files - bound to `a18i`, which the suite did not print",
+    "tools/affected.py: each miss the 2026-10-25 measurement named is selected for its commit's changed files - bound to `a18j`, which the suite did not print",
+    "tools/affected.py: each miss the 2026-10-25 measurement named is selected for its commit's changed files - bound to `a18k`, which the suite did not print",
+    "tools/affected.py: each miss the 2026-10-25 measurement named is selected for its commit's changed files - bound to `a18l`, which the suite did not print",
+    "tools/affected.py: each miss the 2026-10-25 measurement named is selected for its commit's changed files - bound to `a18m`, which the suite did not print",
+    "tools/affected.py: each miss the 2026-10-25 measurement named is selected for its commit's changed files - bound to `a18z`, which the suite did not print",
+    "tools/affected.py: each miss the 2026-10-25 measurement named is selected for its commit's changed files - bound to `a19`, which the suite did not print"
+  ],
+  "testsAddUnchecked": []
+}

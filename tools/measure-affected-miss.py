@@ -8,6 +8,7 @@ How often the affected-test selection leaves out a suite that was going to go re
     tools/measure-affected-miss.py --no-ci              # the mutation half alone
     tools/measure-affected-miss.py --ci-only --ci-since 2026-10-01   # the CI half alone
     tools/measure-affected-miss.py --json               # machine-readable
+    tools/measure-affected-miss.py --selector tools/affected.py   # one selector, every commit
     tools/measure-affected-miss.py --selftest           # this file's own cases
 
 WHY IT EXISTS. `tools/affected.py` decides which suites a change owes, and a narrowed
@@ -42,7 +43,11 @@ dropped.
 WHAT IT DOES NOT SAY.
   - The selection measured is the one each commit CARRIED (that commit's own
     `tools/affected.py`), run from inside the scratch worktree, because the selector
-    reads its repository from where it lives. `--affected-cmd` replaces it.
+    reads its repository from where it lives. `--affected-cmd` replaces it, and
+    `--selector <file>` measures ONE selector across the history instead: the file
+    is written over the scratch tree's `tools/affected.py` for the selection only
+    and the commit's own copy is put back before anything is mutated or swept, so
+    the selector reads that commit's tree and the sweep runs that commit's suites.
   - A mutation that turns nothing red is reported as `inert`. Zero misses over an
     inert mutation is zero evidence, and the output says so instead of counting it.
   - A commit that changed no Python has nothing to mutate; it is named and left out
@@ -117,8 +122,12 @@ DEFAULTS = {
     "rev": "HEAD", "commits": 20, "scan": 400, "pattern": TASK_SUBJECT,
     "sweep_cmd": None, "affected_cmd": None, "timeout": 3600, "env": None,
     "mutation": True, "ci": True, "ci_since": None, "ci_limit": 200, "gh_cmd": ["gh"],
-    "budget_minutes": None, "scratch_dir": None,
+    "budget_minutes": None, "scratch_dir": None, "selector": None,
 }
+
+# Where `--selector` puts its file in a scratch tree: the path the default selector
+# command runs, so the file reads its repository from that tree.
+SELECTOR_REL = "tools/affected.py"
 
 
 # --- running things -------------------------------------------------------------
@@ -414,8 +423,32 @@ def run_mutation(opts, tree, kind, originals, sel):
 
 
 def select_in_tree(opts, tree, parent):
-    rc, text = run_cmd(affected_argv(opts, parent), tree, opts["env"], opts["timeout"])
-    return read_selection(rc, text)
+    if opts["selector"] is None:
+        rc, text = run_cmd(affected_argv(opts, parent), tree, opts["env"],
+                           opts["timeout"])
+        return read_selection(rc, text)
+    target = os.path.join(tree, *SELECTOR_REL.split("/"))
+    original = None
+    if os.path.isfile(target):
+        with open(target, "rb") as fh:
+            original = fh.read()
+    try:
+        with open(opts["selector"], "rb") as fh:
+            body = fh.read()
+        with open(target, "wb") as fh:
+            fh.write(body)
+        rc, text = run_cmd(affected_argv(opts, parent), tree, opts["env"],
+                           opts["timeout"])
+        return read_selection(rc, text)
+    finally:
+        # Put back what the commit carried - or nothing, where it carried none - so
+        # the sweep that follows runs that commit's own cases and not this file's.
+        if original is None:
+            if os.path.exists(target):
+                os.remove(target)
+        else:
+            with open(target, "wb") as fh:
+                fh.write(original)
 
 
 def measure_in_tree(opts, tree, parent, changed):
@@ -716,6 +749,9 @@ def main(argv, out=None):
                         help="the sweep, run in each scratch worktree")
     parser.add_argument("--affected-cmd", default=None,
                         help="the selector; {base} is the parent commit")
+    parser.add_argument("--selector", default=None,
+                        help="measure this selector file on every commit instead "
+                             "of the one each commit carried")
     parser.add_argument("--timeout", type=int, default=DEFAULTS["timeout"])
     parser.add_argument("--budget-minutes", type=float, default=None)
     parser.add_argument("--no-ci", action="store_true")
@@ -743,6 +779,12 @@ def main(argv, out=None):
         overrides["sweep_cmd"] = shlex.split(args.sweep_cmd)
     if args.affected_cmd:
         overrides["affected_cmd"] = shlex.split(args.affected_cmd)
+    if args.selector:
+        if not os.path.isfile(args.selector):
+            sys.stderr.write("measure-affected-miss: --selector %s is not a file\n"
+                             % (args.selector,))
+            return 2
+        overrides["selector"] = os.path.abspath(args.selector)
     opts = make_options(args.repo, **overrides)
     rc, _text = git(["rev-parse", "--show-toplevel"], opts["repo"], opts["env"])
     if rc != 0:
@@ -1202,6 +1244,52 @@ def _cases(check):
         check("m18 a CI half that WAS answered and found no failed run in the "
               "window says so, in words, instead of a bare zero of zero",
               "0 of 0 runs (CI) - gh answered" in quiet)
+
+        # one selector across the history, rather than the one each commit carried
+        sel_dir = tempfile.mkdtemp(prefix="measure-affected-miss-selector-")
+        roots.append(sel_dir)
+        wide = os.path.join(sel_dir, _py("wide_selector"))
+        _write(wide, "import json\nprint(json.dumps({'full': False, 'suites': "
+                     "[%r, %r], 'gates': [], 'reasons': [], 'changed': []}))\n"
+               % (_py("test_a"), _py("test_b")))
+        at_rel = [sys.executable, os.path.join(*SELECTOR_REL.split("/")),
+                  "--json", "--base", "{base}"]
+        chosen = measure(_fixture_opts(fx, affected_cmd=at_rel, selector=wide))
+        carried = measure(_fixture_opts(fx, affected_cmd=at_rel))
+        chosen_raise = mutations_of(chosen, "raise")
+        check("m19 `--selector` measures the file it is handed on each commit: the "
+              "fixture's commits carry no selector at that path, so without it the "
+              "commit is not measured, and with it the wider selection is the one "
+              "read - the suite the carried selection missed is selected, while "
+              "the raise still turned both suites red",
+              chosen["measured"] == 1 and len(chosen_raise) == 1
+              and chosen_raise[0]["red"] == 2 and chosen_raise[0]["missed"] == []
+              and carried["measured"] == 0
+              and any(r["status"] == "could-not-measure"
+                      for r in carried["commits"]))
+
+        # The commit's own copy is back before anything is swept, and a tree that
+        # carried none is left with none.
+        held = os.path.join(sel_dir, "held")
+        bare = os.path.join(sel_dir, "bare")
+        _write(os.path.join(held, *SELECTOR_REL.split("/")), "ORIGINAL\n")
+        os.makedirs(os.path.join(bare, "tools"))
+        sel_opts = _fixture_opts(fx, affected_cmd=at_rel, selector=wide)
+        read_held = select_in_tree(sel_opts, held, "HEAD")
+        read_bare = select_in_tree(sel_opts, bare, "HEAD")
+        with io.open(os.path.join(held, *SELECTOR_REL.split("/")),
+                     encoding="utf-8") as fh:
+            held_after = fh.read()
+        check("m19b the selector file stands in for the selection only: the copy "
+              "the tree held is restored byte for byte afterwards, and a tree that "
+              "held none is left without one - while both selections were read "
+              "from the file handed in",
+              read_held["readable"] and read_held["suites"] == [_py("test_a"),
+                                                               _py("test_b")]
+              and read_bare["readable"] and held_after == "ORIGINAL\n"
+              and not os.path.exists(os.path.join(bare, *SELECTOR_REL.split("/")))
+              and main(["--selector", os.path.join(sel_dir, "absent")],
+                       io.StringIO()) == 2)
 
         def _line(*argv):
             # The tool splits these two options with `shlex.split` (POSIX rules),

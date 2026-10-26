@@ -3192,7 +3192,8 @@
       "P131.2",
       "P131.9",
       "P142.1",
-      "P142.6"
+      "P142.6",
+      "P142.12-6yq"
     ],
     "plugins/audit/schema/audit-config.schema.json": [
       "P41.1",
@@ -10022,7 +10023,8 @@
       "P139.1",
       "P139.2-6sp",
       "P142.1",
-      "P142.6"
+      "P142.6",
+      "P142.12-6yq"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -11515,7 +11517,8 @@
       "P141.1",
       "P142.1",
       "P142.6",
-      "P142.11-6yq"
+      "P142.11-6yq",
+      "P142.12-6yq"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"

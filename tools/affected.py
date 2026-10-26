@@ -33,17 +33,26 @@ the failure surfaces in CI wearing somebody else's commit. So every rule here is
 written to widen rather than narrow, an unrecognised path selects the full set, and
 the reason is always printed next to the selection.
 
-THE CROSS-FILE TRAP. Suites here lint OTHER files' source - `_output` reads every
-file's AST for house style, `_deps` walks the import graph, `_refs` checks paths and
-version pins. Editing one file can turn those red without touching them, so any
-`.py` change selects them too. That is not caution, it is a measured fact: this
-repo has gone red exactly that way.
+THE CROSS-FILE TRAP. Suites here lint OTHER files' source - `_output_lints` reads
+every file's AST for house style, `_deps` walks the import graph, `_refs` checks
+paths and version pins. Editing one file can turn those red without touching them,
+so any `.py` change selects every suite and tool that calls one of the shared tree
+walks (`reach_graph()` reads which do). That is not caution, it is a measured fact:
+this repo has gone red exactly that way.
+
+WHAT A SUITE REACHES is read the same way, off the code rather than a list: what it
+imports, what it loads or resolves through `_loader` or the hooks' resolver, what a
+suite or a tool names inside a call (the subprocess it starts, the source it reads),
+and onward through each of those, however many files away. What that reading cannot
+see: a target computed at runtime in the product's own code, and a file loaded
+through `importlib` by a computed path - neither shows up here, and the miss
+measurement is what finds them.
 """
+import ast
 import contextlib
 import io
 import json
 import os
-import re
 import subprocess
 import sys
 
@@ -75,24 +84,13 @@ _output.install_path()
 if _output.LINTS_DIR not in sys.path:
     sys.path.insert(0, _output.LINTS_DIR)
 
-import _deps  # noqa: E402  (the import graph this selection is derived from)
+import _deps  # noqa: E402  (the loader's module and call names the graph reads)
 import _output_lints  # noqa: E402  (which development modules have their cases in tests/)
 import _refs  # noqa: E402  (the surfaces and sweep documents it reads)
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TESTS = "tests"
 LINTS = "tools/lints/"
-
-# Suites that read the WHOLE tree rather than one module, so any `.py` edit can
-# turn them red. Derived by grep once and listed here because the list is the
-# claim: a suite that starts scanning the tree must be added, and the comment
-# above `PANEL_GATE` says how a missing entry shows up.
-TREE_SCANNERS = (
-    "test__output.py", "test__deps.py", "test__refs.py", "test__manifest_vocab.py",
-    "test__config_rules.py", "test__manifest_rules.py", "test__panel_paths.py",
-    "test__panel_state.py", "test__report_page.py", "test__ui_theme.py",
-    "test_remind_tdd.py", "test_validate_manifest.py",
-)
 
 PANEL_GATE = "node tools/capture-screenshots.mjs --check --only panel"
 REPORT_GATE = "node tools/check-report-interactive.mjs %s"
@@ -170,7 +168,7 @@ def refs_reads(posix):
 
     Derived from `_refs.SURFACES`, `_refs.SWEEP_DOCS`, `_refs._FETCH_DOC_EXT` and
     `_refs.STAMP_EXT` for the
-    same reason `_reverse_imports()` is derived from the real import graph: a hand-kept
+    same reason `reach_graph()` is derived from the real tree: a hand-kept
     copy of somebody else's list is a copy that stops agreeing. Editing
     `CONTRIBUTING.md` selected `test__deps.py` and not this - and `CONTRIBUTING.md` is a
     `_refs` surface, so a path rotting in it went unchecked by the narrowed run.
@@ -224,23 +222,283 @@ def changed_files(base, explicit):
     return sorted(out)
 
 
-def _reverse_imports():
-    """basename -> everything that imports it, transitively."""
-    edges, _ = _deps.import_graph()
-    direct = {}
-    for importer, imported in edges:
-        direct.setdefault(imported, set()).add(importer)
-    closure = {}
-    for name in direct:
-        seen, stack = set(), [name]
-        while stack:
-            cur = stack.pop()
-            for up in direct.get(cur, ()):
-                if up not in seen:
-                    seen.add(up)
-                    stack.append(up)
-        closure[name] = seen
-    return closure
+# --- the reach graph ------------------------------------------------------------
+# WHICH SUITE GOES RED WHEN A FILE BREAKS is a question about what each suite RUNS,
+# and the import graph `_deps` keeps answers a narrower one: what the SHIPPED tree
+# imports, for the layer rule. Read alone it missed every suite that reaches a module
+# through something else - a suite loading an entry script, that script running a
+# second one by path, a suite importing another suite's fixtures - and the measured
+# misses were exactly those. So the graph below is read off every `.py` the sweep can
+# run or load - imports read as `_deps` reads them, loads through the loader names
+# `_deps` keeps - and widened by the ways this repo runs a file it does not import.
+#
+# The directories a red-turning `.py` can sit in. `.claude/hooks/` is not one: a path
+# there matches no branch of `select()` and widens to the full set.
+REACH_DIRS = (_output.SCRIPTS_DIR, _output.HOOKS_DIR, _output.TESTS_DIR,
+              os.path.join(REPO, "tools"))
+
+# The calls that run or load a file named in their arguments, by the module that
+# holds them - read through that module, never by a bare name, because `json.load`
+# is a `load` too. `_deps` reads only the loading pair, and leaves `script_path` out
+# ON PURPOSE: for the layer rule a path handed to a subprocess is no dependency. For
+# this question it is the whole of one - the subprocess is what turns the suite red -
+# so the resolver joins them, and so does the hooks' resolver
+# (`hooks/_config.find_script`), which is how a hook reaches a script.
+RESOLVERS = {_deps._LOADER_MODULE: tuple(_deps._LOADER_FUNCS) + ("script_path",),
+             "_config": ("find_script",)}
+
+# Where the shared tree walks live: `_output.py` holds the walk the sweep and the
+# lints share, and the lint modules hold every walk built on it. A function here
+# that reaches `os.walk` - directly or through another function here - walks the
+# tree, and a suite calling one is a tree scanner.
+WALK_HOMES = (os.path.join(_output.SCRIPTS_DIR, "_output.py"),)
+OS_WALK = "os.walk"
+
+
+def _rel(path):
+    return os.path.relpath(path, REPO).replace(os.sep, "/")
+
+
+def _stem(rel):
+    return os.path.basename(rel)[:-3]
+
+
+def _is_suite(rel):
+    """A file the sweep runs as a suite under `tests/` - never a helper beside one."""
+    return rel.startswith(TESTS + "/") and os.path.basename(rel).startswith("test")
+
+
+def _is_dev(rel):
+    """Development code: a suite, a suite helper, a tool. Its `.py` literals inside a
+    call are what it runs; the product's are mostly text - a brief naming the next
+    command, a table of areas - and reading them as runs made every suite reach every
+    other one through a sentence."""
+    return rel.startswith(TESTS + "/") or rel.startswith("tools/")
+
+
+def _call_name(call):
+    func = call.func
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    if isinstance(func, ast.Name):
+        return func.id
+    return None
+
+
+def _py_constants(tree):
+    """Module-level `NAME = "....py"` bindings - `DRIVER = "drive-phase.py"` and
+    `load_script(DRIVER)` are one target spelled in two places."""
+    out = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 \
+                and isinstance(node.targets[0], ast.Name) \
+                and isinstance(node.value, ast.Constant) \
+                and isinstance(node.value.value, str) \
+                and node.value.value.endswith(".py"):
+            out[node.targets[0].id] = _stem(node.value.value)
+    return out
+
+
+def _scan(tree, consts):
+    """Everything the graph reads from one file, in ONE walk of its tree.
+
+    `imports` holds the first component of every absolute import, read the way
+    `_deps._imported_sibling_names()` reads one; `in_call` every module stem a `.py`
+    literal or bound constant names inside a call; `calls` one row per call that
+    names a target or could resolve one - `(name, qualifier, targets, forwards,
+    has_args, function)`, where `forwards` says the call passes on a parameter of the
+    function it sits in; `fn_calls` the call names inside each function; `aliases`
+    and `from_names` how its imports are bound.
+
+    One walk because the graph parses every `.py` the sweep can reach on every
+    selection, and the first version, walking each tree once per question, spent
+    more on the walks than on the parse."""
+    found = {"imports": set(), "in_call": set(), "calls": [], "fn_calls": {},
+             "aliases": {}, "from_names": {}}
+    frames, open_calls = [], []
+    stack = [(tree, True)]
+    while stack:
+        node, entering = stack.pop()
+        if not entering:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                frames.pop()
+            elif isinstance(node, ast.Call):
+                row = open_calls.pop()
+                if row[0] is not None:
+                    found["calls"].append(tuple(row))
+            continue
+        stack.append((node, False))
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            params = set(a.arg for a in ast.walk(node.args) if isinstance(a, ast.arg))
+            frames.append((node.name, params))
+            found["fn_calls"].setdefault(node.name, set())
+        elif isinstance(node, ast.Call):
+            name = _call_name(node)
+            func = node.func
+            qualifier = (func.value.id if isinstance(func, ast.Attribute)
+                         and isinstance(func.value, ast.Name) else None)
+            if frames:
+                # `os.walk` kept apart from every other `walk`: the lint modules
+                # call `ast.walk` everywhere, and it walks a tree of nodes.
+                found["fn_calls"][frames[-1][0]].add(
+                    OS_WALK if (qualifier, name) == ("os", "walk") else name)
+            open_calls.append([name, qualifier, set(), False, bool(node.args),
+                               frames[-1][0] if frames else None])
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str) \
+                and node.value.endswith(".py") and open_calls:
+            stem = _stem(node.value)
+            found["in_call"].add(stem)
+            for row in open_calls:
+                row[2].add(stem)
+        elif isinstance(node, ast.Name) and open_calls:
+            if node.id in consts:
+                found["in_call"].add(consts[node.id])
+                for row in open_calls:
+                    row[2].add(consts[node.id])
+            if frames and node.id in frames[-1][1]:
+                for row in open_calls:
+                    row[3] = True
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                base = alias.name.split(".")[0]
+                found["imports"].add(base)
+                found["aliases"][alias.asname or base] = base
+        elif isinstance(node, ast.ImportFrom) and not node.level:
+            base = (node.module or "").split(".")[0]
+            found["imports"].add(base)
+            for alias in node.names:
+                found["from_names"][alias.asname or alias.name] = (base, alias.name)
+        stack.extend((child, True) for child in ast.iter_child_nodes(node))
+    return found
+
+
+def _walk_names(scans, homes):
+    """Function names in `homes` that reach `os.walk`, grown to a fixpoint - a walk
+    built on a walk is a walk."""
+    defs = [(fn, calls) for rel in homes for fn, calls in scans[rel]["fn_calls"].items()]
+    names = set((OS_WALK,))
+    grew = True
+    while grew:
+        grew = False
+        for fn, calls in defs:
+            if fn not in names and calls & names:
+                names.add(fn)
+                grew = True
+    names.discard(OS_WALK)
+    return names
+
+
+def _scans_tree(scan, walks, home_stems):
+    """True when this file calls a shared walk through the module that holds it -
+    `_output.py_files(...)`, `L.kept_files(...)`, or a walk imported by name. Read
+    through the module, never by a bare name alone: a suite's own `render` is not
+    the lint module's."""
+    via = set(local for local, mod in scan["aliases"].items() if mod in home_stems)
+    bare = set(local for local, (mod, name) in scan["from_names"].items()
+               if mod in home_stems and name in walks)
+    for name, qualifier, _t, _f, _a, _fn in scan["calls"]:
+        if (qualifier in via and name in walks) or (qualifier is None and name in bare):
+            return True
+    return False
+
+
+def _is_resolver(scan, name, qualifier):
+    """True for a call that reaches a `RESOLVERS` function through its module - an
+    `import _loader [as X]` alias, or the name imported from it."""
+    if qualifier is not None:
+        return name in RESOLVERS.get(scan["aliases"].get(qualifier), ())
+    mod, original = scan["from_names"].get(name, (None, None))
+    return original in RESOLVERS.get(mod, ())
+
+
+def _file_edges(rel, scan, known, wrappers):
+    """`(imports, runs, unknown)` for one file.
+
+    `imports` is what it imports by bare name; `runs` what it loads, resolves or -
+    for development code - names inside a call; `unknown` is True when a resolver
+    call's target is computed at runtime (a name read out of a document, say), which
+    this graph cannot follow and so reads as every module under `scripts/`."""
+    stem = _stem(rel)
+    runs = set(scan["in_call"]) if _is_dev(rel) else set()
+    unknown = False
+    for name, qualifier, targets, forwards, has_args, _fn in scan["calls"]:
+        resolver = _is_resolver(scan, name, qualifier)
+        if not resolver and name not in wrappers:
+            continue
+        runs |= targets
+        if resolver and not targets and has_args and not forwards:
+            unknown = True
+    self_only = set((stem,))
+    return (scan["imports"] & known) - self_only, (runs & known) - self_only, unknown
+
+
+def reach_graph():
+    """The graph `select()` reads: who imports and who runs each module, every
+    suite and tool that scans the tree, and the files nothing could parse.
+
+    Built once per selection and handed in, never cached in the module: a cache here
+    is a second copy of the tree that stops agreeing with it."""
+    files = []
+    for directory in REACH_DIRS:
+        files.extend(_rel(path) for _r, path in _output.lint_py_files(directory))
+    scans, broken = {}, []
+    for rel in sorted(set(files)):
+        try:
+            with open(os.path.join(REPO, rel), encoding="utf-8") as fh:
+                tree = ast.parse(fh.read(), filename=rel)
+        except (OSError, SyntaxError, ValueError):
+            broken.append(rel)
+            continue
+        scans[rel] = _scan(tree, _py_constants(tree))
+    known = set(_stem(rel) for rel in files)
+    scripts = set(_stem(rel) for rel in files
+                  if rel.startswith(_rel(_output.SCRIPTS_DIR) + "/"))
+    wrappers = set(fn for scan in scans.values()
+                   for name, qualifier, _t, forwards, _a, fn in scan["calls"]
+                   if forwards and fn and _is_resolver(scan, name, qualifier))
+    imported_by, run_by = {}, {}
+    for rel, scan in scans.items():
+        imports, runs, unknown = _file_edges(rel, scan, known, wrappers)
+        if unknown:
+            runs = runs | (scripts - set((_stem(rel),)))
+        for stem in imports:
+            imported_by.setdefault(stem, set()).add(rel)
+        for stem in runs:
+            run_by.setdefault(stem, set()).add(rel)
+    homes = [rel for rel in scans
+             if rel.startswith(LINTS) or rel in set(_rel(p) for p in WALK_HOMES)]
+    walks = _walk_names(scans, homes)
+    home_stems = set(_stem(rel) for rel in homes)
+    scanners = sorted(rel for rel, scan in scans.items()
+                      if _is_runner(rel) and _scans_tree(scan, walks, home_stems))
+    return {"imported_by": imported_by, "run_by": run_by, "scanners": scanners,
+            "broken": sorted(broken)}
+
+
+def _is_runner(rel):
+    """A file whose own cases the sweep runs: a suite, or a tool carrying them."""
+    return _is_suite(rel) or (rel.startswith("tools/") and rel not in MIGRATED)
+
+
+def reached_by(graph, rel):
+    """Every file that imports or runs `rel`, transitively.
+
+    A suite is where a red STOPS: a file naming a suite's path does not run its cases.
+    The one way past one is an import - a suite borrowing another suite's fixture
+    goes red with it - so from a suite only the importers are followed."""
+    seen = set()
+    stack = [rel]
+    while stack:
+        cur = stack.pop()
+        stem = _stem(cur)
+        up = set(graph["imported_by"].get(stem, ()))
+        if not _is_suite(cur):
+            up |= graph["run_by"].get(stem, set())
+        for nxt in up - seen:
+            seen.add(nxt)
+            stack.append(nxt)
+    seen.discard(rel)
+    return seen
 
 
 def _suite_for(module_basename):
@@ -257,25 +515,20 @@ def _suite_for(module_basename):
     return None
 
 
-def _suites_importing(module_basename):
-    """The suites under `tests` that `import` this module by bare name.
-
-    The reverse-import closure is read off the SHIPPED import graph, and a lint
-    module is not in it - nothing shipped may import one - so the only importers
-    left to ask are the suites and the tools, and a suite is a file here.
-    """
-    pattern = re.compile(r"^\s*(?:import|from)\s+%s\b" % re.escape(module_basename),
-                         re.MULTILINE)
-    found = set()
-    directory = os.path.join(REPO, TESTS)
-    for name in sorted(os.listdir(directory)):
-        if not name.endswith(".py"):
-            continue
-        with open(os.path.join(directory, name), encoding="utf-8",
-                  errors="replace") as fh:
-            if pattern.search(fh.read()):
-                found.add(name)
-    return found
+def _reached_selection(graph, rel):
+    """`(suites, tool gates)` that `rel` can turn red: its own suite, and every suite
+    and tool whose cases import or run it, however many files away."""
+    suites, gates = set(), []
+    reached = reached_by(graph, rel) | set((rel,))
+    own = _suite_for(_stem(rel))
+    if own:
+        suites.add(own)
+    for other in sorted(reached):
+        if _is_suite(other):
+            suites.add(other[len(TESTS) + 1:])
+        elif _is_runner(other):
+            gates.append(TOOL_SELFTEST % (other,))
+    return suites, gates
 
 
 # --- the selection rules ------------------------------------------------------
@@ -301,7 +554,7 @@ def _all_suite_paths():
 def _related_suite_paths(paths):
     """The suite paths `--list-related` prints for `paths` -- the SAME
     selection `select()` already derives (importers' suites, every
-    TREE_SCANNERS suite once any `.py` changed), widened to the full listing
+    tree-scanning suite once any `.py` changed), widened to the full listing
     the moment `select()` cannot narrow (an unrecognised path, or any other
     `full` trigger). One path per line, never executed -- the contract
     `meta.phaseGate.derived.listing.related` holds."""
@@ -330,15 +583,24 @@ def _once(gates):
     return out
 
 
-def select(paths):
-    """What to run, and why. Returns (plan, reasons, full)."""
+def select(paths, graph=None):
+    """What to run, and why. Returns (suites, gates, reasons, full).
+
+    `graph` is `reach_graph()`'s answer, for a caller asking many questions of one
+    tree; absent, it is built here when a `.py` is among the paths."""
     suites = set()
     gates = []
     reasons = []
     full = False
-    closure = _reverse_imports()
     touched_py = False
     panel = report = artifacts = vitest = False
+    if graph is None and any(_repo_relative(p).endswith(".py") for p in paths):
+        graph = reach_graph()
+
+    def reach(posix):
+        found, tool_gates = _reached_selection(graph, posix)
+        suites.update(found)
+        gates.extend(tool_gates)
 
     for path in paths:
         posix = _repo_relative(path)
@@ -354,8 +616,13 @@ def select(paths):
         # root-prose rule below used to be the whole of it), this file would
         # under-select for exactly the files the widening was for: a count added to
         # a `commands/*.md` or to a `tests/` docstring selected neither suite.
+        #
+        # THE `.py` HALF IS THE TREE SCANNERS, added once after the loop. It named one
+        # suite here by hand, and the scan had moved to another module with its own
+        # suite, so a style fault in any `.py` turned a suite red that no narrowed run
+        # selected. The scanners are now read off the shared walks (`reach_graph()`).
         if posix.endswith(".py"):
-            suites.add("test__output.py")
+            touched_py = True
         if posix.endswith(".md"):
             suites.add("test__deps.py")
         if posix == WORKFLOW:
@@ -393,11 +660,15 @@ def select(paths):
             reasons.append("%s - root prose, linted by _deps" % (posix,))
             continue
         if posix.startswith(TESTS.replace(os.sep, "/") + "/"):
-            name = os.path.basename(posix)
-            if name.endswith(".py"):
-                suites.add(name)
-                touched_py = True
-                reasons.append("%s - its own suite" % (posix,))
+            if posix.endswith(".py"):
+                # A suite is its own selection; a helper beside the suites (the
+                # harness, a shared fixture) is no suite at all, and was named as
+                # one here. Either way what imports or runs it goes red with it.
+                if _is_suite(posix):
+                    suites.add(posix[len(TESTS) + 1:])
+                reach(posix)
+                reasons.append("%s - its own cases, plus every suite and tool that "
+                               "imports or runs it" % (posix,))
             continue
         if posix.startswith("plugins/audit/scripts/ui/"):
             # Assembled surfaces: the part belongs to a page, not to a module.
@@ -425,15 +696,9 @@ def select(paths):
         if posix.endswith(".py") and posix.startswith("plugins/audit/"):
             touched_py = True
             base = os.path.basename(posix)[:-3]
-            own = _suite_for(base)
-            if own:
-                suites.add(own)
-            for up in closure.get(base, ()):
-                dep = _suite_for(up)
-                if dep:
-                    suites.add(dep)
-            reasons.append("%s - its suite plus every suite of a module that "
-                           "imports it" % (posix,))
+            reach(posix)
+            reasons.append("%s - its suite plus every suite and tool that imports "
+                           "or runs it, however many files away" % (posix,))
             if base in ("_ui_theme", "_output"):
                 panel = report = artifacts = True
                 reasons.append("%s - both surfaces read it" % (posix,))
@@ -470,15 +735,10 @@ def select(paths):
             # a suite beside the rest and it is `MIGRATED`, so the tool arm below
             # answered "no rule matches" for the two files that used to take the
             # plugin `.py` arm. Same selection as that arm: its own suite, every
-            # suite that imports it, and the suites that lint the whole tree.
-            touched_py = True
-            base = os.path.basename(posix)[:-3]
-            own = _suite_for(base)
-            if own:
-                suites.add(own)
-            suites.update(_suites_importing(base))
-            reasons.append("%s - a lint module: its suite plus every suite that "
-                           "imports it" % (posix,))
+            # suite and tool that imports or runs it, and the tree scanners.
+            reach(posix)
+            reasons.append("%s - a lint module: its suite plus every suite and tool "
+                           "that imports or runs it" % (posix,))
             continue
         if posix.startswith("tools/"):
             # THE TOOL'S OWN CASES FIRST, and outside the chain below rather than as
@@ -500,6 +760,11 @@ def select(paths):
             if own:
                 gates.append(TOOL_SELFTEST % (posix,))
                 reasons.append("%s - a tool, so its own cases run" % (posix,))
+            if posix.endswith(".py"):
+                # ...and every suite and tool that imports or runs it: a tool is a
+                # module to whatever loads it, and a suite driving the runner or the
+                # selector goes red with them.
+                reach(posix)
             if "capture-screenshots" in posix or posix.startswith("tools/ui-checks/"):
                 # `ui-checks/` holds the concerns that moved OUT of the panel gate
                 # and are imported back into it, so editing one edits the gate. They
@@ -540,10 +805,20 @@ def select(paths):
                        "than a guess" % (posix,))
 
     if touched_py:
-        suites.update(TREE_SCANNERS)
-        reasons.append("a .py changed, so every suite that lints the whole tree "
-                       "is included - editing one file turns those red without "
-                       "touching them")
+        for rel in graph["scanners"]:
+            if _is_suite(rel):
+                suites.add(rel[len(TESTS) + 1:])
+            else:
+                gates.append(TOOL_SELFTEST % (rel,))
+        reasons.append("a .py changed, so every suite and tool that walks the tree "
+                       "through a shared walk is included - editing one file turns "
+                       "those red without touching them")
+        if graph["broken"]:
+            # A file the graph could not parse is a file whose edges it does not
+            # know, so what reaches through it is unknown too.
+            full = True
+            reasons.append("%s - would not parse, so what it reaches is unknown "
+                           "and the full set is selected" % (", ".join(graph["broken"]),))
     if vitest:
         gates.append(VITEST)
     if artifacts:
@@ -618,6 +893,168 @@ def main(argv):
     return 0
 
 
+# What `measure-affected-miss.py` recorded over a run of recent task commits: per
+# commit, the label of the case that holds it, the commit, the files it changed, and
+# every suite a planted fault in those files turned red while this selection left it
+# out. Copied from the measurement's JSON, so the case reads no file outside the tree.
+MEASURED_MISSES = (
+    ("a18a", "4805f994",
+     ("plugins/audit/scripts/governance/_runner_output.py",
+      "plugins/audit/scripts/governance/stamp-verification.py",
+      "tests/test__runner_output.py",
+      "tests/test_stamp_verification.py",),
+     ("tests/test__claude_home.py",
+      "tests/test__filed_returns.py",
+      "tests/test__output_lints.py",
+      "tests/test__panel_composition.py",
+      "tests/test__proc_group.py",
+      "tests/test_audit_lookup.py",
+      "tests/test_audit_task.py",
+      "tests/test_commit_task_work.py",
+      "tests/test_derive_phase_gate.py",
+      "tests/test_drive_phase.py",
+      "tests/test_full_gate.py",
+      "tests/test_gen_demo_manifest.py",
+      "tests/test_run_test_gate.py",)),
+    ("a18b", "d33730d6",
+     ("tests/test_drive_phase.py",),
+     ("tests/test__output_lints.py",)),
+    ("a18c", "5536cf07",
+     ("plugins/audit/scripts/governance/drive-phase.py",
+      "tests/test_drive_phase.py",),
+     ("tests/test__filed_returns.py",
+      "tests/test__invariants.py",
+      "tests/test__output_lints.py",
+      "tests/test_detect_plan_skip.py",
+      "tests/test_stamp_verification.py",
+      "tools/stream-cost.py",)),
+    ("a18d", "e4bd0447",
+     ("plugins/audit/scripts/governance/drive-phase.py",
+      "tests/test_drive_phase.py",),
+     ("tests/test__filed_returns.py",
+      "tests/test__invariants.py",
+      "tests/test__output_lints.py",
+      "tests/test_detect_plan_skip.py",
+      "tests/test_stamp_verification.py",
+      "tools/stream-cost.py",)),
+    ("a18e", "67d0e3dc",
+     ("plugins/audit/scripts/governance/drive-phase.py",
+      "tests/test_drive_phase.py",
+      "tools/check-committed-pii.py",),
+     ("tests/test__filed_returns.py",
+      "tests/test__invariants.py",
+      "tests/test__journal_io.py",
+      "tests/test__output_lints.py",
+      "tests/test_detect_plan_skip.py",
+      "tests/test_stamp_verification.py",
+      "tools/stream-cost.py",)),
+    ("a18f", "d1e8d994",
+     ("plugins/audit/scripts/status/_doctor_policy.py",
+      "plugins/audit/scripts/status/_skill_places.py",
+      "tests/test__doctor_policy.py",
+      "tests/test__skill_places.py",),
+     ("tests/test__doctor_report.py",
+      "tests/test__help_lints.py",
+      "tests/test__output_lints.py",
+      "tests/test_audit_doctor.py",
+      "tests/test_drive_phase.py",
+      "tests/test_run_agent_session.py",)),
+    ("a18g", "c3ebab8a",
+     ("plugins/audit/scripts/governance/run-agent-session.py",
+      "plugins/audit/scripts/status/_doctor_policy.py",
+      "plugins/audit/scripts/status/_skill_places.py",
+      "tests/test__doctor_policy.py",
+      "tests/test__skill_places.py",
+      "tests/test_run_agent_session.py",
+      "tools/lints/_deps.py",),
+     ("tests/test__doctor_report.py",
+      "tests/test__help_lints.py",
+      "tests/test__output_lints.py",
+      "tests/test_audit_doctor.py",
+      "tests/test_commit_task_work.py",
+      "tests/test_derive_phase_gate.py",
+      "tools/affected.py",
+      "tools/gate-parity.py",
+      "tools/prove-gates.py",)),
+    ("a18h", "587e2871",
+     ("plugins/audit/scripts/governance/drive-phase.py",
+      "plugins/audit/scripts/governance/run-agent-session.py",
+      "tests/test_drive_phase.py",
+      "tests/test_run_agent_session.py",),
+     ("tests/test__filed_returns.py",
+      "tests/test__invariants.py",
+      "tests/test__output_lints.py",
+      "tests/test_detect_plan_skip.py",
+      "tests/test_stamp_verification.py",
+      "tools/stream-cost.py",)),
+    ("a18i", "88892397",
+     ("plugins/audit/scripts/governance/_scoped_commit.py",
+      "plugins/audit/scripts/governance/drive-phase.py",
+      "tests/test__scoped_commit.py",
+      "tests/test_drive_phase.py",),
+     ("tests/test__doctor_hygiene.py",
+      "tests/test__doctor_trail.py",
+      "tests/test__evidence_io.py",
+      "tests/test__evidence_view.py",
+      "tests/test__filed_returns.py",
+      "tests/test__help_lints.py",
+      "tests/test__invariants.py",
+      "tests/test__output_lints.py",
+      "tests/test__status_facts.py",
+      "tests/test_audit_doctor.py",
+      "tests/test_audit_status.py",
+      "tests/test_audit_task.py",
+      "tests/test_bench_report.py",
+      "tests/test_close_phase.py",
+      "tests/test_commit_task_work.py",
+      "tests/test_detect_plan_skip.py",
+      "tests/test_full_gate.py",
+      "tests/test_gen_demo_manifest.py",
+      "tests/test_gen_demo_usage.py",
+      "tests/test_guard_bash_writes.py",
+      "tests/test_panel_server.py",
+      "tests/test_render_report.py",
+      "tests/test_run_test_gate.py",
+      "tests/test_stamp_verification.py",
+      "tests/test_verify_invariants.py",
+      "tools/check-git-pipeline.py",
+      "tools/check-rendered-artifacts.py",
+      "tools/stream-cost.py",)),
+    ("a18j", "794aa0d8",
+     ("plugins/audit/scripts/governance/_scoped_commit.py",
+      "plugins/audit/scripts/manifest/_manifest_io.py",
+      "tests/test__scoped_commit.py",
+      "tests/test_audit_task.py",
+      "tests/test_commit_task_work.py",
+      "tests/test_drive_phase.py",),
+     ("tests/test__output_lints.py",)),
+    ("a18k", "990bfa8c",
+     ("tests/_harness.py",
+      "tools/gate-parity.py",
+      "tools/sweep-selftests.py",),
+     ("tests/test__output_lints.py",)),
+    ("a18l", "5101bd4d",
+     ("plugins/audit/scripts/governance/drive-phase.py",
+      "tests/test_drive_phase.py",),
+     ("tests/test__filed_returns.py",
+      "tests/test__invariants.py",
+      "tests/test__output_lints.py",
+      "tests/test_detect_plan_skip.py",
+      "tests/test_stamp_verification.py",
+      "tools/stream-cost.py",)),
+    ("a18m", "17563b1b",
+     ("plugins/audit/scripts/governance/run-agent-session.py",
+      "tests/test_run_agent_session.py",),
+     ("tests/test__output_lints.py",
+      "tests/test_drive_phase.py",)),
+)
+# Suites that measurement named which the tree has since retired. Built rather than
+# written, because a `.py` path under `tools/` that names no file is what
+# `_refs.tool_basename_drift()` reports.
+RETIRED_MISSES = tuple("tests/%s.%s" % (stem, "py") for stem in (
+    "test_commit_audit_state", "test_commit_manifest_index"))
+
+
 # --- selftest -----------------------------------------------------------------
 # THIS FILE USED TO SAY IT NEEDED NONE: "its answers are checked by running the full
 # set it defers to". That is false in the one direction that matters. A selector that
@@ -635,14 +1072,17 @@ def main(argv):
 # that groups its cases by topic is right to, and a rule demanding one global
 # ascending sequence would forbid exactly that.
 def _cases(check):
+    # ONE GRAPH FOR EVERY QUESTION BELOW: building it parses every `.py` the sweep
+    # can reach, and each case asks about the same tree.
+    graph = reach_graph()
 
     def sel(*paths):
-        suites, gates, _why, full = select(list(paths))
+        suites, gates, _why, full = select(list(paths), graph)
         return {"suites": suites, "gates": gates, "full": full}
 
     def why(*paths):
         """The reason lines alone, joined - what a reader of a narrowed run gets."""
-        _suites, _gates, reasons, _full = select(list(paths))
+        _suites, _gates, reasons, _full = select(list(paths), graph)
         return " | ".join(reasons)
 
     yml = ".github/workflows/ci.yml"
@@ -857,19 +1297,22 @@ def _cases(check):
         lines = [ln for ln in buf.getvalue().splitlines() if ln.strip()]
         return lines, exit_code
 
-    related_lines, related_exit = _run_lines(
-        ["--list-related", "plugins/audit/scripts/_output.py"])
-    expected_related = sorted(_suite_path(s) for s in
-                              select(["plugins/audit/scripts/_output.py"])[0])
-    check("a16 `--list-related` with a scripts/ module prints its importers' "
-          "suites plus every TREE_SCANNERS suite, one path per line, and runs "
-          "no suite -- the EXIT CODE is 0 and nothing but paths came out: %r"
-          % (related_lines,),
+    # A module nothing else imports or runs, so the listing is narrower than the
+    # full one and a17's comparison means something: `_output.py` is reached by
+    # every suite through the harness, and its listing IS the full one.
+    narrow = "plugins/audit/scripts/governance/record-outside-run.py"
+    related_lines, related_exit = _run_lines(["--list-related", narrow])
+    expected_related = sorted(_suite_path(s) for s in select([narrow], graph)[0])
+    scanner_suites = [rel for rel in graph["scanners"] if _is_suite(rel)]
+    check("a16 `--list-related` with a scripts/ module prints the suites that "
+          "import or run it plus every suite that walks the tree, one path per "
+          "line, and runs no suite -- the EXIT CODE is 0 and nothing but paths "
+          "came out: %r" % (related_lines,),
           related_exit == 0
           and sorted(related_lines) == expected_related
-          and all(s in related_lines for s in
-                  (_suite_path(t) for t in TREE_SCANNERS))
-          and _suite_path("test__output.py") in related_lines)
+          and scanner_suites
+          and all(s in related_lines for s in scanner_suites)
+          and _suite_path("test_record_outside_run.py") in related_lines)
 
     unknown_lines, unknown_exit = _run_lines(
         ["--list-related", "some/unknown/place.xyz"])
@@ -880,6 +1323,47 @@ def _cases(check):
           unknown_exit == 0
           and sorted(unknown_lines) == _all_suite_paths()
           and len(unknown_lines) > len(related_lines))
+
+    # THE HISTORY, NOT A RULE. Each row is a commit `measure-affected-miss.py` planted
+    # a fault in, the files it changed, and the suites that went red under the fault
+    # while this file's selection for those files left them out. The rows are the
+    # measurement's own data, carried inline so the case needs no file outside the
+    # tree; a rule written to pass them would be a list of instances, so the fix is
+    # judged by the rows rather than shaped by them.
+    def covers(paths, suite):
+        """Read the selection the way the measurement does: the full set covers
+        everything, a suite under `tests/` is named by basename, any other suite only
+        by the gate that asks for its own cases."""
+        suites, gates, _why, full = select(list(paths), graph)
+        if full:
+            return True
+        if suite.startswith(TESTS + "/"):
+            return os.path.basename(suite) in suites
+        return TOOL_SELFTEST % (suite,) in gates
+
+    for label, sha, changed, missed in MEASURED_MISSES:
+        left = [s for s in missed if not covers(changed, s)]
+        check("%s the selection for commit %s's changed files names every suite the "
+              "measurement saw go red without being selected; left out: %r"
+              % (label, sha, left),
+              not left)
+
+    retired = [s for s in RETIRED_MISSES if os.path.exists(os.path.join(REPO, s))]
+    check("a18z a missed suite left out of the rows above is one the tree no longer "
+          "holds - and if it comes back it belongs in a row, so its return is red "
+          "here rather than silently unchecked: %r" % (retired,),
+          not retired and len(RETIRED_MISSES) > 0)
+
+    leaf = "plugins/audit/scripts/governance/record-outside-run.py"
+    leaf_sel = sel(leaf)
+    every = _all_suite_paths()
+    check("a19 THE OTHER DIRECTION: a module nothing imports, runs or reads by name "
+          "outside its own suite still narrows - widening every row above to the "
+          "full set would pass them all and select nothing. Selected %d suites of "
+          "the %d the full set runs" % (len(leaf_sel["suites"]), len(every)),
+          not leaf_sel["full"]
+          and "test_record_outside_run.py" in leaf_sel["suites"]
+          and len(leaf_sel["suites"]) < len(every))
 
 
 def _selftest():
