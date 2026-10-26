@@ -1,0 +1,68 @@
+{
+ "findings": [
+  {
+   "id": 1,
+   "severity": "med",
+   "file": "tools/sweep-selftests.py:1761-1765 (one_block's timeout); cases tools/sweep-selftests.py:4007 bg6, :4306 tt0, :4321 tt1",
+   "issue": "The block path's timeout calibration, which every live staged suite now takes (stage_labels reads a literal STAGES in all eight: test__deps, test__output, test_audit_task, test_close_phase, test_commit_task_work, test_drive_phase, test_stamp_verification, check-committed-pii), is reached by no case with a non-empty cost table. bb1 and sr13 sweep with costs={}, sb1 with costs=None, so file_timeout returns the floor whatever one_block passes. bg6, tt0 and tt1 pin 'the timed-heavy staged suite gets its calibrated timeout and is told it' and 'an untimed staged suite gets the largest any entry would get', but their fixtures ('if False: staged_main()' with no STAGES) go through the whole-suite fallback only. Replacing :1763 with the bare floor `timeout`, or dropping staged=True, leaves the suite green. The task clause 'Keep per-block timeouts calibrated' has no case behind it.",
+   "resolution": "Add a case that sweeps a STAGES-literal fixture whose blocks print SWEEP_FILE_TIMEOUT, on jobs=4, once with costs={'split-suite': 900.0} (expect TIMEOUT_PER_COST*900//stage_grant(4) in every block's output, and the row's timeout) and once with a ghost-only table (expect the largest entry's figure, never the floor). Add a deadline variant like tt2 that shows a block's timeout cut to what is left. Prove it red by mutating :1763 to the floor."
+  },
+  {
+   "id": 2,
+   "severity": "med",
+   "file": "CLAUDE.md:239-243; CONTRIBUTING.md:330-334; .github/workflows/ci.yml:134-135; tools/sweep-selftests.py:1713 (sweep docstring), :1587-1590 (costs_from_rows docstring), :1604-1612 (record_costs 'about' text), :1474-1478 (shard comment)",
+   "issue": "These still describe the grant model the diff retired for every staged suite in the tree. CLAUDE.md says a staged_main suite 'is admitted with stage_grant(jobs) slots ... and is told the number in SWEEP_STAGE_GRANT, which sizes its block pool'. CONTRIBUTING.md and the ci.yml comment say the same. sweep()'s docstring says '`costs` orders the submissions (`run_order`)', but sweep() now orders by work_items. costs_from_rows, the shard comment and the record_costs 'about' string say the recorded figure is 'wall seconds times the slots ... the file held', but a block-run suite's figure is now the sum of its processes' seconds. The 'about' string is written into the committed .github/sweep-costs.json on the next --record-costs. The executor named the first three as followers, but no case and no task holds them.",
+   "resolution": "Rewrite each to the block model in this task or a follower task filed before sign-off: blocks are run as the sweep's jobs, one slot each, and replayed via --replay; a suite whose STAGES is not a literal runs whole on a grant; a block-run suite's cost is the summed slot-seconds of its processes. Fix sweep()'s docstring to name work_items."
+  },
+  {
+   "id": 3,
+   "severity": "low",
+   "file": "tools/sweep-selftests.py:3801-3805 (sh6)",
+   "issue": "sh6 says 'a shard runs its costliest files FIRST, so the slowest suite starts at once', but it asserts run_order(), which sweep() no longer calls. Submission order is now work_items (:1743). bb3 pins work_items as a function, but no case shows that sweep() submits in that order. Reverting :1743 to any other order leaves sh6 and bb3 green. bb1 uses equal costs, so it cannot tell either.",
+   "resolution": "Retitle sh6 to what it asserts: the split's order. Add a case that sweeps, at jobs=1, a heavy plain file and a staged fixture whose per-block estimate is higher, with costs given, and reads the order off each row's windows (start times): costliest job first."
+  },
+  {
+   "id": 4,
+   "severity": "low",
+   "file": "tests/_harness.py:1185-1187 (replayed)",
+   "issue": "replayed() keeps the first entry for a label (by.setdefault) and drops any later one silently. A list naming one block twice - the shape a sweep that ran a block twice would hand over - replays one copy and is never named. The sweep cannot produce that today: labels are unique by stage_labels, paths are set-deduped, and there is one counter per suite. But the replay is meant to be the honest reading, and it names a missing block and a stray block yet not a doubled one.",
+   "resolution": "Count labels in entries. A label listed more than once becomes one failing case '<label> RAN TWICE'. Add it to sr15's list, red-first by restoring setdefault."
+  },
+  {
+   "id": 5,
+   "severity": "low",
+   "file": "tools/sweep-selftests.py:4111-4165 (bb1)",
+   "issue": "The clause 'at some moment blocks of both run' rests on a-blocks sleeping 0.3 s, measured inside each child after its own interpreter start. It fails whenever b1's sleep starts more than 0.3 s after the last a-block's sleep began. That is start-up jitter, which the executor itself measured at load average 18-20 on 10 cores, and this case runs inside a full sweep's 8 workers. The other clauses (two b blocks at once, never more than four) are robust.",
+   "resolution": "Lengthen the a nap (for example 1.5 s, still well under b's 3 s), or read concurrency off the rows' per-process windows that sweep() now returns, rather than off in-sleep spans."
+  }
+ ],
+ "preExisting": [
+  {
+   "id": 1,
+   "severity": "med",
+   "file": "plugins/audit/scripts/governance/run-agent-session.py:66-70, :494-497",
+   "issue": "Each session's TMPDIR (session-writer-*/session-reviewer-*) is made under the caller's temp directory and left there. The docstring says removing it is 'the task's teardown, which finds it through that record (nothing in the drive reads the path back today)', so nothing removes it. The per-block watched scratch made this visible in 13 blocks. The diff's test-side fix (tests/test_drive_phase.py:961-966, a fixture_root TMPDIR per played session) is correct for the suite, but it routes the suite around a product leak into the operator's temp directory.",
+   "resolution": "File it with /audit:bug and pin it with a case asserting a finished session leaves no session-* directory under the TMPDIR it was handed, or that the teardown reads the .tmpdir record and removes it."
+  },
+  {
+   "id": 2,
+   "severity": "low",
+   "file": "tests/_harness.py:1075-1087 (block_result)",
+   "issue": "A block's exit code is used only in messages. A block that wrote its cases file and then exited non-zero (a crash at interpreter teardown, a signal) replays green. The same holds for run_stage and the old pool, so this is not a regression; the sweep now has each block's code in hand and could grade it.",
+   "resolution": "In block_result, a non-zero, non-None code with a readable report adds one failing case naming the block and its exit code."
+  }
+ ],
+ "intent": {
+  "answer": "diverges",
+  "note": "PART 2, 'Blocks, not suites, as the unit the sweep schedules ... so one large suite no longer holds a fixed grant while others wait': matches. sweep() (tools/sweep-selftests.py:1742-1801) runs each STAGES block as its own run_one child on one slot of the one slot_gate. The last block's thread starts '--selftest --replay LIST'. _harness.replay_selftest (tests/_harness.py:1203) replays in STAGES order and names a missing block, a stray block, a killed block and an unreadable list. 'keep each block's scratch-dir isolation and the watched-pair checks': matches, because each block is a run_one with its own scratch, home and git config, and suite_ran folds block debris into the row. 'Keep per-block timeouts calibrated': implemented at :1763 (file_timeout at stage_grant, cut by the deadline in child()) but no case pins it (finding 1). 'keep --shard I/N balancing working with .github/sweep-costs.json': matches. Sharding is per file, blocks follow their file, costs_from_rows/costs_from_render keep slot-seconds per file, and the TIMING regex still reads old '[Ns, N slots]' logs. PART 1, 'find what its blocks repeat (fixture repositories built per block, full drive runs where a function call answers the same question) and share or narrow it': partly. One repeat was narrowed: _drive_follower_map copies only _output.py, not all of scripts/ (tests/test_drive_phase.py:8103-8111). The executor reports the three targeted blocks fell by 40.2 / 35.3 process-seconds out of about 1100. Neither named kind, fixture repos shared across blocks or drive runs replaced by function calls, was done, and in-process submit was declined with a reason. ACCEPTANCE (1), 'wall clock under 240 s': NOT MET. The orchestrator measured on a quiet machine, twice with a 22-minute gap: HEAD 415.8 / 416.1 s, with this task 385.3 / 385.4 s, exit 0, 193/193 files. The per-file slot-seconds sum to 2709.8, a lower bound near 339 s on 8 slots. (2) case counts: printed (drive_phase 574 -> 574, sweep 128 -> 135, harness 85 -> 89). (3) 'tests/test__harness.py cover the block scheduling': not created. The executor's reason holds: _output_lints.selftest_coverage (tools/lints/_output_lints.py:2138-2192) reports any tests/test_*.py that names no module under scripts/, hooks/ or the dev dirs as an orphan, and _harness lives in tests/. The harness cases sr13-sr17 sit in tests/_harness.py's own selftest, which the sweep runs. So this half of the divergence is in the description. 'red-first by breaking it' is narrative only (below). CLAIM: the executor's outcome describes the diff I read accurately: stage_labels, staged_blocks, work_items, one_block/replay, suite_ran, windows in claude_verdicts, timing '[Ns, N blocks]', budget_line, block_result and replay_results split, --replay, the anchor-only copy and the session TMPDIR. It claims no sweep wall clock and says its own simulation (266 s) is above 240 s. It names the CLAUDE.md, CONTRIBUTING.md and ci.yml followers, but not the in-file docstrings in finding 2. The dependants it lists were checked against the diff: run_stage's messages are unchanged apart from 'exit %s' (test_audit_task ps2 still matches 'no case at all'), _runner_output's FAIL/summary regexes are untouched, stamp-verification sweep_budget reads per-file costs only, and test_stamp_verification's _SWEEP_GREEN is a fixture.",
+  "missing": [
+   "a stamp-verification.py compare of the filed stamp (not run: outside what a reviewer may execute)",
+   "a recorded command and exit code for the hand-made HEAD-splice red and the m1-m8 mutations (scratchpad/p142-11 holds the scripts, headcopy/ and mutate.py, but no run log)"
+  ],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Executor: 'mode regression, expectRedFirst false'. That holds: docs/audit/phases/P142.json gives P142.11-6yq tests.mode 'regression' and expectRedFirst false, so the mode owes no red. The executor also reports a manual red, 'HEAD's sweep-selftests.py with only the bb1 section spliced in -> FAIL bb1 (b-suite blocks ran one after another ...) and FAIL bb1b, SELFTEST FAILED 128/130', and mutations m1-m8, each red on its named case. That report names no exact command or exit code and is backed by no stamp. It is not graded proved. By reading, the HEAD failure is plausible: at HEAD the second suite is admitted on one slot behind a three-slot grant, so its blocks run serially.",
+  "inheritedTests": "flagged",
+  "inheritedTestsBasis": "tests.gate is 'python3 tools/sweep-selftests.py tools/sweep-selftests.py', which selects tools/sweep-selftests.py's own _cases only. Read from it: bg6 (:4007), tt0 (:4306) and tt1 (:4321) assert staged-suite timeout calibration only on the whole-suite fallback (fixtures with 'if False: staged_main()' and no STAGES), so deleting the block-path calibration at :1763 leaves them passing (finding 1). sh6 (:3801) asserts run_order(), which sweep() no longer calls, so replacing the sweep's work_items ordering leaves it passing (finding 3). tt2/tt3 reach the deadline cut through child(), which blocks share, so the cut itself is covered. sb1/sb2 were updated to assert the replay line and blocks=2. These are judgements from reading; no case was watched not failing."
+ },
+ "verdict": "findings"
+}

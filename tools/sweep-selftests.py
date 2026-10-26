@@ -169,12 +169,14 @@ DEFAULT_TIMEOUT = 300
 # On a four-core CI runner that let a staged suite be squeezed onto two cores
 # while three sweep workers held the rest, and run 38370435884 killed
 # `test_drive_phase.py` at the per-file cap on windows that way. So there is ONE
-# budget - the sweep's `jobs` slots - and a staged suite holds several of them
-# at once: up to `stage_grant(jobs)` of them, admitted in submission order with
-# what is free when its turn comes (`slot_gate`), so while it runs nothing else
-# can take its cores, and the number it holds goes to the child in
-# `STAGE_GRANT_VAR`, which `_harness.stage_workers()` reads. The name and the
-# cap are `_harness.py`'s too; case bg0 fails when the two copies part.
+# budget - the sweep's `jobs` slots. A staged suite whose `STAGES` table the
+# sweep reads has every block run as a job of its own, one slot each (`blocks,
+# not suites`, below). One whose table it cannot read is run whole and holds
+# several slots at once: up to `stage_grant(jobs)` of them, admitted in
+# submission order with what is free when its turn comes (`slot_gate`), and the
+# number it holds goes to the child in `STAGE_GRANT_VAR`, which
+# `_harness.stage_workers()` reads. The name and the cap are `_harness.py`'s
+# too; case bg0 fails when the two copies part.
 STAGE_GRANT_VAR = "SWEEP_STAGE_GRANT"
 FILE_TIMEOUT_VAR = "SWEEP_FILE_TIMEOUT"
 STAGE_GRANT_MAX = 6
@@ -854,7 +856,10 @@ def claude_verdicts(changes, windows):
     """`(by_suite, loose)`: each change given to the one suite whose window holds
     its moment, and every other change as a line naming who could have made it.
 
-    `windows` is {suite path: (start ns, end ns)}. `by_suite` is {path: [text]}.
+    `windows` is {suite path: (start ns, end ns)}, or {suite path: [(start ns,
+    end ns), ...]} for a suite the sweep ran as several processes - one per
+    block and the replay - so the gaps between them, when other suites ran,
+    are not the suite's. `by_suite` is {path: [text]}.
     A pure function of its two arguments, so every branch is driven without a
     child.
     """
@@ -869,8 +874,9 @@ def claude_verdicts(changes, windows):
                          % (change["text"], change["untimed"]))
             continue
         who = [] if at is None else [
-            p for p, (start, end) in sorted(windows.items())
-            if start - CLAUDE_START_SLACK_NS <= at <= end]
+            p for p, spans in sorted(windows.items())
+            if any(start - CLAUDE_START_SLACK_NS <= at <= end
+                   for start, end in _spans(spans))]
         if len(who) == 1:
             by_suite.setdefault(who[0], []).append(change["text"])
         elif who:
@@ -883,6 +889,13 @@ def claude_verdicts(changes, windows):
                          "filesystem stamps times too coarsely to tell"
                          % (change["text"],))
     return by_suite, loose
+
+
+def _spans(window):
+    """A window as a list of `(start, end)` spans: one span is a list of one."""
+    if window and isinstance(window[0], (tuple, list)):
+        return list(window)
+    return [window]
 
 
 def claude_debris(findings):
@@ -1054,7 +1067,7 @@ def legacy_locale_verdict(environ=None, locale_vars=None, interpreter=None,
 
 def run_one(rel_path, repo=None, encoding=None, timeout=DEFAULT_TIMEOUT,
             pycache=None, environ=None, spaced=False, grant=1,
-            locale_vars=None, os_name=None):
+            locale_vars=None, os_name=None, extra=()):
     """Run one file's `--selftest` in a scratch directory and report what happened.
 
     Split from `grade` on purpose: everything below this line is a decision about
@@ -1108,6 +1121,9 @@ def run_one(rel_path, repo=None, encoding=None, timeout=DEFAULT_TIMEOUT,
     `STAGE_GRANT_VAR` and its `timeout` in `FILE_TIMEOUT_VAR`, set over whatever
     the caller's environment carried, so a staged suite sizes its block pool and
     its block timeouts from this run rather than from a sweep around this one.
+
+    `extra` follows `--selftest` on the child's command line: one block of a
+    staged suite, or its replay (`sweep`, for a suite run block by block).
     """
     repo = repo or REPO
     env = ambient_env(os.environ if environ is None else environ)
@@ -1147,7 +1163,7 @@ def run_one(rel_path, repo=None, encoding=None, timeout=DEFAULT_TIMEOUT,
     env.update(git_global_env(gitconf))
     for root in (scratch, home):
         io.open(os.path.join(root, SENTINEL), "wb").write(SENTINEL_BYTES)
-    argv = [interpreter, os.path.join(repo, rel_path), "--selftest"]
+    argv = [interpreter, os.path.join(repo, rel_path), "--selftest"] + list(extra)
     began = time.monotonic()
     # THE WALL-CLOCK WINDOW this child ran in, for `claude_verdicts`: the monotonic
     # reading above measures a duration and cannot be compared with a file's stamp.
@@ -1319,8 +1335,44 @@ def is_staged(source):
 def staged_paths(paths, repo=None):
     """The subset of `paths` (repo-relative) that `is_staged`; a file that
     cannot be read is not one, and the sweep then runs it on one slot."""
+    return set(staged_blocks(paths, repo))
+
+
+def stage_labels(source):
+    """The block labels of the `STAGES` table `source` assigns at module level,
+    in order - read off the AST as a literal of `(label, function name)` string
+    pairs - or None when there is no such table, it is not a literal of that
+    shape, it is empty, or two rows share a label. None is not a refusal: the
+    sweep then runs the suite whole, holding a grant (`stage_grant`)."""
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return None
+    for node in tree.body:
+        if not (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)
+                and node.targets[0].id == "STAGES"):
+            continue
+        try:
+            rows = ast.literal_eval(node.value)
+        except (ValueError, TypeError, SyntaxError):
+            return None
+        shaped = isinstance(rows, (tuple, list)) and all(
+            isinstance(row, (tuple, list)) and len(row) == 2
+            and all(isinstance(part, str) for part in row) for row in rows)
+        labels = [row[0] for row in rows] if shaped else []
+        if not labels or len(set(labels)) != len(labels):
+            return None
+        return labels
+    return None
+
+
+def staged_blocks(paths, repo=None):
+    """`{path: labels or None}` for each of `paths` that `is_staged`: the
+    labels its blocks run under when the sweep can read its table
+    (`stage_labels`), else None. A file that cannot be read is not staged."""
     repo = repo or REPO
-    found = set()
+    found = {}
     for path in paths:
         try:
             with io.open(os.path.join(repo, path), encoding="utf-8",
@@ -1329,7 +1381,7 @@ def staged_paths(paths, repo=None):
         except (IOError, OSError):
             continue
         if is_staged(source):
-            found.add(path)
+            found[path] = stage_labels(source)
     return found
 
 
@@ -1564,6 +1616,86 @@ def record_costs(path, rows, swept, jobs, platform=None):
         fh.write(json.dumps(data, indent=1, sort_keys=True) + "\n")
 
 
+# --- blocks, not suites, as the unit the budget schedules ------------------------
+# A STAGED SUITE THAT HELD SLOTS HELD THEM UNTIL ITS LAST BLOCK ENDED. Admitted with
+# a grant, the heaviest suite ran its own pool on a fixed share of the budget
+# from its first block to its last, while the cheap files queued for the rest
+# and the share sat partly idle through its tail. So the sweep reads each staged
+# suite's `STAGES` table (`stage_labels`) and runs every block as a job of its
+# own, one slot each, out of the same budget and in the same ticket order as any
+# file: a block is a child run by `run_one` like a file - its own scratch
+# directory, home and git config, watched the same way - started as
+# `--selftest --stage LABEL --cases-to PATH`. When the last block of a suite has
+# ended, the thread that ran it starts the suite once more, on the slot it
+# already holds, as `--selftest --replay LIST`; `_harness.replay_selftest` reads
+# what every block wrote and prints the full run's cases, tally and exit code,
+# so the file's row is graded by `grade` like any other. A suite whose table
+# cannot be read as a literal runs whole on a grant, as before.
+#
+# ORDER: every job by its estimated cost, costliest first (`work_items`). A
+# block's estimate is its file's recorded cost spread evenly over its blocks,
+# since the table times files and not blocks; that is longest-first list
+# scheduling over the budget, and it puts the heavy plain files ahead of a
+# staged suite's many small blocks instead of behind all of them.
+#
+# A BLOCK'S TIMEOUT is its file's calibrated timeout at the slots a grant would
+# have given it (`file_timeout` at `stage_grant(jobs)`), which is what a block
+# was allowed when the suite ran its own pool, still cut by the deadline. The
+# replay is allowed the floor.
+def work_items(paths, costs, blocks):
+    """`[(path, label or None)]`, the sweep's jobs in the order it submits
+    them: one per block of each suite `blocks` gives labels for, one per any
+    other file. Costliest estimate first, ties by path and then by the block's
+    place in its table, so the order is a function of its arguments alone."""
+    live = _live(costs or {}, paths)
+    estimate = _median(live)
+    jobs = []
+    for path in set(paths):
+        cost = cost_of(live, path, estimate)
+        labels = blocks.get(path) or [None]
+        jobs.extend((-cost / len(labels), path, at, label)
+                    for at, label in enumerate(labels))
+    return [(path, label) for _cost, path, _at, label in sorted(jobs)]
+
+
+def block_entry(label, cases_path, ran):
+    """What `_harness.replay_selftest` is told about one block the sweep ran:
+    its label, the file it was told to write its cases to, its exit code and
+    output, and - when it never finished or never started - why."""
+    never = ran["code"] is None
+    return {"label": label, "cases": cases_path, "code": ran["code"],
+            "out": "" if never else ran["output"],
+            "why": ran["output"] if never else ""}
+
+
+def suite_ran(path, blocks_ran, replay):
+    """The one result a suite run as blocks stands for, shaped as `run_one`'s
+    is for a file: the replay's exit code and output, the debris of every
+    block - each line naming its block - and of the replay, the seconds of
+    them all (slot-seconds, since each held one slot), and the window of each
+    process, for `claude_verdicts`.
+
+    A BLOCK THAT NEVER FINISHED LEAVES NO DEBRIS ON THE FILE: what a kill
+    leaves in its scratch is the kill's, the rule `grade` applies to a file,
+    and the block is already a failing case in the replay."""
+    debris = []
+    for label, ran in blocks_ran:
+        if ran["code"] is not None:
+            debris.extend("block %s, %s" % (label, d) for d in ran["debris"])
+    debris.extend(replay["debris"])
+    spans = [(r["began_ns"], r["ended_ns"])
+             for r in [ran for _label, ran in blocks_ran] + [replay]
+             if "began_ns" in r]
+    timed = [ran.get("seconds") for _label, ran in blocks_ran] + [
+        replay.get("seconds")]
+    return {"path": path, "code": replay["code"], "output": replay["output"],
+            "debris": debris, "grant": 1, "blocks": len(blocks_ran),
+            "seconds": sum(t for t in timed if t is not None),
+            "timeout": max([ran.get("timeout") or 0
+                            for _label, ran in blocks_ran] or [0]) or None,
+            "windows": spans}
+
+
 def exempt_row(rel_path, reason):
     """The row for a file the spaced leg does not run: ok, no cases, the reason."""
     return {"path": rel_path, "ok": True, "why": None, "cases": 0,
@@ -1607,25 +1739,60 @@ def sweep(paths, jobs=None, repo=None, encoding=None,
         exempt = SPACED_EXEMPT
     rows.extend(exempt_row(p, exempt[p]) for p in paths if p in exempt)
     paths = [p for p in paths if p not in exempt]
-    order = run_order(paths, costs or {})
-    staged = staged_paths(order, repo)
+    blocks = staged_blocks(paths, repo)
+    items = work_items(paths, costs, blocks)
     grant = stage_grant(jobs)
     wait, done = slot_gate(jobs)
     started = time.time()
+    # Per staged suite run as blocks: the blocks still to end, and what each
+    # one that has ended left, under one lock.
+    lock = threading.Lock()
+    pending_blocks = dict((p, {"left": len(labels), "ran": []})
+                          for p, labels in blocks.items() if labels)
 
-    def admitted(ticket, path):
-        # WHAT THE GATE GAVE, not what was asked: a staged suite admitted while
-        # fewer than `grant` slots were free holds those, is told so, and has
-        # its timeout calibrated to them.
-        held = wait(ticket, grant if path in staged else 1)
+    def child(path, held, cap_timeout, extra=()):
         left = (None if deadline is None
                 else max(1, int(deadline - (time.time() - started))))
+        return run_one(path, repo, encoding,
+                       cap_timeout if left is None else min(cap_timeout, left),
+                       pycache, None, spaced, held,
+                       locale_vars=locale_vars, os_name=os_name, extra=extra)
+
+    def one_block(ticket, path, label):
+        cases_path = os.path.join(box, "%d.json" % (ticket,))
+        ran = child(path, 1, file_timeout(path, costs, timeout, grant,
+                                          staged=True),
+                    ("--stage", label, "--cases-to", cases_path))
+        with lock:
+            state = pending_blocks[path]
+            state["ran"].append((label, cases_path, ran))
+            state["left"] -= 1
+            last = state["left"] == 0
+        if not last:
+            return None
+        # THE LAST BLOCK OF THE SUITE TO END starts its replay, on the slot it
+        # holds: the order the blocks ended in is the scheduler's, and the
+        # replay puts them back in `STAGES` order.
+        listed = os.path.join(box, "%d.replay.json" % (ticket,))
+        with io.open(listed, "w", encoding="utf-8") as fh:
+            json.dump([block_entry(lab, cp, r) for lab, cp, r in state["ran"]],
+                      fh)
+        replay = child(path, 1, timeout, ("--replay", listed))
+        return suite_ran(path, [(lab, r) for lab, _cp, r in state["ran"]],
+                         replay)
+
+    def admitted(ticket, item):
+        path, label = item
+        # WHAT THE GATE GAVE, not what was asked: a staged suite run whole,
+        # admitted while fewer than `grant` slots were free, holds those, is
+        # told so, and has its timeout calibrated to them.
+        whole_staged = path in blocks and label is None
+        held = wait(ticket, grant if whole_staged else 1)
         try:
-            return run_one(path, repo, encoding,
-                           file_timeout(path, costs, timeout, held,
-                                        staged=path in staged, cap=left),
-                           pycache, None, spaced, held,
-                           locale_vars=locale_vars, os_name=os_name)
+            if label is not None:
+                return one_block(ticket, path, label)
+            return child(path, held, file_timeout(path, costs, timeout, held,
+                                                  staged=whole_staged))
         finally:
             # HELD THROUGH THE WAIT, so the next child cannot start inside it:
             # `CLAUDE_SERIAL_GAP_S` says why a serial run leaves a gap.
@@ -1633,6 +1800,9 @@ def sweep(paths, jobs=None, repo=None, encoding=None,
                 time.sleep(CLAUDE_SERIAL_GAP_S)
             done(held)
     pycache = tempfile.mkdtemp(prefix="sp-run-")
+    # WHERE EACH BLOCK WRITES ITS CASES and each replay reads the list of them:
+    # the sweep's own directory, outside every watched one.
+    box = tempfile.mkdtemp(prefix="sb-")
     # THE CHECKOUT'S OWN `.claude/`, read before the first child starts and after
     # the last one is done (`claude_verdicts` says why that is the only shape).
     watched = repo or REPO
@@ -1640,26 +1810,36 @@ def sweep(paths, jobs=None, repo=None, encoding=None,
     ran_all = []
     try:
         with futures.ThreadPoolExecutor(max_workers=jobs) as pool:
-            # COSTLIEST FIRST, so the slowest suite is never the last one
+            # COSTLIEST FIRST, so the slowest job is never the last one
             # started, and admitted through ONE budget in that order.
-            pending = [pool.submit(admitted, i, p) for i, p in enumerate(order)]
+            pending = [pool.submit(admitted, i, item)
+                       for i, item in enumerate(items)]
             for fut in futures.as_completed(pending):
-                ran_all.append(fut.result())
+                ran = fut.result()
+                if ran is not None:
+                    ran_all.append(ran)
     finally:
         shutil.rmtree(pycache, ignore_errors=True)
+        shutil.rmtree(box, ignore_errors=True)
     by_suite, loose = claude_verdicts(
         claude_changes(claude_before, claude_snapshot(watched)),
         # A child that never started (the spaced layout could not be built) ran
         # in no window and can be named for nothing.
-        dict((r["path"], (r["began_ns"], r["ended_ns"])) for r in ran_all
-             if "began_ns" in r))
+        dict((r["path"], r["windows"] if "windows" in r
+              else (r["began_ns"], r["ended_ns"])) for r in ran_all
+             if r.get("windows") or "began_ns" in r))
     for ran in ran_all:
         graded = grade(ran["path"], ran["code"], ran["output"],
                        debris=ran["debris"]
                        + claude_debris(by_suite.get(ran["path"], [])))
+        spans = ran.get("windows") or [(ran.get("began_ns"), ran.get("ended_ns"))]
+        starts = [a for a, _b in spans if a is not None]
+        ends = [b for _a, b in spans if b is not None]
         rows.append(dict(graded, seconds=ran.get("seconds"),
                          grant=ran.get("grant"), timeout=ran.get("timeout"),
-                         window=(ran.get("began_ns"), ran.get("ended_ns"))))
+                         blocks=ran.get("blocks"), windows=spans,
+                         window=(min(starts) if starts else None,
+                                 max(ends) if ends else None)))
     unnamed = claude_row(loose)
     if unnamed is not None:
         rows.append(unnamed)
@@ -1736,16 +1916,21 @@ def render(rows, jobs, encoding=None, stream=None, spaced=False):
 
 
 # The suffix `timing()` writes, as a pattern `costs_from_render()` reads back.
-TIMING = re.compile(r"^  (?:ok|FAILED)  +(\S+) .*  \[([0-9.]+)s(?:, (\d+) slots)?\]$")
+TIMING = re.compile(r"^  (?:ok|FAILED)  +(\S+) .*  \[([0-9.]+)s"
+                    r"(?:, (\d+) (slots|blocks))?\]$")
 
 
 def timing(row):
     """`  [12.3s]` for a row a child ran - `  [12.3s, 3 slots]` when it held
-    more than one - and nothing for a row with no measurement. Printed on the
-    loud form so a CI log carries every file's seconds and can be recorded
+    more than one, `  [912.3s, 40 blocks]` for a suite the sweep ran block by
+    block, whose seconds are then the sum over its processes, each on one
+    slot - and nothing for a row with no measurement. Printed on the loud form
+    so a CI log carries every file's seconds and can be recorded
     (`--costs-from-log`) without a second run."""
     if row.get("seconds") is None:
         return ""
+    if row.get("blocks"):
+        return "  [%.1fs, %d blocks]" % (row["seconds"], row["blocks"])
     grant = row.get("grant") or 1
     return "  [%.1fs%s]" % (row["seconds"],
                             ", %d slots" % (grant,) if grant > 1 else "")
@@ -1753,7 +1938,8 @@ def timing(row):
 
 def costs_from_render(text):
     """{path: slot-seconds} read off the loud form's lines - the seconds times
-    the slots printed beside them - for a log saved from a run elsewhere, a CI
+    the slots printed beside them, or the seconds alone beside a count of
+    blocks - for a log saved from a run elsewhere, a CI
     cell's. A FAILED line counts too: a timeout's seconds say how long the file
     was allowed, which is a floor for its cost. A file printed more than once -
     logs of two legs or two runs, read as one text - keeps its LONGEST timing,
@@ -1769,7 +1955,9 @@ def costs_from_render(text):
         match = TIMING.match(line[at:].rstrip())
         if match:
             path = match.group(1).replace("\\", "/")
-            seconds = round(float(match.group(2)) * int(match.group(3) or 1), 1)
+            # A block-by-block suite's seconds are already slot-seconds.
+            slots = int(match.group(3) or 1) if match.group(4) == "slots" else 1
+            seconds = round(float(match.group(2)) * slots, 1)
             found[path] = max(seconds, found.get(path, seconds))
     return found
 
@@ -1908,21 +2096,28 @@ def _positive(text):
 
 def budget_line(paths, jobs, costs, floor, repo=None, deadline=None):
     """The one line saying how this run shares its budget, with the basis of
-    each number: which files hold several slots, the longest timeout the cost
-    table gave any file over the floor, and the deadline when one applies."""
-    found = staged_paths(paths, repo)
-    staged = sorted(found)
+    each number: which staged suites run whole holding several slots, the
+    longest timeout the cost table gave any file over the floor, the deadline
+    when one applies, and which staged suites run block by block and how many
+    blocks that is."""
+    found = staged_blocks(paths, repo)
+    whole = sorted(p for p, labels in found.items() if not labels)
+    split = sorted(p for p, labels in found.items() if labels)
     grant = stage_grant(jobs)
     longest = max([file_timeout(p, costs, floor, grant if p in found else 1,
                                 staged=p in found, cap=deadline)
                    for p in paths] or [floor])
     return ("budget: %d slots; %d staged suites hold up to %d each (%s); per-file "
-            "timeout %ds, up to %ds for a file the cost table times as heavy%s\n"
-            % (jobs, len(staged), stage_grant(jobs),
-               ", ".join(os.path.basename(p) for p in staged) or "none",
+            "timeout %ds, up to %ds for a file the cost table times as heavy%s; "
+            "%d staged suites run block by block, a slot a block, %d blocks "
+            "(%s)\n"
+            % (jobs, len(whole), stage_grant(jobs),
+               ", ".join(os.path.basename(p) for p in whole) or "none",
                floor, longest,
                "" if deadline is None else
-               "; every file named by %ds, the CI deadline" % (deadline,)))
+               "; every file named by %ds, the CI deadline" % (deadline,),
+               len(split), sum(len(found[p]) for p in split),
+               ", ".join(os.path.basename(p) for p in split) or "none"))
 
 
 def record_from_log(log, record, platform, workers):
@@ -3887,7 +4082,9 @@ def _cases(check):
           % (sb_seen,),
           sb_seen.get("whole-suite") == (True, 4, [1, 1, 1, 1])
           and sb_seen.get("split-suite") == (True, 4, [1, 1, 1, 1])
-          and "of 2 blocks at once" in sb_rows["split-suite"]["output"],
+          and sb_rows["split-suite"].get("blocks") == 2
+          and "stage pool: 2 blocks run by the sweep" in sb_rows[
+              "split-suite"]["output"],
           sb_rows.get("split-suite", {}).get("output", "")[-600:])
     sb_hollow = sb_rows.get("hollow-suite") or {}
     sb_out = sb_hollow.get("output") or ""
@@ -3902,6 +4099,146 @@ def _cases(check):
                for i in ("ka1", "ka2")] == [1, 1]
           and CONTRACT.findall(sb_out)[-1:] == [("2", "3")],
           sb_out[-600:])
+
+    # --- blocks, not suites, share the budget ----------------------------------
+    # Two staged suites of three blocks each on a four-slot budget. Every block
+    # labels its cases with the moments it slept between, so the run is read
+    # off what the blocks themselves saw. The `b` blocks sleep far longer than
+    # the `a` ones: with blocks as the unit, the first `b` block starts beside
+    # the three `a` ones and the other two take the slots those free, so at
+    # some moment two `b` blocks run at once; a suite admitted on a fixed share
+    # - one slot, behind a suite holding three - runs its blocks one by one.
+    bb_body = ("import sys, time\n"
+               "sys.path.insert(0, %(tests)r)\n"
+               "import _harness\n\n\n"
+               "def _span(check, tag, nap):\n"
+               "    t0 = time.time()\n"
+               "    time.sleep(nap)\n"
+               "    check('%%s1 first span=%%r' %% (tag, (t0, time.time())), True)\n"
+               "    check('%%s2 second of %%s' %% (tag, tag), True)\n\n\n"
+               "def _1_cases(check):\n    _span(check, '%(p)sa', %(nap)r)\n\n\n"
+               "def _2_cases(check):\n    _span(check, '%(p)sb', %(nap)r)\n\n\n"
+               "def _3_cases(check):\n    _span(check, '%(p)sc', %(nap)r)\n\n\n"
+               "STAGES = (('one-block', '_1_cases'), ('two-block', '_2_cases'),\n"
+               "          ('three-block', '_3_cases'))\n"
+               "if __name__ == '__main__':\n"
+               "    raise SystemExit(_harness.staged_main(sys.argv[1:], STAGES, "
+               "globals(), 'sweep-bb-'))\n")
+    bb_tests = os.path.join(REPO, "tests")
+    bb_box = tempfile.mkdtemp(prefix="sweep-blocks-")
+    try:
+        for bb_name, bb_p, bb_nap in (("a-suite", "a", 0.3), ("b-suite", "b", 3.0)):
+            with io.open(os.path.join(bb_box, bb_name), "w", encoding="utf-8") as fh:
+                fh.write(bb_body % {"tests": bb_tests, "p": bb_p, "nap": bb_nap})
+        bb_rows = dict((r["path"], r) for r in sweep(
+            ["a-suite", "b-suite"], jobs=4, repo=bb_box, costs={}))
+        bb_line = budget_line(["a-suite", "b-suite"], 4, {}, DEFAULT_TIMEOUT,
+                              repo=bb_box)
+    finally:
+        remove_tree(bb_box)
+    bb_spans = []
+    for bb_path, bb_row in sorted(bb_rows.items()):
+        for bb_got in re.findall(r"(?m)^PASS [ab][abc]1 first span=\(([0-9.]+), "
+                                 r"([0-9.]+)\)", bb_row.get("output") or ""):
+            bb_spans.append((bb_path, float(bb_got[0]), float(bb_got[1])))
+
+    def bb_running(at):
+        return [p for p, start, end in bb_spans if start <= at < end]
+    bb_moments = [bb_running(start) for _p, start, _e in bb_spans]
+    bb_ids = dict((p, [len(re.findall(r"(?m)^PASS %s%s%d " % (p[0], b, n),
+                                      r.get("output") or ""))
+                       for b in "abc" for n in (1, 2)])
+                  for p, r in bb_rows.items())
+    check("bb1 blocks of two staged suites share the worker budget: at some "
+          "moment blocks of both run, at some moment two blocks of the suite "
+          "started second run at once, never more blocks than slots - and no "
+          "case is lost from either, each id printed once and every file "
+          "green with its whole count: spans %r, ids %r, rows %r"
+          % (bb_spans, bb_ids,
+             dict((k, (v["ok"], v["cases"], v.get("blocks"), v.get("why")))
+                  for k, v in bb_rows.items())),
+          len(bb_spans) == 6
+          and any("a-suite" in m and "b-suite" in m for m in bb_moments)
+          and any(m.count("b-suite") >= 2 for m in bb_moments)
+          and max(len(m) for m in bb_moments) <= 4
+          and bb_ids == {"a-suite": [1] * 6, "b-suite": [1] * 6}
+          and all(r["ok"] and r["cases"] == 6 and r.get("blocks") == 3
+                  for r in bb_rows.values()))
+    check("bb1b ...and the budget line names the suites it runs block by block "
+          "and how many blocks that is: %r" % (bb_line,),
+          bb_line.startswith("budget: 4 slots; 0 staged suites hold up to 3 "
+                             "each (none);")
+          and bb_line.rstrip().endswith("2 staged suites run block by block, "
+                                        "a slot a block, 6 blocks (a-suite, "
+                                        "b-suite)"))
+
+    bb_table = ("STAGES = (('x-block', '_x_cases'), ('y-block', '_y_cases'))\n"
+                "staged_main()\n")
+    bb_labels = [stage_labels(bb_table),
+                 stage_labels("STAGES = tuple(ROWS)\nstaged_main()\n"),
+                 stage_labels("STAGES = (('x', '_a'), ('x', '_b'))\n"),
+                 stage_labels("STAGES = ()\n"),
+                 stage_labels("STAGES = (('x', '_a', 3),)\n"),
+                 stage_labels("def f():\n    STAGES = (('x', '_a'),)\n"),
+                 stage_labels("STAGES = (\n")]
+    check("bb2 a staged suite's blocks are the labels of its `STAGES` literal, "
+          "in order; a computed table, a repeated label, an empty or misshapen "
+          "table, one not at module level and a file that does not parse give "
+          "none, and such a suite runs whole on a grant: %r" % (bb_labels,),
+          bb_labels == [["x-block", "y-block"], None, None, None, None, None,
+                        None])
+    bb_costs = {"heavy": 100.0, "split": 240.0, "light": 1.0}
+    bb_order = work_items(["light", "split", "heavy"], bb_costs,
+                          {"split": ["s1", "s2", "s3"]})
+    bb_wide = work_items(["light", "split", "heavy"], dict(bb_costs, split=600.0),
+                         {"split": ["s1", "s2", "s3"]})
+    check("bb3 the jobs are ordered by estimate, costliest first: a block is "
+          "its file's cost over its blocks, so three blocks of a 240-second "
+          "suite go after a 100-second file, and three of a 600-second one "
+          "before it; blocks keep their table's order: %r / %r"
+          % (bb_order, bb_wide),
+          bb_order == [("heavy", None), ("split", "s1"), ("split", "s2"),
+                       ("split", "s3"), ("light", None)]
+          and bb_wide == [("split", "s1"), ("split", "s2"), ("split", "s3"),
+                          ("heavy", None), ("light", None)])
+    bb_ran = [("one", {"code": 0, "debris": ["working directory: x"],
+                       "seconds": 2.0, "timeout": 900, "began_ns": 10,
+                       "ended_ns": 20, "output": ""}),
+              ("two", {"code": None, "debris": ["home directory: y"],
+                       "seconds": 900.0, "timeout": 900, "began_ns": 30,
+                       "ended_ns": 40, "output": "did not finish within 900s"})]
+    bb_replay = {"code": 1, "output": "0/1 cases " + "passed\n",
+                 "debris": ["home directory: z"], "seconds": 0.5,
+                 "began_ns": 50, "ended_ns": 60}
+    bb_suite = suite_ran("s", bb_ran, bb_replay)
+    bb_entries = [block_entry(lab, "c-%s" % (lab,), r) for lab, r in bb_ran]
+    check("bb4 a suite run as blocks stands for one result: the replay's exit "
+          "and output, the debris of each finished block naming the block and "
+          "none from a killed one, the seconds of every process summed, one "
+          "window each; the replay is told a killed block's why and not its "
+          "output: %r / %r" % (bb_suite, bb_entries),
+          bb_suite["code"] == 1 and bb_suite["output"] == bb_replay["output"]
+          and bb_suite["debris"] == ["block one, working directory: x",
+                                     "home directory: z"]
+          and bb_suite["seconds"] == 902.5 and bb_suite["blocks"] == 2
+          and bb_suite["grant"] == 1 and bb_suite["timeout"] == 900
+          and bb_suite["windows"] == [(10, 20), (30, 40), (50, 60)]
+          and bb_entries == [
+              {"label": "one", "cases": "c-one", "code": 0, "out": "",
+               "why": ""},
+              {"label": "two", "cases": "c-two", "code": None, "out": "",
+               "why": "did not finish within 900s"}])
+    bb_slack = CLAUDE_START_SLACK_NS
+    bb_win = {"blocks": [(0, 100), (10 * bb_slack, 10 * bb_slack + 100)],
+              "other": (2 * bb_slack, 3 * bb_slack)}
+    bb_by, bb_loose = claude_verdicts(
+        [{"text": "gap", "at": 2 * bb_slack + 5},
+         {"text": "inside", "at": 10 * bb_slack + 50}], bb_win)
+    check("bb5 a suite run as several processes is a candidate for a change "
+          "only inside one of their windows, not in the gaps between them, "
+          "where another suite ran: %r / %r" % (bb_by, bb_loose),
+          bb_by == {"other": ["gap"], "blocks": ["inside"]} and bb_loose == [])
+
 
     bg_buf = io.StringIO()
     render([dict(grade("a/heavy-suite", 0, "2/2 cases passed\n", set()),
@@ -3923,6 +4260,16 @@ def _cases(check):
           "[123.5s, 3 slots]" in bg_text and "[0.5s]" in bg_text
           and bg_read[0] == bg_read[1]
           == {"a/heavy-suite": 370.5, "a/light-suite": 0.5, "a/hung-suite": 300.0})
+    bb_buf = io.StringIO()
+    render([dict(grade("a/split-suite", 0, "9/9 cases passed\n", set()),
+                 seconds=912.34, grant=1, blocks=40)], 4, stream=bb_buf)
+    bb_text = bb_buf.getvalue()
+    check("bb6 a suite run block by block prints its summed seconds beside its "
+          "count of blocks, and reads back as those seconds - already "
+          "slot-seconds, never multiplied by the blocks: %r / %r"
+          % (bb_text, costs_from_render(bb_text)),
+          "[912.3s, 40 blocks]" in bb_text
+          and costs_from_render(bb_text) == {"a/split-suite": 912.3})
     bg_twice = costs_from_render(bg_text + "\n" + bg_text.replace(
         "[123.5s, 3 slots]", "[23.5s, 3 slots]").replace("[0.5s]", "[9.0s]"))
     check("bg7b a log carrying one file twice - two legs, two runs - records the "

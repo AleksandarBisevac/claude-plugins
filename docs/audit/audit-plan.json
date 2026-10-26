@@ -4211,7 +4211,8 @@
       "P131.12",
       "P133.1",
       "P142.1",
-      "P142.4"
+      "P142.4",
+      "P142.13-6yq"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -11640,7 +11641,8 @@
       "P133.1",
       "P134.1",
       "P142.1",
-      "P142.4"
+      "P142.4",
+      "P142.13-6yq"
     ],
     "tests/test_set_priority.py": [
       "P131.1"
@@ -11697,7 +11699,8 @@
     "tools/lints/_output_lints.py": [
       "P131.2",
       "P131.19-dau",
-      "P132.5-5mm"
+      "P132.5-5mm",
+      "P142.13-6yq"
     ],
     "tools/lints/_ui_theme_lints.py": [
       "P131.2"
@@ -11738,7 +11741,8 @@
     "tests/test__output_lints.py": [
       "P131.2",
       "P131.19-dau",
-      "P132.5-5mm"
+      "P132.5-5mm",
+      "P142.13-6yq"
     ],
     "tests/test__ui_theme_lints.py": [
       "P131.2"

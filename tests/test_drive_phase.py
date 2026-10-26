@@ -28,7 +28,9 @@ fresh interpreter running a verb, and building a fixture's git repository is a
 small share beside them. A block shares no state with another - each builds its
 own repositories - so the blocks run concurrently and the parent replays every
 case they report, in block order, through one `_harness.run`. The runner is
-`_harness.staged_main`, shared with every staged suite. `--stage` still runs the
+`_harness.staged_main`, shared with every staged suite. Under the sweep the
+blocks are the sweep's own jobs, drawn from its one budget beside every other
+suite's, and `--replay` prints what they reported. `--stage` still runs the
 named blocks in this process, for a red-first proof in a throwaway tree.
 
 A FULL RUN LASTS AS LONG AS ITS LONGEST BLOCK, at best, so no block may grow
@@ -956,6 +958,12 @@ def _play_session(root, argv, bindir, log, cost, session=WRITER_SESSION,
     path it lists. Returns `(code, output)`."""
     env = dict(os.environ)
     env["PATH"] = bindir + os.pathsep + env.get("PATH", "")
+    # A TEMP DIRECTORY OF THE FIXTURE'S, removed with it: the runner makes the
+    # session's own TMPDIR under the temp directory it is handed and leaves it
+    # there, recorded in the scratch, so handed this suite's it left one per
+    # session where the sweep's watch reads a leak.
+    held = _harness.fixture_root("drive-session-tmp-")
+    env.update(TMPDIR=held, TMP=held, TEMP=held)
     env.update(WS_LOG=log, WS_SESSION=session, WS_COST=cost, WS_MODE=mode,
                WS_EDIT=json.dumps(edit or {}), WS_RESULT=(result if result is not None
                           else _said("the session is done")),
@@ -8092,9 +8100,15 @@ def _drive_follower_map(M, prefix, sharded=False):
         plan = _mio.load_manifest(mpath)
         os.remove(mpath)
         _mio.save_sharded(mpath, plan)
-    shutil.copytree(_output.SCRIPTS_DIR,
-                    os.path.join(root, "plugins", "audit", "scripts"),
-                    ignore=shutil.ignore_patterns("__pycache__"))
+    # THE ANCHOR ALONE, NOT THE PLUGIN'S SCRIPTS: the map's owner here is the
+    # fixture's own `_deps.py`, which needs `_output` to start and maps the
+    # modules it finds beside it. Over a copy of every script it read the whole
+    # plugin on each of its runs - the member's and the recipe's - and the copy
+    # was committed, then checked out into every task tree; over the anchor it
+    # reads one module, and the recipe still writes the map the same way.
+    os.makedirs(os.path.join(root, "plugins", "audit", "scripts"))
+    shutil.copy(os.path.join(_output.SCRIPTS_DIR, "_output.py"),
+                os.path.join(root, "plugins", "audit", "scripts", "_output.py"))
     shutil.copytree(_output.LINTS_DIR, os.path.join(root, "tools", "lints"),
                     ignore=shutil.ignore_patterns("__pycache__"))
     guide = "PLUGIN-BUILD-GUIDE.md"

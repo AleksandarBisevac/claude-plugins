@@ -862,10 +862,12 @@ def run(body):
 # each other for the same process starts rather than finishing sooner.
 STAGE_WORKERS = 6
 # THE SWEEP'S GRANT. `tools/sweep-selftests.py` runs files side by side out of
-# one budget of slots, and a staged suite holds several of them at once; the
-# sweep names how many in this variable, and the file timeout it applies in the
-# next, in the environment of the child it starts. Both names are the sweep's
-# too, and its own cases fail when the two copies part.
+# one budget of slots. A staged suite whose `STAGES` it reads has its blocks run
+# as the sweep's own jobs and replayed here (`replay_selftest`); one whose table
+# it cannot read is run whole and holds several slots at once, and the sweep
+# names how many in this variable, and the file timeout it applies in the next,
+# in the environment of the child it starts. Both names are the sweep's too,
+# and its own cases fail when the two copies part.
 STAGE_GRANT_VAR = "SWEEP_STAGE_GRANT"
 FILE_TIMEOUT_VAR = "SWEEP_FILE_TIMEOUT"
 # A block's timeout with no file timeout handed down: under the sweep's default
@@ -1051,22 +1053,35 @@ def run_stage(script, label, out_dir, timeout=STAGE_TIMEOUT):
                               errors="replace", stdin=subprocess.DEVNULL,
                               env=env, timeout=timeout)
     except subprocess.TimeoutExpired as exc:
-        return {"label": label, "report": None, "out": stream_text(exc.stdout),
-                "err": stream_text(exc.stderr),
-                "why": "did not finish within %ds" % (timeout,)}
-    res = {"label": label, "report": None, "out": done.stdout,
-           "err": done.stderr, "why": ""}
+        return block_result(label, path, None, stream_text(exc.stdout),
+                            stream_text(exc.stderr),
+                            "did not finish within %ds" % (timeout,))
+    return block_result(label, path, done.returncode, done.stdout, done.stderr)
+
+
+def block_result(label, path, code, out, err="", why=""):
+    """`{label, report, out, err, why}` for one block whose child has ended:
+    `report` is the cases it wrote to `path`, or None with `why` saying what it
+    did instead. A `why` given here - the child never finished, or never
+    started - is kept, and the file is not read.
+
+    ONE READING FOR BOTH RUNNERS of a block: this suite's own pool
+    (`run_stage`), and the sweep, which runs a staged suite's blocks as jobs of
+    its own and hands their outcomes to `replay_selftest`."""
+    res = {"label": label, "report": None, "out": out or "", "err": err or "",
+           "why": why}
+    if why:
+        return res
     try:
         with open(path, encoding="utf-8") as fh:
             report = json.load(fh)
     except (OSError, ValueError) as exc:
-        res["why"] = "exit %d, no cases written (%s: %s); stderr ends: %s" % (
-            done.returncode, type(exc).__name__, exc, done.stderr[-2000:])
+        res["why"] = "exit %s, no cases written (%s: %s); stderr ends: %s" % (
+            code, type(exc).__name__, exc, res["err"][-2000:])
         return res
-    if not report.get("cases"):
+    if not isinstance(report, dict) or not report.get("cases"):
         # A block that ran no case is not a block that passed.
-        res["why"] = "exit %d, the block reported no case at all" % (
-            done.returncode,)
+        res["why"] = "exit %s, the block reported no case at all" % (code,)
         return res
     res["report"] = report
     return res
@@ -1093,6 +1108,13 @@ def run_stages(check, script, labels, prefix, workers=None, timeout=None):
     with ThreadPoolExecutor(max_workers=width) as pool:
         results = list(pool.map(
             lambda lab: run_stage(script, lab, out_dir, timeout), labels))
+    replay_results(check, results)
+
+
+def replay_results(check, results):
+    """Replay what each block of `results` reported, in that order, through
+    `check`; a block that wrote no cases is ONE NAMED failing case, and a case
+    id claimed from call sites in two blocks is a duplicate."""
     sites = {}
     for res in results:
         sys.stdout.write(res["out"])
@@ -1135,10 +1157,85 @@ def staged_selftest(stages, namespace, prefix, only=()):
     return run(body)
 
 
+# --- blocks the sweep ran, replayed here ----------------------------------------
+# THE SWEEP SCHEDULES BLOCKS, NOT SUITES. A suite running its own pool held a
+# fixed share of the sweep's slots for as long as its longest block, while the
+# other suites queued for the rest; so `tools/sweep-selftests.py` reads a staged
+# suite's `STAGES` table, runs each block as a job of its own out of its one
+# budget - `--stage LABEL --cases-to PATH`, each in its own watched scratch
+# directory - and, once every block has ended, starts the suite once more with
+# `--replay PATH`. That run is this: it reads what each block wrote and replays
+# it in `STAGES` order through one `run()`, with the checks a full run makes -
+# a block that wrote nothing, a duplicate id across blocks, a block no row
+# reaches - so its case ids, their order, its tally and its exit code are a full
+# run's. `PATH` holds a JSON list with one object per block the sweep ran:
+# `label`, `cases` (the file the block wrote), `code` (its exit code, or None
+# when it never finished), `out` (its output) and `why` (set when it never
+# finished or never started). The sweep owns the writing, this the reading, and
+# `block_result` is the one reading of a block for both runners.
+REPLAY_LINE = ("stage pool: %d blocks run by the sweep, each a job of its own, "
+               "replayed here\n")
+
+
+def replayed(stages, entries):
+    """`(results, strays)`: one `block_result` per row of `stages`, in its
+    order, from the sweep's `entries`, and the labels the sweep ran that no row
+    names. A row the sweep ran no block for is a result whose `why` says so -
+    a block missing from the replay fails by name, never reads as passed."""
+    by = {}
+    for entry in entries:
+        by.setdefault(entry.get("label"), entry)
+    results = []
+    for label, _fn in stages:
+        entry = by.get(label)
+        if entry is None:
+            results.append(block_result(
+                label, None, None, "", "", "the sweep ran no block by this "
+                "label, so its cases never ran"))
+            continue
+        results.append(block_result(label, entry.get("cases"), entry.get("code"),
+                                    entry.get("out"), "", entry.get("why") or ""))
+    staged = set(label for label, _fn in stages)
+    strays = sorted("%s" % (label,) for label in by if label not in staged)
+    return results, strays
+
+
+def replay_selftest(stages, namespace, path):
+    """Child side of a sweep that ran this suite's blocks as its own jobs: the
+    outcomes listed in `path` replayed in `STAGES` order, then the table's own
+    faults. The exit code `run()` gives."""
+    script = os.path.abspath(namespace["__file__"])
+
+    def body(check):
+        try:
+            with open(path, encoding="utf-8") as fh:
+                entries = json.load(fh)
+        except (OSError, ValueError) as exc:
+            check("REPLAY READ NOTHING - the list of blocks the sweep ran could "
+                  "not be read, so no case of this suite is known", False,
+                  "%s: %s" % (type(exc).__name__, exc))
+            return
+        if not isinstance(entries, list):
+            check("REPLAY READ NOTHING - the list of blocks the sweep ran is "
+                  "not a list", False, repr(entries)[:200])
+            return
+        results, strays = replayed(stages, entries)
+        sys.stdout.write(REPLAY_LINE % (len(results),))
+        replay_results(check, results)
+        for label in strays:
+            check("%s RAN BUT IS NOT STAGED - the sweep ran a block this "
+                  "suite's `STAGES` does not name" % (label,), False)
+        with open(script, "r", encoding="utf-8") as fh:
+            src = fh.read()
+        for label, ok, detail in stage_faults(src, stages):
+            check(label, ok, detail)
+    return run(body)
+
+
 def staged_main(argv, stages, namespace, prefix):
     """A staged suite's whole command line: `--selftest`, narrowed by
-    `--stage LABEL ...`; a child's `--cases-to PATH`; anything else a usage
-    error. The exit code."""
+    `--stage LABEL ...`; a child's `--cases-to PATH`; the sweep's
+    `--replay PATH`; anything else a usage error. The exit code."""
     if "--selftest" not in argv:
         sys.stderr.write("usage: %s --selftest [--stage LABEL ...]\n"
                          % (os.path.basename(namespace["__file__"]),))
@@ -1147,6 +1244,9 @@ def staged_main(argv, stages, namespace, prefix):
     if to:
         return collect_stages(stages, namespace, flag_values(argv, "--stage"),
                               to[-1])
+    again = flag_values(argv, "--replay")
+    if again:
+        return replay_selftest(stages, namespace, again[-1])
     return staged_selftest(stages, namespace, prefix,
                            flag_values(argv, "--stage"))
 
@@ -2001,26 +2101,85 @@ def _stage_runner_cases(check):
           % (timeouts,),
           timeouts == [STAGE_TIMEOUT, 600 - STAGE_TIMEOUT_MARGIN, STAGE_TIMEOUT])
 
-    # THE WIRING, THROUGH THE RUNNER THAT GRANTS. A suite with five blocks is
-    # run by the sweep itself on a four-slot budget: the sweep holds three of
-    # them for a staged suite and says so in the child's environment, and the
-    # pool `run_stages` builds is read back off the line it prints. Five blocks,
-    # so neither the block count nor this machine's cores (alone, two to
-    # `STAGE_WORKERS`) can produce the width the grant does.
+    # THE WIRING, THROUGH THE SWEEP THAT SCHEDULES BLOCKS. A suite with five
+    # blocks is run by the sweep itself on a four-slot budget: the sweep reads
+    # its `STAGES` table, runs each block as a job of its own and then the
+    # replay, so the suite's own pool never starts - its line is absent - and
+    # the replay's line counts every block.
     wide = os.path.join(work, "wide_suite.py")
     with open(wide, "w", encoding="utf-8") as fh:
         fh.write(_STAGED_SUITE % dict(_STAGED_WIDE, tests=TESTS_DIR))
     sweeper = _load_sweep()
     rows = sweeper.sweep(["wide_suite.py"], jobs=4, repo=work, costs={})
     out = rows[0].get("output") or ""
-    pools = re.findall(r"^stage pool: (\d+) of (\d+) blocks at once, (.+)$",
-                       out, re.M)
-    check("sr13 a staged suite run BY THE SWEEP sizes its block pool from the "
-          "slots the sweep granted it, not from this machine's cores - one "
-          "budget for both pools, read off the line `run_stages` prints: "
-          "ok %r, %r" % (rows[0].get("ok"), pools),
-          rows[0].get("ok") is True and len(pools) == 1
-          and pools[0][:2] == ("3", "5") and "granted" in pools[0][2])
+    pools = re.findall(r"^stage pool: (\d+) of (\d+) blocks at once", out, re.M)
+    order = [line.split()[1] for line in out.splitlines()
+             if line.startswith(("PASS ", "FAIL "))]
+    tmps = re.findall(r"tmp=(.+?)\s*$", out, re.M)
+    check("sr13 a staged suite run BY THE SWEEP has its blocks run as the "
+          "sweep's own jobs, one slot each, and replayed in `STAGES` order - "
+          "its own pool never starts, and each block had a temp directory of "
+          "its own: ok %r, blocks %r, slots %r, pools %r, order %r, tmps %r"
+          % (rows[0].get("ok"), rows[0].get("blocks"), rows[0].get("grant"),
+             pools, order, tmps),
+          rows[0].get("ok") is True and rows[0].get("blocks") == 5
+          and rows[0].get("grant") == 1 and pools == []
+          and out.count(REPLAY_LINE % (5,)) == 1
+          and order == ["x1", "x2", "y1", "p1", "q1", "r1"]
+          and len(tmps) == 2 and tmps[0] != tmps[1])
+
+    # THE REPLAY, DRIVEN DIRECTLY: the blocks run as `--cases-to` children the
+    # way the sweep starts them, then the list handed to `--replay` in an order
+    # that is not `STAGES` order, with a block missing, a stray, and a block
+    # that never finished - each a fault the replay must name by itself.
+    def block_child(label):
+        path = os.path.join(work, "%s.cases.json" % (label,))
+        code, out, _err = suite(good, "--selftest", "--stage", label,
+                                "--cases-to", path)
+        return {"label": label, "cases": path, "code": code, "out": out,
+                "why": ""}
+
+    def replay(entries):
+        path = os.path.join(work, "replay-%d.json" % (len(entries),))
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(entries, fh)
+        return suite(good, "--selftest", "--replay", path)
+    a_entry, b_entry = block_child("a-block"), block_child("b-block")
+    code, out, _err = replay([b_entry, a_entry])
+    order = [line.split()[1] for line in out.splitlines()
+             if line.startswith(("PASS ", "FAIL "))]
+    check("sr14 `--replay` prints the cases the sweep's block runs wrote, in "
+          "`STAGES` order whatever order the list holds them in, with a full "
+          "run's tally and exit code: exit %r, %r" % (code, order),
+          code == 0 and order == ["x1", "x2", "y1"]
+          and out.count(REPLAY_LINE % (2,)) == 1
+          and out.rstrip().endswith("ALL PASS: 3/3 cases " + "passed"))
+    code, out, _err = replay([a_entry, dict(b_entry, label="stray-block")])
+    fails = [line for line in out.splitlines() if line.startswith("FAIL ")]
+    check("sr15 ...and a staged block the list does not carry is ONE failing "
+          "case naming it and saying the sweep ran no block by its label, and a "
+          "block the list carries that `STAGES` does not name is one more - "
+          "neither reads as passed: exit %r, %r" % (code, fails),
+          code == 1 and len(fails) == 2
+          and fails[0].startswith("FAIL b-block DID NOT REPORT")
+          and "ran no block by this label" in out
+          and fails[1].startswith("FAIL stray-block RAN BUT IS NOT STAGED")
+          and out.count("PASS x1 ") == 1 and "PASS y1 " not in out)
+    code, out, _err = replay([a_entry, dict(b_entry, code=None, out="",
+                                            why="did not finish within 7s")])
+    fails = [line for line in out.splitlines() if line.startswith("FAIL ")]
+    check("sr16 ...a block the sweep killed is ONE failing case carrying why, "
+          "and its cases file is not read even when one is there: exit %r, %r"
+          % (code, fails),
+          code == 1 and len(fails) == 1
+          and fails[0].startswith("FAIL b-block DID NOT REPORT")
+          and "did not finish within 7s" in out and "PASS y1 " not in out)
+    unread = os.path.join(work, "no-such-list.json")
+    code, out, _err = suite(good, "--selftest", "--replay", unread)
+    check("sr17 ...and a list that cannot be read is a failing run saying so, "
+          "never an empty green one: exit %r, %r" % (code, out[-300:]),
+          code == 1 and "REPLAY READ NOTHING" in out
+          and "0/1 cases " + "passed" in out)
 
 
 # A suite that pushes to a local bare repository with BARE git, no fixture prefix,
