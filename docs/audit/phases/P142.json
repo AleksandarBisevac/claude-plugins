@@ -1011,7 +1011,7 @@
     {
       "id": "P142.14-6yq",
       "title": "The sweep's block scheduler is described where it runs and where it is documented, and its per-block timeout has a case that can go red",
-      "status": "in_progress",
+      "status": "blocked",
       "description": "Review findings on the sweep's block scheduler (the two tasks before this one split suites into blocks and made blocks the sweep's unit):\n- med: the per-block timeout calibration (tools/sweep-selftests.py, the file_timeout call for a staged block) has no case behind it - every staged fixture passes empty or no costs, and the fixtures that pass costs carry no STAGES table so they reach the whole-suite fallback. Add a fixture with a STAGES table and a cost table, a ghost-only table, and a deadline variant; prove each red by mutating the calibration.\n- med: descriptions of the retired grant model are now false - CLAUDE.md (the paragraph on staged suites admitted with stage_grant slots), CONTRIBUTING.md (same rule), the .github/workflows/ci.yml comment beside the sweep shard matrix, sweep()'s docstring (ordering by run_order), and the costs_from_rows / shard comment / record_costs \"about\" text (\"wall seconds times the slots\", which --record-costs writes into .github/sweep-costs.json). State the block model once and point at it.\n- low: sh6 is titled \"a shard runs its costliest files FIRST\" but tests run_order, which sweep() no longer calls; make it test the order sweep() submits in.\n- low: tests/_harness.py replayed() keeps only the first entry for a duplicated label; a block run twice must fail by name.\n- low: bb1's overlap clause relies on a 0.3 s nap across interpreter starts; read the per-process windows instead.\nNo number in prose; no F/P/BUG ids in comments.",
       "files": [
         "tools/sweep-selftests.py",
@@ -1051,7 +1051,8 @@
         "runId": "2026-10-26T12:46:27Z.5cc2af",
         "status": "failed",
         "at": "2026-10-26T12:46:27Z"
-      }
+      },
+      "blockedReason": "Gate red only on tests/test__output_lints.py te11/ln1, red at HEAD d4a26f13 (tests/test__runner_output.py:469, from P142.9) and fixed by P142.16-6yq; held until it lands, then unblocked and re-gated."
     },
     {
       "id": "P142.15-6yq",
