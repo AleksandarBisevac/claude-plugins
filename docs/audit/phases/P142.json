@@ -713,12 +713,17 @@
       "startedAt": "2026-10-26T10:06:10Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-26T11:46:12Z.65342e",
+        "status": "passed",
+        "at": "2026-10-26T11:46:12Z"
+      }
     },
     {
       "id": "P142.10-6yq",
       "title": "The affected selection names every suite a change can turn red: tree-scanning lints always, and suites reaching a module through a subprocess or a sibling's import",
-      "status": "in_progress",
+      "status": "done",
       "description": "The P142.3 measurement (tools/measure-affected-miss.py --commits 20, range 17563b1b..4805f994) found that 13 of 16 measured commits had at least one suite turned red by a mutation in a changed file that tools/affected.py did not select. Two classes, not a list of instances:\n\n1. Tree-scanning suites. A suite whose lint walks every tracked file (tests/test__output_lints.py on a style mutation in almost every commit; also test__help_lints, test__deps, test__refs and the like) is affected by ANY change to a file in the set it scans. The selection must derive that set from the lint's own walk (the shared walks in tools/lints) rather than from a hand list, and select the suite whenever a changed path falls inside it.\n2. Reach the import graph does not show. Raise mutations were missed for suites that reach the module transitively (A imports B imports changed C), through a subprocess of an entry script (`[sys.executable, <script>]`, `_loader`, `find_script`), or by reading its source. Close the reverse-import walk transitively and add the subprocess/loader edges, derived from the code, not spelled.\n\nAcceptance: (1) every (commit, missed suite) pair the measurement JSON recorded is selected when tools/affected.py is given that commit's changed files - write the cases from that data, so they fail on today's code; (2) the selection stays narrower than the full sweep for a commit that touches one leaf module (report the count, do not assert a number in prose); (3) measure-affected-miss.py keeps its CLI; if it needs a flag to read the selection, add it. The re-measurement over >=20 commits is NOT part of this task - the orchestrator runs it on a quiet machine afterwards.\n\nMeasurement data: <scratchpad>/miss-rate-20.json, the orchestrator hands over the full path (read-only; per commit: sha, changed, mutations[].missed).\n\nNo F/P/BUG ids in comments. Do not run the full measurement or any browser gate.",
       "files": [
         "tools/affected.py",
@@ -742,19 +747,36 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a1891691d0e8",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/affected.py: the hand-kept TREE_SCANNERS tuple, the `.py -> test__output.py` mapping, the shipped-only `_deps.import_graph()` closure and the regex `_suites_importing()` are replaced by reach_graph(): one AST walk per `.py` under scripts/, hooks/, tests/ and tools/ records imports, `_loader` load/load_script/script_path and hooks `_config.find_script` calls read through the module alias (wrapper call sites included, module-level `NAME = \"x.py\"` constants resolved), and - for development code only (tests/, tools/) - every `.py` literal inside a call (subprocess argv, os.path.join of a read source). A computed resolver target in dev code reads as every scripts/ module. reached_by() closes the reverse walk transitively; a suite is a sink except through an import of it. Tree scanners are derived: functions in _output.py and tools/lints/ that reach os.walk (fixpoint), and every suite/tool calling one through that module; any changed `.py` selects them. select(paths, graph=None) builds the graph once per call when a `.py` is present; _cases build it once. Tools reached get `python3 <tool> --selftest` gates. A tests/ helper (e.g. _harness.py) is no longer added as a suite named after itself. New cases a18a..a18m (one per measured commit, data inline: commit, changed files, missed suites), a18z (the two missed suites the tree retired stay retired), a19 (leaf narrows). a16/a17 now use the leaf module because _output.py is reached by every suite. tools/measure-affected-miss.py: CLI kept; new `--selector FILE` writes that selector over the scratch tree's tools/affected.py for the selection only and restores the commit's own copy (or removes it) before anything is mutated or swept, so one selector can be measured across history; cases m19, m19b. Runs: `python3 tools/sweep-selftests.py tools/affected.py` exit 0 (41 cases); dependants subset `python3 tools/sweep-selftests.py tools/affected.py tools/measure-affected-miss.py tests/test__gate_derive.py tests/test_derive_phase_gate.py tests/test__refs.py tests/test__output_lints.py tests/test__deps.py tools/gate-parity.py tools/bench-hooks.py` exit 0, 9/9 files ok, 984 cases; ruff and vermin -t=3.8- clean on both files. Leaf-module selection (plugins/audit/scripts/governance/record-outside-run.py): before 12 of 164 suites and NOT its own suite; after 24 of 164 suites (`tools/affected.py --list-related <leaf> | wc -l`) plus 14 tool selftest gates, full=False. Dropped from the .py selection because no shared walk reaches them: test__config_rules, test__manifest_rules, test__report_page, test__ui_theme (raw os.walk for def names only), test_remind_tdd, test_validate_manifest - the re-measurement should watch these. Selector wall time ~5s, measured back to back once (old `_deps.import_graph()` ~5.2s the same way).",
+        "descriptive": "The affected selection now selects every suite the 2026-10-25 miss measurement recorded, derived from the code's imports, loads, runs and shared tree walks, while a leaf module still narrows."
       },
       "startedAt": "2026-10-26T10:06:04Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-26T11:34:30Z",
+      "verifiedBy": [
+        "a18a..a18m: per measured commit, the selection for its changed files names every suite the measurement saw go red unselected (data inline)",
+        "a18z: the measured suites the tree has since retired are still absent",
+        "a19: a module nothing imports or runs still narrows below the full set and selects its own suite",
+        "measure m19/m19b: --selector measures the handed file and restores the commit's own copy"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-26T11:34:27Z.d91ad8",
         "status": "passed",
         "at": "2026-10-26T11:34:27Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "a1891691d0e8",
+        "at": "2026-10-26T11:34:30Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-26T10:38:49Z",
+        "basis": "`python3 tools/sweep-selftests.py tools/affected.py` in a throwaway tree at HEAD exited 1 on \"NameError: name 'reach_graph' is not defined\" (read as python), and the task introduces 'reach_graph': absent from HEAD's tools/measure-affected-miss.py, tools/affected.py and present in the working tree's tools/affected.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; fix run: held back 21s of the deadline, the recorded slot-seconds of tools/affected.py in .github/sweep-costs.json",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -796,7 +818,12 @@
       "startedAt": "2026-10-26T10:06:07Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-26T11:41:16Z.d293b6",
+        "status": "passed",
+        "at": "2026-10-26T11:41:16Z"
+      }
     },
     {
       "id": "P142.12-6yq",

@@ -5978,6 +5978,18 @@ def _sweep_cases(check):
           ok is None and no_summary is not None and short is not None
           and empty is not None)
 
+    # A sweep run on Windows prints through a pipe whose bytes keep `\r\n`, and
+    # the run is decoded as it came: the same verdicts must come off that text.
+    crlf_ok = M.fix_problem({"code": 0, "text": _SWEEP_GREEN.replace("\n", "\r\n"),
+                             "problem": None}, cmd, {"collected": 1})
+    crlf_red = M.fix_problem({"code": 1, "text": _SWEEP_RED.replace("\n", "\r\n"),
+                              "problem": None}, cmd, {"collected": 1}) or ""
+    check("swc3b the sweep's output with Windows line ends reads as its LF text "
+          "does: the green summary is a pass, and a red run's reason names the "
+          "file the sweep failed: %r / %r" % (crlf_ok, crlf_red[:300]),
+          crlf_ok is None
+          and "the sweep failed tools/release.py (exited 1)" in crlf_red)
+
     green = _runner_output.sweep_tally(_SWEEP_GREEN)
     check("swc4 the tally of a green sweep is its summary's cases and no failure, "
           "a red sweep has none (its failing file's own tally is what is read), "

@@ -76,14 +76,21 @@ _CSI = re.compile(_CSI_TEXT)
 
 
 def plain_text(text):
-    """`text` with every terminal control sequence removed, None read as "".
+    """`text` with every terminal control sequence removed and every line
+    ending `\\n`, None read as "".
 
     A runner forced into colour through a pipe (FORCE_COLOR) wraps its summary
-    words and its failure bullets in escapes, and every reader below is written
-    against the plain text. So the entry points `red` reads through -
-    `read_tally`, `failing_cases` and `jest_failures` - strip once, here, and
-    the readers they call never strip again."""
-    return _CSI.sub("", text or "")
+    words and its failure bullets in escapes, and a child on Windows ends its
+    lines `\\r\\n` - kept as they came, since a run's bytes are decoded without
+    universal newlines - so a pattern anchored `[ \\t]*$` under re.M stops at the
+    `\\r` and matches nothing. Every reader below is written against plain,
+    `\\n`-ended text, so every public reader taking a run's text - the tally,
+    case, summary and sweep readers - reads it through here, `\\r\\n` and a lone
+    `\\r` both read as `\\n`. It is idempotent, so a reader handing its text on
+    to another reader reads the same answer. `ru17` in
+    tests/test__runner_output.py runs every such reader over each fixture's
+    CRLF and lone-CR twin."""
+    return _CSI.sub("", text or "").replace("\r\n", "\n").replace("\r", "\n")
 # The phrasing both vitest and pytest use for "there were none", which carries no
 # `N word` pair at all and would otherwise read as a runner this cannot count.
 _NO_TESTS = re.compile(r"\bno tests\b")
@@ -135,10 +142,12 @@ def summary_reader(text):
 def summary_readers(text):
     """Every `(name, joined, words)` whose summary this output carries, in
     table order. `summary_reader` takes the first; a caller that must know
-    the output is ONE runner's asks whether there is more than one."""
+    the output is ONE runner's asks whether there is more than one. Read
+    through `plain_text`, as every reader taking a run's text is."""
+    text = plain_text(text)
     out = []
     for name, line_re, words in _SUMMARY_READERS:
-        found = line_re.findall(text or "")
+        found = line_re.findall(text)
         if not found:
             continue
         joined = " ".join(found)
