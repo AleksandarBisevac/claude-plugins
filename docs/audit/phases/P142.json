@@ -832,7 +832,7 @@
     {
       "id": "P142.11-6yq",
       "title": "The sweep finishes under four minutes: the costliest staged suite does less work, and the sweep's workers run blocks from every staged suite",
-      "status": "in_progress",
+      "status": "done",
       "description": "P142.8 split four suites into staged blocks and changed the slot gate; the sweep went from 430.6 s / 418.3 s to 370.5 s / 370.9 s (two runs each, 20 min gap, 8 slots on a 10-core machine), short of the 240 s acceptance. Its measured bound: about 2200 CPU-seconds of total work over 8 slots cannot finish under about 275 s even with perfect packing, and tests/test_drive_phase.py alone holds 6 of 8 slots for about 210 s (113 blocks, 1343 process-seconds).\n\nTwo parts, both needed:\n1. Less work in tests/test_drive_phase.py: find what its blocks repeat (fixture repositories built per block, full drive runs where a function call answers the same question) and share or narrow it without dropping a case. Report process-seconds before and after.\n2. Blocks, not suites, as the unit the sweep schedules: let the sweep's workers draw individual blocks from every staged suite (tests/_harness.py staged_main and the runner's slot gate) so one large suite no longer holds a fixed grant while others wait. Keep per-block timeouts calibrated, keep each block's scratch-dir isolation and the watched-pair checks, and keep --shard I/N balancing working with .github/sweep-costs.json.\n\nAcceptance: (1) `python3 tools/sweep-selftests.py` wall clock under 240 s, measured twice with a gap before and after, spread reported; (2) the case count per file is unchanged (print both); (3) the runner's own suite and tests/test__harness.py cover the block scheduling, red-first by breaking it; (4) no number written into prose. The Windows cost table is re-recorded by the orchestrator from CI logs, not here.\n\nNo F/P/BUG ids in comments. No browser gates.",
       "files": [
         "tests/_harness.py",
@@ -860,32 +860,51 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d4a26f13e49a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "PART 2 (blocks as the sweep's unit). tools/sweep-selftests.py: stage_labels() reads a staged suite's STAGES literal off the AST (None for computed, empty, misshapen, nested or duplicate-label tables); staged_blocks() maps path->labels; work_items() orders every job costliest-estimate first (a block = file cost / blocks; ties by path, then table order); sweep() runs each block as its own run_one child (--selftest --stage L --cases-to P, own scratch/home/git config, watched like a file, one slot from the same slot_gate in ticket order, timeout = file_timeout at stage_grant(jobs) slots, still cut by the deadline); the thread ending a suite's last block writes the block list and starts the suite once more with --selftest --replay LIST on the slot it holds; suite_ran() folds blocks+replay into one row (replay's exit/output, block debris prefixed 'block L,' and dropped for a killed block, summed seconds as slot-seconds, grant 1, blocks N, one window per process); claude_verdicts() accepts a list of windows; timing() prints '[Ns, N blocks]' and costs_from_render reads it unmultiplied; budget_line() appends which staged suites run block by block and how many blocks. A staged suite whose table cannot be read still runs whole on a grant (bg5/bg6/tt0 fixtures keep that path). --shard is untouched: blocks follow their file's part; record_costs keeps per-file slot-seconds. tests/_harness.py: block_result() is the one reading of a block for both runners (run_stage now calls it; messages unchanged except 'exit %s'); replay_results() split out of run_stages(); replayed() + replay_selftest() + staged_main '--replay PATH': STAGES order, a missing label is ONE failing 'DID NOT REPORT' case, a stray label a failing 'RAN BUT IS NOT STAGED' case, an unreadable list 'REPLAY READ NOTHING', then stage_faults and label_faults as a full run. PART 1 (less work in tests/test_drive_phase.py): _drive_follower_map copied all of plugins/audit/scripts into the fixture (committed, checked out per task tree) so its _deps.py --write-map read the whole plugin (about 5 s CPU per run, two runs per drive, three drives: fm, fi and al's re-run of fm); it now copies _output.py only. Process-seconds of the suite's 114 blocks (wait4 rusage incl. children, 6 at a time, machine shared, load avg 18-20 on 10 cores), two pairs about an hour apart: before 1156.7 / 1098.0, after 1097.2 / 1053.8; the three targeted blocks fell 40.2 / 35.3 (fm 20.05->7.68, fi 20.51->8.04, al 58.81->43.44), the other 111 moved -19.3 / -8.8, which is load noise. ALSO FOUND AND FIXED: per-block watched scratch exposed that every writer/reviewer session the suite plays left run-agent-session.py's session-writer-*/session-reviewer-* TMPDIR in the block's temp dir (13 blocks; the old per-block TMPDIR under fixture_root was removed at exit and hid it); _play_session now hands the session a fixture_root temp dir. The other seven staged suites were run block by block through the sweep's own run_one: every block exit 0, every case passing, no debris. CASE COUNTS (tally lines): test_drive_phase.py 574 -> 574 (HEAD blocks sum 574; after, both through the harness pool and through the sweep's block path 'ALL PASS: 574/574'); tools/sweep-selftests.py 128 -> 135 (bb1, bb1b, bb2-bb6 added; sb1 now asserts the replay line); tests/_harness.py 85 -> 89 (sr14-sr17 added; sr13 rewritten from 'pool sized by the grant' to 'blocks run as the sweep's jobs, replayed in STAGES order'). tests/test__harness.py was NOT created: _output_lints.selftest_coverage() reports a tests/test_*.py naming no module under scripts/ or hooks/ as an orphan (its docstring says tests/_harness.py is not an orphan candidate), so that file would turn the sweep red; the harness cases stay in tests/_harness.py's own selftest, which the sweep runs. COMMANDS: ruff check (3 files) exit 0; vermin -t=3.8- exit 0; prose_number_claims/house_style_violations over the tree: none in these files; own gate exit 0 ('1/1 files ok, 135 cases'). SIMULATION (not a measurement; scratchpad/p142-11/sim.py, list scheduling over .github/sweep-costs.json with drive_phase blocks from the measured shape): the block model reaches total/slots, the grant model sits above it (8 slots: 657 vs 627 table-seconds); with a local-like table of 2200 slot-s (drive_phase 1343) the block model is 275 s before and 266 s after this task's cut. So under the 240 s acceptance this task's work cut is not enough on its own: what remains is verb start-up (about 5400 Python processes per run of this suite; drive-phase.py and audit-task.py imports cost about 0.12-0.17 s CPU each) and the other suites. Declined lever: running submit in-process instead of as a command (about 50 s) - the suite's stated design is that the agent's last act is a command, and every drive exercises that path under the cp1252 leg. DEPENDANTS: tests/_harness.py importers (test__ado_* .. test__affected_tests and the rest) - still correct, run/check/fixture_root/run_stage/run_stages/stage_timeout/STAGE_TIMEOUT_MARGIN keep their signatures and behaviour (test_audit_task ps2/ps3 and test_drive_phase al-block use them; both re-run green); _group_present/_pid_present (test_run_test_gate), _labels (test__usage_viz), _load_sweep (test_drive_phase) unchanged. tests/test_drive_phase.py dependants: .github/sweep-costs.json - not edited, its per-file entry still means slot-seconds; drive-phase.py, test__runner_output.py, test_run_test_gate.py (_counting, _follower_cases, _head unchanged), tools/sweep-selftests.py (bg2b still finds it staged), PLUGIN-BUILD-GUIDE.md (_load unchanged), docs/research files - still correct. tools/sweep-selftests.py dependants: before-you-claim evals.json, _output.py, _filed_returns.py - path mentions, still correct; _runner_collects.py reads SWEEP_DIRS and _runner_output.py the FAIL lines - both unchanged; stamp-verification.py sweep_budget reads the cost table per file - unchanged meaning; sweep-costs.json format unchanged; budget_line named in _warning_groups.py is audit-status's own function, not this one; locale_decision (test_drive_phase) and named_suites (test_derive_phase_gate) unchanged; test_stamp_verification's _SWEEP_GREEN spells the old budget line as a stand-in fixture and is not compared with live output. CHANGED AND OUTSIDE MY FILES (followers for the orchestrator): CLAUDE.md (the 'workers are one budget of slots ... admitted with stage_grant(jobs) slots ... SWEEP_STAGE_GRANT sizes its block pool' paragraph), CONTRIBUTING.md ('THE WORKERS ARE ONE BUDGET OF SLOTS' paragraph) and .github/workflows/ci.yml (comment above the sweep matrix) still describe the grant model; tests/test_integrate_task.py copies all of scripts/ into a fixture the same way (al-block re-runs that suite whole, about 21 s of its CPU is those write-maps). Observation for the Faults register, not verified as a product defect: run-agent-session.py makes each session's TMPDIR under the parent temp dir and nothing in these drives removes it. Disclosure: I ran 'git stash list' once (read-only listing) in my worktree while starting the profiler; no stash was created or applied.",
+        "descriptive": "The sweep now schedules staged suites block by block from one budget and replays them per file; test_drive_phase.py does about 40 fewer process-seconds and no longer leaks session temp dirs."
       },
       "startedAt": "2026-10-26T10:06:07Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-26T11:55:23Z",
+      "verifiedBy": [
+        "bb1: two fixture staged suites of three blocks on a four-slot sweep - blocks of both run at one moment, two blocks of the second run at once, never more than four, and each suite keeps all six cases, each id once",
+        "bb1b: the budget line names the suites run block by block and their block count",
+        "bb2: stage_labels reads a literal STAGES table and refuses computed, duplicate, empty, misshapen, nested and unparseable ones",
+        "bb3: work_items orders jobs by estimate, a block weighing its file's cost over its blocks, both directions",
+        "bb4: suite_ran folds blocks and replay into one row - killed block leaves no debris, seconds summed, one window each; block_entry hands a killed block's why, not its output",
+        "bb5: claude_verdicts attributes a change only inside one of a suite's process windows, not the gaps",
+        "bb6: a block-by-block row prints '[Ns, N blocks]' and reads back unmultiplied",
+        "sr13 (rewritten), sr14-sr17 in tests/_harness.py: the sweep runs a staged suite's blocks as its jobs and replays them in STAGES order; --replay reorders, names a missing and a stray block, carries a killed block's why, and fails on an unreadable list"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-26T11:41:16Z.d293b6",
         "status": "passed",
         "at": "2026-10-26T11:41:16Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "d4a26f13e49a",
+        "at": "2026-10-26T11:55:23Z",
+        "return": "docs/audit/evidence/returns/P142.11-6yq/20261026T100607Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "mode regression, expectRedFirst false. The added case and the code it tests share tools/sweep-selftests.py, so a HEAD tree with that test file copied over already carries the fix and the helper cannot put HEAD's scheduler under the new case. Watched by hand instead, in a throwaway copy outside the shared tree: HEAD's sweep-selftests.py with only the bb1 section spliced in -> FAIL bb1 (b-suite blocks ran one after another, spans 1793010744.08-747.09, 747.15-750.16, 750.22-753.23, rows blocks=None) and FAIL bb1b, SELFTEST FAILED 128/130. Mutations of the new code in the same copy, each restored and checked byte-equal: m1 no block scheduling -> sb1, bb1, sr13 red; m2 block estimate = whole file cost -> bb3; m3/m3b replay skips a missing label / drops strays -> sr15; m3c replay in list order -> sr13, sr14; m4 killed block keeps debris -> bb4; m5 one window per suite -> bb5; m6 blocks multiplied as slots -> bb6; m7 unreadable list passes -> sr17; m8 why ignored -> sr11, sr15, sr16.",
+        "at": "not run by the helper; manual HEAD red taken 2026-10-26 in scratchpad/p142-11/headcopy"
       }
     },
     {
       "id": "P142.12-6yq",
       "title": "The sign-off lint probe is named by the plan, reports a held run by what it did, fits the print budget, and bounds and scopes its restore check",
-      "status": "pending",
+      "status": "blocked",
       "description": "Review findings on the sign-off lint probe that P142.6 added to drive-phase.py `lint_probe()` (fix them together, they share the function):\n- R3 (med): the hold stores only the HEAD, so a re-entry at the same HEAD after a run that printed `ran none` reports `lint probe green (held at this HEAD)`. Store the outcome word with the hold and print it back; a held ran-none run says ran none.\n- R4 (med): the success print is over INSTRUCTION_BYTES (300) with the probe clause. Shorten or merge the clause so every non-stop print fits, and make the byte-budget case measure a fixture that HAS a probe.\n- R5 (med): the shipped driver runs whatever sits at the hard-coded `tools/prove-gates.py`. The probe must be named by the plan: read a `meta.buildCommands` key (name it `lintProbe`; the driver appends `--changed <paths>`), and a plan without the key skips the step and says so in the did-line. The orchestrator sets the key on this repo's plan with `/audit:task build-command`; do not edit docs/audit.\n- R6 (low): the restore check compares status letters only; compare contents (hash) of files already modified before the run, and word the stop so it does not tell the operator to discard another session's edits.\n- R7 (low): give the probe run a timeout derived from the drive's own budget, and report a timeout as a stop naming it.\n- R8 (low): lp6's other-HEAD twin passes head=None; use a different SHA so a hold that ignores the head goes red.\nUpdate phase-signoff.md step 4b to match. Red-first each case against today's code. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
         "tests/test_drive_phase.py",
         "plugins/audit/reference/phase-signoff.md",
-        "plugins/audit/scripts/governance/drive-phase.py",
-        "tests/test_drive_phase.py"
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "regression",
@@ -903,14 +922,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-26T12:53:50Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -934,12 +953,19 @@
         "P142-R6",
         "P142-R7",
         "P142-R8"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-26T13:10:06Z.548ecc",
+        "status": "failed",
+        "at": "2026-10-26T13:10:06Z"
+      },
+      "blockedReason": "Gate red only on tests/test__output_lints.py te11/ln1, which is red at HEAD d4a26f13 (pinned on tests/test__runner_output.py:469, from P142.9) and fixed by P142.16-6yq; the task's own regression (ds1) is fixed in attempt 2. Held until P142.16 lands, then unblocked and re-gated."
     },
     {
       "id": "P142.13-6yq",
       "title": "Every reader of a runner's output reads it through the one normalisation, so no private pattern sees Windows line ends",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The previous task normalised `\\r\\n` and lone `\\r` in `_runner_output.plain_text()` and routed every public reader of that module through it. The same class survives outside it: run-test-gate.py matches its private `_FAILURE_READERS` and `_VITEST_FAIL_LINE` patterns against raw run output (around its lines 972, 1048-1052 and 3366), so on a Windows run a pytest FAILED line yields `tests/test_x.py::test_a\\r` as the failing name.\n\nFix the class, not the three call sites: run-test-gate must read runner output only through `_runner_output.plain_text()` (or through `_runner_output`'s public readers, deleting a private copy that duplicates one). Then make it enforceable: one predicate in tools/lints/_output_lints.py that reports a module under plugins/audit/scripts which compiles a `re.M` pattern anchored at `$` and applies it to text that did not pass through `plain_text` - scope it narrowly enough to be honest (read the before-you-claim and no-silent-pass skills; state in its docstring what it cannot see), give it a row tools/prove-gates.py derives, and red-first both the deny and the allow case.\n\nRed-first every case against today's code. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -964,6 +990,162 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-26T11:56:05Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-26T12:38:50Z.69b645",
+        "status": "failed",
+        "at": "2026-10-26T12:38:50Z"
+      }
+    },
+    {
+      "id": "P142.14-6yq",
+      "title": "The sweep's block scheduler is described where it runs and where it is documented, and its per-block timeout has a case that can go red",
+      "status": "in_progress",
+      "description": "Review findings on the sweep's block scheduler (the two tasks before this one split suites into blocks and made blocks the sweep's unit):\n- med: the per-block timeout calibration (tools/sweep-selftests.py, the file_timeout call for a staged block) has no case behind it - every staged fixture passes empty or no costs, and the fixtures that pass costs carry no STAGES table so they reach the whole-suite fallback. Add a fixture with a STAGES table and a cost table, a ghost-only table, and a deadline variant; prove each red by mutating the calibration.\n- med: descriptions of the retired grant model are now false - CLAUDE.md (the paragraph on staged suites admitted with stage_grant slots), CONTRIBUTING.md (same rule), the .github/workflows/ci.yml comment beside the sweep shard matrix, sweep()'s docstring (ordering by run_order), and the costs_from_rows / shard comment / record_costs \"about\" text (\"wall seconds times the slots\", which --record-costs writes into .github/sweep-costs.json). State the block model once and point at it.\n- low: sh6 is titled \"a shard runs its costliest files FIRST\" but tests run_order, which sweep() no longer calls; make it test the order sweep() submits in.\n- low: tests/_harness.py replayed() keeps only the first entry for a duplicated label; a block run twice must fail by name.\n- low: bb1's overlap clause relies on a 0.3 s nap across interpreter starts; read the per-process windows instead.\nNo number in prose; no F/P/BUG ids in comments.",
+      "files": [
+        "tools/sweep-selftests.py",
+        "tests/_harness.py",
+        "CLAUDE.md",
+        "CONTRIBUTING.md",
+        ".github/workflows/ci.yml"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tools/sweep-selftests.py: a staged fixture with a STAGES table and a cost table gets its block timeout from the table, a ghost-only table and a deadline cut it, and submission follows work_items order"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tools/sweep-selftests.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-26T11:56:08Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-26T12:46:27Z.5cc2af",
+        "status": "failed",
+        "at": "2026-10-26T12:46:27Z"
+      }
+    },
+    {
+      "id": "P142.15-6yq",
+      "title": "An agent session removes the temp directory it was given when it ends",
+      "status": "pending",
+      "description": "run-agent-session.py creates a session-writer-* / session-reviewer-* temp directory per session and never removes it. Remove it in finally on every exit path (success, failure, timeout, interrupt), keeping anything a caller is told to read out of it by copying first. Red-first the case against today's code. No F/P/BUG ids in comments.",
+      "files": [
+        "plugins/audit/scripts/governance/run-agent-session.py",
+        "tests/test_run_agent_session.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_run_agent_session.py: a writer and a reviewer session each leave no session temp directory behind, on success, on failure and on timeout"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_agent_session.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "bugId": "BUG-30-6yq"
+    },
+    {
+      "id": "P142.16-6yq",
+      "title": "The CRLF reader case reports what it left out of the differing readers it prints",
+      "status": "pending",
+      "description": "At HEAD tests/test__output_lints.py is red (te11 and ln1, 167 of 169) on tests/test__runner_output.py around line 469: the ru17 label prints len(differ) beside differ[:4], a count of the whole set beside a bounded slice with nothing saying what was left out. Render the list through _output.some_of() (as the lint says) or drop the count. Both suites must be green: python3 tools/sweep-selftests.py tests/test__runner_output.py tests/test__output_lints.py. No other change.",
+      "files": [
+        "tests/test__runner_output.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__runner_output.py tests/test__output_lints.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P142.17-6yq",
+      "title": "Every tree walk the last tasks added is either proved by a prove-gates row or declared not a gate",
+      "status": "pending",
+      "description": "At HEAD `python3 tools/prove-gates.py --selftest` is red (c1 and a4, 43 of 45): tools/affected.py's new `reach_graph` walks the tree, so the derivation reaches it, and it has no TABLE/ALLOW row and no NOT_A_GATE declaration. `reach_graph` builds a graph; it returns no verdict - decide by reading it whether it is a gate; if it is not, declare it in NOT_A_GATE with a reason (the reason is checked in both directions). The task before this one adds `_output_lints.runner_line_end_violations`, a real lint; its executor proved these rows in a scratch copy (verify each still applies exactly once against the landed code, and that each turns its named case red):\nTABLE, after the bc1 row:\n (\"runner_line_end_violations\", L + \"_output_lints.py\", \"replace\", \"def runner_line_end_violations(dirs=None, home=RUNNER_TEXT_HOME, pending=None):\" -> same line + \"\\n    return []\", OUTL, \"le1\")\n (\"runner_line_end_violations\", S + \"governance/run-test-gate.py\", \"replace\", \"    body = _ro.plain_text(text)\\n    if wrapper_words(command):\\n        return False\\n\" -> \"    body = text or \\\"\\\"\\n    if wrapper_words(command):\\n        return False\\n\", OUTL, \"le4\")\nALLOW: three rows on _output_lints.py turning le2 / le2 / le3 red: drop the home-module filter, empty the normaliser call-name tuple, and report sites listed as pending.\nThen run `python3 tools/prove-gates.py --only runner_line_end` and `python3 tools/prove-gates.py --selftest`; both green. No F/P/BUG ids in comments.",
+      "files": [
+        "tools/prove-gates.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tools/prove-gates.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P142.13-6yq"
+      ],
       "attempts": 0,
       "maxAttempts": 3,
       "commit": null,

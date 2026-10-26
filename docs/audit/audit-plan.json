@@ -1015,7 +1015,8 @@
       "BF4.2",
       "BF4.3-p5e",
       "P131.14",
-      "P142.7"
+      "P142.7",
+      "P142.14-6yq"
     ],
     ".gitignore": [
       "P4.4",
@@ -1224,7 +1225,8 @@
       "P130.60-ywo",
       "P131.1",
       "P131.2",
-      "P137.6-3y3"
+      "P137.6-3y3",
+      "P142.14-6yq"
     ],
     "COMPATIBILITY.md": [
       "P18.8",
@@ -1344,7 +1346,8 @@
       "P131.16-dau",
       "P137.6-3y3",
       "P142.3",
-      "P142.5"
+      "P142.5",
+      "P142.14-6yq"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -1644,7 +1647,8 @@
       "P138.2",
       "P138.4-myr",
       "P138.5-myr",
-      "P142.1"
+      "P142.1",
+      "P142.12-6yq"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -3191,8 +3195,8 @@
       "P131.1",
       "P131.2",
       "P131.9",
-      "P142.1",
       "P142.6",
+      "P142.1",
       "P142.12-6yq"
     ],
     "plugins/audit/schema/audit-config.schema.json": [
@@ -4210,8 +4214,8 @@
       "P131.2",
       "P131.12",
       "P133.1",
-      "P142.1",
       "P142.4",
+      "P142.1",
       "P142.13-6yq"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
@@ -8104,8 +8108,9 @@
       "P131.1",
       "P131.2",
       "P134.1",
+      "P142.6",
       "P142.1",
-      "P142.6"
+      "P142.17-6yq"
     ],
     "tools/redfirst.sh": [
       "P55.13",
@@ -8150,7 +8155,8 @@
       "P137.8-3y3",
       "P142.2",
       "P142.8",
-      "P142.11-6yq"
+      "P142.11-6yq",
+      "P142.14-6yq"
     ],
     "tools/ui-tests/evidence-badge.test.mjs": [
       "P32.7",
@@ -10657,9 +10663,9 @@
       "P130.9",
       "P131.1",
       "P131.2",
-      "P142.1",
       "P142.7",
-      "P142.8"
+      "P142.8",
+      "P142.1"
     ],
     "docs/audit/phases/P127.json": [
       "P127.8-bgr"
@@ -11044,7 +11050,8 @@
       "P132.5-5mm",
       "P134.1",
       "P137.6-3y3",
-      "P142.11-6yq"
+      "P142.11-6yq",
+      "P142.14-6yq"
     ],
     "tests/fixtures/pricing-page-2026-10-10.md": [
       "P131.1"
@@ -11112,8 +11119,8 @@
       "P131.2",
       "P86.4",
       "P131.19-dau",
-      "P142.1",
-      "P142.8"
+      "P142.8",
+      "P142.1"
     ],
     "tests/test__doctor_ado.py": [
       "P131.1"
@@ -11325,7 +11332,8 @@
       "P131.1",
       "P131.2",
       "P142.2",
-      "P142.9-6yq"
+      "P142.9-6yq",
+      "P142.16-6yq"
     ],
     "tests/test__scope_companions.py": [
       "P131.1"
@@ -11516,8 +11524,8 @@
       "P139.1",
       "P139.2-6sp",
       "P141.1",
-      "P142.1",
       "P142.6",
+      "P142.1",
       "P142.11-6yq",
       "P142.12-6yq"
     ],
@@ -11640,8 +11648,8 @@
       "P131.12",
       "P133.1",
       "P134.1",
-      "P142.1",
       "P142.4",
+      "P142.1",
       "P142.13-6yq"
     ],
     "tests/test_set_priority.py": [
@@ -11713,7 +11721,8 @@
       "P135.5-kux",
       "P137.4-3y3",
       "P138.1",
-      "P138.4-myr"
+      "P138.4-myr",
+      "P142.15-6yq"
     ],
     "tests/test_run_agent_session.py": [
       "P131.3",
@@ -11724,7 +11733,8 @@
       "P136.1",
       "P137.4-3y3",
       "P138.1",
-      "P138.4-myr"
+      "P138.4-myr",
+      "P142.15-6yq"
     ],
     "plugins/audit/scripts/governance/_clause_coverage.py": [
       "P131.7"
@@ -12408,6 +12418,22 @@
       "actual": "nineteen low findings open after P131's task reviews",
       "files": [],
       "taskId": null,
+      "fixedIn": null,
+      "notes": null
+    },
+    {
+      "id": "BUG-30-6yq",
+      "title": "Agent sessions leave their writer and reviewer temp directories behind",
+      "status": "in_progress",
+      "severity": "med",
+      "reportedAt": "2026-10-26T11:55:50Z",
+      "reportedBy": "orchestrator",
+      "description": "run-agent-session.py (plugins/audit/scripts/governance) creates a session-writer-* or session-reviewer-* temp directory per session and nothing removes it. Found by a review of the sweep's per-block isolation; tests/test_drive_phase.py now hands its sessions a fixture temp dir, which keeps the suite clean but routes around the product leak.",
+      "repro": "Run a writer or reviewer session through run-agent-session.py, then list the TMPDIR it was given",
+      "expected": "Each session's temp directory is removed when the session ends",
+      "actual": "A session-writer-* or session-reviewer-* directory remains for every session",
+      "files": [],
+      "taskId": "P142.15-6yq",
       "fixedIn": null,
       "notes": null
     }
