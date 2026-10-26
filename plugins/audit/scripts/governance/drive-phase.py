@@ -6950,6 +6950,135 @@ def red_gate_stop(ctx, phase, out, err):
     return E_STOPPED, "\n".join(lines)
 
 
+# --- sign-off's lint probe --------------------------------------------------------
+# The project's own mutation probe of its guarded lints, run at sign-off over the
+# files the phase changed. A project with no file here owes none, and the did-line
+# says so. The probe answers a fixed protocol: `--changed <paths>` runs the rows of
+# the lints living in those paths, in both directions; exit 0 with its summary
+# lines (`ran none` when no path held a lint), exit 1 with a `ROW NOT PROVEN:` line
+# per row that was not proven, any other exit a refusal.
+LINT_PROBE = "tools/prove-gates.py"
+LINT_PROBE_NOT_PROVEN = "ROW NOT PROVEN"
+_LINT_PROBE_NONE = "ran none"
+_LINT_PROBE_SUMMARY = re.compile(r"^\d+ of \d+ |%s" % (_LINT_PROBE_NONE,))
+
+
+def phase_changed_paths(ctx, phase):
+    """`(paths, unread)` - every file a task of the phase declares and every
+    path a recorded task commit changed, spelled as the plan spells them, and
+    the commits git could not read, the plan's own records left out as
+    `diff_paths` leaves them. An unread commit is said aloud by the caller:
+    its paths are missing from what the probe is handed."""
+    paths = set(_posix_rel(f) for t in _tasks(phase) for f in t.get("files") or [])
+    hc = _loader.load_hooks_config(modname="audit__config")
+    top = hc.checkout_top(ctx["gitRoot"]) or ctx["gitRoot"]
+    records = _invariants.record_rels(ctx["manifest"], phase, ctx["project"],
+                                      ctx["gitRoot"], config=ctx["config"])
+    unread = []
+    for task in _tasks(phase):
+        sha = task.get("commit")
+        if not sha:
+            continue
+        code, out, _why = _git_run(ctx["gitRoot"], [
+            "diff-tree", "--no-commit-id", "--name-only", "-r", "-z", "--root",
+            str(sha)])
+        if code != 0:
+            unread.append(str(sha)[:12])
+            continue
+        changed = [p.decode("utf-8", "replace") for p in out.split(b"\0") if p]
+        paths.update(hc.git_to_plan(p, top, ctx["project"]) for p in changed
+                     if not _invariants.is_record_path(p, records))
+    return sorted(p for p in paths if p), unread
+
+
+def checkout_status(ctx):
+    """The checkout's `git status` entries, untracked files included, each its
+    two status letters and its path spelled as the plan spells it, sorted - or
+    None when git cannot say."""
+    code, out, _why = _git_run(ctx["gitRoot"], [
+        "status", "--porcelain", "-z", "--untracked-files=all", "--no-renames"])
+    if code != 0:
+        return None
+    hc = _loader.load_hooks_config(modname="audit__config")
+    top = hc.checkout_top(ctx["gitRoot"]) or ctx["gitRoot"]
+    entries = [e.decode("utf-8", "replace") for e in out.split(b"\0") if e]
+    return sorted("%s %s" % (e[:2], hc.git_to_plan(e[3:], top, ctx["project"]))
+                  for e in entries)
+
+
+def _probe_summary(text):
+    """The probe's summary lines, else its last line: what a green run proved."""
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    said = [ln for ln in lines if _LINT_PROBE_SUMMARY.search(ln)]
+    return "; ".join(said or lines[-1:]) or "printed nothing"
+
+
+def lint_probe(ctx, state, phase, head):
+    """Run the lint probe over the phase's changed files: None when it proved
+    every row it ran, or ran none - each said on the did-line - or the project
+    keeps no probe, which says nothing, as an unset `meta.runtimeBoot` says
+    nothing; else the stop. A green run is held at `head`, so a decision
+    answered after it does not run minutes of mutation again.
+
+    THE STATUS IS COMPARED AROUND THE RUN, because the probe mutates the
+    working tree and restores it, and an exit 0 says nothing about whether it
+    did: a row stranded mid-mutation is the failure the probe's own trap
+    exists for, and the sign-off verb must never bind a tree it left behind."""
+    probe = os.path.join(ctx["project"], *LINT_PROBE.split("/"))
+    if not os.path.isfile(probe):
+        return None
+    held = state.get("lintProbe")
+    if head and isinstance(held, dict) and held.get("head") == head:
+        ctx["did"].append("lint probe green (held at this HEAD)")
+        return None
+    paths, unread = phase_changed_paths(ctx, phase)
+    args = ["--changed"] + paths
+    before = checkout_status(ctx)
+    try:
+        done = subprocess.run([sys.executable, probe] + args, cwd=ctx["project"],
+                              capture_output=True)
+    except OSError as exc:
+        return _stopped(ctx, "the lint probe %s could not be started (%s), so "
+                        "the sign-off verb did not run" % (LINT_PROBE, exc))
+    finally:
+        after = checkout_status(ctx)
+    text = _verb_text(done.stdout) + _verb_text(done.stderr)
+    ctx["log"].append((LINT_PROBE, args, done.returncode, text))
+    if before is None or after is None:
+        return _stopped(ctx, "git could not read the checkout's status around "
+                        "the lint probe, so whether it restored the tree is "
+                        "unknown and the sign-off verb did not run")
+    if before != after:
+        moved = sorted(set(before) ^ set(after))
+        return _stopped(ctx, "the lint probe left the checkout changed (%s), so "
+                        "the sign-off verb did not run; restore the tree, then "
+                        "next %s" % (_clip(", ".join(moved), 200), ctx["phase"]))
+    if done.returncode == 1:
+        rows = [ln.strip() for ln in text.splitlines()
+                if ln.strip().startswith(LINT_PROBE_NOT_PROVEN)]
+        return _stopped(ctx, "the lint probe found a guarded lint the phase "
+                        "changed that is not proven, so the sign-off verb did "
+                        "not run:\n%s\n  fix it in a new task: audit-task.py add "
+                        "\"<the fix>\" --phase %s --files <files>, then next %s"
+                        % ("\n".join("  " + r for r in rows[:5])
+                           or "  (exit 1, no %s line printed)"
+                           % (LINT_PROBE_NOT_PROVEN,),
+                           phase["id"], ctx["phase"]))
+    if done.returncode != 0:
+        return _stopped(ctx, "the lint probe %s refused (exit %d): %s"
+                        % (LINT_PROBE, done.returncode,
+                           _clip(_probe_summary(text), 200)))
+    if head:
+        state["lintProbe"] = {"head": head}
+        write_state(ctx, state)
+    # THE VERDICT WORD, NOT THE PROBE'S LINES: a success print is bounded, and
+    # the summary lines alone outgrow it. They stay in the `--verbose` log.
+    ctx["did"].append(_clip("lint probe %s%s" % (
+        "ran none" if _LINT_PROBE_NONE in text else "green",
+        "; paths of %s unread" % (", ".join(unread),) if unread else ""), 120))
+    return None
+
+
 def runtime_boot_root(manifest, phase):
     """`(due, root)` - whether sign-off owes a runtime boot: `meta.runtimeBoot`
     is set and a file of the phase lies under its `appRootPath` (every file,
@@ -7118,6 +7247,9 @@ def run_signoff(ctx, state, phase):
             drop_held_gate(ctx, state)
             return relay_refusal(ctx, "verify-invariants.py", code, out + err)
         ctx["did"].append("invariants clean")
+    stop = lint_probe(ctx, state, phase, head)
+    if stop is not None:
+        return stop
     summary = signoff_summary(state, phase, head)
     args = ["signoff", phase["id"], ctx["manifest"], "--project-dir",
             ctx["project"], "--verdict", "passed"]

@@ -7,6 +7,7 @@ until it over-fires, and require it to have been proven QUIET.
     tools/prove-gates.py --red           # only the break-it-and-see-red half
     tools/prove-gates.py --allow         # only the stays-quiet half
     tools/prove-gates.py --only layer    # the rows whose name contains this
+    tools/prove-gates.py --changed a b   # the rows whose lint lives in these files
     tools/prove-gates.py --list          # the tables, without running anything
     tools/prove-gates.py --selftest      # this file's own cases; MUTATES NOTHING
 
@@ -34,6 +35,13 @@ chosen and where an allow case is not meaningful.
 WHAT IT COSTS. One suite per row, so a full run is minutes rather than seconds, and
 it MUTATES THE WORKING TREE while it runs (restoring each time, under redfirst's
 trap). It is not a per-commit gate; run it before a release, or when a lint changes.
+
+`--changed <paths>` IS THE "WHEN A LINT CHANGES" HALF, and the drive's sign-off
+step is its caller: it hands over the files the phase changed, and only the rows
+whose lint lives in one of them run, both directions unless `--red`/`--allow`
+narrows it. A set naming no such file runs nothing and prints `ran none` rather
+than exiting silently, and a row that is not proven prints a `ROW NOT PROVEN:`
+line naming its direction, lint and file - the line that stop quotes.
 
 `--selftest` NEVER MUTATES. It checks the table against the tree - that every anchor
 still exists exactly once, that no load-bearing lint is missing a row, and that no
@@ -2396,7 +2404,7 @@ def prove(row, repo=None):
 
 
 def render(rows, missing, stale=(), stream=None, claim="gates proven red",
-           undefined=()):
+           undefined=(), direction="red"):
     """The report for ONE direction's rows. `claim` is what a proven row means.
 
     Parameterised rather than duplicated: the arithmetic, the coarse notice and the
@@ -2425,6 +2433,13 @@ def render(rows, missing, stale=(), stream=None, claim="gates proven red",
     for r in coarse:
         out.write("  NAMES NO CASE: %s is proven only by its whole suite going "
                   "red\n" % (r["lint"],))
+    # One line per row that was not proven, led by a fixed phrase and naming the
+    # direction, the lint and its file: the sign-off step that runs this probe
+    # quotes these lines as the reason it stopped, so the row is named there
+    # rather than left for a reader to find in the column table above.
+    for r in bad:
+        out.write("  ROW NOT PROVEN: %s %s in %s - %s\n"
+                  % (direction, r["lint"], r.get("file") or "?", r["verdict"]))
     out.write("%d of %d %s%s%s\n"
               % (len(rows) - len(bad), len(rows), claim,
                  ("; %d lint(s) missing a row" % len(missing)) if missing else "",
@@ -2452,6 +2467,19 @@ def main(argv):
     want_allow = "--red" not in argv
     table = [r for r in TABLE if only is None or only in r[0]]
     allow = [r for r in ALLOW if only is None or only in r[0]]
+    changed = changed_paths(argv)
+    if changed is not None:
+        table, allow = changed_rows(table, changed), changed_rows(allow, changed)
+        # NOTHING TO RUN IS SAID, AND IT IS SAID BEFORE THE MARKER. A set that
+        # names no lint file is the common case at a phase's sign-off, and a
+        # silent exit 0 there would read as every guarded lint proven.
+        if not ((want_red and table) or (want_allow and allow)):
+            sys.stdout.write("prove-gates: --changed named %d path(s) and none "
+                             "is the file of a lint a %s row names, so ran none\n"
+                             % (len(changed), "/".join(
+                                 d for d, on in (("red", want_red),
+                                                 ("allow", want_allow)) if on)))
+            return 0
     if "--list" in argv:
         for label, rows in (("red", table if want_red else []),
                             ("allow", allow if want_allow else [])):
@@ -2484,27 +2512,63 @@ def main(argv):
         return 2
     marker = _suite.hold(git_dir)
     try:
-        return _prove(want_red, want_allow, table, allow, only)
+        return _prove(want_red, want_allow, table, allow,
+                      only is None and changed is None)
     finally:
         _suite.release(marker)
 
 
-def _prove(want_red, want_allow, table, allow, only):
+def changed_paths(argv):
+    """The paths after `--changed`, up to the next flag - `[]` for a bare
+    `--changed` - or None when the flag is absent, which is the whole table."""
+    if "--changed" not in argv:
+        return None
+    out = []
+    for arg in argv[argv.index("--changed") + 1:]:
+        if arg.startswith("--"):
+            break
+        out.append(arg)
+    return out
+
+
+def _repo_rel(path):
+    """`path` spelled as a row spells its file: forward slashes, no `./`."""
+    text = str(path).replace("\\", "/")
+    while text.startswith("./"):
+        text = text[2:]
+    return text
+
+
+def changed_rows(rows, paths):
+    """The rows whose lint lives in one of `paths` - a row's file is the one its
+    mutation edits, which is the file holding the lint it proves."""
+    wanted = set(_repo_rel(p) for p in paths if p)
+    return [r for r in rows if r[1] in wanted]
+
+
+def _proved(rows):
+    """`prove()` over `rows`, each result carrying the file its row mutates, so
+    a row that is not proven can be named with it."""
+    return [dict(prove(row), file=row[1]) for row in rows]
+
+
+def _prove(want_red, want_allow, table, allow, whole):
+    """Both halves over the rows given. `whole` is a run over the entire table:
+    only then is a lint with no row reported missing, since a narrowed run
+    (`--only`, `--changed`) leaves rows out on purpose."""
     code = 0
     if want_red:
         sys.stdout.write("proving %d gate(s) go RED; each mutates the tree and "
                          "restores it\n" % (len(table),))
-        code |= render([prove(row) for row in table],
-                       coverage() if only is None else [],
+        code |= render(_proved(table), coverage() if whole else [],
                        stale_rows(table), undefined=undefined_cases(table))
     if want_allow:
         sys.stdout.write("\nproving %d guard(s) stay QUIET; each weakens the GUARD "
                          "so it over-fires, and the named allow case must go red\n"
                          % (len(allow),))
-        code |= render([prove(row) for row in allow],
-                       allow_coverage() if only is None else [],
+        code |= render(_proved(allow), allow_coverage() if whole else [],
                        stale_rows(allow), claim=ALLOW_CLAIM,
-                       undefined=undefined_cases(allow))
+                       undefined=undefined_cases(allow), direction="allow")
     return code
 
 
@@ -3029,6 +3093,94 @@ def _cases(check):
           "change what all of them see mid-run - so the expensive half lives "
           "in main() and this suite never reaches `prove()`: %r" % (_c6_calls,),
           len(_c6_fns) == 1 and _c6_calls == [])
+    _changed_cases(check)
+
+
+def _changed_run(argv, survives=()):
+    """`(code, printed, proved, holds)` of `main(argv)` with the mutating half
+    replaced: `prove` answers RED for every row - STAYED GREEN for a row whose
+    lint is in `survives` - and records which row it was handed, and the
+    marker the real run holds on this checkout's git dir is a recorder too, so
+    a case here never mutates the tree nor makes a concurrent sweep refuse."""
+    import _suite
+    proved, holds = [], []
+
+    def fake_prove(row, repo=None):
+        proved.append(row)
+        if row[0] in survives:
+            return {"lint": row[0], "verdict": "STAYED GREEN",
+                    "detail": "the gate asserts nothing about this", "cases": []}
+        return {"lint": row[0], "verdict": "RED", "detail": "x1", "cases": ["x1"]}
+    held = dict((n, getattr(_suite, n))
+                for n in ("git_dir_of", "marker_state", "hold", "release"))
+    real_prove, real_out = globals()["prove"], sys.stdout
+    globals()["prove"] = fake_prove
+    _suite.git_dir_of = lambda repo: tempfile.gettempdir()
+    _suite.marker_state = lambda git_dir: {"state": "absent", "path": git_dir}
+    _suite.hold = lambda git_dir: holds.append(git_dir)
+    _suite.release = lambda marker: None
+    buf = io.StringIO()
+    sys.stdout = buf
+    try:
+        code = main(argv)
+    finally:
+        sys.stdout = real_out
+        globals()["prove"] = real_prove
+        for name, fn in held.items():
+            setattr(_suite, name, fn)
+    return code, buf.getvalue(), proved, holds
+
+
+def _changed_cases(check):
+    """`--changed <paths>`: the rows whose lint lives in those paths, both
+    directions, and nothing for a set that names no lint file - said aloud."""
+    both = sorted(set(r[1] for r in TABLE) & set(r[1] for r in ALLOW))
+    lint_file = both[0] if both else ""
+    red_rows = [r for r in TABLE if r[1] == lint_file]
+    allow_rows = [r for r in ALLOW if r[1] == lint_file]
+    pick = globals().get("changed_rows")
+    got = ((pick(TABLE, [lint_file, "README.md"]), pick(TABLE, []),
+            pick(TABLE, ["./" + lint_file])) if pick else None)
+    check("ch1 changed_rows keeps exactly the rows whose lint lives in a changed "
+          "path - every row of %s and none of another file, a `./` spelling "
+          "included - and an empty set keeps none: %r"
+          % (lint_file, [len(g) for g in got] if got else "no changed_rows"),
+          bool(red_rows) and got is not None
+          and got == (red_rows, [], red_rows))
+
+    code, said, proved, holds = _changed_run(["--changed", lint_file,
+                                              "README.md"])
+    check("ch2 --changed with a lint's file proves that lint's rows in BOTH "
+          "directions - its red rows, then its allow rows - and no row of any "
+          "other file: %r" % ((code, len(proved), len(red_rows), len(allow_rows),
+                               said[-200:]),),
+          code == 0 and bool(allow_rows) and proved == red_rows + allow_rows
+          and len(holds) == 1 and "go RED" in said and "stay QUIET" in said)
+
+    runs = [_changed_run(argv) for argv in (["--changed"],
+                                            ["--changed", "README.md"],
+                                            ["--changed", "README.md", "--red"])]
+    check("ch3 an empty set, or one naming no file a row's lint lives in, runs "
+          "NO row, holds no marker, exits 0 and SAYS it ran none - it never "
+          "reads as a proof of everything: %r"
+          % ([(c, len(p), len(h), s.strip()[-120:]) for c, s, p, h in runs],),
+          all(c == 0 and p == [] and h == [] and "ran none" in s
+              for c, s, p, h in runs))
+
+    victim = red_rows[0][0] if red_rows else None
+    code, said, proved, _h = _changed_run(["--changed", lint_file],
+                                          survives=(victim,))
+    named = [ln.strip() for ln in said.splitlines()
+             if ln.strip().startswith("ROW NOT PROVEN")]
+    check("ch4 a surviving mutation exits 1 and names the row: one ROW NOT "
+          "PROVEN line per row of that lint, each naming its direction and the "
+          "lint, and no line for a row that went red: %r" % ((code, named),),
+          code == 1 and victim is not None and bool(named)
+          and all(victim in ln for ln in named)
+          and any(ln.startswith("ROW NOT PROVEN: red ") for ln in named)
+          and len(named) == len([r for r in red_rows + allow_rows
+                                 if r[0] == victim]))
+
 
 def _selftest():
     from _suite import run          # the house runner; tools/_suite.py says why here

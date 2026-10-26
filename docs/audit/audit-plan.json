@@ -8147,7 +8147,8 @@
       "P137.6-3y3",
       "P137.8-3y3",
       "P142.2",
-      "P142.8"
+      "P142.8",
+      "P142.11-6yq"
     ],
     "tools/ui-tests/evidence-badge.test.mjs": [
       "P32.7",
@@ -9339,7 +9340,8 @@
       "P131.2",
       "P131.16-dau",
       "P142.3",
-      "P142.5"
+      "P142.5",
+      "P142.10-6yq"
     ],
     "docs/audit/phases/P85.json": [
       "P91.1"
@@ -9438,7 +9440,8 @@
       "P130.35-ywo",
       "P131.1",
       "P131.2",
-      "P142.2"
+      "P142.2",
+      "P142.9-6yq"
     ],
     "plugins/audit/tests/test__runner_output.py": [
       "P102.3",
@@ -11037,7 +11040,8 @@
       "P109.3",
       "P132.5-5mm",
       "P134.1",
-      "P137.6-3y3"
+      "P137.6-3y3",
+      "P142.11-6yq"
     ],
     "tests/fixtures/pricing-page-2026-10-10.md": [
       "P131.1"
@@ -11317,7 +11321,8 @@
     "tests/test__runner_output.py": [
       "P131.1",
       "P131.2",
-      "P142.2"
+      "P142.2",
+      "P142.9-6yq"
     ],
     "tests/test__scope_companions.py": [
       "P131.1"
@@ -11509,7 +11514,8 @@
       "P139.2-6sp",
       "P141.1",
       "P142.1",
-      "P142.6"
+      "P142.6",
+      "P142.11-6yq"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -11642,7 +11648,8 @@
       "P131.6",
       "P131.10",
       "P142.2",
-      "P142.8"
+      "P142.8",
+      "P142.9-6yq"
     ],
     "tests/test_usage_ledger.py": [
       "P131.1",
@@ -11740,7 +11747,8 @@
       "P131.16-dau",
       "P131.19-dau",
       "P132.5-5mm",
-      "P142.3"
+      "P142.3",
+      "P142.10-6yq"
     ],
     "plugins/audit/scripts/status/_impact.py": [
       "P131.18-dau"
@@ -11765,6 +11773,9 @@
     ],
     "tests/test_verify_sh.py": [
       "P140.1"
+    ],
+    "tests/test__harness.py": [
+      "P142.11-6yq"
     ]
   },
   "bugs": [

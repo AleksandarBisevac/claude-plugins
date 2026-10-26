@@ -22,7 +22,65 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P142-R1",
+        "severity": "med",
+        "file": "tools/measure-affected-miss.py (no diff); task outcome",
+        "issue": "contradicts task clause: acceptance (5) 'the measured result over 20 commits is recorded in the task outcome with the commit range'. The outcome records a 2-commit window (ad586f07b..d33730d60) in which one commit timed out at 1200s (NOT MEASURED) and the other was a full-set selection ('so no suite can be missed'), giving 'misses 0 of 1 commits (mutation); 0 of 1 runs (CI)'. That is zero evidence about the miss rate and not the 20-commit measurement the clause asks for; the executor itself says the 20-commit run is 'still owed by the orchestrator'. The 'misses 0 of 1' line must not be read as a clean miss rate.",
+        "resolution": "Run the 20-commit command the outcome names on a quiet machine (python3 tools/measure-affected-miss.py --commits 20 --budget-minutes 240 --timeout 2400 --ci-limit 30 --json) and record its output and commit range in the outcome before the task closes done; or, if the orchestrator decides the measurement is out of scope for this task, split it into its own task rather than close this one as met. If the task is closed with no change (--no-change --reason), the reason must say acceptance (5) is unmeasured."
+      },
+      {
+        "id": "P142-R2",
+        "severity": "low",
+        "file": "docs/audit/audit-plan.json (P142.3 vs P131.16-dau)",
+        "issue": "P142.3's description is a verbatim re-ask of a task already done (b52ba79a, amended 66b3635d): tools/measure-affected-miss.py has existed since P131.16-dau, so this task adds nothing and its tests.add entries are met only by pre-existing cases m6, m8, m10, m13. A duplicate task in the plan is an input error that wastes an executor run and can double-count 'tests added'.",
+        "resolution": "Close P142.3 with --no-change and a reason naming b52ba79a/66b3635d and the pre-existing cases, after (5) is measured; or rewrite its description to the measurement alone."
+      },
+      {
+        "id": "P142-R3",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:7034-7037,7071-7073",
+        "issue": "contradicts task clause \"a phase touching no such file runs none and says so\" / acceptance (2) \"prints that it ran none\" on the held path: a run that printed `ran none` is held as `state[\"lintProbe\"] = {\"head\": head}` (the word is not stored), and the held branch then appends `lint probe green (held at this HEAD)` - so any re-entry at the same HEAD (e.g. after the sign-off verb stopped) reports a probe that ran no row as green, the exact reading-as-a-proof the clause forbids.",
+        "resolution": "Store the word with the hold (`{\"head\": head, \"said\": \"ran none\"|\"green\"}`) and echo it on the held branch (`lint probe ran none (held at this HEAD)`); add an lp6 twin that holds a ran-none run and asserts the held did-line says ran none."
+      },
+      {
+        "id": "P142-R4",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:7076-7078 (bound at :373)",
+        "issue": "The success print breaks the module's stated invariant `INSTRUCTION_BYTES = 300` (\"The bound every print that is not a stop stays inside\") whenever a probe runs: the executor's own measurement is 312 bytes in lp1's one-task fixture. This repo keeps tools/prove-gates.py, so from this change every sign-off here prints past the bound; lp1 does not assert the bound and dp3 only measures a probeless fixture, so nothing goes red.",
+        "resolution": "Make the probe clause fit (e.g. fold it into the `invariants clean` clause as `invariants clean, lint probe green|ran none`, or move the word into the sign-off summary) and extend dp3 (or lp1/lp2) to measure the success print of a probe-carrying fixture against INSTRUCTION_BYTES."
+      },
+      {
+        "id": "P142-R5",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:6958 (LINT_PROBE), 7025-7027",
+        "issue": "A shipped product script now executes any project file that happens to sit at `tools/prove-gates.py` at every sign-off, by filename convention alone, with no plan key opting in: a user project with an unrelated script at that path has it run with `--changed <paths>` and its exit 1 read as a not-proven stop and any other non-zero exit as a refusal that blocks sign-off. Every other gate the driver runs is named by the plan (meta.buildCommands, meta.runtimeBoot); this one is not. The executor flagged it as (b).",
+        "resolution": "Key the probe off the plan (a `meta.buildCommands` entry or a dedicated meta key naming the probe command and declaring it speaks the `--changed` protocol), absent means skip; set it in this repo's plan. If that is out of this task's files, file it as a fix task before sign-off rather than shipping the filename convention."
+      },
+      {
+        "id": "P142-R6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:6992-7004,7049-7053",
+        "issue": "Acceptance (4) is checked as equality of porcelain status letters + paths only. A file already dirty before the run (` M`) that the probe leaves mutated still reads ` M` after, so a stranded mutation in an already-modified lint file passes; conversely, a second session editing the shared checkout during the minutes-long run produces a false `left the checkout changed` stop whose remedy (`restore the tree`) would tell the operator to discard someone else's work.",
+        "resolution": "For entries dirty before the run, also compare a content digest (git hash-object of each) before and after; and word the stop as 'changed during the probe run' naming the entries without prescribing a restore, or refuse to start the probe when a path in the changed set is already dirty."
+      },
+      {
+        "id": "P142-R7",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:7029-7031",
+        "issue": "`subprocess.run` of a minutes-long mutating probe carries no timeout, so a hung probe hangs the sign-off step indefinitely with the tree possibly mid-mutation.",
+        "resolution": "Pass a timeout (a generous bound or one read from the plan), catch `subprocess.TimeoutExpired` as a refusal stop; the status comparison in `finally` already reports what a killed run left."
+      },
+      {
+        "id": "P142-R8",
+        "severity": "low",
+        "file": "tests/test_drive_phase.py:6392-6393",
+        "issue": "lp6's 'at another HEAD it runs once' twin calls `lint_probe(..., None)`, which short-circuits the hold on `if head and ...`; it never exercises a different SHA, so a hold that ignored the head comparison (e.g. `held.get(\"head\")` truthy) would still pass lp6.",
+        "resolution": "Call the twin with a different 40-hex head (`\"b\" * 40`) so the comparison itself is what lets it run."
+      }
+    ],
+    "outcome": "[findings: 8 - 0 high, 4 med, 4 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -140,7 +198,7 @@
     {
       "id": "P142.2",
       "title": "Red-first through a sweep-shaped command proves when the task's suites pass and its new cases were red at HEAD",
-      "status": "in_progress",
+      "status": "done",
       "description": "Reproduce on the filed P131.11 case (stamp-verification.py red --project <tree> --task P131.11 -- python3 tools/sweep-selftests.py tools/release.py tools/check-example-pins.py) and find which reader rejects the fix-side output, which today reads 'the task's tests do not all pass (no tally or error reader matched its output)' while the same command exits 0 in the task tree. The cause is not established: the candidates are the fix-side run's environment (the sweep's isolation inside the helper's throwaway), the per-file versus summary reader, and the time budget. Fix it so a sweep-shaped command proves when its suites pass and its new cases were red at HEAD, and size the fix-side time budget from the sweep's own per-file cost table (.github/sweep-costs.json) rather than a fixed figure. tools/sweep-selftests.py is touched only if the fix-side reader needs its output shape changed. Acceptance: (1) on a fixture, a sweep-shaped red command whose suites pass in the task tree and whose new case is red at HEAD reads proved, and the same case reads could-not-prove on the code before the fix (red first); (2) a sweep-shaped command whose suite fails in the task tree still reads not proved and names the failing file, and the case goes red when the reader is weakened to accept any exit 0; (3) the fix-side time budget is read from the sweep's per-file cost table, and a suite with no recorded cost is reported as having none rather than given a default; (4) the filed P131.11 case, re-run with its own command on the fixed tree, reads proved (run by the orchestrator, it is not a gate key).",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -179,25 +237,40 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "4805f994152e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "CAUSE (reproduced, then established). Reproduction: a scratch repo at the parent of the P131.11 commit with that commit's three files laid over, `stamp-verification.py red --manifest docs/audit/audit-plan.json --task P131.11 -- python3 tools/sweep-selftests.py tools/release.py tools/check-example-pins.py` read could-not-prove with 'with the working tree's implementation the task's tests do not all pass (no tally or error reader matched its output ...)'. The same sweep run directly in that tree printed only per-file 'ok' lines and the summary '2/2 files ok, 67 cases', exit 0; `_runner_output.read_run_tally` on that text returned None. So the reader that rejects the fix-side output is `fix_problem` (via `read_run_tally`): the sweep drops a green file's own output, so a passing sweep carries NO runner tally, only its own summary, which no reader read. Not the environment (the isolated run exits 0, 9.7s total) and not the time budget (nothing timed out). A SECOND blocker sat behind the first, hidden because fix_problem short-circuits before credit: the failing cases were located in the one script the command ran, which for a sweep is tools/sweep-selftests.py, not the suite, so every case read 'the runner locates it in no declared test file' (seen in the swc1 fixture after fixing the first), and the sweep's own two-space 'FAIL  <path>: <why>' lines were counted as failing house cases. FIX. _runner_output.py: `sweep_tally` (a sweep that graded every file ok, at least one file and one case; read_run_tally falls back to it LAST, behind every runner), `sweep_failing_cases` (house cases read per '--- path: why ---' block, each tagged with `script`), and `_house_cases` no longer reads the sweep's two-space FAIL lines. stamp-verification.py: `_failing_cases` (uses the per-file reader for a sweep-shaped command), `case_site` locates a house case at its block's script, `fix_problem` names the failing file ('the sweep failed tests/x.py (exited 1)'), `_TALLY_KEYS` row for the sweep, and the time budget: `sweep_suites`, `load_sweep_costs`, `sweep_budget`, `budget_clause` - for a command running tools/sweep-selftests.py over named suites, the recorded slot-seconds of those suites (read from .github/sweep-costs.json of the project, rounded up, never more than half the deadline) are held back from the baseline/task/held/second runs (`early` deadline) so the fix run keeps them; a suite with no recorded cost holds nothing and is named ('no recorded cost for X'); an unreadable table says why; the basis carries the clause. tools/sweep-selftests.py was NOT touched (its output shape was sufficient). EVIDENCE. Filed P131.11 case, re-run with its own command on the fixed helper in the scratch repo: status proved ('3 of 43 collected tests failing an assertion ... x5, x6, rl16 ... each passing with the working tree's implementation ... fix run: held back 3s of the deadline, the recorded slot-seconds of tools/check-example-pins.py in .github/sweep-costs.json; no recorded cost for tools/release.py') in 10.5s. Cases: swc1-swc9 in tests/test_stamp_verification.py (new stage swc-block, 9/9), rs3 and rs4 in tests/test__runner_output.py (22/22). Red first: before any fix swc1, swc2, swc3 failed on the fixture (swc1 read could-not-prove, the pre-fix behaviour) and the rest raised on the missing symbols. Mutations on a scratch copy (not the tree), each restored, pycache purged: fix_problem accepts any exit 0 -> swc3 red; sweep_tally accepts partial/empty sweeps -> swc3, swc4, rs4 red; sweep_tally never fires -> swc1, swc3, swc4, swc8, rs4 red; fix_problem drops the failing-file clause -> swc2 red; case_site ignores the block script -> swc1, swc8 red; early deadline = deadline -> swc9 red; default 60s cost for an uncosted suite -> swc5, swc6, swc7, swc9 red; _house_cases reads the two-space FAIL lines -> rs3 red. Gate: `python3 tools/sweep-selftests.py tests/test_stamp_verification.py tests/test__runner_output.py tests/test_run_test_gate.py tests/test__filed_returns.py --jobs 4 --quiet` -> '4/4 files ok, 1025 cases' (summary line read; this was the sweep's own tail, the pipe hides its exit code, so the summary is the evidence). ruff check on the three changed areas: All checks passed; vermin -t=3.8-: exit 0; _output_lints.prose_number_claims() and house_style_violations() over the tree: [] and []. DEPENDANTS. stamp-verification.py's dependants (PLUGIN-BUILD-GUIDE.md, audit-plan.schema.json, _output.py, _proc_group.py, _runner_output.py, drive-phase.py, run-test-gate.py, _filed_returns.py): still correct - no flag, exit code, JSON key or redFirst word changed; the only output change is an extra basis clause for a sweep-shaped command and a 'the sweep failed X' clause in the existing cannot-prove sentence; drive-phase.py shells the verb and submit parses status/basis/printed, unchanged. PLUGIN-BUILD-GUIDE.md was not edited: it names no cost-table budget, and I did not widen scope to a doc outside files - the orchestrator may want a sentence there. Names used elsewhere (_build_throwaway, _decisive_line, _hard_link_or_copy, _head_text): untouched. _runner_output.py's dependants (run-test-gate.py, stamp-verification.py, test__refs.py, test__runner_output.py, test_run_test_gate.py, test_stamp_verification.py, test__filed_returns.py): still correct - run-test-gate.py uses sweep_failures/sweep_summary/SWEEP_RUNNER, all unchanged; read_run_tally's only change is a last-resort fallback that returns a tally only for a clean sweep summary, so no other runner's output changes (rs4 pins that a runner's own tally wins); the one behavioural change under a shared reader is `_house_cases` skipping lines that begin with 'FAIL' plus two spaces, which the harness never prints (its line is 'FAIL <label>'); test_run_test_gate.py and test__filed_returns.py ran green. _json_blob, _unittest_cases, _vitest_cases, playwright_line_cases: untouched. tests/test_stamp_verification.py's dependants (sweep-costs.json, test__filed_returns.py, sweep-selftests.py, verify.sh): still correct - only an added stage; the sweep-costs.json row for the suite is unchanged by this task (a re-record is the orchestrator's call; the suite grew by one stage). tools/sweep-selftests.py: untouched, so its 42 dependants are unaffected. tests/test__runner_output.py: two cases added; its cost row and the guide reference stand. NOT DONE: the full sweep and browser gates were not run (told not to); tests/test_drive_phase.py was not run although drive-phase.py shells this verb.",
+        "descriptive": "red-first through a sweep-shaped command now proves when the suites pass and the new cases were red at HEAD, names the failing file when they do not, and sizes the fix run's reserved time from the sweep's cost table, naming any suite with no recorded cost."
       },
       "startedAt": "2026-10-25T10:10:32Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-25T12:35:10Z",
+      "verifiedBy": [
+        "tests/test_stamp_verification.py stage swc-block: a stand-in sweep with the real output shapes in a fixture repo - a passing suite proves, a still-failing one reads could-not-prove naming the file, the reader accepts a clean summary and refuses exit 0 without one (summary short of its files, no file swept), the tally and read order, the budget arithmetic and cap, the basis clause, the end-to-end clause from a fixture cost table, and the deadlines the runs actually got",
+        "tests/test__runner_output.py: sweep_failing_cases per header block and the two-space FAIL lines not read as cases; sweep_tally accepts only a fully ok non-empty sweep and yields to a runner's own tally"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-25T12:35:08Z.bdb595",
         "status": "passed",
         "at": "2026-10-25T12:35:08Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "4805f994152e",
+        "at": "2026-10-25T12:35:10Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-25T10:30:40Z",
+        "basis": "`python3 tests/test_stamp_verification.py --selftest --stage swc-block` in a throwaway tree at HEAD exited 1 with 3 of 4 collected tests failing an assertion, the task's own among them (HEAD's own tests on HEAD's code failing only the unknown-stage check for `swc-block`, which the task's test files add - the stage is new at HEAD), each passing with the working tree's implementation - swc1 (house FAIL), swc2 (house FAIL), swc3 (house FAIL): SELFTEST FAILED: 0/4 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P142.3",
       "title": "The affected selection's miss rate is measured on this repository's history before any task gate trusts it",
-      "status": "in_progress",
+      "status": "done",
       "description": "Add tools/measure-affected-miss.py. Mutation half: for each of the last N task commits (default 20), in a scratch worktree at that commit, apply each of two mutations to every changed .py (an import-time raise, and a house-style violation the tree lints read), run the full sweep, and count the suites that went red that tools/affected.py --base <parent> did not select. CI half: for each failed CI run in the window, read its failing suites (gh run view --log-failed) and check them against the selection for that SHA's diff. It prints 'misses M of N commits (mutation); K of J runs (CI)' with every miss named; a CI half that could not ask prints could-not-ask and is never read as zero. It never edits the checkout: every mutation happens in its own scratch worktree, removed in finally. Acceptance: (1) on a fixture repository where a suite depends on a changed module the selection omits, the miss is counted and named; (2) a selection that includes every red suite counts zero misses; (3) no gh, or no network, prints could-not-ask for the CI half; (4) the checkout's status is unchanged after a run; (5) the measured result over 20 commits is recorded in the task outcome with the commit range.",
       "files": [
         "tools/measure-affected-miss.py",
@@ -239,22 +312,26 @@
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": null,
+        "noChange": {
+          "reason": "The miss-rate tool already exists (tools/measure-affected-miss.py, landed in P131.16-dau as b52ba79a/66b3635d); this task's remaining acceptance was the measurement itself. Measured 2026-10-25 over 17563b1b..4805f994: 20 commits requested, 16 measured (3 could-not-measure: the commit changes the sweep runner itself; 1 carried no Python). Mutation: 13 of 16 measured commits had at least one suite the affected selection did not name (test__output_lints.py on style mutations in most of them; raise mutations missed suites such as test__filed_returns, test__invariants, test_detect_plan_skip). CI: 0 misses in 2 failing runs read (40194747670, 40076895652). The selection is not safe to gate a task on.",
+          "examinedAt": "4805f994152e531ac615a87849b3b01e1769fb22"
+        }
       },
       "startedAt": "2026-10-25T10:10:35Z",
-      "completedAt": null,
+      "completedAt": "2026-10-25T16:34:21Z",
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-25T11:00:59Z.bf960f",
-        "status": "failed",
-        "at": "2026-10-25T11:00:59Z"
+        "runId": "2026-10-25T12:47:30Z.4b9191",
+        "status": "passed",
+        "at": "2026-10-25T12:47:30Z"
       }
     },
     {
       "id": "P142.4",
       "title": "A task's gate is the affected selection, and no derived step re-runs what a declared key already runs in full",
-      "status": "pending",
+      "status": "blocked",
       "description": "run-test-gate.py measures a task's declared non-suite entries plus the suites the selection names for its changed paths; an unrecognised path class widens to the phase gate and says so. A declared key whose command is the unscoped sweep (the dogfood plan's selftests) counts as already wide for the Python arm, so no affected/python or affected/related step is added beside it: today such steps re-run suites the key already ran. The recorded row commits with no override. Acceptance: (1) a task gate holding the full-sweep key adds no affected/python or affected/related step; (2) a narrow declared gate gets the affected suites for its changed paths and none for an unchanged tree; (3) an unrecognised path widens to the phase gate, saying so; (4) the green row commits without override; (5) the selection is used only after the miss-rate task's result is recorded with zero misses, or with each miss's path class widened to the full set.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -292,7 +369,7 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [
-        "P142.3"
+        "P142.10-6yq"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -303,7 +380,8 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "blockedReason": "Owner 2026-10-26: fix the selection model (P142.10-6yq), then re-measure over at least 20 commits with zero misses; held until that measurement."
     },
     {
       "id": "P142.5",
@@ -363,7 +441,7 @@
     {
       "id": "P142.6",
       "title": "Sign-off runs the full gate once, and a probe of a guarded lint only when the phase changed that lint",
-      "status": "pending",
+      "status": "in_progress",
       "description": "At sign-off the phase gate runs once with its browser steps. When the phase diff touches a file that holds a lint tools/prove-gates.py derives a row for, those rows run in both directions before sign-off; a phase touching no such file runs none and says so. A surviving mutation stops sign-off with the row named. Acceptance: (1) a phase diff touching a lint's file runs that lint's rows in both directions at sign-off; (2) a phase touching no lint file runs none and prints that it ran none; (3) a surviving mutation stops sign-off naming the row; (4) the probe restores the tree in finally and the checkout's status is unchanged.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -399,16 +477,22 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-25T16:34:55Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-26T09:47:49Z.f8e4d3",
+        "status": "passed",
+        "at": "2026-10-26T09:47:49Z"
+      }
     },
     {
       "id": "P142.7",
@@ -466,7 +550,7 @@
     {
       "id": "P142.8",
       "title": "The sweep's wall clock is under four minutes: the critical-path suites split into blocks the workers share",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The sweep's critical path is a few long suites (on 2026-10-17: test__deps.py 158 s, test_stamp_verification.py 119 s, test__output.py 84 s, check-committed-pii.py 64 s). Split each into staged blocks so the sweep spreads them across workers, and re-record the cost table. Each split keeps every case: the case count per file before and after is compared. Acceptance: (1) time python3 tools/sweep-selftests.py is under 240 s wall on this machine twice, at least 20 minutes apart, both figures recorded; (2) no suite's case count falls; (3) total CPU of the sweep is not higher than before; (4) the sweep's own selftest is green.",
       "files": [
         "tests/test__deps.py",
@@ -504,6 +588,125 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-25T16:34:58Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-26T10:00:00Z.6ea243",
+        "status": "passed",
+        "at": "2026-10-26T10:00:00Z"
+      }
+    },
+    {
+      "id": "P142.9-6yq",
+      "title": "Runner output read off a Windows pipe keeps CRLF, and every reader anchored at end of line stops matching",
+      "status": "pending",
+      "description": "CI release tier on ci/P142 (run 40194747670, sha 4805f994) is red on Windows only: tests/test_stamp_verification.py cases swc1, swc2, swc8 fail on windows plain, windows cp1252 and resample. Cause, reproduced on macOS: stamp-verification decodes a run's stdout as bytes (`.decode(\"utf-8\", \"replace\")`), so a Windows child's `\\r\\n` survives into the text, and `_runner_output` readers anchored with `[ \\t]*$` under re.M stop matching - `sweep_tally(\"...1/1 files ok, 2 cases\\r\\n\")` returns None while the LF twin returns the tally. The pytest reader survives only because its regex does not anchor at end of line; jest/vitest/mocha/sweep/FAIL-line readers share the defect.\n\nThis is a class, not the sweep instance: fix it once at the entry every reader already goes through - `plain_text()` (it strips terminal escapes \"once, here\") - by normalising `\\r\\n` and lone `\\r` line ends to `\\n`, and update its docstring to state both normalisations. Then check every public reader in `_runner_output` actually reaches `plain_text` before matching; any that does not, route it through.\n\nTests (regression, red-first): one table-driven case in tests/test__runner_output.py that runs every public reader (sweep_tally, sweep_summary, sweep_failures, sweep_failing_cases, read_run_tally / read_tally, failing_cases, jest_failures and the per-runner summary readers) over each fixture text it already has AND that text with `\\n` -> `\\r\\n`, asserting identical answers - so a reader added later without the normalisation goes red by being in the table. Derive the reader list from the module rather than spelling it when practical. Confirm it is red with plain_text unchanged.\n\nDependants: stamp-verification.py (red-first `fix_problem`, `sweep_budget`), drive-phase.py and run-test-gate.py read these readers' answers; run tests/test_stamp_verification.py, tests/test__runner_output.py, tests/test_drive_phase.py, tests/test_run_test_gate.py. No F/P/BUG ids in comments.",
+      "files": [
+        "plugins/audit/scripts/governance/_runner_output.py",
+        "tests/test__runner_output.py",
+        "tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test__runner_output.py: every reader returns the same answer for a text and its CRLF twin"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__runner_output.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P142.10-6yq",
+      "title": "The affected selection names every suite a change can turn red: tree-scanning lints always, and suites reaching a module through a subprocess or a sibling's import",
+      "status": "pending",
+      "description": "The P142.3 measurement (tools/measure-affected-miss.py --commits 20, range 17563b1b..4805f994) found that 13 of 16 measured commits had at least one suite turned red by a mutation in a changed file that tools/affected.py did not select. Two classes, not a list of instances:\n\n1. Tree-scanning suites. A suite whose lint walks every tracked file (tests/test__output_lints.py on a style mutation in almost every commit; also test__help_lints, test__deps, test__refs and the like) is affected by ANY change to a file in the set it scans. The selection must derive that set from the lint's own walk (the shared walks in tools/lints) rather than from a hand list, and select the suite whenever a changed path falls inside it.\n2. Reach the import graph does not show. Raise mutations were missed for suites that reach the module transitively (A imports B imports changed C), through a subprocess of an entry script (`[sys.executable, <script>]`, `_loader`, `find_script`), or by reading its source. Close the reverse-import walk transitively and add the subprocess/loader edges, derived from the code, not spelled.\n\nAcceptance: (1) every (commit, missed suite) pair the measurement JSON recorded is selected when tools/affected.py is given that commit's changed files - write the cases from that data, so they fail on today's code; (2) the selection stays narrower than the full sweep for a commit that touches one leaf module (report the count, do not assert a number in prose); (3) measure-affected-miss.py keeps its CLI; if it needs a flag to read the selection, add it. The re-measurement over >=20 commits is NOT part of this task - the orchestrator runs it on a quiet machine afterwards.\n\nMeasurement data: <scratchpad>/miss-rate-20.json, the orchestrator hands over the full path (read-only; per commit: sha, changed, mutations[].missed).\n\nNo F/P/BUG ids in comments. Do not run the full measurement or any browser gate.",
+      "files": [
+        "tools/affected.py",
+        "tools/measure-affected-miss.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/affected.py: each miss the 2026-10-25 measurement named is selected for its commit's changed files"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tools/affected.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P142.11-6yq",
+      "title": "The sweep finishes under four minutes: the costliest staged suite does less work, and the sweep's workers run blocks from every staged suite",
+      "status": "pending",
+      "description": "P142.8 split four suites into staged blocks and changed the slot gate; the sweep went from 430.6 s / 418.3 s to 370.5 s / 370.9 s (two runs each, 20 min gap, 8 slots on a 10-core machine), short of the 240 s acceptance. Its measured bound: about 2200 CPU-seconds of total work over 8 slots cannot finish under about 275 s even with perfect packing, and tests/test_drive_phase.py alone holds 6 of 8 slots for about 210 s (113 blocks, 1343 process-seconds).\n\nTwo parts, both needed:\n1. Less work in tests/test_drive_phase.py: find what its blocks repeat (fixture repositories built per block, full drive runs where a function call answers the same question) and share or narrow it without dropping a case. Report process-seconds before and after.\n2. Blocks, not suites, as the unit the sweep schedules: let the sweep's workers draw individual blocks from every staged suite (tests/_harness.py staged_main and the runner's slot gate) so one large suite no longer holds a fixed grant while others wait. Keep per-block timeouts calibrated, keep each block's scratch-dir isolation and the watched-pair checks, and keep --shard I/N balancing working with .github/sweep-costs.json.\n\nAcceptance: (1) `python3 tools/sweep-selftests.py` wall clock under 240 s, measured twice with a gap before and after, spread reported; (2) the case count per file is unchanged (print both); (3) the runner's own suite and tests/test__harness.py cover the block scheduling, red-first by breaking it; (4) no number written into prose. The Windows cost table is re-recorded by the orchestrator from CI logs, not here.\n\nNo F/P/BUG ids in comments. No browser gates.",
+      "files": [
+        "tests/_harness.py",
+        "tests/test_drive_phase.py",
+        "tools/sweep-selftests.py",
+        "tests/test__harness.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tools/sweep-selftests.py: blocks of two staged suites share the worker budget, and no case is lost from either"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tools/sweep-selftests.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P142.8"
+      ],
       "attempts": 0,
       "maxAttempts": 3,
       "commit": null,

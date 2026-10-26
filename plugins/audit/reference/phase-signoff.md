@@ -3,8 +3,8 @@
 **No pipeline command reads this file first, and the main loop does not perform sign-off by
 hand any more.** Once every task is closed, the step driver (`scripts/governance/drive-phase.py`)
 dispatches the phase reviewer, records its findings in one write, prints one `decide triage`,
-and on `sign-off` runs the phase gate, the invariants check, the verdict, the commit, the
-landing and the lock release as one step, in that order, printing the rule each step needs at
+and on `sign-off` runs the phase gate, the invariants check, the lint probe (step 4b), the
+verdict, the commit, the landing and the lock release as one step, in that order, printing the rule each step needs at
 that step. `tools/measure-context.py --gate` (in the source repository) holds that no pipeline command reads a reference
 file first. This file is the reference for what each step checks and why, for the guide agent
 and for a reader who asks: where it says "you", read the step the driver runs. What each
@@ -436,6 +436,22 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    away-and-back (jest mocks and tsc miss module-init/require-cycle boot crashes). Use the runtime steps in
    `meta.runtimeBoot`; if the runtime is unreachable, STOP and hand the human an explicit boot-check action item —
    the phase may NOT be signed off until the human confirms. If `meta.runtimeBoot` is null, skip this step.
+4b. **`lintProbeGreen`** — the project's mutation probe of its guarded lints, run only when the project
+   keeps one at `tools/prove-gates.py` (`LINT_PROBE` in `drive-phase.py`); a project keeping none
+   skips the step silently, as an unset `meta.runtimeBoot` skips step 4, because the probe is a
+   project's own tool and not something every plan owes. The driver's `lint_probe()` runs it after the invariants and before the
+   verdict, handing it `--changed` and every file the phase's tasks declare or their commits changed,
+   the plan's own records left out. The probe runs only the rows whose lint lives in one of those
+   files, in both directions; a phase that changed no such file runs none, and the did-line carries
+   the probe's own `ran none` line rather than reading as a proof. Exit 1 is a stop that quotes each
+   `ROW NOT PROVEN:` line the probe printed — the direction, the lint and its file — and the remedy is
+   a fix task, as for a red gate. The probe mutates the working tree and restores it under its own
+   trap; the driver reads `git status` before and after the run and **stops, naming the entries,
+   when they differ**, whatever the probe's exit, so a tree it left behind is never the one the
+   verdict binds. A green run is held at its HEAD in the drive's state, so a decision answered after
+   it does not pay for the run again; a new commit runs it again. That ordering, the comparison and
+   the stop are `lint_probe()`'s and the `lp` cases of `tests/test_drive_phase.py` (in the source repository) hold them; the
+   protocol the probe answers is `prove-gates.py`'s own `ch` cases.
 5. Only if all applicable gates pass:
    a. **Record the sign-off through the verb, never by hand:**
       ```
