@@ -3628,7 +3628,8 @@
       "P130.8",
       "P131.1",
       "P131.2",
-      "P142.1"
+      "P142.1",
+      "P142.18-6yq"
     ],
     "plugins/audit/scripts/git/close-phase.py": [
       "P18.3",
@@ -3709,7 +3710,8 @@
       "P130.8",
       "P131.1",
       "P131.2",
-      "P142.1"
+      "P142.1",
+      "P142.18-6yq"
     ],
     "plugins/audit/scripts/governance/_evidence_io.py": [
       "P29.4",
@@ -10031,7 +10033,8 @@
       "P139.2-6sp",
       "P142.1",
       "P142.6",
-      "P142.12-6yq"
+      "P142.12-6yq",
+      "P142.18-6yq"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -11412,7 +11415,8 @@
       "P131.1"
     ],
     "tests/test__worktrees.py": [
-      "P131.1"
+      "P131.1",
+      "P142.18-6yq"
     ],
     "tests/test_ado_connect.py": [
       "P131.1"
@@ -11527,7 +11531,8 @@
       "P142.6",
       "P142.1",
       "P142.11-6yq",
-      "P142.12-6yq"
+      "P142.12-6yq",
+      "P142.18-6yq"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -11582,7 +11587,8 @@
       "P109.6"
     ],
     "tests/test_manage_worktrees.py": [
-      "P131.1"
+      "P131.1",
+      "P142.18-6yq"
     ],
     "tests/test_materialize_proposal.py": [
       "P131.1"

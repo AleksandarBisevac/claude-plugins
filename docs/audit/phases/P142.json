@@ -1057,7 +1057,7 @@
     {
       "id": "P142.15-6yq",
       "title": "An agent session removes the temp directory it was given when it ends",
-      "status": "in_progress",
+      "status": "blocked",
       "description": "run-agent-session.py creates a session-writer-* / session-reviewer-* temp directory per session and never removes it. Remove it in finally on every exit path (success, failure, timeout, interrupt), keeping anything a caller is told to read out of it by copying first. Red-first the case against today's code. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/governance/run-agent-session.py",
@@ -1092,15 +1092,16 @@
       "bugId": "BUG-30-6yq",
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-26T13:28:07Z.48e22b",
+        "runId": "2026-10-26T13:33:23Z.2d2dd6",
         "status": "failed",
-        "at": "2026-10-26T13:28:07Z"
-      }
+        "at": "2026-10-26T13:33:23Z"
+      },
+      "blockedReason": "Gate red only on test__output_lints te11/ln1, red at its tree's base d92b9c64 and fixed on the phase head by P142.16-6yq (b10ddfdd); a rerun still runs in the old tree. Owner 2026-10-26: fix the tool first (P142.18-6yq: the task tree follows the phase head), then re-gate."
     },
     {
       "id": "P142.16-6yq",
       "title": "The CRLF reader case reports what it left out of the differing readers it prints",
-      "status": "in_progress",
+      "status": "done",
       "description": "At HEAD tests/test__output_lints.py is red (te11 and ln1, 167 of 169) on tests/test__runner_output.py around line 469: the ru17 label prints len(differ) beside differ[:4], a count of the whole set beside a bounded slice with nothing saying what was left out. Render the list through _output.some_of() (as the lint says) or drop the count. Both suites must be green: python3 tools/sweep-selftests.py tests/test__runner_output.py tests/test__output_lints.py. No other change.",
       "files": [
         "tests/test__runner_output.py"
@@ -1121,19 +1122,30 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b10ddfddfb7d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tests/test__runner_output.py only (+4/-3; git status --short in the task worktree lists only that file): the ru17 label kept its len(differ) count and now renders the differing list through _output.some_of(differ, render=repr) inside [%s] instead of differ[:4], so a truncated list ends with 'and N more'; the import line became 'from _output import safe_stdio, some_of'. The case's predicate is unchanged. At base d92b9c64 the gate command printed 'SELFTEST FAILED: 167/169 cases passed' with te11 and ln1 both naming ('test__runner_output.py', 469, ...some_of()). After the edit, run twice in the task tree: python3 tools/sweep-selftests.py tests/test__runner_output.py tests/test__output_lints.py exited 0 both times, '2/2 files ok, 192 cases'. ruff check tests/test__runner_output.py exited 0. Probe of the rendering: some_of over three 250-char tuples with the default budget printed the first tuple's repr followed by 'and 2 more'. Dependants: .github/sweep-costs.json (path key) still correct - the file path is unchanged; plugins/audit/scripts/governance/_runner_output.py still correct - not touched, and ru8 constrains that module's imports, not the test's; tools/affected.py still correct - it uses _cases and _selftest, whose names and signatures are unchanged; PLUGIN-BUILD-GUIDE.md still correct - it names the path, which is unchanged.",
+        "descriptive": "The CRLF reader case now says how many differing readers it left out instead of printing a whole-set count beside a silently cut slice, turning test__output_lints green again."
       },
       "startedAt": "2026-10-26T13:11:14Z",
-      "completedAt": null,
+      "completedAt": "2026-10-26T13:28:09Z",
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-26T13:22:25Z.ae0478",
         "status": "passed",
         "at": "2026-10-26T13:22:25Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "b10ddfddfb7d",
+        "at": "2026-10-26T13:28:09Z",
+        "return": "docs/audit/evidence/returns/P142.16-6yq/20261026T131114Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only fix of a lint finding in a test file; the fixing file is the test itself, so a throwaway at HEAD with this file is the fix",
+        "at": "n/a"
       }
     },
     {
@@ -1160,6 +1172,47 @@
       "dependsOn": [
         "P142.13-6yq"
       ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P142.18-6yq",
+      "title": "A task tree follows the phase head when the base moves under it, so a red the phase has since fixed is not charged to the task",
+      "status": "pending",
+      "description": "Observed in P142 on 2026-10-26: four returned tasks (their trees based at d4a26f13 / d92b9c64) went gate-red only on a suite that was red at their base; the phase then landed the fix (b10ddfdd), but a `rerun` still ran in the old tree (the run's testedState.head stayed at the old base), so the only exits were an owner override or a pointless retry. The gate judges a task on a base that is no longer the phase's.\n\nFix the structure: when the drive re-gates (rerun/retry) or before it gates a returned task, and the phase head has moved past the tree's base, bring the task tree to the phase head with the task's work carried - only when none of the task's changed files moved between the two commits (a fast check over `git diff --name-only base..head`); otherwise refuse by name, listing the overlapping files, and leave the tree untouched. Record the base change (old base, new base, the files that moved) in the run's record and in the carry so commit-task-work diffs the task's work against the new base and the stamp/scope digest is unaffected. Never rebase or rewrite a commit; the task tree holds uncommitted work over a detached HEAD, so the move is a checkout of the new head carrying the working-tree changes, verified byte-for-byte on the task's files after the move. Read drive-phase.py's rule \"never rebase - it rewrites the task commit SHAs\" and keep it true.\n\nNote: task P142.12-6yq has uncommitted work in its own tree that also edits drive-phase.py and tests/test_drive_phase.py (sign-off lint probe); keep your drive-phase change small and local to the gate/dispatch path so the two integrate cleanly.\n\nHigh risk: it moves a tree that holds an agent's only copy of its work. Red-first every case. Prove a failure mid-move leaves the work as it was. No F/P/BUG ids in comments.",
+      "files": [
+        "plugins/audit/scripts/git/_worktrees.py",
+        "plugins/audit/scripts/git/manage-worktrees.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test__worktrees.py",
+        "tests/test_manage_worktrees.py",
+        "tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__worktrees.py: a task tree whose base is behind the phase head and whose work touches none of the files that moved is brought to the head with its work intact, and one whose work overlaps a moved file is refused by name",
+          "tests/test_drive_phase.py: a gate rerun after the phase head moved runs in the advanced tree and records the new base"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__worktrees.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
       "attempts": 0,
       "maxAttempts": 3,
       "commit": null,
