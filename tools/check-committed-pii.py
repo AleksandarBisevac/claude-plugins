@@ -1464,7 +1464,7 @@ def _reader_split_cases(check):
           and _seen == [(1, "windows-user-path")] * len(_shares))
 
 
-def _cases(check):
+def _domain_cases(check):
     _user = "aleksandarbisevac"
     # ONE LEAK, EVERY SPELLING IT ARRIVES IN. A session directory reaches a
     # command line dash-joined, a URL percent-escaped and a Windows path
@@ -1735,9 +1735,11 @@ def _cases(check):
           set(SYNTHETIC) == set(_SYNTHETIC_HEADLINE)
           and "plan-index-unparseable" in SYNTHETIC
           and "plan-config-unreadable" in SYNTHETIC)
-    _moving_cases(check)
-    _plan_problem_cases(check)
 
+
+def _contract_cases(check):
+    """The contract checks that read a row's shape: the journal's, a phase
+    claim's `host`, a writer id, a torn line."""
     _row = {"actor": {"author": None, "sessionId": "s", "via": "hook",
                       "host": "MacBook-Pro.local"},
             "details": {"command": "npm ci"}}
@@ -1806,8 +1808,9 @@ def _cases(check):
           "nobody can clear: %r vs %r" % (_torn, _mid),
           _torn == [] and [h[2] for h in _mid] == ["journal-unparseable-row"])
 
-    _foreign_cases(check)
 
+def _command_line_cases(check):
+    """The command line, its usage errors and `--scan-text`."""
     # The command line, as a value rather than as an exit code, because `--repo`
     # gave it three ways to be wrong where it had one: a flag whose value is
     # missing, a word nobody recognises, and a path that is not a directory. All
@@ -1875,9 +1878,26 @@ def _cases(check):
           and len(set(_msgs[1:])) == 3)
 
 
-def _selftest():
-    from _suite import run          # the house runner; tools/_suite.py says why here
-    return run(_cases)
+# Every block, in replay order - the order the cases always printed in. Most
+# of the file's time is whole-tree scans, so one process per block lets them
+# run side by side: a full run starts one per block, a few at a time, and
+# replays their cases in this order (`_harness.staged_main`, reached through
+# the `tools/_suite.py` bridge, which says why a tool imports it late).
+# `--stage LABEL` runs only the blocks it names, in this process.
+STAGES = (
+    ("pi-domain", "_domain_cases"),
+    ("pi-moving", "_moving_cases"),
+    ("pi-plan-problem", "_plan_problem_cases"),
+    ("pi-contract", "_contract_cases"),
+    ("pi-foreign", "_foreign_cases"),
+    ("pi-command-line", "_command_line_cases"),
+)
+
+
+def _staged_selftest(argv):
+    """`--selftest`, run as staged blocks; the exit code."""
+    from _suite import _harness     # the house runner; tools/_suite.py says why here
+    return _harness.staged_main(argv, STAGES, globals(), "pii-stages-")
 
 
 USAGE = ("usage: check-committed-pii.py [--repo <path>] [--scan-text] "
@@ -1913,7 +1933,7 @@ def parse_argv(argv):
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else list(argv)
     if "--selftest" in argv:
-        return _selftest()
+        return _staged_selftest(argv)
     # HANDLED LIKE `--selftest` AND BEFORE `parse_argv`, on purpose: it names no
     # repository and takes no value, so threading it through the `--repo` parser
     # would give that parser a second question to answer and `q18`'s three kinds

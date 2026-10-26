@@ -170,8 +170,9 @@ DEFAULT_TIMEOUT = 300
 # while three sweep workers held the rest, and run 38370435884 killed
 # `test_drive_phase.py` at the per-file cap on windows that way. So there is ONE
 # budget - the sweep's `jobs` slots - and a staged suite holds several of them
-# at once: `stage_grant(jobs)` of them, admitted in submission order, so while it
-# runs nothing else can take its cores, and the number goes to the child in
+# at once: up to `stage_grant(jobs)` of them, admitted in submission order with
+# what is free when its turn comes (`slot_gate`), so while it runs nothing else
+# can take its cores, and the number it holds goes to the child in
 # `STAGE_GRANT_VAR`, which `_harness.stage_workers()` reads. The name and the
 # cap are `_harness.py`'s too; case bg0 fails when the two copies part.
 STAGE_GRANT_VAR = "SWEEP_STAGE_GRANT"
@@ -1359,29 +1360,42 @@ def file_timeout(path, costs, floor=DEFAULT_TIMEOUT, slots=1, staged=False,
 
 def slot_gate(slots):
     """`(wait, done)` over a budget of `slots`. `wait(ticket, weight)` returns
-    once every lower ticket has been admitted and `weight` slots are free, and
-    takes them; `done(weight)` gives them back.
+    once every lower ticket has been admitted and at least one slot is free,
+    takes up to `weight` of the free slots and returns how many it took;
+    `done(taken)` gives them back.
 
     IN TICKET ORDER, never out of it. A cheap file allowed past a staged suite
     waiting for its slots would take the slot that suite was waiting on, and
     with enough cheap files behind it the suite would start last - the exact
-    shape a costliest-first order exists to prevent. A weight above `slots`
-    would wait forever, so it is read as `slots`."""
+    shape a costliest-first order exists to prevent.
+
+    AND A FULL GRANT IS NEVER WAITED FOR WHILE A SLOT SITS FREE. The head used
+    to wait until all `weight` of its slots were free, and every ticket behind
+    it waited with it, so the slots already free stayed idle until the files
+    holding the rest had finished: a staged suite admitted while another held
+    most of the budget stalled the whole run behind it, and each suite split
+    into blocks added one more such stall. Taking what is free, and telling the
+    child the number (`STAGE_GRANT_VAR`), keeps the order and wastes no slot:
+    the suite sizes its block pool from what it holds, and its timeout is
+    calibrated to the same number (`file_timeout`). A weight above `slots`
+    is read as `slots`, and a weight under one as one."""
     cond = threading.Condition()
     state = {"free": slots, "turn": 0}
 
     def wait(ticket, weight):
-        weight = min(weight, slots)
+        weight = max(1, min(weight, slots))
         with cond:
-            while state["turn"] != ticket or state["free"] < weight:
+            while state["turn"] != ticket or state["free"] < 1:
                 cond.wait()
-            state["free"] -= weight
+            taken = min(weight, state["free"])
+            state["free"] -= taken
             state["turn"] += 1
             cond.notify_all()
+        return taken
 
-    def done(weight):
+    def done(taken):
         with cond:
-            state["free"] += min(weight, slots)
+            state["free"] += max(1, min(taken, slots))
             cond.notify_all()
     return wait, done
 
@@ -1600,22 +1614,24 @@ def sweep(paths, jobs=None, repo=None, encoding=None,
     started = time.time()
 
     def admitted(ticket, path):
-        weight = grant if path in staged else 1
-        wait(ticket, weight)
+        # WHAT THE GATE GAVE, not what was asked: a staged suite admitted while
+        # fewer than `grant` slots were free holds those, is told so, and has
+        # its timeout calibrated to them.
+        held = wait(ticket, grant if path in staged else 1)
         left = (None if deadline is None
                 else max(1, int(deadline - (time.time() - started))))
         try:
             return run_one(path, repo, encoding,
-                           file_timeout(path, costs, timeout, weight,
+                           file_timeout(path, costs, timeout, held,
                                         staged=path in staged, cap=left),
-                           pycache, None, spaced, weight,
+                           pycache, None, spaced, held,
                            locale_vars=locale_vars, os_name=os_name)
         finally:
             # HELD THROUGH THE WAIT, so the next child cannot start inside it:
             # `CLAUDE_SERIAL_GAP_S` says why a serial run leaves a gap.
             if jobs == 1:
                 time.sleep(CLAUDE_SERIAL_GAP_S)
-            done(weight)
+            done(held)
     pycache = tempfile.mkdtemp(prefix="sp-run-")
     # THE CHECKOUT'S OWN `.claude/`, read before the first child starts and after
     # the last one is done (`claude_verdicts` says why that is the only shape).
@@ -1900,7 +1916,7 @@ def budget_line(paths, jobs, costs, floor, repo=None, deadline=None):
     longest = max([file_timeout(p, costs, floor, grant if p in found else 1,
                                 staged=p in found, cap=deadline)
                    for p in paths] or [floor])
-    return ("budget: %d slots; %d staged suites hold %d each (%s); per-file "
+    return ("budget: %d slots; %d staged suites hold up to %d each (%s); per-file "
             "timeout %ds, up to %ds for a file the cost table times as heavy%s\n"
             % (jobs, len(staged), stage_grant(jobs),
                ", ".join(os.path.basename(p) for p in staged) or "none",
@@ -3712,16 +3728,15 @@ def _cases(check):
     bg_weights = [3, 1, 1, 3, 1, 1, 2]
 
     def bg_task(ticket):
-        weight = bg_weights[ticket]
-        bg_wait(ticket, weight)
+        taken = bg_wait(ticket, bg_weights[ticket])
         with bg_lock:
-            bg_state["held"] += weight
+            bg_state["held"] += taken
             bg_state["peak"] = max(bg_state["peak"], bg_state["held"])
             bg_state["order"].append(ticket)
         time.sleep(0.05)
         with bg_lock:
-            bg_state["held"] -= weight
-        bg_done(weight)
+            bg_state["held"] -= taken
+        bg_done(taken)
     with futures.ThreadPoolExecutor(max_workers=4) as bg_pool:
         list(bg_pool.map(bg_task, range(len(bg_weights))))
     check("bg4 the slot gate never lets more than the budget be held at once and "
@@ -3729,6 +3744,51 @@ def _cases(check):
           "waiting for its slots: %r" % (bg_state,),
           bg_state["peak"] <= 4 and bg_state["peak"] >= 3
           and bg_state["order"] == list(range(len(bg_weights))))
+
+    # THE HEAD TAKES WHAT IS FREE. Three plain files hold three of four slots;
+    # a staged suite asking for three is admitted AT ONCE with the one left,
+    # rather than waiting for all three while that slot idles. And the other
+    # direction, which a gate that stopped counting would fail: with nothing
+    # free the next ticket waits, and a head never takes more than is free or
+    # more than it asked for.
+    mg_wait, mg_done = slot_gate(4)
+    mg_plain = [mg_wait(t, 1) for t in range(3)]
+    mg_got = {}
+
+    def mg_ask(ticket, weight):
+        mg_got[ticket] = mg_wait(ticket, weight)
+    mg_head = threading.Thread(target=mg_ask, args=(3, 3))
+    mg_head.daemon = True
+    mg_head.start()
+    mg_head.join(2.0)
+    mg_at_once = dict(mg_got)
+    mg_next = threading.Thread(target=mg_ask, args=(4, 1))
+    mg_next.daemon = True
+    mg_next.start()
+    mg_next.join(0.3)
+    mg_blocked = 4 not in mg_got
+    for _held in mg_plain:
+        mg_done(_held)
+    mg_head.join(2.0)
+    mg_next.join(2.0)
+    # In a thread with a bound, so a gate that waits for the full ask hangs
+    # nothing and reads as the empty list it produced.
+    mg_small_wait, _mg_small_done = slot_gate(4)
+    mg_small = []
+    mg_two = threading.Thread(target=lambda: mg_small.extend(
+        [mg_small_wait(0, 2), mg_small_wait(1, 9)]))
+    mg_two.daemon = True
+    mg_two.start()
+    mg_two.join(2.0)
+    check("bg4b a staged suite at the head of the queue is admitted with the "
+          "slots that are free, at least one, instead of waiting for its full "
+          "grant while they idle; with none free the next ticket waits; a head "
+          "takes no more than it asked for and no more than is free: plain %r, "
+          "head at once %r, next blocked %r then %r, two heads on a fresh "
+          "budget %r" % (mg_plain, mg_at_once, mg_blocked, mg_got, mg_small),
+          mg_plain == [1, 1, 1] and mg_at_once == {3: 1}
+          and mg_blocked and mg_got == {3: 1, 4: 1}
+          and mg_small == [2, 2])
 
     bg_box = tempfile.mkdtemp(prefix="sweep-budget-")
     try:
@@ -3750,7 +3810,8 @@ def _cases(check):
             ["plain-suite", "staged-suite"], jobs=4, repo=bg_box,
             costs={"staged-suite": 900.0}))
         check("bg6 the sweep holds `stage_grant(jobs)` slots for a staged suite "
-              "and one for any other file, gives the timed-heavy one its "
+              "admitted with that many free, and one for any other file, gives "
+              "the timed-heavy one its "
               "calibrated timeout, and tells each child so: %r"
               % (dict((k, (v.get("grant"), v.get("timeout"), v.get("output")))
                       for k, v in bg_rows.items()),),
@@ -3770,12 +3831,77 @@ def _cases(check):
     check("bg6b the budget line says what each number came from - the slots, "
           "which suites hold several and how many, the floor and the longest "
           "calibrated timeout: %r" % (bg_line,),
-          bg_line.startswith("budget: 4 slots; 1 staged suites hold 3 each "
+          bg_line.startswith("budget: 4 slots; 1 staged suites hold up to 3 each "
                              "(staged-suite); per-file timeout %ds"
                              % (DEFAULT_TIMEOUT,))
           and "up to %ds" % (300 * TIMEOUT_PER_COST,) in bg_line
           and "deadline" not in bg_line
           and "up to 500s" in bg_cut and "named by 500s" in bg_cut)
+
+    # --- a suite split into blocks: every case kept, an empty block red -------
+    # The same four cases written as ONE run and as TWO staged blocks, each run
+    # through the sweep for real - the harness's own `staged_main`, its child
+    # protocol and its replay - so a split that lost a block's cases, or counted
+    # one twice, reads as a total that moved. The third file is the split with
+    # one block emptied: a block that asserts nothing must turn its file red by
+    # name, never pass as a block with nothing wrong in it.
+    sb_head = ("import sys\n"
+               "sys.path.insert(0, %r)\n"
+               "import _harness\n\n\n"
+               "def _a_cases(check):\n"
+               "    check('ka1 the first block, first case', True)\n"
+               "    check('ka2 the first block, second case', True)\n\n\n"
+               % (os.path.join(REPO, "tests"),))
+    sb_second = ("def _b_cases(check):\n"
+                 "    check('kb1 the second block, first case', True)\n"
+                 "    check('kb2 the second block, second case', True)\n\n\n")
+    sb_staged = ("STAGES = (('a-block', '_a_cases'), ('b-block', '_b_cases'))\n"
+                 "if __name__ == '__main__':\n"
+                 "    raise SystemExit(_harness.staged_main(sys.argv[1:], STAGES, "
+                 "globals(), 'sweep-sb-'))\n")
+    sb_sources = {
+        "whole-suite": sb_head + sb_second
+        + "def _all(check):\n    _a_cases(check)\n    _b_cases(check)\n\n\n"
+        "raise SystemExit(_harness.run(_all))\n",
+        "split-suite": sb_head + sb_second + sb_staged,
+        "hollow-suite": sb_head + "def _b_cases(check):\n    return None\n\n\n"
+        + sb_staged,
+    }
+    sb_box = tempfile.mkdtemp(prefix="sweep-split-")
+    try:
+        for sb_name, sb_text in sb_sources.items():
+            with io.open(os.path.join(sb_box, sb_name), "w", encoding="utf-8") as fh:
+                fh.write(sb_text)
+        sb_rows = dict((r["path"], r) for r in sweep(sorted(sb_sources), jobs=4,
+                                                     repo=sb_box))
+    finally:
+        remove_tree(sb_box)
+    sb_ids = ("ka1", "ka2", "kb1", "kb2")
+    sb_seen = dict((k, (v["ok"], v["cases"],
+                        [len(re.findall(r"(?m)^PASS %s " % (i,), v["output"]))
+                         for i in sb_ids]))
+                   for k, v in sb_rows.items())
+    check("sb1 a staged suite split into blocks reports the same total case "
+          "count through the sweep as the same cases run whole, each case once "
+          "and every one passing, and the split one really ran as blocks: %r"
+          % (sb_seen,),
+          sb_seen.get("whole-suite") == (True, 4, [1, 1, 1, 1])
+          and sb_seen.get("split-suite") == (True, 4, [1, 1, 1, 1])
+          and "of 2 blocks at once" in sb_rows["split-suite"]["output"],
+          sb_rows.get("split-suite", {}).get("output", "")[-600:])
+    sb_hollow = sb_rows.get("hollow-suite") or {}
+    sb_out = sb_hollow.get("output") or ""
+    check("sb2 ...and a block that asserts nothing is red by name: the file "
+          "fails, the empty block is ONE failing case saying it did not report, "
+          "and the other block's cases still ran and passed: %r"
+          % ((sb_hollow.get("ok"), sb_hollow.get("why"), sb_hollow.get("cases")),),
+          sb_hollow.get("ok") is False and sb_hollow.get("why") == "exited 1"
+          and len(re.findall(r"(?m)^FAIL b-block DID NOT REPORT", sb_out)) == 1
+          and len(re.findall(r"(?m)^FAIL ", sb_out)) == 1
+          and [len(re.findall(r"(?m)^PASS %s " % (i,), sb_out))
+               for i in ("ka1", "ka2")] == [1, 1]
+          and CONTRACT.findall(sb_out)[-1:] == [("2", "3")],
+          sb_out[-600:])
 
     bg_buf = io.StringIO()
     render([dict(grade("a/heavy-suite", 0, "2/2 cases passed\n", set()),
@@ -3901,8 +4027,10 @@ def _cases(check):
     check("tt5 the deadline plus the setup allowance fits inside the `selftests` "
           "job's own timeout-minutes in ci.yml, so a hung file is named before "
           "the runner cancels the job, and no file's CALIBRATED timeout on the "
-          "live table reaches past it - so the deadline cuts only a hang, not the "
-          "margin a heavy file was given: deadline %ds + setup %ds vs %r minutes; longest "
+          "live table, at the slots it asks for, reaches past it - so the "
+          "deadline cuts a hang, or a staged suite admitted late with fewer "
+          "slots, and never the margin a heavy file was given at its full "
+          "grant: deadline %ds + setup %ds vs %r minutes; longest "
           "file timeout %ds" % (SWEEP_DEADLINE, CI_SETUP_ALLOWANCE, tt_minutes,
                                 tt_most),
           tt_minutes is not None

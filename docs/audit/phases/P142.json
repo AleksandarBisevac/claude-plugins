@@ -78,9 +78,37 @@
         "file": "tests/test_drive_phase.py:6392-6393",
         "issue": "lp6's 'at another HEAD it runs once' twin calls `lint_probe(..., None)`, which short-circuits the hold on `if head and ...`; it never exercises a different SHA, so a hold that ignored the head comparison (e.g. `held.get(\"head\")` truthy) would still pass lp6.",
         "resolution": "Call the twin with a different 40-hex head (`\"b\" * 40`) so the comparison itself is what lets it run."
+      },
+      {
+        "id": "P142-R9",
+        "severity": "med",
+        "file": ".github/sweep-costs.json:24,58,156 (unchanged); tools/check-committed-pii.py:1881-1893",
+        "issue": "contradicts task clause 'Split each into staged blocks so the sweep spreads them across workers, and re-record the cost table.' The table is untouched, so the four split files keep the figures they had when each ran unsplit on one slot. Those figures now set the shard balance and every split file's timeout. On the live table, shard 3/3 holds three staged suites in a row (test_close_phase 330.3, test__deps 268.2, test_stamp_verification 265.4). The per-block process overhead on Windows, where test_stamp_verification now starts a process for each of its blocks, has never been measured. The executor gives a reason (the table binds to windows-latest and cannot be recorded from darwin), but the clause is still not done.",
+        "resolution": "Make it a tracked task before sign-off. Once this lands on a CI run, save each Windows selftests cell's log and run `python tools/sweep-selftests.py --costs-from-log <logs> --platform windows-latest --record-costs .github/sweep-costs.json`. Then confirm that the shard split it prints is balanced and that no split file's calibrated timeout at held=3 sits within 2x of its measured wall time."
+      },
+      {
+        "id": "P142-R10",
+        "severity": "med",
+        "file": "tools/sweep-selftests.py:1361-1400 (the scheduler change); the bound is tests/test_drive_phase.py",
+        "issue": "contradicts task clause 'Acceptance: (1) time python3 tools/sweep-selftests.py is under 240 s wall on this machine twice, at least 20 minutes apart'. The executor measured 370.5 s and 370.9 s (20 min 11 s apart) and says itself that this is NOT MET. Its stated bound is test_drive_phase.py (about 209.6 s holding 6 of 8 slots; its blocks total 1343 process-seconds). The phase's desired outcome ('the sweep's wall clock is under four minutes') is therefore still open after this task.",
+        "resolution": "Open a follow-up task scoped to the bound the executor measured: cut the work in test_drive_phase.py's heaviest blocks, and/or add one cross-suite block pool in tests/_harness.py so blocks from different staged suites share the sweep's slots. Re-measure with the same command twice, 20 minutes apart. Alternatively, amend the description if 240 s is not reachable on this machine."
+      },
+      {
+        "id": "P142-R11",
+        "severity": "low",
+        "file": "CLAUDE.md:240; CONTRIBUTING.md:332; .github/workflows/ci.yml:134",
+        "issue": "The diff makes three untouched documents state the old admission rule. CLAUDE.md says a staged suite 'is admitted with `stage_grant(jobs)` slots', CONTRIBUTING.md says 'is admitted holding `stage_grant(jobs)` slots', and the ci.yml comment says 'a staged suite is admitted holding all but one of them'. After slot_gate's change at tools/sweep-selftests.py:1385-1394, a suite holds as many slots as are free when its turn comes, between 1 and that number. The executor listed all three as stale and outside its files.",
+        "resolution": "Reword each to say: up to `stage_grant(jobs)` slots, as many as are free when its turn comes and at least one, with the number it holds passed to the child in SWEEP_STAGE_GRANT and its timeout calibrated to that number."
+      },
+      {
+        "id": "P142-R12",
+        "severity": "low",
+        "file": "tools/sweep-selftests.py:1620-1628, 4017-4035",
+        "issue": "A staged suite's grant is fixed when it is admitted. If it is admitted with 1 slot, it runs every block serially (stage_workers=min(6,1)) for its whole run, even after other slots free up. Its timeout at held=1 is 3 x cost, which can exceed SWEEP_DEADLINE. tt5 still only bounds timeouts at the full grant, and its label was widened to accept that the deadline 'cuts ... a staged suite admitted late with fewer slots'. On today's windows table this is latent, not live. At jobs=4 the staged suite second in each shard gets 1 slot (shard 2/3: test_commit_task_work 222.9; shard 3/3: test__deps 268.2), and both serial costs are well under the 1380 s deadline. A rebalance that put test_audit_task (606.0) or test_drive_phase (1346.4) second in a shard would have the deadline cut a run that is slow, not hung, and nothing would turn red first.",
+        "resolution": "Add a tt5 sibling over the live table: for each `--shard i/3` at jobs=4, compute each staged suite's admitted slots (ticket order, with what is free at its turn, assuming earlier holders have not yet finished). Assert that file_timeout at those slots, and the serial cost it implies, stay under SWEEP_DEADLINE. That makes the latent case fail on the table change that creates it."
       }
     ],
-    "outcome": "[findings: 8 - 0 high, 4 med, 4 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 12 - 0 high, 6 med, 6 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -441,7 +469,7 @@
     {
       "id": "P142.6",
       "title": "Sign-off runs the full gate once, and a probe of a guarded lint only when the phase changed that lint",
-      "status": "in_progress",
+      "status": "done",
       "description": "At sign-off the phase gate runs once with its browser steps. When the phase diff touches a file that holds a lint tools/prove-gates.py derives a row for, those rows run in both directions before sign-off; a phase touching no such file runs none and says so. A surviving mutation stops sign-off with the row named. Acceptance: (1) a phase diff touching a lint's file runs that lint's rows in both directions at sign-off; (2) a phase touching no lint file runs none and prints that it ran none; (3) a surviving mutation stops sign-off naming the row; (4) the probe restores the tree in finally and the checkout's status is unchanged.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -479,19 +507,42 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "aa9e37ded036",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/prove-gates.py: new `--changed <paths>` (changed_paths, changed_rows, _repo_rel): narrows TABLE and ALLOW to the rows whose file (row[1], the file holding the lint) is among the paths; both directions unless --red/--allow; a set naming no such file prints `prove-gates: --changed named N path(s) and none is the file of a lint a red/allow row names, so ran none` and exits 0 BEFORE the marker is held. render() gained `direction` and prints one `ROW NOT PROVEN: <direction> <lint> in <file> - <verdict>` line per unproven row (results now carry `file` via _proved()); _prove() takes `whole` so coverage()/allow_coverage() are only demanded on an un-narrowed run. Docstring documents the protocol. drive-phase.py: new section `sign-off's lint probe` - LINT_PROBE = tools/prove-gates.py, phase_changed_paths() (declared files + paths each recorded task commit changed via diff-tree, plan records left out, spelled through git_to_plan; unread commits named), checkout_status() (porcelain -z through git_to_plan), lint_probe() run in run_signoff after the invariants and before the sign-off verb: absent probe -> silent skip (as unset meta.runtimeBoot); green held at HEAD in drive state (`lintProbe`); git status compared before/after the run (read in finally) and a difference stops naming the entries whatever the exit; exit 1 stops quoting every ROW NOT PROVEN line with the fix-task remedy; other exits stop as a refusal; green adds `lint probe green` / `lint probe ran none` to the did-line, the probe's own lines go to the --verbose log. phase-signoff.md: step 4b `lintProbeGreen` plus the opening sentence's step list. Tests: prove-gates ch1-ch4 (stubbed prove + stubbed _suite marker, so the suite still mutates nothing; c6 still green); test_drive_phase lp-block lp1-lp6 with a committed stub probe speaking the protocol. Runs: prove-gates --selftest 41/45 on HEAD code (ch1-ch4 FAIL) -> 45/45; lp-block 0/5 on HEAD code -> 6/6; full test_drive_phase --selftest 574/574 exit 0; test__deps 254/254 (after routing checkout_status through git_to_plan, which git_path_base_violations gb1 demanded), test__output_lints 169/169, test__refs 292/292, test__areas 130/130, test_require_plan 238/238, check-prohibitions 16/16, test__help_lints 14/14, test__runner_output 22/22, test_run_test_gate 569/569; ruff check plugins/audit tools tests exit 0; vermin exit 0. Mutations (in-process, no tree edit): checkout_status->[] reddens lp4 only; lint_probe->None reddens lp1-lp5; lint_probe->always stop reddens lp1, lp2, lp5 (over-fire twin); prove-gates PROVEN=() reddens ch2, ch4; changed_rows->all rows reddens ch1-ch3. FINDINGS for the orchestrator: (a) INSTRUCTION_BYTES (300) is exceeded by the sign-off success print whenever a probe runs: 312 bytes in lp1's one-task fixture, against about 292 without the clause - the landing clause and the fixed rule line already use nearly all of it, so no clause fits; lp1 does not assert the bound and dp3 (probeless fixture) still holds it. Measured once; a byte count of a deterministic print. (b) The probe path is a fixed constant in a product script; the structurally better anchor is a plan key (meta.buildCommands has an offered `provesCanFail` key, but it is a gate COMMAND with no --changed protocol, and adopting it needs _gate_feed/schema/README edits outside this task's files). (c) This repo keeps tools/prove-gates.py, so from this change on every sign-off here runs it over the phase's files: minutes of mutation when a lint file changed, a `ran none` line otherwise; prove-gates exits 2 (relayed as a refusal stop) while another mutating run holds the marker. Acceptance (the phase gate runs once with its browser steps) is existing behaviour and was not changed. Dependants: tools/prove-gates.py -> .github/sweep-costs.json still correct (a cost figure; ch cases add stubbed calls of main, suite measured whole-run unchanged in kind); guard-bash-writes.py still correct (docstring mention of a background run only); tests/_harness.py, test__deps.py, test__gate_feed.py, test_guard_bash_writes.py, tools/affected.py, tools/bench-hooks.py still correct (mentions, or the provesCanFail value string, or names `_cases`/`_selftest` which kept their names; render() only gained a defaulted kwarg and _prove is private to the file); _call_name/selector_text unchanged. drive-phase.py -> tests/test_drive_phase.py changed (lp-block added to STAGES; sb1 still green); PLUGIN-BUILD-GUIDE.md, README.md, docs/research/pipeline-cost-design.md still correct (no section describes the sign-off step list at this granularity; checked by the full drive suite and the doc lints green, not by a word-by-word read of each); detect-plan-skip.py, record-risk-confirmation.py, stamp-verification.py, _areas.py still correct (basename references; no signature they import changed - only new functions were added); _carries/_clip/_mark/_marked unchanged. tests/test_drive_phase.py -> sweep-costs.json still correct (suite grows by six cases, about 30 s single-block); test__runner_output.py 22/22 and test_run_test_gate.py 569/569 (_counting/_follower_cases/_head untouched); tools/sweep-selftests.py still correct (STAGES shape unchanged); PLUGIN-BUILD-GUIDE.md/_load and the research docs still correct. phase-signoff.md -> require-plan.py, schema, _areas.py, _manifest_io.py, test__areas.py 130/130, test__refs.py 292/292, test_require_plan.py 238/238, check-prohibitions.py 16/16 all green; step numbering 1-5 kept, 4b inserted so no reference to `step 5` shifts.",
+        "descriptive": "Sign-off now runs the project's lint probe over the phase's changed files - that lint's rows in both directions, none (said so) when no lint file changed - and stops naming any row a mutation survived or any tree change the probe left behind."
       },
       "startedAt": "2026-10-25T16:34:55Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-26T10:05:07Z",
+      "verifiedBy": [
+        "prove-gates.py ch1: changed_rows keeps exactly the rows of a changed lint file (a ./ spelling included), none for an empty set",
+        "prove-gates.py ch2: --changed <lint file> proves its red rows then its allow rows, no row of another file",
+        "prove-gates.py ch3: an empty or lint-free set runs no row, holds no marker, exits 0 and prints ran none",
+        "prove-gates.py ch4: a surviving mutation exits 1 with one ROW NOT PROVEN line per row of that lint naming direction and lint",
+        "test_drive_phase lp1: a phase touching the lint file runs the probe once with --changed <that file>, no direction flag, and signs off saying lint probe green",
+        "test_drive_phase lp2: a phase touching no lint file signs off and the did-line says ran none",
+        "test_drive_phase lp3: a surviving row stops before the sign-off verb quoting ROW NOT PROVEN, nothing signed",
+        "test_drive_phase lp4: a probe leaving the checkout changed stops naming the entry even on exit 0",
+        "test_drive_phase lp5: over-fire twin - no probe in the project signs off unchanged with no probe clause",
+        "test_drive_phase lp6: a green probe held at this HEAD is not run again; at another HEAD it runs once"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-26T09:47:49Z.f8e4d3",
         "status": "passed",
         "at": "2026-10-26T09:47:49Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "aa9e37ded036",
+        "at": "2026-10-26T10:05:07Z",
+        "return": "docs/audit/evidence/returns/P142.6/20261025T163455Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-25T17:08:08Z",
+        "basis": "`python3 tools/sweep-selftests.py tools/prove-gates.py tests/test_drive_phase.py` in a throwaway tree at HEAD: inline suite tools/prove-gates.py (its test file is its implementation file): none of its 11 changed hunk(s) lies inside a test definition (a def named test*/selftest*/*cases, or a Test* class), so no copy holding the new cases without the fix can be laid over HEAD; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; fix run: held back 240s of the deadline (the recorded 1402s, capped at half the 480s deadline), the recorded slot-seconds of tests/test_drive_phase.py, tools/prove-gates.py in .github/sweep-costs.json",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {

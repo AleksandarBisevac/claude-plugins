@@ -5709,9 +5709,10 @@ def _new_stage_unit_cases(check):
           == ["aa", "zz"])
 
 
-# Every block, in run order. `--stage LABEL` narrows a run to the blocks it
-# names, which is what lets a red-first proof in a throwaway tree fit its
-# deadline: the whole suite does not.
+# Every block, in replay order. A full run starts one process per block, a few
+# at a time, and replays their cases in this order (`_harness.staged_main`);
+# `--stage LABEL` narrows a run to the blocks it names, run in this process,
+# which is what lets a red-first proof in a throwaway tree fit its deadline.
 STAGES = (
     ("sd-encoding", "_encoding_cases"),
     ("sd-deps", "_deps_cases"),
@@ -5786,15 +5787,6 @@ STAGES = (
     ("sdr-block", "_drive_red_cases"),
     ("swc-block", "_sweep_cases"),
 )
-
-
-def _cases(check, only=()):
-    for label, fn in STAGES:
-        if not only or label in only:
-            _harness.stage(check, label, globals()[fn])
-    unknown = sorted(set(only) - set(label for label, _fn in STAGES))
-    if unknown:
-        check(_harness.unknown_stage_label(unknown), False)
 
 
 def _case_title_cases(check):
@@ -5910,7 +5902,7 @@ def _sweep_total(ok, files, count):
 
 
 # The shapes `tools/sweep-selftests.py` printed for two suites, header notes cut.
-_SWEEP_GREEN = ("budget: 8 slots; 0 staged suites hold 6 each (none); per-file "
+_SWEEP_GREEN = ("budget: 8 slots; 0 staged suites hold up to 6 each (none); per-file "
                 "timeout 300s, up to 300s for a file the cost table times as heavy\n"
                 "sweep: 2 files, 8 workers\n"
                 + _sweep_row("tools/check-example-pins.py", 24)
@@ -6147,14 +6139,7 @@ def _success_line_cases(check):
           not_red[0] != M.E_PROVED and len(not_red[1].splitlines()) > 1)
 
 
-def _selftest(only=()):
-    return _harness.run(lambda check: _cases(check, only))
-
-
 if __name__ == "__main__":
     safe_stdio()
-    if "--selftest" in sys.argv[1:]:
-        raise SystemExit(_selftest(_harness.flag_values(sys.argv[1:], "--stage")))
-    sys.stderr.write("usage: test_stamp_verification.py --selftest "
-                     "[--stage LABEL ...]\n")
-    raise SystemExit(2)
+    raise SystemExit(_harness.staged_main(sys.argv[1:], STAGES, globals(),
+                                          "stamp-verification-stages-"))

@@ -47,7 +47,9 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 import ast
 import os
 import re
+import shutil
 import sys
+import tempfile
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
@@ -58,10 +60,19 @@ import _evidence_io as _ev                         # noqa: E402  (follower_line)
 
 
 # --- cases --------------------------------------------------------------------
-def _cases(check):
-    import shutil
-    import tempfile
+def _ck_tree(files):
+    """A `scripts/`-shaped fixture directory holding `(name, source)`."""
+    root = tempfile.mkdtemp()
+    for _name, _body in files:
+        with open(os.path.join(root, _name), "w", encoding="utf-8") as _fh:
+            _fh.write(_body)
+    return root
 
+
+def _layer_graph_cases(check):
+    """The import graph: the real tree green, the render, one fixture per
+    violation, the `_loader` call shapes, the guide's map and rules, and the
+    mutation proof of the upward edge."""
     # ------------------------------------------------------------- real tree, green cases
     real_edges, real_broken = M.import_graph()
     real_violations = M.layer_violations()
@@ -1104,6 +1115,10 @@ def _cases(check):
     finally:
         shutil.rmtree(mut_dir, ignore_errors=True)
 
+
+def _guide_cases(check):
+    """The guide's enumeration, the navigability rule, and the scanners reaching
+    a subdirectory."""
     # ------------------------------------------ guide_enumeration: real guide + fixtures
     check("e1 the real, shipped guide names no scripts/hooks .py file missing from "
           "either the directory tree or a section-2 heading right now: %r"
@@ -1568,6 +1583,9 @@ def _cases(check):
     finally:
         shutil.rmtree(rec, ignore_errors=True)
 
+
+def _boundary_cases(check):
+    """The `tests/` and `tools/lints/` boundaries the product may not cross."""
     # ---- the tests/ boundary: the product may not depend on its own test tree ----
     # Fixtures, because the real tree is (and must stay) clean, and a rule only ever
     # seen returning [] is a rule that might be returning [] for the wrong reason.
@@ -1710,6 +1728,9 @@ def _cases(check):
                                              M._output.LINTS_DIR)))
           and os.path.isfile(os.path.join(M._output.LINTS_DIR, "_deps.py")))
 
+
+def _hook_plan_and_prose_cases(check):
+    """Which tree a hook reads the plan from, and the prose documents' numbers."""
     # ---- which tree a hook reads the plan from (`ht*`) ------------------------
     # Fixtures in both directions: the shapes the hooks had (a reader beside
     # `repo_root`, directly and through a helper of the same file) and the
@@ -2068,6 +2089,9 @@ def _cases(check):
     finally:
         shutil.rmtree(_dpn_tmp, ignore_errors=True)
 
+
+def _citation_cases(check):
+    """No comment, docstring or document cites the private register."""
     # --- rc: a comment or docstring must state its own constraint, not a private --
     # --- register's id -------------------------------------------------------------
     # register_citation_violations() reads a `#` comment, a docstring and a
@@ -2294,7 +2318,14 @@ def _cases(check):
     # goes red the day a comment, docstring, `check()` message or document
     # anywhere in this repo points at the private register again instead of
     # stating its own constraint.
-    _rc_left = len(M.register_citation_violations())
+    #
+    # ONE SCAN OF THE REAL TREE, read three ways: the whole count here, the
+    # comment kinds in rc16c, the stylesheet and markup kinds below. Nothing
+    # between the three reads writes into the tree - every fixture is a temp
+    # directory of its own - so a second and a third scan could only return
+    # the first one's answer, at the cost of a whole-tree walk each.
+    _rc_real = M.register_citation_violations()
+    _rc_left = len(_rc_real)
     check("rc16 THE GATE: the real tree carries no citation of the private "
           "register left to find, in any shape the helpers above recognise - "
           "the count is what the case reads, so a citation coming back is "
@@ -2334,7 +2365,7 @@ def _cases(check):
     finally:
         shutil.rmtree(_src_tmp, ignore_errors=True)
 
-    _src_real = [v for v in M.register_citation_violations()
+    _src_real = [v for v in _rc_real
                  if os.path.splitext(v[0])[1] in M.COMMENT_SYNTAXES]
     check("rc16c over this repository's tree no source kind carries a "
           "register citation in a comment (still standing: %d, in %d files)"
@@ -2374,7 +2405,7 @@ def _cases(check):
         _kind_hits = sorted(M.register_citation_violations(_kind_tmp))
     finally:
         shutil.rmtree(_kind_tmp, ignore_errors=True)
-    _kind_real = [v for v in M.register_citation_violations()
+    _kind_real = [v for v in _rc_real
                   if os.path.splitext(v[0])[1] in _new_kinds]
     check("the comment-citation lint reads every source kind the tree "
           "ships through one table - css block comments and yml line comments "
@@ -2469,6 +2500,10 @@ def _cases(check):
           and _output_lints.prose_scan_exemption("CHANGELOG.md", _cs_rows) is not None)
 
 
+def _scan_memo_cases(check):
+    """The recorded layer debt and the scan memo: both read the memoised
+    default-tree scan, so they share one process and the memo serves the
+    second reader instead of a block of its own scanning again."""
     # --- the ONE recorded layer debt, and whether its REASON still holds ----------
     # KNOWN_LAYER_DEBT carries a written justification, and a written justification
     # is the half of an allow-list that rots without anything noticing: `r2` pins
@@ -2629,6 +2664,9 @@ def _cases(check):
         M._EDGES.clear()
         shutil.rmtree(_mem_tmp, ignore_errors=True)
 
+
+def _config_memo_cases(check):
+    """The config-read memo."""
     # --- cm: the config-read memo, the mm rules applied a second time -------------
     # Profiled with cProfile, this suite entered `config_key_reads` dozens of times
     # per run and parsed the same tree to the same answer each time, because
@@ -2700,6 +2738,10 @@ def _cases(check):
         M._CONFIG_READS.clear()
         shutil.rmtree(_cm_tmp, ignore_errors=True)
 
+
+def _config_key_cases(check):
+    """One config key, one interpretation; the declared table; the merged-block
+    accessor."""
     # --- one config key, one interpretation ---------------------------------------
     # THE DEFECT THIS RULE IS NAMED FOR IS RECONSTRUCTED, NOT DESCRIBED. Two
     # helpers derived `meta.ado.types.bug` in two files for a release and
@@ -2707,14 +2749,6 @@ def _cases(check):
     # exemption written to recognise those rows looked for another. A rule that
     # cannot see that case is the wrong rule, so it is a fixture below and not a
     # sentence here.
-    def _ck_tree(files):
-        """A `scripts/`-shaped fixture directory holding `(name, source)`."""
-        root = tempfile.mkdtemp()
-        for _name, _body in files:
-            with open(os.path.join(root, _name), "w", encoding="utf-8") as _fh:
-                _fh.write(_body)
-        return root
-
     _ck_reads, _ck_unreadable = M.config_key_reads()
     _ck_shared = sorted(k for k, v in _ck_reads.items()
                         if len(set(r[0] for r in v)) >= 2)
@@ -3128,6 +3162,8 @@ def _cases(check):
         shutil.rmtree(_ck_named, ignore_errors=True)
 
 
+def _dict_key_cases(check):
+    """One dict, one set of keys."""
     # --- one dict, one set of keys ------------------------------------------------
     # THE DEFECT IS RECONSTRUCTED, NOT DESCRIBED, for `ck3`'s reason word for
     # word. `_evidence_io.row_for` read `result.get("countsBasis")` while nothing
@@ -3425,6 +3461,9 @@ def _cases(check):
         shutil.rmtree(_dk_quiet, ignore_errors=True)
         shutil.rmtree(_dk_torn, ignore_errors=True)
 
+
+def _writer_cases(check):
+    """One JSON encoding, and one way to replace a state file."""
     # --- one JSON encoding ----------------------------------------------------
     # `je*`. The plugin used to take the escaping as an argument, so two writers
     # produced two byte shapes for one document and a title carrying a dash came
@@ -3824,18 +3863,27 @@ def _git_path_base_cases(check):
                        and r[2].strip() for r in rows))
 
 
-def _all_cases(check):
-    _cases(check)
-    _git_path_base_cases(check)
-
-
-def _selftest():
-    return _harness.run(_all_cases)
+# Every block, in replay order. Most cases here scan the real tree, so the
+# file's time is spent in scans rather than in process starts, and one process
+# per block lets them run side by side: a full run starts one per block, a few
+# at a time, and replays their cases in this order (`_harness.staged_main`).
+# `--stage LABEL` runs only the blocks it names, in this process.
+STAGES = (
+    ("dg-graph", "_layer_graph_cases"),
+    ("dg-guide", "_guide_cases"),
+    ("dg-boundary", "_boundary_cases"),
+    ("dg-hook-prose", "_hook_plan_and_prose_cases"),
+    ("dg-citation", "_citation_cases"),
+    ("dg-scan-memo", "_scan_memo_cases"),
+    ("dg-config-memo", "_config_memo_cases"),
+    ("dg-config-key", "_config_key_cases"),
+    ("dg-dict-key", "_dict_key_cases"),
+    ("dg-writer", "_writer_cases"),
+    ("dg-git-path-base", "_git_path_base_cases"),
+)
 
 
 if __name__ == "__main__":
     safe_stdio()
-    if "--selftest" in sys.argv[1:]:
-        raise SystemExit(_selftest())
-    sys.stderr.write("usage: test__deps.py --selftest\n")
-    raise SystemExit(2)
+    raise SystemExit(_harness.staged_main(sys.argv[1:], STAGES, globals(),
+                                          "deps-stages-"))

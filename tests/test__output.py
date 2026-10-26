@@ -149,7 +149,7 @@ def _shipped_literals(top=None):
 
 
 # --- cases --------------------------------------------------------------------
-def _cases(check):
+def _anchor_cases(check):
     import tempfile
     import shutil
     import io
@@ -778,12 +778,6 @@ def _cases(check):
     check("lf4 an empty list writes nothing at all, which is the correct answer "
           "before the migration starts and after it ends",
           M.write_lf_lines([], io.StringIO()).getvalue() == "")
-
-
-    _remove_tree_cases(check)
-    _sharing_cases(check)
-    _finding_code_cases(check)
-    _success_line_cases(check)
 
 
 # --- a name another process holds open -----------------------------------------
@@ -1483,16 +1477,21 @@ def _project_of_manifest_cases(check):
           and L.manifest_dirname_project_violations() == [])
 
 
-def _selftest():
-    def body(check):
-        _cases(check)
-        _project_of_manifest_cases(check)
-    return _harness.run(body)
+# Every block, in replay order - the order the cases always printed in. A full
+# run starts one process per block, a few at a time, and replays their cases
+# in this order (`_harness.staged_main`); `--stage LABEL` runs only the blocks
+# it names, in this process.
+STAGES = (
+    ("ot-anchor", "_anchor_cases"),
+    ("ot-remove-tree", "_remove_tree_cases"),
+    ("ot-sharing", "_sharing_cases"),
+    ("ot-finding-code", "_finding_code_cases"),
+    ("ot-success-line", "_success_line_cases"),
+    ("ot-project", "_project_of_manifest_cases"),
+)
 
 
 if __name__ == "__main__":
     safe_stdio()
-    if "--selftest" in sys.argv[1:]:
-        raise SystemExit(_selftest())
-    sys.stderr.write("usage: test__output.py --selftest\n")
-    raise SystemExit(2)
+    raise SystemExit(_harness.staged_main(sys.argv[1:], STAGES, globals(),
+                                          "output-stages-"))
