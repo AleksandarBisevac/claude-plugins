@@ -4817,7 +4817,10 @@ refused before anything is built, because it would run the shared files and grad
 interrupt tears the whole group down, and SIGINT/SIGTERM raise so the `finally` runs.
 ONE deadline, `--timeout`, starts before anything runs and covers every git call that builds or
 reads the throwaway and every run - the task's, the second (`--introduces`), HEAD's own and the fix
-run - each getting what the earlier ones left; at most one run
+run - each getting what the earlier ones left. `--timeout` is the deadline when given; when not, it is
+`DEFAULT_TIMEOUT`, or, for a sweep command naming suites `.github/sweep-costs.json` times, the sweep's own
+per-cost factor (`TIMEOUT_PER_COST`) over their recorded slot-seconds, when that is more, up to `MAX_TIMEOUT`
+(`sized_deadline`); the basis names the deadline and which of those it came from. At most one run
 can time out, because each later run is made only when the one before it finished. What follows the
 deadline is bounded and summed in `TEARDOWN_MARGIN` - one teardown and the removal's two git
 calls, each capped at `REMOVE_GIT_TIMEOUT` - and `--timeout` is refused above `MAX_TIMEOUT`, the

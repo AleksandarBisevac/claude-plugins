@@ -5786,6 +5786,7 @@ STAGES = (
     ("ct-block", "_case_title_cases"),
     ("sdr-block", "_drive_red_cases"),
     ("swc-block", "_sweep_cases"),
+    ("swd-block", "_sweep_deadline_cases"),
 )
 
 
@@ -5921,11 +5922,12 @@ _SWEEP_RED = ("sweep: 2 files, 8 workers\n"
 _COSTS_REL = ".github/sweep-costs.json"
 
 
-def _sweep_repo(prefix, wt_test, costs=None):
-    """`_red_repo` with the stand-in sweep and a cost table COMMITTED at HEAD,
-    so the throwaway holds them; `costs=None` leaves the table out."""
+def _sweep_repo(prefix, wt_test, costs=None, sweep=None):
+    """`_red_repo` with the stand-in sweep (`sweep`, or the quick one) and a cost
+    table COMMITTED at HEAD, so the throwaway holds them; `costs=None` leaves the
+    table out."""
     root, man = _red_repo(prefix, wt_test)
-    extra = {"tools/sweep-selftests.py": _FAKE_SWEEP}
+    extra = {"tools/sweep-selftests.py": sweep or _FAKE_SWEEP}
     if costs is not None:
         extra[_COSTS_REL] = json.dumps({"costs": costs})
     paths = sorted(extra)
@@ -6080,6 +6082,131 @@ def _sweep_cases(check):
           and round(held["fix"] - held["task"], 3) == 7
           and held["task"] == held["baseline"]
           and flat["fix"] == flat["task"] == flat["baseline"])
+
+
+# A stand-in sweep that takes longer than the deadline the fixtures give the
+# default, so only a deadline sized from the command's recorded cost lets it end.
+_SLOW_SECONDS = 4
+_SLOW_SWEEP = "import time\ntime.sleep(%d)\n" % (_SLOW_SECONDS,) + _FAKE_SWEEP
+# The default the end-to-end cases patch in: shorter than one slow run, and the
+# cost below is such that the sized deadline is far above it.
+_SHORT_DEFAULT = 3
+_SLOW_COST = 20.0
+
+
+def _red_with_default(root, man, cmd, default, *extra):
+    """`_red` with the module's default deadline set to `default` for the call."""
+    held = M.DEFAULT_TIMEOUT
+    M.DEFAULT_TIMEOUT = default
+    try:
+        return _red(root, man, cmd, *extra)
+    finally:
+        M.DEFAULT_TIMEOUT = held
+
+
+def _sweep_deadline_cases(check):
+    """The deadline `red` works to is sized from the command it is handed, and
+    the basis says which deadline it used and where that came from; a stage the
+    task adds is red for its cases at HEAD, said as that."""
+    py = sys.executable
+    cmd = [py, "tools/sweep-selftests.py", "tests/test_mine.py"]
+    wt = _red_test("import mine", "mine.v == 2")
+
+    costed_root, costed_man = _sweep_repo(
+        "stamp-swd-costed-", wt, costs={"tests/test_mine.py": _SLOW_COST},
+        sweep=_SLOW_SWEEP)
+    code, got = _red_with_default(costed_root, costed_man, cmd, _SHORT_DEFAULT)
+    block = got.get("redFirst") or {}
+    basis = block.get("basis") or ""
+    wanted = int(_SLOW_COST * M.TIMEOUT_PER_COST)
+    check("swd1 a sweep command whose suite is recorded as costing more than the "
+          "default deadline allows runs to the end under a deadline sized from "
+          "that cost - the sweep takes %ds a run and the default is %ds - and the "
+          "basis names the %ds it used and the table it came from: %r"
+          % (_SLOW_SECONDS, _SHORT_DEFAULT, wanted,
+             (code, block.get("status"), basis[-420:])),
+          code == M.E_PROVED and block.get("status") == "proved"
+          and "deadline: %ds" % (wanted,) in basis and _COSTS_REL in basis
+          and "tests/test_mine.py" in basis)
+
+    free_root, free_man = _sweep_repo(
+        "stamp-swd-free-", wt, costs={"tests/other.py": _SLOW_COST},
+        sweep=_SLOW_SWEEP)
+    code_f, free = _red_with_default(free_root, free_man, cmd, _SHORT_DEFAULT)
+    block_f = free.get("redFirst") or {}
+    basis_f = block_f.get("basis") or ""
+    # The over-fire direction: a command the table does not time must keep the
+    # default, so the slow run is cut off at it. A deadline sized from some other
+    # suite's cost, or from a made-up one, would let it finish and read proved.
+    check("swd2 a sweep command naming a suite the cost table does not time keeps "
+          "the default deadline, which the slow run outlasts - could-not-prove - "
+          "and the basis says the deadline was the default and why: %r"
+          % ((code_f, block_f.get("status"), basis_f[-420:]),),
+          code_f == M.E_CANNOT_PROVE and block_f.get("status") == "could-not-prove"
+          and "deadline: %ds, the default" % (_SHORT_DEFAULT,) in basis_f
+          and "no recorded cost for tests/test_mine.py" in basis_f)
+
+    costs = {"tests/a.py": 12.4, "tests/b.py": 30.0, "tests/big.py": 5000.0}
+    sweep = ["tools/sweep-selftests.py"]
+    plain = M.sized_deadline([py] + sweep + ["tests/a.py", "tests/b.py"], costs,
+                             None, None, 20)
+    capped = M.sized_deadline([py] + sweep + ["tests/big.py"], costs, None, None, 20)
+    small = M.sized_deadline([py] + sweep + ["tests/a.py"], costs, None, None, 480)
+    given = M.sized_deadline([py] + sweep + ["tests/a.py"], costs, None, 7, 20)
+    other = M.sized_deadline([py, "tests/test_mine.py"], costs, None, None, 20)
+    unread = M.sized_deadline([py] + sweep + ["tests/a.py"], {}, "no table", None, 20)
+    whole = M.sized_deadline([py] + sweep, costs, None, None, 20)
+    check("swd3 the sized deadline is the sweep's per-cost factor times the "
+          "recorded slot-seconds of the suites named (rounded up), never under the "
+          "default, never over what the host's Bash limit leaves, and a --timeout "
+          "given wins over all of it: %r"
+          % ((plain, capped, small, given),),
+          plain["seconds"] == int(-(-M.TIMEOUT_PER_COST * (12.4 + 30.0) // 1))
+          and capped["seconds"] == M.MAX_TIMEOUT
+          and "capped" in M.deadline_clause(capped)
+          and small["seconds"] == 480
+          and given["seconds"] == 7 and "--timeout" in M.deadline_clause(given))
+    check("swd4 a command that is not a sweep, a whole-tree sweep naming no suite, "
+          "and an unreadable table each keep the default, and each clause says "
+          "why - none leaves it unsaid: %r" % ((other, whole, unread),),
+          other["seconds"] == whole["seconds"] == unread["seconds"] == 20
+          and "deadline: 20s, the default" in M.deadline_clause(other)
+          and "deadline: 20s, the default" in M.deadline_clause(whole)
+          and "no table" in M.deadline_clause(unread))
+
+    spec = importlib.util.spec_from_file_location(
+        "sweep_selftests_deadline",
+        os.path.join(_output.REPO_ROOT, "tools", "sweep-selftests.py"))
+    sweep_mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(sweep_mod)
+    table, table_problem = sweep_mod.load_costs(sweep_mod.COSTS_PATH)
+    ours, ours_problem = M.load_sweep_costs(_output.REPO_ROOT)
+    mine = {"tests/x.py": 91.0}
+    check("swd5 the factor is the sweep's own (%r vs %r), a one-suite deadline is "
+          "what the sweep allows that file when it holds one slot, and this "
+          "module reads the same table the sweep does (%d entries each way): %r"
+          % (M.TIMEOUT_PER_COST, getattr(sweep_mod, "TIMEOUT_PER_COST", None),
+             len(ours), (table_problem, ours_problem)),
+          M.TIMEOUT_PER_COST == getattr(sweep_mod, "TIMEOUT_PER_COST", None)
+          and table_problem is None and ours_problem is None
+          and dict((k, float(v)) for k, v in ours.items()) == table
+          and M.sized_deadline([py] + sweep + ["tests/x.py"], mine, None, None,
+                               1)["seconds"]
+          == sweep_mod.file_timeout("tests/x.py", mine, floor=1))
+
+    old = ("aa", [("old1", "mine.v >= 1")])
+    root, man = _red_repo("stamp-swd-stage-", _staged_test(
+        [old, ("zz", [("new1", "mine.v == 2")])]), head_test=_staged_test([old]))
+    code_s, got_s = _red(root, man, [py, "tests/test_mine.py", "--stage", "zz"])
+    block_s = got_s.get("redFirst") or {}
+    basis_s = block_s.get("basis") or ""
+    check("swd6 a stage the task adds, which HEAD's file lacks, is not a refusal: "
+          "HEAD's run failing only the unknown-stage check reads as the stage's "
+          "cases not existing at HEAD, which is red for those cases, and the basis "
+          "says exactly that: %r" % ((code_s, block_s.get("status"), basis_s[:420]),),
+          code_s == M.E_PROVED and block_s.get("status") == "proved"
+          and "its cases did not exist at HEAD, which is red for them" in basis_s
+          and "`zz`" in basis_s)
 
 
 def _cli(argv, stdin_text=None):

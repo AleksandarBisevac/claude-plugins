@@ -1542,7 +1542,7 @@
     {
       "id": "P142.22-6yq",
       "title": "Starting a task reads a repeated status row as a repeat, so a holder's duplicated block rows do not keep its own work charged",
-      "status": "in_progress",
+      "status": "done",
       "description": "Observed in P142 on 2026-10-27, on every restart of a single-dispatch task in the project checkout (three times in a row). `audit-task.py start` refused because another blocked task declares the same files. The release that exists for this case asks `_ran_within(_status_events(...))` whether the holder ran in the window, and it answered None (\"cannot tell\"). The cause is a real journal holding duplicate block rows: `in_progress->blocked` twice in the same second, then `None->blocked`. Both the drive and audit-task record the block, so the status chain reads as broken. Each time, the orchestrator had to set the work aside by hand, start, and restore it with sha256 checks.\n\nFix the reading, not the instance:\n1. A status row whose `to` equals the state already reached is a repeat, not a break, whatever its `from` says (None included). Collapse repeats before the chain is judged.\n2. Keep refusing a chain that is genuinely broken: a `from` that is neither the reached state nor None, or a row naming a different state with no transition into it.\n3. Look at why two writers record the same block. If one of them is redundant, say so in your outcome; do not remove a journal writer in this task.\n\nRed-first with the exact row shape copied from the real journal (same-second duplicate plus a `None->blocked`). It must read as \"did not run within the window\" where that is true. Add an over-fire case: a genuinely broken chain still answers None, and the refusal still fires. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -1570,19 +1570,34 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3b457d0c0f5f",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added _status_chain(events) in plugins/audit/scripts/manifest/audit-task.py: folds a row whose `to` equals the reached state into the row that reached it when its `from` is None, the reached state, or the `from` of the row that reached it; returns None when a move-on row does not start at the reached state, or a repeat names any other from. _ran_within now judges that chain instead of the raw adjacent-pair check; its last-event-vs-current check is unchanged. _status_events and _filed_while_running untouched. Tests (tests/test_audit_task.py, after hw11): hw13 real-shaped rows (manifest.edit pending->in_progress, task.block, manifest.edit and task.blocked all in_progress->blocked in the same second, wave.done None->blocked) -> window after block answers False, window straddling the run answers True; hw14 four genuinely broken chains (repeat with a stale other from, None->different state, from a never-reached state, last change not ending at current) all answer None. Mutation: repeat accepting any from -> hw14 red; fix absent -> hw13 red. Gate: sweep of tests/test_audit_task.py 1127 cases ok; tests/test__deps.py 254 ok; tests/test__output_lints.py 173 ok. Run bare (outside the sweep's isolation) lo-po4 fails because the suite warns it stands in a checkout; it passes under the sweep. Interpretation note: the task's rule 1 says a repeat holds 'whatever its from says' and rule 2 refuses a from that is neither reached state nor None; the real journal's repeat carries the previous state as its from (in_progress->blocked twice), so I accept None, the reached state, or the reaching row's own from as a repeat, and keep refusing any other from. Redundant writer: for one block three rows are written - the CLI's task.block (via cli), the hook's manifest.edit (via hook, same changes entry, no extra information) and the hook's task.blocked (carries attempt number, unique). The manifest.edit hook row duplicates the CLI row's status change and is the redundant one; no writer was removed.",
+        "descriptive": "A holder's duplicated block rows no longer make the journal unreadable, so the start can tell a blocked holder did not run in the window instead of keeping its work charged."
       },
       "startedAt": "2026-10-27T16:19:25Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-27T16:52:29Z",
+      "verifiedBy": [
+        "hw13: real-shaped duplicate block rows plus None->blocked read as one block (False after, True while running)",
+        "hw14: four genuinely broken chains still answer can't-tell"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-27T16:52:26Z.fd56db",
         "status": "passed",
         "at": "2026-10-27T16:52:26Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "3b457d0c0f5f",
+        "at": "2026-10-27T16:52:29Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-27T16:32:36Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_audit_task.py` in a throwaway tree at HEAD exited 1 with 1 of 1127 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - hw13 (house FAIL): SELFTEST FAILED: 1126/1127 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; fix run: held back 240s of the deadline (the recorded 606s, capped at half the 480s deadline), the recorded slot-seconds of tests/test_audit_task.py in .github/sweep-costs.json",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1625,7 +1640,12 @@
       "startedAt": "2026-10-27T16:19:28Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-27T17:03:54Z.70b2a4",
+        "status": "passed",
+        "at": "2026-10-27T17:03:54Z"
+      }
     }
   ],
   "request": "neka njihov dokument bude osnova! I u odnosu na to treba napraviti plan implementacije",

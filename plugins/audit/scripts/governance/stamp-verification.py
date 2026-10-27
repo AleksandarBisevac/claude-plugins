@@ -638,7 +638,9 @@ DEFAULT_TIMEOUT = 480
 # call that builds or reads the throwaway and every run - HEAD's own, the task's,
 # the second (`--introduces`) and the fix run: each stage gets what the earlier
 # ones left - except that a sweep-shaped command holds the fix run's recorded
-# cost back from the stages before it (`sweep_budget`). `_isolated_run` makes no run, and `_isolate` starts neither of the
+# cost back from the stages before it (`sweep_budget`). Its length is `--timeout`
+# when given, else the default or what the command's recorded cost sizes it to
+# (`sized_deadline`). `_isolated_run` makes no run, and `_isolate` starts neither of the
 # reset's git calls, with less than a whole second left, so none of those is
 # started past the deadline on the one-second floor a timeout is given. The
 # git calls before the throwaway exists (listing and reading HEAD's files,
@@ -3373,6 +3375,7 @@ def red_verdict(run, ctx):
         env_clause += ("; kept, naming the shared root: %s - the run may have read "
                        "shared-tree files through it" % (", ".join(ctx["naming"]),))
     env_clause += deps_clause(ctx.get("deps"))
+    env_clause += deadline_clause(ctx.get("sized"))
     env_clause += budget_clause(ctx.get("budget"))
     env_clause = withdrawn_clause(run.get("withdrawn")) + env_clause
     if run["problem"] is not None:
@@ -3407,7 +3410,8 @@ def red_verdict(run, ctx):
                if tally is not None and tally["runner"] is not None else [])
     fresh = new_stage_baseline(run.get("head"), run["cmd"], ctx.get("stages"))
     how = ("HEAD's own tests on HEAD's code failing only the unknown-stage check "
-           "for %s, which the task's test files add - the stage is new at HEAD"
+           "for %s, which the task's test files add - the stage is new at HEAD: "
+           "its cases did not exist at HEAD, which is red for them"
            % (", ".join("`%s`" % (s,) for s in fresh),) if fresh
            else "HEAD's own tests green on HEAD's code")
     absent = ctx.get("absent") or []
@@ -3684,6 +3688,11 @@ def _left(deadline):
 # default figure to stand in for a measurement nobody made.
 SWEEP_SCRIPT = "sweep-selftests.py"
 SWEEP_COSTS_REL = ".github/sweep-costs.json"
+# What the sweep multiplies a file's recorded slot-seconds by to get the time it
+# allows that file before calling it hung (`TIMEOUT_PER_COST` in
+# `tools/sweep-selftests.py`). The plugin ships without `tools/`, so the factor
+# is held here and a case in the suite fails when the two parts.
+TIMEOUT_PER_COST = 3
 
 
 def sweep_suites(cmd):
@@ -3717,6 +3726,69 @@ def load_sweep_costs(root):
             for v in costs.values()):
         return {}, "%s carries no `costs` object of numbers" % (SWEEP_COSTS_REL,)
     return costs, None
+
+
+# THE DEADLINE IS SIZED FROM THE COMMAND, not typed once for every command. The
+# default is a figure for a test file that runs in seconds; a sweep over a suite
+# the table records as heavy needs the baseline, the task's run and the fix run
+# each to finish inside it, and a deadline under that makes the proof
+# `could-not-prove` for a reason that is the helper's, not the task's. So a
+# sweep-shaped command that names suites the table times gets
+# `TIMEOUT_PER_COST` times their recorded slot-seconds together - the allowance
+# the sweep itself gives them before it calls them hung - when that is more than
+# the default, and never more than `MAX_TIMEOUT`. A command the table says
+# nothing about keeps the default, and the basis says that was the reason.
+# `--timeout`, when given, is used as given.
+def sized_deadline(cmd, costs, problem, explicit, default):
+    """`{"seconds", "source", "why"}` - the deadline `red` works to, and where it
+    came from. `explicit` is `--timeout` or None, `default` the figure used when
+    nothing sizes it, `costs` and `problem` what `load_sweep_costs` answered.
+
+    `source` is one of "timeout", "costs" and "default"; `why` is what the
+    clause quotes: the suites and the recorded figure for "costs", else the
+    sentence saying why the default stood."""
+    if explicit is not None:
+        return {"seconds": explicit, "source": "timeout", "why": "--timeout"}
+    suites = sweep_suites(cmd)
+    if suites is None:
+        return {"seconds": default, "source": "default",
+                "why": "the command is not a sweep naming suites, so there is no "
+                       "recorded cost to size it from"}
+    if problem:
+        return {"seconds": default, "source": "default", "why": problem}
+    costed = dict((s, costs[s]) for s in suites if s in costs)
+    if not costed:
+        return {"seconds": default, "source": "default",
+                "why": "no recorded cost for %s in %s"
+                       % (", ".join(suites), SWEEP_COSTS_REL)}
+    total = sum(costed.values())
+    recorded = int(-(-total // 1))
+    wanted = int(-(-(TIMEOUT_PER_COST * total) // 1))
+    if wanted <= default:
+        return {"seconds": default, "source": "default",
+                "why": "%d times the recorded %ds of %s in %s is only %ds"
+                       % (TIMEOUT_PER_COST, recorded, ", ".join(sorted(costed)),
+                          SWEEP_COSTS_REL, wanted)}
+    seconds = min(wanted, MAX_TIMEOUT)
+    return {"seconds": seconds, "source": "costs", "wanted": wanted,
+            "recorded": recorded, "suites": sorted(costed),
+            "why": "%d times the recorded %ds of %s in %s%s"
+                   % (TIMEOUT_PER_COST, recorded, ", ".join(sorted(costed)),
+                      SWEEP_COSTS_REL,
+                      "" if seconds == wanted else
+                      ", capped at the %ds the host's Bash limit leaves" % (seconds,))}
+
+
+def deadline_clause(sized):
+    """The basis clause naming the deadline the runs worked to and where it came
+    from; empty only for no sizing at all."""
+    if sized is None:
+        return ""
+    if sized["source"] == "timeout":
+        return "; deadline: %ds, from --timeout" % (sized["seconds"],)
+    if sized["source"] == "default":
+        return "; deadline: %ds, the default - %s" % (sized["seconds"], sized["why"])
+    return "; deadline: %ds, %s" % (sized["seconds"], sized["why"])
 
 
 def sweep_budget(cmd, costs, problem, timeout):
@@ -3767,7 +3839,7 @@ def _red_scope(args, cmd, deadline):
     if not (args.task and args.manifest) or args.files:
         return None, ("red takes its scope off the plan: pass --manifest and "
                       "--task, and no --files")
-    if not 1 <= args.timeout <= MAX_TIMEOUT:
+    if args.timeout is not None and not 1 <= args.timeout <= MAX_TIMEOUT:
         return None, ("--timeout %s is outside 1..%d: one deadline covers every run, "
                       "and it must leave the host's %d-second Bash limit room for "
                       "the teardown, or the host kills the helper before its own "
@@ -3813,7 +3885,13 @@ def _arm():
 
 def run_red(args, cmd, out):
     """`red`: prove a red in a throwaway tree and print the `redFirst` block."""
-    deadline = time.time() + args.timeout
+    start = time.time()
+    # Reading the plan and the dependency plan needs a deadline before the cost
+    # table can be read, so they run under the default; the sized one replaces it
+    # as soon as the root they find is known.
+    explicit = args.timeout
+    args.timeout = DEFAULT_TIMEOUT if explicit is None else explicit
+    deadline = start + args.timeout
     scope, problem = _red_scope(args, cmd, deadline)
     if problem is not None:
         sys.stderr.write("ERROR: %s\n" % (problem,))
@@ -3821,6 +3899,9 @@ def run_red(args, cmd, out):
     root = scope["root"]
     costs, cost_problem = (load_sweep_costs(root) if sweep_suites(cmd)
                            else ({}, None))
+    sized = sized_deadline(cmd, costs, cost_problem, explicit, DEFAULT_TIMEOUT)
+    args.timeout = sized["seconds"]
+    deadline = start + args.timeout
     budget = sweep_budget(cmd, costs, cost_problem, args.timeout)
     # The runs before the fix run end where the fix run's held-back time begins.
     early = deadline - (budget["reserve"] if budget else 0)
@@ -3946,7 +4027,7 @@ def run_red(args, cmd, out):
             "head_modules": state["head_modules"],
             "head_js": state["head_js"], "path": path, "stages": state["stages"],
             "deadline": deadline, "deps": deps, "sources": sources,
-            "inline": inline, "budget": budget})
+            "inline": inline, "budget": budget, "sized": sized})
     finally:
         # A junction left in the throwaway is one git's removal may descend
         # through into the shared tree's dependencies: the removal is skipped
@@ -4056,8 +4137,11 @@ def build_parser():
                         help="a symbol the task creates; `red` only - a compile "
                              "or collection error counts as red only when the "
                              "task introduces a symbol the run names")
-    parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT,
-                        help="seconds every run `red` makes may take together; `red` only")
+    parser.add_argument("--timeout", type=int, default=None,
+                        help="seconds every run `red` makes may take together; `red` "
+                             "only. Not given: the default, or - for a sweep naming "
+                             "suites the cost table times - what those costs size it "
+                             "to; the basis names which")
     parser.add_argument("--case", action="append", default=[],
                         help="the id or full label of a case the task added; "
                              "`red` only - a red "
