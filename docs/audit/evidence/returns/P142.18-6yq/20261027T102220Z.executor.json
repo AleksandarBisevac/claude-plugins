@@ -1,0 +1,108 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__worktrees.py tests/test_drive_phase.py": "pass",
+    "python3 tests/test__worktrees.py --selftest": "pass",
+    "python3 tests/test_manage_worktrees.py --selftest": "pass",
+    "python3 tests/test_drive_phase.py --selftest": "pass",
+    "python3 tests/test__filed_returns.py --selftest": "pass",
+    "python3 tests/test__deps.py --selftest": "pass",
+    "python3 tests/test__output_lints.py --selftest": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-27T10:52:47Z",
+    "basis": "`python3 tests/test__worktrees.py --selftest` in a throwaway tree at HEAD exited 1 on \"AttributeError: module '_worktrees' has no attribute 'advance_tree'\" (read as python), and the task introduces 'advance_tree': absent from HEAD's module-level bindings of plugins/audit/scripts/git/_worktrees.py and bound in the working tree's; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "THIS ATTEMPT (re-review's two meds and its lows). MED-1, the copy is the move's journal: it is dropped only after the marker records the outcome. advance_tree takes `settle(answer)` - the caller's record of a move that counted - and runs it after the tree answers as the work and before the copy goes; a settle that fails returns advanced with an error and the copy kept for the next move. advance_task_tree passes settle=_record_move and reads any copy first (_resume): a copy taken from the marker's base is a move cut short - finished (marker written, then copy dropped; `resumed`) when the tree answers as its result, else undone back to the base; a copy taken for a move TO the marker's base is a move recorded whose copy removal was cut short - dropped once the tree answers as it; a copy with no index.json (written last; nothing moves before it is) is dropped; anything else stays with an error. Dropping a copy is _drop_copy: renamed to its tombstone (audit-advance.dropped) in one atomic step, then removed, so a kill mid-removal leaves no half copy - a leftover tombstone is cleared at the next move. MED-2, one stop word: advance_task_tree's docstring states `kept` is set whenever a copy is left beside the tree and means the tree is not settled; drive-phase.advance_member stops iff said['kept'] (replacing `restored is False or advanced+error`), naming the copy. LOWS: the index is not written over an index.lock a killed git left - the undo reports it, restored False, copy kept (av29); a work file the process cannot read is a refusal naming it before anything moves (av28, the review's p8); a changed path that is a directory is named as 'a nested repository, or a tracked file the task replaced with a directory' (av30). tools/lints/_deps.py: a STATE_WRITERS row for _worktrees._drop_copy (an atomic take of a name, not a file written - the reason the table already gives _journal_io._clear_stale_breaker). CASES: av27 kills a move at every git call it makes (looping until a run is not killed) and at the first three calls of _put, _write_aside, write_record, _keep_copy, _drop_copy and the copy's rmtree (half-removing it), then runs the move again unarmed; it asserts after each that HEAD and the marker agree on the head, the work (an edit, an added file, a deletion) reads back, no copy is left, and what an integration would carry against the marker's base - tracked diffs plus untracked files, read without touching the index, records left out - is the work and nothing else; it also asserts every write point was reached. av31: a copy cut short before index.json is dropped and the move made. ab6 (drive): a copy the mover cannot read stops the drive naming it, and no gate row is added. CRASH.PY RE-RUN (<scratchpad>/crash.py): every line OK - git calls 1-15, _put #1, _write_aside #1, write_record #1, _keep_copy #1, rmtree half - each ending head=to marker=to, work intact, integ=['a.txt','d.txt','n/new.txt'], no copy, no lock. MUTATION ROWS (scratch copy, anchors asserted to land once, pycache purged; <scratchpad>/probe/mutations4.py, mutations4b.py; outputs probe6.log, probe9.log): copy dropped before the marker is written -> av27; a copy whose move the marker records not settled -> av27; a copy with no index.json read as unreadable -> av31; copy removed in place, no tombstone -> av27; resume finishes without recording -> av27; drive stops only on restored-false or advanced-with-error (the attempt-3 condition) -> ab6; unreadable work file raises -> av28; index written under a lock -> av29; directory wording -> av30; undo does not put the index back -> av18; a leftover copy never read -> av19 av20 av27; a finished move undone and redone -> av19. The attempt-3 rows re-run on this code (probe7.log, probe8.log): every applicable row still red (av7 av13 av15 av24; av13; av15 av24; av14; av25; av16 av24; av17; av21; av22; av23; av26; av26; ab5; av7; av2; av4; av8; av19 av22 tv1 tv2 ab3; ab1 ab2 ab3 ab5), three re-anchored in mutations4b as above. GATES RUN this attempt, each exit 0: `python3 tools/sweep-selftests.py tests/test__worktrees.py tests/test_drive_phase.py` (2/2 files ok, 725 cases); test__worktrees 144/144; test_manage_worktrees 74/74; test_drive_phase 581/581; test__filed_returns 117/117; test__deps 254/254 (it went 253/254 on sw1 for the new rename until the STATE_WRITERS row was added); test__output_lints 169/169; ruff and vermin -t=3.8- over the changed files. LIMITS: av15/av24/av28 skip by the mechanism where chmod does not stop a write or a read; a copy whose `to` the marker records but whose tree no longer answers as it (records dirtied between the kill and the next move) stops the drive with the copy named rather than guessing. DEPENDANTS: as attempt 3, plus tools/lints/_deps.py (one more STATE_WRITERS row, no name or layer changed; its importers still correct) and drive-phase.py's stop condition in advance_member (the only reader of advance_task_tree's answer; integrate-task.py reads the marker, which is now written before any copy is dropped).",
+    "descriptive": "A move killed at any point now settles on the next move - the copy outlives the move until the marker records it - and the drive stops on any tree a copy is left beside."
+  },
+  "testsAdded": [
+    "tests/test__worktrees.py av1-av26 (earlier attempts), av27 a move killed at every git call and every write point and then made again ends settled, av28 an unreadable work file is a refusal, av29 no index write under a stale index.lock, av30 the tracked-file-made-a-directory wording, av31 a copy cut short before its index.json is dropped",
+    "tests/test_drive_phase.py ab1-ab5 (earlier attempts), ab6 a copy the mover cannot read stops the drive",
+    "tests/test_manage_worktrees.py tv1-tv4 (attempt 1)"
+  ],
+  "casesAdded": [
+    [
+      "av1",
+      "av2",
+      "av3",
+      "av4",
+      "av5",
+      "av6",
+      "av7",
+      "av8",
+      "av9",
+      "av10",
+      "av11",
+      "av12",
+      "av13",
+      "av14",
+      "av15",
+      "av16",
+      "av17",
+      "av18",
+      "av19",
+      "av20",
+      "av21",
+      "av22",
+      "av23",
+      "av24",
+      "av25",
+      "av26",
+      "av27",
+      "av28",
+      "av29",
+      "av30",
+      "av31"
+    ],
+    [
+      "ab1",
+      "ab2",
+      "ab3",
+      "ab1m",
+      "ab4",
+      "ab5",
+      "ab6"
+    ]
+  ],
+  "claims": "claims:\n1 _worktrees.advance_tree calls settle(...) before _drop_copy(copy) and returns kept on a failed settle; advance_task_tree passes settle=_record_move and runs _resume first; _resume handles start==base, end==base and a copy with no index.json; drive-phase.advance_member stops on said['kept'] alone\n2 nine new mutation rows plus three re-anchored, each red on its case; av27 and ab6 red on the attempt-3 code before the fix\n3 the class is 'the copy and the marker disagree after a kill': every point a move can be killed is now in av27's loop (git calls enumerated until none is left, every write point and the copy's removal), and the drive reads the one word `kept` for every unsettled outcome; left: records dirtied between a kill and the next move stop the drive rather than being guessed\n4 the stop rule for callers lives in advance_task_tree's own docstring (`kept` means not settled) and is enforced by ab6 and the drive's single condition\n5 n/a - no property recorded\n6 the resume reads the copy's recorded move against the marker and the tree's state, never a message's text\n7 no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:1cbe2042fb982af1aae1894598976dacd1f210b146513a9b8dbb64522841c4e9\",\"dirtyDigest\":\"sha256:21c184bbe4fb83c110b16aadc2c90866b5ceff6ec7058f175d12a0d7685974bb\",\"dirtyPaths\":{\"plugins/audit/scripts/git/_worktrees.py\":\"5eac9791222f0efa\",\"plugins/audit/scripts/git/manage-worktrees.py\":\"c3137fe24c83c91c\",\"plugins/audit/scripts/governance/drive-phase.py\":\"eee5794ce3b2b83d\",\"tests/test__worktrees.py\":\"10a92c66ec5e93ef\",\"tests/test_drive_phase.py\":\"446ca9b98ecc5fd1\",\"tests/test_manage_worktrees.py\":\"422baae1ba6ae644\",\"tools/lints/_deps.py\":\"b45499d2b96b767c\"},\"head\":\"daa0c539\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/git/_worktrees.py\",\"plugins/audit/scripts/git/manage-worktrees.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test__worktrees.py\",\"tests/test_drive_phase.py\",\"tests/test_manage_worktrees.py\",\"tools/lints/_deps.py\"],\"scopeDigest\":\"sha256:03e8f6316ad0abafd864cd027e69c31e6e821d6464b10ccb57e81f2de45e276f\",\"v\":2}",
+  "testsAddGaps": [
+    "tests/test__worktrees.py: a task tree whose base is behind the phase head and whose work touches none of the files that moved is brought to the head with its work intact, and one whose work overlaps a moved file is refused by name - bound to `av1`, which the suite did not print",
+    "tests/test__worktrees.py: a task tree whose base is behind the phase head and whose work touches none of the files that moved is brought to the head with its work intact, and one whose work overlaps a moved file is refused by name - bound to `av2`, which the suite did not print",
+    "tests/test__worktrees.py: a task tree whose base is behind the phase head and whose work touches none of the files that moved is brought to the head with its work intact, and one whose work overlaps a moved file is refused by name - bound to `av3`, which the suite did not print",
+    "tests/test__worktrees.py: a task tree whose base is behind the phase head and whose work touches none of the files that moved is brought to the head with its work intact, and one whose work overlaps a moved file is refused by name - bound to `av4`, which the suite did not print",
+    "tests/test__worktrees.py: a task tree whose base is behind the phase head and whose work touches none of the files that moved is brought to the head with its work intact, and one whose work overlaps a moved file is refused by name - bound to `av5`, which the suite did not print",
+    "tests/test__worktrees.py: a task tree whose base is behind the phase head and whose work touches none of the files that moved is brought to the head with its work intact, and one whose work overlaps a moved file is refused by name - bound to `av6`, which the suite did not print",
+    "tests/test__worktrees.py: a task tree whose base is behind the phase head and whose work touches none of the files that moved is brought to the head with its work intact, and one whose work overlaps a moved file is refused by name - bound to `av7`, which the suite did not print",
+    "tests/test__worktrees.py: a task tree whose base is behind the phase head and whose work touches none of the files that moved is brought to the head with its work intact, and one whose work overlaps a moved file is refused by name - bound to `av8`, which the suite did not print",
+    "tests/test__worktrees.py: a task tree whose base is behind the phase head and whose work touches none of the files that moved is brought to the head with its work intact, and one whose work overlaps a moved file is refused by name - bound to `av9`, which the suite did not print",
+    "tests/test__worktrees.py: a task tree whose base is behind the phase head and whose work touches none of the files that moved is brought to the head with its work intact, and one whose work overlaps a moved file is refused by name - bound to `av10`, which the suite did not print",
+    "tests/test__worktrees.py: a task tree whose base is behind the phase head and whose work touches none of the files that moved is brought to the head with its work intact, and one whose work overlaps a moved file is refused by name - bound to `av11`, which the suite did not print",
+    "tests/test__worktrees.py: a task tree whose base is behind the phase head and whose work touches none of the files that moved is brought to the head with its work intact, and one whose work overlaps a moved file is refused by name - bound to `av12`, which the suite did not print",
+    "tests/test__worktrees.py: a task tree whose base is behind the phase head and whose work touches none of the files that moved is brought to the head with its work intact, and one whose work overlaps a moved file is refused by name - bound to `av13`, which the suite did not print",
+    "tests/test__worktrees.py: a task tree whose base is behind the phase head and whose work touches none of the files that moved is brought to the head with its work intact, and one whose work overlaps a moved file is refused by name - bound to `av14`, which the suite did not print",
+    "tests/test__worktrees.py: a task tree whose base is behind the phase head and whose work touches none of the files that moved is brought to the head with its work intact, and one whose work overlaps a moved file is refused by name - bound to `av15`, which the suite did not print",
+    "tests/test__worktrees.py: a task tree whose base is behind the phase head and whose work touches none of the files that moved is brought to the head with its work intact, and one whose work overlaps a moved file is refused by name - bound to `av16`, which the suite did not print",
+    "tests/test__worktrees.py: a task tree whose base is behind the phase head and whose work touches none of the files that moved is brought to the head with its work intact, and one whose work overlaps a moved file is refused by name - bound to `av17`, which the suite did not print",
+    "tests/test__worktrees.py: a task tree whose base is behind the phase head and whose work touches none of the files that moved is brought to the head with its work intact, and one whose work overlaps a moved file is refused by name - bound to `av18`, which the suite did not print",
+    "tests/test__worktrees.py: a task tree whose base is behind the phase head and whose work touches none of the files that moved is brought to the head with its work intact, and one whose work overlaps a moved file is refused by name - bound to `av19`, which the suite did not print",
+    "tests/test__worktrees.py: a task tree whose base is behind the phase head and whose work touches none of the files that moved is brought to the head with its work intact, and one whose work overlaps a moved file is refused by name - bound to `av20`, which the suite did not print",
+    "tests/test__worktrees.py: a task tree whose base is behind the phase head and whose work touches none of the files that moved is brought to the head with its work intact, and one whose work overlaps a moved file is refused by name - bound to `av21`, which the suite did not print",
+    "tests/test__worktrees.py: a task tree whose base is behind the phase head and whose work touches none of the files that moved is brought to the head with its work intact, and one whose work overlaps a moved file is refused by name - bound to `av22`, which the suite did not print",
+    "tests/test__worktrees.py: a task tree whose base is behind the phase head and whose work touches none of the files that moved is brought to the head with its work intact, and one whose work overlaps a moved file is refused by name - bound to `av23`, which the suite did not print",
+    "tests/test__worktrees.py: a task tree whose base is behind the phase head and whose work touches none of the files that moved is brought to the head with its work intact, and one whose work overlaps a moved file is refused by name - bound to `av24`, which the suite did not print",
+    "tests/test__worktrees.py: a task tree whose base is behind the phase head and whose work touches none of the files that moved is brought to the head with its work intact, and one whose work overlaps a moved file is refused by name - bound to `av25`, which the suite did not print",
+    "tests/test__worktrees.py: a task tree whose base is behind the phase head and whose work touches none of the files that moved is brought to the head with its work intact, and one whose work overlaps a moved file is refused by name - bound to `av26`, which the suite did not print",
+    "tests/test__worktrees.py: a task tree whose base is behind the phase head and whose work touches none of the files that moved is brought to the head with its work intact, and one whose work overlaps a moved file is refused by name - bound to `av27`, which the suite did not print",
+    "tests/test__worktrees.py: a task tree whose base is behind the phase head and whose work touches none of the files that moved is brought to the head with its work intact, and one whose work overlaps a moved file is refused by name - bound to `av28`, which the suite did not print",
+    "tests/test__worktrees.py: a task tree whose base is behind the phase head and whose work touches none of the files that moved is brought to the head with its work intact, and one whose work overlaps a moved file is refused by name - bound to `av29`, which the suite did not print",
+    "tests/test__worktrees.py: a task tree whose base is behind the phase head and whose work touches none of the files that moved is brought to the head with its work intact, and one whose work overlaps a moved file is refused by name - bound to `av30`, which the suite did not print",
+    "tests/test__worktrees.py: a task tree whose base is behind the phase head and whose work touches none of the files that moved is brought to the head with its work intact, and one whose work overlaps a moved file is refused by name - bound to `av31`, which the suite did not print"
+  ],
+  "testsAddUnchecked": [
+    "tests/test_drive_phase.py: a gate rerun after the phase head moved runs in the advanced tree and records the new base - not checked: the submit's command did not run `tests/test_drive_phase.py`, so the ids bound to it were not compared with any printed label"
+  ]
+}

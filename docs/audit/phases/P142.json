@@ -1214,23 +1214,23 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 3,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-27T09:34:49Z",
+      "startedAt": "2026-10-27T10:22:20Z",
       "completedAt": null,
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-27T10:21:45Z.b7b10e",
+        "runId": "2026-10-27T11:01:38Z.935f9e",
         "status": "passed",
-        "at": "2026-10-27T10:21:45Z"
+        "at": "2026-10-27T11:01:38Z"
       },
-      "blockedReason": "High-risk not confirmed yet: the re-review closed H1, H2, M1, M2 (all probes) but reproduced two meds in crash ordering: the copy is removed before the marker is written, so a kill there leaves HEAD at the head with the marker at the old base; and an unreadable or foreign leftover copy answers restored=None, which the drive does not stop on. Attempt 4 orders marker-before-copy-removal and stops on kept+error."
+      "blockedReason": "adversarial delta review (attempt 4): HIGH - _drop_copy swallows a failed rename and both callers report kept=None; a later move's _resume force-undoes from the stale copy over newer work with no error (reproduced, scratchpad p10.py). Fix by invariant: kept derived from the copy's presence on disk after every operation, and no forced undo unless every held path still reads as the copy's bytes or the move's result."
     },
     {
       "id": "P142.19-6yq",
