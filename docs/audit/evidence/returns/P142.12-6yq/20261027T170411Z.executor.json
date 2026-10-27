@@ -1,0 +1,38 @@
+{
+  "gates": {
+    "python3 tests/test_drive_phase.py --selftest --stage lp-block": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "task mode is regression with expectRedFirst false, so no red was owed; this attempt changed no file and only re-ran the block",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "No file changed in this attempt. The task tree holds the earlier work for the lint probe in plugins/audit/scripts/governance/drive-phase.py lint_probe(), tests/test_drive_phase.py, plugins/audit/reference/phase-signoff.md step 4b and PLUGIN-BUILD-GUIDE.md. Re-ran `python3 tests/test_drive_phase.py --selftest --stage lp-block` in that tree and it printed 'ALL PASS: 10/10 cases passed' (lp1 to lp10). I did not run the gate command `python3 tools/sweep-selftests.py tests/test_drive_phase.py`: the orchestrator said the full gate is red only because the tree stands at the old base d4a26f13 and the drive recuts it at the head after submit. The pipe hid the exit code, so the evidence is the ALL PASS line, not an exit code. Dependants of the four files were not re-inspected in this attempt: this attempt changed nothing, and the orchestrator reported the earlier work as read twice and found correct. Those verdicts therefore rest on the orchestrator's earlier read, not on a check made now.",
+    "descriptive": "The sign-off lint probe is named by meta.buildCommands.lintProbe, a held ran-none run says ran none, every probe print fits 300 bytes, a hung probe is a named timeout stop, and the restore check compares file contents."
+  },
+  "testsAdded": [
+    "lp1 and lp2: a phase touching a lint file runs the probe once and says green; a phase touching none says ran none",
+    "lp3: a surviving mutation stops the sign-off naming the row",
+    "lp4 and lp10: a probe that changes the checkout stops the sign-off, and a file already modified before the run and changed again by the probe is caught by content, with wording that does not tell the operator to discard earlier edits",
+    "lp5: a plan naming no lintProbe runs no probe and the did-line says the key is unset",
+    "lp6: a green held probe is not rerun at the same HEAD and does run at another HEAD, using a real different SHA",
+    "lp7: every success print of a probe drive is at most 300 bytes, measured on a fixture that has a probe",
+    "lp8: a held ran-none run prints ran none, never green",
+    "lp9: a hung probe times out as a named stop"
+  ],
+  "casesAdded": [
+    [
+      "lp5",
+      "lp6",
+      "lp7",
+      "lp8",
+      "lp9",
+      "lp10"
+    ]
+  ],
+  "claims": "claims:\n1 n/a - no prose written this attempt; the earlier work is the orchestrator's read, and lp1-lp10 PASS in the lp-block run\n2 lp-block re-run in the task tree: ALL PASS 10/10. No mutation made this attempt; red-first not owed (regression, expectRedFirst false)\n3 n/a - not a fix of a reported defect in this attempt; no file changed\n4 n/a - no rule to an agent written this attempt\n5 measured once: the lp-block run above, one window, one tree, at the old base d4a26f13\n6 n/a - no guard written this attempt\n7 n/a - no number written this attempt",
+  "stamp": "audit-stamp: {\"content\":\"sha256:16e091fe711cb8d1c1d79cfe5060b04e5a1c4fdbe686d25f4e429fe2adf9d99f\",\"dirtyDigest\":\"sha256:87391e7a0677ac2b1f83b21f392c1d05080b86a6ae5190a38254109e1f10cb3e\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"2ea49e986b36e8f0\",\"plugins/audit/reference/phase-signoff.md\":\"8951f3453ed2daf5\",\"plugins/audit/scripts/governance/drive-phase.py\":\"b2084d307d949bcf\",\"tests/test_drive_phase.py\":\"d4ccd5cca617a72b\"},\"head\":\"d4a26f13\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/phase-signoff.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:4a48d27428fc7b27d8ceacb268d502bdcaa01fb89468b6945686cc7989e25ecc\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

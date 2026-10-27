@@ -347,7 +347,7 @@ import _manifest_phases as _phases  # noqa: E402  (FINDING_FIELDS: what a findin
 import _evidence_io as _evio  # noqa: E402  (project_config_for, evidence_dir)
 import _excerpt  # noqa: E402  (a failing verb's output is quoted both ends, never head-cut)
 import _invariants  # noqa: E402  (is_record_path: which changed paths are records)
-import _journal_io  # noqa: E402  (read_all: a high-risk answer given before the run)
+import _journal_io  # noqa: E402  (read_all: a high-risk answer given before the run; file_hash: the one file digest)
 import _filed_returns as _fr  # noqa: E402  (where a filed return lives, and its read;
 #                                            the per-task review key a task holds;
 #                                            the driver's state path, needs_human)
@@ -365,6 +365,7 @@ import _clause_coverage as _cc  # noqa: E402  (check: whether the writer answere
 import _scope_companions  # noqa: E402  (derive: the runner config a widen declares)
 import _worktrees  # noqa: E402  (read_provenance: whether a kept tree's marker names its task; advance_task_tree: a member's tree brought to the phase head)
 import _scoped_commit  # noqa: E402  (plugin_owned_rels: the one table of what the plugin owns under .claude/)
+import _proc_group  # noqa: E402  (shell_invocation, tear_down: the lint probe run as one stoppable tree)
 
 E_OK, E_STOPPED, E_USAGE = 0, 1, 2
 PREFIX = "[drive-phase]"
@@ -650,7 +651,7 @@ STEPS = {
                  "human's decision, and the reason is kept in the summary",)},
     "decide-not-fast-forward": {
         "line": "decide not-fast-forward %(phase)s: the parent moved, so "
-                "close-phase made no merge (%(why)s)",
+                "nothing merged (%(why)s)",
         "rule": ("Ask the human; never rebase - it rewrites the task commit SHAs.",)},
     "decide-runtime-boot": {
         "line": "decide runtime-boot %(phase)s: meta.runtimeBoot is set and the "
@@ -664,8 +665,8 @@ STEPS = {
                  "grade nothing: ask the human; the reason is kept.",)},
     "done": {
         "line": "done %(phase)s: %(why)s",
-        "rule": ("Report where it landed: a parent that is not the development "
-                 "branch does not hold the work yet.",)},
+        "rule": ("Report where it landed, and whether that is the development "
+                 "branch.",)},
     # Printed ONLY when the plan's own readiness names a phase beyond the one
     # that just finished - never a guess, and never for the phase that just
     # closed, which has nothing left ready. A phase boundary is a context
@@ -7320,8 +7321,9 @@ def review_findings_step(ctx, state, phase, review):
 
 # --- sign-off's last step: the gate, the verdict, the landing -------------------
 def phase_gate(ctx, phase):
-    """`(code, stdout, stderr)` of the phase's recorded gate run, derived first
-    when `meta.phaseGate.mode` asks for a derived gate."""
+    """`(code, stdout, stderr)` of the phase's recorded gate run, each step held
+    to `SIGNOFF_STEP_SECONDS`, derived first when `meta.phaseGate.mode` asks for
+    a derived gate."""
     manifest = _mio.load_manifest(ctx["manifest"])
     if ((manifest.get("meta") or {}).get("phaseGate") or {}).get("mode"):
         code, out, err = run_verb(ctx, "derive-phase-gate.py", [
@@ -7329,7 +7331,8 @@ def phase_gate(ctx, phase):
         if code != 0:
             return code, out, err
     return run_verb(ctx, "run-test-gate.py", [
-        ctx["manifest"], phase["id"], "--record", "--project-dir", ctx["project"]])
+        ctx["manifest"], phase["id"], "--record", "--project-dir", ctx["project"],
+        "--timeout", str(SIGNOFF_STEP_SECONDS)])
 
 
 def red_gate_stop(ctx, phase, out, err):
@@ -7354,15 +7357,27 @@ def red_gate_stop(ctx, phase, out, err):
 
 # --- sign-off's lint probe --------------------------------------------------------
 # The project's own mutation probe of its guarded lints, run at sign-off over the
-# files the phase changed. A project with no file here owes none, and the did-line
-# says so. The probe answers a fixed protocol: `--changed <paths>` runs the rows of
-# the lints living in those paths, in both directions; exit 0 with its summary
-# lines (`ran none` when no path held a lint), exit 1 with a `ROW NOT PROVEN:` line
-# per row that was not proven, any other exit a refusal.
-LINT_PROBE = "tools/prove-gates.py"
+# files the phase changed. THE PLAN NAMES IT: `meta.buildCommands.lintProbe` is
+# the command, and the driver appends `--changed <paths>`; a plan naming none
+# runs none, and the did-line says `lintProbe unset`. A file at some
+# conventional path is not a command anybody declared, so none is looked for.
+# The probe answers a fixed protocol: `--changed <paths>` runs the rows of the
+# lints living in those paths, in both directions; exit 0 with its summary lines
+# (`ran none` when no path held a lint), exit 1 with a `ROW NOT PROVEN:` line per
+# row that was not proven, any other exit a refusal.
+LINT_PROBE_KEY = "lintProbe"
 LINT_PROBE_NOT_PROVEN = "ROW NOT PROVEN"
 _LINT_PROBE_NONE = "ran none"
 _LINT_PROBE_SUMMARY = re.compile(r"^\d+ of \d+ |%s" % (_LINT_PROBE_NONE,))
+# The words a finished probe run is held with and said by. A hold carries its
+# word, because the held run is reported by what it did: a run that ran none,
+# met again at its HEAD, is still not a proof.
+_LINT_PROBE_WORDS = ("green", _LINT_PROBE_NONE)
+# The bound the drive holds each sign-off step that runs a project's own
+# commands to: the phase gate (handed to `run-test-gate.py` as `--timeout`) and
+# the lint probe. One number, so a probe is never given longer than the gate the
+# same sign-off already waited on, and a hung one ends the step as a stop.
+SIGNOFF_STEP_SECONDS = 3600
 
 
 def phase_changed_paths(ctx, phase):
@@ -7394,9 +7409,17 @@ def phase_changed_paths(ctx, phase):
 
 
 def checkout_status(ctx):
-    """The checkout's `git status` entries, untracked files included, each its
-    two status letters and its path spelled as the plan spells it, sorted - or
-    None when git cannot say."""
+    """`{path: (letters, digest)}` - the checkout's `git status` entries,
+    untracked files included: each path spelled as the plan spells it, its two
+    status letters and the digest of its bytes - or None when git cannot say.
+    The digest is `_journal_io.file_hash`'s, the one place this plugin hashes a
+    file it opens; its None for a path holding no readable file (deleted, a
+    directory) is equal to itself, so an entry absent on both sides compares
+    equal and one that appeared does not.
+
+    THE BYTES AS WELL AS THE LETTERS: a file already modified before a run
+    keeps ` M` whatever the run writes into it, so the letters alone cannot see
+    a probe that left a mutation in a file somebody had been editing."""
     code, out, _why = _git_run(ctx["gitRoot"], [
         "status", "--porcelain", "-z", "--untracked-files=all", "--no-renames"])
     if code != 0:
@@ -7404,8 +7427,16 @@ def checkout_status(ctx):
     hc = _loader.load_hooks_config(modname="audit__config")
     top = hc.checkout_top(ctx["gitRoot"]) or ctx["gitRoot"]
     entries = [e.decode("utf-8", "replace") for e in out.split(b"\0") if e]
-    return sorted("%s %s" % (e[:2], hc.git_to_plan(e[3:], top, ctx["project"]))
-                  for e in entries)
+    return dict((hc.git_to_plan(e[3:], top, ctx["project"]),
+                 (e[:2], _journal_io.file_hash(os.path.join(top, e[3:]))))
+                for e in entries)
+
+
+def status_moved(before, after):
+    """The paths whose status letters or bytes differ between two
+    `checkout_status` readings, an entry present in only one included, sorted."""
+    return sorted(p for p in set(before) | set(after)
+                  if before.get(p) != after.get(p))
 
 
 def _probe_summary(text):
@@ -7415,47 +7446,102 @@ def _probe_summary(text):
     return "; ".join(said or lines[-1:]) or "printed nothing"
 
 
-def lint_probe(ctx, state, phase, head):
-    """Run the lint probe over the phase's changed files: None when it proved
-    every row it ran, or ran none - each said on the did-line - or the project
-    keeps no probe, which says nothing, as an unset `meta.runtimeBoot` says
-    nothing; else the stop. A green run is held at `head`, so a decision
-    answered after it does not run minutes of mutation again.
+def lint_probe_command(manifest):
+    """The command `meta.buildCommands.lintProbe` resolves to
+    (`_evidence_io.resolved_commands`, `meta.nodePreamble` in front), or None
+    when the plan names no probe."""
+    build = (manifest.get("meta") or {}).get("buildCommands")
+    named = build.get(LINT_PROBE_KEY) if isinstance(build, dict) else None
+    if not isinstance(named, str) or not named.strip():
+        return None
+    return _evio.resolved_commands(manifest, [LINT_PROBE_KEY])[0][1]
 
-    THE STATUS IS COMPARED AROUND THE RUN, because the probe mutates the
-    working tree and restores it, and an exit 0 says nothing about whether it
-    did: a row stranded mid-mutation is the failure the probe's own trap
-    exists for, and the sign-off verb must never bind a tree it left behind."""
-    probe = os.path.join(ctx["project"], *LINT_PROBE.split("/"))
-    if not os.path.isfile(probe):
+
+def run_lint_probe(project, command, timeout):
+    """`(exit, text, None)` of the probe run under the POSIX shell from the
+    project, its whole process tree stopped at `timeout` seconds; `(exit, text,
+    why)` when it timed out or could not be started, `why` saying which and the
+    exit `run-test-gate.py` records for the same two (the killed tree's own,
+    else 124; 127) - a code for the `--verbose` log, never a verdict."""
+    argv, env, refusal = _proc_group.shell_invocation(command)
+    if argv is None:
+        return 127, "", "could not be started: %s" % (refusal,)
+    kwargs = {"stdout": subprocess.PIPE, "stderr": subprocess.STDOUT}
+    kwargs.update(_proc_group.group_kwargs())
+    try:
+        proc = subprocess.Popen(argv, cwd=project, env=env, **kwargs)
+    except OSError as exc:
+        return 127, "", "could not be started: %s" % (exc,)
+    try:
+        out, _err = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        confirmed = _proc_group.tear_down(proc)
+        text = _verb_text(_proc_group.drain(proc).encode("utf-8"))
+        code = proc.returncode if proc.returncode is not None else 124
+        return code, text, (
+            "timed out after %d s (SIGNOFF_STEP_SECONDS, the bound of a sign-off "
+            "step) and was stopped%s" % (
+                timeout, "" if confirmed else ", its teardown unconfirmed"))
+    except BaseException:
+        _proc_group.tear_down(proc)
+        _proc_group.drain(proc)
+        raise
+    return proc.returncode, _verb_text(out), None
+
+
+def lint_probe(ctx, state, phase, head):
+    """Run the lint probe the plan names over the phase's changed files: None
+    when it proved every row it ran, or ran none, or the plan names no probe -
+    each said on the did-line - else the stop. A finished run is held at `head`
+    with its word, so a decision answered after it does not run minutes of
+    mutation again, and the held run is said by what it did.
+
+    THE CHECKOUT IS COMPARED AROUND THE RUN, letters and bytes, because the
+    probe mutates the working tree and restores it, and an exit 0 says nothing
+    about whether it did: a row stranded mid-mutation is the failure the probe's
+    own trap exists for, and the sign-off verb must never bind a tree it left
+    behind. What moved is named and never prescribed away - the entry may be
+    another session's edit made while the probe ran."""
+    command = lint_probe_command(_mio.load_manifest(ctx["manifest"]))
+    if command is None:
+        ctx["did"].append("%s unset" % (LINT_PROBE_KEY,))
         return None
     held = state.get("lintProbe")
-    if head and isinstance(held, dict) and held.get("head") == head:
-        ctx["did"].append("lint probe green (held at this HEAD)")
+    if head and isinstance(held, dict) and held.get("head") == head \
+            and held.get("word") in _LINT_PROBE_WORDS:
+        ctx["did"].append("lint probe %s (held)" % (held["word"],))
         return None
     paths, unread = phase_changed_paths(ctx, phase)
     args = ["--changed"] + paths
     before = checkout_status(ctx)
     try:
-        done = subprocess.run([sys.executable, probe] + args, cwd=ctx["project"],
-                              capture_output=True)
-    except OSError as exc:
-        return _stopped(ctx, "the lint probe %s could not be started (%s), so "
-                        "the sign-off verb did not run" % (LINT_PROBE, exc))
+        code, text, why = run_lint_probe(
+            ctx["project"], "%s %s" % (command, " ".join(
+                shlex.quote(a) for a in args)), SIGNOFF_STEP_SECONDS)
     finally:
         after = checkout_status(ctx)
-    text = _verb_text(done.stdout) + _verb_text(done.stderr)
-    ctx["log"].append((LINT_PROBE, args, done.returncode, text))
-    if before is None or after is None:
+    ctx["log"].append((LINT_PROBE_KEY, args, code, text))
+    moved = (None if before is None or after is None
+             else status_moved(before, after))
+    if why is not None:
+        return _stopped(ctx, "the lint probe (meta.buildCommands.%s) %s, so the "
+                        "sign-off verb did not run%s; fix the command or what it "
+                        "waits on, then next %s" % (
+                            LINT_PROBE_KEY, why,
+                            "; the checkout changed while it ran: %s"
+                            % (_clip(", ".join(moved), 200),) if moved else "",
+                            ctx["phase"]))
+    if moved is None:
         return _stopped(ctx, "git could not read the checkout's status around "
                         "the lint probe, so whether it restored the tree is "
                         "unknown and the sign-off verb did not run")
-    if before != after:
-        moved = sorted(set(before) ^ set(after))
-        return _stopped(ctx, "the lint probe left the checkout changed (%s), so "
-                        "the sign-off verb did not run; restore the tree, then "
-                        "next %s" % (_clip(", ".join(moved), 200), ctx["phase"]))
-    if done.returncode == 1:
+    if moved:
+        return _stopped(ctx, "the checkout changed while the lint probe ran (%s) "
+                        "- a mutation it did not restore, or another session's "
+                        "edit; the sign-off verb did not run. Put back only what "
+                        "the probe left, then next %s"
+                        % (_clip(", ".join(moved), 200), ctx["phase"]))
+    if code == 1:
         rows = [ln.strip() for ln in text.splitlines()
                 if ln.strip().startswith(LINT_PROBE_NOT_PROVEN)]
         return _stopped(ctx, "the lint probe found a guarded lint the phase "
@@ -7466,18 +7552,19 @@ def lint_probe(ctx, state, phase, head):
                            or "  (exit 1, no %s line printed)"
                            % (LINT_PROBE_NOT_PROVEN,),
                            phase["id"], ctx["phase"]))
-    if done.returncode != 0:
-        return _stopped(ctx, "the lint probe %s refused (exit %d): %s"
-                        % (LINT_PROBE, done.returncode,
-                           _clip(_probe_summary(text), 200)))
+    if code != 0:
+        return _stopped(ctx, "the lint probe (meta.buildCommands.%s) refused "
+                        "(exit %d): %s" % (LINT_PROBE_KEY, code,
+                                           _clip(_probe_summary(text), 200)))
+    word = _LINT_PROBE_NONE if _LINT_PROBE_NONE in text else "green"
     if head:
-        state["lintProbe"] = {"head": head}
+        state["lintProbe"] = {"head": head, "word": word}
         write_state(ctx, state)
     # THE VERDICT WORD, NOT THE PROBE'S LINES: a success print is bounded, and
     # the summary lines alone outgrow it. They stay in the `--verbose` log.
     ctx["did"].append(_clip("lint probe %s%s" % (
-        "ran none" if _LINT_PROBE_NONE in text else "green",
-        "; paths of %s unread" % (", ".join(unread),) if unread else ""), 120))
+        word, "; paths of %s unread" % (", ".join(unread),) if unread else ""),
+        120))
     return None
 
 

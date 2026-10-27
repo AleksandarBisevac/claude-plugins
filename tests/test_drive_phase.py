@@ -6253,14 +6253,15 @@ def _standing_risk_cases(check):
           and run2["steps"][-1] == ("decide", "high-risk", None))
 
 
-# A lint probe at the path sign-off asks for, answering the `--changed` protocol
-# the way `tools/prove-gates.py` does: it holds one lint, in the file
-# `LP_PROBE_LINT` names, and runs that lint's rows only when the paths it is
-# handed include that file. `LP_PROBE_MODE` picks what its rows do - all go red,
-# one survives, or a run that leaves a stray file behind - and every argv it
-# was started with is appended to `LP_PROBE_LOG`, outside the fixture.
+# A lint probe the plan names in `meta.buildCommands.lintProbe`, answering the
+# `--changed` protocol the way `tools/prove-gates.py` does: it holds one lint, in
+# the file `LP_PROBE_LINT` names, and runs that lint's rows only when the paths it
+# is handed include that file. `LP_PROBE_MODE` picks what its rows do - all go
+# red, one survives, a run that leaves a stray file behind, one that appends to
+# the file `LP_PROBE_TOUCH` names, or one that hangs - and every argv it was
+# started with is appended to `LP_PROBE_LOG`, outside the fixture.
 _LINT_PROBE_STUB = (
-    "import json, os, sys\n"
+    "import json, os, sys, time\n"
     "argv = sys.argv[1:]\n"
     "with open(os.environ['LP_PROBE_LOG'], 'a', encoding='utf-8') as fh:\n"
     "    fh.write(json.dumps(argv) + '\\n')\n"
@@ -6273,6 +6274,8 @@ _LINT_PROBE_STUB = (
     "    print('no changed file holds a lint a row names, so ran none')\n"
     "    sys.exit(0)\n"
     "mode = os.environ.get('LP_PROBE_MODE', 'green')\n"
+    "if mode == 'hang':\n"
+    "    time.sleep(40)\n"
     "if mode == 'survive':\n"
     "    print('  demo_drift   STAYED GREEN   the gate asserts nothing about this')\n"
     "    print('  ROW NOT PROVEN: red demo_drift in %s - STAYED GREEN' % (lint,))\n"
@@ -6280,60 +6283,105 @@ _LINT_PROBE_STUB = (
     "if mode == 'dirty':\n"
     "    with open('stray-probe.txt', 'w', encoding='utf-8') as fh:\n"
     "        fh.write('left behind\\n')\n"
+    "if mode == 'touch':\n"
+    "    with open(os.environ['LP_PROBE_TOUCH'], 'a', encoding='utf-8') as fh:\n"
+    "        fh.write('the probe left this\\n')\n"
     "print('2 of 2 gates proven red')\n"
     "print('2 of 2 guards proven to stay quiet on known-good input')\n")
 
+LP_PROBE_KEY = "lintProbe"
 
-def _probe_repo(prefix, probe=True):
-    """A one-task phase-reviewed fixture, with the stub probe committed at the
-    path sign-off reads when `probe` is set."""
+
+def _probe_repo(prefix, probe=True, named=True):
+    """A one-task phase-reviewed fixture, with the stub probe committed at
+    `tools/prove-gates.py` when `probe` is set, and the plan naming it in
+    `meta.buildCommands.lintProbe` when `named` is."""
     root, mpath = _repo(prefix, task_ids=TASKS[:1], per_task="phase")
     if probe:
         os.makedirs(os.path.join(root, "tools"))
         _write_lf(os.path.join(root, "tools", "prove-gates.py"), _LINT_PROBE_STUB)
         _harness.git(root, "add", "tools/prove-gates.py")
         _harness.git(root, "commit", "-qm", "lint probe")
+    if named:
+        command = '"%s" tools/prove-gates.py' % (
+            sys.executable.replace("\\", "/"),)
+        _commit_plan(root, mpath, lambda plan: plan["meta"].setdefault(
+            "buildCommands", {}).update({LP_PROBE_KEY: command}),
+            "the plan names its lint probe")
     return root, mpath
 
 
-def _probe_drive(M, prefix, lint="src/f1.txt", mode="green", probe=True):
-    """`(run, calls, root, mpath, seen)`: the drive to its end over a fixture
-    whose stub probe holds `lint` and behaves as `mode`; `calls` is every argv
-    the probe was started with, `seen` the verbs the drive ran."""
-    root, mpath = _probe_repo(prefix, probe=probe)
+@contextlib.contextmanager
+def _probe_env(**pinned):
+    """`LP_PROBE_LOG` at a fresh file outside the fixture, with every other
+    `LP_PROBE_*` variable given set for the block; yields the log's path."""
     logdir = os.path.realpath(_harness.fixture_root("drive-probe-log-"))
-    log = os.path.join(logdir, "calls.jsonl")
-    pinned = {"LP_PROBE_LOG": log, "LP_PROBE_LINT": lint, "LP_PROBE_MODE": mode}
+    pinned = dict(pinned, LP_PROBE_LOG=os.path.join(logdir, "calls.jsonl"))
     held = dict((n, os.environ.get(n)) for n in pinned)
     os.environ.update(pinned)
-    seen = _counting(M)
     try:
-        run = drive(M, root, mpath, answer=_stop_at_other)
+        yield pinned["LP_PROBE_LOG"]
     finally:
         for name, value in held.items():
             if value is None:
                 os.environ.pop(name, None)
             else:
                 os.environ[name] = value
-    calls = []
-    if os.path.exists(log):
-        with open(log, encoding="utf-8") as fh:
-            calls = [json.loads(ln) for ln in fh if ln.strip()]
-    _harness.remove_tree(logdir)
+        _harness.remove_tree(logdir)
+
+
+def _probe_calls(log):
+    """Every argv the stub probe logged, in order."""
+    if not os.path.exists(log):
+        return []
+    with open(log, encoding="utf-8") as fh:
+        return [json.loads(ln) for ln in fh if ln.strip()]
+
+
+def _probe_drive(M, prefix, lint="src/f1.txt", mode="green", probe=True,
+                 named=True):
+    """`(run, calls, root, mpath, seen)`: the drive to its end over a fixture
+    whose stub probe holds `lint` and behaves as `mode`; `calls` is every argv
+    the probe was started with, `seen` the verbs the drive ran."""
+    root, mpath = _probe_repo(prefix, probe=probe, named=named)
+    seen = _counting(M)
+    with _probe_env(LP_PROBE_LINT=lint, LP_PROBE_MODE=mode) as log:
+        run = drive(M, root, mpath, answer=_stop_at_other)
+        calls = _probe_calls(log)
     return run, calls, root, mpath, seen
 
 
+def _probe_ctx(root, mpath):
+    """The drive context `lint_probe` reads, for a case calling it directly."""
+    return {"project": root, "gitRoot": root, "manifest": mpath, "config": None,
+            "phase": PHASE, "did": [], "log": [],
+            "stateDir": os.path.join(root, ".claude", "state")}
+
+
+def _probe_direct(M, root, mpath, state, head, **pinned):
+    """`(result, did, calls, seconds)` of one `lint_probe` call over the
+    fixture's phase with the `LP_PROBE_*` variables `pinned`."""
+    ctx = _probe_ctx(root, mpath)
+    with _probe_env(**pinned) as log:
+        began = time.time()
+        result = M.lint_probe(ctx, state, _phase_of(mpath), head)
+        seconds = time.time() - began
+        calls = _probe_calls(log)
+    return result, ctx["did"], calls, seconds
+
+
 def _lint_probe_cases(check):
-    """At sign-off the lint probe runs over the files the phase changed: the
-    rows of a lint the phase touched, both directions; none when it touched
-    none, said so; a surviving row stops the sign-off naming it, and so does a
-    probe that left the checkout changed."""
+    """At sign-off the lint probe the plan names runs over the files the phase
+    changed: the rows of a lint the phase touched, both directions; none when it
+    touched none, said so; a surviving row stops the sign-off naming it, and so
+    does a probe that left the checkout changed or ran past its bound."""
     M, why = _load("drive_phase_lint_probe")
     if M is None:
         check("lp1 the driver loads", False, why)
         return
     run, calls, root, _mpath, _seen = _probe_drive(M, "probe-green")
     text = "\n".join(t for _c, t in run["prints"])
+    sizes_green = [len(t.encode("utf-8")) for _c, t in run["prints"]]
     changed = calls[0][calls[0].index("--changed") + 1:] \
         if len(calls) == 1 and "--changed" in calls[0] else None
     check("lp1 a phase whose diff touches a lint's file runs the probe once at "
@@ -6348,11 +6396,34 @@ def _lint_probe_cases(check):
     run, calls, root, mpath, _seen = _probe_drive(M, "probe-none",
                                                   lint="src/elsewhere.py")
     text = "\n".join(t for _c, t in run["prints"])
+    sizes_none = [len(t.encode("utf-8")) for _c, t in run["prints"]]
     check("lp2 a phase touching no lint file runs none, and the did-line SAYS it "
           "ran none rather than reading as a proof: %r"
           % ((len(calls), run["steps"][-1], text[-400:]),),
           len(calls) == 1 and run["steps"][-1] == DONE and _signed(mpath)
           and "ran none" in text)
+
+    # The byte bound over drives whose sign-off DID run the probe: dp3 measures
+    # a fixture keeping none, so a probe clause that pushed the last print past
+    # the bound was green there. The sign-off's did-line rides on two prints -
+    # `done`, and the decision a moved parent stops at - so both are measured.
+    M_nf, _w = _load("drive_phase_lint_probe_nff")
+    real_verb = M_nf.run_verb
+
+    def parent_moved(ctx, script, args, stdin=None):
+        if script == "close-phase.py" and "--no-ff" not in args:
+            return 3, "[close-phase] the parent moved\n", ""
+        return real_verb(ctx, script, args, stdin=stdin)
+    M_nf.run_verb = parent_moved
+    run_nf, calls_nf, _r, _m, _seen = _probe_drive(M_nf, "probe-nff")
+    sizes_nf = [len(t.encode("utf-8")) for _c, t in run_nf["prints"]]
+    check("lp7 every success print of a drive whose sign-off ran the probe - "
+          "green, ran-none, and the decision a moved parent stops at - is at "
+          "most %d bytes: %r" % (BOUND, (sizes_green, sizes_none, sizes_nf)),
+          sizes_green and sizes_none and len(calls_nf) == 1
+          and run_nf["steps"][-1] == ("decide", "not-fast-forward", None)
+          and all(c == 0 for c, _t in run_nf["prints"])
+          and max(sizes_green + sizes_none + sizes_nf) <= BOUND)
 
     run, calls, root, mpath, seen = _probe_drive(M, "probe-survive",
                                                  mode="survive")
@@ -6375,45 +6446,93 @@ def _lint_probe_cases(check):
           and not seen.get(("audit-task.py", "signoff"))
           and not _signed(mpath))
 
-    run, calls, root, mpath, _seen = _probe_drive(M, "probe-absent", probe=False)
+    # The probe a project keeps is run only when the plan names it: a file at
+    # the path a release once hard-coded is not a command anybody declared.
+    run, calls, root, mpath, _seen = _probe_drive(M, "probe-unnamed",
+                                                  named=False)
     text = "\n".join(t for _c, t in run["prints"])
-    check("lp5 THE OVER-FIRE TWIN: a project keeping no probe at that path "
-          "signs off exactly as before - no stop, and no lint-probe clause on "
-          "its did-line, as an unset meta.runtimeBoot adds none: %r"
-          % ((calls, run["steps"][-1], text[-300:]),),
+    check("lp5 a plan naming no meta.buildCommands.%s does not run the probe "
+          "sitting at tools/prove-gates.py, signs off, and its did-line SAYS the "
+          "step had no command - the key, unset: %r"
+          % (LP_PROBE_KEY, (calls, run["steps"][-1], text[-300:]),),
           calls == [] and run["steps"][-1] == DONE and _signed(mpath)
-          and "lint probe" not in text)
+          and "%s unset" % (LP_PROBE_KEY,) in text)
 
     # A green run held at a HEAD is not paid for again at that HEAD; at any
-    # other it is - the twin, so a hold that swallowed every later run fails.
+    # other it is - the twin, at a SHA of its own, so a hold that ignored the
+    # head and swallowed every later run fails.
     root, mpath = _probe_repo("probe-held")
-    logdir = os.path.realpath(_harness.fixture_root("drive-probe-log-"))
-    log = os.path.join(logdir, "calls.jsonl")
-    held_env = os.environ.get("LP_PROBE_LOG")
-    os.environ["LP_PROBE_LOG"] = log
-    phase = _phase_of(mpath)
-    ctxs = [{"project": root, "gitRoot": root, "manifest": mpath, "config": None,
-             "phase": PHASE, "did": [], "log": []} for _n in range(2)]
-    try:
-        same = M.lint_probe(ctxs[0], {"lintProbe": {"head": "a" * 40}}, phase,
-                            "a" * 40)
-        other = M.lint_probe(ctxs[1], {"lintProbe": {"head": "a" * 40}}, phase,
-                             None)
-    finally:
-        if held_env is None:
-            os.environ.pop("LP_PROBE_LOG", None)
-        else:
-            os.environ["LP_PROBE_LOG"] = held_env
-    ran = 0
-    if os.path.exists(log):
-        with open(log, encoding="utf-8") as fh:
-            ran = len([ln for ln in fh if ln.strip()])
-    _harness.remove_tree(logdir)
+    same, did_same, ran_same, _s = _probe_direct(
+        M, root, mpath, {"lintProbe": {"head": "a" * 40, "word": "green"}},
+        "a" * 40)
+    other, _did, ran_other, _s = _probe_direct(
+        M, root, mpath, {"lintProbe": {"head": "a" * 40, "word": "green"}},
+        "b" * 40)
     check("lp6 a green probe held at this HEAD is not run again, and is said "
           "held; asked at another HEAD it runs once: %r"
-          % ((same, ctxs[0]["did"], other, ran),),
-          same is None and other is None and ran == 1
-          and any("held at this HEAD" in d for d in ctxs[0]["did"]))
+          % ((same, did_same, other, len(ran_same), len(ran_other)),),
+          same is None and other is None and ran_same == []
+          and len(ran_other) == 1
+          and did_same == ["lint probe green (held)"])
+
+    # The word the hold stores is the word it prints back: a run that ran none,
+    # met again at its HEAD, is not a proof either.
+    state = {}
+    first, did_first, ran_first, _s = _probe_direct(
+        M, root, mpath, state, "c" * 40, LP_PROBE_LINT="src/elsewhere.py")
+    again, did_again, ran_again, _s = _probe_direct(
+        M, root, mpath, state, "c" * 40, LP_PROBE_LINT="src/elsewhere.py")
+    check("lp8 a run that ran none, held and met again at its HEAD, prints ran "
+          "none and never green, and does not run the probe again: %r"
+          % ((first, did_first, again, did_again, len(ran_first),
+              len(ran_again)),),
+          first is None and again is None and len(ran_first) == 1
+          and ran_again == []
+          and any("ran none" in d and "held" in d for d in did_again)
+          and not any("green" in d for d in did_again))
+
+    # A probe that does not come back is a stop naming the bound it ran past,
+    # inside that bound - not a sign-off waiting on it.
+    held_bound = getattr(M, "SIGNOFF_STEP_SECONDS", None)
+    M.SIGNOFF_STEP_SECONDS = 2
+    try:
+        hung, did_hung, _ran, seconds = _probe_direct(
+            M, root, mpath, {}, None, LP_PROBE_MODE="hang")
+    finally:
+        if held_bound is None:
+            delattr(M, "SIGNOFF_STEP_SECONDS")
+        else:
+            M.SIGNOFF_STEP_SECONDS = held_bound
+    hung_text = hung[1] if isinstance(hung, tuple) else ""
+    check("lp9 a probe that runs past the drive's step bound is stopped and "
+          "reported as a stop naming the timeout and the bound, well before "
+          "the stub's own sleep would have ended: %r" % ((hung, did_hung, seconds),),
+          isinstance(hung, tuple) and hung[0] == 1
+          and "timed out" in hung_text and "2 s" in hung_text
+          and seconds < 30)
+
+    # A file another session had already modified keeps its two status letters
+    # whatever the probe does to it, so only its bytes can say it moved. The
+    # twin leaves it alone, so a comparison that always differs is red too.
+    root, mpath = _probe_repo("probe-premod")
+    with open(os.path.join(root, "src", "f2.txt"), "a", encoding="utf-8") as fh:
+        fh.write("another session's edit\n")
+    left, _did, _ran, _s = _probe_direct(
+        M, root, mpath, {}, None, LP_PROBE_MODE="touch",
+        LP_PROBE_TOUCH=os.path.join(root, "src", "f2.txt"))
+    left_text = left[1] if isinstance(left, tuple) else ""
+    with open(os.path.join(root, "src", "f2.txt"), "w", encoding="utf-8") as fh:
+        fh.write("v0\nanother session's edit\n")
+    quiet, did_quiet, _ran, _s = _probe_direct(M, root, mpath, {}, None)
+    check("lp10 a file modified before the run and changed again by the probe "
+          "stops the sign-off naming it, worded so it does not tell the "
+          "operator to discard the edits that were there before; the same "
+          "file left alone by a green probe is no stop: %r"
+          % ((left, quiet, did_quiet),),
+          isinstance(left, tuple) and left[0] == 1
+          and "src/f2.txt" in left_text
+          and "restore the tree" not in left_text
+          and quiet is None and any("green" in d for d in did_quiet))
 
 
 def _boot_cases(check):
@@ -8793,13 +8912,17 @@ def _wave_review_discard_cases(check):
 # did-lines (commit SHAs written as <sha>) and the journal's action sequence.
 # Taken from a drive by the v3.2.0 plugin itself; `w1` holds width 1 and an
 # absent key to it, and `w1m` is the case that says the comparison can fail.
+# One clause departs from that drive's text and is not about width: the sign-off
+# line now says the lint-probe step was skipped for a plan naming no
+# `meta.buildCommands.lintProbe`, a step the 3.2.0 drive did not have.
 PINNED_320_DID = [
     "started P1.1",
     "gate P1.1 green; stamp current",
     "closed P1.1 at <sha>; started P1.2",
     "gate P1.2 green; stamp current",
     "closed P1.2 at <sha>",
-    "phase gate green; invariants clean; signed off; committed <sha>; landed "
+    "phase gate green; invariants clean; lintProbe unset; signed off; "
+    "committed <sha>; landed "
     "(audit/p1-one -> main (no-checkout); mergedAt = <ts>...); lock released",
 ]
 # One tuple per journal file - each file is one writer's chain, in append order.

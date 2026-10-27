@@ -175,9 +175,30 @@
         "file": "tests/_harness.py:1228-1241 (sr18 at 2195-2209)",
         "issue": "The new duplicate-label failure (replayed() third return value, replay_selftest 'RAN n TIMES') and its case sr18 live in tests/_harness.py, which the recorded gate (`python3 tools/sweep-selftests.py tools/sweep-selftests.py`) does not select and tests.add does not name. The executor ran `tests/_harness.py --selftest` (90/90) separately and states sr18 was not proved red by mutation; the gate record therefore says nothing about this low clause.",
         "resolution": "Add `python3 tools/sweep-selftests.py tests/_harness.py` (or the harness selftest) to the task's tests.gate / list tests/_harness.py in tests.add, and mutate replayed() to the old setdefault-only form once to show sr18 red."
+      },
+      {
+        "id": "P142-R22",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:7368 (LINT_PROBE_KEY) crossing plugins/audit/scripts/manifest/_manifest_phases.py:263-296 (phase_gate_default)",
+        "issue": "The diff makes the probe a meta.buildCommands key, but phase_gate_default() defaults a NEW phase's gate to EVERY buildCommands key not in meta.phaseGate.exclude (only review-only keys are skipped). Once the orchestrator sets lintProbe, /audit:phase add on a plan without a derived or excluding phaseGate writes `lintProbe` into each new phase's gate, so run-test-gate.py runs the mutating probe with no --changed (the whole probe, minutes, rewriting the tree) as an ordinary gate command. Neither the diff, phase-signoff.md 4b nor any case mentions or pins this; the other side of the boundary is untouched.",
+        "resolution": "Treat lintProbe as a key that is not a gate entry in phase_gate_default (a reserved set beside REVIEW_ONLY_GATES), with a case in the phase-gate-default suite; or at least state in step 4b that a plan naming lintProbe must list it in meta.phaseGate.exclude."
+      },
+      {
+        "id": "P142-R23",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:7324-7335",
+        "issue": "phase_gate's new docstring says 'each step held to SIGNOFF_STEP_SECONDS', but only run-test-gate.py is handed --timeout; the derive-phase-gate.py call just above it is not bounded by it.",
+        "resolution": "Reword to say the recorded gate run is held to it, or pass the bound to derive-phase-gate.py if it takes one."
+      },
+      {
+        "id": "P142-R24",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:651-668 (STEPS decide-not-fast-forward, done)",
+        "issue": "To make the prints fit the byte budget the diff rewrote two step texts that R4 did not name (R4 asked to 'Shorten or merge the clause'). The done rule lost its consequence: 'a parent that is not the development branch does not hold the work yet' became 'Report where it landed, and whether that is the development branch', which no longer tells the agent what to say; PLUGIN-BUILD-GUIDE.md:956 still describes the note as one the sign-off report must repeat. The not-fast-forward line dropped 'the parent moved'. Only lp7 pins the sizes, not the wording.",
+        "resolution": "Keep the consequence in the done rule (terse form) and take the bytes from the probe clause or the did-line instead, or add a case pinning the wording the guide promises."
       }
     ],
-    "outcome": "[findings: 21 - 0 high, 8 med, 13 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 24 - 0 high, 9 med, 15 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -926,7 +947,7 @@
     {
       "id": "P142.12-6yq",
       "title": "The sign-off lint probe is named by the plan, reports a held run by what it did, fits the print budget, and bounds and scopes its restore check",
-      "status": "blocked",
+      "status": "in_progress",
       "description": "Review findings on the sign-off lint probe that P142.6 added to drive-phase.py `lint_probe()` (fix them together, they share the function):\n- R3 (med): the hold stores only the HEAD, so a re-entry at the same HEAD after a run that printed `ran none` reports `lint probe green (held at this HEAD)`. Store the outcome word with the hold and print it back; a held ran-none run says ran none.\n- R4 (med): the success print is over INSTRUCTION_BYTES (300) with the probe clause. Shorten or merge the clause so every non-stop print fits, and make the byte-budget case measure a fixture that HAS a probe.\n- R5 (med): the shipped driver runs whatever sits at the hard-coded `tools/prove-gates.py`. The probe must be named by the plan: read a `meta.buildCommands` key (name it `lintProbe`; the driver appends `--changed <paths>`), and a plan without the key skips the step and says so in the did-line. The orchestrator sets the key on this repo's plan with `/audit:task build-command`; do not edit docs/audit.\n- R6 (low): the restore check compares status letters only; compare contents (hash) of files already modified before the run, and word the stop so it does not tell the operator to discard another session's edits.\n- R7 (low): give the probe run a timeout derived from the drive's own budget, and report a timeout as a stop naming it.\n- R8 (low): lp6's other-HEAD twin passes head=None; use a different SHA so a hold that ignores the head goes red.\nUpdate phase-signoff.md step 4b to match. Red-first each case against today's code. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -950,14 +971,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 3,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-27T12:16:44Z",
+      "startedAt": "2026-10-27T17:04:11Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -984,11 +1005,10 @@
       ],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-27T12:33:38Z.d4ce2c",
-        "status": "failed",
-        "at": "2026-10-27T12:33:38Z"
-      },
-      "blockedReason": "waits on the fix for a refused tree move: its work overlaps files the head moved, the mover refused, and the gate ran at the old base d4a26f13 charging te11/ln1 the head fixed; no offered answer recuts the tree. Unblock and redo once the drive offers the recut."
+        "runId": "2026-10-27T17:13:08Z.e1f173",
+        "status": "passed",
+        "at": "2026-10-27T17:13:08Z"
+      }
     },
     {
       "id": "P142.13-6yq",
@@ -1603,7 +1623,7 @@
     {
       "id": "P142.23-6yq",
       "title": "The red-first helper sizes its deadline from the command's recorded cost and reads a stage missing at base as red",
-      "status": "in_progress",
+      "status": "done",
       "description": "Observed in P142 on 2026-10-27. P142.20-6yq's submit ran the red-first helper on `python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__worktrees.py` with the default 480 s deadline, half of it held back for the fix run. test_drive_phase records about 1349 slot-seconds in .github/sweep-costs.json. The base run therefore timed out and the return was filed `could-not-prove`. Narrowing to the task's new stage cannot help: HEAD's test file has no such stage, so the base run refuses with `unknown_stage_label`. Every tdd task gated on the drive suite loses mechanical red-first.\n\nFix the structure:\n1. The deadline is sized from the command it is handed. When the command is a sweep, read the recorded costs of the files it names from the sweep's own cost table (reuse the sweep's reader; do not parse the JSON a second time), scaled by the same per-cost factor the sweep uses for a file's timeout. Keep `--timeout` as an explicit override. When no cost is recorded, keep today's default and say so in the basis.\n2. A stage the fix run has and HEAD's file lacks is not a refusal. It means those cases did not exist at base, which is red for those cases. Say exactly that in the basis.\n3. The basis text names the deadline it used and where the deadline came from.\n\nRed-first: a fixture sweep command whose recorded cost exceeds the default, which times out today and completes after the fix. A stage missing at base, which refuses today and reads red after the fix. Add an over-fire case: an unrecorded command keeps the default deadline. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -1632,19 +1652,36 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "aeca2fc87b3e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "stamp-verification.py: new sized_deadline(cmd, costs, problem, explicit, default) and deadline_clause(sized); run_red resolves --timeout (parser default now None) after the plan is read: explicit wins, else a sweep command naming suites the cost table times gets ceil(TIMEOUT_PER_COST * their recorded slot-seconds) when above DEFAULT_TIMEOUT, capped at MAX_TIMEOUT, else DEFAULT_TIMEOUT with the reason; every red basis now carries a 'deadline: Ns, <source>' clause before the fix-run hold-back clause; the new-stage basis now says its cases did not exist at HEAD, which is red for them. _red_scope tolerates an unresolved timeout. Reader reuse: the plugin cannot import tools/ (it ships without it), so the existing plugin-side load_sweep_costs is reused (no new parser) and TIMEOUT_PER_COST is held in the plugin and pinned to tools/sweep-selftests.py by case swd5 (factor, same table entries, and file_timeout agreement for one suite). PLUGIN-BUILD-GUIDE.md deadline paragraph updated (edit allowed by the plan gate). Tests: new stage swd-block with swd1-swd6; ran sweep over test_stamp_verification, test__deps, test__output_lints, test_drive_phase: 4/4 files ok; ruff clean.",
+        "descriptive": "The red-first helper sizes its deadline from a sweep command's recorded cost and states the deadline and its source in every basis."
       },
       "startedAt": "2026-10-27T16:19:28Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-27T17:03:57Z",
+      "verifiedBy": [
+        "swd1: slow stand-in sweep with a recorded cost above the default deadline proves under a sized deadline",
+        "swd2: unrecorded sweep suite keeps the default deadline and the basis says so",
+        "swd3-swd5: sized_deadline arithmetic, cap, floor, explicit override, non-sweep default, and agreement with the sweep's factor and table",
+        "swd6: a stage missing at HEAD reads as its cases being red at HEAD, basis says so"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-27T17:03:54Z.70b2a4",
         "status": "passed",
         "at": "2026-10-27T17:03:54Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "aeca2fc87b3e",
+        "at": "2026-10-27T17:03:57Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-27T16:39:14Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_stamp_verification.py` in a throwaway tree at HEAD exited 1 on \"AttributeError: module 'stamp_verification' has no attribute 'TIMEOUT_PER_COST'\" (read as python), and the task introduces 'TIMEOUT_PER_COST': absent from HEAD's module-level bindings of plugins/audit/scripts/governance/stamp-verification.py and bound in the working tree's; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; fix run: held back 240s of the deadline (the recorded 266s, capped at half the 480s deadline), the recorded slot-seconds of tests/test_stamp_verification.py in .github/sweep-costs.json",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     }
   ],
