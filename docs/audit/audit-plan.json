@@ -12441,7 +12441,7 @@
     {
       "id": "BUG-30-6yq",
       "title": "Agent sessions leave their writer and reviewer temp directories behind",
-      "status": "in_progress",
+      "status": "fixed",
       "severity": "med",
       "reportedAt": "2026-10-26T11:55:50Z",
       "reportedBy": "orchestrator",
@@ -12451,7 +12451,7 @@
       "actual": "A session-writer-* or session-reviewer-* directory remains for every session",
       "files": [],
       "taskId": "P142.15-6yq",
-      "fixedIn": null,
+      "fixedIn": "9902993fe59d",
       "notes": null
     }
   ],

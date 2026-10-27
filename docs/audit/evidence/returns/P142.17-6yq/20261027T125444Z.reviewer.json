@@ -1,0 +1,15 @@
+{
+ "findings": [],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clause: 'if it is not [a gate], declare it in NOT_A_GATE with a reason'. tools/affected.py:435 reach_graph builds imported_by/run_by/scanners/broken from an AST walk and returns a dict of edges, no verdict, so the NOT_A_GATE row is right; the reason (80+ chars, says why it is a candidate and why not a gate) is in the diff. Clause: 'TABLE, after the bc1 row: le1, le4' - both rows are present immediately after bc1 with the specified anchors/replacements; I confirmed in the task tree that each anchor occurs exactly once (the def line, and the run-test-gate.py plain_text body anchor, in _output_lints.py:1619 and run-test-gate.py). Clause: 'ALLOW: three rows on _output_lints.py turning le2 / le2 / le3 red: drop the home-module filter, empty the normaliser call-name tuple, report pending sites' - three ALLOW rows present; each anchor (home filter at _output_lints.py:1669-1671, the (RUNNER_TEXT_NORMALISER, \"splitlines\") tuple, and the `if site not in pending:` block at 1679-1680) occurs exactly once. No F/P/BUG ids in the added comments. The diff is only tools/prove-gates.py (45 insertions), matching the claim's outcome.technical. The claim's descriptive line ('every lint and tree walk the last tasks added is now ... proved or declared') is consistent with the diff. I did not run prove-gates (forbidden); the red/green runs (--only runner_line_end, --selftest 45/45) are the executor's recorded results, unverified by me beyond anchor-uniqueness.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "gate-only task, no tests added (tests.add: none); the executor filed not-attempted with basis 'gate-only task, expectRedFirst false'. The rows' own red proof is the prove-gates run the executor reports (le1,le2,le3 red for the crippled def; le4 for the run-test-gate row); I did not re-run it.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "tests.gate is `python3 tools/sweep-selftests.py tools/prove-gates.py`, which runs the prove-gates --selftest cases (c1/c1b-f coverage, c2 anchor-exactly-once, c2b, c10, c11, a1/a4 allow coverage) in tools/prove-gates.py. Read the coverage/anchor cases by name only (tools/prove-gates.py:2637-2855); the behaviour added here is table rows, which c1/a4 (row exists for every derived lint) and c2/a1 (anchor present exactly once) fail on if the rows are deleted. No assertion-never-reached, swallowing try or empty-filter shape found in what I read; I did not read every case body."
+ },
+ "verdict": "clean",
+ "tasks": []
+}

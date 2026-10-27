@@ -469,6 +469,21 @@ TABLE = (
   "def bare_output_cut_violations(dirs=None, pending=None):\n"
   "    return []",
   OUTL, "bc1"),
+ # The run-text line-end rule, crippled. It is what keeps a pattern anchored at
+ # `$` from being applied to a run whose lines end `\r\n`, and a version
+ # reporting nothing reads exactly like a tree whose every reader normalises.
+ ("runner_line_end_violations", L + "_output_lints.py", "replace",
+  "def runner_line_end_violations(dirs=None, home=RUNNER_TEXT_HOME, pending=None):",
+  "def runner_line_end_violations(dirs=None, home=RUNNER_TEXT_HOME, pending=None):\n"
+  "    return []",
+  OUTL, "le1"),
+ # ...and the real tree's end-of-run reader reading text it did not normalise:
+ # that is the read a `\r` silently defeats, and `le4` is the case that reads the
+ # real tree for it.
+ ("runner_line_end_violations", S + "governance/run-test-gate.py", "replace",
+  "    body = _ro.plain_text(text)\n    if wrapper_words(command):\n        return False\n",
+  "    body = text or \"\"\n    if wrapper_words(command):\n        return False\n",
+  OUTL, "le4"),
  # The newline rule, crippled. It is what keeps a committed file from being
  # written CRLF on Windows, and a version reporting nothing reads exactly like
  # a tree whose every text-mode write names its newline.
@@ -1262,6 +1277,30 @@ ALLOW = (
  # authors to route around the lint.
  ("bare_output_cut_violations", L + "_output_lints.py", "replace",
   "sl.upper.value < OUTPUT_CUT_MIN", "sl.upper.value < 0", OUTL, "bc2"),
+ # The run-text line-end rule, widened past the modules that import the home of
+ # the normalisation: a markdown reader with the same anchored pattern never
+ # sees a `\r`, and convicting it would teach authors to route around the lint.
+ # `le2`'s fixture holds one.
+ ("runner_line_end_violations", L + "_output_lints.py", "replace",
+  "        if stem[name] != home \\\n"
+  "                and not any(module == home for module, _m in aliases.values()):\n"
+  "            continue\n",
+  "", OUTL, "le2"),
+ # ...and with the normaliser's call name emptied: text that passed through
+ # `plain_text` or came out of `.splitlines()` is the fix itself, and `le2`'s
+ # compliant module is built from both.
+ ("runner_line_end_violations", L + "_output_lints.py", "replace",
+  "        if _call_name(expr) in (RUNNER_TEXT_NORMALISER, \"splitlines\"):",
+  "        if _call_name(expr) in ():", OUTL, "le2"),
+ # ...and its pending table ignored: a site the table names while it still
+ # holds such a read would be convicted anyway, and `le3` is the case that
+ # holds one silenced.
+ ("runner_line_end_violations", L + "_output_lints.py", "replace",
+  "                if site not in pending:\n"
+  "                    violations.add((name, line, _LINE_END_READ))",
+  "                if True:\n"
+  "                    violations.add((name, line, _LINE_END_READ))",
+  OUTL, "le3"),
  # The text-ordered-timestamp rule, widened from a `ts` read in place to one
  # inside ANY call: `stamp_moment(r.get("ts"))` is the moment the stamp names,
  # the fix itself, and `to2`'s fixture holds `_evidence_io`'s helpers built on it.
@@ -1854,6 +1893,12 @@ NOT_A_GATE = (
   "themselves. A set of script names is what the placeholder lint judges command "
   "lines against, and an empty or wrong set shows up as that lint's mp1/mp2 going "
   "red, not as a finding of its own."),
+ ("reach_graph",
+  "the GRAPH the affected-check selection reads, not a verdict: it answers who "
+  "imports and who runs each module and which suites scan the tree, and a graph "
+  "of edges is not a list of findings. What makes it a candidate is that it "
+  "walks every file under its roots with no argument; what makes it not a gate "
+  "is that nothing it returns is a pass or a fail."),
 )
 
 _MIN_NOT_A_GATE_REASON = 80   # a reason short enough to be a label is not a reason

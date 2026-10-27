@@ -1114,7 +1114,7 @@
     {
       "id": "P142.15-6yq",
       "title": "An agent session removes the temp directory it was given when it ends",
-      "status": "in_progress",
+      "status": "done",
       "description": "run-agent-session.py creates a session-writer-* / session-reviewer-* temp directory per session and never removes it. Remove it in finally on every exit path (success, failure, timeout, interrupt), keeping anything a caller is told to read out of it by copying first. Red-first the case against today's code. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/governance/run-agent-session.py",
@@ -1138,20 +1138,34 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9902993fe59d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Re-read attempt 1's work in the task tree against the brief; nothing changed. plugins/audit/scripts/governance/run-agent-session.py: _run arms SIGINT/SIGTERM (_proc_group.arm_interrupt, defined at _proc_group.py:442, disarm at :457) before _prepare, runs the session in _in_session, and its finally calls drop_session_tmp -> _output.remove_tree (_output.py:360); _prepare removes the directory itself when the .tmpdir record write fails. Module docstring now says the TMPDIR is removed, on which paths, and that a SIGKILL still leaves it. Tests: stub writes a nested fixture into its TMPDIR, stop=<signal> support, cases ras52-ras58. Commands: `python3 tools/sweep-selftests.py tests/test_run_agent_session.py` exit 0, 1/1 files ok, 67 cases; ruff check on both files exit 0; vermin -t=3.8- on both exit 0. Dependants: tests/test_run_agent_session.py changed by this task (_under/_cases/_selftest names kept); tools/affected.py still correct (reads _usage, _cases, _selftest, none renamed); PLUGIN-BUILD-GUIDE.md still correct but silent about the removal (not in this task's files; _under, exit_for unchanged); drive-phase.py still correct (never reads the TMPDIR); audit-config.schema.json, _config_rules.py, _panel_settings.py, _skill_places.py still correct (name the script for the model setting and skill resolution, unchanged); tests/test__doctor_policy.py (find_skills) and tests/test_drive_phase.py (_read_text, its own helper) unaffected. Not covered by any case: the outer arm in _run for a stop between mkdtemp and the child's start, a window no deterministic case can hit.",
+        "descriptive": "A writer or reviewer agent session now removes its temp directory when it ends, on success, failure, timeout and interrupt."
       },
       "startedAt": "2026-10-27T12:54:43Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-27T13:17:03Z",
+      "verifiedBy": [
+        "a writer and a reviewer session each leave no session temp directory behind on success (ras52, ras53), on failure (ras54), on SIGTERM and SIGINT stops (ras55, ras56), across every run of the suite (ras57), and when the TMPDIR record cannot be written (ras58)"
+      ],
       "bugId": "BUG-30-6yq",
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-27T13:17:00Z.cfc52e",
         "status": "passed",
         "at": "2026-10-27T13:17:00Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "9902993fe59d",
+        "at": "2026-10-27T13:17:03Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-27T12:57:10Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_run_agent_session.py` in a throwaway tree at HEAD exited 1 with 7 of 67 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ras52 (house FAIL), ras53 (house FAIL), ras54 (house FAIL), ras58 (house FAIL), ras55 (house FAIL), ras56 (house FAIL), ras57 (house FAIL): SELFTEST FAILED: 60/67 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; fix run: no time held back, no recorded cost for tests/test_run_agent_session.py in .github/sweep-costs.json",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1238,7 +1252,12 @@
       "startedAt": "2026-10-27T12:54:44Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-27T13:22:13Z.5b2ac0",
+        "status": "passed",
+        "at": "2026-10-27T13:22:13Z"
+      }
     },
     {
       "id": "P142.18-6yq",
