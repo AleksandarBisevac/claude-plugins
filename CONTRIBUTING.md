@@ -328,18 +328,22 @@ the split, and for its timeout an untimed staged suite gets the largest any entr
 ghost included - would get, an untimed ordinary file the floor (cases tt0, tt1). Here a
 slice runs whole, which is the same leg.
 
-THE WORKERS ARE ONE BUDGET OF SLOTS, here and in CI. A staged suite (its `__main__` is
-`_harness.staged_main`) is admitted holding `stage_grant(jobs)` slots, in costliest-first
-order, and reads the number from `SWEEP_STAGE_GRANT` to size its block pool, so the sweep's
-workers and the suite's blocks never add up past the machine. Each file's timeout is the
-floor (`--timeout`) or a multiple of its recorded seconds, whichever is longer - a hang
-detector calibrated per file, handed down as `SWEEP_FILE_TIMEOUT` so a block still times
-out before its file. On a CI runner every timeout is also cut to what is left of the
+THE WORKERS ARE ONE BUDGET OF SLOTS, here and in CI, and what it schedules is a block,
+not a suite. A staged suite (its `__main__` is `_harness.staged_main`) has each block of
+its `STAGES` table run by the sweep as a job of its own on one slot, then one replay that
+prints the suite's whole run, so the sweep's workers and the suite's blocks never add up
+past the machine. The model - the order jobs are submitted in, the timeout a block is
+given, and what happens to a suite whose table the sweep cannot read - is stated once, in
+the `blocks, not suites` comment above `work_items()` in `tools/sweep-selftests.py`. Each
+file's timeout is the floor (`--timeout`) or a multiple of its recorded seconds, whichever
+is longer - a hang detector calibrated per file and handed down as `SWEEP_FILE_TIMEOUT`;
+a block is given its file's figure at the slots a grant would hold (cases bt1-bt3). On a
+CI runner every timeout is also cut to what is left of the
 sweep's deadline (`SWEEP_DEADLINE`), so a hung file is named before the job's own
 `timeout-minutes` cancels the job with no file named; case tt5 reads that bound out of
 `ci.yml` and fails when the deadline and the setup allowance stop fitting under it. The run
-prints a `budget:` line saying which suites held several slots and the longest timeout
-given, and every per-file line carries its seconds: a saved CI log re-records the table
+prints a `budget:` line saying which suites held several slots, which ran block by block,
+and the longest timeout given, and every per-file line carries its seconds: a saved CI log re-records the table
 with `--costs-from-log LOG --platform NAME --record-costs PATH`. Record from WINDOWS logs,
 the platform that binds; a log carrying a file twice (two legs, two runs) keeps its longer
 timing.

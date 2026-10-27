@@ -236,12 +236,14 @@ leg is a matrix cell split by `--shard I/N`, the parts balanced by the per-file 
 `.github/sweep-costs.json` (re-record them with `--record-costs`) and their union pinned to the
 whole tree by the runner's own cases, while `gate-parity.py`'s `shard_matrix_drift()` holds the
 matrix to running every part. Locally a leg still runs whole. **The workers are one budget of
-slots, and a staged suite holds several of them:** a file whose `__main__` is
-`_harness.staged_main` is admitted with `stage_grant(jobs)` slots, in costliest-first order, and
-is told the number in `SWEEP_STAGE_GRANT`, which sizes its block pool — so the sweep's workers and
-a suite's blocks never add up past the machine. Each file's timeout is a hang detector calibrated
-from the same table — the floor, or a multiple of the file's recorded seconds when that is longer
-— and reaches the child as `SWEEP_FILE_TIMEOUT`, under which its blocks time out. The loud form
+slots, and what it schedules is a block, not a suite:** a staged suite (its `__main__` is
+`_harness.staged_main`) has each block of its `STAGES` table run as a job of its own on one slot,
+then one replay that prints the suite's whole run, so the sweep's workers and a suite's blocks
+never add up past the machine. That model — the submission order, a block's timeout, and the
+fallback for a table the sweep cannot read — is stated once, in the `blocks, not suites` comment
+above `work_items()` in `tools/sweep-selftests.py`; read it there rather than here. Each job's
+timeout is a hang detector calibrated from the same table — the floor, or a multiple of the
+file's recorded seconds when that is longer — and reaches the child as `SWEEP_FILE_TIMEOUT`. The loud form
 prints every file's seconds, so a CI log can be recorded with `--costs-from-log`. Re-derive the
 wall clock rather than trusting a figure written here; `--jobs 1` gives the old serial shape for
 a bisect.

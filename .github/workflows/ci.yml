@@ -131,8 +131,9 @@ jobs:
   # ways by `--shard`, whose parts are balanced by the per-file costs in
   # .github/sweep-costs.json and whose union is the whole tree (the runner's sh0 case).
   # Inside a cell the sweep uses every core, because it reads `CI=true`, as ONE budget
-  # of slots: a staged suite is admitted holding all but one of them and sizes its
-  # block pool from that grant. Each file's timeout is calibrated from its cost, and
+  # of slots, which schedules a staged suite's blocks one slot each - the model is
+  # stated once, in the `blocks, not suites` comment above work_items() in
+  # tools/sweep-selftests.py. Each file's timeout is calibrated from its cost, and
   # the sweep cuts every timeout to its CI deadline, so a hung file is named before
   # this job's bound cancels it with nothing named. Re-record the table from the
   # windows cells' logs, the platform that binds:

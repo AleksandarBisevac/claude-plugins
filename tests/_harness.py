@@ -1178,13 +1178,21 @@ REPLAY_LINE = ("stage pool: %d blocks run by the sweep, each a job of its own, "
 
 
 def replayed(stages, entries):
-    """`(results, strays)`: one `block_result` per row of `stages`, in its
-    order, from the sweep's `entries`, and the labels the sweep ran that no row
-    names. A row the sweep ran no block for is a result whose `why` says so -
-    a block missing from the replay fails by name, never reads as passed."""
-    by = {}
+    """`(results, strays, twice)`: one `block_result` per row of `stages`, in
+    its order, from the sweep's `entries`; the labels the sweep ran that no row
+    names; and `{label: runs}` for every label the list carries more than once.
+    A row the sweep ran no block for is a result whose `why` says so - a block
+    missing from the replay fails by name, never reads as passed.
+
+    A LABEL RUN TWICE IS NOT A BLOCK THAT RAN. Which of its runs stands for the
+    block cannot be said - one may have passed and the other failed - so the
+    caller fails it by name; the first run's result is still replayed, so its
+    cases stay readable."""
+    by, runs = {}, {}
     for entry in entries:
-        by.setdefault(entry.get("label"), entry)
+        label = entry.get("label")
+        by.setdefault(label, entry)
+        runs[label] = runs.get(label, 0) + 1
     results = []
     for label, _fn in stages:
         entry = by.get(label)
@@ -1197,7 +1205,8 @@ def replayed(stages, entries):
                                     entry.get("out"), "", entry.get("why") or ""))
     staged = set(label for label, _fn in stages)
     strays = sorted("%s" % (label,) for label in by if label not in staged)
-    return results, strays
+    twice = dict(("%s" % (label,), n) for label, n in runs.items() if n > 1)
+    return results, strays, twice
 
 
 def replay_selftest(stages, namespace, path):
@@ -1219,12 +1228,17 @@ def replay_selftest(stages, namespace, path):
             check("REPLAY READ NOTHING - the list of blocks the sweep ran is "
                   "not a list", False, repr(entries)[:200])
             return
-        results, strays = replayed(stages, entries)
+        results, strays, twice = replayed(stages, entries)
         sys.stdout.write(REPLAY_LINE % (len(results),))
         replay_results(check, results)
         for label in strays:
             check("%s RAN BUT IS NOT STAGED - the sweep ran a block this "
                   "suite's `STAGES` does not name" % (label,), False)
+        for label in sorted(twice):
+            check("%s RAN %d TIMES - the sweep ran more than one block by this "
+                  "label, so which run's cases stand for it cannot be said; "
+                  "the first run's are replayed above" % (label, twice[label]),
+                  False)
         with open(script, "r", encoding="utf-8") as fh:
             src = fh.read()
         for label, ok, detail in stage_faults(src, stages):
@@ -1971,8 +1985,9 @@ def _r_cases(check):
 
 
 def _load_sweep():
-    """`tools/sweep-selftests.py` as a module: the runner that grants a staged
-    suite its slots, loaded by path because its name is not an identifier."""
+    """`tools/sweep-selftests.py` as a module: the runner that schedules a
+    staged suite's blocks, loaded by path because its name is not an
+    identifier."""
     import importlib.util
     path = os.path.join(_output.REPO_ROOT, "tools", "sweep-selftests.py")
     spec = importlib.util.spec_from_file_location("harness_sweep_selftests", path)
@@ -2180,6 +2195,19 @@ def _stage_runner_cases(check):
           "never an empty green one: exit %r, %r" % (code, out[-300:]),
           code == 1 and "REPLAY READ NOTHING" in out
           and "0/1 cases " + "passed" in out)
+    # The second run of `b-block` carries a failing exit and no cases file: a
+    # replay that kept only the first entry, silently, reads the suite green.
+    # sr14 is the other direction - a list naming each block once replays
+    # with no failing case at all.
+    code, out, _err = replay([a_entry, b_entry,
+                              dict(b_entry, cases=unread, code=1)])
+    fails = [line for line in out.splitlines() if line.startswith("FAIL ")]
+    check("sr18 ...and a block the list carries twice is ONE failing case "
+          "naming it and how many times it ran, while each case of it is "
+          "still replayed once: exit %r, %r" % (code, fails),
+          code == 1 and len(fails) == 1
+          and fails[0].startswith("FAIL b-block RAN 2 TIMES")
+          and out.count("PASS y1 ") == 1 and out.count("PASS x1 ") == 1)
 
 
 # A suite that pushes to a local bare repository with BARE git, no fixture prefix,
