@@ -7569,11 +7569,36 @@ def _records_wave(M, prefix):
         _file_wave_executor(root, mpath, t)
     tree2 = _tree_of(root, "P1.2")
     before = _work_bytes(tree2) if tree2 else {}
+    base2 = _git_out(tree2, "rev-parse", "HEAD").strip() if tree2 else None
     _code, second = _next_wave(M, root, mpath)
     after = _work_bytes(tree2) if tree2 and os.path.isdir(tree2) else {}
+    # The drive brings a member's tree to the phase head before its gate, so a
+    # file the phase moved meanwhile (a sibling's integrated work) holds the
+    # head's bytes afterwards - by design, and not the refresh's doing.
+    moved = [p for p in _git_out(tree2, "diff", "--name-only", base2,
+                                 "HEAD").splitlines() if p.strip()] \
+        if base2 and os.path.isdir(tree2) else []
+    # ...and each such file is then the head's, byte for byte: what the move
+    # was for, and what a move that left a stale copy behind would not be.
+    stale = [p for p in moved if not p.startswith("docs/audit/")
+             and after.get(p) != _blob(tree2, "HEAD", p)]
     return {"root": root, "mpath": mpath, "added": added, "sent": sent,
             "committed": committed, "tree2": tree2, "before": before,
-            "after": after, "second": second, "gated": gated}
+            "after": after, "second": second, "gated": gated, "moved": moved,
+            "stale": stale}
+
+
+def _blob(repo, rev, rel):
+    """The bytes commit `rev` holds at `rel`, or None."""
+    done = subprocess.run(_GIT + ["show", "%s:%s" % (rev, rel)], cwd=repo,
+                          capture_output=True, timeout=60)
+    return done.stdout if done.returncode == 0 else None
+
+
+def _unmoved(run, key):
+    """`run[key]`'s `{path: bytes}` without the paths the phase moved under the
+    member's tree between its old base and the head it was brought to."""
+    return dict((p, b) for p, b in run[key].items() if p not in run["moved"])
 
 
 def _tree_plan_ids(tree):
@@ -7608,13 +7633,17 @@ def _wave_record_cases(check):
     tree2 = run["tree2"]
     listed = _git_out(tree2, "diff", "--cached", "--name-only") if tree2 else "?"
     ids = _tree_plan_ids(tree2) if tree2 else None
-    check("wq2 the refresh touches record paths only - a member's work files are "
-          "byte-identical before and after it: work=%r plan-ids=%r staged=%r"
-          % (sorted(set(run["before"]) ^ set(run["after"]))
-             or [p for p in run["before"] if run["before"][p] != run["after"].get(p)],
-             ids, listed),
-          tree2 and run["before"] and run["before"] == run["after"]
-          and run["before"].get("src/f2.txt") == b"changed by P1.2\n"
+    before, after = _unmoved(run, "before"), _unmoved(run, "after")
+    check("wq2 the refresh touches record paths only - a member's work files, and "
+          "every file the phase did not move, are byte-identical before and "
+          "after it, and every file it moved holds the head's bytes: work=%r "
+          "moved=%r stale=%r plan-ids=%r staged=%r"
+          % (sorted(set(before) ^ set(after))
+             or [p for p in before if before[p] != after.get(p)],
+             run["moved"], run["stale"], ids, listed),
+          tree2 and before and before == after and not run["stale"]
+          and "src/f2.txt" not in run["moved"]
+          and before.get("src/f2.txt") == b"changed by P1.2\n"
           and ids is not None and run["added"] in ids and listed == "")
     kept = [t for t in (_tree_of(root, "P1.1"),) if t and os.path.isdir(t)]
     check("wq3 a closed member's tree whose only difference from the phase tree "
@@ -7628,6 +7657,9 @@ def _wave_record_mutant_cases(check):
     # fails wq2's byte comparison - so both predicates are seen to read.
     idle, _w = _load("drive_phase_wave_records_idle")
     idle.refresh_member_records = lambda ctx, state, task, tree: None
+    # Bringing the tree to the phase head brings the committed records too, so
+    # the twin turns off both ways the records reach a member's tree.
+    idle.advance_member = lambda ctx, state, task, tree: None
     run = _records_wave(idle, "waverecm")
     rows = [r.get("status") for r in _rows_of(run["root"], run["mpath"], "P1.1")]
     check("wq1m RED TWIN: a driver that does not refresh a member's records "
@@ -8977,6 +9009,190 @@ def _wave_regate_cases(check):
           "%r %r" % (false_gates, false_text),
           not [g for g in false_gates if not g[1]]
           and "re-gate" not in false_text)
+
+
+# A gate the base fails and the phase fixes later: it passes only where the
+# measured tree holds `fixed.txt`, a file no task writes and the phase tree
+# commits after the wave's trees were cut.
+_AB_FIXED = '"%s" -c "import os, sys; sys.exit(0 if os.path.exists(\'fixed.txt\') ' \
+    'else 1)"' % (sys.executable,)
+
+
+def _ab_red_at_base(M, prefix, phase_edit=None):
+    """A two-member wave whose first member is red only on a check the base
+    fails, with the phase tree then committing the fix - and `phase_edit`
+    `(rel, text)` beside it when given. `(root, mpath, head, tree)` once the
+    first member's gate-red decision stands."""
+    root, mpath = _wave_repo(prefix, 2)
+
+    def edit(plan):
+        plan["phases"][0]["tasks"][0]["tests"]["gate"] = [_AB_FIXED]
+    _commit_plan(root, mpath, edit, "the first member's gate needs the fix")
+    _code, first = _next_wave(M, root, mpath)
+    for t in _dispatched(first):
+        _file_wave_executor(root, mpath, t)
+    _code, _second = _next_wave(M, root, mpath)
+    tree = _tree_of(root, "P1.1")
+    for rel, text in [("fixed.txt", "the phase fixed what the base broke\n")] + (
+            [phase_edit] if phase_edit else []):
+        _write_lf(os.path.join(root, *rel.split("/")), text)
+        _harness.git(root, "add", rel)
+    _harness.git(root, "commit", "-qm", "the phase fixes the base's red")
+    return root, mpath, _git_out(root, "rev-parse", "HEAD").strip(), tree
+
+
+def _ab_last_row(root, mpath, task_id):
+    rows = _evio.oldest_first(_rows_of(root, mpath, task_id))
+    return rows[-1] if rows else {}
+
+
+def _wave_advance_cases(check):
+    """A member red only on what the base carried, answered `rerun` after the
+    phase landed the fix, is measured in its tree brought to the phase head -
+    not in the tree at the old base, where the same red would come back."""
+    M, why = _load("drive_phase_wave_advance")
+    if M is None:
+        check("ab1 the driver loads", False, why)
+        return
+    root, mpath, head, tree = _ab_red_at_base(M, "waveadvance")
+    base = _git_out(tree, "rev-parse", "HEAD").strip() if tree else None
+    code, text = _next(M, root, mpath, "--answer", "rerun")
+    row = _ab_last_row(root, mpath, "P1.1")
+    check("ab1 a rerun after the phase head moved runs in the tree brought to "
+          "the head: the gate's row records the head, and it is green: %r"
+          % ((code, (row.get("testedState") or {}).get("head"), row.get("status"),
+              text[-400:]),),
+          base and base != head
+          and _evio.same_head((row.get("testedState") or {}).get("head"), head)
+          and row.get("status") == "passed")
+    import _journal_io
+    moves = [r for r in _journal_io.read_all(root)
+             if isinstance(r, dict) and r.get("action") == "task.tree.advanced"]
+    said = (moves[-1].get("details") or {}) if moves else {}
+    check("ab2 the base change is recorded: one journal row naming the old base, "
+          "the new base and the files that moved: %r" % (said,),
+          len(moves) == 1 and said.get("taskId") == "P1.1"
+          and said.get("parent") == base and said.get("commit") == head
+          and "fixed.txt" in [c.get("id") for c in said.get("changes") or []])
+    check("ab3 ...and the member closes on that green with its own bytes "
+          "integrated: %r" % (tasks_of(mpath)["P1.1"].get("status"),),
+          tasks_of(mpath)["P1.1"].get("status") == "done"
+          and _read(os.path.join(root, "src", "f1.txt")) == b"changed by P1.1\n")
+
+    # RED TWIN: a driver that never moves the tree measures the rerun at the old
+    # base, where the base's red is still there - ab1's predicate fails for it.
+    mutant, _w = _load("drive_phase_wave_advance_mutant")
+    mutant.advance_member = lambda ctx, state, task, tree: None
+    root_m, mpath_m, head_m, _tree_m = _ab_red_at_base(mutant, "waveadvancem")
+    _next(mutant, root_m, mpath_m, "--answer", "rerun")
+    row_m = _ab_last_row(root_m, mpath_m, "P1.1")
+    check("ab1m RED TWIN: a driver that reruns in the tree at the old base "
+          "records a red at that base: %r"
+          % (((row_m.get("testedState") or {}).get("head"), row_m.get("status")),),
+          not _evio.same_head((row_m.get("testedState") or {}).get("head"), head_m)
+          and row_m.get("status") != "passed")
+
+    # A wave that has not cached its record paths yet - a later wave adopting a
+    # kept tree, or a first gate - still knows which dirty paths are records:
+    # the drive's refreshed plan and journal are not the task's work.
+    root_r, mpath_r, head_r, tree_r = _ab_red_at_base(M, "waveadvancer")
+    state_file = os.path.join(root_r, ".claude", "state", "drive", "%s.json" % (PHASE,))
+    with open(state_file, encoding="utf-8") as fh:
+        state = json.load(fh)
+    cached = (state.get("wave") or {}).pop("records", None)
+    with open(state_file, "w", encoding="utf-8") as fh:
+        json.dump(state, fh, indent=2)
+    # The tree holds records refreshed from the moved head - the state a kept
+    # tree is adopted in - so they are dirty AND among the paths that moved.
+    with _Env(root_r):
+        refreshed = _verb(root_r, "integrate-task.py", [
+            mpath_r, "P1.1", "--project", root_r, "--refresh-records", "--json"])
+    dirty = [p for p in _git_out(tree_r, "status", "--porcelain").splitlines()
+             if "docs/audit" in p] if tree_r else []
+    _code, text_r = _next(M, root_r, mpath_r, "--answer", "rerun")
+    row_r = _ab_last_row(root_r, mpath_r, "P1.1")
+    check("ab5 with no record paths cached on the wave, the member's refreshed "
+          "records are still not read as its work: the tree moves and the rerun "
+          "is green at the head: %r" % ((cached, refreshed[0], dirty,
+                                          row_r.get("status"), text_r[-300:]),),
+          cached and tree_r and refreshed[0] == 0 and dirty
+          and _evio.same_head((row_r.get("testedState") or {}).get("head"), head_r)
+          and row_r.get("status") == "passed")
+
+    # A copy beside the member's tree that the mover cannot read is a move whose
+    # outcome nobody can tell: the drive stops there rather than gate the tree.
+    root_k, mpath_k, _head_k, tree_k = _ab_red_at_base(M, "waveadvancek")
+    copy_k = os.path.join(_git_out(tree_k, "rev-parse", "--absolute-git-dir").strip(),
+                          "audit-advance") if tree_k else ""
+    if copy_k:
+        os.makedirs(copy_k)
+        with open(os.path.join(copy_k, "index.json"), "w", encoding="utf-8") as fh:
+            fh.write("not a copy this plugin wrote")
+    rows_before = len(_rows_of(root_k, mpath_k, "P1.1"))
+    code_k, text_k = _next(M, root_k, mpath_k, "--answer", "rerun")
+    check("ab6 a copy the mover cannot read stops the drive, naming it, and the "
+          "member's gate is not run in a tree whose state nobody can tell: %r"
+          % ((code_k, text_k[-300:]),),
+          copy_k and code_k != 0 and "stopped" in text_k and "audit-advance" in text_k
+          and len(_rows_of(root_k, mpath_k, "P1.1")) == rows_before)
+
+    # A copy that will not come down - a handle another process holds open in
+    # it, as Windows does - is a tree not settled however the move itself went:
+    # the drive stops on what is on disk, after a move that counted (ab7) and
+    # after one that was undone (ab8).
+    wt = M._worktrees
+    for cid, prefix, undone in (("ab7", "waveadvanced", False),
+                                ("ab8", "waveadvanceu", True)):
+        root_d, mpath_d, head_d, tree_d = _ab_red_at_base(M, prefix)
+        rows_d = len(_rows_of(root_d, mpath_d, "P1.1"))
+        # Read before the run: a drive that goes on removes the tree.
+        copy_d = os.path.join(_git_out(tree_d, "rev-parse", "--absolute-git-dir")
+                              .strip(), "audit-advance") if tree_d else ""
+        f1_d = os.path.join(tree_d, "src", "f1.txt") if tree_d else ""
+        real_rename, real_runner = wt.os.rename, wt._runner
+
+        def flaky(src, dst, *rest, **kw):
+            if str(src).endswith("audit-advance"):
+                raise PermissionError(13, "fixture: a handle is open in the copy")
+            return real_rename(src, dst, *rest, **kw)
+
+        def refusing(run, _head=head_d, _undone=undone):
+            fn = real_runner(run)
+
+            def answer(cwd, args, timeout=60):
+                if _undone and args[:3] == ["checkout", "-q", "--detach"] \
+                        and _head in args:
+                    return 1, "", "error: fixture: the checkout died"
+                return fn(cwd, args, timeout)
+            return answer
+        wt.os.rename, wt._runner = flaky, refusing
+        try:
+            code_d, text_d = _next(M, root_d, mpath_d, "--answer", "rerun")
+        finally:
+            wt.os.rename, wt._runner = real_rename, real_runner
+        check("%s a copy that will not come down after a move that %s stops the "
+              "drive, naming it, with no gate run in that tree: %r"
+              % (cid, "was undone" if undone else "counted", (code_d, text_d[-300:]),),
+              tree_d and code_d != 0 and "stopped" in text_d
+              and "audit-advance" in text_d and os.path.isdir(copy_d)
+              and len(_rows_of(root_d, mpath_d, "P1.1")) == rows_d
+              and os.path.isfile(f1_d) and _read(f1_d) == b"changed by P1.1\n")
+
+    # The deny direction: the phase moved the member's own file too, so the
+    # tree is not moved, the drive names the file, and the work stays put.
+    root_o, mpath_o, head_o, tree_o = _ab_red_at_base(
+        M, "waveadvanceo", ("src/f1.txt", "the phase's own edit of f1\n"))
+    base_o = _git_out(tree_o, "rev-parse", "HEAD").strip() if tree_o else None
+    _code, text_o = _next(M, root_o, mpath_o, "--answer", "rerun")
+    check("ab4 a member whose work overlaps a file the phase moved is NOT "
+          "brought to the head: the drive names the file, the tree stays at its "
+          "base and its work is untouched: %r" % (text_o[-500:],),
+          tree_o and _git_out(tree_o, "rev-parse", "HEAD").strip() == base_o
+          and base_o != head_o and "src/f1.txt" in text_o
+          and _read(os.path.join(tree_o, "src", "f1.txt")) == b"changed by P1.1\n"
+          and not [r for r in _journal_io.read_all(root_o)
+                   if isinstance(r, dict)
+                   and r.get("action") == "task.tree.advanced"])
 
 
 def _wave_hooks_cases(check):
@@ -10740,6 +10956,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("kr-block", "_kept_restart_cases"),
           ("wt7-block", "_wave_review_discard_cases"),
           ("wd-block", "_wave_redo_cases"), ("wg-block", "_wave_regate_cases"),
+          ("ab-block", "_wave_advance_cases"),
           ("wh-block", "_wave_hooks_cases"),
           ("pf-block", "_preflight_cases"),
           ("pg-block", "_scope_language_cases"),

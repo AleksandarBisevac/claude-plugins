@@ -30,9 +30,14 @@ I/O IS AT THE EDGE. `parse_list` and every planner below it are pure functions o
 text and dicts, so their cases need no `git init` and can drive branches a fixture
 cannot reach. The three functions that must ask git take an injectable `run`.
 
-Reads git, never writes it. The plan it returns names the argv a caller would run;
-running it is `close-phase.py`'s and `manage-worktrees.py`'s job, and the lock, the
-journal row and the revalidation are theirs too.
+Reads git, and writes it in one place only. The plans it returns name the argv a
+caller would run; running them is `close-phase.py`'s and `manage-worktrees.py`'s
+job, and the lock, the journal row and the revalidation are theirs too. The one
+git write is `advance_tree`, which moves a task tree's detached HEAD to the phase
+head with its uncommitted work carried: the move and the byte check that decides
+it counted are one operation, and a caller holding only the argv could run the
+first without the second. `write_record` writes the marker file a worktree's
+provenance is read from, and `advance_task_tree` uses it to record a move.
 
 This module carries no `--selftest` of its own; its cases live in
 `tests/test__worktrees.py`.
@@ -42,6 +47,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -126,6 +132,24 @@ def admin_dir(tree_path, run=None):
     if not path:
         return ""
     return path if os.path.isabs(path) else os.path.join(tree_path, path)
+
+
+def write_record(tree_path, record, run=None):
+    """The marker file for `record`, in the worktree's own admin directory.
+    Returns `(file, "")`, or `("", why)` -- the one writer of a marker, here
+    beside its reader so the tree mover below records a new base through it.
+    Serialised first and renamed into place, so a marker that cannot be
+    written leaves the one before it whole."""
+    admin = admin_dir(tree_path, run=run)
+    if not admin:
+        return "", "git would not name the admin directory of %s" % (tree_path,)
+    path = os.path.join(admin, PROVENANCE_FILE)
+    try:
+        body = json.dumps(record, indent=1, sort_keys=True) + "\n"
+        _write_aside(path, body.encode("utf-8"))
+    except (TypeError, ValueError, OSError) as exc:
+        return "", "%s could not be written: %s" % (path, exc)
+    return path, ""
 
 
 def read_provenance(tree_path, run=None, expect_branch=None, expect_task=None):
@@ -1328,6 +1352,741 @@ def sweep_plan(trees, wanted_branches, parent_of, contained_by_branch,
             "strangers": split["strangers"],
             "empty": examined == 0,
             "basis": split["basis"]}
+
+
+# --- a task tree brought to the phase head (the one write here) -----------------
+# A task tree holds an agent's only copy of its work: uncommitted changes over a
+# detached HEAD at the commit the tree was cut from. Once the phase head moves past
+# that commit, a gate run in the tree measures a base the phase no longer has, and a
+# red the phase has since fixed is charged to the task. The move is a plain
+# `git checkout --detach <head>` - never `-f`, never a rebase, never a commit: git
+# carries the working-tree changes and refuses as a whole when one would be
+# overwritten. It is asked only after the plan below finds none of the task's
+# changed paths among those that moved and no ignored file where the head starts
+# tracking one (git overwrites those without a word).
+#
+# GIT'S EXIT IS NOT THE VERDICT. It exits 0 over a file it could not unlink, and a
+# .gitignore the head adds turns the task's untracked file into one no `add -A`
+# takes - both measured. So the move counts only when the tree then answers as the
+# work and nothing else: HEAD is the head, `status` lists exactly the work paths,
+# `diff <head>` names nothing outside them, and each work path reads back byte for
+# byte. Anything else is undone back to the base from a copy taken before the move
+# - the bytes and the git index both - and the undo is checked the same way. The
+# copy sits in the tree's own admin directory with the move it was taken for, so
+# a process killed mid-move leaves it beside the tree, and the next move of that
+# task reads it first: a move that completed is finished, one cut short undone -
+# but only over bytes the copy or the move accounts for. A path holding anything
+# else is newer work, and nothing is forced over it.
+#
+# WHETHER A COPY IS LEFT IS READ OFF THE DISK, never remembered: every answer's
+# `kept` is the copy (or its tombstone) found beside the tree when the answer is
+# made, so no step that fails to take one down can report a settled tree.
+ADVANCE_BACKUP = "audit-advance"
+COPY_INDEX, COPY_GIT_INDEX = "index.json", "git-index"
+DROPPED = ".dropped"
+
+
+def advance_plan(base, to, changed, moved, is_record=None, occupied=()):
+    """{"ok", "already", "work", "records", "overlap", "moved", "refusal"} -
+    whether a tree at `base` whose working tree changed `changed` may move to
+    `to`, over which `moved` changed. Pure.
+
+    `is_record(rel)` says which changed paths are the caller's records rather
+    than the task's work (a drive refreshes those into the tree; they move with
+    the head). The overlap is work that moved, plus `occupied`: paths the tree
+    holds outside what git lists as changed (ignored ones) where the head
+    starts tracking a file. A non-empty overlap is the refusal, naming every
+    path in it. `ok` is True only when the move may run: no overlap, and
+    somewhere to move to."""
+    record = is_record if is_record is not None else (lambda _rel: False)
+    work = sorted(set(p for p in changed if not record(p)))
+    overlap = sorted(set(work) & set(moved))
+    held = sorted(set(occupied) - set(overlap))
+    refusal = None
+    if overlap or held:
+        refusal = _refusal("; ".join(
+            ["the task's work changes %s, which the phase also changed between "
+             "%s and %s" % (", ".join(overlap), base[:12], to[:12])] * bool(overlap)
+            + ["the tree holds %s outside its listed changes (ignored), where %s "
+               "starts tracking a file git would overwrite it with"
+               % (", ".join(held), to[:12])] * bool(held)),
+            "the tree stays at its base with its work untouched; the overlap is "
+            "the integration's to settle, or a recut at the phase head")
+    return {"ok": not (overlap or held) and base != to, "already": base == to,
+            "work": work, "records": sorted(set(changed) - set(work)),
+            "overlap": overlap + held, "moved": sorted(set(moved)),
+            "refusal": refusal}
+
+
+def _nul_paths(out, status=False):
+    """The paths in git's NUL-separated output; `status` strips the two-letter
+    code and the space a `status --porcelain -z` line starts with."""
+    items = [i for i in (out or "").split("\0") if i]
+    return [i[3:] for i in items] if status else items
+
+
+def _snap(tree, rel):
+    """What `rel` holds in `tree`: ("file", bytes, mode), ("link", target),
+    ("absent",) - or ("dir",) for a directory, which no copy here can stand
+    in for."""
+    path = os.path.join(tree, *rel.split("/"))
+    if os.path.islink(path):
+        return ("link", os.readlink(path))
+    if os.path.isdir(path):
+        return ("dir",)
+    if not os.path.exists(path):
+        return ("absent",)
+    with open(path, "rb") as fh:
+        return ("file", fh.read(), os.stat(path).st_mode & 0o7777)
+
+
+def _put(tree, rel, held):
+    """Write `held` (a `_snap`) back to `rel` in `tree`."""
+    path = os.path.join(tree, *rel.split("/"))
+    if os.path.islink(path) or os.path.isfile(path):
+        os.remove(path)
+    if held[0] == "absent":
+        return
+    parent = os.path.dirname(path)
+    if parent and not os.path.isdir(parent):
+        os.makedirs(parent)
+    if held[0] == "link":
+        os.symlink(held[1], path)
+        return
+    with open(path, "wb") as fh:
+        fh.write(held[1])
+    os.chmod(path, held[2])
+
+
+def _nul_pairs(out):
+    """`[(status letter, path)]` from `diff --name-status -z --no-renames`."""
+    items = (out or "").split("\0")
+    return [(items[i], items[i + 1]) for i in range(0, len(items) - 1, 2)
+            if items[i]]
+
+
+def _tree_paths(fn, tree, ask, rev=None):
+    """`(paths, why)` - git's answer to one question about `tree`, every path
+    spelled from the tree's top: `changed` is what `status` lists (untracked
+    included, ignored not), `moved` is `[(letter, path)]` between the commits
+    `rev[0]` and `rev[1]`, `against` is the paths whose working copy differs
+    from the commit `rev`. `paths` is None beside the reason git could not
+    answer. Every listing the mover reads is asked here."""
+    if ask == "changed":
+        argv = ["status", "--porcelain", "-z", "--untracked-files=all",
+                "--no-renames"]
+    elif ask == "moved":
+        argv = ["diff", "--name-status", "-z", "--no-renames", rev[0], rev[1]]
+    else:
+        argv = ["diff", "--name-only", "-z", "--no-renames", rev]
+    code, out, err = fn(tree, argv)
+    if code != 0:
+        return None, "git %s could not answer in %s: %s" % (
+            " ".join(argv[:2]), tree, (err or "no answer").strip())
+    if ask == "changed":
+        return _nul_paths(out, status=True), ""
+    if ask == "moved":
+        return _nul_pairs(out), ""
+    return _nul_paths(out), ""
+
+
+def _occupied(tree, added, moved, changed):
+    """The paths a checkout of the head would overwrite though git lists them
+    nowhere: a file outside `changed` (an ignored one) at a path the head adds,
+    or standing where the head needs a directory. A path is read under the
+    name the filesystem holds it by: on one that folds case, `readme` answers
+    for a tracked `README`, and a README the head renames is no ignored file."""
+    found, moved, changed = set(), set(moved), set(changed)
+    for rel in added:
+        parts = rel.split("/")
+        spots = [rel] + ["/".join(parts[:n]) for n in range(1, len(parts))]
+        for spot in spots:
+            path = os.path.join(tree, *spot.split("/"))
+            if not os.path.lexists(path):
+                continue
+            real = _on_disk(tree, spot)
+            if real in changed or (spot != rel and os.path.isdir(path)) \
+                    or (real != rel and real in moved):
+                continue
+            if os.path.isdir(path) and any(c.startswith(real + "/") for c in changed):
+                # A directory holding listed changes where the head puts a file:
+                # git refuses that checkout itself, and names the directory.
+                continue
+            found.add(real)
+    return sorted(found)
+
+
+def _on_disk(tree, rel):
+    """`rel` spelled with the last part's name as its directory lists it - the
+    same string where names are case-sensitive or already match."""
+    parent, name = os.path.split(os.path.join(tree, *rel.split("/")))
+    try:
+        names = os.listdir(parent)
+    except OSError:
+        return rel
+    if name in names:
+        return rel
+    folded = [n for n in names if n.lower() == name.lower()]
+    if len(folded) != 1:
+        return rel
+    return "/".join(rel.split("/")[:-1] + [folded[0]])
+
+
+def _write_aside(path, data):
+    """Write the bytes `data` beside `path` under a temp name of mkstemp's own,
+    synced to the disk, and rename it over `path`, so a reader sees the old
+    bytes or the new ones and never a half-written file. The temp file is
+    removed on any failure. Raises OSError."""
+    fd, aside = tempfile.mkstemp(prefix=".audit-", dir=os.path.dirname(path))
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(aside, path)
+    except BaseException:
+        if os.path.exists(aside):
+            os.remove(aside)
+        raise
+
+
+def _write_synced(path, data):
+    """Write the bytes `data` to the new file `path` and sync them to the disk
+    before returning. Raises OSError."""
+    with open(path, "wb") as fh:
+        fh.write(data)
+        fh.flush()
+        os.fsync(fh.fileno())
+
+
+def _fsync_dir(path):
+    """Sync the names in the directory `path` to the disk. Windows will not
+    open a directory to sync it, so there this does nothing. Raises OSError
+    elsewhere."""
+    if os.name == "nt":
+        return
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _index_path(fn, tree):
+    """The tree's git index file, or "" when git will not name it."""
+    code, out, _err = fn(tree, ["rev-parse", "--git-path", "index"])
+    rel = (out or "").strip()
+    if code != 0 or not rel:
+        return ""
+    return rel if os.path.isabs(rel) else os.path.join(tree, rel)
+
+
+def _keep_copy(where, held, meta, index_bytes):
+    """The copy taken before a move, written into `where`, which this call
+    creates: `os.mkdir` raises FileExistsError when a copy is already there -
+    an earlier move not yet read, or another mover's - and that one is never
+    this mover's to remove. Every changed path's bytes, the git index as it
+    was, and `meta` (the move it was taken for) in `index.json`, written last
+    so a copy that has one is whole - through a power cut too: every file and
+    the directory's names are synced before `index.json` is written, and
+    `index.json` and the names again before this returns and anything moves.
+    Raises OSError."""
+    os.mkdir(where)
+    paths = {}
+    for n, rel in enumerate(sorted(held)):
+        kind = held[rel]
+        paths[rel] = {"kind": kind[0], "slot": n}
+        if kind[0] == "file":
+            paths[rel]["mode"] = kind[2]
+            _write_synced(os.path.join(where, "%d.bin" % (n,)), kind[1])
+        elif kind[0] == "link":
+            paths[rel]["target"] = kind[1]
+    if index_bytes is not None:
+        _write_synced(os.path.join(where, COPY_GIT_INDEX), index_bytes)
+    _fsync_dir(where)
+    _write_aside(os.path.join(where, COPY_INDEX), json.dumps(
+        dict(meta, paths=paths), indent=1, sort_keys=True).encode("utf-8"))
+    _fsync_dir(where)
+
+
+def _read_copy(where):
+    """`(held, meta, index_bytes)` from a copy `_keep_copy` wrote. Raises
+    OSError, ValueError or KeyError when it is not whole."""
+    with open(os.path.join(where, COPY_INDEX), encoding="utf-8") as fh:
+        meta = json.load(fh)
+    held = {}
+    for rel, row in (meta.get("paths") or {}).items():
+        if row["kind"] == "file":
+            with open(os.path.join(where, "%d.bin" % (row["slot"],)), "rb") as fh:
+                held[rel] = ("file", fh.read(), row["mode"])
+        elif row["kind"] == "link":
+            held[rel] = ("link", row["target"])
+        else:
+            held[rel] = (row["kind"],)
+    index_bytes = None
+    if os.path.exists(os.path.join(where, COPY_GIT_INDEX)):
+        with open(os.path.join(where, COPY_GIT_INDEX), "rb") as fh:
+            index_bytes = fh.read()
+    return held, meta, index_bytes
+
+
+def _differing(tree, held, rels):
+    """The paths among `rels` whose bytes in `tree` are not `held`'s."""
+    return [rel for rel in rels if _snap(tree, rel) != held[rel]]
+
+
+def _answers_as(fn, tree, head, held, want, is_record=None):
+    """Every way `tree` fails to stand at commit `head` holding exactly the
+    paths `want` as changed, each with `held`'s bytes - [] when it does. The
+    one test both a move and an undo must pass. A path `is_record` names is
+    the caller's, which a drive refreshes after a move: listed or not, it is
+    no fault."""
+    record = is_record if is_record is not None else (lambda _rel: False)
+    wrong = []
+    code, out, _err = fn(tree, ["rev-parse", "--verify", "--quiet", "HEAD"])
+    if code != 0 or (out or "").strip() != head:
+        wrong.append("HEAD is %s, not %s" % ((out or "unknown").strip()[:12],
+                                             head[:12]))
+    changed, why = _tree_paths(fn, tree, "changed")
+    if changed is None:
+        return wrong + [why]
+    extra = sorted(p for p in set(changed) - set(want) if not record(p))
+    lost = sorted(set(want) - set(changed))
+    if extra:
+        wrong.append("changed though not the task's: %s" % (", ".join(extra),))
+    if lost:
+        wrong.append("no longer listed as changed (ignored, or gone): %s"
+                     % (", ".join(lost),))
+    differs, why = _tree_paths(fn, tree, "against", head)
+    stray = sorted(p for p in set(differs or ()) - set(want) if not record(p))
+    if differs is None or stray:
+        wrong.append(why or "differs from %s outside the work: %s"
+                     % (head[:12], ", ".join(stray)))
+    off = _differing(tree, held, sorted(set(want) & set(held)))
+    if off:
+        wrong.append("does not read back byte for byte: %s" % (", ".join(off),))
+    return wrong
+
+
+def _undo(fn, tree, base, held, index_path, index_bytes):
+    """Put the tree back at `base` with every held path's bytes and the git
+    index it had, whatever state a move left it in: [] when it then answers as
+    it did before the move (`_answers_as`), else what is still wrong.
+
+    The bytes and the index go back even when git's half fails: a forced
+    checkout that stops on one file has already overwritten others, the task's
+    among them. Git's exit does not decide the undo any more than it decided
+    the move - the check after it does, and git's words are kept beside a
+    check that fails."""
+    code, _out, err = fn(tree, ["checkout", "-q", "-f", "--detach", base])
+    said = [] if code == 0 else ["git could not check out %s again: %s" % (
+        base[:12], (err or "no answer").strip())]
+    # The index is git's to write while a lock stands beside it: a git killed
+    # mid-command leaves one, and writing under it would race whatever reads it.
+    held_back = []
+    try:
+        if index_bytes is not None and index_path:
+            if os.path.lexists(index_path + ".lock"):
+                held_back.append("%s.lock is left by a git that did not finish, so "
+                                 "the index was not put back" % (index_path,))
+            else:
+                _write_aside(index_path, index_bytes)
+        for rel in sorted(held):
+            _put(tree, rel, held[rel])
+    except OSError as exc:
+        return said + held_back + ["the copy could not be written back: %s" % (exc,)]
+    wrong = held_back + _answers_as(fn, tree, base, held, sorted(held))
+    return said + wrong if wrong else []
+
+
+def _advance_answer(base, to):
+    """A move's answer before anything is known: not advanced, nothing named."""
+    return {"advanced": False, "already": False, "from": base, "to": to,
+            "moved": [], "work": [], "overlap": [], "refusal": None,
+            "restored": None, "kept": None, "error": None}
+
+
+def _drop_copy(copy):
+    """Take a copy down: "" once it is gone, else why not. Renamed to its
+    tombstone first - one atomic step - so a process killed while removing it
+    leaves no half copy for the next move to read, only a tombstone the next
+    move clears. A copy that will not rename stays whole where it is. No
+    caller has to act on the answer for the tree to read as unsettled: every
+    answer's `kept` is read off the disk (`_with_kept`)."""
+    tomb = copy + DROPPED
+    try:
+        if os.path.lexists(tomb):
+            shutil.rmtree(tomb)
+        os.rename(copy, tomb)
+        shutil.rmtree(tomb)
+    except OSError as exc:
+        return "the copy at %s could not be taken down (%s)" % (copy, exc)
+    return ""
+
+
+def _left_beside(copy):
+    """The copy, or its tombstone, standing on disk at `copy` - None when
+    neither does. Every answer's `kept`."""
+    for path in (copy, copy + DROPPED) if copy else ():
+        if os.path.lexists(path):
+            return path
+    return None
+
+
+def _with_kept(answer, copy):
+    """`answer` with `kept` read off the disk, never taken from what a step said
+    it did - and, when something is left there, an `error` saying so if the
+    answer had none."""
+    left = _left_beside(copy)
+    if left and not answer.get("error"):
+        answer = dict(answer, error="a copy of the work is left at %s" % (left,))
+    return dict(answer, kept=left)
+
+
+def _copy_path(tree, run):
+    """Where the copy of `tree`'s work is kept, or "" when git will not name
+    the tree's admin directory (and no copy can have been kept)."""
+    admin = admin_dir(tree, run=run)
+    return os.path.join(admin, ADVANCE_BACKUP) if admin else ""
+
+
+def advance_tree(tree, base, to, is_record=None, run=None, settle=None):
+    """{"advanced", "already", "from", "to", "moved", "work", "overlap",
+    "refusal", "restored", "kept", "error"} - move the task tree `tree` from
+    `base` to `to`, its uncommitted work carried.
+
+    `settle(answer)` is the caller's record of a move that counted, run before
+    the copy is dropped and answering "" or why it could not be made: the copy
+    is the move's journal, so it outlives the move until the move is recorded.
+    A move whose record failed is `advanced` with an `error` and its copy
+    `kept`, for the next move to finish recording.
+
+    `kept` is read off the disk as the answer is made (`_with_kept`): the copy
+    or its tombstone where one is left beside the tree, for any reason - a copy
+    that would not come down included - and None only where none is.
+
+    Every refusal is asked before anything is written: the tree's HEAD must BE
+    `base` (a move is from where the tree stands, never from a base somebody
+    remembered), git must describe both the tree and the span, no changed path
+    the task owns may be among those that moved, and no ignored file may stand
+    where the head starts tracking one. Then the copy is taken (the bytes of
+    every changed path and the git index), the record paths are put back at
+    the base (they are the caller's, refreshed again after the move), and git
+    checks out `to`. Not `advanced` unless the tree then answers as the work
+    and nothing else (`_answers_as`); otherwise the move is undone back to the
+    base from the copy (`restored` True once the undo answers as the tree did
+    before), or - when even that fails - the copy is left in place and named
+    in `kept`."""
+    copy = _copy_path(tree, run)
+    return _with_kept(_advance(tree, base, to, is_record, run, settle, copy), copy)
+
+
+def _advance(tree, base, to, is_record, run, settle, copy):
+    """`advance_tree`'s move, `copy` where its copy is kept ("" when git would
+    not say). Its answer's `kept` is not its own to set."""
+    fn = _runner(run)
+    answer = _advance_answer(base, to)
+    code, out, err = fn(tree, ["rev-parse", "--verify", "--quiet", "HEAD"])
+    if code != 0:
+        return dict(answer, error="git could not name the HEAD of %s: %s"
+                                  % (tree, (err or "").strip()))
+    if (out or "").strip() != base:
+        return dict(answer, refusal=_refusal(
+            "%s stands at %s, not at the base %s it was to move from"
+            % (tree, (out or "").strip()[:12], (base or "")[:12]),
+            "nothing was moved; ask again with the commit the tree stands on"))
+    if base == to:
+        return dict(answer, already=True)
+    pairs, why = _tree_paths(fn, tree, "moved", (base, to))
+    if pairs is None:
+        return dict(answer, error=why)
+    moved = [p for _letter, p in pairs]
+    changed, why = _tree_paths(fn, tree, "changed")
+    if changed is None:
+        return dict(answer, moved=sorted(moved), error=why)
+    added = [p for letter, p in pairs if letter.startswith("A")]
+    plan = advance_plan(base, to, changed, moved, is_record=is_record,
+                        occupied=_occupied(tree, added, moved, changed))
+    answer = dict(answer, moved=plan["moved"], work=plan["work"],
+                  overlap=plan["overlap"])
+    if plan["refusal"]:
+        return dict(answer, refusal=plan["refusal"])
+    held, unread = {}, []
+    for rel in changed:
+        try:
+            held[rel] = _snap(tree, rel)
+        except OSError as exc:
+            unread.append("%s (%s)" % (rel, exc.strerror or exc))
+    if unread:
+        return dict(answer, refusal=_refusal(
+            "the task's changed %s cannot be read, so no copy of it could be "
+            "taken" % (", ".join(unread),), "nothing was moved"))
+    dirs = sorted(rel for rel, kind in held.items() if kind[0] == "dir")
+    if dirs:
+        return dict(answer, refusal=_refusal(
+            "%s is a directory where git lists one changed path (a nested "
+            "repository, or a tracked file the task replaced with a directory), "
+            "and no copy taken here can stand in for it" % (", ".join(dirs),),
+            "nothing was moved"))
+    index_path = _index_path(fn, tree)
+    if not copy or not index_path:
+        return dict(answer, error="git would not name the admin directory or the "
+                                  "index of %s, so no copy of the work could be "
+                                  "kept beside it; nothing was moved" % (tree,))
+    try:
+        index_bytes = None
+        if os.path.exists(index_path):
+            with open(index_path, "rb") as fh:
+                index_bytes = fh.read()
+        _keep_copy(copy, held, {"from": base, "to": to, "work": plan["work"],
+                                "moved": plan["moved"]}, index_bytes)
+    except FileExistsError:
+        return dict(answer, error="a copy is already at %s - an earlier move not "
+                    "yet read, or another mover's - and it is not this move's to "
+                    "remove; nothing was moved" % (copy,))
+    except OSError as exc:
+        return dict(answer, error="; ".join(filter(None, [
+            "the copy of the work could not be written (%s); nothing was moved"
+            % (exc,), _drop_copy(copy)])))
+    undo = (fn, tree, base, held, index_path, index_bytes)
+    try:
+        for rel in plan["records"]:
+            # One path at a time: a record the base does not hold is refused by
+            # git, taken out of the index and removed; the copy holds its bytes.
+            if fn(tree, ["checkout", "-q", base, "--", rel])[0] != 0:
+                fn(tree, ["rm", "-q", "--cached", "--ignore-unmatch", "--", rel])
+                _put(tree, rel, ("absent",))
+    except OSError as exc:
+        return _settle(answer, _undo(*undo), copy, "the record paths could not "
+                       "be put back at the base (%s)" % (exc,))
+    code, out, err = fn(tree, ["checkout", "-q", "--detach", to])
+    if code != 0:
+        return _settle(answer, _undo(*undo), copy, "git %s the checkout of %s: %s"
+                       % ("gave no answer to" if code is None else "refused",
+                          to[:12], ((err or "") + (out or "")).strip()))
+    wrong = _answers_as(fn, tree, to, held, plan["work"])
+    if wrong:
+        return _settle(answer, _undo(*undo), copy, "git checked out %s and the "
+                       "tree did not answer as the work: %s"
+                       % (to[:12], "; ".join(wrong)))
+    why = settle(dict(answer, advanced=True)) if settle is not None else ""
+    if why:
+        return dict(answer, advanced=True, error="%s; the copy stays at %s for the "
+                    "next move to finish the record" % (why, copy))
+    why = _drop_copy(copy)
+    return dict(answer, advanced=True, error=(
+        "%s; the move counted, and the tree is not settled until the copy is "
+        "gone" % (why,)) if why else None)
+
+
+def advance_task_tree(tree, task_id, to, is_record=None, at=None, run=None):
+    """`advance_tree`'s answer plus `marker` - the tree marked for `task_id`
+    moved from the base its marker records to `to`, and the marker made to
+    record it.
+
+    The marker is what `integrate-task.py` reads the base from, so once the
+    tree stands on `to` its `base` must say `to`, or the task's work is diffed
+    against a commit the tree no longer stands on. `baseMoves` keeps every
+    move - old base, new base, the files that moved under the work (the
+    caller's records left out), and `at`, the caller's stamp of the moment.
+
+    THE COPY IS THE MOVE'S JOURNAL, and every way out keeps it until the move's
+    outcome is recorded: the marker is written before the copy is dropped, so a
+    process killed anywhere leaves the copy, the marker, or both saying what
+    happened. A copy found beside the tree is read before anything else, and
+    acted on only when every path it holds and every path the tree now changes
+    reads as the copy recorded it or as the move it was taken for left it
+    (`_newer_work`); a path holding anything else is newer work - the copy is
+    kept, nothing is changed, and the answer names the path. Past that:
+    - taken from the marker's base, it is a move cut short - finished (the
+      marker brought up to it, `resumed`) when the tree answers as its result,
+      undone back to the base from the copy otherwise;
+    - taken for a move to the marker's base, the move was recorded and only
+      dropping the copy was cut short - dropped;
+    - with no `index.json` (written last), it was never finished, and nothing
+      is moved before it is - dropped.
+    Anything else - a copy that cannot be read, or one taken for another base -
+    is left where it is.
+
+    `kept` is the one word for "this tree is not settled", read off the disk as
+    the answer is made: the copy or its tombstone wherever one is left beside
+    the tree, whatever else the answer says. A caller runs nothing in the tree
+    while it is set."""
+    copy = _copy_path(tree, run)
+    return _with_kept(_advance_task(tree, task_id, to, is_record, at, run, copy), copy)
+
+
+def _advance_task(tree, task_id, to, is_record, at, run, copy):
+    """`advance_task_tree`'s move, `copy` where its copy is kept. Its answer's
+    `kept` is not its own to set."""
+    fn = _runner(run)
+    held = read_provenance(tree, run=run, expect_task=str(task_id))
+    record = held.get("record") or {}
+    base = record.get("base")
+    if held.get("ours") is not True or not base:
+        return dict(_advance_answer(base, to), marker=None, refusal=_refusal(
+            "%s carries no marker naming task %s with a base commit (%s)"
+            % (tree, task_id, held.get("basis") or "no base recorded"),
+            "nothing was moved: a move is from the base the marker records"))
+    record_of = is_record if is_record is not None else (lambda _rel: False)
+    if copy and os.path.lexists(copy + DROPPED):
+        try:
+            shutil.rmtree(copy + DROPPED)
+        except OSError as exc:
+            return dict(_advance_answer(base, to), marker=None, error=(
+                "the tombstone of a dropped copy at %s could not be cleared (%s); "
+                "nothing was moved" % (copy + DROPPED, exc)))
+    state = {"record": record, "marker": None}
+
+    def settle(move):
+        path, why, new = _record_move(tree, state["record"], move, record_of, at, run)
+        if path:
+            state["record"], state["marker"] = new, path
+        return why
+    finished = None
+    if copy and os.path.lexists(copy):
+        finished, why = _resume(fn, tree, copy, base, settle, record_of)
+        if why:
+            return dict(_advance_answer(base, to), marker=state["marker"], error=why)
+        base = state["record"].get("base")
+    moved = _advance(tree, base, to, is_record, run, settle, copy)
+    if finished is not None and moved["already"]:
+        return dict(moved, advanced=True, already=False, marker=state["marker"],
+                    resumed=True, **{"from": finished["from"],
+                                     "moved": finished.get("moved") or [],
+                                     "work": finished.get("work") or []})
+    return dict(moved, marker=state["marker"])
+
+
+def _resume(fn, tree, copy, base, settle, record_of):
+    """`(move, why)` for a copy found beside the tree (`advance_task_tree`
+    names the three it settles): the move's meta when it was finished here,
+    None when there was nothing to finish - and `why` when the copy could not
+    be settled, the copy then left where it is. `record_of(rel)` names the
+    caller's record paths, which the copy's own non-work paths join.
+
+    Nothing is forced and nothing dropped until `_newer_work` finds every path
+    accounted for: a forced checkout and the copy's bytes written back would
+    take with them whatever an agent wrote after the copy was taken, and a
+    copy dropped over such a tree loses the one record of what the tree held
+    before."""
+    if not os.path.lexists(os.path.join(copy, COPY_INDEX)):
+        return None, _drop_copy(copy)
+    try:
+        held, meta, index_bytes = _read_copy(copy)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        return None, ("a copy at %s cannot be read (%s): an unfinished move whose "
+                      "work only it may hold; nothing was moved" % (copy, exc))
+    start, end = meta.get("from"), meta.get("to") or ""
+    if base not in (start, end):
+        return None, ("the copy at %s was taken for a move from %s to %s and the "
+                      "marker names %s; nothing was moved"
+                      % (copy, str(start)[:12], end[:12], base[:12]))
+    work = meta.get("work") or []
+    held_records = set(held) - set(work)
+
+    def is_record(rel):
+        return rel in held_records or record_of(rel)
+    newer = _newer_work(fn, tree, meta, held, (start, end) if start == base else (end,),
+                        is_record)
+    if newer:
+        return None, ("%s holds what neither the copy at %s nor the move from %s to "
+                      "%s left there - newer work, or a state no move wrote: %s; "
+                      "nothing was changed, and the copy stays"
+                      % (tree, copy, str(start)[:12], end[:12], ", ".join(newer)))
+    if end == base:
+        return None, _drop_copy(copy)
+    if not _answers_as(fn, tree, end, held, work, is_record=is_record):
+        why = settle(meta)
+        if why:
+            return None, "%s; the copy stays at %s" % (why, copy)
+        return meta, _drop_copy(copy)
+    wrong = _undo(fn, tree, base, held, _index_path(fn, tree), index_bytes)
+    if wrong:
+        return None, ("an unfinished move to %s could not be put back (%s); "
+                      "its copy is at %s" % (end[:12], "; ".join(wrong), copy))
+    return None, _drop_copy(copy)
+
+
+def _newer_work(fn, tree, meta, held, heads, is_record):
+    """What in `tree` neither the copy `held` nor its move `meta` accounts for -
+    [] when nothing. HEAD must be one of `heads` (the commits the move stood
+    on); each of the task's work paths must read as the copy holds it (a move
+    carries the work unchanged); and every path the tree lists as changed must
+    be work, a path `is_record` names (the caller's, put back and refreshed by
+    the drive, never the task's), or a path the move carries reading as the
+    other of `heads` holds it. Anything else - an edit made since the copy was
+    taken, a state a killed undo left - is named."""
+    work, moved = set(meta.get("work") or []), set(meta.get("moved") or [])
+    code, out, _err = fn(tree, ["rev-parse", "--verify", "--quiet", "HEAD"])
+    at = (out or "").strip() if code == 0 else ""
+    if at not in heads:
+        return ["HEAD (at %s, where the move stood at %s)" % (
+            at[:12] or "no commit git would name",
+            " or ".join(h[:12] for h in heads))]
+    changed, why = _tree_paths(fn, tree, "changed")
+    if changed is None:
+        return [why]
+    diverged = [rel for rel in sorted(work) if not _holds(tree, rel, held.get(rel))]
+    others = [h for h in heads if h != at]
+    for rel in sorted(p for p in set(changed) - work if not is_record(p)):
+        if rel not in moved or not any(_reads_as(fn, tree, rel, c) for c in others):
+            diverged.append(rel)
+    return diverged
+
+
+def _holds(tree, rel, kind):
+    """Whether `rel` in `tree` holds `kind` (a `_snap`) - no, too, when it
+    cannot be read."""
+    try:
+        return kind is not None and _snap(tree, rel) == kind
+    except OSError:
+        return False
+
+
+def _reads_as(fn, tree, rel, commit):
+    """Whether `rel` in `tree` holds what `commit` holds there: absent where
+    the commit has none, else a regular file whose blob git hashes to the
+    commit's. A link or a directory never answers yes, and neither does a
+    question git could not answer."""
+    path = os.path.join(tree, *rel.split("/"))
+    code, out, _err = fn(tree, ["rev-parse", "--verify", "--quiet",
+                                "%s:%s" % (commit, rel)])
+    if code == 1:
+        return not os.path.lexists(path)
+    if code != 0 or os.path.islink(path) or not os.path.isfile(path):
+        return False
+    code, blob, _err = fn(tree, ["hash-object", "--", rel])
+    return code == 0 and (blob or "").strip() == (out or "").strip()
+
+
+def _record_move(tree, record, move, record_of, at, run):
+    """`(path, why, record)` - the marker brought to `move["to"]`, the move
+    appended to `baseMoves` with the files that moved under the work."""
+    step = {"from": move["from"], "to": move["to"], "at": at,
+            "moved": [p for p in move.get("moved") or [] if not record_of(p)]}
+    new = dict(record, base=move["to"], baseMoves=list(
+        record.get("baseMoves") or []) + [step])
+    path, why = write_record(tree, new, run=run)
+    if not path:
+        return "", ("%s moved to %s with its work, and its marker could not record "
+                    "the new base (%s): it still names %s, so integrating the tree "
+                    "now would diff its work against that commit"
+                    % (tree, move["to"][:12], why, move["from"][:12])), record
+    return path, "", new
+
+
+def _settle(answer, wrong, copy, why):
+    """The answer of a move that did not count: the copy removed once the
+    undo answers as the tree did before (`wrong` empty), and left - named,
+    with what is still wrong - when it does not. Whether it is gone is the
+    disk's to say (`_with_kept`), not this function's."""
+    said = [why, "the tree is back at its base with its work and its index as "
+                 "they were" if not wrong else "the work could NOT be put back "
+                 "(%s) - its copy is at %s" % ("; ".join(wrong), copy)]
+    if not wrong:
+        said.append(_drop_copy(copy))
+    return dict(answer, restored=not wrong, error="; ".join(filter(None, said)))
 
 
 # --- cli ------------------------------------------------------------------------

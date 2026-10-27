@@ -121,6 +121,7 @@ def _cases(check):
     try:
         _run_cases(check, root)
         _task_cases(check, root)
+        _advance_cases(check, root)
         _env_cases(check, root)
     finally:
         _harness.remove_tree(root)
@@ -242,6 +243,77 @@ def _task_cases(check, root):
     ns2 = p2.parse_args(["task-remove", "m.json", "P1.1", "--force"])
     check("tr4 both verbs parse under their own names",
           ns.verb == "task-add" and ns.base == base and ns2.force is True)
+
+
+def _advance_cases(check, root):
+    """A tree `task-add` made and marked, moved by `_worktrees.advance_task_tree`
+    against a REAL repository: the marker `task-add` wrote is the one the move
+    reads its base from, and it is made to name the new base - the commit
+    `integrate-task.py` diffs the task's work against."""
+    proj = os.path.join(root, "advproj")
+    os.makedirs(proj)
+    _g(proj, "init", "-q", "-b", "dev")
+    for name in ("a.txt", "b.txt"):
+        with open(os.path.join(proj, name), "w") as fh:
+            fh.write("%s at base\n" % (name,))
+    _g(proj, "add", "-A")
+    _g(proj, "commit", "-qm", "base")
+    base = _g(proj, "rev-parse", "HEAD")[1]
+    trees = {}
+    for task_id, rel in (("P1.1", "b.txt"), ("P1.2", "a.txt")):
+        code, ans = M.do_task_add(proj, TASK_PLAN, task_id, base, project=proj,
+                                  path=os.path.join(root, "adv-" + task_id))
+        trees[task_id] = ans.get("path") or ""
+        with open(os.path.join(trees[task_id], rel), "w") as fh:
+            fh.write("the work of %s\n" % (task_id,))
+    with open(os.path.join(proj, "a.txt"), "w") as fh:
+        fh.write("a at head\n")
+    _g(proj, "commit", "-qam", "the phase moved a.txt")
+    head = _g(proj, "rev-parse", "HEAD")[1]
+
+    tree = trees["P1.1"]
+    ans = M._wt.advance_task_tree(tree, "P1.1", head, at="2026-10-26T00:00:00Z")
+    rec = M._wt.read_provenance(tree, expect_task="P1.1").get("record") or {}
+    moves = rec.get("baseMoves") or []
+    with open(os.path.join(tree, "b.txt"), encoding="utf-8") as fh:
+        work = fh.read()
+    check("tv1 a marked task tree is moved to the head with its work, and its "
+          "marker names the new base and keeps the move - old base, new base, "
+          "the files that moved, the caller's moment",
+          ans.get("advanced") is True and ans.get("marker")
+          and _g(tree, "rev-parse", "HEAD")[1] == head
+          and rec.get("base") == head and len(moves) == 1
+          and moves[0] == {"from": base, "to": head, "moved": ["a.txt"],
+                           "at": "2026-10-26T00:00:00Z"}
+          and rec.get("taskId") == "P1.1" and work == "the work of P1.1\n",
+          repr((ans, rec)))
+    again = M.do_task_add(proj, TASK_PLAN, "P1.1", base, project=proj)[1]
+    check("tv2 ...and `task-add` adopting that tree afterwards hands it back at "
+          "the base the marker now records, not the one it was cut at",
+          again.get("adopted") is True and again.get("base") == head,
+          repr(again))
+    tree = trees["P1.2"]
+    ans = M._wt.advance_task_tree(tree, "P1.2", head, at="2026-10-26T00:00:00Z")
+    rec = M._wt.read_provenance(tree, expect_task="P1.2").get("record") or {}
+    with open(os.path.join(tree, "a.txt"), encoding="utf-8") as fh:
+        work = fh.read()
+    check("tv3 a task whose work overlaps a moved file is refused and the file "
+          "named; the tree stays at its base and its marker still names it, with "
+          "no move recorded",
+          ans.get("advanced") is False and ans.get("overlap") == ["a.txt"]
+          and "a.txt" in ((ans.get("refusal") or {}).get("why") or "")
+          and _g(tree, "rev-parse", "HEAD")[1] == base and rec.get("base") == base
+          and "baseMoves" not in rec and work == "the work of P1.2\n",
+          repr((ans, rec)))
+    # P1.1's tree, at the head now, asked about as P1.2's and moved back to the
+    # base: nothing it changed moved between the two, so only the marker check
+    # stands between the question and a move of another task's tree.
+    tree = trees["P1.1"]
+    other = M._wt.advance_task_tree(tree, "P1.2", base)
+    check("tv4 a tree whose marker names ANOTHER task is not moved: the move reads "
+          "its base from this task's marker or not at all",
+          other.get("advanced") is False and other.get("refusal")
+          and _g(tree, "rev-parse", "HEAD")[1] == head, repr(other))
 
 def _py(code):
     """A shell command running `code` under this interpreter - the same spelling on

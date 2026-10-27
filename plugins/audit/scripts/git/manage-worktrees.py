@@ -424,20 +424,10 @@ def do_remove(git_root, manifest, phase_id, force=False, run=None, path=None):
 
 
 def _write_record(tree_path, record, run=None):
-    """The marker file for `record`, in the worktree's own admin directory. Returns
-    the file, or "" + why -- the one writer, so a phase marker and a task marker
-    cannot disagree about where the record lives."""
-    admin = _wt.admin_dir(tree_path, run=run)
-    if not admin:
-        return "", "git would not name the admin directory of %s" % (tree_path,)
-    path = os.path.join(admin, _wt.PROVENANCE_FILE)
-    try:
-        with io.open(path, "w", encoding="utf-8", newline="\n") as fh:
-            fh.write(json.dumps(record, indent=1, sort_keys=True))
-            fh.write("\n")
-    except Exception as exc:
-        return "", "%s could not be written: %s" % (path, exc)
-    return path, ""
+    """The marker file for `record`: `_worktrees.write_record`, the one writer, so
+    a phase marker, a task marker and a moved task tree's marker cannot disagree
+    about where the record lives."""
+    return _wt.write_record(tree_path, record, run=run)
 
 
 def write_provenance(tree_path, phase_id, branch, run=None):

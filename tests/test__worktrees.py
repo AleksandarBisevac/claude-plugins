@@ -1048,6 +1048,1120 @@ def _cases(check):
           _fallback and _fallback[0]["argv"] == ["branch", "-d", "feature/p2"],
           repr(_fallback[0]["argv"] if _fallback else None))
 
+    _advance_cases(check)
+
+
+# --- a task tree brought to the phase head with its work carried ------------------
+# A REAL repository, because what is under test is what git's checkout does to
+# uncommitted work - a fake runner would encode the answer the move hopes for. The
+# fixture's base holds a.txt, b.txt, d.txt and docs/r.json; the head moves b.txt
+# and docs/r.json. A tree's work edits a.txt, deletes d.txt and adds n.txt, so all
+# three shapes of uncommitted work ride the move.
+_AV_WORK = {"a.txt": b"the task's edit of a\n", "n.txt": b"a file the task added\n"}
+
+
+def _av_repo(prefix):
+    """`(root, repo, base, head)`: a repository whose head moved b.txt and
+    docs/r.json past `base`. Removed at exit through `fixture_root`."""
+    root = os.path.realpath(_harness.fixture_root(prefix))
+    repo = os.path.join(root, "repo")
+    os.makedirs(os.path.join(repo, "docs"))
+    for rel, body in (("a.txt", b"a at base\n"), ("b.txt", b"b at base\n"),
+                      ("d.txt", b"d at base\n"), ("docs/r.json", b"{}\n")):
+        with open(os.path.join(repo, *rel.split("/")), "wb") as fh:
+            fh.write(body)
+    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "base"]):
+        _harness.git(repo, *argv)
+    base = _harness.git(repo, "rev-parse", "HEAD").strip()
+    for rel, body in (("b.txt", b"b at head\n"), ("docs/r.json", b"{\"at\": 1}\n")):
+        with open(os.path.join(repo, *rel.split("/")), "wb") as fh:
+            fh.write(body)
+    for argv in (["add", "-A"], ["commit", "-qm", "the phase moved"]):
+        _harness.git(repo, *argv)
+    return root, repo, base, _harness.git(repo, "rev-parse", "HEAD").strip()
+
+
+def _av_tree(root, repo, base, name, extra=None):
+    """A detached tree of `repo` at `base` holding the task's work, plus `extra`
+    ({rel: bytes}) written over it."""
+    tree = os.path.join(root, name)
+    _harness.git(repo, "worktree", "add", "-q", "--detach", tree, base)
+    for rel, body in sorted(dict(_AV_WORK, **(extra or {})).items()):
+        with open(os.path.join(tree, *rel.split("/")), "wb") as fh:
+            fh.write(body)
+    os.remove(os.path.join(tree, "d.txt"))
+    return tree
+
+
+def _av_bytes(tree, rels=("a.txt", "b.txt", "d.txt", "n.txt", "docs/r.json")):
+    """{rel: bytes or None} - what the tree holds at each path."""
+    found = {}
+    for rel in rels:
+        path = os.path.join(tree, *rel.split("/"))
+        if os.path.exists(path):
+            with open(path, "rb") as fh:
+                found[rel] = fh.read()
+        else:
+            found[rel] = None
+    return found
+
+
+def _av_head(tree):
+    return _harness.git(tree, "rev-parse", "HEAD").strip()
+
+
+def _av_record(rel):
+    """The caller's record rule, injected: this module may not import the
+    layer-mate that holds the real one."""
+    return rel == "docs" or rel.startswith("docs/")
+
+
+def _advance_cases(check):
+    try:
+        root, repo, base, head = _av_repo("advance-")
+    except RuntimeError as exc:
+        _harness.could_not_run(check, "av1 a git fixture to move a tree over",
+                               "%s" % (exc,))
+        return
+    # The allow direction: nothing the task changed moved between base and head.
+    tree = _av_tree(root, repo, base, "t-clear")
+    before = _av_bytes(tree)
+    moved = M.advance_tree(tree, base, head)
+    after = _av_bytes(tree)
+    check("av1 a tree whose work touches none of the files that moved is brought "
+          "to the head: HEAD is the head, the moved file holds the head's bytes, "
+          "and the answer names what moved",
+          moved.get("advanced") is True and _av_head(tree) == head
+          and after["b.txt"] == b"b at head\n"
+          and moved.get("moved") == ["b.txt", "docs/r.json"]
+          and moved.get("from") == base and moved.get("to") == head,
+          repr((moved, _av_head(tree)[:12])))
+    check("av2 ...with the work intact byte for byte - the edited file, the added "
+          "untracked file and the deletion all ride the move",
+          after["a.txt"] == before["a.txt"] == _AV_WORK["a.txt"]
+          and after["n.txt"] == _AV_WORK["n.txt"] and after["d.txt"] is None
+          and sorted(moved.get("work") or []) == ["a.txt", "d.txt", "n.txt"],
+          repr((after, moved.get("work"))))
+    # The deny direction: the work edits b.txt, which the head moved too.
+    tree_o = _av_tree(root, repo, base, "t-overlap", {"b.txt": b"the task's b\n"})
+    before_o = _av_bytes(tree_o)
+    refused = M.advance_tree(tree_o, base, head)
+    check("av3 a tree whose work overlaps a moved file is refused BY NAME - the "
+          "overlapping file listed, and only it",
+          refused.get("advanced") is False
+          and refused.get("overlap") == ["b.txt"]
+          and "b.txt" in ((refused.get("refusal") or {}).get("why") or "")
+          and "a.txt" not in ((refused.get("refusal") or {}).get("why") or ""),
+          repr(refused))
+    check("av4 ...and the refused tree is left untouched: HEAD still the base, "
+          "every byte as it was",
+          _av_head(tree_o) == base and _av_bytes(tree_o) == before_o,
+          repr((_av_head(tree_o)[:12], _av_bytes(tree_o))))
+    # A record path the drive refreshed is not the task's work: it is put back
+    # and moves with the head. Without the records named it is an overlap.
+    tree_r = _av_tree(root, repo, base, "t-records", {"docs/r.json": b"refreshed\n"})
+    unnamed = M.advance_tree(tree_r, base, head)
+    check("av5 a dirty record path the caller does NOT name as a record is work, "
+          "and overlapping the head it is refused by name",
+          unnamed.get("advanced") is False
+          and unnamed.get("overlap") == ["docs/r.json"]
+          and _av_head(tree_r) == base, repr(unnamed))
+    named = M.advance_tree(tree_r, base, head, is_record=_av_record)
+    check("av6 ...named as a record it is not work: the tree moves, the record "
+          "holds the head's bytes and the task's work is intact",
+          named.get("advanced") is True and _av_head(tree_r) == head
+          and _av_bytes(tree_r)["docs/r.json"] == b"{\"at\": 1}\n"
+          and _av_bytes(tree_r)["a.txt"] == _AV_WORK["a.txt"]
+          and "docs/r.json" not in (named.get("work") or []), repr(named))
+    # A failure mid-move: git's checkout reports success and a work file comes
+    # out different. The byte check after the move is what sees it.
+    tree_m = _av_tree(root, repo, base, "t-midmove")
+    before_m = _av_bytes(tree_m)
+
+    def scribbling(cwd, args, timeout=60):
+        done = M._git(cwd, args)
+        if args[:1] == ["checkout"] and head in args and done[0] == 0:
+            with open(os.path.join(tree_m, "a.txt"), "wb") as fh:
+                fh.write(b"bytes the move should never have written\n")
+        return done
+    broke = M.advance_tree(tree_m, base, head, run=scribbling)
+    check("av7 a move whose result differs from the work by one byte is NOT an "
+          "advance: it is undone, the tree is back at its base and every byte of "
+          "the work is as it was",
+          broke.get("advanced") is False and broke.get("restored") is True
+          and broke.get("error") and _av_head(tree_m) == base
+          and _av_bytes(tree_m) == before_m,
+          repr((broke, _av_head(tree_m)[:12], _av_bytes(tree_m))))
+    check("av8 ...and the backup taken before the move is gone once the work is "
+          "back - nothing is kept when nothing was lost",
+          not broke.get("kept"), repr(broke.get("kept")))
+    tree_f = _av_tree(root, repo, base, "t-gitfails")
+    before_f = _av_bytes(tree_f)
+
+    def refusing(cwd, args, timeout=60):
+        if args[:1] == ["checkout"] and head in args:
+            return 1, "", "error: fixture: the checkout died"
+        return M._git(cwd, args)
+    died = M.advance_tree(tree_f, base, head, run=refusing)
+    check("av9 a checkout git refuses leaves the work as it was and says git's "
+          "words",
+          died.get("advanced") is False and _av_head(tree_f) == base
+          and _av_bytes(tree_f) == before_f
+          and "the checkout died" in (died.get("error") or ""),
+          repr(died))
+    same = M.advance_tree(tree, head, head)
+    check("av10 a tree already at the head is not moved and says so - the "
+          "already-answer is not an advance",
+          same.get("advanced") is False and same.get("already") is True
+          and not same.get("refusal") and _av_head(tree) == head, repr(same))
+    stale = M.advance_tree(tree_o, head, head)
+    check("av11 a base that is not the tree's HEAD is refused before anything "
+          "moves - the move is from the commit the tree stands on, never from a "
+          "base somebody remembered",
+          stale.get("advanced") is False and stale.get("refusal")
+          and _av_head(tree_o) == base and _av_bytes(tree_o) == before_o,
+          repr(stale))
+    pure = M.advance_plan(base, head, ["a.txt", "docs/r.json", "b.txt"],
+                          ["b.txt", "docs/r.json"], is_record=_av_record)
+    check("av12 the plan is pure over the four lists: work is the changed paths "
+          "outside the records, the overlap is work that moved",
+          pure.get("work") == ["a.txt", "b.txt"] and pure.get("overlap") == ["b.txt"]
+          and pure.get("ok") is False, repr(pure))
+    _advance_after_cases(check)
+    _advance_crash_cases(check)
+
+
+def _av_pair(prefix, base_files, head_files, force=()):
+    """`(root, repo, base, head)`: `base_files` committed, then `head_files`
+    written over them and committed - each path in `force` added past the
+    ignore rules, as a head that starts tracking an ignored path does."""
+    root = os.path.realpath(_harness.fixture_root(prefix))
+    repo = os.path.join(root, "repo")
+    for files, label in ((base_files, "base"), (head_files, "head")):
+        for rel, body in sorted(files.items()):
+            path = os.path.join(repo, *rel.split("/"))
+            if not os.path.isdir(os.path.dirname(path)):
+                os.makedirs(os.path.dirname(path))
+            with open(path, "wb") as fh:
+                fh.write(body)
+        if label == "base":
+            _harness.git(repo, "init", "-q")
+        _harness.git(repo, "add", "-A")
+        for rel in force:
+            if label == "head":
+                _harness.git(repo, "add", "-f", rel)
+        _harness.git(repo, "commit", "-qm", label)
+        if label == "base":
+            base = _harness.git(repo, "rev-parse", "HEAD").strip()
+    return root, repo, base, _harness.git(repo, "rev-parse", "HEAD").strip()
+
+
+def _av_plain_tree(root, repo, base, name, work):
+    """A detached tree at `base` with `work` ({rel: bytes}) written in it."""
+    tree = os.path.join(root, name)
+    _harness.git(repo, "worktree", "add", "-q", "--detach", tree, base)
+    for rel, body in sorted(work.items()):
+        path = os.path.join(tree, *rel.split("/"))
+        if not os.path.isdir(os.path.dirname(path)):
+            os.makedirs(os.path.dirname(path))
+        with open(path, "wb") as fh:
+            fh.write(body)
+    return tree
+
+
+def _av_status(tree):
+    """`{path: two-letter code}` git reports for the tree, ignored included."""
+    out = _harness.git(tree, "status", "--porcelain", "-z", "--untracked-files=all",
+                       "--ignored", "--no-renames")
+    return dict((item[3:], item[:2]) for item in out.split("\0") if item)
+
+
+def _advance_after_cases(check):
+    """What the tree holds AFTER git's checkout is what decides a move: git
+    exits 0 over a file it could not update, and a rule the head adds can turn
+    the task's file into one no `add -A` will ever take."""
+    root, repo, base, head = _av_pair("advance-ign-", {"a.txt": b"a\n"},
+                                      {".gitignore": b"gen/\n"})
+    tree = _av_plain_tree(root, repo, base, "t-ign",
+                          {"gen/new_module.py": b"the task's only copy\n"})
+    said = M.advance_tree(tree, base, head)
+    check("av13 a head whose .gitignore covers the task's untracked file is no "
+          "advance: the file would be ignored at the head and no integration "
+          "would carry it, so the tree stays at its base with the file untracked "
+          "(not ignored) and the answer names it",
+          said.get("advanced") is False and _av_head(tree) == base
+          and _av_status(tree).get("gen/new_module.py") == "??"
+          and _av_bytes(tree, ("gen/new_module.py",))["gen/new_module.py"]
+          == b"the task's only copy\n"
+          and "gen/new_module.py" in (said.get("error") or "")
+          + ((said.get("refusal") or {}).get("why") or ""),
+          repr((said, _av_status(tree))))
+    root, repo, base, head = _av_pair(
+        "advance-trk-", {"a.txt": b"a\n", ".gitignore": b"local.cfg\n"},
+        {"local.cfg": b"the head's committed cfg\n"}, force=("local.cfg",))
+    tree = _av_plain_tree(root, repo, base, "t-trk",
+                          {"local.cfg": b"the task tree's own cfg\n"})
+    said = M.advance_tree(tree, base, head)
+    check("av14 an ignored file in the tree at a path the head starts tracking is "
+          "refused by name before anything moves - git would overwrite it "
+          "without a word",
+          said.get("advanced") is False and _av_head(tree) == base
+          and _av_bytes(tree, ("local.cfg",))["local.cfg"]
+          == b"the task tree's own cfg\n"
+          and "local.cfg" in ((said.get("refusal") or {}).get("why") or ""),
+          repr(said))
+    root, repo, base, head = _av_pair(
+        "advance-ro-", {"a.txt": b"a\n", "m.txt": b"m at base\n",
+                        "z/locked.txt": b"z at base\n"},
+        {"m.txt": b"m at head\n", "z/locked.txt": b"z at head\n"})
+    tree = _av_plain_tree(root, repo, base, "t-ro", {"a.txt": b"the task's a\n"})
+    locked = os.path.join(tree, "z")
+    os.chmod(locked, 0o555)
+    try:
+        if os.access(locked, os.W_OK):
+            _harness.skip(check, "av15 a file git could not update", "a directory "
+                          "made read-only stays writable here (an administrator, "
+                          "or a filesystem that ignores the mode)",
+                          os.access(locked, os.W_OK))
+        else:
+            said = M.advance_tree(tree, base, head)
+            os.chmod(locked, 0o755)
+            check("av15 a file git could not update during the checkout (it exits "
+                  "0 and says so on stderr) is no advance: the move is undone - "
+                  "back at the base, the moved files holding the base's bytes, the "
+                  "task's work as it was - and the answer names the file",
+                  said.get("advanced") is False and said.get("restored") is True
+                  and "z/locked.txt" in (said.get("error") or "")
+                  and _av_head(tree) == base and _av_status(tree) == {"a.txt": " M"}
+                  and _av_bytes(tree, ("a.txt", "m.txt", "z/locked.txt")) == {
+                      "a.txt": b"the task's a\n", "m.txt": b"m at base\n",
+                      "z/locked.txt": b"z at base\n"},
+                  repr((said, _av_status(tree))))
+    finally:
+        os.chmod(locked, 0o755)
+    root, repo, base, head = _av_pair(
+        "advance-lock-", {"a.txt": b"a\n", "m.txt": b"m at base\n",
+                          "z/locked.txt": b"z at base\n"},
+        {"m.txt": b"m at head\n", "z/locked.txt": b"z at head\n"})
+    tree = _av_plain_tree(root, repo, base, "t-lock", {"a.txt": b"the task's a\n"})
+    locked = os.path.join(tree, "z")
+    os.chmod(locked, 0o555)
+
+    def lock_lifts(cwd, args, timeout=60):
+        # The lock holds through the checkout and is gone by the undo - the
+        # shape of a file another process held open for a moment.
+        done = M._git(cwd, args)
+        if args[:1] == ["checkout"] and head in args:
+            os.chmod(locked, 0o755)
+        return done
+    try:
+        if os.access(locked, os.W_OK):
+            _harness.skip(check, "av24 a lock that lifts before the undo",
+                          "a directory made read-only stays writable here",
+                          os.access(locked, os.W_OK))
+        else:
+            said = M.advance_tree(tree, base, head, run=lock_lifts)
+            check("av24 ...and once the file can be written again the undo "
+                  "finishes: back at the base, every moved file holding the base's "
+                  "bytes, only the task's work changed, nothing kept",
+                  said.get("advanced") is False and said.get("restored") is True
+                  and not said.get("kept") and _av_head(tree) == base
+                  and _av_status(tree) == {"a.txt": " M"}
+                  and _av_bytes(tree, ("a.txt", "m.txt", "z/locked.txt")) == {
+                      "a.txt": b"the task's a\n", "m.txt": b"m at base\n",
+                      "z/locked.txt": b"z at base\n"},
+                  repr((said, _av_status(tree))))
+    finally:
+        os.chmod(locked, 0o755)
+    root, repo, base, head = _av_pair("advance-case-", {"README": b"r\n", "a.txt": b"a\n"},
+                                      {"other.txt": b"o\n"})
+    _harness.git(repo, "mv", "README", "readme.tmp")
+    _harness.git(repo, "mv", "readme.tmp", "readme")
+    _harness.git(repo, "commit", "-qm", "a rename that changes only the case")
+    head = _harness.git(repo, "rev-parse", "HEAD").strip()
+    tree = _av_plain_tree(root, repo, base, "t-case", {"a.txt": b"the task's a\n"})
+    said = M.advance_tree(tree, base, head)
+    check("av25 ALLOW: a head that renames a tracked file by case alone is no "
+          "ignored file in the way, on a filesystem that folds case too - the "
+          "tree moves with its work",
+          said.get("advanced") is True and _av_head(tree) == head
+          and _av_status(tree) == {"a.txt": " M"}, repr(said))
+    root, repo, base, head = _av_pair("advance-to-", {"a.txt": b"a\n", "b.txt": b"b\n"},
+                                      {"b.txt": b"b at head\n"})
+    tree = _av_plain_tree(root, repo, base, "t-timeout", {"a.txt": b"the task's a\n"})
+
+    def timing_out(cwd, args, timeout=60):
+        done = M._git(cwd, args)
+        if args[:1] == ["checkout"] and head in args:
+            return None, "", "git did not finish within its timeout"
+        return done
+    said = M.advance_tree(tree, base, head, run=timing_out)
+    check("av16 a checkout whose answer never came (it ran, then the runner timed "
+          "out) is undone back to the BASE - restored means HEAD is the base and "
+          "every byte is as it was, not only the held paths",
+          said.get("advanced") is False and said.get("restored") is True
+          and _av_head(tree) == base and _av_status(tree) == {"a.txt": " M"}
+          and _av_bytes(tree, ("a.txt", "b.txt")) == {
+              "a.txt": b"the task's a\n", "b.txt": b"b\n"},
+          repr((said, _av_head(tree)[:12], _av_status(tree))))
+    root, repo, base, head = _av_pair(
+        "advance-idx-", {"a.txt": b"a\n", "docs/plan.json": b"{}\n"},
+        {"docs/j.jsonl": b"row at head\n", "docs/plan.json": b"{\"h\": 1}\n"})
+    tree = _av_plain_tree(root, repo, base, "t-staged", {
+        "a.txt": b"the task's a\n", "docs/j.jsonl": b"row at head\n",
+        "docs/plan.json": b"{\"h\": 1}\n"})
+    _harness.git(tree, "add", "-A")
+    said = M.advance_tree(tree, base, head, is_record=_av_record)
+    check("av17 a tree whose index holds the staged work and staged record paths "
+          "(the integration stages with `add -A`) moves cleanly: the records "
+          "follow the head in the index too, and only the work is left changed",
+          said.get("advanced") is True and _av_head(tree) == head
+          and _av_status(tree) == {"a.txt": "M "}, repr((said, _av_status(tree))))
+    root, repo, base, head = _av_pair("advance-keep-", {"a.txt": b"a\n", "b.txt": b"b\n"},
+                                      {"b.txt": b"b at head\n"})
+    tree = _av_plain_tree(root, repo, base, "t-keep", {"a.txt": b"the task's a\n"})
+    _harness.git(tree, "add", "a.txt")
+
+    def scribble(cwd, args, timeout=60):
+        done = M._git(cwd, args)
+        if args[:1] == ["checkout"] and head in args and done[0] == 0:
+            with open(os.path.join(tree, "a.txt"), "wb") as fh:
+                fh.write(b"bytes the move should never have written\n")
+        return done
+    said = M.advance_tree(tree, base, head, run=scribble)
+    check("av18 an undone move gives the index back as well as the bytes: the "
+          "work the task had staged is staged again",
+          said.get("restored") is True and _av_head(tree) == base
+          and _av_status(tree) == {"a.txt": "M "}, repr((said, _av_status(tree))))
+    root, repo, base, head = _av_pair("advance-stuck-", {"a.txt": b"a\n", "b.txt": b"b\n"},
+                                      {"b.txt": b"b at head\n"})
+    tree = _av_plain_tree(root, repo, base, "t-stuck", {"a.txt": b"the task's a\n"})
+
+    def stuck(cwd, args, timeout=60):
+        # The move comes out wrong, and git then refuses the way back.
+        if args[:1] == ["checkout"] and "-f" in args:
+            return 1, "", "error: fixture: the way back is refused"
+        done = M._git(cwd, args)
+        if args[:1] == ["checkout"] and head in args and done[0] == 0:
+            with open(os.path.join(tree, "a.txt"), "wb") as fh:
+                fh.write(b"bytes the move should never have written\n")
+        return done
+    said = M.advance_tree(tree, base, head, run=stuck)
+    kept = said.get("kept") or ""
+    check("av26 an undo that cannot finish says so - not restored, the copy kept "
+          "and named with what is still wrong - and still writes the task's work "
+          "back: restored is a checked claim, never git's exit",
+          said.get("advanced") is False and said.get("restored") is False
+          and kept and os.path.isfile(os.path.join(kept, M.COPY_INDEX))
+          and kept in (said.get("error") or "")
+          and "the way back is refused" in (said.get("error") or "")
+          and _av_bytes(tree, ("a.txt",))["a.txt"] == b"the task's a\n",
+          repr(said))
+
+
+def _av_marked(tree, base):
+    """Mark `tree` as task T1's at `base`, the way `task-add` does."""
+    M.write_record(tree, {"createdBy": M.PROVENANCE_MARK, "taskId": "T1",
+                          "phaseId": "P1", "base": base})
+    return M.read_provenance(tree, expect_task="T1").get("record") or {}
+
+
+class _Killed(BaseException):
+    """The drive dying mid-move: not an Exception, so nothing catches it."""
+
+
+def _advance_crash_cases(check):
+    """A process killed in the middle of a move leaves the copy beside the tree;
+    the next move reads it and finishes or forgets the move, rather than being
+    blocked by it forever or diffing the work against a base the tree left."""
+    root, repo, base, head = _av_pair("advance-crash-", {"a.txt": b"a\n", "b.txt": b"b\n"},
+                                      {"b.txt": b"b at head\n"})
+    tree = _av_plain_tree(root, repo, base, "t-crash", {"a.txt": b"the task's a\n"})
+    _av_marked(tree, base)
+
+    def dying_after(cwd, args, timeout=60):
+        done = M._git(cwd, args)
+        if args[:1] == ["checkout"] and head in args and done[0] == 0:
+            raise _Killed("killed after the checkout")
+        return done
+    try:
+        M.advance_task_tree(tree, "T1", head, run=dying_after)
+    except _Killed:
+        pass
+    again = M.advance_task_tree(tree, "T1", head)
+    record = M.read_provenance(tree, expect_task="T1").get("record") or {}
+    copy = os.path.join(M.admin_dir(tree), M.ADVANCE_BACKUP)
+    check("av19 a move killed after its checkout is finished by the next one - "
+          "read as done, not undone and made again: the work reads back as it "
+          "was, the marker names the head and the move, and the copy is gone",
+          again.get("advanced") is True and again.get("resumed") is True
+          and _av_head(tree) == head
+          and record.get("base") == head and len(record.get("baseMoves") or []) == 1
+          and not os.path.exists(copy)
+          and _av_bytes(tree, ("a.txt",))["a.txt"] == b"the task's a\n",
+          repr((again, record, os.path.exists(copy))))
+    root, repo, base, head = _av_pair("advance-crash0-", {"a.txt": b"a\n", "b.txt": b"b\n"},
+                                      {"b.txt": b"b at head\n"})
+    tree = _av_plain_tree(root, repo, base, "t-crash0", {"a.txt": b"the task's a\n"})
+    _av_marked(tree, base)
+
+    def dying_before(cwd, args, timeout=60):
+        if args[:1] == ["checkout"] and head in args:
+            raise _Killed("killed before the checkout")
+        return M._git(cwd, args)
+    try:
+        M.advance_task_tree(tree, "T1", head, run=dying_before)
+    except _Killed:
+        pass
+    again = M.advance_task_tree(tree, "T1", head)
+    record = M.read_provenance(tree, expect_task="T1").get("record") or {}
+    check("av20 a move killed before its checkout leaves a copy the next move "
+          "reads as stale - the tree still matches it at the base - so the move "
+          "runs instead of being refused forever",
+          again.get("advanced") is True and _av_head(tree) == head
+          and record.get("base") == head
+          and _av_bytes(tree, ("a.txt",))["a.txt"] == b"the task's a\n",
+          repr((again, record)))
+    root, repo, base, head = _av_pair("advance-race-", {"a.txt": b"a\n", "b.txt": b"b\n"},
+                                      {"b.txt": b"b at head\n"})
+    tree = _av_plain_tree(root, repo, base, "t-race", {"a.txt": b"the task's a\n"})
+    copy = os.path.join(M.admin_dir(tree), M.ADVANCE_BACKUP)
+    real_keep = M._keep_copy
+
+    def racing(where, *rest, **kw):
+        # A second mover made its copy between this one's look and its write.
+        os.makedirs(where)
+        with open(os.path.join(where, "index.json"), "w", encoding="utf-8") as fh:
+            fh.write("{\"other\": 1}")
+        return real_keep(where, *rest, **kw)
+    M._keep_copy = racing
+    try:
+        raced = M.advance_tree(tree, base, head)
+    finally:
+        M._keep_copy = real_keep
+    check("av21 a copy another mover made first is never deleted by this one: the "
+          "move is refused and the other copy is still there",
+          raced.get("advanced") is False and os.path.isfile(
+              os.path.join(copy, "index.json")) and _av_head(tree) == base,
+          repr((raced, os.path.exists(copy))))
+    root, repo, base, head = _av_pair(
+        "advance-rec-", {"a.txt": b"a\n", "docs/r.json": b"{}\n", "b.txt": b"b\n"},
+        {"docs/r.json": b"{\"at\": 1}\n", "b.txt": b"b at head\n"})
+    tree = _av_plain_tree(root, repo, base, "t-rec", {"a.txt": b"the task's a\n"})
+    _av_marked(tree, base)
+    moved = M.advance_task_tree(tree, "T1", head, is_record=_av_record)
+    step = ((M.read_provenance(tree, expect_task="T1").get("record") or {})
+            .get("baseMoves") or [{}])[-1]
+    check("av22 the move the marker records names the files that moved under the "
+          "work, not the caller's records",
+          moved.get("advanced") is True and step.get("moved") == ["b.txt"],
+          repr((moved, step)))
+    before = M.read_provenance(tree, expect_task="T1").get("record") or {}
+    wrote, why = M.write_record(tree, dict(before, unwritable=object()))
+    after = M.read_provenance(tree, expect_task="T1").get("record") or {}
+    check("av23 a marker that cannot be written leaves the old one whole - the "
+          "record is serialised and written aside before it replaces anything",
+          wrote == "" and why and after.get("base") == before.get("base") == head,
+          repr((wrote, why, after)))
+    _advance_kill_cases(check)
+    _advance_low_cases(check)
+    _advance_settle_cases(check)
+    _advance_sync_cases(check)
+
+
+def _advance_low_cases(check):
+    """The edges a move meets in a real tree: a work file it cannot read, a
+    lock a git left on the index, a tracked file the task made a directory."""
+    root, repo, base, head = _av_pair("advance-unread-", {"a.txt": b"a\n", "b.txt": b"b\n"},
+                                      {"b.txt": b"b at head\n"})
+    tree = _av_plain_tree(root, repo, base, "t-unread", {"secret.key": b"k\n"})
+    secret = os.path.join(tree, "secret.key")
+    os.chmod(secret, 0o000)
+    try:
+        if os.access(secret, os.R_OK):
+            _harness.skip(check, "av28 an unreadable work file", "a file made "
+                          "unreadable stays readable here (an administrator, or a "
+                          "filesystem that ignores the mode)", os.access(secret, os.R_OK))
+        else:
+            try:
+                said = M.advance_tree(tree, base, head)
+            except OSError as exc:
+                said = {"raised": repr(exc)}
+            check("av28 a work file the process cannot read is a refusal naming "
+                  "it, before anything moves - not an exception out of the mover",
+                  said.get("advanced") is False and "secret.key" in (
+                      (said.get("refusal") or {}).get("why") or "")
+                  and _av_head(tree) == base, repr(said))
+    finally:
+        os.chmod(secret, 0o644)
+    root, repo, base, head = _av_pair("advance-lockidx-", {"a.txt": b"a\n", "b.txt": b"b\n"},
+                                      {"b.txt": b"b at head\n"})
+    tree = _av_plain_tree(root, repo, base, "t-lockidx", {"a.txt": b"the task's a\n"})
+    index_lock = os.path.join(M.admin_dir(tree), "index.lock")
+
+    def lock_left(cwd, args, timeout=60):
+        done = M._git(cwd, args)
+        if args[:1] == ["checkout"] and head in args and done[0] == 0:
+            with open(os.path.join(tree, "a.txt"), "wb") as fh:
+                fh.write(b"bytes the move should never have written\n")
+        if args[:1] == ["checkout"] and "-f" in args:
+            # A git killed mid-command leaves its lock beside the index.
+            with open(index_lock, "wb") as fh:
+                fh.write(b"a lock a killed git left\n")
+        return done
+    try:
+        said = M.advance_tree(tree, base, head, run=lock_left)
+        with open(index_lock, "rb") as fh:
+            lock_bytes = fh.read()
+    finally:
+        if os.path.exists(index_lock):
+            os.remove(index_lock)
+    check("av29 an undo that finds a lock beside the index does not write the "
+          "index under it: the lock is left as it was, the undo says the index "
+          "was not put back, and the copy is kept",
+          said.get("restored") is False and ".lock" in (said.get("error") or "")
+          and said.get("kept") and lock_bytes == b"a lock a killed git left\n"
+          and _av_bytes(tree, ("a.txt",))["a.txt"] == b"the task's a\n", repr(said))
+    root, repo, base, head = _av_pair("advance-dirfile-", {"a.txt": b"a\n", "d.txt": b"d\n"},
+                                      {"a.txt": b"a at head\n"})
+    tree = _av_plain_tree(root, repo, base, "t-dirfile", {})
+    os.remove(os.path.join(tree, "d.txt"))
+    os.makedirs(os.path.join(tree, "d.txt"))
+    with open(os.path.join(tree, "d.txt", "inside.txt"), "wb") as fh:
+        fh.write(b"the task's file inside\n")
+    said = M.advance_tree(tree, base, head)
+    tree_h, base_h, head_h = _kill_fixture(99)
+    half = os.path.join(M.admin_dir(tree_h), M.ADVANCE_BACKUP)
+    os.mkdir(half)
+    with open(os.path.join(half, "0.bin"), "wb") as fh:
+        fh.write(b"a copy cut short before its index was written\n")
+    resumed = M.advance_task_tree(tree_h, "T1", head_h, is_record=_av_record)
+    check("av31 a copy cut short before its index.json (written last, and nothing "
+          "moves before it is) is dropped and the move made",
+          resumed.get("advanced") is True and not resumed.get("kept")
+          and not os.path.exists(half) and not _kill_settled(tree_h, head_h),
+          repr((resumed, _kill_settled(tree_h, head_h))))
+    check("av30 a tracked file the task replaced with a directory is refused in "
+          "words that say so, not only as a nested repository",
+          said.get("advanced") is False and "replaced with a directory" in (
+              (said.get("refusal") or {}).get("why") or "")
+          and _av_head(tree) == base, repr(said))
+
+
+def _refusing_drop():
+    """`(install, restore)`: `os.rename` refuses to take a copy down - a handle
+    another process holds open in it, as Windows does - and renames anything
+    else."""
+    real = M.os.rename
+
+    def flaky(src, dst, *rest, **kw):
+        if str(src).endswith(M.ADVANCE_BACKUP):
+            raise PermissionError(13, "fixture: a handle is open in the copy")
+        return real(src, dst, *rest, **kw)
+    return (lambda: setattr(M.os, "rename", flaky),
+            lambda: setattr(M.os, "rename", real))
+
+
+def _settle_tree(prefix):
+    """`(tree, base, head, copy)`: a marked tree at `base` whose work edits
+    a.txt; the head moved b.txt, and c.txt is tracked and untouched."""
+    root, repo, base, head = _av_pair(
+        prefix, {"a.txt": b"a\n", "b.txt": b"b\n", "c.txt": b"c\n"},
+        {"b.txt": b"b at head\n"})
+    tree = _av_plain_tree(root, repo, base, "t", {"a.txt": b"the task's a\n"})
+    _av_marked(tree, base)
+    return tree, base, head, os.path.join(M.admin_dir(tree), M.ADVANCE_BACKUP)
+
+
+# What an agent writes once it is handed the tree again: its own file further
+# along, and a tracked file the work had not touched.
+_NEWER = {"a.txt": b"the agent's later a\n", "c.txt": b"the agent's edit of c\n"}
+
+
+def _write_newer(tree, extra=None):
+    for rel, body in sorted(dict(_NEWER, **(extra or {})).items()):
+        with open(os.path.join(tree, *rel.split("/")), "wb") as fh:
+            fh.write(body)
+
+
+def _held_still(tree, again, copy, head, before):
+    """Whether `again` held the tree: kept and naming both newer paths, the
+    copy still on disk, HEAD at `head`, and every byte and status as `before`."""
+    rels = ("a.txt", "b.txt", "c.txt")
+    said = again.get("error") or ""
+    return (again.get("advanced") is False and again.get("kept") == copy
+            and os.path.isdir(copy) and "a.txt" in said and "c.txt" in said
+            and _av_head(tree) == head
+            and (_av_bytes(tree, rels), _av_status(tree)) == before)
+
+
+def _advance_settle_cases(check):
+    """`kept` is read off the disk: a copy left beside the tree, for whatever
+    reason, is a tree not settled. And a copy found there is never forced over
+    bytes it does not account for - newer work keeps it, unchanged."""
+    tree, base, head, copy = _settle_tree("advance-drop-")
+    _ok, said = _armed([_refusing_drop()], lambda: M.advance_tree(tree, base, head))
+    check("av32 a move that counted but whose copy will not come down answers "
+          "kept, naming the copy still on disk - advanced, and not settled",
+          said.get("advanced") is True and said.get("kept") == copy
+          and os.path.isdir(copy) and copy in (said.get("error") or ""), repr(said))
+    tree, base, head, copy = _settle_tree("advance-dropundo-")
+    _ok, said = _armed([_refusing_drop()], lambda: M.advance_task_tree(
+        tree, "T1", head, run=_scribbler(tree, head)))
+    check("av33 an undone move whose copy will not come down answers kept too: "
+          "restored, and the copy named and still on disk",
+          said.get("advanced") is False and said.get("restored") is True
+          and said.get("kept") == copy and os.path.isdir(copy), repr(said))
+    _write_newer(tree)
+    before = (_av_bytes(tree, ("a.txt", "b.txt", "c.txt")), _av_status(tree))
+    again = M.advance_task_tree(tree, "T1", head)
+    check("av34 work written after that answer is never forced over: the next "
+          "move changes no byte, keeps the copy and names every path that "
+          "diverged - the task's own file and a tracked file it had not touched",
+          _held_still(tree, again, copy, base, before),
+          repr((again, _av_bytes(tree, ("a.txt", "c.txt")))))
+    tree, base, head, copy = _settle_tree("advance-killnewer-")
+    killed, _said = _armed([], lambda: M.advance_task_tree(
+        tree, "T1", head, run=_first_kill_runner(head, True)))
+    _write_newer(tree)
+    before = (_av_bytes(tree, ("a.txt", "b.txt", "c.txt")), _av_status(tree))
+    again = M.advance_task_tree(tree, "T1", head)
+    check("av35 work written after a kill and before the next move is never "
+          "forced over either: that move changes no byte, keeps the copy and "
+          "names the paths",
+          killed and _held_still(tree, again, copy, head, before),
+          repr((killed, again, _av_bytes(tree, ("a.txt", "c.txt")))))
+    tree, _base, head = _kill_fixture(200)
+    copy = os.path.join(M.admin_dir(tree), M.ADVANCE_BACKUP)
+    _ok, first = _armed([_refusing_drop()], lambda: M.advance_task_tree(
+        tree, "T1", head, is_record=_av_record))
+    with open(os.path.join(tree, "docs", "r.json"), "wb") as fh:
+        fh.write(b"{\"refreshed\": \"by the drive, from a later head\"}\n")
+    again = M.advance_task_tree(tree, "T1", head, is_record=_av_record)
+    check("av36 ALLOW: a recorded move whose copy stayed, in a tree whose records "
+          "the drive has since refreshed and whose work is as the copy holds it, "
+          "is settled by the next move - the copy dropped, nothing kept",
+          first.get("advanced") is True and first.get("kept") == copy
+          and not again.get("kept") and not os.path.exists(copy)
+          and not again.get("error") and not _kill_settled(tree, head),
+          repr((first.get("kept"), again, _kill_settled(tree, head))))
+    tree, base, head, copy = _settle_tree("advance-recnewer-")
+    _ok, first = _armed([_refusing_drop()], lambda: M.advance_task_tree(
+        tree, "T1", head))
+    _write_newer(tree)
+    before = (_av_bytes(tree, ("a.txt", "b.txt", "c.txt")), _av_status(tree))
+    again = M.advance_task_tree(tree, "T1", head)
+    check("av37 ...and with newer work in it, the same recorded move's copy is "
+          "kept and the paths named, nothing changed",
+          first.get("advanced") is True and _held_still(tree, again, copy, head, before),
+          repr((first.get("kept"), again)))
+    # A git killed part way through its checkout: HEAD still at the base, one
+    # file the head moves already written with the head's bytes. That state is
+    # the move's own, so the next move puts it back and moves; a moved file
+    # holding bytes neither commit has is not, and is held.
+    for cid, body in (("av39", b"b at head\n"), ("av40", b"bytes neither commit has\n")):
+        tree, base, head, copy = _settle_tree("advance-partial-%s-" % (cid,))
+        killed, _said = _armed([], lambda: M.advance_task_tree(
+            tree, "T1", head, run=_first_kill_runner(head, False)))
+        with open(os.path.join(tree, "b.txt"), "wb") as fh:
+            fh.write(body)
+        before = (_av_bytes(tree, ("a.txt", "b.txt", "c.txt")), _av_status(tree))
+        again = M.advance_task_tree(tree, "T1", head)
+        if cid == "av39":
+            check("av39 ALLOW: a checkout git left part way - HEAD at the base, a "
+                  "file the head moves already holding the head's bytes - is the "
+                  "move's own state: the next move puts it back and moves, nothing "
+                  "kept",
+                  killed and again.get("advanced") is True and not again.get("kept")
+                  and _av_head(tree) == head and not os.path.exists(copy)
+                  and _av_bytes(tree, ("a.txt", "b.txt")) == {
+                      "a.txt": b"the task's a\n", "b.txt": b"b at head\n"},
+                  repr((killed, again)))
+        else:
+            check("av40 ...and a file the head moves holding bytes NEITHER commit has "
+                  "is newer work: held, named, no byte changed",
+                  killed and again.get("advanced") is False
+                  and again.get("kept") == copy and "b.txt" in (again.get("error") or "")
+                  and _av_head(tree) == base
+                  and (_av_bytes(tree, ("a.txt", "b.txt", "c.txt")),
+                       _av_status(tree)) == before,
+                  repr((killed, again)))
+
+
+def _first_kill_runner(head, after):
+    """A runner that dies at the checkout of `head`, before or after git runs
+    it."""
+    def dying(cwd, args, timeout=60):
+        at = args[:3] == ["checkout", "-q", "--detach"] and head in args
+        if at and not after:
+            raise _Killed("before the checkout")
+        done = M._git(cwd, args, timeout)
+        if at and after:
+            raise _Killed("after the checkout")
+        return done
+    return dying
+
+
+def _advance_sync_cases(check):
+    """The copy's `index.json` is written last so that one present means the
+    copy is whole - which holds through a power cut only when every byte before
+    it, and the names in its directory, reached the disk before it did."""
+    tree, base, head, copy = _settle_tree("advance-sync-")
+    events = []
+    real_fsync, real_aside = M.os.fsync, M._write_aside
+
+    def fsyncing(fd):
+        events.append(("fsync", os.fstat(fd).st_ino))
+        return real_fsync(fd)
+
+    def aside(path, data, *rest, **kw):
+        if os.path.basename(path) == M.COPY_INDEX:
+            where = os.path.dirname(path)
+            events.append(("index", sorted(
+                os.stat(os.path.join(where, name)).st_ino for name in os.listdir(where)
+                if not name.startswith(".")), os.stat(where).st_ino))
+        return real_aside(path, data, *rest, **kw)
+
+    def watching(cwd, args, timeout=60):
+        if args[:1] == ["checkout"] and os.path.isdir(copy):
+            events.append(("checkout", os.stat(os.path.join(copy, M.COPY_INDEX)).st_ino
+                           if os.path.exists(os.path.join(copy, M.COPY_INDEX)) else None))
+        return M._git(cwd, args, timeout)
+    _ok, said = _armed([(lambda: setattr(M.os, "fsync", fsyncing),
+                         lambda: setattr(M.os, "fsync", real_fsync)),
+                        (lambda: setattr(M, "_write_aside", aside),
+                         lambda: setattr(M, "_write_aside", real_aside))],
+                       lambda: M.advance_tree(tree, base, head, run=watching))
+    at = [i for i, e in enumerate(events) if e[0] == "index"]
+    first_git = [i for i, e in enumerate(events) if e[0] == "checkout"]
+    wrong = []
+    if not at or not first_git:
+        wrong.append("index.json was never written aside before a checkout")
+    else:
+        synced_before = set(e[1] for e in events[:at[0]] if e[0] == "fsync")
+        files, where = events[at[0]][1], events[at[0]][2]
+        wrong += ["a copy file not synced before index.json"] * bool(
+            set(files) - synced_before)
+        wrong += ["the copy's directory not synced before index.json"] * (
+            os.name != "nt" and where not in synced_before)
+        synced_after = set(e[1] for e in events[at[0]:first_git[0]] if e[0] == "fsync")
+        index_ino = events[first_git[0]][1]
+        wrong += ["index.json not synced before the first checkout"] * (
+            index_ino not in synced_after)
+        wrong += ["the directory not synced again before the first checkout"] * (
+            os.name != "nt" and where not in synced_after)
+    check("av38 the copy's files and its directory reach the disk before its "
+          "index.json is written, and index.json and the directory again before "
+          "git moves anything - so an index.json present means a whole copy",
+          said.get("advanced") is True and not wrong
+          and any(e[0] == "index" and e[1] for e in events),
+          repr((wrong, events[:12], said.get("error"))))
+
+
+# The task's work in the kill fixture, beside a deletion of d.txt; the record
+# paths under docs/ hold the head's bytes, as a drive's refresh leaves them.
+# Enough files that a write made once per held path is made more times than a
+# fixed number of kills per point would reach.
+_KILL_WORK = dict([("a.txt", b"the task's a\n"), ("n/new.txt", b"a file the task added\n")]
+                  + [("w/%d.txt" % (i,), b"work file %d\n" % (i,)) for i in (1, 2, 3)])
+# "git-before" and "git-after" are each git call that WRITES, killed before it
+# runs and after: a kill before a read leaves the disk as the kill after the
+# write before it does, so the writes are where the states a kill can leave
+# differ. "rmtree" is a removal of the copy left half done; the rest are the
+# module's own functions, each a point a process can die at.
+_KILL_POINTS = ("git-before", "git-after", "rmtree", "_put", "_write_aside",
+                "_write_synced", "write_record", "_keep_copy", "_drop_copy", "_undo",
+                "_settle", "_resume")
+_GIT_WRITES = ("checkout", "rm", "add", "reset", "read-tree", "update-index")
+
+
+def _kill_repo(n):
+    """`(root, repo, base, head)`: base holds a.txt, b.txt, d.txt and a record;
+    the head moves b.txt and the records."""
+    return _av_pair(
+        "advance-kill%d-" % (n,),
+        {"a.txt": b"a\n", "b.txt": b"b\n", "d.txt": b"d\n", "docs/r.json": b"{}\n"},
+        {"b.txt": b"b at head\n", "docs/r.json": b"{\"h\": 1}\n",
+         "docs/j.jsonl": b"row at head\n"})
+
+
+def _kill_fixture(n, made=None):
+    """`(tree, base, head)`: a marked task tree at `base` holding the work, its
+    head having moved b.txt and the record paths - cut from `made` (a
+    `_kill_repo`) when given, so a run of kills shares one repository."""
+    root, repo, base, head = made or _kill_repo(n)
+    tree = _av_plain_tree(root, repo, base, "t%d" % (n,), dict(_KILL_WORK, **{
+        "docs/r.json": b"{\"h\": 1}\n", "docs/j.jsonl": b"row at head\n"}))
+    os.remove(os.path.join(tree, "d.txt"))
+    _av_marked(tree, base)
+    return tree, base, head
+
+
+def _kill_settled(tree, head):
+    """What is wrong with `tree` after a killed move and the next one: [] when
+    HEAD and the marker agree on the head, the work reads back, no copy is
+    left, and what an integration would carry against the marker's base -
+    the tracked paths that differ from it plus the untracked ones, records
+    left out - is the work and only the work. Read without touching the
+    index, so the reading changes nothing it reads."""
+    wrong = []
+    record = M.read_provenance(tree, expect_task="T1").get("record") or {}
+    marked, steps = record.get("base"), record.get("baseMoves") or []
+    if _av_head(tree) != head or marked != head:
+        wrong.append("HEAD %s, marker %s" % (_av_head(tree)[:7], str(marked)[:7]))
+    if [s.get("to") for s in steps] != [head]:
+        wrong.append("the marker records %d moves, not the one to the head" % (len(steps),))
+    if _av_bytes(tree, sorted(_KILL_WORK) + ["d.txt"]) != dict(_KILL_WORK, **{"d.txt": None}):
+        wrong.append("work bytes")
+    carried = set(_harness.git(tree, "diff", "--name-only", "-z", str(marked)).split("\0"))
+    carried |= set(_harness.git(tree, "ls-files", "-o", "--exclude-standard", "-z").split("\0"))
+    carried = sorted(p for p in carried if p and not _av_record(p))
+    if carried != sorted(list(_KILL_WORK) + ["d.txt"]):
+        wrong.append("integration would carry %s" % (carried,))
+    if os.path.exists(os.path.join(M.admin_dir(tree), M.ADVANCE_BACKUP)):
+        wrong.append("a copy is left")
+    return wrong
+
+
+def _kill_held(tree, head, again):
+    """[] when `again` HELD the tree rather than settling it, and held it
+    safely: kept and said why, the copy it keeps holding the task's work byte
+    for byte, and one more move over the tree changing no byte of it."""
+    kept = again.get("kept") or ""
+    if not kept or not again.get("error"):
+        return ["neither settled nor held: kept %r" % (kept,)]
+    try:
+        copied, _meta, _index = M._read_copy(kept)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        return ["the kept copy %s cannot be read: %s" % (kept, exc)]
+    lost = [rel for rel, body in sorted(_KILL_WORK.items())
+            if (copied.get(rel) or (None, None))[1:2] != (body,)]
+    lost += ["d.txt"] * (copied.get("d.txt") != ("absent",))
+    if lost:
+        return ["the kept copy does not hold the work: %s" % (lost,)]
+    rels = sorted(_KILL_WORK) + ["b.txt", "d.txt", "docs/r.json", "docs/j.jsonl"]
+    before = (_av_head(tree), _av_bytes(tree, rels), _av_status(tree))
+    once_more = M.advance_task_tree(tree, "T1", head, is_record=_av_record)
+    if (_av_head(tree), _av_bytes(tree, rels), _av_status(tree)) != before \
+            or not once_more.get("kept"):
+        return ["a move over the held tree changed it: %r" % (once_more,)]
+    return []
+
+
+def _kill_arm(point, k, hits):
+    """`(install, restore)`: count each call of `point` in `hits[point]` and
+    raise `_Killed` at call `k` (0 counts only) - None when the module has no
+    such point. The git points count the writing git calls, through whatever
+    runner the move was handed; "rmtree" a removal of the copy, left half
+    done."""
+    def hit():
+        hits[point] = hits.get(point, 0) + 1
+        return hits[point] == k
+    if point in ("git-before", "git-after"):
+        # Wraps whatever runner stands when installed, so both git points
+        # count at once on the counting run.
+        under = []
+
+        def runner(run):
+            fn = under[-1](run)
+
+            def dying(cwd, args, timeout=60):
+                if args[:1] and args[0] not in _GIT_WRITES:
+                    return fn(cwd, args, timeout)
+                dies = hit()
+                if dies and point == "git-before":
+                    raise _Killed("before git write %d" % (k,))
+                done = fn(cwd, args, timeout)
+                if dies:
+                    raise _Killed("after git write %d" % (k,))
+                return done
+            return dying
+
+        def install():
+            under.append(M._runner)
+            M._runner = runner
+        return install, lambda: setattr(M, "_runner", under.pop())
+    if point == "rmtree":
+        real_rmtree = M.shutil.rmtree
+
+        def half(path, *rest, **kw):
+            if M.ADVANCE_BACKUP not in str(path) or not hit():
+                return real_rmtree(path, *rest, **kw)
+            held = sorted(os.listdir(path)) if os.path.isdir(path) else []
+            if held:
+                os.remove(os.path.join(path, held[0]))
+            raise _Killed("rmtree #%d" % (k,))
+        return (lambda: setattr(M.shutil, "rmtree", half),
+                lambda: setattr(M.shutil, "rmtree", real_rmtree))
+    real = getattr(M, point, None)
+    if real is None:
+        return None
+
+    def armed(*args, **kw):
+        if hit():
+            raise _Killed("%s #%d" % (point, k))
+        return real(*args, **kw)
+    return (lambda: setattr(M, point, armed), lambda: setattr(M, point, real))
+
+
+def _armed(arms, call):
+    """`call()` with every arm installed: `(killed, answer)`."""
+    for install, _restore in arms:
+        install()
+    try:
+        return False, call()
+    except _Killed:
+        return True, None
+    finally:
+        for _install, restore in reversed(arms):
+            restore()
+
+
+def _scribbler(tree, head):
+    """A runner whose checkout of `head` succeeds and then finds the task's
+    a.txt holding bytes the move never should have written - so the move's own
+    check fails and its undo runs."""
+    def scribble(cwd, args, timeout=60):
+        done = M._git(cwd, args, timeout)
+        if args[:3] == ["checkout", "-q", "--detach"] and head in args \
+                and done[0] == 0:
+            with open(os.path.join(tree, "a.txt"), "wb") as fh:
+                fh.write(b"bytes the move should never have written\n")
+        return done
+    return scribble
+
+
+def _first_kill(after):
+    """A move killed once at its checkout of the head - before git runs it, or
+    after - so the move armed next starts by reading the copy that kill left:
+    undoing it, or finishing it."""
+    def prepare(tree, head):
+        killed, _said = _armed([], lambda: M.advance_task_tree(
+            tree, "T1", head, is_record=_av_record,
+            run=_first_kill_runner(head, after)))
+        return killed
+    return prepare
+
+
+# (name, the first kill or None, a move whose check fails, may the end be a
+# hold, the window armed). A hold is the answer when a kill lands where the
+# tree holds bytes neither the copy nor the move wrote - inside an undo after
+# git's forced checkout, or after a check that found the work scribbled over -
+# and the next move keeps the copy rather than force over them. The window is
+# the calls made inside one function (to the end of the run when its flag is
+# set): what the plain move already arms is not armed again.
+_KILL_SCENARIOS = (
+    ("a move", None, False, False, None),
+    ("the resume that undoes a move killed before its checkout",
+     _first_kill(False), False, True, ("_resume", False)),
+    ("the resume that finishes a move killed after its checkout",
+     _first_kill(True), False, False, ("_resume", False)),
+    ("the undo of a move whose check fails, and what follows it", None, True,
+     True, ("_undo", True)),
+)
+
+
+def _window_arm(name, hits, marks):
+    """`(install, restore)`: record in `marks` the counts `hits` held when the
+    function `name` was first entered ("in") and last left ("out")."""
+    under = []
+
+    def marked(*args, **kw):
+        marks.setdefault("in", dict(hits))
+        try:
+            return under[-1](*args, **kw)
+        finally:
+            marks["out"] = dict(hits)
+
+    def install():
+        under.append(getattr(M, name))
+        setattr(M, name, marked)
+    return install, lambda: setattr(M, name, under.pop())
+
+
+def _kill_outcome(tree, head, again, may_hold):
+    """`(wrong, held)` for the move made after the kills."""
+    wrong = _kill_settled(tree, head)
+    if not (again.get("advanced") or again.get("already")) or again.get("kept"):
+        wrong.append("the next move: %s" % ((again.get("error") or (
+            again.get("refusal") or {}).get("why") or "not advanced")[:200],))
+    if not wrong:
+        return [], False
+    if not may_hold:
+        return wrong, False
+    hold = _kill_held(tree, head, again)
+    return (wrong + hold, False) if hold else ([], True)
+
+
+def _advance_kill_cases(check):
+    """A move killed at any point it reaches - every call of every point, in a
+    plain move, in the resume that undoes or finishes a move an earlier kill
+    cut short, and in a move whose own undo runs - and then made again ends
+    with the tree, its marker and what an integration would carry agreeing, or
+    held with the work safe in its copy. The calls are COUNTED on an unarmed
+    run first and every one of them armed in turn, so no point is capped at a
+    fixed number of kills and a write added later is armed too."""
+    failures, counts, kills, holds, n = [], {}, 0, [], [0]
+
+    def move(tree, head, scribbles):
+        return lambda: M.advance_task_tree(
+            tree, "T1", head, is_record=_av_record,
+            run=_scribbler(tree, head) if scribbles else None)
+    for name, prepare, scribbles, may_hold, window in _KILL_SCENARIOS:
+        n[0] += 1
+        made = _kill_repo(n[0])
+
+        def fixture():
+            n[0] += 1
+            return _kill_fixture(n[0], made)
+        tree, _base, head = fixture()
+        if prepare is not None and not prepare(tree, head):
+            failures.append((name, "the first kill never landed"))
+            continue
+        hits, marks = {}, {}
+        arms = [_kill_arm(p, 0, hits) for p in _KILL_POINTS]
+        missing = [p for p, a in zip(_KILL_POINTS, arms) if a is None]
+        if missing:
+            failures.append((name, "no such point in the module: %s" % (missing,)))
+        arms = [a for a in arms if a] + ([_window_arm(window[0], hits, marks)]
+                                         if window else [])
+        _armed(arms, move(tree, head, scribbles))
+        if window and "in" not in marks:
+            failures.append((name, "%s was never entered" % (window[0],)))
+            continue
+        low = marks.get("in") or {}
+        high = hits if not window or window[1] else marks.get("out") or {}
+        for point in _KILL_POINTS:
+            counts[point] = counts.get(point, 0) + high.get(point, 0) - low.get(point, 0)
+            for k in range(low.get(point, 0) + 1, high.get(point, 0) + 1):
+                tree, _base, head = fixture()
+                if prepare is not None and not prepare(tree, head):
+                    failures.append((name, "the first kill never landed"))
+                    continue
+                arm = _kill_arm(point, k, {})
+                killed, _said = _armed([arm], move(tree, head, scribbles))
+                if not killed:
+                    failures.append(("%s: %s #%d" % (name, point, k), "never reached"))
+                    continue
+                kills += 1
+                again = M.advance_task_tree(tree, "T1", head, is_record=_av_record)
+                wrong, held = _kill_outcome(tree, head, again, may_hold)
+                if wrong:
+                    failures.append(("%s: %s #%d" % (name, point, k), wrong))
+                if held:
+                    holds.append("%s #%d" % (point, k))
+    unreached = sorted(p for p in _KILL_POINTS if not counts.get(p))
+    check("av27 a move killed at every call of every point it reaches - before "
+          "and after each git write, each write of the copy, the marker, the "
+          "index and the work, half way through dropping the copy, and inside "
+          "the undo, the settle and the resume after a first kill - then made "
+          "again ends settled (HEAD and the marker on the head, the work intact, "
+          "no copy left, an integration carrying the work and nothing else) or "
+          "held with the work whole in its copy and nothing forced",
+          not failures and not unreached and kills > len(_KILL_POINTS)
+          and max(c for p, c in counts.items() if not p.startswith("git")) > 3,
+          repr((failures[:4], len(failures), unreached, kills, counts, holds[:8])))
+
 
 def _selftest():
     return _harness.run(_cases)

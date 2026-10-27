@@ -1186,7 +1186,7 @@
     {
       "id": "P142.18-6yq",
       "title": "A task tree follows the phase head when the base moves under it, so a red the phase has since fixed is not charged to the task",
-      "status": "blocked",
+      "status": "in_progress",
       "description": "Observed in P142 on 2026-10-26: four returned tasks (their trees based at d4a26f13 / d92b9c64) went gate-red only on a suite that was red at their base; the phase then landed the fix (b10ddfdd), but a `rerun` still ran in the old tree (the run's testedState.head stayed at the old base), so the only exits were an owner override or a pointless retry. The gate judges a task on a base that is no longer the phase's.\n\nFix the structure: when the drive re-gates (rerun/retry) or before it gates a returned task, and the phase head has moved past the tree's base, bring the task tree to the phase head with the task's work carried - only when none of the task's changed files moved between the two commits (a fast check over `git diff --name-only base..head`); otherwise refuse by name, listing the overlapping files, and leave the tree untouched. Record the base change (old base, new base, the files that moved) in the run's record and in the carry so commit-task-work diffs the task's work against the new base and the stamp/scope digest is unaffected. Never rebase or rewrite a commit; the task tree holds uncommitted work over a detached HEAD, so the move is a checkout of the new head carrying the working-tree changes, verified byte-for-byte on the task's files after the move. Read drive-phase.py's rule \"never rebase - it rewrites the task commit SHAs\" and keep it true.\n\nNote: task P142.12-6yq has uncommitted work in its own tree that also edits drive-phase.py and tests/test_drive_phase.py (sign-off lint probe); keep your drive-phase change small and local to the gate/dispatch path so the two integrate cleanly.\n\nHigh risk: it moves a tree that holds an agent's only copy of its work. Red-first every case. Prove a failure mid-move leaves the work as it was. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/git/_worktrees.py",
@@ -1214,23 +1214,22 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-27T10:22:20Z",
+      "startedAt": "2026-10-27T11:02:17Z",
       "completedAt": null,
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-27T11:01:38Z.935f9e",
+        "runId": "2026-10-27T12:00:51Z.bd8f44",
         "status": "passed",
-        "at": "2026-10-27T11:01:38Z"
-      },
-      "blockedReason": "adversarial delta review (attempt 4): HIGH - _drop_copy swallows a failed rename and both callers report kept=None; a later move's _resume force-undoes from the stale copy over newer work with no error (reproduced, scratchpad p10.py). Fix by invariant: kept derived from the copy's presence on disk after every operation, and no forced undo unless every held path still reads as the copy's bytes or the move's result."
+        "at": "2026-10-27T12:00:51Z"
+      }
     },
     {
       "id": "P142.19-6yq",

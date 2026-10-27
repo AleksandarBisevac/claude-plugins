@@ -1898,6 +1898,12 @@ GIT_PATH_BASE_EXEMPT = (
     ("_worktrees.py", "dirtiness",
      "whether a worktree holds dirt before it is removed: the lines are counted "
      "and quoted back, never compared with a plan entry"),
+    ("_worktrees.py", "_tree_paths",
+     "the tree mover's listings: a task tree's changed paths, the paths that "
+     "moved between two commits and the paths differing from one are compared "
+     "only with each other, read back as bytes and checked out from that same "
+     "tree's top; the record test the mover is handed takes git-root paths "
+     "(drive-phase passes _invariants.record_rels), never a plan entry"),
     ("close-phase.py", "_link_texts",
      "the symbolic-link entries of one scratch work tree, asked by the paths "
      "that same tree was checked out with"),
@@ -2339,6 +2345,16 @@ STATE_WRITERS = (
      "the same writer on the hooks/ side of the layer rule. hooks/ may import "
      "nothing from scripts/, so the pattern is stated a second time here rather "
      "than shared; both take a temp name of their own."),
+    ("scripts/git/_worktrees.py", "_write_aside",
+     "a task tree's marker and its git index put back after an undone move are "
+     "written as BYTES (the index is binary), and _manifest_io's writer is a "
+     "layer-mate this module cannot import. Its temp name is mkstemp's own, in "
+     "the target's directory, removed on any failure."),
+    ("scripts/git/_worktrees.py", "_drop_copy",
+     "a rename takes a task tree's copy directory out of its own name before it "
+     "is removed, so a process killed mid-removal leaves no half copy for the "
+     "next move to read. That is an atomic take of a name, not a file written, "
+     "and no writer could express it."),
     ("scripts/panel/_panel_write.py", "restore",
      "the panel's rollback puts snapshotted BYTES back, including files that are "
      "not text; a text writer would re-encode them. Its temp name is mkstemp's "

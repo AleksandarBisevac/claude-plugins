@@ -363,7 +363,7 @@ import _gate_derive  # noqa: E402  (entry_collector: what collects a gate entry'
 import _tree_stamp  # noqa: E402  (parse_stamp, declared_scope: the scope a filing was made under)
 import _clause_coverage as _cc  # noqa: E402  (check: whether the writer answered every clause)
 import _scope_companions  # noqa: E402  (derive: the runner config a widen declares)
-import _worktrees  # noqa: E402  (read_provenance: whether a kept tree's marker names its task)
+import _worktrees  # noqa: E402  (read_provenance: whether a kept tree's marker names its task; advance_task_tree: a member's tree brought to the phase head)
 import _scoped_commit  # noqa: E402  (plugin_owned_rels: the one table of what the plugin owns under .claude/)
 
 E_OK, E_STOPPED, E_USAGE = 0, 1, 2
@@ -4044,7 +4044,9 @@ def gate_step(ctx, state, manifest, phase, task, tree=None):
     """The task's recorded gate, once per start: None when it is green (and
     marked so), else the decision or stop a red or unrun gate asks."""
     if tree:
-        stop = refresh_member_records(ctx, state, task, tree)
+        stop = advance_member(ctx, state, task, tree)
+        if stop is None:
+            stop = refresh_member_records(ctx, state, task, tree)
         if stop is not None:
             return stop
     code, out, err = task_gate(ctx, state, phase, task, tree)
@@ -4163,6 +4165,7 @@ INTEGRATION_STATE = "audit-wave-integration.json"
 # `manage-worktrees.py task-add`'s exit when the tree was made and its declared
 # setup failed in it: could-not-run, never a red.
 SETUP_FAILED = 6
+TASK_TREE_ADVANCED = "task.tree.advanced"
 # Returned by `wave_step` when no wave applies, so the serial step runs; None
 # already means "a step was taken, go round again".
 NO_WAVE = object()
@@ -4337,6 +4340,69 @@ def refresh_member_records(ctx, state, task, tree):
         write_state(ctx, state)
     ctx["did"].append("records of %s at %s" % (
         task["id"], (answer.get("head") or "?")[:7]))
+    return None
+
+
+def advance_member(ctx, state, task, tree):
+    """Bring a member's tree to the phase HEAD before its gate is measured,
+    when the phase has moved past the base the tree was cut at. None, or the
+    stop.
+
+    A tree measured at its old base charges the task with a red the phase has
+    since fixed, and a rerun there measures the same base again. The move is
+    `_worktrees.advance_task_tree`: a checkout of the head carrying the
+    uncommitted work, never a rebase - the tree holds no commit to rewrite -
+    refused by name when the task changed a file that moved, checked byte for
+    byte after, and recorded in the tree's marker, whose base is what the
+    integration diffs the work against. The record paths - `record_rels` asked
+    now, beside any the wave cached - are the drive's own refresh, not the
+    task's work: a tree adopted by a later wave holds refreshed records before
+    this wave has cached a single one. A refused move leaves the tree where it
+    was and is said on the did-line; the gate then measures it there, as it did
+    before. An answer that `kept` a copy of the work beside the tree - a move
+    not put back or not recorded, newer work the copy does not account for, a
+    copy that would not come down, or one nobody can read - stops the drive:
+    `kept` is advance_task_tree's one word for a tree that is not settled, read
+    off the disk as the answer is made."""
+    wave = state.get("wave") or {}
+    base = (wave.get("bases") or {}).get(task["id"])
+    head = git_head(ctx)
+    if not base or not head or base == head:
+        return None
+    _manifest, phase = load_phase(ctx)
+    records = list(dict.fromkeys(_invariants.record_rels(
+        ctx["manifest"], phase, ctx["project"], ctx["gitRoot"])
+        + list(wave.get("records") or [])))
+
+    def is_record(rel):
+        return _invariants.is_record_path(rel, records)
+    said = _worktrees.advance_task_tree(tree, task["id"], head, at=_utc_stamp(),
+                                        is_record=is_record)
+    if said["kept"]:
+        return _stopped(ctx, "the tree of %s at %s is not settled - a copy of its "
+                        "work stays at %s: %s. Nothing runs in that tree until "
+                        "the next drive settles it or a human has read the copy"
+                        % (task["id"], tree, said["kept"], _clip(said["error"], 400)))
+    if not (said["advanced"] or said["already"]):
+        ctx["did"].append("tree of %s stays at %s, not moved to the phase head "
+                          "%s: %s" % (task["id"], base[:12], head[:12], _clip(
+                              (said["refusal"] or {}).get("why") or said["error"]
+                              or "no reason given", 300)))
+        return None
+    wave.setdefault("bases", {})[task["id"]] = head
+    write_state(ctx, state)
+    if said["already"]:
+        return None
+    moved = [p for p in said["moved"] if not is_record(p)]
+    base = said["from"] or base
+    wave_row(ctx, TASK_TREE_ADVANCED, "%s: tree moved from %s to %s with its work; "
+             "%d file(s) moved under it" % (task["id"], base[:12], head[:12],
+                                            len(moved)), {
+                 "taskId": task["id"], "phaseId": ctx["phase"], "commit": head,
+                 "parent": base, "changes": [{"id": p, "field": "path"}
+                                             for p in moved]})
+    ctx["did"].append("tree of %s moved from %s to the phase head %s, its work "
+                      "carried" % (task["id"], base[:7], head[:7]))
     return None
 
 
