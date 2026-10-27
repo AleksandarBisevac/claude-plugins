@@ -926,7 +926,7 @@
     {
       "id": "P142.12-6yq",
       "title": "The sign-off lint probe is named by the plan, reports a held run by what it did, fits the print budget, and bounds and scopes its restore check",
-      "status": "in_progress",
+      "status": "blocked",
       "description": "Review findings on the sign-off lint probe that P142.6 added to drive-phase.py `lint_probe()` (fix them together, they share the function):\n- R3 (med): the hold stores only the HEAD, so a re-entry at the same HEAD after a run that printed `ran none` reports `lint probe green (held at this HEAD)`. Store the outcome word with the hold and print it back; a held ran-none run says ran none.\n- R4 (med): the success print is over INSTRUCTION_BYTES (300) with the probe clause. Shorten or merge the clause so every non-stop print fits, and make the byte-budget case measure a fixture that HAS a probe.\n- R5 (med): the shipped driver runs whatever sits at the hard-coded `tools/prove-gates.py`. The probe must be named by the plan: read a `meta.buildCommands` key (name it `lintProbe`; the driver appends `--changed <paths>`), and a plan without the key skips the step and says so in the did-line. The orchestrator sets the key on this repo's plan with `/audit:task build-command`; do not edit docs/audit.\n- R6 (low): the restore check compares status letters only; compare contents (hash) of files already modified before the run, and word the stop so it does not tell the operator to discard another session's edits.\n- R7 (low): give the probe run a timeout derived from the drive's own budget, and report a timeout as a stop naming it.\n- R8 (low): lp6's other-HEAD twin passes head=None; use a different SHA so a hold that ignores the head goes red.\nUpdate phase-signoff.md step 4b to match. Red-first each case against today's code. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -987,7 +987,8 @@
         "runId": "2026-10-27T12:33:38Z.d4ce2c",
         "status": "failed",
         "at": "2026-10-27T12:33:38Z"
-      }
+      },
+      "blockedReason": "waits on the fix for a refused tree move: its work overlaps files the head moved, the mover refused, and the gate ran at the old base d4a26f13 charging te11/ln1 the head fixed; no offered answer recuts the tree. Unblock and redo once the drive offers the recut."
     },
     {
       "id": "P142.13-6yq",
@@ -1052,7 +1053,7 @@
     {
       "id": "P142.14-6yq",
       "title": "The sweep's block scheduler is described where it runs and where it is documented, and its per-block timeout has a case that can go red",
-      "status": "in_progress",
+      "status": "done",
       "description": "Review findings on the sweep's block scheduler (the two tasks before this one split suites into blocks and made blocks the sweep's unit):\n- med: the per-block timeout calibration (tools/sweep-selftests.py, the file_timeout call for a staged block) has no case behind it - every staged fixture passes empty or no costs, and the fixtures that pass costs carry no STAGES table so they reach the whole-suite fallback. Add a fixture with a STAGES table and a cost table, a ghost-only table, and a deadline variant; prove each red by mutating the calibration.\n- med: descriptions of the retired grant model are now false - CLAUDE.md (the paragraph on staged suites admitted with stage_grant slots), CONTRIBUTING.md (same rule), the .github/workflows/ci.yml comment beside the sweep shard matrix, sweep()'s docstring (ordering by run_order), and the costs_from_rows / shard comment / record_costs \"about\" text (\"wall seconds times the slots\", which --record-costs writes into .github/sweep-costs.json). State the block model once and point at it.\n- low: sh6 is titled \"a shard runs its costliest files FIRST\" but tests run_order, which sweep() no longer calls; make it test the order sweep() submits in.\n- low: tests/_harness.py replayed() keeps only the first entry for a duplicated label; a block run twice must fail by name.\n- low: bb1's overlap clause relies on a 0.3 s nap across interpreter starts; read the per-process windows instead.\nNo number in prose; no F/P/BUG ids in comments.",
       "files": [
         "tools/sweep-selftests.py",
@@ -1079,19 +1080,35 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9eeea6d54c7d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Attempt 2 re-read attempt 1's work in the tree against the brief and found it correct; no source change this attempt. Work: tools/sweep-selftests.py gains bt1-bt3 (staged fixture WITH a STAGES table: costs table gives each block ceil(3*1000/4)=750 on one slot; ghost-only table gives 1125, above the floor; deadline=60 cuts each block to 0<t<=60), sh6 rewritten to start order of a real sweep(jobs=1) == work_items order [b-heavy, c-split:s1..s3, a-light] (differs from path order and run_order), bb1 reads per-process windows from the row; prose: the blocks-not-suites comment above work_items() is the one statement of the model, sweep()/run_order/costs_from_rows/shard comment/record_costs about text corrected. tests/_harness.py: replayed() returns (results, strays, twice), replay_selftest fails a label run more than once by name, new case sr18. CLAUDE.md, CONTRIBUTING.md, ci.yml: grant-model sentences replaced by the block model in brief plus a pointer. Evidence this attempt (all from the task tree): python3 tools/sweep-selftests.py --selftest exit 0, 138/138; python3 tests/_harness.py --selftest 90/90; own gate run-test-gate.py docs/audit/audit-plan.json P142 --task P142.14-6yq --own --quiet --tree <tree> exit 0 GATE GREEN. Mutations on file_timeout call in one_block (each restored by Edit; git diff --stat identical before/after; __pycache__ purged between cycles): slots grant->1 => bt1 and bt2 FAIL (136/138; bt2 told 4500 at one slot); deadline min(cap_timeout,left) removed in child() => bt3 FAIL, plus tt2 and tt3 (135/138); staged=True->False => bt2 FAIL (137/138). Not proved by mutation in this attempt: sh6 and bb1 reworks, sr18. Not edited: .github/sweep-costs.json about text still says wall seconds times the slots; record_costs rewrites it on the next --record-costs. Earlier attempt noted tests/test__output_lints.py te11/ln1 red on tests/test__runner_output.py:469, a file not in this task; not rerun this attempt (the phase head fixed it per the orchestrator). DEPENDANTS: tools/sweep-selftests.py readers (evals.json, _output.py, _filed_returns.py, stamp-verification.py, _runner_collects.py, _runner_output.py): output format, row shape, budget line and constants unchanged - still correct; .github/sweep-costs.json: format unchanged, about text stale until next --record-costs; ci.yml: comment only, no job/slice/timeout-minutes changed - still correct; budget_line, coverage_findings, locale_decision, named_suites: signatures and behaviour unchanged - still correct. tests/_harness.py importers (test__ado_*, test__affected_tests, ...): run/check/fixture_root/staged_main unchanged; replayed() changed return shape, no caller outside _harness.py (attempt 1 git grep) - still correct; _group_present, _labels, _load_sweep (docstring only), _pid_present unchanged. CLAUDE.md and CONTRIBUTING.md readers by basename (guard-history-rewrite.py, test__output_lints, test__deps, test__areas, test_derive_phase_gate, tools/affected.py, check-committed-pii, check-example-ledgers, check-prohibitions, evals.json, _output.py): only the sweep paragraph changed - still correct.",
+        "descriptive": "The sweep's block model is stated once where it runs and the docs point there; a block's timeout calibration, its ghost fallback and its deadline cut each have a case that goes red when the calibration is mutated; submission order is read off a real run."
       },
       "startedAt": "2026-10-27T12:16:48Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-27T12:49:58Z",
+      "verifiedBy": [
+        "bt1-bt3: staged fixture with STAGES table and cost table, ghost-only table, and deadline variant, each read off the SWEEP_FILE_TIMEOUT and slots the block was told",
+        "sh6: order sweep() actually starts jobs equals work_items order",
+        "bb1: overlap read from per-process windows",
+        "sr18: replayed() fails a label run twice by name (in tests/_harness.py)"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-27T12:45:43Z.283ded",
         "status": "passed",
         "at": "2026-10-27T12:45:43Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "9eeea6d54c7d",
+        "at": "2026-10-27T12:49:58Z",
+        "return": "docs/audit/evidence/returns/P142.14-6yq/20261027T121648Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "mode regression, expectRedFirst false: no red owed before the fix. The cases were instead proved red by mutating the calibration in the task tree and restoring (see outcome.technical).",
+        "at": "2026-10-27T12:20Z"
       }
     },
     {
