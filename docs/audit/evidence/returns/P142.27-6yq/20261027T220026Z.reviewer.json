@@ -1,0 +1,19 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": ".github/sweep-costs.json:2",
+   "issue": "The committed cost table's about text still reads 'wall seconds times the slots of the sweep's budget the file held', which the edited record_costs string (tools/sweep-selftests.py:1624-1630) now contradicts for a block-run suite. The generator and the file it writes disagree until a re-record, and no live task holds that: the tasks that named the re-record and the about text are both cancelled, and no case compares the two.",
+   "resolution": "File a task that either replaces the about string in the table with the bytes record_costs now writes (no cost values touched) or re-records the table from the Windows cells' logs, and name the file in its scope."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "The task asked that the stale grant-model wording be rewritten to the block model, in CLAUDE.md, CONTRIBUTING.md, ci.yml, sweep()'s docstring, costs_from_rows, the shard comment and the record_costs 'about' string, with sweep()'s docstring naming work_items. Read against HEAD: CLAUDE.md lines 239-242 and ci.yml lines 134-135 state the block model and point to the 'blocks, not suites' comment; sweep()'s docstring names work_items; costs_from_rows' docstring counts a block-run suite as the sum over its blocks and replay and a whole-run file as wall seconds times slots; the shard comment defers to costs_from_rows. The remaining stage_grant and SWEEP_STAGE_GRANT mentions in CONTRIBUTING.md 346-347 describe only the whole-run fallback for a table that is not a literal, which matches the fallback comment (1664-1666) and budget_line. The one stale string, record_costs' about text, is rewritten and matches suite_ran (1726-1731: grant 1, seconds summed over blocks and replay) and costs_from_rows (seconds times grant). The executor's outcome describes this diff: only tools/sweep-selftests.py changed, inside a string literal, and CLAUDE.md, CONTRIBUTING.md and ci.yml are byte-unchanged, so every listed dependant is unaffected, as claimed. The clause that the committed sweep-costs.json gets the new text on the next record is true, but see finding 1: nothing holds that re-record.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "The executor filed not-attempted: tests.expectRedFirst is false on this tdd task and it names no case. tests.add is empty, so no added test exists to be seen red; I did not grade a green run as a proof.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "tests.gate's selftests entry is `python3 tools/sweep-selftests.py`, which runs the whole tree, so the bound the question needs does not exist. The diff changes only a string literal that no case pins (git grep for the string's old wording finds only the source line)."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

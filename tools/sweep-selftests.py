@@ -1622,10 +1622,12 @@ def record_costs(path, rows, swept, jobs, platform=None):
     merged = dict((k, v) for k, v in old.items() if k in swept)
     merged.update(costs_from_rows(rows))
     data = {"about": "Per-file slot-seconds of each `--selftest` - what the "
-                     "file took out of the sweep's budget: the seconds of each "
-                     "process it ran as, times the slots that process held "
-                     "(one per block of a suite run block by block) - "
-                     "written by "
+                     "file took out of the sweep's budget: each process it "
+                     "ran as, its seconds times the slots it held, summed. A "
+                     "suite run block by block ran one process per block and "
+                     "one replay, each on one slot, so its figure is those "
+                     "processes' seconds summed; a file run whole is its "
+                     "seconds times the slots it held - written by "
                      "`python3 tools/sweep-selftests.py --record-costs "
                      ".github/sweep-costs.json`, or from a saved windows CI "
                      "log with `--costs-from-log`. `--shard` reads how files "
