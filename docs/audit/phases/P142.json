@@ -1261,23 +1261,23 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 2,
+      "attempts": 3,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-27T06:58:29Z",
+      "startedAt": "2026-10-27T07:21:30Z",
       "completedAt": null,
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-27T07:20:47Z.699e5a",
+        "runId": "2026-10-27T08:17:45Z.b2a448",
         "status": "passed",
-        "at": "2026-10-27T07:20:47Z"
+        "at": "2026-10-27T08:17:45Z"
       },
-      "blockedReason": "High-risk not confirmed: adversarial opus review reproduced H1 (the own-work release accepts a return filed outside an in_progress attempt or read unchecked - two plugin verbs clear the refusal) and H2 (the task-tree release clears the holder, not the change; a restart then commits the holder's edit), plus M1-M3. Attempt 3 redesigns the release around per-path evidence, failing closed."
+      "blockedReason": "High-risk not confirmed yet: the re-review closed both highs but reproduced MED-1 (a holder working inline in the same checkout and writing while blocked is released, and the commit carries its edit) and a MED residual in commit-task-work (it never checks the task's status; a never-started task's commit sweeps a held edit). Attempt 4 closes both."
     }
   ],
   "request": "neka njihov dokument bude osnova! I u odnosu na to treba napraviti plan implementacije",
