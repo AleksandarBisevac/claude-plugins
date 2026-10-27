@@ -4483,12 +4483,25 @@ task cycle, fix-task and close spans from them, since those steps run in subproc
 session's stream never shows.
 
 **A wave's edges.** A member whose integration the phase tree refuses is offered `redo` and
-`block`, never `retry`: `redo` (`recut_tree`) reads the member's work from its tree as one binary
-patch, keeps it in a file of the state directory, takes the tree down, cuts a new one at the
-phase HEAD, applies the patch there and clears the gate mark so the gate is measured over the new
-tree - no executor is dispatched and no attempt is spent, because the work was not what failed
-(`wd1`-`wd4`). A patch the new base refuses stops the drive and names the file the work is kept
-in. Before a wave opens, `hooks_width` asks `_doctor_setup.hooks_task_binding` whether the hooks
+`block`, never `retry`, and so is a member whose tree the mover would not bring to the phase
+head because its work changes files that moved there - the one refusal whose `kind` is
+`_worktrees.REFUSED_WORK_MOVED` (`advance_member` stops at `tree-behind` and records no gate run
+at the base the phase has left, `ar1`). Every other way the mover declines - a tree not at its
+recorded base, one gone or without its marker, a nested repository - stops at `tree-not-moved`,
+which offers `block` alone and gates nothing either (`ar9`, `ar10b`, `ar12`, `ar13`). `redo`
+(`recut_tree`, the one recut for both) refuses before the old tree is touched unless the tree is
+there with its marker and its HEAD at the recorded base, so the work read is exactly that base to
+the working tree (`ar10`, `ar11`); the work is read the way the carry does, the record paths left
+out (`ar4`), and it refuses a link to a nested repository the base lacks (`ar14`), a carry ref
+holding a path the work lacks (`ar8`), or a three-way apply at the head, tried in a scratch index,
+that conflicts - each by name, with the tree and the carry ref as they were (`ar3`, `ar5`). Past
+that it pins the work commit to `refs/audit/redo/<id>`, writes the patch whole and synced into the
+state directory, takes the tree down, cuts a new one at the phase HEAD, applies the work
+three-way, checks every carried path the head did not move byte for byte, and clears the gate
+mark so the gate is measured over the new tree - no executor is dispatched and no attempt is
+spent, because the work was not what failed (`wd1`-`wd4`, `ar2`). A step failing after the old
+tree came down stops the drive naming the kept patch, and nothing runs in that member's tree
+until a human has applied it or taken it away (`ar6`, `ar7`). Before a wave opens, `hooks_width` asks `_doctor_setup.hooks_task_binding` whether the hooks
 Claude Code loads - the copy `installed_plugins.json` records and the live copies the hook run
 records name - define the task-tree binding the plan gate judges a wave's trees by: a copy that
 lacks it runs the phase at width 1 and the print says which copy and why, a copy that carries it

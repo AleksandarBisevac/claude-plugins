@@ -1649,7 +1649,8 @@
       "P138.5-myr",
       "P142.1",
       "P142.12-6yq",
-      "P142.19-6yq"
+      "P142.19-6yq",
+      "P142.20-6yq"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -4295,7 +4296,8 @@
       "P131.2",
       "P131.6",
       "P131.10",
-      "P142.2"
+      "P142.2",
+      "P142.23-6yq"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -4768,7 +4770,8 @@
       "P138.2",
       "P138.3-myr",
       "P142.1",
-      "P142.19-6yq"
+      "P142.19-6yq",
+      "P142.22-6yq"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -8162,7 +8165,8 @@
       "P142.2",
       "P142.8",
       "P142.11-6yq",
-      "P142.14-6yq"
+      "P142.14-6yq",
+      "P142.21-6yq"
     ],
     "tools/ui-tests/evidence-badge.test.mjs": [
       "P32.7",
@@ -10909,7 +10913,8 @@
       "P131.19-dau",
       "P138.4-myr",
       "P142.1",
-      "P142.18-6yq"
+      "P142.18-6yq",
+      "P142.20-6yq"
     ],
     "tools/lints/_refs.py": [
       "P130.8",
@@ -11061,7 +11066,8 @@
       "P134.1",
       "P137.6-3y3",
       "P142.11-6yq",
-      "P142.14-6yq"
+      "P142.14-6yq",
+      "P142.21-6yq"
     ],
     "tests/fixtures/pricing-page-2026-10-10.md": [
       "P131.1"
@@ -11471,7 +11477,8 @@
       "P138.2",
       "P138.3-myr",
       "P142.1",
-      "P142.19-6yq"
+      "P142.19-6yq",
+      "P142.22-6yq"
     ],
     "tests/test_audit_usage.py": [
       "P131.1"
@@ -11679,7 +11686,8 @@
       "P131.10",
       "P142.2",
       "P142.8",
-      "P142.9-6yq"
+      "P142.9-6yq",
+      "P142.23-6yq"
     ],
     "tests/test_usage_ledger.py": [
       "P131.1",

@@ -1221,7 +1221,7 @@
     {
       "id": "P142.17-6yq",
       "title": "Every tree walk the last tasks added is either proved by a prove-gates row or declared not a gate",
-      "status": "in_progress",
+      "status": "done",
       "description": "At HEAD `python3 tools/prove-gates.py --selftest` is red (c1 and a4, 43 of 45): tools/affected.py's new `reach_graph` walks the tree, so the derivation reaches it, and it has no TABLE/ALLOW row and no NOT_A_GATE declaration. `reach_graph` builds a graph; it returns no verdict - decide by reading it whether it is a gate; if it is not, declare it in NOT_A_GATE with a reason (the reason is checked in both directions). The task before this one adds `_output_lints.runner_line_end_violations`, a real lint; its executor proved these rows in a scratch copy (verify each still applies exactly once against the landed code, and that each turns its named case red):\nTABLE, after the bc1 row:\n (\"runner_line_end_violations\", L + \"_output_lints.py\", \"replace\", \"def runner_line_end_violations(dirs=None, home=RUNNER_TEXT_HOME, pending=None):\" -> same line + \"\\n    return []\", OUTL, \"le1\")\n (\"runner_line_end_violations\", S + \"governance/run-test-gate.py\", \"replace\", \"    body = _ro.plain_text(text)\\n    if wrapper_words(command):\\n        return False\\n\" -> \"    body = text or \\\"\\\"\\n    if wrapper_words(command):\\n        return False\\n\", OUTL, \"le4\")\nALLOW: three rows on _output_lints.py turning le2 / le2 / le3 red: drop the home-module filter, empty the normaliser call-name tuple, and report sites listed as pending.\nThen run `python3 tools/prove-gates.py --only runner_line_end` and `python3 tools/prove-gates.py --selftest`; both green. No F/P/BUG ids in comments.",
       "files": [
         "tools/prove-gates.py"
@@ -1244,19 +1244,30 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "94a097d7d590",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/prove-gates.py only, by Edit. TABLE: two rows after bc1 (runner_line_end_violations: crippled def -> le1; run-test-gate.py end-of-run reader un-normalised -> le4). ALLOW: three rows on _output_lints.py (drop the home-module filter -> le2; empty the normaliser call-name tuple -> le2; report pending sites -> le3). NOT_A_GATE: reach_graph with a reason (a graph of edges, no verdict). Each anchor applies exactly once (selftest a1/c2 pass). prove-gates --only runner_line_end: all 2 red and 3 allow rows proven, named case in each red set. --selftest 45/45 (was 43/45: c1, a4 and later a1/c2b during my concurrent run). sweep-selftests on the file ok, 45 cases. A first --only run was backgrounded by the 120s tool timeout while mutating; my concurrent --selftest read the mutated tree and failed a1/c2b, so I waited for the first run to restore (git status showed only prove-gates.py modified afterwards), purged __pycache__ and re-ran green.",
+        "descriptive": "Every lint and tree walk the last tasks added is now either proved by a prove-gates fail/allow row or declared not a gate, and the selftest is green again."
       },
       "startedAt": "2026-10-27T12:54:44Z",
-      "completedAt": null,
+      "completedAt": "2026-10-27T13:23:26Z",
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-27T13:22:13Z.5b2ac0",
         "status": "passed",
         "at": "2026-10-27T13:22:13Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "94a097d7d590",
+        "at": "2026-10-27T13:23:26Z",
+        "return": "docs/audit/evidence/returns/P142.17-6yq/20261027T125444Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task, expectRedFirst false: no test is added. The rows themselves were proved red by prove-gates (2 of 2 gates proven red: le1,le2,le3 and le4; 3 of 3 guards proven to stay quiet: le2+le4, le2+le4, le3+le4), and at the start --selftest c1 and a4 were the known red.",
+        "at": "2026-10-27 prove-gates --only runner_line_end run, started 1:56PM"
       }
     },
     {
@@ -1395,13 +1406,15 @@
     {
       "id": "P142.20-6yq",
       "title": "A task tree the mover refuses to bring to the head is recut there with its work, never gated at the base the phase has left",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Observed in P142 on 2026-10-27, right after the tree-follows-head change landed (862b4941).\n\nP142.13 and P142.14 advanced and went green. P142.12's work overlaps three files the head moved: plugins/audit/scripts/governance/drive-phase.py, tests/test_drive_phase.py and PLUGIN-BUILD-GUIDE.md. So `advance_member` refused the move by name (\"the tree stays at d4a26f13\"). The drive then ran the gate in that tree anyway. The gate went red on te11/ln1 in tests/test__output_lints.py, which b10ddfdd had already fixed, and the base verdict was `no-base`. The gate-red decision offered retry|rerun|block. None of those moves the tree, and `redo` is offered only at integration-refused. So the task had no supported exit except a block. This is the same defect the tree-follows-head change was opened to remove, now reached by every task whose files the phase also edits.\n\nFix the structure:\n1. A refused move is not a gate input. When `advance_member` refuses because the work overlaps files that moved, the drive records no gate run on that base. It stops with a decision whose answers include `redo`: recut the tree at the phase head carrying the task's work as a patch, three-way where it applies. Only the task's work paths are carried, never the plan's record files, the same exclusion integration uses. Each carried path is then verified against refs/audit/carry/<task> after applying.\n2. A redo whose patch does not apply leaves the old tree and the carry ref untouched. It refuses by name, listing the conflicting paths.\n3. Reuse the existing redo machinery (`redo` at integration-refused, the patch it writes and the tree take-down) rather than a second copy. Find the one place the decision table decides which answers a state offers.\n\nRed-first each case. Use a fixture whose work overlaps a moved file and is gated at its old base today (red), and gets the recut decision and no gate row after the fix. Also cover a redo whose patch conflicts (refused, tree and carry ref unchanged), and record files never carried. Prove a failure mid-redo leaves the work as it was.\n\nHigh risk: it recuts a tree that holds an agent's only copy of its work. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
         "tests/test_drive_phase.py",
         "plugins/audit/scripts/git/_worktrees.py",
-        "tests/test__worktrees.py"
+        "tests/test__worktrees.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tools/lints/_deps.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -1421,6 +1434,132 @@
         "no-silent-pass"
       ],
       "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 2,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-27T14:19:40Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-27T16:19:11Z.3c4a31",
+        "status": "passed",
+        "at": "2026-10-27T16:19:11Z"
+      }
+    },
+    {
+      "id": "P142.21-6yq",
+      "title": "The sweep reads every child's output with one line end, so no check that counts a line sees Windows line ends",
+      "status": "pending",
+      "description": "Observed on CI run 40511735770 (ci/P142 at 94a097d7, release tier), both Windows legs, plain and cp1252: tests/_harness.py sr13 FAIL. The sweep ran the staged suite correctly: ok True, blocks 5, slots 1, pools [], order and tmps as expected. The one conjunct that failed is `out.count(REPLAY_LINE % (5,)) == 1`. REPLAY_LINE ends in \"\\n\". The child writes it through a text-mode stdout, so on Windows it arrives as \"\\r\\n\". The sweep decodes the child's bytes as they are (`done.stdout.decode(\"utf-8\", \"replace\")` in tools/sweep-selftests.py, where a file's row output is captured), so every row \"output\" a reader receives keeps Windows line ends.\n\nThis is the third time this phase has hit the class. Run-test-gate's readers came first, then the private patterns the runner-line-end lint now covers. Each earlier fix normalised at a reader. Fix it once, where the text enters:\n1. Every place tools/sweep-selftests.py turns a child's bytes into text normalises line ends at that point. Reuse the one normalisation the plugin already has (`_runner_output.plain_text`, or the function it calls for line ends) rather than writing a second one. So a row's \"output\", and every line the sweep itself parses, reads \"\\n\" on every platform.\n2. A case that fails on today's code on any platform: a fixture child that writes \"\\r\\n\" line ends as raw bytes, run through the sweep. Its row output and the replay count read the same as a \"\\n\" child's. Red-first it on posix by writing the CRLF bytes explicitly, so the case does not depend on the runner's platform.\n3. sr13 itself needs no change once the capture normalises. If any other check in tests/_harness.py or tools/sweep-selftests.py counts or compares \"\\n\"-terminated text read from a child some way other than through the sweep's capture, normalise it the same way and list each site in your outcome.\n\nDo not widen the runner-line-end lint in this task. Say in your outcome whether it could see this shape (a str count or endswith on unnormalised child text) and why not. No F/P/BUG ids in comments.",
+      "files": [
+        "tools/sweep-selftests.py",
+        "tests/_harness.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/sweep-selftests.py: a child writing CRLF line ends as raw bytes yields the same row output and replay count through the sweep as one writing LF"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tools/sweep-selftests.py tests/_harness.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "before-you-claim",
+        "no-silent-pass"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P142.22-6yq",
+      "title": "Starting a task reads a repeated status row as a repeat, so a holder's duplicated block rows do not keep its own work charged",
+      "status": "pending",
+      "description": "Observed in P142 on 2026-10-27, on every restart of a single-dispatch task in the project checkout (three times in a row). `audit-task.py start` refused because another blocked task declares the same files. The release that exists for this case asks `_ran_within(_status_events(...))` whether the holder ran in the window, and it answered None (\"cannot tell\"). The cause is a real journal holding duplicate block rows: `in_progress->blocked` twice in the same second, then `None->blocked`. Both the drive and audit-task record the block, so the status chain reads as broken. Each time, the orchestrator had to set the work aside by hand, start, and restore it with sha256 checks.\n\nFix the reading, not the instance:\n1. A status row whose `to` equals the state already reached is a repeat, not a break, whatever its `from` says (None included). Collapse repeats before the chain is judged.\n2. Keep refusing a chain that is genuinely broken: a `from` that is neither the reached state nor None, or a row naming a different state with no transition into it.\n3. Look at why two writers record the same block. If one of them is redundant, say so in your outcome; do not remove a journal writer in this task.\n\nRed-first with the exact row shape copied from the real journal (same-second duplicate plus a `None->blocked`). It must read as \"did not run within the window\" where that is true. Add an over-fire case: a genuinely broken chain still answers None, and the refusal still fires. No F/P/BUG ids in comments.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_audit_task.py: a journal holding a same-second duplicate block row and a None-to-blocked row reads as one transition, and a genuinely broken chain still answers cannot-tell"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_task.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "before-you-claim",
+        "no-silent-pass"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P142.23-6yq",
+      "title": "The red-first helper sizes its deadline from the command's recorded cost and reads a stage missing at base as red",
+      "status": "pending",
+      "description": "Observed in P142 on 2026-10-27. P142.20-6yq's submit ran the red-first helper on `python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__worktrees.py` with the default 480 s deadline, half of it held back for the fix run. test_drive_phase records about 1349 slot-seconds in .github/sweep-costs.json. The base run therefore timed out and the return was filed `could-not-prove`. Narrowing to the task's new stage cannot help: HEAD's test file has no such stage, so the base run refuses with `unknown_stage_label`. Every tdd task gated on the drive suite loses mechanical red-first.\n\nFix the structure:\n1. The deadline is sized from the command it is handed. When the command is a sweep, read the recorded costs of the files it names from the sweep's own cost table (reuse the sweep's reader; do not parse the JSON a second time), scaled by the same per-cost factor the sweep uses for a file's timeout. Keep `--timeout` as an explicit override. When no cost is recorded, keep today's default and say so in the basis.\n2. A stage the fix run has and HEAD's file lacks is not a refusal. It means those cases did not exist at base, which is red for those cases. Say exactly that in the basis.\n3. The basis text names the deadline it used and where the deadline came from.\n\nRed-first: a fixture sweep command whose recorded cost exceeds the default, which times out today and completes after the fix. A stage missing at base, which refuses today and reads red after the fix. Add an over-fire case: an unrecorded command keeps the default deadline. No F/P/BUG ids in comments.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_stamp_verification.py: a sweep command whose recorded cost exceeds the default deadline completes under a deadline sized from that cost, and a stage the base file lacks reads as red rather than a refusal"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_stamp_verification.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "before-you-claim",
+        "no-silent-pass"
+      ],
+      "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
       "attempts": 0,

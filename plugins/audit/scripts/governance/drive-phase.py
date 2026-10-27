@@ -522,6 +522,18 @@ STEPS = {
         "rule": ("redo recuts its tree at the phase HEAD with the work carried "
                  "over and spends no attempt; block keeps the tree and tells "
                  "the human.",)},
+    "decide-tree-behind": {
+        "line": "decide tree-behind %(task)s: no gate runs at the base the phase "
+                "has left - %(why)s",
+        "rule": ("redo recuts its tree at the phase HEAD with the work applied "
+                 "three-way and spends no attempt; work that does not apply "
+                 "there is refused by name and nothing moves; block keeps the "
+                 "tree and tells the human.",)},
+    "decide-tree-not-moved": {
+        "line": "decide tree-not-moved %(task)s: no gate runs at the base the "
+                "phase has left, and no recut is offered - %(why)s",
+        "rule": ("A recut would take down what it cannot carry: block keeps the "
+                 "tree and its work, and a human settles what the mover named.",)},
     "decide-undeclared-change": {
         "line": "decide undeclared-change %(task)s: changed outside its files: "
                 "%(why)s",
@@ -740,6 +752,16 @@ DECISIONS = {
     # conflict, a lockfile, a dirty phase tree), or owed a word on paths the
     # task changed and never declared.
     "integration-refused": (("redo", "block"), ("block",)),
+    # A member's tree the mover would not bring to the phase head - its work
+    # changes a file that moved there. Measured at the base the phase has left,
+    # its gate would charge the task with reds the phase has since fixed, so no
+    # gate runs there: `redo` is the same recut integration-refused offers.
+    "tree-behind": (("redo", "block"), ("block",)),
+    # Every other way the mover declines - a tree not at its recorded base, one
+    # with no marker or gone, a nested repository, an ignored file in the head's
+    # way, a git that could not say. No gate runs there either, and a recut is
+    # no remedy: it would take down what it cannot carry. A human settles it.
+    "tree-not-moved": (("block",), ("block",)),
     "undeclared-change": (("widen", "discard", "block"), ("block",)),
     # Before the start: a test the task declares and its runner will never
     # collect (`scope_gap`).
@@ -801,6 +823,7 @@ SIGNAL_VERBS = {
     "decide-red-refused": "judge", "decide-tests-moved": "judge",
     "decide-clauses-uncovered-writer": "judge", "decide-clauses-uncovered": "judge",
     "decide-integration-refused": "judge", "decide-undeclared-change": "judge",
+    "decide-tree-behind": "judge", "decide-tree-not-moved": "ask",
     "decide-scope-gap": "judge", "decide-gate-red": "judge",
     "decide-no-executor-return": "judge", "decide-scope-changed": "judge",
     "decide-no-reviewer-return": "judge", "decide-no-change": "judge",
@@ -3921,11 +3944,14 @@ def advance(ctx, state, manifest, phase, task, tree=None):
     when it runs in a wave: its gate is measured there, its stamp graded there,
     and its bytes are integrated into the phase tree before the close. A
     serial step (`tree` None) on a task whose kept tree stands is stopped
-    instead: it would run the task in the phase tree, without its work."""
+    instead: it would run the task in the phase tree, without its work - and
+    so is a step over a tree whose redo left the work in a patch."""
     if tree is None:
         stop = kept_tree_stop(ctx, state, task)
         if stop is not None:
             return stop
+    elif os.path.lexists(redo_patch(ctx, task["id"])):
+        return redo_left(ctx, task["id"])
     # Before anything reads the session: a writer session that ended since the
     # last step leaves its cost on the task whatever the step does next, and a
     # session that has written nothing yet is waited for rather than graded -
@@ -4343,6 +4369,16 @@ def refresh_member_records(ctx, state, task, tree):
     return None
 
 
+def member_records(ctx, state):
+    """The record paths of a member's tree - `record_rels` asked now, beside any
+    the wave cached: the drive's own refresh, never the task's work. The mover
+    and the recut read this one set, so neither carries what the other leaves."""
+    _manifest, phase = load_phase(ctx)
+    return list(dict.fromkeys(_invariants.record_rels(
+        ctx["manifest"], phase, ctx["project"], ctx["gitRoot"])
+        + list((state.get("wave") or {}).get("records") or [])))
+
+
 def advance_member(ctx, state, task, tree):
     """Bring a member's tree to the phase HEAD before its gate is measured,
     when the phase has moved past the base the tree was cut at. None, or the
@@ -4357,10 +4393,15 @@ def advance_member(ctx, state, task, tree):
     integration diffs the work against. The record paths - `record_rels` asked
     now, beside any the wave cached - are the drive's own refresh, not the
     task's work: a tree adopted by a later wave holds refreshed records before
-    this wave has cached a single one. A refused move leaves the tree where it
-    was and is said on the did-line; the gate then measures it there, as it did
-    before. An answer that `kept` a copy of the work beside the tree - a move
-    not put back or not recorded, newer work the copy does not account for, a
+    this wave has cached a single one. A move not made leaves the tree where it
+    was and is no gate input; nothing is measured at the base the phase has
+    left. The refusal's `kind` - a field, never its words - picks the decision:
+    work that moved under the tree (`REFUSED_WORK_MOVED`) is `tree-behind`,
+    whose `redo` is `recut_tree`; every other refusal, and a move git could
+    not describe, is `tree-not-moved`, which offers `block` alone, since a
+    recut would take down what it cannot carry. An answer that `kept` a copy
+    of the work beside the tree - a move not put back or not recorded, newer
+    work the copy does not account for, a
     copy that would not come down, or one nobody can read - stops the drive:
     `kept` is advance_task_tree's one word for a tree that is not settled, read
     off the disk as the answer is made."""
@@ -4369,10 +4410,7 @@ def advance_member(ctx, state, task, tree):
     head = git_head(ctx)
     if not base or not head or base == head:
         return None
-    _manifest, phase = load_phase(ctx)
-    records = list(dict.fromkeys(_invariants.record_rels(
-        ctx["manifest"], phase, ctx["project"], ctx["gitRoot"])
-        + list(wave.get("records") or [])))
+    records = member_records(ctx, state)
 
     def is_record(rel):
         return _invariants.is_record_path(rel, records)
@@ -4384,11 +4422,13 @@ def advance_member(ctx, state, task, tree):
                         "the next drive settles it or a human has read the copy"
                         % (task["id"], tree, said["kept"], _clip(said["error"], 400)))
     if not (said["advanced"] or said["already"]):
-        ctx["did"].append("tree of %s stays at %s, not moved to the phase head "
-                          "%s: %s" % (task["id"], base[:12], head[:12], _clip(
-                              (said["refusal"] or {}).get("why") or said["error"]
-                              or "no reason given", 300)))
-        return None
+        refusal = said["refusal"] or {}
+        return decision(ctx, state, "tree-behind" if refusal.get("kind") ==
+                        _worktrees.REFUSED_WORK_MOVED else "tree-not-moved", task,
+                        _clip("the tree of %s stays at %s, not moved to the phase "
+                              "head %s: %s" % (task["id"], base[:12], head[:12],
+                                               refusal.get("why") or said["error"]
+                                               or "no reason given"), 400))
     wave.setdefault("bases", {})[task["id"]] = head
     write_state(ctx, state)
     if said["already"]:
@@ -4643,20 +4683,128 @@ def drop_tree(ctx, state, task_id):
     return None
 
 
-def tree_work(tree):
-    """`(patch, why)` - everything the tree changed against its base, untracked
-    files included, as one binary patch; `patch` is None beside the reason git
-    could not say. Staging in the tree is harmless: it is about to be taken
-    down."""
-    for argv in (["add", "-A"], ["diff", "--cached", "--binary", "HEAD"]):
-        try:
-            done = subprocess.run(["git", "-C", tree] + argv, capture_output=True,
-                                  timeout=120)
-        except (OSError, subprocess.SubprocessError) as exc:
-            return None, exc.__class__.__name__
-        if done.returncode != 0:
-            return None, _clip(done.stderr.decode("utf-8", "replace").strip(), 120)
-    return done.stdout, ""
+def tree_work(tree, records, task_id):
+    """`(work, why)` - what the tree changed against its base, untracked files
+    included and the record paths left out, read the way `carry_commit` reads
+    it, so nothing in the tree - its index included - is touched before the
+    redo knows it can apply. `work` is {"base", "commit", "paths", "links",
+    "patch"}: `base` the commit under the work (the tree's HEAD), `links` the
+    nested repositories the work records as links its base does not hold, the
+    patch binary and full-index, so a three-way apply finds each preimage;
+    None beside the reason git could not say."""
+    sha, why = carry_commit(tree, records, task_id)
+    if sha is None:
+        return None, why
+    span = ["%s^" % (sha,), sha]
+    code, base, err = carry_git(tree, ["rev-parse", "--verify", span[0]])
+    if code != 0:
+        return None, err or "git named no base under the work"
+    paths, why = _changed_between(tree, span[0], sha)
+    if paths is None:
+        return None, why
+    links, why = _links_added(tree, span[0], sha)
+    if links is None:
+        return None, why
+    code, patch, err = carry_git(tree, ["diff", "--binary", "--full-index",
+                                        "--no-renames"] + span)
+    if code != 0:
+        return None, err or "git diff exited %d" % (code,)
+    return {"base": base.decode("utf-8").strip(), "commit": sha, "paths": paths,
+            "links": links, "patch": patch}, ""
+
+
+# Git's mode for a link to a nested repository: the record holds the nested
+# commit's name, not its files, and taking the tree down deletes the objects.
+GITLINK_MODE = "160000"
+
+
+def _links_added(where, a, b):
+    """`(paths, why)` - the paths commit `b` holds as a link to a nested
+    repository where `a` holds none, read off git's raw diff; None beside the
+    reason git could not say."""
+    code, out, err = carry_git(where, ["diff", "--raw", "-z", "--no-renames",
+                                       "--no-abbrev", a, b])
+    if code != 0:
+        return None, err or "git diff exited %d" % (code,)
+    items = [i.decode("utf-8", "replace") for i in out.split(b"\0")]
+    pairs = zip(items[0::2], items[1::2])
+    return sorted(path for meta, path in pairs
+                  if meta.startswith(":") and len(meta.split()) >= 2
+                  and meta.split()[1] == GITLINK_MODE
+                  and meta.split()[0] != ":" + GITLINK_MODE), ""
+
+
+def _changed_between(where, a, b, paths=None):
+    """`(paths, why)` - the paths that differ between commits `a` and `b`,
+    narrowed to `paths` when given, renames read as a delete and an add; None
+    beside the reason git could not say."""
+    spec = ["--"] + [":(literal)%s" % (p,) for p in paths] if paths else []
+    code, out, err = carry_git(where, ["diff", "--name-only", "-z", "--no-renames",
+                                       a, b] + spec)
+    if code != 0:
+        return None, err or "git diff exited %d" % (code,)
+    return sorted(n.decode("utf-8", "replace") for n in out.split(b"\0") if n), ""
+
+
+def recut_conflicts(ctx, patch, head):
+    """`(paths, why)` - the paths a three-way apply of `patch` at `head` leaves
+    unmerged, [] when it applies, asked in a scratch index so no tree, index
+    or ref is touched; None beside the reason the check could not be made. The
+    recut tree is a fresh checkout of `head`, so this answers for it."""
+    scratch = tempfile.mkdtemp(prefix="audit-recut-")
+    try:
+        env = dict(os.environ, GIT_INDEX_FILE=os.path.join(scratch, "index"))
+        code, _out, err = carry_git(ctx["gitRoot"], ["read-tree", head], env)
+        if code != 0:
+            return None, err or "git read-tree exited %d" % (code,)
+        code, _out, err = carry_git(ctx["gitRoot"], [
+            "apply", "--cached", "--3way", "--whitespace=nowarn"], env, stdin=patch)
+        if code == 0:
+            return [], ""
+        said, listed, _e = carry_git(ctx["gitRoot"], ["ls-files", "-u", "-z"], env)
+        unmerged = sorted(set(item.split(b"\t", 1)[1].decode("utf-8", "replace")
+                              for item in listed.split(b"\0") if b"\t" in item))
+        if said != 0 or not unmerged:
+            return None, err or "git apply exited %d" % (code,)
+        return unmerged, ""
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def carry_beside_work(ctx, task_id, records, work, carry):
+    """`(lost, newer, why)` - the work read from the tree against the filed
+    carry ref `carry`: `lost` the paths the carry holds as work and the tree's
+    work does not (a recut from the tree would drop them), `newer` those both
+    hold with other bytes (the tree moved on since the filing; its bytes are
+    the ones carried). `why` is set, both None, when git could not compare."""
+    held, why = _changed_between(ctx["gitRoot"], "%s^" % (carry,), carry)
+    if held is None:
+        return None, None, why
+    held = [p for p in held if not _invariants.is_record_path(p, records)]
+    lost = [p for p in held if p not in work["paths"]]
+    both = [p for p in held if p in work["paths"]]
+    newer, why = _changed_between(ctx["gitRoot"], carry, work["commit"], both) \
+        if both else ([], "")
+    if newer is None:
+        return None, None, why
+    return lost, newer, ""
+
+
+def recut_wrong(ctx, tree, task_id, records, work, moved):
+    """The carried paths the recut `tree` does not hold as the work did, each
+    named; [] when it holds them. A path the head did not move reads byte for
+    byte as the work commit holds it - both sides read through `carry_commit`,
+    one reading; a path the head moved is the three-way merge's, which git
+    applied without a conflict."""
+    now, why = carry_commit(tree, records, task_id)
+    if now is None:
+        return ["the recut tree could not be read (%s)" % (why,)]
+    still = [p for p in work["paths"] if p not in moved]
+    wrong, why = _changed_between(tree, work["commit"], now, still) if still \
+        else ([], "")
+    if wrong is None:
+        return ["the recut tree could not be compared with the work (%s)" % (why,)]
+    return wrong
 
 
 # --- a filed member's work, carried in a ref -----------------------------------
@@ -4853,47 +5001,235 @@ def drop_carry(ctx, task_id):
                 task_id, remote, err))
 
 
+def redo_patch(ctx, task_id):
+    """Where a redo keeps a member's work between taking its old tree down and
+    verifying the recut one."""
+    return os.path.join(os.path.dirname(state_path(ctx)), "redo-%s.patch" % (task_id,))
+
+
+def redo_left(ctx, task_id):
+    """The stop for a member whose redo left its work in a patch: no gate, no
+    integration and no further redo runs over a tree that may lack that work
+    until a human has put it back or taken it away."""
+    return _stopped(ctx, "a redo of %s stopped part way and its work is kept as "
+                    "%s, which may be its only copy; nothing runs in its tree "
+                    "until a human applies it there (git apply --3way) or takes "
+                    "it away, then next" % (task_id, redo_patch(ctx, task_id)))
+
+
+REDO_PIN_NS = "refs/audit/redo/"
+
+
+def redo_pin(task_id):
+    """The ref holding a redo's work commit until the redo has held, so the
+    objects its kept patch names outlive any gc in between."""
+    return REDO_PIN_NS + carry_ref(task_id)[len(CARRY_NS):]
+
+
+def recut_standing(ctx, task, tree):
+    """`(base, why)` - the base a member's tree records, when a recut may read
+    the work from that tree: it is there, carries the marker naming the task
+    and a base, and its HEAD is that base, so what it holds against HEAD is the
+    whole of the work. Else None beside why, naming where the work is."""
+    ref = carry_ref(task["id"])
+    if not tree or not os.path.isdir(tree):
+        where = ("its work is in %s alone" % (ref,) if carried_commit(ctx, task["id"])
+                 else "no %s holds its work either" % (ref,))
+        return None, ("the tree of %s (%s) is gone and %s; a recut would cut an "
+                      "empty tree" % (task["id"], tree or "none recorded", where))
+    held = _worktrees.read_provenance(tree, expect_task=str(task["id"]))
+    base = (held.get("record") or {}).get("base")
+    if held.get("ours") is not True or not base:
+        return None, ("%s carries no marker naming %s with a base (%s)"
+                      % (tree, task["id"], held.get("basis") or "no base recorded"))
+    code, out, err = carry_git(tree, ["rev-parse", "--verify", "HEAD"])
+    now = out.decode("utf-8", "replace").strip() if code == 0 else ""
+    if now != base:
+        return None, ("%s stands at %s, not at its recorded base %s, so work "
+                      "committed there is not what a recut reads" % (
+                          tree, now[:12] or "a HEAD git would not name (%s)" % (err,),
+                          base[:12]))
+    return base, ""
+
+
+def keep_redo_work(ctx, task_id, work, kept):
+    """Pin the work commit and write the patch whole and synced
+    (`_worktrees.keep_bytes`) before the old tree comes down. '' when both are
+    kept, else why."""
+    code, _out, err = carry_git(ctx["gitRoot"], ["update-ref", redo_pin(task_id),
+                                                 work["commit"]])
+    if code != 0:
+        return "update-ref %s: %s" % (redo_pin(task_id), err or "exit %d" % (code,))
+    try:
+        _worktrees.keep_bytes(kept, work["patch"])
+    except OSError as exc:
+        return "the patch could not be written (%s)" % (exc,)
+    return ""
+
+
+def drop_redo_work(task_id, kept, git_root):
+    """Take away what a redo kept once it has held: the patch, then the pin.
+    '' when both are gone, else why - said, never raised."""
+    try:
+        os.remove(kept)
+    except OSError as exc:
+        return "%s: %s" % (kept, exc.strerror or exc)
+    code, _out, err = carry_git(git_root, ["update-ref", "-d", redo_pin(task_id)])
+    return "" if code == 0 else "update-ref -d %s: %s" % (redo_pin(task_id), err)
+
+
 def recut_tree(ctx, state, task):
-    """Recut a member's tree at the phase HEAD with its work in it, and measure
-    its gate again over the new tree. None, or the stop. The work is read before
-    the tree is taken down and kept in a file of the state directory until it
-    has applied, so a patch the new base refuses is never the only copy lost."""
+    """`redo`: recut a member's tree at the phase HEAD with its work in it, and
+    measure its gate again over the new tree - the one recut, for a tree the
+    integration refused and for one the mover would not bring to the head. None,
+    or the stop.
+
+    Every refusal comes before the old tree is touched, and each leaves the
+    tree, its work and its carry ref as they were. What the recut stands on is
+    asked first (`recut_standing`): the tree is there - a tree that is gone is
+    refused, naming the carry ref where the work then lives, never recut empty
+    - it carries its marker, and its HEAD is the base the marker records, so
+    the work read is exactly that base to the working tree. The work is read
+    the way the carry reads it (`tree_work`, the record paths left out - they
+    are the phase's, refreshed into the new tree), and holds no link to a
+    nested repository the base lacks, whose objects the tree's removal would
+    delete. A path the filed carry ref holds as work and the tree's work lacks
+    refuses the redo (`carry_beside_work`); a three-way apply of the work at the
+    head is tried in a scratch index (`recut_conflicts`), a conflict refusing
+    it by name. Past them, the work commit is pinned to `refs/audit/redo/<id>`
+    and the patch written whole to a file of the state directory, both kept
+    until the recut tree holds every carried path as `recut_wrong` checks it,
+    so a step failing after the old tree came down never loses the only copy;
+    the stop names the file, and `advance` runs nothing in the member's tree
+    while it is there. The carry ref is moved to the recut tree only once the
+    work is verified there."""
     tree = ((state.get("wave") or {}).get("trees") or {}).get(task["id"])
-    patch, why = (tree_work(tree) if tree and os.path.isdir(tree) else (b"", ""))
-    if patch is None:
+    ref = carry_ref(task["id"])
+    kept = redo_patch(ctx, task["id"])
+    if os.path.lexists(kept):
+        return redo_left(ctx, task["id"])
+    base, why = recut_standing(ctx, task, tree)
+    if base is None:
+        return _stopped(ctx, "redo refused: %s; nothing was recut and no attempt "
+                        "is spent - block, and a human settles it" % (why,))
+    records = member_records(ctx, state)
+    work, why = tree_work(tree, records, task["id"])
+    if work is None:
         return _stopped(ctx, "the work in the tree of %s could not be read (%s), "
                         "so nothing was recut and no attempt is spent"
                         % (task["id"], why))
-    kept = os.path.join(os.path.dirname(state_path(ctx)),
-                        "redo-%s.patch" % (task["id"],))
-    if patch:
-        with open(kept, "wb") as fh:
-            fh.write(patch)
+    if work["base"] != base or work["links"]:
+        return _stopped(ctx, "redo refused: %s; nothing was recut, and its tree "
+                        "and %s are as they were" % (
+                            "the work of %s was read over %s, not its recorded "
+                            "base %s" % (task["id"], work["base"][:12], base[:12])
+                            if work["base"] != base else
+                            "the tree of %s holds %s as a link to a nested "
+                            "repository its base lacks, which a recut cannot "
+                            "carry and the tree's removal would delete" % (
+                                task["id"], ", ".join(work["links"])), ref))
+    head = git_head(ctx)
+    if not head:
+        return _stopped(ctx, "git named no HEAD in %s to recut the tree of %s at; "
+                        "nothing was recut" % (ctx["gitRoot"], task["id"]))
+    moved = []
+    carry = carried_commit(ctx, task["id"])
+    if carry:
+        lost, newer, why = carry_beside_work(ctx, task["id"], records, work, carry)
+        if lost is None:
+            return _stopped(ctx, "the work of %s could not be compared with %s "
+                            "(%s); nothing was recut" % (task["id"], ref, why))
+        if lost:
+            return _stopped(ctx, "redo refused: %s holds %s as the work of %s and "
+                            "its tree no longer does, so a recut from the tree "
+                            "would drop it; nothing was recut, and its tree and "
+                            "%s are as they were"
+                            % (ref, ", ".join(lost), task["id"], ref))
+        if newer:
+            ctx["did"].append("tree of %s holds %s newer than %s; the tree's bytes "
+                              "are the ones carried" % (
+                                  task["id"], _clip(", ".join(newer), 160), ref))
+    if work["patch"]:
+        conflicts, why = recut_conflicts(ctx, work["patch"], head)
+        if conflicts is None:
+            return _stopped(ctx, "whether the work of %s applies at the phase head "
+                            "%s could not be checked (%s); nothing was recut, and "
+                            "its tree and %s are as they were"
+                            % (task["id"], head[:12], why, ref))
+        if conflicts:
+            return _stopped(ctx, "redo refused: the work of %s conflicts at the "
+                            "phase head %s in %s; nothing was recut, and its tree, "
+                            "its work and %s are as they were - block, or settle "
+                            "the conflict in the tree and answer again"
+                            % (task["id"], head[:12], ", ".join(conflicts), ref))
+        moved, why = _changed_between(ctx["gitRoot"], work["base"], head)
+        if moved is None:
+            return _stopped(ctx, "what the phase moved since the base of %s could "
+                            "not be read (%s); nothing was recut" % (task["id"], why))
+        why = keep_redo_work(ctx, task["id"], work, kept)
+        if why:
+            return _stopped(ctx, "the work of %s could not be kept before its tree "
+                            "came down (%s); nothing was recut, and its tree and "
+                            "%s are as they were" % (task["id"], why, ref))
+
+    keeping = ("the redo of %s stopped once its old tree was coming down: its "
+               "work is kept as %s and %s is as it was, and no attempt is spent"
+               % (task["id"], kept, ref))
+
+    def after_drop(why):
+        return _stopped(ctx, "%s - %s" % (_clip(why, 300), keeping))
+
+    def kept_beside(stop):
+        # A verb's own stop keeps its kind and words; the keeping is added.
+        return stop if not work["patch"] else (stop[0], "%s\n%s" % (stop[1], keeping))
     stop = drop_tree(ctx, state, task["id"])
     if stop is not None:
-        return stop
-    _new, stop = add_tree(ctx, state, task)
+        return kept_beside(stop)
+    new, stop = add_tree(ctx, state, task)
     if stop is not None:
-        return stop
-    if patch:
-        done = subprocess.run(["git", "-C", state["wave"]["trees"][task["id"]],
-                               "apply", "--binary", "--whitespace=nowarn", kept],
-                              capture_output=True, timeout=120)
-        if done.returncode != 0:
-            return _stopped(ctx, "the tree of %s is recut at %s and its work does "
-                            "not apply there (%s); the work is kept as %s and no "
-                            "attempt is spent"
-                            % (task["id"], state["wave"]["base"][:12],
-                               _clip(done.stderr.decode("utf-8", "replace").strip(),
-                                     120), kept))
-        os.remove(kept)
+        return kept_beside(stop)
+    if work["patch"]:
+        code, _out, err = carry_git(new, ["apply", "--3way", "--whitespace=nowarn"],
+                                    stdin=work["patch"])
+        if code != 0:
+            return after_drop("the work does not apply in the tree recut at %s "
+                              "(%s)" % (head[:12], err or "git apply exited %d"
+                                        % (code,)))
+        wrong = recut_wrong(ctx, new, task["id"], records, work, moved)
+        if wrong:
+            return after_drop("the recut tree does not hold the work as it was: %s"
+                              % (", ".join(wrong),))
+        if carry:
+            carry_work(ctx, task, new, records)
     (state.get("gated") or {}).pop(task["id"], None)
     if not state.get("gated"):
         state.pop("gated", None)
     write_state(ctx, state)
-    ctx["did"].append("tree of %s recut at %s, its work carried over" % (
-        task["id"], state["wave"]["base"][:12]))
+    if work["patch"]:
+        why = drop_redo_work(task["id"], kept, ctx["gitRoot"])
+        if why:
+            return _stopped(ctx, "the tree of %s is recut at %s and holds its work, "
+                            "and what the redo kept could not be taken away (%s); "
+                            "remove it by hand, then next" % (
+                                task["id"], head[:12], why))
+    ctx["did"].append(recut_said(task["id"], state["wave"]["base"], work, moved,
+                                 ref if carry else None))
     return None
+
+
+def recut_said(task_id, at, work, moved, carry):
+    """The did-line of a recut that held: each carried path under what it got -
+    a path the head moved merged three-way, one it did not verified byte for
+    byte - and a claim only where a path was carried that way."""
+    merged = [p for p in work["paths"] if p in moved]
+    compared = [p for p in work["paths"] if p not in moved]
+    parts = (["merged three-way (%s)" % (_clip(", ".join(merged), 120),)] * bool(merged)
+             + ["verified byte for byte (%s)" % (_clip(", ".join(compared), 120),)]
+             * bool(compared)
+             + ["none of %s left behind" % (carry,)] * bool(carry and work["paths"]))
+    return "tree of %s recut at %s, %s" % (
+        task_id, at[:12], "its work carried over: %s" % ("; ".join(parts),)
+        if work["paths"] else "with no work to carry")
 
 
 def open_wave(ctx, state, picked, width, basis):

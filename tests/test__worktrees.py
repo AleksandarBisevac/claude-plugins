@@ -1227,6 +1227,43 @@ def _advance_cases(check):
           "outside the records, the overlap is work that moved",
           pure.get("work") == ["a.txt", "b.txt"] and pure.get("overlap") == ["b.txt"]
           and pure.get("ok") is False, repr(pure))
+    # A caller acts on WHICH refusal it got - a recut is the remedy for work
+    # that moved and for nothing else - so the kind is a field, never the text.
+    # Spelled here as well, so a module without the constant fails the case
+    # rather than crashing the block.
+    moved_kind = getattr(M, "REFUSED_WORK_MOVED", "work-moved")
+    held = M.advance_plan(base, head, ["b.txt"], ["b.txt", "c.txt"],
+                          occupied=["c.txt"])
+    check("av41 the refusal for work that moved under the tree carries the kind "
+          "`work-moved`; one where an ignored file stands in the head's way, even "
+          "beside an overlap, does not: %r" % ((pure.get("refusal"),
+                                                 held.get("refusal")),),
+          (pure.get("refusal") or {}).get("kind") == moved_kind
+          and held.get("refusal")
+          and (held.get("refusal") or {}).get("kind") != moved_kind)
+    check("av42 the mover's own overlap refusal carries the kind end to end, and "
+          "its refusal of a base the tree does not stand on does not: %r"
+          % ((refused.get("refusal"), stale.get("refusal")),),
+          (refused.get("refusal") or {}).get("kind") == moved_kind
+          and stale.get("refusal")
+          and (stale.get("refusal") or {}).get("kind") != moved_kind)
+    import tempfile
+    spot = tempfile.mkdtemp(prefix="keep-bytes-")
+    try:
+        target = os.path.join(spot, "kept.patch")
+        data = b"\x00binary\xffpatch\n"
+        if hasattr(M, "keep_bytes"):
+            M.keep_bytes(target, data)
+        with open(target, "rb") as fh:
+            got = fh.read()
+        names = sorted(os.listdir(spot))
+    except OSError as exc:
+        got, names = None, ["raised %s" % (exc,)]
+    finally:
+        _harness.remove_tree(spot)
+    check("av43 keep_bytes writes the bytes it is given, byte for byte, and leaves "
+          "nothing beside them: %r" % ((got, names),),
+          got == data and names == ["kept.patch"])
     _advance_after_cases(check)
     _advance_crash_cases(check)
 

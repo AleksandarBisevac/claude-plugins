@@ -753,6 +753,16 @@ def _refusal(why, remedy):
     return {"why": why, "remedy": remedy}
 
 
+# The one refusal kind a caller acts on: the task's work changes files that
+# moved between the tree's base and the head. Read as a field, never off `why`.
+REFUSED_WORK_MOVED = "work-moved"
+
+
+def _refusal_of(kind, why, remedy):
+    """`_refusal`, carrying `kind` when there is one."""
+    return dict(_refusal(why, remedy), kind=kind) if kind else _refusal(why, remedy)
+
+
 def merge_plan(trees, branch, parent, contained, parent_exists, parent_dirty,
                dirty_lines=None, cwd_tree=None):
     """{"mode", "where", "argv", "refusal", "basis"} -- HOW this merge must be done,
@@ -1397,21 +1407,29 @@ def advance_plan(base, to, changed, moved, is_record=None, occupied=()):
     holds outside what git lists as changed (ignored ones) where the head
     starts tracking a file. A non-empty overlap is the refusal, naming every
     path in it. `ok` is True only when the move may run: no overlap, and
-    somewhere to move to."""
+    somewhere to move to.
+
+    The refusal's `kind` is `REFUSED_WORK_MOVED` only when the task's own work
+    moved and nothing else stands in the way: that one refusal a recut at the
+    head answers, since the work is all the tree holds that the head lacks. An
+    ignored file in the head's way is not work a recut carries, so a refusal
+    naming one has no kind, and neither has any other refusal the mover makes."""
     record = is_record if is_record is not None else (lambda _rel: False)
     work = sorted(set(p for p in changed if not record(p)))
     overlap = sorted(set(work) & set(moved))
     held = sorted(set(occupied) - set(overlap))
     refusal = None
     if overlap or held:
-        refusal = _refusal("; ".join(
+        refusal = _refusal_of(REFUSED_WORK_MOVED if not held else None, "; ".join(
             ["the task's work changes %s, which the phase also changed between "
              "%s and %s" % (", ".join(overlap), base[:12], to[:12])] * bool(overlap)
             + ["the tree holds %s outside its listed changes (ignored), where %s "
                "starts tracking a file git would overwrite it with"
                % (", ".join(held), to[:12])] * bool(held)),
-            "the tree stays at its base with its work untouched; the overlap is "
-            "the integration's to settle, or a recut at the phase head")
+            "the tree stays at its base with its work untouched; %s" % (
+                "the overlap is the integration's to settle, or a recut at the "
+                "phase head" if not held else
+                "a human moves the ignored file out of the head's way"))
     return {"ok": not (overlap or held) and base != to, "already": base == to,
             "work": work, "records": sorted(set(changed) - set(work)),
             "overlap": overlap + held, "moved": sorted(set(moved)),
@@ -1548,6 +1566,15 @@ def _write_aside(path, data):
         if os.path.exists(aside):
             os.remove(aside)
         raise
+
+
+def keep_bytes(path, data):
+    """Write the bytes `data` to `path` whole or not at all (`_write_aside`),
+    then sync the directory's names, so a caller keeping the only copy of
+    something - a redo's patch - finds it after a crash or not at all, never
+    half. Raises OSError."""
+    _write_aside(path, data)
+    _fsync_dir(os.path.dirname(path) or ".")
 
 
 def _write_synced(path, data):

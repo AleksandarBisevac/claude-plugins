@@ -1,0 +1,76 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__worktrees.py": "pass",
+    "python3 tests/test__deps.py --selftest": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-27T15:21:01Z",
+    "basis": "`python3 tests/test__worktrees.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 156 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - av41 (house FAIL), av42 (house FAIL), av43 (house FAIL): SELFTEST FAILED: 153/156 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Attempt 2, by invariant. (1) _worktrees.advance_plan's refusal carries kind REFUSED_WORK_MOVED ('work-moved') only when the task's own work moved and no ignored file is in the way (_refusal_of); every other refusal has no kind. drive-phase advance_member reads that field: work-moved -> tree-behind (redo|block); every other decline -> new decision tree-not-moved (block only; STEPS and SIGNAL_VERBS 'ask'). No gate runs at the old base in either case. (2) recut_tree (the one recut, shared with integration-refused) checks before anything comes down, each refusal by name with the tree and the carry ref unchanged: recut_standing (the tree exists - a gone tree is refused naming refs/audit/carry/<id> as where the work is, never recut empty; it carries its marker; HEAD == the recorded base); tree_work's base == the recorded base, so the work is exactly base..worktree; no link to a nested repository the base lacks (_links_added reads git's raw diff for mode 160000); the carry lost-path check; the scratch-index three-way pre-check. (3) Lows folded in: the work commit is pinned to refs/audit/redo/<id> before the drop and dropped after success; the patch is written whole and synced through the new _worktrees.keep_bytes (on the sanctioned _write_aside, plus a directory fsync); a failed removal after success is a reported stop, not a raise; the did-line (recut_said) names merged-three-way paths and byte-for-byte-verified paths apart, claiming each only where it holds. (4) test__deps gb1: GIT_PATH_BASE_EXEMPT rows for drive-phase _changed_between and recut_conflicts in tools/lints/_deps.py (outside the task's files; the plan gate allowed the Edit). Their paths are git-root, compared only with each other and with record_rels' git-root paths, and fed back as pathspecs from the same checkout; routing them through git_to_plan would put them in a different spelling from the records. sw1 is met by keep_bytes rather than a new os.replace site. PLUGIN-BUILD-GUIDE.md 'A wave's edges' rewritten again (gate allowed). Results: the gate sweep exit 0, '2/2 files ok, 758 cases'; test__deps 254/254 exit 0; 32 cross-file suites from the red step's affected list, plus manage_worktrees and integrate_task, '32/32 files ok, 5539 cases' exit 0; ruff and vermin -t=3.8- clean. Mutation probe: scratchpad/probe/mutations20.py, 38 rows, every guard red with an over-fire row each, and 5 rows labelled EXPECTED NOT RED that stayed green (scratchpad/m20d.log). Lows left for the batch: the worktreeSetup dry-run mismatch (the scratch-index pre-check runs no executor.worktreeSetup, so a setup that rewrites tracked files can make the real apply differ); redo_left guards only the wave path, not the serial one; the head read twice in recut_tree (git_head, then drop_tree's own read); a failed removal after success has no case; keep_bytes' fsync is unobservable in a test.",
+    "descriptive": "redo is offered only when a task's own work moved under its tree, and the recut refuses by name, before anything comes down, a tree that is gone, off its recorded base, or holding a nested repository."
+  },
+  "testsAdded": [
+    "av41/av42 (test__worktrees): the work-moved refusal carries kind 'work-moved', an ignored-file refusal and a stale-base refusal do not",
+    "av43: keep_bytes writes exactly the bytes and leaves nothing beside them",
+    "ar9: a tree on a commit the agent made is offered block only, gated nowhere, redo is not an answer, the commit is still HEAD",
+    "ar10/ar10b: a redo over a tree whose HEAD left its recorded base is refused naming the base, nothing cut, carry unchanged; the next run offers block only",
+    "ar11: a redo with the tree gone and pruned is refused naming the carry ref, no tree cut, the carry unchanged",
+    "ar12: a gone tree at the mover is offered block only",
+    "ar13: a nested repository at the mover is offered block only, the nested repository untouched",
+    "ar14: a redo over a tree holding a nested repository is refused by name before anything comes down",
+    "ar2b: the did-line names the merged path, makes no byte-for-byte claim, and the pin is gone after success",
+    "ar6c: the work commit is pinned to refs/audit/redo/<id> after a failure past the drop",
+    "ar1-ar8, ar3b, ar6b from attempt 1, with the fixture's phase edit moved inside the hunk context so a plain apply refuses what the three-way merge takes"
+  ],
+  "casesAdded": [
+    [
+      "ar1",
+      "ar2",
+      "ar2b",
+      "ar3",
+      "ar3b",
+      "ar4",
+      "ar5",
+      "ar6",
+      "ar6b",
+      "ar6c",
+      "ar7",
+      "ar8",
+      "ar9",
+      "ar10",
+      "ar10b",
+      "ar11",
+      "ar12",
+      "ar13",
+      "ar14"
+    ]
+  ],
+  "claims": "claims:\n1 _worktrees.advance_plan sets kind=REFUSED_WORK_MOVED only when overlap is non-empty and held is empty; drive-phase advance_member picks tree-behind only on that field, else tree-not-moved, whose DECISIONS options are ('block',); recut_tree calls recut_standing, then the work-base and links check, carry_beside_work and recut_conflicts, all before drop_tree; keep_redo_work pins and writes through keep_bytes before the drop; drop_redo_work runs after write_state and returns a reason, never raises; recut_said builds the did-line from moved and unmoved paths; PLUGIN-BUILD-GUIDE.md matches\n2 scratchpad/probe/mutations20.py (38 rows, log scratchpad/m20d.log): every new guard red - kind not read -> ar9 ar10b ar12 ar13; kind never set -> av41 av42 ar1 ar2; gone tree -> ar11; both HEAD checks -> ar10; links -> ar14; pin -> ar6c; pin left -> ar2b; keep_bytes -> av43 ar6; did-line -> ar2b (ar4) - and each with an over-fire row, red (redo withheld from work-moved -> ar1 ar2; kind set beside an ignored file -> av41; every tree read off base / every path a link -> ar2 ar4); the attempt-1 rows re-run and red. EXPECTED NOT RED, by design: either HEAD check alone and the marker check alone (defence in depth behind each other), keep_bytes' fsync, a failed removal after success, recut_tree's own leftover-patch refusal, the carry ref moved on success\n3 class = an action offered or taken for a state the code did not establish. Invariant, not instance: one field picks the decision, and one precondition set guards both callers of the recut. git grep of the 'redo' answer: one branch in apply_answer, offered by integration-refused and tree-behind only; recut_tree has one caller; tree_work has one caller; carry_commit and its callers are unchanged\n4 the tree-not-moved rule text ('a recut would take down what it cannot carry: block ...') is enforced by its DECISIONS row offering block alone, and answer validation rejects redo (ar9 code 2); the tree-behind rule is enforced by recut_conflicts and recut_standing\n5 the gate measured on this attempt's final tree once: test_drive_phase 1255.1s of summed block time; attempt 1's runs were 1329.2s and 1324.1s on a smaller suite; these are measurements, not a recorded property\n6 the decision reads a structured field the mover sets (refusal.kind), never the refusal's words; the allow direction - the genuine overlap still offers redo and recuts - is shown green (ar1 ar2 ar4), and the over-fire row that withholds it turns ar1 ar2 red\n7 every count above carries the run or the log it comes from",
+  "stamp": "audit-stamp: {\"content\":\"sha256:ca6d8185f6d0338d583c055b9f9888556dc6f2c436bfe64646b2507c0e2b8343\",\"dirtyDigest\":\"sha256:b5780de03121d35a2deab2a30be325bbde6292698b2730597a6f6bcda9273e3e\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"1fe68ce12f8fed1f\",\"plugins/audit/scripts/git/_worktrees.py\":\"38904f1aa81d935e\",\"plugins/audit/scripts/governance/drive-phase.py\":\"46d8fd9f4fe98144\",\"tests/test__worktrees.py\":\"f6f46d3a6d3adffc\",\"tests/test_drive_phase.py\":\"285d70aecf4cb3b5\",\"tools/lints/_deps.py\":\"4c3d3ba835c4d0f5\"},\"head\":\"94a097d7\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/git/_worktrees.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test__worktrees.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:305fae747fd0c460c46f1248b7b00a786828adcf42ce7a5a6b9e71c975a2e127\",\"v\":2}",
+  "testsAddGaps": [
+    "tests/test_drive_phase.py: a task whose work overlaps a file the phase head moved is offered the recut and no gate run is recorded on its old base; a recut whose patch conflicts is refused by name with the tree and the carry ref unchanged - bound to `ar1`, which the suite did not print",
+    "tests/test_drive_phase.py: a task whose work overlaps a file the phase head moved is offered the recut and no gate run is recorded on its old base; a recut whose patch conflicts is refused by name with the tree and the carry ref unchanged - bound to `ar2`, which the suite did not print",
+    "tests/test_drive_phase.py: a task whose work overlaps a file the phase head moved is offered the recut and no gate run is recorded on its old base; a recut whose patch conflicts is refused by name with the tree and the carry ref unchanged - bound to `ar2b`, which the suite did not print",
+    "tests/test_drive_phase.py: a task whose work overlaps a file the phase head moved is offered the recut and no gate run is recorded on its old base; a recut whose patch conflicts is refused by name with the tree and the carry ref unchanged - bound to `ar3`, which the suite did not print",
+    "tests/test_drive_phase.py: a task whose work overlaps a file the phase head moved is offered the recut and no gate run is recorded on its old base; a recut whose patch conflicts is refused by name with the tree and the carry ref unchanged - bound to `ar3b`, which the suite did not print",
+    "tests/test_drive_phase.py: a task whose work overlaps a file the phase head moved is offered the recut and no gate run is recorded on its old base; a recut whose patch conflicts is refused by name with the tree and the carry ref unchanged - bound to `ar4`, which the suite did not print",
+    "tests/test_drive_phase.py: a task whose work overlaps a file the phase head moved is offered the recut and no gate run is recorded on its old base; a recut whose patch conflicts is refused by name with the tree and the carry ref unchanged - bound to `ar5`, which the suite did not print",
+    "tests/test_drive_phase.py: a task whose work overlaps a file the phase head moved is offered the recut and no gate run is recorded on its old base; a recut whose patch conflicts is refused by name with the tree and the carry ref unchanged - bound to `ar6`, which the suite did not print",
+    "tests/test_drive_phase.py: a task whose work overlaps a file the phase head moved is offered the recut and no gate run is recorded on its old base; a recut whose patch conflicts is refused by name with the tree and the carry ref unchanged - bound to `ar6b`, which the suite did not print",
+    "tests/test_drive_phase.py: a task whose work overlaps a file the phase head moved is offered the recut and no gate run is recorded on its old base; a recut whose patch conflicts is refused by name with the tree and the carry ref unchanged - bound to `ar6c`, which the suite did not print",
+    "tests/test_drive_phase.py: a task whose work overlaps a file the phase head moved is offered the recut and no gate run is recorded on its old base; a recut whose patch conflicts is refused by name with the tree and the carry ref unchanged - bound to `ar7`, which the suite did not print",
+    "tests/test_drive_phase.py: a task whose work overlaps a file the phase head moved is offered the recut and no gate run is recorded on its old base; a recut whose patch conflicts is refused by name with the tree and the carry ref unchanged - bound to `ar8`, which the suite did not print",
+    "tests/test_drive_phase.py: a task whose work overlaps a file the phase head moved is offered the recut and no gate run is recorded on its old base; a recut whose patch conflicts is refused by name with the tree and the carry ref unchanged - bound to `ar9`, which the suite did not print",
+    "tests/test_drive_phase.py: a task whose work overlaps a file the phase head moved is offered the recut and no gate run is recorded on its old base; a recut whose patch conflicts is refused by name with the tree and the carry ref unchanged - bound to `ar10`, which the suite did not print",
+    "tests/test_drive_phase.py: a task whose work overlaps a file the phase head moved is offered the recut and no gate run is recorded on its old base; a recut whose patch conflicts is refused by name with the tree and the carry ref unchanged - bound to `ar10b`, which the suite did not print",
+    "tests/test_drive_phase.py: a task whose work overlaps a file the phase head moved is offered the recut and no gate run is recorded on its old base; a recut whose patch conflicts is refused by name with the tree and the carry ref unchanged - bound to `ar11`, which the suite did not print",
+    "tests/test_drive_phase.py: a task whose work overlaps a file the phase head moved is offered the recut and no gate run is recorded on its old base; a recut whose patch conflicts is refused by name with the tree and the carry ref unchanged - bound to `ar12`, which the suite did not print",
+    "tests/test_drive_phase.py: a task whose work overlaps a file the phase head moved is offered the recut and no gate run is recorded on its old base; a recut whose patch conflicts is refused by name with the tree and the carry ref unchanged - bound to `ar13`, which the suite did not print",
+    "tests/test_drive_phase.py: a task whose work overlaps a file the phase head moved is offered the recut and no gate run is recorded on its old base; a recut whose patch conflicts is refused by name with the tree and the carry ref unchanged - bound to `ar14`, which the suite did not print"
+  ],
+  "testsAddUnchecked": []
+}

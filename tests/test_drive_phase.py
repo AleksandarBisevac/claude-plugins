@@ -7185,14 +7185,19 @@ def _tree_of(root, task_id):
     return ((_drive_state(root).get("wave") or {}).get("trees") or {}).get(task_id)
 
 
-def _file_wave_executor(root, mpath, task_id):
-    """Play a wave executor: edit the task's file in ITS tree, then make the
-    agent's last act from the project, as an agent's shell does."""
+def _file_wave_executor(root, mpath, task_id, text=None, then=None):
+    """Play a wave executor: edit the task's file in ITS tree - to `text` when
+    given - run `then(tree)` when given (what else the agent does there before
+    filing), then make the agent's last act from the project, as an agent's
+    shell does."""
     tree = _tree_of(root, task_id)
     if not tree:
         return 99, "no tree recorded for %s" % (task_id,)
     rel = "src/f%d.txt" % (TASKS.index(task_id) + 1,)
-    _write_lf(os.path.join(tree, *rel.split("/")), "changed by %s\n" % (task_id,))
+    _write_lf(os.path.join(tree, *rel.split("/")),
+              text if text is not None else "changed by %s\n" % (task_id,))
+    if then is not None:
+        then(tree)
     return _verb(root, DRIVER, ["submit", task_id, "--role", "executor", mpath,
                                 "--project-dir", root],
                  stdin=json.dumps(_executor_body(task_id)))
@@ -9018,19 +9023,25 @@ _AB_FIXED = '"%s" -c "import os, sys; sys.exit(0 if os.path.exists(\'fixed.txt\'
     'else 1)"' % (sys.executable,)
 
 
-def _ab_red_at_base(M, prefix, phase_edit=None):
+def _ab_red_at_base(M, prefix, phase_edit=None, base=None, work=None, then=None):
     """A two-member wave whose first member is red only on a check the base
     fails, with the phase tree then committing the fix - and `phase_edit`
-    `(rel, text)` beside it when given. `(root, mpath, head, tree)` once the
-    first member's gate-red decision stands."""
+    `(rel, text)` beside it when given. `base` is what `src/f1.txt` holds when
+    the trees are cut, `work` what the first member writes there, and `then` what
+    else it does in its tree before filing, each the fixture's default when
+    None. `(root, mpath, head, tree)` once the first member's gate-red decision
+    stands."""
     root, mpath = _wave_repo(prefix, 2)
+    if base is not None:
+        _write_lf(os.path.join(root, "src", "f1.txt"), base)
 
     def edit(plan):
         plan["phases"][0]["tasks"][0]["tests"]["gate"] = [_AB_FIXED]
     _commit_plan(root, mpath, edit, "the first member's gate needs the fix")
     _code, first = _next_wave(M, root, mpath)
     for t in _dispatched(first):
-        _file_wave_executor(root, mpath, t)
+        _file_wave_executor(root, mpath, t, work if t == "P1.1" else None,
+                            then if t == "P1.1" else None)
     _code, _second = _next_wave(M, root, mpath)
     tree = _tree_of(root, "P1.1")
     for rel, text in [("fixed.txt", "the phase fixed what the base broke\n")] + (
@@ -9193,6 +9204,415 @@ def _wave_advance_cases(check):
           and not [r for r in _journal_io.read_all(root_o)
                    if isinstance(r, dict)
                    and r.get("action") == "task.tree.advanced"])
+
+
+# A file a member and the phase both edit, on lines a three-way apply tells
+# apart: the member's first line, the phase's third. The phase's line sits in
+# the context of the member's hunk, so a plain apply at the head refuses what
+# the three-way merge takes - the fixture tells the two apart. A mover refuses
+# it by path all the same, which is what puts the member at the recut decision.
+_AR_BASE = "one\ntwo\nthree\nfour\nfive\nsix\n"
+_AR_WORK = "one by P1.1\ntwo\nthree\nfour\nfive\nsix\n"
+_AR_PHASE = ("src/f1.txt", "one\ntwo\nthree by the phase\nfour\nfive\nsix\n")
+_AR_MERGED = b"one by P1.1\ntwo\nthree by the phase\nfour\nfive\nsix\n"
+_AR_OFFERS = re.compile(r"--answer [a-z|-]*\bredo\b")
+
+
+def _carry_at(root, task_id):
+    """The commit `refs/audit/carry/<task_id>` names in `root`, or ''."""
+    return _git_out(root, "rev-parse", "-q", "--verify",
+                    "refs/audit/carry/%s" % (task_id,)).strip()
+
+
+def _ar_at_decision(M, prefix, phase_edit=_AR_PHASE, work=_AR_WORK):
+    """The member's gate-red decision answered `rerun` after the phase moved a
+    file its work also edits. -> (root, mpath, head, tree, base, rows, code,
+    text): `rows` is the member's gate row count before the answer."""
+    root, mpath, head, tree = _ab_red_at_base(
+        M, prefix, phase_edit, base=_AR_BASE if work == _AR_WORK else None,
+        work=work)
+    base = _git_out(tree, "rev-parse", "HEAD").strip() if tree else ""
+    rows = len(_rows_of(root, mpath, "P1.1"))
+    code, text = _next(M, root, mpath, "--answer", "rerun")
+    return root, mpath, head, tree, base, rows, code, text
+
+
+def _recut_refused_move_cases(check):
+    """A member whose work overlaps a file the phase head moved is not gated at
+    the base the phase has left: the drive stops at a decision that offers
+    `redo`, and `redo` recuts the tree at the head carrying the work - or, when
+    the work does not apply there, refuses by name and leaves it all as it was."""
+    M, why = _load("drive_phase_recut_refused")
+    if M is None:
+        check("ar1 the driver loads", False, why)
+        return
+    root, mpath, head, tree, base, rows, code, text = _ar_at_decision(M, "arecut")
+    check("ar1 a move the mover refuses for overlap records no gate run on the "
+          "old base: the drive stops at a decision offering redo, naming the "
+          "file, with the tree and its work where they were: %r"
+          % ((code, rows, len(_rows_of(root, mpath, "P1.1")), text[-600:]),),
+          tree and base and base != head
+          and instruction(text)[0] == "decide" and _AR_OFFERS.search(text)
+          and "src/f1.txt" in text
+          and len(_rows_of(root, mpath, "P1.1")) == rows
+          and _git_out(tree, "rev-parse", "HEAD").strip() == base
+          and _read(os.path.join(tree, "src", "f1.txt")) == _AR_WORK.encode())
+    made = len([a for a in _actions(root) if a == "task.worktree"])
+    code, after = _next(M, root, mpath, "--answer", "redo")
+    state = _drive_state(root)
+    row = _ab_last_row(root, mpath, "P1.1")
+    check("ar2 redo recuts the member's tree at the phase head with its work "
+          "merged three-way, gates it there green, spends no attempt, and the "
+          "member closes on both edits: %r"
+          % ((code, (state.get("wave") or {}).get("bases"), row.get("status"),
+              _attempts(mpath, "P1.1"), after[-600:]),),
+          code == 0
+          and len([a for a in _actions(root) if a == "task.worktree"]) == made + 1
+          and _evio.same_head((row.get("testedState") or {}).get("head"), head)
+          and row.get("status") == "passed"
+          and _attempts(mpath, "P1.1") == 1
+          and tasks_of(mpath)["P1.1"].get("status") == "done"
+          and _read(os.path.join(root, "src", "f1.txt")) == _AR_MERGED)
+    check("ar2b ...and its did-line says what each carried path got: the moved "
+          "one merged three-way, and no byte-for-byte claim with nothing compared "
+          "that way; the pinned work ref is gone once it succeeded: %r"
+          % ((after[-500:], _git_out(root, "for-each-ref", "refs/audit/redo/")),),
+          "merged three-way (src/f1.txt)" in after
+          and "verified byte for byte" not in after
+          and not _git_out(root, "for-each-ref", "refs/audit/redo/").strip())
+
+    # The work and the phase's edit touch the same line: the patch does not
+    # apply, so the redo refuses by name and moves nothing.
+    root_c, mpath_c, head_c, tree_c, base_c, rows_c, _code, text_c = \
+        _ar_at_decision(M, "arecutc", ("src/f1.txt", "the phase's own edit\n"),
+                        work=None)
+    carry_c = _carry_at(root_c, "P1.1")
+    bases_c = dict((_drive_state(root_c).get("wave") or {}).get("bases") or {})
+    code_c, refused = _next(M, root_c, mpath_c, "--answer", "redo")
+    check("ar3 a redo whose patch conflicts is refused by name, listing the "
+          "path, and the old tree, its work, its base and the carry ref are "
+          "unchanged, with no gate run: %r"
+          % ((code_c, carry_c, refused[-600:]),),
+          _AR_OFFERS.search(text_c) and carry_c
+          and code_c != 0 and "src/f1.txt" in refused and "redo" in refused
+          and os.path.isdir(tree_c) and _tree_of(root_c, "P1.1") == tree_c
+          and _git_out(tree_c, "rev-parse", "HEAD").strip() == base_c
+          and _read(os.path.join(tree_c, "src", "f1.txt")) == b"changed by P1.1\n"
+          and _carry_at(root_c, "P1.1") == carry_c
+          and dict((_drive_state(root_c).get("wave") or {}).get("bases") or {})
+          == bases_c
+          and len(_rows_of(root_c, mpath_c, "P1.1")) == rows_c
+          and tasks_of(mpath_c)["P1.1"].get("status") == "in_progress")
+    code_c2, again = _next(M, root_c, mpath_c)
+    check("ar3b ...and the decision still stands, to be answered again: %r"
+          % ((code_c2, again[-300:]),),
+          instruction(again)[0] == "decide" and _AR_OFFERS.search(again))
+
+    # The tree holds the plan's records refreshed from the head - dirty, and
+    # among the paths that moved. They are the drive's, not the member's work,
+    # so the recut carries none of them and the work alone applies.
+    root_r, mpath_r, head_r, tree_r = _ab_red_at_base(
+        M, "arecutr", _AR_PHASE, base=_AR_BASE, work=_AR_WORK)
+    with _Env(root_r):
+        refreshed = _verb(root_r, "integrate-task.py", [
+            mpath_r, "P1.1", "--project", root_r, "--refresh-records", "--json"])
+    dirty = [p for p in _git_out(tree_r, "status", "--porcelain").splitlines()
+             if "docs/audit" in p] if tree_r else []
+    _next(M, root_r, mpath_r, "--answer", "rerun")
+    code_r, after_r = _next(M, root_r, mpath_r, "--answer", "redo")
+    recut = _tree_of(root_r, "P1.1")
+    check("ar4 the plan's record files are never carried: with them dirty in "
+          "the old tree the redo still applies the work alone and the member "
+          "closes on both edits: %r"
+          % ((refreshed[0], dirty, code_r, recut, after_r[-600:]),),
+          refreshed[0] == 0 and dirty and code_r == 0
+          and "merged three-way (src/f1.txt)" in after_r
+          and "docs/audit" not in after_r.split("merged three-way", 1)[-1]
+          .split(")", 1)[0]
+          and tasks_of(mpath_r)["P1.1"].get("status") == "done"
+          and _read(os.path.join(root_r, "src", "f1.txt")) == _AR_MERGED)
+
+    # The filed carry holds a path the tree's work no longer does: a recut from
+    # the tree would drop it, so the redo is refused before anything moves.
+    root_l, mpath_l, _head_l, tree_l, base_l, rows_l, _c, _t = _ar_at_decision(
+        M, "arecutl")
+    carry_l = _carry_with(root_l, "P1.1", "src/lost.txt", "filed, then lost\n")
+    code_l, said_l = _next(M, root_l, mpath_l, "--answer", "redo")
+    check("ar8 a carry ref holding a path the tree's work lacks refuses the redo "
+          "by name, and the tree, its work and the carry ref are as they were: %r"
+          % ((code_l, carry_l, said_l[-400:]),),
+          carry_l and code_l != 0 and "redo refused" in said_l
+          and "src/lost.txt" in said_l
+          and _carry_at(root_l, "P1.1") == carry_l
+          and _tree_of(root_l, "P1.1") == tree_l
+          and _git_out(tree_l, "rev-parse", "HEAD").strip() == base_l
+          and _read(os.path.join(tree_l, "src", "f1.txt")) == _AR_WORK.encode()
+          and len(_rows_of(root_l, mpath_l, "P1.1")) == rows_l
+          and not [n for n in os.listdir(os.path.join(root_l, ".claude", "state",
+                                                      "drive"))
+                   if n.endswith(".patch")])
+
+    _recut_crash_cases(check, M)
+    _recut_precondition_cases(check, M)
+
+
+_AR_ANSWERS = re.compile(r"--answer ([a-z|-]+)")
+
+
+def _offers(text):
+    """The answers the last decision printed in `text` offers, in order."""
+    found = _AR_ANSWERS.findall(text or "")
+    return found[-1].split("|") if found else []
+
+
+def _tree_rows(root):
+    return len([a for a in _actions(root) if a == "task.worktree"])
+
+
+def _commit_in(tree, message="the agent commits its work"):
+    """Commit the task's file in its own tree, as an agent may; HEAD after."""
+    _harness.git(tree, "add", "src/f1.txt")
+    _harness.git(tree, "commit", "-qm", message)
+    return _git_out(tree, "rev-parse", "HEAD").strip()
+
+
+def _nested_repo(tree):
+    """A nested repository with a commit of its own at `src/sub` of `tree`; the
+    path of its one file."""
+    sub = os.path.join(tree, "src", "sub")
+    os.makedirs(sub)
+    _harness.git(sub, "init", "-q")
+    _write_lf(os.path.join(sub, "lib.txt"), "nested work\n")
+    _harness.git(sub, "add", "-A")
+    _harness.git(sub, "commit", "-qm", "nested")
+    return os.path.join(sub, "lib.txt")
+
+
+def _gone(root, tree):
+    """The member's tree deleted and git told to forget it."""
+    _harness.remove_tree(tree)
+    _harness.git(root, "worktree", "prune")
+
+
+def _no_patch(root):
+    return not [n for n in os.listdir(os.path.join(root, ".claude", "state", "drive"))
+                if n.endswith(".patch")]
+
+
+def _recut_precondition_cases(check, M):
+    """`redo` is offered for one refusal only - work that moved under the tree -
+    and the recut checks what it stands on before anything comes down: a tree
+    with its marker, HEAD at the recorded base, no nested repository the work
+    would carry as a link. Every other way the mover declines offers `block`."""
+    # The mover declines a tree that is not at its recorded base (the agent
+    # committed there): block only, nothing gated, the commit still the tree's.
+    def committing(tree):
+        _commit_in(tree)
+        _write_lf(os.path.join(tree, "src", "extra.txt"), "extra, uncommitted\n")
+    root, mpath, _head, tree = _ab_red_at_base(M, "arecutk", then=committing)
+    agent = _git_out(tree, "rev-parse", "HEAD").strip() if tree else ""
+    rows = len(_rows_of(root, mpath, "P1.1"))
+    code, text = _next(M, root, mpath, "--answer", "rerun")
+    code_r, said_r = _next(M, root, mpath, "--answer", "redo")
+    check("ar9 a tree standing on a commit the agent made is not offered redo: "
+          "the drive stops at a decision offering block alone, gates nothing, and "
+          "redo is no answer to it; the commit is still the tree's HEAD: %r"
+          % ((code, _offers(text), code_r, text[-400:]),),
+          agent and instruction(text)[0] == "decide" and _offers(text) == ["block"]
+          and len(_rows_of(root, mpath, "P1.1")) == rows
+          and code_r == 2 and _git_out(tree, "rev-parse", "HEAD").strip() == agent
+          and _read(os.path.join(tree, "src", "f1.txt")) == b"changed by P1.1\n"
+          and os.path.isfile(os.path.join(tree, "src", "extra.txt")))
+
+    # Offered redo for a genuine overlap, then the agent commits in the tree:
+    # the recut refuses on HEAD, before anything comes down.
+    root_h, mpath_h, _hh, tree_h, base_h, _rh, _c, text_h = _ar_at_decision(
+        M, "arecuth")
+    carry_h = _carry_at(root_h, "P1.1")
+    agent_h = _commit_in(tree_h)
+    made_h = _tree_rows(root_h)
+    code_h, said_h = _next(M, root_h, mpath_h, "--answer", "redo")
+    check("ar10 a redo over a tree whose HEAD is no longer its recorded base is "
+          "refused by name before anything comes down: the commit stays the "
+          "tree's HEAD, no tree is cut, the carry ref is as it was: %r"
+          % ((code_h, said_h[-400:]),),
+          "redo" in _offers(text_h) and code_h != 0 and "redo refused" in said_h
+          and base_h[:12] in said_h
+          and _tree_of(root_h, "P1.1") == tree_h
+          and _git_out(tree_h, "rev-parse", "HEAD").strip() == agent_h
+          and _read(os.path.join(tree_h, "src", "f1.txt")) == _AR_WORK.encode()
+          and _tree_rows(root_h) == made_h and _carry_at(root_h, "P1.1") == carry_h
+          and _no_patch(root_h))
+    code_h2, again_h = _next(M, root_h, mpath_h)
+    check("ar10b ...and the next run, asking the mover again, offers block alone: "
+          "%r" % ((code_h2, again_h[-300:]),),
+          instruction(again_h)[0] == "decide" and _offers(again_h) == ["block"])
+
+    # The tree is gone and git has forgotten it: the work is in the carry ref
+    # alone, and a recut would cut an empty tree and close on nothing.
+    root_g, mpath_g, _hg, tree_g, _bg, _rg, _c, _t = _ar_at_decision(M, "arecutg")
+    carry_g = _carry_at(root_g, "P1.1")
+    _gone(root_g, tree_g)
+    made_g = _tree_rows(root_g)
+    code_g, said_g = _next(M, root_g, mpath_g, "--answer", "redo")
+    check("ar11 a redo with the tree gone is refused, naming the carry ref as "
+          "where the work is; no tree is cut and the carry ref is as it was: %r"
+          % ((code_g, said_g[-400:]),),
+          carry_g and code_g != 0 and "redo refused" in said_g
+          and "refs/audit/carry/P1.1" in said_g
+          and _tree_rows(root_g) == made_g and _carry_at(root_g, "P1.1") == carry_g
+          and tasks_of(mpath_g)["P1.1"].get("status") == "in_progress"
+          and _no_patch(root_g))
+
+    root_p, mpath_p, _hp, tree_p = _ab_red_at_base(M, "arecutp")
+    _gone(root_p, tree_p)
+    rows_p = len(_rows_of(root_p, mpath_p, "P1.1"))
+    code_p, text_p = _next(M, root_p, mpath_p, "--answer", "rerun")
+    check("ar12 a member whose tree is gone, at the mover, is offered block alone "
+          "and gated nowhere: %r" % ((code_p, _offers(text_p), text_p[-400:]),),
+          instruction(text_p)[0] == "decide" and _offers(text_p) == ["block"]
+          and len(_rows_of(root_p, mpath_p, "P1.1")) == rows_p)
+
+    # A nested repository in the tree: the mover will not copy it, and a recut
+    # would carry it as a link to objects the tree's removal deletes.
+    root_n, mpath_n, _hn, tree_n = _ab_red_at_base(M, "arecutn")
+    lib_n = _nested_repo(tree_n)
+    rows_n = len(_rows_of(root_n, mpath_n, "P1.1"))
+    code_n, text_n = _next(M, root_n, mpath_n, "--answer", "rerun")
+    check("ar13 a tree holding a nested repository, at the mover, is offered "
+          "block alone, gated nowhere, the nested repository untouched: %r"
+          % ((code_n, _offers(text_n), text_n[-400:]),),
+          instruction(text_n)[0] == "decide" and _offers(text_n) == ["block"]
+          and len(_rows_of(root_n, mpath_n, "P1.1")) == rows_n
+          and _read(lib_n) == b"nested work\n")
+
+    root_s, mpath_s, _hs, tree_s, base_s, _rs, _c, _t = _ar_at_decision(
+        M, "arecutsub")
+    carry_s = _carry_at(root_s, "P1.1")
+    lib_s = _nested_repo(tree_s)
+    code_s, said_s = _next(M, root_s, mpath_s, "--answer", "redo")
+    check("ar14 a redo over a tree holding a nested repository the base lacks is "
+          "refused by name before anything comes down; the nested repository, "
+          "the tree and the carry ref are as they were: %r"
+          % ((code_s, said_s[-400:]),),
+          code_s != 0 and "redo refused" in said_s and "src/sub" in said_s
+          and os.path.isfile(lib_s) and _read(lib_s) == b"nested work\n"
+          and _git_out(tree_s, "rev-parse", "HEAD").strip() == base_s
+          and _carry_at(root_s, "P1.1") == carry_s and _no_patch(root_s))
+
+
+def _carry_with(root, task_id, rel, text):
+    """Point `task_id`'s carry ref at a commit holding `rel` beside what the
+    carry held, built in a scratch index so no tree is touched. The new sha, or
+    '' when there was no carry to add to."""
+    import tempfile
+    carry = _carry_at(root, task_id)
+    if not carry:
+        return ""
+    scratch = tempfile.mkdtemp(prefix="arecut-carry-")
+    try:
+        env = dict(os.environ, GIT_INDEX_FILE=os.path.join(scratch, "index"))
+
+        def git(*args, **kw):
+            return subprocess.run(_GIT + list(args), cwd=root, env=env,
+                                  capture_output=True, input=kw.get("data")
+                                  ).stdout.decode("utf-8").strip()
+        git("read-tree", carry)
+        blob = git("hash-object", "-w", "--stdin", data=text.encode("utf-8"))
+        git("update-index", "--add", "--cacheinfo", "100644,%s,%s" % (blob, rel))
+        sha = git("commit-tree", git("write-tree"), "-p", carry + "^", "-m", "carry")
+        git("update-ref", "refs/audit/carry/%s" % (task_id,), sha)
+    finally:
+        _harness.remove_tree(scratch)
+    return _carry_at(root, task_id) if sha else ""
+
+
+def _recut_crash_cases(check, M):
+    """A redo that fails part way leaves the work where a human finds it: before
+    the old tree is taken down, the tree itself, untouched; after, the patch the
+    redo kept, with the carry ref as it was."""
+    real_git = M.carry_git
+
+    def refusing_check(where, argv, env=None, stdin=None):
+        if argv[:1] == ["apply"] and "--cached" in argv:
+            return 1, b"", "fixture: the check could not run"
+        return real_git(where, argv, env=env, stdin=stdin)
+    root, mpath, _head, tree, base, _rows, _code, _text = _ar_at_decision(
+        M, "arecutx")
+    carry = _carry_at(root, "P1.1")
+    status = _git_out(tree, "status", "--porcelain") if tree else ""
+    M.carry_git = refusing_check
+    try:
+        code, said = _next(M, root, mpath, "--answer", "redo")
+    finally:
+        M.carry_git = real_git
+    check("ar5 a redo that fails before the old tree comes down leaves that "
+          "tree, its base, its work, its index and the carry ref as they were: "
+          "%r" % ((code, said[-400:]),),
+          code != 0 and "fixture: the check could not run" in said
+          and carry and _tree_of(root, "P1.1") == tree
+          and _git_out(tree, "rev-parse", "HEAD").strip() == base
+          and _git_out(tree, "status", "--porcelain") == status
+          and _read(os.path.join(tree, "src", "f1.txt")) == _AR_WORK.encode()
+          and _carry_at(root, "P1.1") == carry)
+
+    real_verb = M.run_verb
+
+    def refusing_add(ctx, script, args, stdin=None):
+        if script == "manage-worktrees.py" and args[:1] == ["task-add"]:
+            return 1, "", "fixture: task-add refused"
+        return real_verb(ctx, script, args, stdin=stdin)
+    root_a, mpath_a, _head_a, _tree_a, _base_a, _rows_a, _c, _t = \
+        _ar_at_decision(M, "arecuta")
+    carry_a = _carry_at(root_a, "P1.1")
+    M.run_verb = refusing_add
+    try:
+        code_a, said_a = _next(M, root_a, mpath_a, "--answer", "redo")
+    finally:
+        M.run_verb = real_verb
+    kept = [os.path.join(root_a, ".claude", "state", "drive", n)
+            for n in os.listdir(os.path.join(root_a, ".claude", "state", "drive"))
+            if n.endswith(".patch")]
+    check("ar6 a redo that fails after the old tree came down stops, naming the "
+          "patch it kept, which holds the work, and the carry ref is as it was: "
+          "%r" % ((code_a, kept, said_a[-400:]),),
+          code_a != 0 and len(kept) == 1 and kept[0] in said_a
+          and b"one by P1.1" in _read(kept[0])
+          and _carry_at(root_a, "P1.1") == carry_a and carry_a)
+    pinned = _git_out(root_a, "show", "refs/audit/redo/P1.1:src/f1.txt")
+    check("ar6c ...and the work commit is pinned to refs/audit/redo/P1.1 until a "
+          "redo succeeds, so no gc takes the objects the patch names: %r"
+          % (pinned,), pinned == _AR_WORK)
+    rows_a = len(_rows_of(root_a, mpath_a, "P1.1"))
+    code_a2, said_a2 = _next(M, root_a, mpath_a)
+    check("ar6b ...and the next run measures, integrates and closes nothing over "
+          "a tree that may lack that work: it stops naming the patch: %r"
+          % ((code_a2, said_a2[-400:]),),
+          code_a2 != 0 and kept and kept[0] in said_a2
+          and len(_rows_of(root_a, mpath_a, "P1.1")) == rows_a
+          and tasks_of(mpath_a)["P1.1"].get("status") == "in_progress")
+
+    # A carried path the head never moved must read in the recut tree as the
+    # work held it; one that does not stops the redo by name, the patch kept.
+    def scribbling(where, argv, env=None, stdin=None):
+        said = real_git(where, argv, env=env, stdin=stdin)
+        if argv[:1] == ["apply"] and "--cached" not in argv:
+            _write_lf(os.path.join(where, "src", "extra.txt"), "scribbled\n")
+        return said
+    root_s, mpath_s, head_s, tree_s = _ab_red_at_base(
+        M, "arecuts", _AR_PHASE, base=_AR_BASE, work=_AR_WORK)
+    _write_lf(os.path.join(tree_s, "src", "extra.txt"), "extra by P1.1\n")
+    _next(M, root_s, mpath_s, "--answer", "rerun")
+    M.carry_git = scribbling
+    try:
+        code_s, said_s = _next(M, root_s, mpath_s, "--answer", "redo")
+    finally:
+        M.carry_git = real_git
+    check("ar7 a recut tree whose carried path does not read as the work held it "
+          "stops the redo, naming the path and the patch it kept: %r"
+          % ((code_s, said_s[-400:]),),
+          code_s != 0 and "src/extra.txt" in said_s and ".patch" in said_s
+          and tasks_of(mpath_s)["P1.1"].get("status") == "in_progress")
 
 
 def _wave_hooks_cases(check):
@@ -10957,6 +11377,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("wt7-block", "_wave_review_discard_cases"),
           ("wd-block", "_wave_redo_cases"), ("wg-block", "_wave_regate_cases"),
           ("ab-block", "_wave_advance_cases"),
+          ("ar-block", "_recut_refused_move_cases"),
           ("wh-block", "_wave_hooks_cases"),
           ("pf-block", "_preflight_cases"),
           ("pg-block", "_scope_language_cases"),

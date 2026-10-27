@@ -1,0 +1,43 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__worktrees.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-27T14:10:05Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__worktrees.py` in a throwaway tree at HEAD: the run timed out: no time was left of the 480-second deadline; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; fix run: held back 240s of the deadline (the recorded 1349s, capped at half the 480s deadline), the recorded slot-seconds of tests/test__worktrees.py, tests/test_drive_phase.py in .github/sweep-costs.json",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "drive-phase.py: advance_member now returns decision 'tree-behind' (DECISIONS: redo|block, block needs --reason; STEPS decide-tree-behind; SIGNAL_VERBS judge) for any move not made, so no gate runs at the base the phase left. member_records() is the one record set for the mover and the recut. The existing redo machinery is reused, not duplicated: apply_answer's 'redo' -> recut_tree, rewritten so every refusal comes before drop_tree: tree_work reads the work via carry_commit (scratch index, records excluded, tree and index untouched, full-index binary patch); carry_beside_work refuses when refs/audit/carry/<task> holds a non-record path the work lacks; recut_conflicts tries 'git apply --cached --3way' in a scratch index at the head and refuses by name listing the unmerged paths. After that it writes the patch to state/drive/redo-<id>.patch, drop_tree, add_tree, 'git apply --3way' in the new tree, recut_wrong checks every carried path the head did not move byte for byte against the work commit, carry_work moves the carry ref to the recut tree only after verification, and the patch is removed. A failure after the drop stops naming the kept patch, and advance() runs nothing in that member's tree while the patch exists (redo_left). tests/test_drive_phase.py: ar-block (ar1-ar8, ar3b, ar6b) added and staged; _ab_red_at_base and _file_wave_executor take optional base/work text. PLUGIN-BUILD-GUIDE.md 'A wave's edges' paragraph rewritten to the new recut. That file is outside the task's files; the plan gate allowed the Edit. _worktrees.py and tests/test__worktrees.py are unchanged. Gate: 'python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__worktrees.py' exit 0, '2/2 files ok, 746 cases' on the final tree. Mutation probe: scratchpad/probe/mutations20.py, every row red as designed, two rows expected-not-red and labelled. ruff and vermin -t=3.8- clean on both files; house_style_violations, prose_number_claims, doc_prose_numbers and guide_enumeration report nothing.",
+    "descriptive": "A task tree the mover refuses to bring to the phase head now stops at a redo decision instead of being gated at its old base, and redo recuts it three-way, refusing by name before anything moves."
+  },
+  "testsAdded": [
+    "ar1: a refused overlapping move records no gate row and stops at tree-behind offering redo, tree and work untouched",
+    "ar2: redo recuts at the head with the work merged three-way (a plain apply would refuse it), gates green there, spends no attempt, closes on both edits",
+    "ar3/ar3b: a conflicting redo is refused by name, with tree, base, work, carry ref, wave bases and gate rows unchanged, and the decision still stands",
+    "ar4: dirty record files in the old tree are never carried (only src/f1.txt carried) and the redo applies",
+    "ar5: a failure before the old tree comes down leaves the tree, its index, its work and the carry ref as they were",
+    "ar6/ar6b: a failure after the drop names the kept patch holding the work, the carry ref is unchanged, and the next run gates nothing over the tree",
+    "ar7: a recut tree whose unmoved carried path does not read as the work did stops the redo by name",
+    "ar8: a carry ref holding a path the tree's work lacks refuses the redo before anything moves"
+  ],
+  "casesAdded": [
+    [
+      "ar1",
+      "ar2",
+      "ar3",
+      "ar3b",
+      "ar4",
+      "ar5",
+      "ar6",
+      "ar6b",
+      "ar7",
+      "ar8"
+    ]
+  ],
+  "claims": "claims:\n1 drive-phase.py advance_member: the not-advanced branch returns decision(ctx, state, \"tree-behind\", ...); DECISIONS[\"tree-behind\"] = ((\"redo\",\"block\"),(\"block\",)); recut_tree calls carry_beside_work and recut_conflicts before drop_tree, recut_wrong after the apply, and carry_work only after it; advance() returns redo_left while redo_patch(ctx, id) exists; the PLUGIN-BUILD-GUIDE.md wave-edges paragraph is rewritten to match\n2 scratchpad/probe/mutations20.py: defect -> ar1 ar2 ar3 ar8 red; over-fire tree-behind -> ab1 ab3 ab5; no redo offered -> ar1 ar2; records carried -> ar4; pre-check skipped -> ar3 ar5; conflict read as clean -> ar3; over-fire pre-check -> ar2 ar4; carry lost-path check off -> ar8; over-fire lost -> ar2 ar4; patch not kept -> ar6; verify off -> ar7; over-fire verify -> ar2 ar4; redo-left guard off -> ar6b; over-fire guard -> ar2 ar4 ab1 ab3; plain apply -> ar2 ar4; no work carried -> ar2 ar4 wd3 wd3a; restored each time and __pycache__ purged. EXPECTED NOT RED: recut_tree's own leftover-patch refusal (advance's guard stops first) and the carry ref moved on success (no case observes it before close drops the ref)\n3 class = a gate measured on a tree the mover refused, and a recut that takes the tree down before it knows the work applies: the did-line 'stays at' had one site (advance_member, called only from gate_step); recut_tree's one caller is apply_answer's redo, now shared by integration-refused and tree-behind; tree_work's one caller is recut_tree; git grep integration-refused outside docs/audit: drive-phase.py and its test only, so no other table lists decisions\n4 the decide-tree-behind rule text says a redo whose work does not apply is refused by name, and recut_conflicts enforces it, held by ar3 and the pre-check rows; no other rule to an agent\n5 gate sweep run twice on the final logic: test_drive_phase 1329.2s then 1324.1s summed block seconds, about 20 min apart (the second run after the fixture edit)\n6 n/a - no guard reading a command; redo_left reads the patch file on disk\n7 every count above carries the run or the probe log it comes from",
+  "stamp": "audit-stamp: {\"content\":\"sha256:36fe2127ea7b5f6e852b429d1d759fb97ea6cd25503a768b9d27bcbd452c1fc8\",\"dirtyDigest\":\"sha256:c0d99c7ee977d7831c08df63b38b1c701c3c2ae1651c7e6ac59a0b42f502767e\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"de6edb5f50199a1c\",\"plugins/audit/scripts/governance/drive-phase.py\":\"51208627face4386\",\"tests/test_drive_phase.py\":\"d2b415e6134a599e\"},\"head\":\"94a097d7\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/git/_worktrees.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test__worktrees.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:27e3a965efe47c8481ebb28afc15e7d2468ebbdd3297224dcb914248f05064f6\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

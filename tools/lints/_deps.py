@@ -1941,6 +1941,15 @@ GIT_PATH_BASE_EXEMPT = (
      "journal files named inside their own directory, which git runs in"),
     ("commit-task-work.py", "_changed_shards", _RECORD_PATHS),
     ("drive-phase.py", "carry_commit", _SAME_CHECKOUT),
+    ("drive-phase.py", "_changed_between",
+     "the redo's listings of what changed between two commits of one "
+     "repository: compared with each other, with record_rels' git-root paths, "
+     "and handed back as literal pathspecs to git run at that checkout's top; "
+     "no plan entry is read"),
+    ("drive-phase.py", "recut_conflicts",
+     "the unmerged paths a scratch-index three-way apply leaves, listed from "
+     "the git root it ran at and quoted back in the redo's refusal; no plan "
+     "entry is read"),
     ("drive-phase.py", "restore_carry", _SAME_CHECKOUT),
     ("drive-phase.py", "tree_holds_only_integrated", _SAME_CHECKOUT),
     ("stamp-verification.py", "_at_head",
