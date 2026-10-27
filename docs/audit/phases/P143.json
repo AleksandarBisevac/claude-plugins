@@ -1,0 +1,258 @@
+{
+  "id": "P143",
+  "title": "The affected selection as the task gate",
+  "status": "pending",
+  "description": "",
+  "desiredOutcome": "A task's gate is the affected selection, after a re-measurement shows 0 misses over at least 20 commits; whole-tree scanners run once per phase and on push; CI stays inside its wall-time bound",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [
+    "P142"
+  ],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P143.1-6yq",
+      "title": "A task's gate is the affected selection, and no derived step re-runs what a declared key already runs in full",
+      "status": "pending",
+      "description": "run-test-gate.py measures a task's declared non-suite entries plus the suites the selection names for its changed paths; an unrecognised path class widens to the phase gate and says so. A declared key whose command is the unscoped sweep (the dogfood plan's selftests) counts as already wide for the Python arm, so no affected/python or affected/related step is added beside it: today such steps re-run suites the key already ran. The recorded row commits with no override. Acceptance: (1) a task gate holding the full-sweep key adds no affected/python or affected/related step; (2) a narrow declared gate gets the affected suites for its changed paths and none for an unchanged tree; (3) an unrecognised path widens to the phase gate, saying so; (4) the green row commits without override; (5) the selection is used only after the miss-rate task's result is recorded with zero misses, or with each miss's path class widened to the full set.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/_affected_tests.py",
+        "plugins/audit/scripts/governance/_gate_derive.py",
+        "tests/test_run_test_gate.py",
+        "tests/test__affected_tests.py",
+        "tests/test__gate_derive.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__affected_tests.py: a task gate holding a key whose command is the unscoped sweep is already wide for the Python arm, so no affected/python or affected/related step is added",
+          "tests/test_run_test_gate.py: a narrow declared gate records the affected suites for its changed paths, an unrecognised path widens to the phase gate saying so, and the green row commits without override"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P142.10-6yq",
+        "P143.4-6yq"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "movedFrom": {
+        "id": "P142.4",
+        "phase": "P142",
+        "at": "2026-10-27T21:21:15Z"
+      },
+      "notes": [
+        {
+          "at": "2026-10-27T21:22:03Z",
+          "text": "Do not start before a re-measurement after P143.4 shows 0 misses over at least 20 commits (D13)."
+        }
+      ]
+    },
+    {
+      "id": "P143.2-6yq",
+      "title": "Whole-tree scanners run once per phase and on push, never in a task's gate",
+      "status": "pending",
+      "description": "The suites that lint the whole tree (TREE_SCANNERS in tools/affected.py) leave the per-task selection: a .py change no longer pulls them into a task's gate. The phase gate and verify.sh's per-run tier keep every one of them, so CI and sign-off still run them. Acceptance: (1) a task changing one .py selects no tree scanner; (2) the phase gate and verify.sh's per-run tier include every tree scanner; (3) tools/gate-parity.py is green; (4) CONTRIBUTING.md says where the scanners run.",
+      "files": [
+        "tools/affected.py",
+        "plugins/audit/scripts/governance/_affected_tests.py",
+        "tools/verify.sh",
+        "tools/gate-parity.py",
+        "CONTRIBUTING.md",
+        "tests/test__affected_tests.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/affected.py: a task changing one .py selects no tree scanner, while the phase listing includes every tree scanner",
+          "tests/test__affected_tests.py: the per-task selection excludes TREE_SCANNERS and the phase gate keeps them"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim",
+        "choosing-what-to-optimize"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P143.1-6yq"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "movedFrom": {
+        "id": "P142.5",
+        "phase": "P142",
+        "at": "2026-10-27T21:21:16Z"
+      }
+    },
+    {
+      "id": "P143.3-6yq",
+      "title": "CI runs under eight minutes and 55 runner-minutes: the manifest-validation chain in parallel and Windows on four shards",
+      "status": "pending",
+      "description": "Split the serial manifest-validation job (validator, shards, doctor, report smoke, rendered artifacts) into verify.sh slices that run as parallel jobs, move Windows to four shards, and re-record .github/sweep-costs.json from the new CI logs with --costs-from-log. Acceptance: (1) the median wall of at least five per-run CI runs is at most 8 minutes and their median runner-minutes at most 55, measured with the command in the plan; (2) the manifest-validation work finishes within 5 minutes; (3) shard_matrix_drift and gate-parity are green; (4) the cost table's recorded date is after this change.",
+      "files": [
+        ".github/workflows/ci.yml",
+        ".github/sweep-costs.json",
+        "tools/verify.sh",
+        "tools/gate-parity.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tools/gate-parity.py: every manifest-validation slice ci.yml names exists in verify.sh --list, and the Windows shards cover 1..4"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim",
+        "reproducing-ci-locally",
+        "choosing-what-to-optimize"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P143.2-6yq"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "movedFrom": {
+        "id": "P142.7",
+        "phase": "P142",
+        "at": "2026-10-27T21:21:17Z"
+      }
+    },
+    {
+      "id": "P143.4-6yq",
+      "title": "The affected selector reaches a hook or suite through an assembled path, and the measurement measures a commit that touches its own runner",
+      "status": "pending",
+      "description": "The affected selector pinned at d36d84e8 was re-measured over 20 commits with `tools/measure-affected-miss.py --rev d36d84e8 --commits 26 --selector <tools/affected.py at d36d84e8> --ci-since 2026-10-20`. It missed suites, so the affected selection cannot yet be a task's gate. Fix what it missed, and make the measurement able to measure every commit:\n\n1. An import-time raise in plugins/audit/scripts/governance/drive-phase.py and plugins/audit/scripts/manifest/_manifest_*.py (commits d36d84e8, 0b856d0c, 862b4941) turned `.claude/hooks/guard-release.py` and `.claude/hooks/arm-release-bypass.py` red. The selection named neither. Those hooks reach plugin scripts through a path assembled from string pieces (`os.path.join(\"plugins\", \"audit\", \"scripts\", ...)` held in a module constant) and a subprocess. The reach graph reads a literal path only. Make it read a path assembled from literal pieces, directly or through a module-level constant, the same way it reads a literal. Do this in `.claude/hooks/` exactly as in `tests/` and `tools/`. Add a case per shape that is red on today's selector.\n2. An import-time raise at a1891691 (which changed tools/affected.py and tools/measure-affected-miss.py) turned `tests/test_derive_phase_gate.py` red, unselected. Find the edge the graph does not read and fix it by the same rule as in 1, not by a hand-listed suite. Add a case.\n3. Five commits read could-not-measure (089036e0, 9eeea6d5, 0544c08c, d4a26f13, 46a6e095). In each, the mutation lands in `tools/sweep-selftests.py` or `tools/lints/_output_lints.py`, so the runner doing the measuring dies at import before any suite runs. Run the mutated tree's suites under an unmutated copy of the runner and of the lints it imports, so those commits are measured. The runner's own suite still sees the mutation. A case: a commit touching the runner is measured, not skipped.\n4. Say in your outcome whether CI's Windows miss on 94a097d7 (tests/_harness.py, CRLF; fixed since) is a selection miss or a platform-only red that a posix selection cannot see. If it is the latter, the measurement reports it apart from selection misses.\n\nWho depends on these files: tools/affected.py is called by tools/verify.sh --affected and by plugins/audit/scripts/governance/_affected_tests.py (P143.1 makes it the task gate). tools/measure-affected-miss.py is read by tools/lints/_output_lints.py (a row near the prose-number exemptions). Run both tools' --selftest and tests/test__affected_tests.py, tests/test__output_lints.py and tests/test_derive_phase_gate.py.\n\nDeliver scratchpad/probe/mutations.py (mutations3 engine): one row per fix that removes it, each expected red.\nNo F/P/BUG ids in comments.",
+      "files": [
+        "tools/affected.py",
+        "tools/measure-affected-miss.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/affected.py: a hook or suite reaching a script through an os.path.join of literal pieces or a module constant is selected",
+          "tools/measure-affected-miss.py: a commit whose mutation lands in the sweep runner is measured, not could-not-measure"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tools/affected.py tools/measure-affected-miss.py"
+        ],
+        "gateBasis": "files"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}

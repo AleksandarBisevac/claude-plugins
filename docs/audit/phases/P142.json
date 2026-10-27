@@ -193,8 +193,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py:7368 (LINT_PROBE_KEY) crossing plugins/audit/scripts/manifest/_manifest_phases.py:263-296 (phase_gate_default)",
         "issue": "The diff makes the probe a meta.buildCommands key, but phase_gate_default() defaults a NEW phase's gate to EVERY buildCommands key not in meta.phaseGate.exclude (only review-only keys are skipped). Once the orchestrator sets lintProbe, /audit:phase add on a plan without a derived or excluding phaseGate writes `lintProbe` into each new phase's gate, so run-test-gate.py runs the mutating probe with no --changed (the whole probe, minutes, rewriting the tree) as an ordinary gate command. Neither the diff, phase-signoff.md 4b nor any case mentions or pins this; the other side of the boundary is untouched.",
-        "resolution": "Treat lintProbe as a key that is not a gate entry in phase_gate_default (a reserved set beside REVIEW_ONLY_GATES), with a case in the phase-gate-default suite; or at least state in step 4b that a plan naming lintProbe must list it in meta.phaseGate.exclude.",
-        "fixTask": "P142.24-6yq"
+        "resolution": "fixed in P142.24-6yq (d36d84e800c1): Treat lintProbe as a key that is not a gate entry in phase_gate_default (a reserved set beside REVIEW_ONLY_GATES), with a case in the phase-gate-default suite; or at least state in step 4b that a plan naming lintProbe must list it in meta.phaseGate.exclude.",
+        "fixTask": "P142.24-6yq",
+        "commit": "d36d84e800c1",
+        "status": "fixed"
       },
       {
         "id": "P142-R23",
@@ -211,7 +213,7 @@
         "resolution": "Keep the consequence in the done rule (terse form) and take the bytes from the probe clause or the did-line instead, or add a case pinning the wording the guide promises."
       }
     ],
-    "outcome": "[findings: 24 - 0 high, 9 med, 15 low; 6 with a recorded fix commit]"
+    "outcome": "[findings: 24 - 0 high, 9 med, 15 low; 7 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -460,116 +462,6 @@
       }
     },
     {
-      "id": "P142.4",
-      "title": "A task's gate is the affected selection, and no derived step re-runs what a declared key already runs in full",
-      "status": "blocked",
-      "description": "run-test-gate.py measures a task's declared non-suite entries plus the suites the selection names for its changed paths; an unrecognised path class widens to the phase gate and says so. A declared key whose command is the unscoped sweep (the dogfood plan's selftests) counts as already wide for the Python arm, so no affected/python or affected/related step is added beside it: today such steps re-run suites the key already ran. The recorded row commits with no override. Acceptance: (1) a task gate holding the full-sweep key adds no affected/python or affected/related step; (2) a narrow declared gate gets the affected suites for its changed paths and none for an unchanged tree; (3) an unrecognised path widens to the phase gate, saying so; (4) the green row commits without override; (5) the selection is used only after the miss-rate task's result is recorded with zero misses, or with each miss's path class widened to the full set.",
-      "files": [
-        "plugins/audit/scripts/governance/run-test-gate.py",
-        "plugins/audit/scripts/governance/_affected_tests.py",
-        "plugins/audit/scripts/governance/_gate_derive.py",
-        "tests/test_run_test_gate.py",
-        "tests/test__affected_tests.py",
-        "tests/test__gate_derive.py"
-      ],
-      "tests": {
-        "mode": "tdd",
-        "add": [
-          "tests/test__affected_tests.py: a task gate holding a key whose command is the unscoped sweep is already wide for the Python arm, so no affected/python or affected/related step is added",
-          "tests/test_run_test_gate.py: a narrow declared gate records the affected suites for its changed paths, an unrecognised path widens to the phase gate saying so, and the green row commits without override"
-        ],
-        "expectRedFirst": true,
-        "gate": [
-          "selftests",
-          "validate",
-          "plugin-validate",
-          "gate",
-          "report",
-          "lint",
-          "shots",
-          "interactive"
-        ],
-        "gateBasis": "declared"
-      },
-      "model": "opus",
-      "skills": [
-        "writing-python",
-        "no-silent-pass",
-        "before-you-claim"
-      ],
-      "risk": "high",
-      "blockedBy": [],
-      "dependsOn": [
-        "P142.10-6yq"
-      ],
-      "attempts": 0,
-      "maxAttempts": 3,
-      "commit": null,
-      "outcome": {
-        "technical": null,
-        "descriptive": null
-      },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": [],
-      "blockedReason": "Owner 2026-10-26: fix the selection model (P142.10-6yq), then re-measure over at least 20 commits with zero misses; held until that measurement."
-    },
-    {
-      "id": "P142.5",
-      "title": "Whole-tree scanners run once per phase and on push, never in a task's gate",
-      "status": "pending",
-      "description": "The suites that lint the whole tree (TREE_SCANNERS in tools/affected.py) leave the per-task selection: a .py change no longer pulls them into a task's gate. The phase gate and verify.sh's per-run tier keep every one of them, so CI and sign-off still run them. Acceptance: (1) a task changing one .py selects no tree scanner; (2) the phase gate and verify.sh's per-run tier include every tree scanner; (3) tools/gate-parity.py is green; (4) CONTRIBUTING.md says where the scanners run.",
-      "files": [
-        "tools/affected.py",
-        "plugins/audit/scripts/governance/_affected_tests.py",
-        "tools/verify.sh",
-        "tools/gate-parity.py",
-        "CONTRIBUTING.md",
-        "tests/test__affected_tests.py"
-      ],
-      "tests": {
-        "mode": "tdd",
-        "add": [
-          "tools/affected.py: a task changing one .py selects no tree scanner, while the phase listing includes every tree scanner",
-          "tests/test__affected_tests.py: the per-task selection excludes TREE_SCANNERS and the phase gate keeps them"
-        ],
-        "expectRedFirst": true,
-        "gate": [
-          "selftests",
-          "validate",
-          "plugin-validate",
-          "gate",
-          "report",
-          "lint",
-          "shots",
-          "interactive"
-        ],
-        "gateBasis": "declared"
-      },
-      "model": "sonnet",
-      "skills": [
-        "writing-python",
-        "no-silent-pass",
-        "before-you-claim",
-        "choosing-what-to-optimize"
-      ],
-      "risk": "med",
-      "blockedBy": [],
-      "dependsOn": [
-        "P142.4"
-      ],
-      "attempts": 0,
-      "maxAttempts": 3,
-      "commit": null,
-      "outcome": {
-        "technical": null,
-        "descriptive": null
-      },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
-    },
-    {
       "id": "P142.6",
       "title": "Sign-off runs the full gate once, and a probe of a guarded lint only when the phase changed that lint",
       "status": "done",
@@ -647,59 +539,6 @@
         "status": "could-not-prove",
         "source": "red-first-helper"
       }
-    },
-    {
-      "id": "P142.7",
-      "title": "CI runs under eight minutes and 55 runner-minutes: the manifest-validation chain in parallel and Windows on four shards",
-      "status": "pending",
-      "description": "Split the serial manifest-validation job (validator, shards, doctor, report smoke, rendered artifacts) into verify.sh slices that run as parallel jobs, move Windows to four shards, and re-record .github/sweep-costs.json from the new CI logs with --costs-from-log. Acceptance: (1) the median wall of at least five per-run CI runs is at most 8 minutes and their median runner-minutes at most 55, measured with the command in the plan; (2) the manifest-validation work finishes within 5 minutes; (3) shard_matrix_drift and gate-parity are green; (4) the cost table's recorded date is after this change.",
-      "files": [
-        ".github/workflows/ci.yml",
-        ".github/sweep-costs.json",
-        "tools/verify.sh",
-        "tools/gate-parity.py"
-      ],
-      "tests": {
-        "mode": "regression",
-        "add": [
-          "tools/gate-parity.py: every manifest-validation slice ci.yml names exists in verify.sh --list, and the Windows shards cover 1..4"
-        ],
-        "expectRedFirst": false,
-        "gate": [
-          "selftests",
-          "validate",
-          "plugin-validate",
-          "gate",
-          "report",
-          "lint",
-          "shots",
-          "interactive"
-        ],
-        "gateBasis": "declared"
-      },
-      "model": "sonnet",
-      "skills": [
-        "writing-python",
-        "no-silent-pass",
-        "before-you-claim",
-        "reproducing-ci-locally",
-        "choosing-what-to-optimize"
-      ],
-      "risk": "med",
-      "blockedBy": [],
-      "dependsOn": [
-        "P142.5"
-      ],
-      "attempts": 0,
-      "maxAttempts": 3,
-      "commit": null,
-      "outcome": {
-        "technical": null,
-        "descriptive": null
-      },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
     },
     {
       "id": "P142.8",
@@ -1720,7 +1559,7 @@
     {
       "id": "P142.24-6yq",
       "title": "A build command that runs at sign-off is never defaulted into a phase's gate",
-      "status": "in_progress",
+      "status": "done",
       "description": "Review finding P142-R22 (med), on P142.12-6yq at its landing. The sign-off lint probe is now named by `meta.buildCommands.lintProbe` (drive-phase.py `LINT_PROBE_KEY`). But `_manifest_phases.phase_gate_default()` defaults a new phase's gate to every `buildCommands` key that `meta.phaseGate.exclude` does not name. The only keys it skips are the review-only ones (`_manifest_vocab.review_only_keys`: the `REVIEW_ONLY_GATES` catalog, plus values starting `review-only:`). So once a plan sets `lintProbe`, `/audit:phase add` on a plan with no excluding `phaseGate` writes `lintProbe` into each new phase's gate. Then run-test-gate runs a probe that mutates the tree, as an ordinary gate step, on every task and phase gate.\n\nFix the vocabulary, not the one key:\n1. A `buildCommands` key can be a sign-off step rather than a gate command. Give the catalog that category beside the review-only one (`lintProbe` is its first member), in `_manifest_vocab`, and make it the one place both questions are answered.\n2. `phase_gate_default` skips sign-off-only keys exactly as it skips review-only keys, and its basis names what it skipped.\n3. A phase or task gate that names a sign-off-only key explicitly is reported by the plan's validation (validate-manifest), with a message that says the key runs at sign-off and not as a gate step. Find where `_check_phase_gate` warns about an always/exclude overlap and put the check beside it.\n4. Any other reader that builds a gate from `buildCommands` keys (grep `buildCommands` for derivations) reads the same predicate.\n\nRed-first each case:\n- a plan with `lintProbe` set and no `phaseGate` defaults a new phase's gate without it (red today);\n- an explicit gate entry naming it is reported;\n- over-fire: an ordinary key is still in the default, and a review-only key is still skipped.\nNo F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/manifest/_manifest_vocab.py",
@@ -1753,14 +1592,22 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d36d84e800c1",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_manifest_vocab: new LINT_PROBE_KEY, SIGNOFF_ONLY_GATES=(LINT_PROBE_KEY,), signoff_only_entry(entry), signoff_only_keys(build), beside the review-only catalog. _manifest_phases: re-exports them (LINT_PROBE_KEY, SIGNOFF_ONLY_KEYS, signoff_only_entry, signoff_only_keys); phase_gate_default skips sign-off-only keys from entries and from always, returns them as signoffOnly and names them in basis; new _signoff_only_gate (code phases.signoff_only_gate.in-gate) called from _check_phase_gate (meta.phaseGate.always only; exclude naming it stays quiet), _check_phase_intent (phase testGate) and _walk_phases (non-terminal task tests.gate). drive-phase.py: LINT_PROBE_KEY = _phases.LINT_PROBE_KEY (import layers allow it: drive-phase already imports _manifest_phases; no new import). Files outside the declared list: plugins/audit/scripts/manifest/audit-task.py (edit was allowed) - its _default_phase_gate now appends a sign-off-step clause to the basis it prints for /audit:phase add, and the all-keys-skipped message no longer says 'review-only' alone; no test pins that sentence (grep), and it has no new case of its own. Tests: pg9-pg14 in test__manifest_phases, mv65-mv66 in test__manifest_vocab, lp11 in test_drive_phase (plus import of _manifest_vocab there). Other readers of buildCommands keys checked: _gate_derive and run-test-gate read phase_gate_default (entries/rest/excluded), so they inherit the skip; run-test-gate gate_of/own resolve declared entries only; _gate_feed accepted_gates/review_asks are offers, not gate builders; fullGate naming lintProbe is NOT reported (outside the task's stated scope). Suites: phases+vocab 205 cases pass; drive_phase 607/607; nine cross-file suites 2760 cases pass.",
+        "descriptive": "A plan that names lintProbe no longer has it written into new phases' gates, and an explicit gate naming it is reported as a sign-off step."
       },
       "startedAt": "2026-10-27T17:18:05Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-27T17:43:02Z",
+      "verifiedBy": [
+        "pg9: lintProbe + no phaseGate -> default gate without it, named in basis",
+        "pg10: always cannot put it back",
+        "pg11: ALLOW/over-fire: ordinary key stays, review-only still skipped under its own name, plan without a sign-off key keeps the old basis",
+        "pg12: phase testGate naming it reported",
+        "pg13: task tests.gate naming it reported against that task only",
+        "pg14: phaseGate.always reported, exclude quiet",
+        "mv65/mv66 (vocab) and lp11 (drive) pin the catalog and the single key spelling"
+      ],
       "notes": [
         {
           "at": "2026-10-27T17:17:58Z",
@@ -1783,6 +1630,18 @@
         "runId": "2026-10-27T17:42:59Z.a05f01",
         "status": "passed",
         "at": "2026-10-27T17:42:59Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "d36d84e800c1",
+        "at": "2026-10-27T17:43:02Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-27T17:28:45Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__manifest_phases.py tests/test__manifest_vocab.py` in a throwaway tree at HEAD exited 1 with 8 of 67 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - pg9 (house FAIL), pg10 (house FAIL), pg11 (house FAIL), pg12 (house FAIL), pg13 (house FAIL), pg14 (house FAIL), mv65 (house FAIL), mv66 (house FAIL): SELFTEST FAILED: 65/67 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - 3 times the recorded 21s of tests/test__manifest_phases.py, tests/test__manifest_vocab.py in .github/sweep-costs.json is only 62s; fix run: held back 21s of the deadline, the recorded slot-seconds of tests/test__manifest_phases.py, tests/test__manifest_vocab.py in .github/sweep-costs.json",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     }
   ],

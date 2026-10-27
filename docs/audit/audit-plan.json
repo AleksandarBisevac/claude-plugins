@@ -24,7 +24,8 @@
       "lint": "ruff check plugins/audit tools tests && vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints",
       "shots": "node tools/capture-screenshots.mjs --check",
       "interactive": "node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html",
-      "vitest": "npx vitest run"
+      "vitest": "npx vitest run",
+      "lintProbe": "python3 tools/prove-gates.py"
     },
     "evidenceSince": {
       "at": "2026-09-08T21:36:02Z",
@@ -921,6 +922,12 @@
       "title": "The gate ladder: affected checks per task, the full gate and tree scanners per phase, CI under eight minutes",
       "status": "in_progress",
       "shard": "phases/P142.json"
+    },
+    {
+      "id": "P143",
+      "title": "The affected selection as the task gate",
+      "status": "pending",
+      "shard": "phases/P143.json"
     }
   ],
   "fileIndex": {
@@ -1015,7 +1022,7 @@
       "BF4.2",
       "BF4.3-p5e",
       "P131.14",
-      "P142.7",
+      "P143.3-6yq",
       "P142.14-6yq"
     ],
     ".gitignore": [
@@ -1346,7 +1353,7 @@
       "P131.16-dau",
       "P137.6-3y3",
       "P142.3",
-      "P142.5",
+      "P143.2-6yq",
       "P142.14-6yq"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
@@ -4221,7 +4228,7 @@
       "P131.2",
       "P131.12",
       "P133.1",
-      "P142.4",
+      "P143.1-6yq",
       "P142.1",
       "P142.13-6yq"
     ],
@@ -8023,8 +8030,8 @@
       "P135.1",
       "P137.3-3y3",
       "P137.6-3y3",
-      "P142.5",
-      "P142.7"
+      "P143.2-6yq",
+      "P143.3-6yq"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -8225,8 +8232,8 @@
       "P131.15-dau",
       "P140.1",
       "P140.2-ohy",
-      "P142.5",
-      "P142.7"
+      "P143.2-6yq",
+      "P143.3-6yq"
     ],
     "plugins/audit/scripts/governance/_gate_derive.py": [
       "P79.2",
@@ -8246,7 +8253,7 @@
       "P130.38-ywo",
       "P131.1",
       "P131.2",
-      "P142.4"
+      "P143.1-6yq"
     ],
     "plugins/audit/tests/test__gate_derive.py": [
       "P79.2",
@@ -9362,8 +9369,9 @@
       "P131.2",
       "P131.16-dau",
       "P142.3",
-      "P142.5",
-      "P142.10-6yq"
+      "P143.2-6yq",
+      "P142.10-6yq",
+      "P143.4-6yq"
     ],
     "docs/audit/phases/P85.json": [
       "P91.1"
@@ -10681,7 +10689,7 @@
       "P130.9",
       "P131.1",
       "P131.2",
-      "P142.7",
+      "P143.3-6yq",
       "P142.8",
       "P142.1"
     ],
@@ -10701,8 +10709,8 @@
       "P130.10-ywo",
       "P131.1",
       "P131.2",
-      "P142.4",
-      "P142.5"
+      "P143.1-6yq",
+      "P143.2-6yq"
     ],
     "plugins/audit/tests/test__affected_tests.py": [
       "P125.8",
@@ -11100,8 +11108,8 @@
     ],
     "tests/test__affected_tests.py": [
       "P131.1",
-      "P142.4",
-      "P142.5"
+      "P143.1-6yq",
+      "P143.2-6yq"
     ],
     "tests/test__areas.py": [
       "P131.1",
@@ -11188,7 +11196,7 @@
     ],
     "tests/test__gate_derive.py": [
       "P131.1",
-      "P142.4"
+      "P143.1-6yq"
     ],
     "tests/test__gate_feed.py": [
       "P131.1"
@@ -11680,7 +11688,7 @@
       "P131.12",
       "P133.1",
       "P134.1",
-      "P142.4",
+      "P143.1-6yq",
       "P142.1",
       "P142.13-6yq"
     ],
@@ -11798,7 +11806,8 @@
       "P131.19-dau",
       "P132.5-5mm",
       "P142.3",
-      "P142.10-6yq"
+      "P142.10-6yq",
+      "P143.4-6yq"
     ],
     "plugins/audit/scripts/status/_impact.py": [
       "P131.18-dau"
