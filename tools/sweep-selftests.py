@@ -4456,6 +4456,32 @@ def _cases(check):
           % (bt_seen.get("late"), bt_rows.get("late")),
           len(bt_late) == 2 and all(0 < t <= 60 for t in bt_late)
           and bt_rows["late"][:2] == (True, 2))
+    # bt3's two blocks start together, so a cut frozen at the deadline itself
+    # passes it. Here one worker runs them in turn and the first naps, so the
+    # second is admitted later and must be handed less than the first was.
+    bt_nap = bt_body.replace("def _x_cases(check):\n",
+                             "def _x_cases(check):\n    __import__('time')"
+                             ".sleep(1.5)\n")
+    bt_box = tempfile.mkdtemp(prefix="sweep-block-deadline-")
+    try:
+        with io.open(os.path.join(bt_box, "split-suite"), "w",
+                     encoding="utf-8") as fh:
+            fh.write(bt_nap)
+        bt_turn = sweep(["split-suite"], jobs=1, repo=bt_box,
+                        costs={"split-suite": 1000.0}, deadline=60)[0]
+    finally:
+        remove_tree(bt_box)
+    bt_order = re.findall(r"(?m)^PASS t([xy])1 timeout=(\d+) slots=1$",
+                          bt_turn.get("output") or "")
+    check("bt4 ...and what is left is read when each block is admitted: one "
+          "worker, the second block admitted after the first one's nap is "
+          "handed less than the first was, both under the deadline: told %r, "
+          "row %r" % (bt_order, (bt_turn.get("ok"), bt_turn.get("blocks"))),
+          bt_nap.count("sleep(1.5)") == 1
+          and [b for b, _t in bt_order] == ["x", "y"]
+          and 0 < int(bt_order[1][1]) < int(bt_order[0][1]) <= 60
+          and bt_turn.get("ok") is True and bt_turn.get("blocks") == 2,
+          (bt_turn.get("output") or "")[-600:])
 
 
     bg_buf = io.StringIO()

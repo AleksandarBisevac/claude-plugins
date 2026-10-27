@@ -117,8 +117,10 @@
         "severity": "low",
         "file": "CLAUDE.md:240; CONTRIBUTING.md:332; .github/workflows/ci.yml:134",
         "issue": "The diff makes three untouched documents state the old admission rule. CLAUDE.md says a staged suite 'is admitted with `stage_grant(jobs)` slots', CONTRIBUTING.md says 'is admitted holding `stage_grant(jobs)` slots', and the ci.yml comment says 'a staged suite is admitted holding all but one of them'. After slot_gate's change at tools/sweep-selftests.py:1385-1394, a suite holds as many slots as are free when its turn comes, between 1 and that number. The executor listed all three as stale and outside its files.",
-        "resolution": "Reword each to say: up to `stage_grant(jobs)` slots, as many as are free when its turn comes and at least one, with the number it holds passed to the child in SWEEP_STAGE_GRANT and its timeout calibrated to that number.",
-        "fixTask": "P142.28-6yq"
+        "resolution": "fixed in P142.28-6yq (e6813d0b0a18): Reword each to say: up to `stage_grant(jobs)` slots, as many as are free when its turn comes and at least one, with the number it holds passed to the child in SWEEP_STAGE_GRANT and its timeout calibrated to that number.",
+        "fixTask": "P142.28-6yq",
+        "commit": "e6813d0b0a18",
+        "status": "fixed"
       },
       {
         "id": "P142-R12",
@@ -218,7 +220,7 @@
         "resolution": "Keep the consequence in the done rule (terse form) and take the bytes from the probe clause or the did-line instead, or add a case pinning the wording the guide promises."
       }
     ],
-    "outcome": "[findings: 24 - 0 high, 9 med, 15 low; 7 with a recorded fix commit]"
+    "outcome": "[findings: 24 - 0 high, 9 med, 15 low; 8 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1652,7 +1654,7 @@
     {
       "id": "P142.25-6yq",
       "title": "fix P142-R9: contradicts task clause 'Split each into staged blocks so the sw...",
-      "status": "in_progress",
+      "status": "cancelled",
       "description": "contradicts task clause 'Split each into staged blocks so the sweep spreads them across workers, and re-record the cost table.' The table is untouched, so the four split files keep the figures they had when each ran unsplit on one slot. Those figures now set the shard balance and every split file's timeout. On the live table, shard 3/3 holds three staged suites in a row (test_close_phase 330.3, test__deps 268.2, test_stamp_verification 265.4). The per-block process overhead on Windows, where test_stamp_verification now starts a process for each of its blocks, has never been measured. The executor gives a reason (the table binds to windows-latest and cannot be recorded from darwin), but the clause is still not done.\n\nResolution asked: Make it a tracked task before sign-off. Once this lands on a CI run, save each Windows selftests cell's log and run `python tools/sweep-selftests.py --costs-from-log <logs> --platform windows-latest --record-costs .github/sweep-costs.json`. Then confirm that the shard split it prints is balanced and that no split file's calibrated timeout at held=3 sits within 2x of its measured wall time.",
       "files": [
         ".github/sweep-costs.json",
@@ -1680,10 +1682,10 @@
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Cancelled: The re-record is right but cannot land alone: with the true Windows figures the sweep's shard split cannot hold a staged suite and every block of test_drive_phase gets the whole suite's timeout, so tt5 goes red. The re-record lands with the sweep fix in P143 (F810); its work is kept at refs/audit/kept/P142.25-6yq (d40f2bf4)."
       },
       "startedAt": "2026-10-27T21:23:39Z",
-      "completedAt": null,
+      "completedAt": "2026-10-27T21:59:02Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -1847,7 +1849,7 @@
     {
       "id": "P142.28-6yq",
       "title": "fix P142-R11: The diff makes three untouched documents state the old admissio...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The diff makes three untouched documents state the old admission rule. CLAUDE.md says a staged suite 'is admitted with `stage_grant(jobs)` slots', CONTRIBUTING.md says 'is admitted holding `stage_grant(jobs)` slots', and the ci.yml comment says 'a staged suite is admitted holding all but one of them'. After slot_gate's change at tools/sweep-selftests.py:1385-1394, a suite holds as many slots as are free when its turn comes, between 1 and that number. The executor listed all three as stale and outside its files.\n\nResolution asked: Reword each to say: up to `stage_grant(jobs)` slots, as many as are free when its turn comes and at least one, with the number it holds passed to the child in SWEEP_STAGE_GRANT and its timeout calibrated to that number.",
       "files": [
         "CLAUDE.md",
@@ -1877,13 +1879,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e6813d0b0a18",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The three sentences the finding quotes no longer exist at base 071637de. Commit 9eeea6d5 (P142.14) had already replaced them in CLAUDE.md (about line 239), CONTRIBUTING.md (about line 331) and ci.yml (about line 134) with the block model (a staged suite whose STAGES is a literal runs one job per block, one slot each, then a replay) plus a pointer to the `blocks, not suites` comment above work_items(), which holds the one statement of the fallback. A grep over the three files for admitted|stage_grant|STAGE_GRANT|all but one found no stale admission wording. The admission rule the finding drafted (up to stage_grant(jobs), what is free, at least one) now applies only to the fallback path, a staged suite whose table cannot be read as a literal (sweep() admitted(), tools/sweep-selftests.py about lines 1825-1838). The documents defer that path to the comment, so I did not restate it, because restating it would make a second copy. The one remaining claim in these files about what a staged suite holds was CONTRIBUTING.md's `budget:` sentence, 'which suites held several slots'. budget_line() (tools/sweep-selftests.py:2138-2161) is written before sweep() runs (:2286) and prints 'N staged suites hold up to G each', and under slot_gate a suite run whole can hold one slot. I reworded that sentence: the line is written before the first job starts; it names which staged suites will run whole and the most slots each may hold (stage_grant(jobs)); each takes what is free when its turn comes, at least one (slot_gate wait :1452-1458), is told the number in SWEEP_STAGE_GRANT (run_one :1145), and has its timeout calibrated to it (admitted: file_timeout(..., held, ...)). I made no change to CLAUDE.md or ci.yml. Diff: CONTRIBUTING.md, 5 lines added and 2 removed. Run: python3 tools/sweep-selftests.py tests/test__deps.py tests/test__output_lints.py -> exit 0, 2/2 files ok, 427 cases. Dependants: CONTRIBUTING.md's tests/test__deps.py and tests/test__output_lints.py are still correct (green above). The other CONTRIBUTING.md dependants listed (.claude/skills/before-you-claim/evals/evals.json, plugins/audit/scripts/_output.py, tests/test__areas.py, tests/test_derive_phase_gate.py, tools/affected.py, tools/check-committed-pii.py) refer to the file by name, not to this paragraph. A grep of the tree for 'held several slots|which suites held' returns nothing (exit 1), so none of them quotes the replaced wording, and they are still correct. CLAUDE.md and ci.yml dependants: those files are unchanged, so their dependants are unaffected. Left for P142.27: the three documents already state the block model at base, so the doc half of its rewrite may already be done. The fallback paragraph of the `blocks, not suites` comment (tools/sweep-selftests.py about line 1661, not a file of mine) says a whole-run suite is told its number in STAGE_GRANT_VAR but not that its timeout is calibrated to that number. The code does this (admitted passes `held` to file_timeout). The comment, which the documents defer to, is the place to add it.",
+        "descriptive": "No document still states the old staged-suite admission rule. CONTRIBUTING.md's budget-line sentence now says a whole-run staged suite may hold up to stage_grant(jobs) slots, takes what is free (at least one), and is told that number and timed by it."
       },
       "startedAt": "2026-10-27T21:23:44Z",
-      "completedAt": null,
+      "completedAt": "2026-10-27T21:58:39Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -1915,12 +1917,23 @@
         "runId": "2026-10-27T21:39:57Z.44604c",
         "status": "passed",
         "at": "2026-10-27T21:39:57Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "e6813d0b0a18",
+        "at": "2026-10-27T21:58:39Z",
+        "return": "docs/audit/evidence/returns/P142.28-6yq/20261027T212344Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task with tests.add none and expectRedFirst false; a documentation rewording owes no red",
+        "at": ""
       }
     },
     {
       "id": "P142.29-6yq",
       "title": "fix P142-R20: The committed cost table's `about` text still reads 'wall secon...",
-      "status": "pending",
+      "status": "cancelled",
       "description": "The committed cost table's `about` text still reads 'wall seconds times the slots of the sweep's budget the file held' - the very sentence the task's second med clause lists as false ('record_costs about text ... which --record-costs writes into .github/sweep-costs.json'). The diff corrects the generator (record_costs, tools/sweep-selftests.py) but not the file it wrote, so the repo now carries the retired-model wording until someone re-records. The executor disclosed this and says it was told not to edit the file; nothing in the task description says so.\n\nResolution asked: Replace the `about` string in .github/sweep-costs.json with the text record_costs now writes (same bytes, no cost values touched), or file a follow-up that re-records the table and names it.",
       "files": [
         ".github/sweep-costs.json",
@@ -1947,10 +1960,10 @@
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Cancelled: Subsumed: the re-record writes record_costs' about text, and case swd7 holds the table byte for byte to the recorder; both land with the P143 re-record (F810)."
       },
       "startedAt": null,
-      "completedAt": null,
+      "completedAt": "2026-10-27T21:59:03Z",
       "verifiedBy": [],
       "notes": [
         {
