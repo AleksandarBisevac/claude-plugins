@@ -1,0 +1,21 @@
+{
+  "gates": {
+    "python3 tools/prove-gates.py --only runner_line_end": "pass",
+    "python3 tools/prove-gates.py --selftest": "pass",
+    "python3 tools/sweep-selftests.py tools/prove-gates.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "gate-only task, expectRedFirst false: no test is added. The rows themselves were proved red by prove-gates (2 of 2 gates proven red: le1,le2,le3 and le4; 3 of 3 guards proven to stay quiet: le2+le4, le2+le4, le3+le4), and at the start --selftest c1 and a4 were the known red.",
+    "at": "2026-10-27 prove-gates --only runner_line_end run, started 1:56PM"
+  },
+  "outcome": {
+    "technical": "tools/prove-gates.py only, by Edit. TABLE: two rows after bc1 (runner_line_end_violations: crippled def -> le1; run-test-gate.py end-of-run reader un-normalised -> le4). ALLOW: three rows on _output_lints.py (drop the home-module filter -> le2; empty the normaliser call-name tuple -> le2; report pending sites -> le3). NOT_A_GATE: reach_graph with a reason (a graph of edges, no verdict). Each anchor applies exactly once (selftest a1/c2 pass). prove-gates --only runner_line_end: all 2 red and 3 allow rows proven, named case in each red set. --selftest 45/45 (was 43/45: c1, a4 and later a1/c2b during my concurrent run). sweep-selftests on the file ok, 45 cases. A first --only run was backgrounded by the 120s tool timeout while mutating; my concurrent --selftest read the mutated tree and failed a1/c2b, so I waited for the first run to restore (git status showed only prove-gates.py modified afterwards), purged __pycache__ and re-ran green.",
+    "descriptive": "Every lint and tree walk the last tasks added is now either proved by a prove-gates fail/allow row or declared not a gate, and the selftest is green again."
+  },
+  "testsAdded": [],
+  "claims": "claims:\n1 n/a \u2014 comments in the new rows describe only what each mutation does (tools/prove-gates.py rows after bc1, ALLOW rows before the ts_order allow row, NOT_A_GATE reach_graph reason which says only that it returns edges, not a pass or fail, and that it walks with no argument: tools/affected.py reach_graph returns a dict of imported_by/run_by/scanners/broken)\n2 le1 row -> le1,le2,le3 red; le4 row -> le4 red; allow rows -> le2+le4, le2+le4, le3+le4 red (named le2/le2/le3 included), all from the prove-gates run which restores the tree; git status afterwards shows only tools/prove-gates.py modified; __pycache__ purged before the final --selftest 45/45 exit 0\n3 grep of coverage gap: coverage() and allow_coverage() missing lists were ['reach_graph','runner_line_end_violations'] at base; the selftest c1/a4 now pass, so no other walk or verdict is unaccounted\n4 n/a \u2014 no rule addressed to an agent\n5 n/a \u2014 no property recorded\n6 n/a \u2014 no guard written\n7 n/a \u2014 no number written in prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:d5876250b57777b9b7be67923063432bb0c08e739962dece8c027d9b3167ad8c\",\"dirtyDigest\":\"sha256:a201bda588a1542a6a6d2a817533f061611c289dadb4e853375c04298df80d95\",\"dirtyPaths\":{\"tools/prove-gates.py\":\"d6e6ed4ab34d4654\"},\"head\":\"935f981c\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tools/prove-gates.py\"],\"scopeDigest\":\"sha256:2c1d3db4b90f2fa88f31d8177a739d3c303d7981f2cb40c8f30da81a22055fb0\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

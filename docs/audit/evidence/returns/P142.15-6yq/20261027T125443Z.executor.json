@@ -1,0 +1,33 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_run_agent_session.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-27T12:57:10Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_run_agent_session.py` in a throwaway tree at HEAD exited 1 with 7 of 67 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ras52 (house FAIL), ras53 (house FAIL), ras54 (house FAIL), ras58 (house FAIL), ras55 (house FAIL), ras56 (house FAIL), ras57 (house FAIL): SELFTEST FAILED: 60/67 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; fix run: no time held back, no recorded cost for tests/test_run_agent_session.py in .github/sweep-costs.json",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Re-read attempt 1's work in the task tree against the brief; nothing changed. plugins/audit/scripts/governance/run-agent-session.py: _run arms SIGINT/SIGTERM (_proc_group.arm_interrupt, defined at _proc_group.py:442, disarm at :457) before _prepare, runs the session in _in_session, and its finally calls drop_session_tmp -> _output.remove_tree (_output.py:360); _prepare removes the directory itself when the .tmpdir record write fails. Module docstring now says the TMPDIR is removed, on which paths, and that a SIGKILL still leaves it. Tests: stub writes a nested fixture into its TMPDIR, stop=<signal> support, cases ras52-ras58. Commands: `python3 tools/sweep-selftests.py tests/test_run_agent_session.py` exit 0, 1/1 files ok, 67 cases; ruff check on both files exit 0; vermin -t=3.8- on both exit 0. Dependants: tests/test_run_agent_session.py changed by this task (_under/_cases/_selftest names kept); tools/affected.py still correct (reads _usage, _cases, _selftest, none renamed); PLUGIN-BUILD-GUIDE.md still correct but silent about the removal (not in this task's files; _under, exit_for unchanged); drive-phase.py still correct (never reads the TMPDIR); audit-config.schema.json, _config_rules.py, _panel_settings.py, _skill_places.py still correct (name the script for the model setting and skill resolution, unchanged); tests/test__doctor_policy.py (find_skills) and tests/test_drive_phase.py (_read_text, its own helper) unaffected. Not covered by any case: the outer arm in _run for a stop between mkdtemp and the child's start, a window no deterministic case can hit.",
+    "descriptive": "A writer or reviewer agent session now removes its temp directory when it ends, on success, failure, timeout and interrupt."
+  },
+  "testsAdded": [
+    "a writer and a reviewer session each leave no session temp directory behind on success (ras52, ras53), on failure (ras54), on SIGTERM and SIGINT stops (ras55, ras56), across every run of the suite (ras57), and when the TMPDIR record cannot be written (ras58)"
+  ],
+  "casesAdded": [
+    [
+      "ras52",
+      "ras53",
+      "ras54",
+      "ras55",
+      "ras56",
+      "ras57",
+      "ras58"
+    ]
+  ],
+  "claims": "claims:\n1 run-agent-session.py _run finally -> drop_session_tmp -> _output.remove_tree is the removal the docstring describes; SIGKILL leaving the directory is stated in the docstring itself\n2 attempt 1 mutations in a scratch copy: no removal -> 61/67 (ras52-57 red); non-recursive rmdir -> 61/67 (ras52-57 red); _prepare cleanup dropped -> 65/67 (ras57, ras58 red); unmutated 67/67. Re-run this attempt: 67/67 green, ras52-58 PASS. The helper's red run is filed by submit\n3 the class is every exit path of the session: success (ras52/53), failure (ras54), SIGTERM (ras55), SIGINT (ras56), record-write failure (ras58), and a sweep over all parent temp dirs (ras57). Left: the stop between mkdtemp and child start, no deterministic case\n4 n/a - no rule addressed to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:a9cd853a0d471119a581949cd2cd1ea834adf024382da0e63b3f240af2c53f43\",\"dirtyDigest\":\"sha256:c35a5a2d73ccf3b4ead361427c750a0ea44cd4826acdaaaba715f7cdc9ac075d\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/run-agent-session.py\":\"d8e3277c78c3c1f4\",\"tests/test_run_agent_session.py\":\"1bf36537278fd9d1\"},\"head\":\"d92b9c64\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/run-agent-session.py\",\"tests/test_run_agent_session.py\"],\"scopeDigest\":\"sha256:8d270e692ba4960caf8956d34f1c6686c8aa1e15007c7e294e65fc923c98bfc4\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

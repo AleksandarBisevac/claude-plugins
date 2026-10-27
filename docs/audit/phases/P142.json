@@ -1114,7 +1114,7 @@
     {
       "id": "P142.15-6yq",
       "title": "An agent session removes the temp directory it was given when it ends",
-      "status": "pending",
+      "status": "in_progress",
       "description": "run-agent-session.py creates a session-writer-* / session-reviewer-* temp directory per session and never removes it. Remove it in finally on every exit path (success, failure, timeout, interrupt), keeping anything a caller is told to read out of it by copying first. Red-first the case against today's code. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/governance/run-agent-session.py",
@@ -1136,22 +1136,22 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-26T13:11:11Z",
+      "startedAt": "2026-10-27T12:54:43Z",
       "completedAt": null,
       "verifiedBy": [],
       "bugId": "BUG-30-6yq",
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-26T13:33:23Z.2d2dd6",
-        "status": "failed",
-        "at": "2026-10-26T13:33:23Z"
+        "runId": "2026-10-27T13:17:00Z.cfc52e",
+        "status": "passed",
+        "at": "2026-10-27T13:17:00Z"
       }
     },
     {
@@ -1207,7 +1207,7 @@
     {
       "id": "P142.17-6yq",
       "title": "Every tree walk the last tasks added is either proved by a prove-gates row or declared not a gate",
-      "status": "pending",
+      "status": "in_progress",
       "description": "At HEAD `python3 tools/prove-gates.py --selftest` is red (c1 and a4, 43 of 45): tools/affected.py's new `reach_graph` walks the tree, so the derivation reaches it, and it has no TABLE/ALLOW row and no NOT_A_GATE declaration. `reach_graph` builds a graph; it returns no verdict - decide by reading it whether it is a gate; if it is not, declare it in NOT_A_GATE with a reason (the reason is checked in both directions). The task before this one adds `_output_lints.runner_line_end_violations`, a real lint; its executor proved these rows in a scratch copy (verify each still applies exactly once against the landed code, and that each turns its named case red):\nTABLE, after the bc1 row:\n (\"runner_line_end_violations\", L + \"_output_lints.py\", \"replace\", \"def runner_line_end_violations(dirs=None, home=RUNNER_TEXT_HOME, pending=None):\" -> same line + \"\\n    return []\", OUTL, \"le1\")\n (\"runner_line_end_violations\", S + \"governance/run-test-gate.py\", \"replace\", \"    body = _ro.plain_text(text)\\n    if wrapper_words(command):\\n        return False\\n\" -> \"    body = text or \\\"\\\"\\n    if wrapper_words(command):\\n        return False\\n\", OUTL, \"le4\")\nALLOW: three rows on _output_lints.py turning le2 / le2 / le3 red: drop the home-module filter, empty the normaliser call-name tuple, and report sites listed as pending.\nThen run `python3 tools/prove-gates.py --only runner_line_end` and `python3 tools/prove-gates.py --selftest`; both green. No F/P/BUG ids in comments.",
       "files": [
         "tools/prove-gates.py"
@@ -1228,16 +1228,17 @@
       "dependsOn": [
         "P142.13-6yq"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-27T12:54:44Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P142.18-6yq",
@@ -1371,6 +1372,48 @@
         "status": "proved",
         "source": "red-first-helper"
       }
+    },
+    {
+      "id": "P142.20-6yq",
+      "title": "A task tree the mover refuses to bring to the head is recut there with its work, never gated at the base the phase has left",
+      "status": "pending",
+      "description": "Observed in P142 on 2026-10-27, right after the tree-follows-head change landed (862b4941).\n\nP142.13 and P142.14 advanced and went green. P142.12's work overlaps three files the head moved: plugins/audit/scripts/governance/drive-phase.py, tests/test_drive_phase.py and PLUGIN-BUILD-GUIDE.md. So `advance_member` refused the move by name (\"the tree stays at d4a26f13\"). The drive then ran the gate in that tree anyway. The gate went red on te11/ln1 in tests/test__output_lints.py, which b10ddfdd had already fixed, and the base verdict was `no-base`. The gate-red decision offered retry|rerun|block. None of those moves the tree, and `redo` is offered only at integration-refused. So the task had no supported exit except a block. This is the same defect the tree-follows-head change was opened to remove, now reached by every task whose files the phase also edits.\n\nFix the structure:\n1. A refused move is not a gate input. When `advance_member` refuses because the work overlaps files that moved, the drive records no gate run on that base. It stops with a decision whose answers include `redo`: recut the tree at the phase head carrying the task's work as a patch, three-way where it applies. Only the task's work paths are carried, never the plan's record files, the same exclusion integration uses. Each carried path is then verified against refs/audit/carry/<task> after applying.\n2. A redo whose patch does not apply leaves the old tree and the carry ref untouched. It refuses by name, listing the conflicting paths.\n3. Reuse the existing redo machinery (`redo` at integration-refused, the patch it writes and the tree take-down) rather than a second copy. Find the one place the decision table decides which answers a state offers.\n\nRed-first each case. Use a fixture whose work overlaps a moved file and is gated at its old base today (red), and gets the recut decision and no gate row after the fix. Also cover a redo whose patch conflicts (refused, tree and carry ref unchanged), and record files never carried. Prove a failure mid-redo leaves the work as it was.\n\nHigh risk: it recuts a tree that holds an agent's only copy of its work. No F/P/BUG ids in comments.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "plugins/audit/scripts/git/_worktrees.py",
+        "tests/test__worktrees.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: a task whose work overlaps a file the phase head moved is offered the recut and no gate run is recorded on its old base; a recut whose patch conflicts is refused by name with the tree and the carry ref unchanged"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__worktrees.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "before-you-claim",
+        "no-silent-pass"
+      ],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "request": "neka njihov dokument bude osnova! I u odnosu na to treba napraviti plan implementacije",

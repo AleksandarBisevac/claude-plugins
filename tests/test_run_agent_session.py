@@ -40,9 +40,11 @@ import hashlib
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import REPO_ROOT, safe_stdio          # noqa: E402
@@ -92,8 +94,20 @@ if "--append-system-prompt-file" in argv:
     if os.path.isfile(target):
         with open(target, encoding="utf-8") as fh:
             record["skills_file"] = fh.read()
-with open(os.environ["STUB_RECORD"], "w", encoding="utf-8") as fh:
+# A session's suites build fixtures in their TMPDIR, nested and non-empty, so a
+# removal that only takes an empty directory leaves this behind.
+tmp = os.environ.get("TMPDIR", "")
+record["tmp_wrote"] = False
+if tmp and os.path.isdir(tmp):
+    deep = os.path.join(tmp, "fixture-q81z", "deep")
+    os.makedirs(deep, exist_ok=True)
+    with open(os.path.join(deep, "left.txt"), "w", encoding="utf-8") as fh:
+        fh.write("a file the session's suites left\n")
+    record["tmp_wrote"] = True
+# Written whole and then renamed, so a case polling for it never reads half a file.
+with open(os.environ["STUB_RECORD"] + ".part", "w", encoding="utf-8") as fh:
     json.dump(record, fh)
+os.replace(os.environ["STUB_RECORD"] + ".part", os.environ["STUB_RECORD"])
 mode = os.environ.get("STUB_MODE", "ok")
 sid = os.environ.get("STUB_SESSION", "")
 def emit(event):
@@ -113,6 +127,11 @@ elif mode == "error0":
 elif mode == "budget":
     emit({"type": "result", "subtype": "error_max_budget_usd", "is_error": True,
           "session_id": sid, "total_cost_usd": float(os.environ["STUB_LAST"])})
+elif mode == "hang":
+    # A session still working when its caller gives up on it.
+    sys.stdout.flush()
+    import time
+    time.sleep(300)
 sys.stdout.flush()
 raise SystemExit(int(os.environ.get("STUB_EXIT", "0")))
 '''
@@ -140,8 +159,13 @@ def _install_stub(root):
 
 
 def _run(root, bindir, role, extra=(), mode="ok", exit_code=0, model=MODEL, tag="r",
-         budget="2.5", state_is_file=False, env_extra=None, scratch_dir=None):
+         budget="2.5", state_is_file=False, env_extra=None, scratch_dir=None,
+         stop=None):
     """Run the script once. Returns (exit, stdout, stderr, record-or-None, dirs).
+
+    `stop` names a signal (`"SIGTERM"`, `"SIGINT"`) sent to the script once the
+    stub has started - what a caller's timeout or an interrupt does to a session
+    still running; pair it with `mode="hang"`.
 
     `env_extra` is added to the script's own environment, the parent's as the
     orchestrator would hand it down.
@@ -177,15 +201,53 @@ def _run(root, bindir, role, extra=(), mode="ok", exit_code=0, model=MODEL, tag=
     argv = [sys.executable, SCRIPT, "--role", role, "--task", "P9.1",
             "--tree", tree, "--scratch", scratch, "--state-dir", state,
             "--model", model, "--effort", "high", "--budget-usd", budget] + list(extra)
-    proc = subprocess.run(argv, input=PROMPT.encode("utf-8"), stdout=subprocess.PIPE,
-                          stderr=subprocess.PIPE, env=env, timeout=120)
+    if stop is None:
+        proc = subprocess.run(argv, input=PROMPT.encode("utf-8"), stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, env=env, timeout=120)
+        code, out, err = proc.returncode, proc.stdout, proc.stderr
+    else:
+        code, out, err = _stopped(root, tag, argv, env, record, stop)
     got = None
     if os.path.isfile(record):
         with open(record, encoding="utf-8") as fh:
             got = json.load(fh)
-    return (proc.returncode, proc.stdout.decode("utf-8", "replace"),
-            proc.stderr.decode("utf-8", "replace"), got,
+    return (code, out.decode("utf-8", "replace"), err.decode("utf-8", "replace"), got,
             {"tree": tree, "scratch": scratch, "state": state, "parent_tmp": parent_tmp})
+
+
+def _stopped(root, tag, argv, env, record, stop):
+    """Start the script, wait for the stub's record (the session has started and
+    written into its TMPDIR), send `stop` to the script's own pid, and collect it.
+    The prompt is read from a file rather than a pipe so nothing is left to flush
+    when the script is collected. Returns (exit, stdout bytes, stderr bytes); a
+    script that outlives the signal is killed and reads as exit None."""
+    prompt = os.path.join(root, "prompt-%s.txt" % tag)
+    with open(prompt, "wb") as fh:
+        fh.write(PROMPT.encode("utf-8"))
+    with open(prompt, "rb") as stdin:
+        proc = subprocess.Popen(argv, stdin=stdin, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, env=env)
+        deadline = time.time() + 60
+        while (not os.path.isfile(record) and proc.poll() is None
+               and time.time() < deadline):
+            time.sleep(0.05)
+        if proc.poll() is None:
+            os.kill(proc.pid, getattr(signal, stop))
+        try:
+            out, err = proc.communicate(timeout=60)
+            return proc.returncode, out, err
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            out, err = proc.communicate()
+            return None, out, err
+
+
+def _session_dirs(parent_tmp):
+    """The session directories left in a parent temp directory: every entry whose
+    name starts `session-`, sorted."""
+    if not os.path.isdir(parent_tmp):
+        return []
+    return sorted(n for n in os.listdir(parent_tmp) if n.startswith("session-"))
 
 
 def _after(argv, flag):
@@ -641,9 +703,106 @@ def _cases(check):
               code == 0 and out.startswith("session=%s " % SESSION)
               and "could not be written" in err and "Traceback" not in err)
 
+        _cleanup_cases(check, root, bindir, e_io)
         _skill_cases(check, M, root, bindir, e_io)
+
+        # Every parent temp directory this suite handed the script, after every exit
+        # path it drove - success, a failing exit, no result, a budget stop, a usage
+        # refusal, an io-error, a stop signal.
+        parents = sorted(os.path.join(root, n) for n in os.listdir(root)
+                         if n.startswith("tmp-"))
+        parents.append(inner_tmp)
+        left = dict((p, _session_dirs(p)) for p in parents if _session_dirs(p))
+        check("ras57 across every run this suite made, no parent temp directory "
+              "(%d looked in) still holds a session directory: %r"
+              % (len(parents), left),
+              len(parents) > 10 and not left)
     finally:
         shutil.rmtree(root, ignore_errors=True)
+
+
+def _cleanup_cases(check, root, bindir, e_io):
+    """The session's own TMPDIR is removed when the session ends, however it ends.
+    The stub writes a nested fixture into it, so each case also proves the
+    directory existed and was not empty while the session ran - a run that never
+    made the directory passes "nothing left" by construction, which is why every
+    case requires `tmp_wrote`."""
+    def gone(run):
+        code, out, err, rec, dirs = run
+        seen = (rec or {}).get("tmpdir") or ""
+        return (rec is not None and rec.get("tmp_wrote") is True and bool(seen)
+                and not os.path.lexists(seen)
+                and _session_dirs(dirs["parent_tmp"]) == [])
+
+    def shown(run):
+        code, out, err, rec, dirs = run
+        return "exit %r tmpdir %r left %r err %r" % (
+            code, (rec or {}).get("tmpdir"), _session_dirs(dirs["parent_tmp"]),
+            err[-300:])
+
+    for role, tag, case in (("writer", "cw", "ras52"), ("reviewer", "cv", "ras53")):
+        run = _run(root, bindir, role, tag=tag)
+        check("%s a %s session that ends cleanly leaves no session temp directory "
+              "behind, though its suites wrote a nested fixture into it: %s"
+              % (case, role, shown(run)),
+              run[0] == 0 and gone(run))
+
+    failing = [("writer", "cx1", {"exit_code": 1}),
+               ("reviewer", "cx2", {"exit_code": 1}),
+               ("writer", "cx3", {"mode": "noresult"}),
+               ("reviewer", "cx4", {"mode": "budget", "exit_code": 1})]
+    runs = [(role, tag, _run(root, bindir, role, tag=tag, **kw))
+            for role, tag, kw in failing]
+    bad = [(role, tag, shown(run)) for role, tag, run in runs
+           if run[0] == 0 or not gone(run)]
+    check("ras54 a session that fails - claude exiting 1, no result event, a budget "
+          "stop - exits non-zero and leaves no session temp directory behind, writer "
+          "and reviewer alike: %r" % (bad,),
+          len(runs) == len(failing) and not bad)
+
+    # The record of the TMPDIR is written after the directory is made, so a scratch
+    # nobody can write into fails the run with the directory already there.
+    no_uid = not hasattr(os, "geteuid") or os.geteuid() == 0
+    if no_uid:
+        _harness.skip(check, "ras58 a run whose TMPDIR record cannot be written "
+                      "leaves no session temp directory behind",
+                      "no non-root POSIX uid, so a read-only directory is still "
+                      "writable here", no_uid)
+    else:
+        locked = os.path.join(root, "scratch-locked")
+        os.makedirs(locked)
+        os.chmod(locked, 0o500)
+        try:
+            run = _run(root, bindir, "writer", tag="lk", scratch_dir=locked)
+        finally:
+            os.chmod(locked, 0o700)
+        code, out, err, rec, dirs = run
+        check("ras58 a run whose TMPDIR record cannot be written exits io-error naming "
+              "the record, claude never started, and leaves no session temp directory "
+              "behind: %s" % shown(run),
+              e_io is not None and code == e_io and rec is None
+              and "TMPDIR record" in out + err and locked in out + err
+              and _session_dirs(dirs["parent_tmp"]) == [])
+
+    if not hasattr(os, "killpg"):
+        for case, word in (("ras55", "SIGTERM"), ("ras56", "SIGINT")):
+            _harness.skip(check, "%s a session stopped by %s leaves no session temp "
+                          "directory behind" % (case, word),
+                          "no os.killpg: the script's group teardown on a stop "
+                          "signal is POSIX-only", not hasattr(os, "killpg"))
+        return
+    for case, word, roles in (("ras55", "SIGTERM", ("writer", "reviewer")),
+                              ("ras56", "SIGINT", ("writer",))):
+        bad = []
+        for role in roles:
+            run = _run(root, bindir, role, tag="st-%s-%s" % (word.lower(), role),
+                       mode="hang", stop=word)
+            if run[0] is None or run[0] == 0 or not gone(run):
+                bad.append((role, shown(run)))
+        check("%s a session still running when its caller stops it with %s (what a "
+              "timeout does) exits non-zero and leaves no session temp directory "
+              "behind: %r" % (case, word, bad),
+              not bad)
 
 
 def _write_skill(base, name, body):

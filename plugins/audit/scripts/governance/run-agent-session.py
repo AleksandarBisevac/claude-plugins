@@ -63,11 +63,17 @@ directory (`tempfile.gettempdir()`, so a caller's TMPDIR is honoured) and not un
 the task's scratch: the drive keeps the scratch inside the project, and a TMPDIR below
 it put every fixture a session's suites built inside the real checkout. A parent temp
 directory with a `.git` above it is refused, naming it, and nothing else is tried.
-The scratch keeps a record of where the TMPDIR is (`<its name>.tmpdir`, holding the
-path), since it no longer lies beneath it. The TMPDIR is left in place afterwards,
-and removing it is the task's teardown, which finds it through that record (nothing
-in the drive reads the path back today: a stop reaches the session by its process
-group).
+The scratch keeps a record of where the TMPDIR was (`<its name>.tmpdir`, holding the
+path), since it never lies beneath it. THE TMPDIR IS REMOVED WHEN THE RUN ENDS
+(`_run`'s `finally`, through `_output.remove_tree`), on success, on a failing or
+missing result, on a budget stop and on SIGINT or SIGTERM, which are armed from
+before the directory is made until the outcome is printed - a TMPDIR per session that
+nobody removes is one more directory per session in the machine's temp, forever.
+Nothing a caller is told to read lives in it, so nothing is copied out first: the
+stream, its stderr and the agents file are under the state dir, the skills file and
+the record under the scratch. A removal that fails is named on stderr and leaves the
+exit code as the session made it. What still leaves it: a SIGKILL, after which
+nothing in this process runs.
 
 THE CHILD STARTS WITHOUT THE PARENT'S CLAUDE SESSION VARIABLES (`PARENT_SESSION_VARS`),
 as a top-level session does: copied through, `CLAUDECODE` and the session id would
@@ -493,10 +499,26 @@ def _prepare(args, stream, loaded=()):
         _io("write the agents file", agents_file, _write_json, agents_file, definition)
     tmpdir = _io("create the session TMPDIR under", parent_tmp, tempfile.mkdtemp,
                  prefix="session-%s-" % args.role, dir=parent_tmp)
-    record = os.path.join(args.scratch, os.path.basename(tmpdir) + ".tmpdir")
-    _io("write the TMPDIR record", record, _write_text, record, tmpdir + "\n")
-    return {"agents_file": agents_file, "skills_file": skills_file, "tmpdir": tmpdir,
-            "problem": None}
+    # Until this returns the caller holds no path to remove, so a failure (or a stop
+    # signal) between the directory's making and the return removes it here.
+    handed = False
+    try:
+        record = os.path.join(args.scratch, os.path.basename(tmpdir) + ".tmpdir")
+        _io("write the TMPDIR record", record, _write_text, record, tmpdir + "\n")
+        handed = True
+        return {"agents_file": agents_file, "skills_file": skills_file, "tmpdir": tmpdir,
+                "problem": None}
+    finally:
+        if not handed:
+            _output.remove_tree(tmpdir)
+
+
+def drop_session_tmp(tmpdir):
+    """Remove the session's TMPDIR whole. None when it is gone or none was made;
+    otherwise the sentence naming the directory that is still there."""
+    if tmpdir is None or _output.remove_tree(tmpdir):
+        return None
+    return "the session TMPDIR %s could not be removed; it is left in place" % tmpdir
 
 
 def build_parser():
@@ -639,11 +661,33 @@ def _run(args, stdin, out, refuse, ran):
     if claude is None:
         out(could_not_run_line("no `claude` on PATH", stream, stderr_path, None, 0))
         return E_COULD_NOT_RUN
+    # Armed from before the TMPDIR is made until the outcome is printed, so a stop
+    # outside the child's own run (which `run_session` answers itself) still
+    # reaches the `finally` instead of ending the interpreter there. Disarmed
+    # before the removal: a second stop during it acts as it would on a script
+    # with no handler, rather than raising out of the `finally`.
+    previous = _proc_group.arm_interrupt()
+    prepared = {}
     try:
         prepared = _prepare(args, stream, loaded)
+        return _in_session(args, prompt, claude, stream, stderr_path, prepared, out)
     except PreparationError as exc:
         out("io-error: %s" % exc)
         return E_IO
+    except KeyboardInterrupt as exc:
+        out(could_not_run_line("interrupted by %s outside the session's own run"
+                               % (str(exc) or "SIGINT"), stream, stderr_path, None, 0))
+        return E_COULD_NOT_RUN
+    finally:
+        _proc_group.disarm_interrupt(previous)
+        problem = drop_session_tmp(prepared.get("tmpdir"))
+        if problem:
+            sys.stderr.write("ERROR: %s\n" % problem)
+
+
+def _in_session(args, prompt, claude, stream, stderr_path, prepared, out):
+    """The session itself, once `_prepare` made what it needs: start claude, read
+    its stream, print the one line. The caller removes the TMPDIR."""
     if prepared.get("problem"):
         out(could_not_run_line(prepared["problem"], stream, stderr_path, None, 0))
         return E_COULD_NOT_RUN

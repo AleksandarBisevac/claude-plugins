@@ -3630,7 +3630,8 @@
       "P131.1",
       "P131.2",
       "P142.1",
-      "P142.18-6yq"
+      "P142.18-6yq",
+      "P142.20-6yq"
     ],
     "plugins/audit/scripts/git/close-phase.py": [
       "P18.3",
@@ -10037,7 +10038,8 @@
       "P142.1",
       "P142.6",
       "P142.12-6yq",
-      "P142.18-6yq"
+      "P142.18-6yq",
+      "P142.20-6yq"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -11421,7 +11423,8 @@
     ],
     "tests/test__worktrees.py": [
       "P131.1",
-      "P142.18-6yq"
+      "P142.18-6yq",
+      "P142.20-6yq"
     ],
     "tests/test_ado_connect.py": [
       "P131.1"
@@ -11539,7 +11542,8 @@
       "P142.1",
       "P142.11-6yq",
       "P142.12-6yq",
-      "P142.18-6yq"
+      "P142.18-6yq",
+      "P142.20-6yq"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
