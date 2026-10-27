@@ -102,7 +102,8 @@
         "severity": "med",
         "file": ".github/sweep-costs.json:24,58,156 (unchanged); tools/check-committed-pii.py:1881-1893",
         "issue": "contradicts task clause 'Split each into staged blocks so the sweep spreads them across workers, and re-record the cost table.' The table is untouched, so the four split files keep the figures they had when each ran unsplit on one slot. Those figures now set the shard balance and every split file's timeout. On the live table, shard 3/3 holds three staged suites in a row (test_close_phase 330.3, test__deps 268.2, test_stamp_verification 265.4). The per-block process overhead on Windows, where test_stamp_verification now starts a process for each of its blocks, has never been measured. The executor gives a reason (the table binds to windows-latest and cannot be recorded from darwin), but the clause is still not done.",
-        "resolution": "Make it a tracked task before sign-off. Once this lands on a CI run, save each Windows selftests cell's log and run `python tools/sweep-selftests.py --costs-from-log <logs> --platform windows-latest --record-costs .github/sweep-costs.json`. Then confirm that the shard split it prints is balanced and that no split file's calibrated timeout at held=3 sits within 2x of its measured wall time."
+        "resolution": "Make it a tracked task before sign-off. Once this lands on a CI run, save each Windows selftests cell's log and run `python tools/sweep-selftests.py --costs-from-log <logs> --platform windows-latest --record-costs .github/sweep-costs.json`. Then confirm that the shard split it prints is balanced and that no split file's calibrated timeout at held=3 sits within 2x of its measured wall time.",
+        "fixTask": "P142.25-6yq"
       },
       {
         "id": "P142-R10",
@@ -116,7 +117,8 @@
         "severity": "low",
         "file": "CLAUDE.md:240; CONTRIBUTING.md:332; .github/workflows/ci.yml:134",
         "issue": "The diff makes three untouched documents state the old admission rule. CLAUDE.md says a staged suite 'is admitted with `stage_grant(jobs)` slots', CONTRIBUTING.md says 'is admitted holding `stage_grant(jobs)` slots', and the ci.yml comment says 'a staged suite is admitted holding all but one of them'. After slot_gate's change at tools/sweep-selftests.py:1385-1394, a suite holds as many slots as are free when its turn comes, between 1 and that number. The executor listed all three as stale and outside its files.",
-        "resolution": "Reword each to say: up to `stage_grant(jobs)` slots, as many as are free when its turn comes and at least one, with the number it holds passed to the child in SWEEP_STAGE_GRANT and its timeout calibrated to that number."
+        "resolution": "Reword each to say: up to `stage_grant(jobs)` slots, as many as are free when its turn comes and at least one, with the number it holds passed to the child in SWEEP_STAGE_GRANT and its timeout calibrated to that number.",
+        "fixTask": "P142.28-6yq"
       },
       {
         "id": "P142-R12",
@@ -130,14 +132,16 @@
         "severity": "med",
         "file": "tools/sweep-selftests.py:1761-1765 (one_block's timeout); cases tools/sweep-selftests.py:4007 bg6, :4306 tt0, :4321 tt1",
         "issue": "The block path's timeout calibration, which every live staged suite now takes (stage_labels reads a literal STAGES in all eight: test__deps, test__output, test_audit_task, test_close_phase, test_commit_task_work, test_drive_phase, test_stamp_verification, check-committed-pii), is reached by no case with a non-empty cost table. bb1 and sr13 sweep with costs={}, sb1 with costs=None, so file_timeout returns the floor whatever one_block passes. bg6, tt0 and tt1 pin 'the timed-heavy staged suite gets its calibrated timeout and is told it' and 'an untimed staged suite gets the largest any entry would get', but their fixtures ('if False: staged_main()' with no STAGES) go through the whole-suite fallback only. Replacing :1763 with the bare floor `timeout`, or dropping staged=True, leaves the suite green. The task clause 'Keep per-block timeouts calibrated' has no case behind it.",
-        "resolution": "Add a case that sweeps a STAGES-literal fixture whose blocks print SWEEP_FILE_TIMEOUT, on jobs=4, once with costs={'split-suite': 900.0} (expect TIMEOUT_PER_COST*900//stage_grant(4) in every block's output, and the row's timeout) and once with a ghost-only table (expect the largest entry's figure, never the floor). Add a deadline variant like tt2 that shows a block's timeout cut to what is left. Prove it red by mutating :1763 to the floor."
+        "resolution": "Add a case that sweeps a STAGES-literal fixture whose blocks print SWEEP_FILE_TIMEOUT, on jobs=4, once with costs={'split-suite': 900.0} (expect TIMEOUT_PER_COST*900//stage_grant(4) in every block's output, and the row's timeout) and once with a ghost-only table (expect the largest entry's figure, never the floor). Add a deadline variant like tt2 that shows a block's timeout cut to what is left. Prove it red by mutating :1763 to the floor.",
+        "fixTask": "P142.26-6yq"
       },
       {
         "id": "P142-R14",
         "severity": "med",
         "file": "CLAUDE.md:239-243; CONTRIBUTING.md:330-334; .github/workflows/ci.yml:134-135; tools/sweep-selftests.py:1713 (sweep docstring), :1587-1590 (costs_from_rows docstring), :1604-1612 (record_costs 'about' text), :1474-1478 (shard comment)",
         "issue": "These still describe the grant model the diff retired for every staged suite in the tree. CLAUDE.md says a staged_main suite 'is admitted with stage_grant(jobs) slots ... and is told the number in SWEEP_STAGE_GRANT, which sizes its block pool'. CONTRIBUTING.md and the ci.yml comment say the same. sweep()'s docstring says '`costs` orders the submissions (`run_order`)', but sweep() now orders by work_items. costs_from_rows, the shard comment and the record_costs 'about' string say the recorded figure is 'wall seconds times the slots ... the file held', but a block-run suite's figure is now the sum of its processes' seconds. The 'about' string is written into the committed .github/sweep-costs.json on the next --record-costs. The executor named the first three as followers, but no case and no task holds them.",
-        "resolution": "Rewrite each to the block model in this task or a follower task filed before sign-off: blocks are run as the sweep's jobs, one slot each, and replayed via --replay; a suite whose STAGES is not a literal runs whole on a grant; a block-run suite's cost is the summed slot-seconds of its processes. Fix sweep()'s docstring to name work_items."
+        "resolution": "Rewrite each to the block model in this task or a follower task filed before sign-off: blocks are run as the sweep's jobs, one slot each, and replayed via --replay; a suite whose STAGES is not a literal runs whole on a grant; a block-run suite's cost is the summed slot-seconds of its processes. Fix sweep()'s docstring to name work_items.",
+        "fixTask": "P142.27-6yq"
       },
       {
         "id": "P142-R15",
@@ -179,7 +183,8 @@
         "severity": "low",
         "file": ".github/sweep-costs.json:2",
         "issue": "The committed cost table's `about` text still reads 'wall seconds times the slots of the sweep's budget the file held' - the very sentence the task's second med clause lists as false ('record_costs about text ... which --record-costs writes into .github/sweep-costs.json'). The diff corrects the generator (record_costs, tools/sweep-selftests.py) but not the file it wrote, so the repo now carries the retired-model wording until someone re-records. The executor disclosed this and says it was told not to edit the file; nothing in the task description says so.",
-        "resolution": "Replace the `about` string in .github/sweep-costs.json with the text record_costs now writes (same bytes, no cost values touched), or file a follow-up that re-records the table and names it."
+        "resolution": "Replace the `about` string in .github/sweep-costs.json with the text record_costs now writes (same bytes, no cost values touched), or file a follow-up that re-records the table and names it.",
+        "fixTask": "P142.29-6yq"
       },
       {
         "id": "P142-R21",
@@ -1643,6 +1648,323 @@
         "status": "proved",
         "source": "red-first-helper"
       }
+    },
+    {
+      "id": "P142.25-6yq",
+      "title": "fix P142-R9: contradicts task clause 'Split each into staged blocks so the sw...",
+      "status": "in_progress",
+      "description": "contradicts task clause 'Split each into staged blocks so the sweep spreads them across workers, and re-record the cost table.' The table is untouched, so the four split files keep the figures they had when each ran unsplit on one slot. Those figures now set the shard balance and every split file's timeout. On the live table, shard 3/3 holds three staged suites in a row (test_close_phase 330.3, test__deps 268.2, test_stamp_verification 265.4). The per-block process overhead on Windows, where test_stamp_verification now starts a process for each of its blocks, has never been measured. The executor gives a reason (the table binds to windows-latest and cannot be recorded from darwin), but the clause is still not done.\n\nResolution asked: Make it a tracked task before sign-off. Once this lands on a CI run, save each Windows selftests cell's log and run `python tools/sweep-selftests.py --costs-from-log <logs> --platform windows-latest --record-costs .github/sweep-costs.json`. Then confirm that the shard split it prints is balanced and that no split file's calibrated timeout at held=3 sits within 2x of its measured wall time.",
+      "files": [
+        ".github/sweep-costs.json",
+        "tools/check-committed-pii.py",
+        "tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_stamp_verification.py: Make it a tracked task before sign-off"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_stamp_verification.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-27T21:23:39Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-27T21:23:29Z",
+          "text": "scope: .github/sweep-costs.json, tools/check-committed-pii.py, every path the finding(s) P142-R9 name"
+        },
+        {
+          "at": "2026-10-27T21:23:29Z",
+          "text": "scope: tests/test_stamp_verification.py, the suite that tests .github/sweep-costs.json (the test file that names sweep-costs.json)"
+        },
+        {
+          "at": "2026-10-27T21:23:29Z",
+          "text": "no suite: tools/check-committed-pii.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        }
+      ],
+      "fixes": [
+        "P142-R9"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-27T21:46:22Z.5880a0",
+        "status": "passed",
+        "at": "2026-10-27T21:46:22Z"
+      }
+    },
+    {
+      "id": "P142.26-6yq",
+      "title": "fix P142-R13: The block path's timeout calibration, which every live staged s...",
+      "status": "in_progress",
+      "description": "The block path's timeout calibration, which every live staged suite now takes (stage_labels reads a literal STAGES in all eight: test__deps, test__output, test_audit_task, test_close_phase, test_commit_task_work, test_drive_phase, test_stamp_verification, check-committed-pii), is reached by no case with a non-empty cost table. bb1 and sr13 sweep with costs={}, sb1 with costs=None, so file_timeout returns the floor whatever one_block passes. bg6, tt0 and tt1 pin 'the timed-heavy staged suite gets its calibrated timeout and is told it' and 'an untimed staged suite gets the largest any entry would get', but their fixtures ('if False: staged_main()' with no STAGES) go through the whole-suite fallback only. Replacing :1763 with the bare floor `timeout`, or dropping staged=True, leaves the suite green. The task clause 'Keep per-block timeouts calibrated' has no case behind it.\n\nResolution asked: Add a case that sweeps a STAGES-literal fixture whose blocks print SWEEP_FILE_TIMEOUT, on jobs=4, once with costs={'split-suite': 900.0} (expect TIMEOUT_PER_COST*900//stage_grant(4) in every block's output, and the row's timeout) and once with a ghost-only table (expect the largest entry's figure, never the floor). Add a deadline variant like tt2 that shows a block's timeout cut to what is left. Prove it red by mutating :1763 to the floor.",
+      "files": [
+        "tools/sweep-selftests.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "files-no-suite"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-27T21:23:42Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-27T21:23:33Z",
+          "text": "scope: tools/sweep-selftests.py, every path the finding(s) P142-R13 name"
+        },
+        {
+          "at": "2026-10-27T21:23:33Z",
+          "text": "no suite: tools/sweep-selftests.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-27T21:23:33Z",
+          "text": "no tests.add clause for P142-R13: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P142-R13"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-27T21:58:35Z.9ed6ce",
+        "status": "passed",
+        "at": "2026-10-27T21:58:35Z"
+      }
+    },
+    {
+      "id": "P142.27-6yq",
+      "title": "fix P142-R14: These still describe the grant model the diff retired for every...",
+      "status": "pending",
+      "description": "These still describe the grant model the diff retired for every staged suite in the tree. CLAUDE.md says a staged_main suite 'is admitted with stage_grant(jobs) slots ... and is told the number in SWEEP_STAGE_GRANT, which sizes its block pool'. CONTRIBUTING.md and the ci.yml comment say the same. sweep()'s docstring says '`costs` orders the submissions (`run_order`)', but sweep() now orders by work_items. costs_from_rows, the shard comment and the record_costs 'about' string say the recorded figure is 'wall seconds times the slots ... the file held', but a block-run suite's figure is now the sum of its processes' seconds. The 'about' string is written into the committed .github/sweep-costs.json on the next --record-costs. The executor named the first three as followers, but no case and no task holds them.\n\nResolution asked: Rewrite each to the block model in this task or a follower task filed before sign-off: blocks are run as the sweep's jobs, one slot each, and replayed via --replay; a suite whose STAGES is not a literal runs whole on a grant; a block-run suite's cost is the summed slot-seconds of its processes. Fix sweep()'s docstring to name work_items.",
+      "files": [
+        "CLAUDE.md",
+        "CONTRIBUTING.md",
+        ".github/workflows/ci.yml",
+        "tools/sweep-selftests.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "files-no-suite"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-27T21:23:37Z",
+          "text": "scope: CLAUDE.md, CONTRIBUTING.md, .github/workflows/ci.yml, tools/sweep-selftests.py, every path the finding(s) P142-R14 name"
+        },
+        {
+          "at": "2026-10-27T21:23:37Z",
+          "text": "no suite: tools/sweep-selftests.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-27T21:23:37Z",
+          "text": "no suite: CLAUDE.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tools/affected.py, tools/lints/_deps.py, tools/lints/_refs.py, tools/measure-context.py, tools/prove-gates.py"
+        },
+        {
+          "at": "2026-10-27T21:23:37Z",
+          "text": "no suite: CONTRIBUTING.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test_derive_phase_gate.py, tools/affected.py, tools/check-committed-pii.py, tools/lints/_deps.py, tools/lints/_refs.py, tools/sweep-selftests.py"
+        },
+        {
+          "at": "2026-10-27T21:23:37Z",
+          "text": "no suite: .github/workflows/ci.yml - a document, so no test of it is inferred; the files that name it, the checks that read it, are plugins/audit/scripts/config/_config_rules.py, plugins/audit/scripts/panel/_panel_settings.py, tests/_harness.py, tests/test__doctor_setup.py and 12 more"
+        },
+        {
+          "at": "2026-10-27T21:23:37Z",
+          "text": "no tests.add clause for P142-R14: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P142-R14"
+      ]
+    },
+    {
+      "id": "P142.28-6yq",
+      "title": "fix P142-R11: The diff makes three untouched documents state the old admissio...",
+      "status": "in_progress",
+      "description": "The diff makes three untouched documents state the old admission rule. CLAUDE.md says a staged suite 'is admitted with `stage_grant(jobs)` slots', CONTRIBUTING.md says 'is admitted holding `stage_grant(jobs)` slots', and the ci.yml comment says 'a staged suite is admitted holding all but one of them'. After slot_gate's change at tools/sweep-selftests.py:1385-1394, a suite holds as many slots as are free when its turn comes, between 1 and that number. The executor listed all three as stale and outside its files.\n\nResolution asked: Reword each to say: up to `stage_grant(jobs)` slots, as many as are free when its turn comes and at least one, with the number it holds passed to the child in SWEEP_STAGE_GRANT and its timeout calibrated to that number.",
+      "files": [
+        "CLAUDE.md",
+        "CONTRIBUTING.md",
+        ".github/workflows/ci.yml"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-paths"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-27T21:23:44Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-27T21:23:38Z",
+          "text": "scope: CLAUDE.md, CONTRIBUTING.md, .github/workflows/ci.yml, every path the finding(s) P142-R11 name"
+        },
+        {
+          "at": "2026-10-27T21:23:38Z",
+          "text": "no suite: CLAUDE.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tools/affected.py, tools/lints/_deps.py, tools/lints/_refs.py, tools/measure-context.py, tools/prove-gates.py"
+        },
+        {
+          "at": "2026-10-27T21:23:38Z",
+          "text": "no suite: CONTRIBUTING.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test_derive_phase_gate.py, tools/affected.py, tools/check-committed-pii.py, tools/lints/_deps.py, tools/lints/_refs.py, tools/sweep-selftests.py"
+        },
+        {
+          "at": "2026-10-27T21:23:38Z",
+          "text": "no suite: .github/workflows/ci.yml - a document, so no test of it is inferred; the files that name it, the checks that read it, are plugins/audit/scripts/config/_config_rules.py, plugins/audit/scripts/panel/_panel_settings.py, tests/_harness.py, tests/test__doctor_setup.py and 12 more"
+        },
+        {
+          "at": "2026-10-27T21:23:38Z",
+          "text": "gate-only, not tdd: every file P142-R11 names is a document (CLAUDE.md, CONTRIBUTING.md, .github/workflows/ci.yml) with no test of its own, so there is no case to write first and no red to show; the gate the task carries is its check"
+        }
+      ],
+      "fixes": [
+        "P142-R11"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-27T21:39:57Z.44604c",
+        "status": "passed",
+        "at": "2026-10-27T21:39:57Z"
+      }
+    },
+    {
+      "id": "P142.29-6yq",
+      "title": "fix P142-R20: The committed cost table's `about` text still reads 'wall secon...",
+      "status": "pending",
+      "description": "The committed cost table's `about` text still reads 'wall seconds times the slots of the sweep's budget the file held' - the very sentence the task's second med clause lists as false ('record_costs about text ... which --record-costs writes into .github/sweep-costs.json'). The diff corrects the generator (record_costs, tools/sweep-selftests.py) but not the file it wrote, so the repo now carries the retired-model wording until someone re-records. The executor disclosed this and says it was told not to edit the file; nothing in the task description says so.\n\nResolution asked: Replace the `about` string in .github/sweep-costs.json with the text record_costs now writes (same bytes, no cost values touched), or file a follow-up that re-records the table and names it.",
+      "files": [
+        ".github/sweep-costs.json",
+        "tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_stamp_verification.py: Replace the `about` string in .github/sweep-costs.json with the text record_costs now writes (same bytes, no cost values touched), or file a follow-up that ..."
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_stamp_verification.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-27T21:23:38Z",
+          "text": "scope: .github/sweep-costs.json, every path the finding(s) P142-R20 name"
+        },
+        {
+          "at": "2026-10-27T21:23:38Z",
+          "text": "scope: tests/test_stamp_verification.py, the suite that tests .github/sweep-costs.json (the test file that names sweep-costs.json)"
+        }
+      ],
+      "fixes": [
+        "P142-R20"
+      ]
     }
   ],
   "request": "neka njihov dokument bude osnova! I u odnosu na to treba napraviti plan implementacije",

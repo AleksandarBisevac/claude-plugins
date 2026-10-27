@@ -342,8 +342,11 @@ CI runner every timeout is also cut to what is left of the
 sweep's deadline (`SWEEP_DEADLINE`), so a hung file is named before the job's own
 `timeout-minutes` cancels the job with no file named; case tt5 reads that bound out of
 `ci.yml` and fails when the deadline and the setup allowance stop fitting under it. The run
-prints a `budget:` line saying which suites held several slots, which ran block by block,
-and the longest timeout given, and every per-file line carries its seconds: a saved CI log re-records the table
+prints a `budget:` line, written before the first job starts, saying which staged suites
+will run whole and the most slots each may hold (`stage_grant(jobs)`; each takes what is
+free when its turn comes, at least one, is told the number in `SWEEP_STAGE_GRANT`, and has
+its timeout calibrated to it), which run block by block, and the longest timeout the table
+gives, and every per-file line carries its seconds: a saved CI log re-records the table
 with `--costs-from-log LOG --platform NAME --record-costs PATH`. Record from WINDOWS logs,
 the platform that binds; a log carrying a file twice (two legs, two runs) keeps its longer
 timing.

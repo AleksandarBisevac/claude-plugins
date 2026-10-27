@@ -1,0 +1,19 @@
+{
+ "findings": [],
+ "preExisting": [
+  {"id": 1, "severity": "low", "file": "tools/sweep-selftests.py:1661-1676",
+   "issue": "The fallback paragraph of the block-model comment, which CLAUDE.md, CONTRIBUTING.md and ci.yml all defer to, says a whole-run staged suite holds up to the grant and is told the number in the child variable, but not that its timeout is calibrated to the number it held (admitted() passes held to file_timeout at :1835). The executor flagged this and left it, outside its files.",
+   "resolution": "Add the timeout-calibrated-to-held-slots clause to that paragraph in the task that owns tools/sweep-selftests.py."}
+ ],
+ "intent": {
+  "answer": "matches",
+  "note": "The task clause quotes three sentences ('is admitted with stage_grant(jobs) slots' in CLAUDE.md, 'is admitted holding stage_grant(jobs) slots' in CONTRIBUTING.md, 'a staged suite is admitted holding all but one of them' in ci.yml) and asks for each to say: up to stage_grant(jobs) slots, as many as are free when its turn comes and at least one, number passed in SWEEP_STAGE_GRANT, timeout calibrated to it. I read the tree at base 071637de: grep for admitted|stage_grant|STAGE_GRANT|all but one over CLAUDE.md and ci.yml returns nothing, and a git grep for the three quoted phrasings finds them only in filed evidence JSON, never in the three documents. CLAUDE.md:239-240 and ci.yml:134 already describe the block model (one slot per block, then a replay) and defer the fallback admission rule to the 'blocks, not suites' comment above work_items(), whose fallback paragraph (tools/sweep-selftests.py:1662-1664) and the STAGE_GRANT_VAR comment (:188-192) already state 'up to stage_grant(jobs)... what is free when its turn comes'. So the outcome the clause wants, no document stating the old rule, holds, and restating the rule in the documents would make a second copy; not editing CLAUDE.md and ci.yml is right. The one live stale claim in these files was CONTRIBUTING.md's 'which suites held several slots', which is wrong under slot_gate (a whole-run suite can hold one slot). The executor's rewording matches the code: budget_line is written at :2286 before sweep() starts; it names whole-run staged suites with 'hold up to %d each' (stage_grant(jobs)); slot_gate wait() takes min(weight, free) with free>=1 (:1452-1458); run_one sets SWEEP_STAGE_GRANT (:1145); admitted() passes held to file_timeout (:1835). The outcome describes the diff (CONTRIBUTING.md only, 5 added and 2 removed lines); its dependants answer is sound: the diff touches prose only, and the git grep for the replaced wording over md/yml/sh returns no other quote of it. The gate command it names (test__deps, test__output_lints) I did not rerun; the recorded gate run is passed.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Gate-only documentation rewording: tests.add is none and the executor filed redFirst not-attempted with basis 'gate-only task with tests.add none and expectRedFirst false'; the mode owes none.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "Read tests.gate: sweep-selftests (whole project), validate-manifest, plugin validate, audit-status --gate, render-report, ruff/vermin, screenshots, report-interactive. The behaviour this task names is the wording of a prose paragraph in CONTRIBUTING.md; the doc lints (tests/test__deps.py prose-number and citation checks, tests/test__output_lints.py) select that file, and I found no test whose pass depends on the budget-sentence content, nor a pin quoting 'held several slots' (git grep over the tree returned nothing). The sweep selects the whole project, so no narrower bound applies, but nothing read shows a test claiming the deleted behaviour."
+ },
+ "verdict": "clean",
+ "tasks": []
+}
