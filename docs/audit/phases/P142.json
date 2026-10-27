@@ -1480,7 +1480,7 @@
     {
       "id": "P142.21-6yq",
       "title": "The sweep reads every child's output with one line end, so no check that counts a line sees Windows line ends",
-      "status": "in_progress",
+      "status": "done",
       "description": "Observed on CI run 40511735770 (ci/P142 at 94a097d7, release tier), both Windows legs, plain and cp1252: tests/_harness.py sr13 FAIL. The sweep ran the staged suite correctly: ok True, blocks 5, slots 1, pools [], order and tmps as expected. The one conjunct that failed is `out.count(REPLAY_LINE % (5,)) == 1`. REPLAY_LINE ends in \"\\n\". The child writes it through a text-mode stdout, so on Windows it arrives as \"\\r\\n\". The sweep decodes the child's bytes as they are (`done.stdout.decode(\"utf-8\", \"replace\")` in tools/sweep-selftests.py, where a file's row output is captured), so every row \"output\" a reader receives keeps Windows line ends.\n\nThis is the third time this phase has hit the class. Run-test-gate's readers came first, then the private patterns the runner-line-end lint now covers. Each earlier fix normalised at a reader. Fix it once, where the text enters:\n1. Every place tools/sweep-selftests.py turns a child's bytes into text normalises line ends at that point. Reuse the one normalisation the plugin already has (`_runner_output.plain_text`, or the function it calls for line ends) rather than writing a second one. So a row's \"output\", and every line the sweep itself parses, reads \"\\n\" on every platform.\n2. A case that fails on today's code on any platform: a fixture child that writes \"\\r\\n\" line ends as raw bytes, run through the sweep. Its row output and the replay count read the same as a \"\\n\" child's. Red-first it on posix by writing the CRLF bytes explicitly, so the case does not depend on the runner's platform.\n3. sr13 itself needs no change once the capture normalises. If any other check in tests/_harness.py or tools/sweep-selftests.py counts or compares \"\\n\"-terminated text read from a child some way other than through the sweep's capture, normalise it the same way and list each site in your outcome.\n\nDo not widen the runner-line-end lint in this task. Say in your outcome whether it could see this shape (a str count or endswith on unnormalised child text) and why not. No F/P/BUG ids in comments.",
       "files": [
         "tools/sweep-selftests.py",
@@ -1508,19 +1508,35 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "089036e0978c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/sweep-selftests.py: new child_text(raw) = _runner_output.plain_text(raw.decode('utf-8','replace')), and every site where the sweep turns a child's bytes into text now goes through it: run_one's capture of the row output (the line 1175 site, which feeds grade, the replay entry 'out' and every parse), the locale probe's read (.split(), behaviour unchanged), and the three decodes in the named-suites selftest case. tests/_harness.py: stream_text's bytes branch (a timed-out block's captured bytes, replayed to stdout) now reads through plain_text. sr13 needed no change. Sites left as they are, with reasons: harness _decoded (git output, only stripped/printed in messages), tail_bytes (takes text), 1052/1292/2039 subprocess text=True or universal_newlines=True (already translated by the runtime), 1812 `.decode().splitlines()` and 2261 `.strip()` (insensitive to a CR), and the fixture-source strings at sweep lines 3360/3482 (child code, decoded inside the child, then .strip()). New cases: ce1 (CRLF-bytes fixture child through run_one equals its LF twin, no CR, a newline-terminated line counted once), ce2 (child_text unit: CRLF, lone CR, invalid byte, LF untouched, empty), sr2b (stream_text of CRLF bytes). Runs: sweep of the 7 files incl. test__deps, test__output_lints, _harness, test__runner_output, test_run_test_gate, test_drive_phase all exit 0 (1854 cases); ruff and vermin clean, gate-parity exit 0. Runner-line-end lint: it could not see this shape. It only convicts an anchored multiline regex (search/match/sub/split...) applied to text in a module under scripts/ that imports _runner_output; sr13's failure was a str.count over text with no regex, and the sweep lives under tools/ which that lint does not walk (it also did not import the home module before this change). Not widened. Dependants: sweep consumers (ci.yml, sweep-costs.json, _output.py, _runner_collects/_runner_output/stamp-verification/_filed_returns, before-you-claim evals) read rows' output/path/ok and file paths, unchanged except CRs and CSI escapes are gone from output, and _runner_output readers are idempotent over plain text, so still correct; the new import of _runner_output into the sweep adds no new layer edge (tools/ is outside _deps.LAYERS, test__deps passes); names used elsewhere (budget_line, coverage_findings, locale_decision, named_suites) keep signatures; tests/_harness.py importers (the ado and affected suites etc.) see stream_text only differ on bytes with CRs; _group_present/_pid_present/_labels/_load_sweep untouched, test_run_test_gate and test_drive_phase pass. One behaviour change to note: plain_text also strips terminal escape sequences, so a row's output no longer carries colour codes a child printed.",
+        "descriptive": "The sweep reads every child's output as LF-ended text at the point the bytes enter, so line-counting checks like sr13 hold on Windows."
       },
       "startedAt": "2026-10-27T16:19:22Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-27T16:46:23Z",
+      "verifiedBy": [
+        "ce1: a fixture child writing CRLF as raw bytes yields the same sweep row output as an LF child, with the newline-terminated replay-style line counted once",
+        "ce2: child_text unit cases (CRLF, lone CR, invalid byte, LF, empty)",
+        "sr2b: harness stream_text reads CRLF bytes as LF"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-27T16:46:20Z.c83490",
         "status": "passed",
         "at": "2026-10-27T16:46:20Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "089036e0978c",
+        "at": "2026-10-27T16:46:23Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-27T16:30:29Z",
+        "basis": "`python3 tools/sweep-selftests.py tools/sweep-selftests.py tests/_harness.py` in a throwaway tree at HEAD exited 1 with 1 of 140 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code, the task's run with its inline suite tools/sweep-selftests.py laid over as HEAD's copy plus its 4 test hunk(s), 2 other hunk(s) held at HEAD, and pulled in for the names its test hunks reference: import _runner_output  # noqa: E402  (plain_text: the one reading of a run's line ends) (line 124); def child_text(raw): (line 127)), each passing with the working tree's implementation - ce1 (house FAIL): SELFTEST FAILED: 139/140 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; fix run: held back 22s of the deadline, the recorded slot-seconds of tests/_harness.py, tools/sweep-selftests.py in .github/sweep-costs.json",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1562,7 +1578,12 @@
       "startedAt": "2026-10-27T16:19:25Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-27T16:52:26Z.fd56db",
+        "status": "passed",
+        "at": "2026-10-27T16:52:26Z"
+      }
     },
     {
       "id": "P142.23-6yq",

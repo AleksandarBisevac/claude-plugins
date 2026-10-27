@@ -5468,17 +5468,43 @@ def _start_keys(rows, tid):
     return keys
 
 
+def _status_chain(events):
+    """`events` with every repeat of the state already reached folded into the
+    row that reached it, or None when a link is missing.
+
+    One change is recorded by more than one writer (the command's own row, the
+    hook's edit row, the drive's block row) and a closing row may name the end
+    state with no `from` at all, so a row whose `to` is the state reached is
+    the same change again - provided it does not say it came from some OTHER
+    state than the one it was reached from, which would be a change the
+    journal never saw. A row that moves on must start where the chain stands:
+    a `from` of None is accepted only for the repeat, since nothing says where
+    a change into a different state began."""
+    chain = []
+    for event in events:
+        if not chain:
+            chain.append(event)
+        elif event[3] == chain[-1][3] and event[2] in (
+                None, chain[-1][2], chain[-1][3]):
+            continue
+        elif event[2] != chain[-1][3]:
+            return None
+        else:
+            chain.append(event)
+    return chain
+
+
 def _ran_within(events, current, since, until):
     """Whether a task with these `_status_events` was in_progress at any moment
     from `since` to `until` - True, False, or None when the journal cannot say:
-    no events at all, a change that does not start where the one before it
-    ended, or a last change that does not end at the task's status now - each
-    a change the journal never saw. A second's resolution is all a row
-    carries, so a change in the boundary second counts as inside."""
+    no events at all, a chain with a link missing (`_status_chain`), or a last
+    change that does not end at the task's status now - each a change the
+    journal never saw. A second's resolution is all a row carries, so a change
+    in the boundary second counts as inside."""
     if not events or events[-1][3] != current:
         return None
-    if any(later[2] != earlier[3]
-           for earlier, later in zip(events, events[1:])):
+    events = _status_chain(events)
+    if events is None:
         return None
     before = [e for e in events if e[0] < since]
     status = before[-1][3] if before else events[0][2]

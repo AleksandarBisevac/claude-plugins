@@ -16753,6 +16753,65 @@ def _held_work_cases(check, project, task, write, start, read, git):
           M._ran_within(broken, "pending", 5.0, 6.0) is None
           and M._ran_within(whole, "pending", 5.0, 6.0) is False)
 
+    # The rows a real holder left (copied in shape from a live journal): the
+    # CLI's block row and the hook's edit row record the one change in the same
+    # second, the drive's own row repeats it, and the wave's close names the
+    # end state with no from. A repeat is not a break.
+    def srow(action, ts, tid, was, now):
+        return {"action": action, "ts": ts, "details": {"changes": [
+            {"field": "status", "from": was, "id": tid, "to": now}]}}
+
+    holder_rows = [
+        srow("manifest.edit", "2026-10-27T12:30:00Z", "P1.1", "pending",
+             "in_progress"),
+        srow("task.block", "2026-10-27T12:50:24Z", "P1.1", "in_progress",
+             "blocked"),
+        srow("manifest.edit", "2026-10-27T12:50:26Z", "P1.1", "in_progress",
+             "blocked"),
+        {"action": "task.blocked", "ts": "2026-10-27T12:50:26Z",
+         "details": {"attempt": 2, "from": "in_progress", "phaseId": "P1",
+                     "taskId": "P1.1"}},
+        srow("wave.done", "2026-10-27T12:54:42Z", "P1.1", None, "blocked"),
+    ]
+    held_events = M._status_events(holder_rows, "P1.1")
+    after = held_events[-1][0] + 60.0
+    mid = held_events[1][0] - 60.0
+    check("hw13 a holder whose block was recorded by two writers in the same "
+          "second and closed by a row with no from reads as one block: a "
+          "window after it answers not-running, where a window it ran inside "
+          "still answers running: %r"
+          % ((held_events, M._ran_within(held_events, "blocked", after,
+                                         after + 60.0),
+              M._ran_within(held_events, "blocked", mid, mid + 30.0)),),
+          M._ran_within(held_events, "blocked", after, after + 60.0) is False
+          and M._ran_within(held_events, "blocked", mid, mid + 30.0) is True)
+
+    # The other direction: a repeat is only a repeat when it does not name
+    # another state it came from. These stay unreadable.
+    def chain(*steps):
+        return M._status_events(
+            [srow("manifest.edit", ts, "P1.1", was, now)
+             for ts, was, now in (("2026-10-27T12:30:00Z", "pending",
+                                   "in_progress"),) + steps], "P1.1")
+    stale_from = chain(("2026-10-27T12:50:24Z", "in_progress", "blocked"),
+                       ("2026-10-27T12:50:26Z", "pending", "blocked"))
+    other_state = chain(("2026-10-27T12:50:24Z", "in_progress", "blocked"),
+                        ("2026-10-27T12:50:26Z", None, "pending"))
+    missing_link = chain(("2026-10-27T12:50:24Z", "in_progress", "blocked"),
+                         ("2026-10-27T12:50:26Z", "done", "pending"))
+    unended = chain(("2026-10-27T12:50:24Z", "in_progress", "blocked"),
+                    ("2026-10-27T12:50:26Z", None, "blocked"))
+    answers = [M._ran_within(stale_from, "blocked", after, after + 60.0),
+               M._ran_within(other_state, "pending", after, after + 60.0),
+               M._ran_within(missing_link, "pending", after, after + 60.0),
+               M._ran_within(unended, "pending", after, after + 60.0)]
+    check("hw14 a chain that is genuinely broken still answers can't-tell - a "
+          "repeat naming a different state it came from, a no-from row naming "
+          "a state the chain was not in, a change from a state never reached, "
+          "and a last change that does not end at the status now: %r"
+          % (answers,),
+          answers == [None, None, None, None])
+
     # ---- the way past the refusal is one a guard lets through -------------------
     proj, mpath = holder_plan("hw-remedy")
     write(proj, "src/a.ts", "the blocked task's unfinished edit\n")
