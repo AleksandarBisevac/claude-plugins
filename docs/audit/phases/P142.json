@@ -1406,7 +1406,7 @@
     {
       "id": "P142.20-6yq",
       "title": "A task tree the mover refuses to bring to the head is recut there with its work, never gated at the base the phase has left",
-      "status": "in_progress",
+      "status": "done",
       "description": "Observed in P142 on 2026-10-27, right after the tree-follows-head change landed (862b4941).\n\nP142.13 and P142.14 advanced and went green. P142.12's work overlaps three files the head moved: plugins/audit/scripts/governance/drive-phase.py, tests/test_drive_phase.py and PLUGIN-BUILD-GUIDE.md. So `advance_member` refused the move by name (\"the tree stays at d4a26f13\"). The drive then ran the gate in that tree anyway. The gate went red on te11/ln1 in tests/test__output_lints.py, which b10ddfdd had already fixed, and the base verdict was `no-base`. The gate-red decision offered retry|rerun|block. None of those moves the tree, and `redo` is offered only at integration-refused. So the task had no supported exit except a block. This is the same defect the tree-follows-head change was opened to remove, now reached by every task whose files the phase also edits.\n\nFix the structure:\n1. A refused move is not a gate input. When `advance_member` refuses because the work overlaps files that moved, the drive records no gate run on that base. It stops with a decision whose answers include `redo`: recut the tree at the phase head carrying the task's work as a patch, three-way where it applies. Only the task's work paths are carried, never the plan's record files, the same exclusion integration uses. Each carried path is then verified against refs/audit/carry/<task> after applying.\n2. A redo whose patch does not apply leaves the old tree and the carry ref untouched. It refuses by name, listing the conflicting paths.\n3. Reuse the existing redo machinery (`redo` at integration-refused, the patch it writes and the tree take-down) rather than a second copy. Find the one place the decision table decides which answers a state offers.\n\nRed-first each case. Use a fixture whose work overlaps a moved file and is gated at its old base today (red), and gets the recut decision and no gate row after the fix. Also cover a redo whose patch conflicts (refused, tree and carry ref unchanged), and record files never carried. Prove a failure mid-redo leaves the work as it was.\n\nHigh risk: it recuts a tree that holds an agent's only copy of its work. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1438,25 +1438,49 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "0b856d0cea6f",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Attempt 2, by invariant. (1) _worktrees.advance_plan's refusal carries kind REFUSED_WORK_MOVED ('work-moved') only when the task's own work moved and no ignored file is in the way (_refusal_of); every other refusal has no kind. drive-phase advance_member reads that field: work-moved -> tree-behind (redo|block); every other decline -> new decision tree-not-moved (block only; STEPS and SIGNAL_VERBS 'ask'). No gate runs at the old base in either case. (2) recut_tree (the one recut, shared with integration-refused) checks before anything comes down, each refusal by name with the tree and the carry ref unchanged: recut_standing (the tree exists - a gone tree is refused naming refs/audit/carry/<id> as where the work is, never recut empty; it carries its marker; HEAD == the recorded base); tree_work's base == the recorded base, so the work is exactly base..worktree; no link to a nested repository the base lacks (_links_added reads git's raw diff for mode 160000); the carry lost-path check; the scratch-index three-way pre-check. (3) Lows folded in: the work commit is pinned to refs/audit/redo/<id> before the drop and dropped after success; the patch is written whole and synced through the new _worktrees.keep_bytes (on the sanctioned _write_aside, plus a directory fsync); a failed removal after success is a reported stop, not a raise; the did-line (recut_said) names merged-three-way paths and byte-for-byte-verified paths apart, claiming each only where it holds. (4) test__deps gb1: GIT_PATH_BASE_EXEMPT rows for drive-phase _changed_between and recut_conflicts in tools/lints/_deps.py (outside the task's files; the plan gate allowed the Edit). Their paths are git-root, compared only with each other and with record_rels' git-root paths, and fed back as pathspecs from the same checkout; routing them through git_to_plan would put them in a different spelling from the records. sw1 is met by keep_bytes rather than a new os.replace site. PLUGIN-BUILD-GUIDE.md 'A wave's edges' rewritten again (gate allowed). Results: the gate sweep exit 0, '2/2 files ok, 758 cases'; test__deps 254/254 exit 0; 32 cross-file suites from the red step's affected list, plus manage_worktrees and integrate_task, '32/32 files ok, 5539 cases' exit 0; ruff and vermin -t=3.8- clean. Mutation probe: scratchpad/probe/mutations20.py, 38 rows, every guard red with an over-fire row each, and 5 rows labelled EXPECTED NOT RED that stayed green (scratchpad/m20d.log). Lows left for the batch: the worktreeSetup dry-run mismatch (the scratch-index pre-check runs no executor.worktreeSetup, so a setup that rewrites tracked files can make the real apply differ); redo_left guards only the wave path, not the serial one; the head read twice in recut_tree (git_head, then drop_tree's own read); a failed removal after success has no case; keep_bytes' fsync is unobservable in a test.",
+        "descriptive": "redo is offered only when a task's own work moved under its tree, and the recut refuses by name, before anything comes down, a tree that is gone, off its recorded base, or holding a nested repository."
       },
       "startedAt": "2026-10-27T14:19:40Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-27T16:19:21Z",
+      "verifiedBy": [
+        "av41/av42 (test__worktrees): the work-moved refusal carries kind 'work-moved', an ignored-file refusal and a stale-base refusal do not",
+        "av43: keep_bytes writes exactly the bytes and leaves nothing beside them",
+        "ar9: a tree on a commit the agent made is offered block only, gated nowhere, redo is not an answer, the commit is still HEAD",
+        "ar10/ar10b: a redo over a tree whose HEAD left its recorded base is refused naming the base, nothing cut, carry unchanged; the next run offers block only",
+        "ar11: a redo with the tree gone and pruned is refused naming the carry ref, no tree cut, the carry unchanged",
+        "ar12: a gone tree at the mover is offered block only",
+        "ar13: a nested repository at the mover is offered block only, the nested repository untouched",
+        "ar14: a redo over a tree holding a nested repository is refused by name before anything comes down",
+        "ar2b: the did-line names the merged path, makes no byte-for-byte claim, and the pin is gone after success",
+        "ar6c: the work commit is pinned to refs/audit/redo/<id> after a failure past the drop",
+        "ar1-ar8, ar3b, ar6b from attempt 1, with the fixture's phase edit moved inside the hunk context so a plain apply refuses what the three-way merge takes"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-27T16:19:11Z.3c4a31",
         "status": "passed",
         "at": "2026-10-27T16:19:11Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "0b856d0cea6f",
+        "at": "2026-10-27T16:19:21Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-27T15:21:01Z",
+        "basis": "`python3 tests/test__worktrees.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 156 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - av41 (house FAIL), av42 (house FAIL), av43 (house FAIL): SELFTEST FAILED: 153/156 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P142.21-6yq",
       "title": "The sweep reads every child's output with one line end, so no check that counts a line sees Windows line ends",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Observed on CI run 40511735770 (ci/P142 at 94a097d7, release tier), both Windows legs, plain and cp1252: tests/_harness.py sr13 FAIL. The sweep ran the staged suite correctly: ok True, blocks 5, slots 1, pools [], order and tmps as expected. The one conjunct that failed is `out.count(REPLAY_LINE % (5,)) == 1`. REPLAY_LINE ends in \"\\n\". The child writes it through a text-mode stdout, so on Windows it arrives as \"\\r\\n\". The sweep decodes the child's bytes as they are (`done.stdout.decode(\"utf-8\", \"replace\")` in tools/sweep-selftests.py, where a file's row output is captured), so every row \"output\" a reader receives keeps Windows line ends.\n\nThis is the third time this phase has hit the class. Run-test-gate's readers came first, then the private patterns the runner-line-end lint now covers. Each earlier fix normalised at a reader. Fix it once, where the text enters:\n1. Every place tools/sweep-selftests.py turns a child's bytes into text normalises line ends at that point. Reuse the one normalisation the plugin already has (`_runner_output.plain_text`, or the function it calls for line ends) rather than writing a second one. So a row's \"output\", and every line the sweep itself parses, reads \"\\n\" on every platform.\n2. A case that fails on today's code on any platform: a fixture child that writes \"\\r\\n\" line ends as raw bytes, run through the sweep. Its row output and the replay count read the same as a \"\\n\" child's. Red-first it on posix by writing the CRLF bytes explicitly, so the case does not depend on the runner's platform.\n3. sr13 itself needs no change once the capture normalises. If any other check in tests/_harness.py or tools/sweep-selftests.py counts or compares \"\\n\"-terminated text read from a child some way other than through the sweep's capture, normalise it the same way and list each site in your outcome.\n\nDo not widen the runner-line-end lint in this task. Say in your outcome whether it could see this shape (a str count or endswith on unnormalised child text) and why not. No F/P/BUG ids in comments.",
       "files": [
         "tools/sweep-selftests.py",
@@ -1482,21 +1506,27 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-27T16:19:22Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-27T16:46:20Z.c83490",
+        "status": "passed",
+        "at": "2026-10-27T16:46:20Z"
+      }
     },
     {
       "id": "P142.22-6yq",
       "title": "Starting a task reads a repeated status row as a repeat, so a holder's duplicated block rows do not keep its own work charged",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Observed in P142 on 2026-10-27, on every restart of a single-dispatch task in the project checkout (three times in a row). `audit-task.py start` refused because another blocked task declares the same files. The release that exists for this case asks `_ran_within(_status_events(...))` whether the holder ran in the window, and it answered None (\"cannot tell\"). The cause is a real journal holding duplicate block rows: `in_progress->blocked` twice in the same second, then `None->blocked`. Both the drive and audit-task record the block, so the status chain reads as broken. Each time, the orchestrator had to set the work aside by hand, start, and restore it with sha256 checks.\n\nFix the reading, not the instance:\n1. A status row whose `to` equals the state already reached is a repeat, not a break, whatever its `from` says (None included). Collapse repeats before the chain is judged.\n2. Keep refusing a chain that is genuinely broken: a `from` that is neither the reached state nor None, or a row naming a different state with no transition into it.\n3. Look at why two writers record the same block. If one of them is redundant, say so in your outcome; do not remove a journal writer in this task.\n\nRed-first with the exact row shape copied from the real journal (same-second duplicate plus a `None->blocked`). It must read as \"did not run within the window\" where that is true. Add an over-fire case: a genuinely broken chain still answers None, and the refusal still fires. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -1522,25 +1552,27 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-27T16:19:25Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P142.23-6yq",
       "title": "The red-first helper sizes its deadline from the command's recorded cost and reads a stage missing at base as red",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Observed in P142 on 2026-10-27. P142.20-6yq's submit ran the red-first helper on `python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__worktrees.py` with the default 480 s deadline, half of it held back for the fix run. test_drive_phase records about 1349 slot-seconds in .github/sweep-costs.json. The base run therefore timed out and the return was filed `could-not-prove`. Narrowing to the task's new stage cannot help: HEAD's test file has no such stage, so the base run refuses with `unknown_stage_label`. Every tdd task gated on the drive suite loses mechanical red-first.\n\nFix the structure:\n1. The deadline is sized from the command it is handed. When the command is a sweep, read the recorded costs of the files it names from the sweep's own cost table (reuse the sweep's reader; do not parse the JSON a second time), scaled by the same per-cost factor the sweep uses for a file's timeout. Keep `--timeout` as an explicit override. When no cost is recorded, keep today's default and say so in the basis.\n2. A stage the fix run has and HEAD's file lacks is not a refusal. It means those cases did not exist at base, which is red for those cases. Say exactly that in the basis.\n3. The basis text names the deadline it used and where the deadline came from.\n\nRed-first: a fixture sweep command whose recorded cost exceeds the default, which times out today and completes after the fix. A stage missing at base, which refuses today and reads red after the fix. Add an over-fire case: an unrecorded command keeps the default deadline. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
-        "tests/test_stamp_verification.py"
+        "tests/test_stamp_verification.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -1562,16 +1594,17 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-27T16:19:28Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     }
   ],
   "request": "neka njihov dokument bude osnova! I u odnosu na to treba napraviti plan implementacije",

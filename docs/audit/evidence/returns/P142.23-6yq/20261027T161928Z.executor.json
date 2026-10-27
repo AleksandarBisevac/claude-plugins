@@ -1,0 +1,43 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_stamp_verification.py tests/test__deps.py tests/test__output_lints.py tests/test_drive_phase.py": "pass",
+    "ruff check plugins/audit tests": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-27T16:39:14Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_stamp_verification.py` in a throwaway tree at HEAD exited 1 on \"AttributeError: module 'stamp_verification' has no attribute 'TIMEOUT_PER_COST'\" (read as python), and the task introduces 'TIMEOUT_PER_COST': absent from HEAD's module-level bindings of plugins/audit/scripts/governance/stamp-verification.py and bound in the working tree's; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; fix run: held back 240s of the deadline (the recorded 266s, capped at half the 480s deadline), the recorded slot-seconds of tests/test_stamp_verification.py in .github/sweep-costs.json",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "stamp-verification.py: new sized_deadline(cmd, costs, problem, explicit, default) and deadline_clause(sized); run_red resolves --timeout (parser default now None) after the plan is read: explicit wins, else a sweep command naming suites the cost table times gets ceil(TIMEOUT_PER_COST * their recorded slot-seconds) when above DEFAULT_TIMEOUT, capped at MAX_TIMEOUT, else DEFAULT_TIMEOUT with the reason; every red basis now carries a 'deadline: Ns, <source>' clause before the fix-run hold-back clause; the new-stage basis now says its cases did not exist at HEAD, which is red for them. _red_scope tolerates an unresolved timeout. Reader reuse: the plugin cannot import tools/ (it ships without it), so the existing plugin-side load_sweep_costs is reused (no new parser) and TIMEOUT_PER_COST is held in the plugin and pinned to tools/sweep-selftests.py by case swd5 (factor, same table entries, and file_timeout agreement for one suite). PLUGIN-BUILD-GUIDE.md deadline paragraph updated (edit allowed by the plan gate). Tests: new stage swd-block with swd1-swd6; ran sweep over test_stamp_verification, test__deps, test__output_lints, test_drive_phase: 4/4 files ok; ruff clean.",
+    "descriptive": "The red-first helper sizes its deadline from a sweep command's recorded cost and states the deadline and its source in every basis."
+  },
+  "testsAdded": [
+    "swd1: slow stand-in sweep with a recorded cost above the default deadline proves under a sized deadline",
+    "swd2: unrecorded sweep suite keeps the default deadline and the basis says so",
+    "swd3-swd5: sized_deadline arithmetic, cap, floor, explicit override, non-sweep default, and agreement with the sweep's factor and table",
+    "swd6: a stage missing at HEAD reads as its cases being red at HEAD, basis says so"
+  ],
+  "casesAdded": [
+    [
+      "swd1",
+      "swd2",
+      "swd3",
+      "swd4",
+      "swd5",
+      "swd6"
+    ]
+  ],
+  "claims": "claims:\n1 stamp-verification.py sized_deadline/deadline_clause (the added block after load_sweep_costs) do what the comments say; run_red resolves explicit/sized before deadline; swd1 and swd2 prove it end to end (basis shows 'deadline: 60s, 3 times the recorded 20s ...' and 'deadline: 3s, the default - no recorded cost ...')\n2 swd1 and swd2 were run red on the pre-fix code (only the TIMEOUT_PER_COST constant present): both could-not-prove with 'the run timed out ... 3-second deadline'; swd3/4/5 raised AttributeError on sized_deadline; swd6 wording is red at HEAD by its absent phrase (the helper's base run is the proof). Over-fire direction: swd2 (unrecorded suite keeps default, slow run times out) - not mutated by hand in the shared tree.\n3 grep DEFAULT_TIMEOUT / args.timeout in stamp-verification.py: every args.timeout reader sits in run_red after sizing or in _red_scope validation (now None-tolerant); sr-edges case caught the one caller passing the raw parse and was fixed. Left: run-test-gate.py has its own timeout, a different command.\n4 n/a - no rule addressed to an agent\n5 swd1/swd2 timing: one window, measured once (sweep stand-in sleeps 4s vs default 3s).\n6 n/a - no guard\n7 numbers in prose: none written; the factor is a constant pinned to the sweep's by swd5.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:77252ad7b62b96acf5d70f96636eaafe3c7dc0a8c05d23be383cbbb3f2998d1f\",\"dirtyDigest\":\"sha256:128c9cf773c203f4edd0ec72e108e4a650499ca95c01e34bfb4175fd98fa6fcb\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"02ec98f653f3f650\",\"plugins/audit/scripts/governance/stamp-verification.py\":\"ac0642b86befc1ba\",\"tests/test_stamp_verification.py\":\"e3e7ab9fa028e580\"},\"head\":\"0b856d0c\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/stamp-verification.py\",\"tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:8de134ef780344c29641e4351bacb38c1c615f4e33a481cc0ab48585c0be607d\",\"v\":2}",
+  "testsAddGaps": [
+    "tests/test_stamp_verification.py: a sweep command whose recorded cost exceeds the default deadline completes under a deadline sized from that cost, and a stage the base file lacks reads as red rather than a refusal - bound to `swd1`, which the suite did not print",
+    "tests/test_stamp_verification.py: a sweep command whose recorded cost exceeds the default deadline completes under a deadline sized from that cost, and a stage the base file lacks reads as red rather than a refusal - bound to `swd2`, which the suite did not print",
+    "tests/test_stamp_verification.py: a sweep command whose recorded cost exceeds the default deadline completes under a deadline sized from that cost, and a stage the base file lacks reads as red rather than a refusal - bound to `swd3`, which the suite did not print",
+    "tests/test_stamp_verification.py: a sweep command whose recorded cost exceeds the default deadline completes under a deadline sized from that cost, and a stage the base file lacks reads as red rather than a refusal - bound to `swd4`, which the suite did not print",
+    "tests/test_stamp_verification.py: a sweep command whose recorded cost exceeds the default deadline completes under a deadline sized from that cost, and a stage the base file lacks reads as red rather than a refusal - bound to `swd5`, which the suite did not print",
+    "tests/test_stamp_verification.py: a sweep command whose recorded cost exceeds the default deadline completes under a deadline sized from that cost, and a stage the base file lacks reads as red rather than a refusal - bound to `swd6`, which the suite did not print"
+  ],
+  "testsAddUnchecked": []
+}

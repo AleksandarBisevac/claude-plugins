@@ -1,0 +1,31 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_audit_task.py": "pass",
+    "python3 tools/sweep-selftests.py tests/test__deps.py": "pass",
+    "python3 tools/sweep-selftests.py tests/test__output_lints.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-27T16:32:36Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_audit_task.py` in a throwaway tree at HEAD exited 1 with 1 of 1127 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - hw13 (house FAIL): SELFTEST FAILED: 1126/1127 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; fix run: held back 240s of the deadline (the recorded 606s, capped at half the 480s deadline), the recorded slot-seconds of tests/test_audit_task.py in .github/sweep-costs.json",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Added _status_chain(events) in plugins/audit/scripts/manifest/audit-task.py: folds a row whose `to` equals the reached state into the row that reached it when its `from` is None, the reached state, or the `from` of the row that reached it; returns None when a move-on row does not start at the reached state, or a repeat names any other from. _ran_within now judges that chain instead of the raw adjacent-pair check; its last-event-vs-current check is unchanged. _status_events and _filed_while_running untouched. Tests (tests/test_audit_task.py, after hw11): hw13 real-shaped rows (manifest.edit pending->in_progress, task.block, manifest.edit and task.blocked all in_progress->blocked in the same second, wave.done None->blocked) -> window after block answers False, window straddling the run answers True; hw14 four genuinely broken chains (repeat with a stale other from, None->different state, from a never-reached state, last change not ending at current) all answer None. Mutation: repeat accepting any from -> hw14 red; fix absent -> hw13 red. Gate: sweep of tests/test_audit_task.py 1127 cases ok; tests/test__deps.py 254 ok; tests/test__output_lints.py 173 ok. Run bare (outside the sweep's isolation) lo-po4 fails because the suite warns it stands in a checkout; it passes under the sweep. Interpretation note: the task's rule 1 says a repeat holds 'whatever its from says' and rule 2 refuses a from that is neither reached state nor None; the real journal's repeat carries the previous state as its from (in_progress->blocked twice), so I accept None, the reached state, or the reaching row's own from as a repeat, and keep refusing any other from. Redundant writer: for one block three rows are written - the CLI's task.block (via cli), the hook's manifest.edit (via hook, same changes entry, no extra information) and the hook's task.blocked (carries attempt number, unique). The manifest.edit hook row duplicates the CLI row's status change and is the redundant one; no writer was removed.",
+    "descriptive": "A holder's duplicated block rows no longer make the journal unreadable, so the start can tell a blocked holder did not run in the window instead of keeping its work charged."
+  },
+  "testsAdded": [
+    "hw13: real-shaped duplicate block rows plus None->blocked read as one block (False after, True while running)",
+    "hw14: four genuinely broken chains still answer can't-tell"
+  ],
+  "casesAdded": [
+    [
+      "hw13",
+      "hw14"
+    ]
+  ],
+  "claims": "claims:\n1 audit-task.py _status_chain and _ran_within docstrings describe exactly what the code does: repeat folding at the elif with from in (None, chain[-1][2], chain[-1][3]); missing link returns None; no sentence claims a writer was removed\n2 fix absent -> hw13 FAIL (None, None); repeat accepts any from -> hw14 FAIL; restored, pycache purged, sweep 1127/1127 ok\n3 grep _ran_within/_status_events in audit-task.py: _ran_within called once (_own_work_paths), _status_events twice (that call and _filed_while_running); the latter reads events for ordering by index and does not judge chain continuity, left unchanged\n4 n/a - no rule addressed to an agent\n5 n/a - no property recorded\n6 n/a - no guard command-reading; the decision reads recorded status transitions\n7 n/a - no number written in prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:eae2ae8c3d5c87a6c899e18f811ade54db7b67696cac53c2eb138f3834beefcf\",\"dirtyDigest\":\"sha256:01cd8367b2dcc2e2f8f38ad8687b19901f019bbf6d48fdabe81a8a21d3211e66\",\"dirtyPaths\":{\"plugins/audit/scripts/manifest/audit-task.py\":\"f4e4d2cc63f3aea4\",\"tests/test_audit_task.py\":\"5f5b7c16340875df\"},\"head\":\"0b856d0c\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/manifest/audit-task.py\",\"tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:18829bb5268c8ef2b6172d17eef000b7f50ae24be445531384401afde5ccf1e4\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

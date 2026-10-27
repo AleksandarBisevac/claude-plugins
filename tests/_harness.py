@@ -951,9 +951,12 @@ def flag_values(args, flag):
 
 def stream_text(stream):
     """A captured stream as text: a timeout hands it back as bytes even when
-    the run asked for text, and as None when nothing was captured."""
+    the run asked for text, and as None when nothing was captured. Bytes are
+    not translated by universal newlines, so a Windows child's `\\r\\n` is read
+    as `\\n` here, the way a child that finished is."""
     if isinstance(stream, bytes):
-        return stream.decode("utf-8", "replace")
+        import _runner_output
+        return _runner_output.plain_text(stream.decode("utf-8", "replace"))
     return stream or ""
 
 
@@ -2011,6 +2014,11 @@ def _stage_runner_cases(check):
           "nothing captured into an empty string rather than None",
           stream_text(b"caf\xc3\xa9") == u"caf\xe9" and stream_text(None) == ""
           and stream_text("x") == "x")
+    check("sr2b ...and bytes a timed-out child wrote with CRLF line ends read "
+          "as LF, as a child that finished does, so the replay of a block "
+          "that timed out is counted the same way: %r"
+          % (stream_text(b"one\r\ntwo\r\n"),),
+          stream_text(b"one\r\ntwo\r\n") == "one\ntwo\n")
 
     twin = ("def _a_cases(check):\n    _b_cases(check)\n\n\n"
             "def _b_cases(check):\n    pass\n\n\n"

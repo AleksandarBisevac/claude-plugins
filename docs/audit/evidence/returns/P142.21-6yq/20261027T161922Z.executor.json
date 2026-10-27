@@ -1,0 +1,35 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tools/sweep-selftests.py tests/_harness.py": "pass",
+    "sweep of tests/_harness.py tests/test__deps.py tests/test__output_lints.py tests/test__runner_output.py tests/test_run_test_gate.py tests/test_drive_phase.py tools/sweep-selftests.py": "pass",
+    "ruff check tools/sweep-selftests.py tests/_harness.py": "pass",
+    "vermin -t=3.8- on both files": "pass",
+    "python3 tools/gate-parity.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-27T16:30:29Z",
+    "basis": "`python3 tools/sweep-selftests.py tools/sweep-selftests.py tests/_harness.py` in a throwaway tree at HEAD exited 1 with 1 of 140 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code, the task's run with its inline suite tools/sweep-selftests.py laid over as HEAD's copy plus its 4 test hunk(s), 2 other hunk(s) held at HEAD, and pulled in for the names its test hunks reference: import _runner_output  # noqa: E402  (plain_text: the one reading of a run's line ends) (line 124); def child_text(raw): (line 127)), each passing with the working tree's implementation - ce1 (house FAIL): SELFTEST FAILED: 139/140 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; fix run: held back 22s of the deadline, the recorded slot-seconds of tests/_harness.py, tools/sweep-selftests.py in .github/sweep-costs.json",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "tools/sweep-selftests.py: new child_text(raw) = _runner_output.plain_text(raw.decode('utf-8','replace')), and every site where the sweep turns a child's bytes into text now goes through it: run_one's capture of the row output (the line 1175 site, which feeds grade, the replay entry 'out' and every parse), the locale probe's read (.split(), behaviour unchanged), and the three decodes in the named-suites selftest case. tests/_harness.py: stream_text's bytes branch (a timed-out block's captured bytes, replayed to stdout) now reads through plain_text. sr13 needed no change. Sites left as they are, with reasons: harness _decoded (git output, only stripped/printed in messages), tail_bytes (takes text), 1052/1292/2039 subprocess text=True or universal_newlines=True (already translated by the runtime), 1812 `.decode().splitlines()` and 2261 `.strip()` (insensitive to a CR), and the fixture-source strings at sweep lines 3360/3482 (child code, decoded inside the child, then .strip()). New cases: ce1 (CRLF-bytes fixture child through run_one equals its LF twin, no CR, a newline-terminated line counted once), ce2 (child_text unit: CRLF, lone CR, invalid byte, LF untouched, empty), sr2b (stream_text of CRLF bytes). Runs: sweep of the 7 files incl. test__deps, test__output_lints, _harness, test__runner_output, test_run_test_gate, test_drive_phase all exit 0 (1854 cases); ruff and vermin clean, gate-parity exit 0. Runner-line-end lint: it could not see this shape. It only convicts an anchored multiline regex (search/match/sub/split...) applied to text in a module under scripts/ that imports _runner_output; sr13's failure was a str.count over text with no regex, and the sweep lives under tools/ which that lint does not walk (it also did not import the home module before this change). Not widened. Dependants: sweep consumers (ci.yml, sweep-costs.json, _output.py, _runner_collects/_runner_output/stamp-verification/_filed_returns, before-you-claim evals) read rows' output/path/ok and file paths, unchanged except CRs and CSI escapes are gone from output, and _runner_output readers are idempotent over plain text, so still correct; the new import of _runner_output into the sweep adds no new layer edge (tools/ is outside _deps.LAYERS, test__deps passes); names used elsewhere (budget_line, coverage_findings, locale_decision, named_suites) keep signatures; tests/_harness.py importers (the ado and affected suites etc.) see stream_text only differ on bytes with CRs; _group_present/_pid_present/_labels/_load_sweep untouched, test_run_test_gate and test_drive_phase pass. One behaviour change to note: plain_text also strips terminal escape sequences, so a row's output no longer carries colour codes a child printed.",
+    "descriptive": "The sweep reads every child's output as LF-ended text at the point the bytes enter, so line-counting checks like sr13 hold on Windows."
+  },
+  "testsAdded": [
+    "ce1: a fixture child writing CRLF as raw bytes yields the same sweep row output as an LF child, with the newline-terminated replay-style line counted once",
+    "ce2: child_text unit cases (CRLF, lone CR, invalid byte, LF, empty)",
+    "sr2b: harness stream_text reads CRLF bytes as LF"
+  ],
+  "casesAdded": [
+    [
+      "ce1",
+      "ce2",
+      "sr2b"
+    ]
+  ],
+  "claims": "claims:\n1 tools/sweep-selftests.py child_text (top of file) is what the docstring says: plain_text over the UTF-8 replace-decode; run_one's output line and the probe read go through it\n2 ce1 red before the fix (FAIL ce1, crlf output kept \\r\\n) and ce2 NameError; green after: sweep selftest 140/140; sr2b green after, red-first re-proved by the submit helper\n3 grep '.decode(' tools/sweep-selftests.py tests/_harness.py: every hit either routed through child_text/stream_text or left because the text is already newline-translated, split/strip-insensitive, or git output; listed in the outcome\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:5b941d8ba5808ded94816acb982d31436c4e64604abc5e8ad60a4945c34ecba3\",\"dirtyDigest\":\"sha256:8c675b8992b04adf0b5b52fe31e40eb0bff6b475126aafd635298c381dd5db88\",\"dirtyPaths\":{\"tests/_harness.py\":\"83d8fb3a52c324ad\",\"tools/sweep-selftests.py\":\"e32496a78e139f1c\"},\"head\":\"0b856d0c\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tests/_harness.py\",\"tools/sweep-selftests.py\"],\"scopeDigest\":\"sha256:094a5a0e770429e7c8789dd8595ad2f139a3afdb44f7be1de42e1f7c4906f040\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

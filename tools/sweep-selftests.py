@@ -121,6 +121,19 @@ if _lints not in sys.path:
     sys.path.insert(0, _lints)
 
 import _output_lints  # noqa: E402  (selftest_coverage: which modules have a suite)
+import _runner_output  # noqa: E402  (plain_text: the one reading of a run's line ends)
+
+
+def child_text(raw):
+    """A child's captured bytes as text, in `\\n`-ended lines on every platform.
+
+    A child's stdout is decoded here without universal newlines, so a Windows
+    child's `\\r\\n` would reach every reader of a row's output intact - the
+    replay line a staged suite prints is counted, `\\n` included, and would
+    never be found. Every place this file turns a child's bytes into text reads
+    them through here, so the lines are `\\n`-ended once, where the text
+    enters."""
+    return _runner_output.plain_text(raw.decode("utf-8", "replace"))
 
 # The directories a sweep covers. A tuple so nothing can append to it at runtime.
 #
@@ -1054,7 +1067,7 @@ def legacy_locale_verdict(environ=None, locale_vars=None, interpreter=None,
         return {"locale": {}, "line": "", "reported": None,
                 "problem": "could-not-run: the locale probe failed to run: %s"
                            % (exc,)}
-    said = done.stdout.decode("utf-8", "replace").split()
+    said = child_text(done.stdout).split()
     if done.returncode != 0 or len(said) != 2:
         return {"locale": {}, "line": "", "reported": None,
                 "problem": "could-not-run: the locale probe exited %d and said "
@@ -1172,7 +1185,7 @@ def run_one(rel_path, repo=None, encoding=None, timeout=DEFAULT_TIMEOUT,
         done = subprocess.run(argv, cwd=scratch, env=env, stdout=subprocess.PIPE,
                               stderr=subprocess.STDOUT, timeout=timeout)
         code = done.returncode
-        output = done.stdout.decode("utf-8", "replace")
+        output = child_text(done.stdout)
     except subprocess.TimeoutExpired:
         code, output = None, "did not finish within %ds" % (timeout,)
     except OSError as exc:
@@ -2794,10 +2807,50 @@ def _claude_watch_cases(check):
           all(said.values()) and len(said) == 2)
 
 
+def _child_text_cases(check):
+    """What a row's output reads like whatever line end the child wrote: the bytes
+    a child writes are decoded and then read as plain `\\n`-ended text, so a count
+    or an `endswith` over a row's output means the same on every platform."""
+    said = ["stage pool: 5 blocks run by the sweep, replayed here",
+            "PASS x1 a case",
+            "ALL PASS: 1/1 cases " + "passed"]
+    # The child writes BYTES, not text: a text-mode stdout translates `\n` on
+    # windows only, and the case has to go red on a posix runner as well.
+    bodies = {}
+    for name, end in (("lf", "\n"), ("crlf", "\r\n")):
+        raw = (end.join(said) + end).encode("utf-8")
+        bodies[name] = "import sys\nsys.stdout.buffer.write(%r)\n" % (raw,)
+    box = tempfile.mkdtemp(prefix="sweep-lineend-")
+    try:
+        for name, body in bodies.items():
+            with io.open(os.path.join(box, name), "w", encoding="utf-8") as fh:
+                fh.write(body)
+        rows = dict((name, run_one(name, repo=box, timeout=30))
+                    for name in bodies)
+    finally:
+        remove_tree(box)
+    crlf, lf = rows["crlf"]["output"], rows["lf"]["output"]
+    pool_line = said[0] + "\n"
+    check("ce1 a child that writes CRLF line ends as raw bytes yields the same "
+          "row output as one that writes LF: no carriage return survives, and a "
+          "count of a newline-terminated line finds it once in each (crlf %r, "
+          "lf %r)" % (crlf, lf),
+          crlf == lf and "\r" not in crlf
+          and crlf.count(pool_line) == 1 and lf.count(pool_line) == 1)
+    got = child_text(b"a\r\nb\rc\nd\xff\r\n")
+    check("ce2 every place the sweep turns a child's bytes into text reads them "
+          "through one function: CRLF and a lone CR both read as LF, a byte "
+          "that is not UTF-8 is replaced rather than raised over, and bytes "
+          "already LF are untouched (%r)" % (got,),
+          got == "a\nb\nc\nd�\n" and child_text(b"a\nb\n") == "a\nb\n"
+          and child_text(b"") == "")
+
+
 def _cases(check):
     """Every branch of `grade` plus the two refusals, driven without a subprocess."""
     _suite_root_cases(check)
     _claude_watch_cases(check)
+    _child_text_cases(check)
     live = "tests/test__output.py"
 
     g = grade(live, 0, "ALL PASS: 7/7 cases passed\n")
@@ -4627,8 +4680,8 @@ def _cases(check):
     nl_ran = subprocess.run(
         [sys.executable, os.path.abspath(__file__), "--jobs", "2", nl_real],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=300)
-    nl_text = nl_ran.stdout.decode("utf-8", "replace")
-    nl_err = nl_refused.stderr.decode("utf-8", "replace")
+    nl_text = child_text(nl_ran.stdout)
+    nl_err = child_text(nl_refused.stderr)
     nl_rowlines = [ln.split()[1] for ln in nl_text.splitlines()
                    if ln.startswith("  ok ") or ln.startswith("  FAILED ")]
     check("%s: read %r, whole %r, unknown %r, shard %r; rows %r; refused exit "
@@ -4636,7 +4689,7 @@ def _cases(check):
           % (nl_title, nl_read, nl_whole, nl_unknown, nl_shard,
              dict((p, (r["ok"], r["why"])) for p, r in nl_rows.items()),
              nl_refused.returncode, nl_err[-200:],
-             nl_refused.stdout.decode("utf-8", "replace")[-120:],
+             child_text(nl_refused.stdout)[-120:],
              nl_ran.returncode, nl_rowlines, nl_text[-160:]),
           nl_read == (["tests/test_a", "tools/c"], None)
           and nl_whole == ([], None)
