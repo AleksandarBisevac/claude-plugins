@@ -1070,6 +1070,79 @@ def _cases(check):
            for v in ("review-only: x", "  Review-Only: x", "pytest",
                      "echo review-only: x", None, "")]
           == [True, True, False, False, False, False])
+    # --- a sign-off step is not a gate command ----------------------------------
+    _so_cmds = {"test": "x", "lint": "y", "lintProbe": "python3 tools/probe.py"}
+    _so = M.phase_gate_default({"buildCommands": _so_cmds}) \
+        if hasattr(M, "phase_gate_default") else {}
+    check("pg9 a plan naming `lintProbe` and no phaseGate defaults a new "
+          "phase's gate WITHOUT it, ordinary keys kept in buildCommands order, "
+          "and the skip is returned by name and named in the basis: %r" % (_so,),
+          _so.get("entries") == ["test", "lint"]
+          and _so.get("signoffOnly") == ["lintProbe"]
+          and "lintProbe" in (_so.get("basis") or "")
+          and "sign-off" in (_so.get("basis") or ""))
+    _so_always = M.phase_gate_default(
+        {"buildCommands": _so_cmds,
+         "phaseGate": {"always": ["lintProbe", "lint"],
+                       "exclude": ["test"]}})
+    check("pg10 `always` naming it does not put it back: a sign-off step is "
+          "skipped exactly as a read is, so the explicit declaration cannot "
+          "turn the probe into a gate step either: %r" % (_so_always,),
+          _so_always["entries"] == ["lint"]
+          and _so_always["signoffOnly"] == ["lintProbe"])
+    # ALLOW, and the over-fire direction: a skip that dropped every key, or
+    # that swallowed the review-only list into its own, passes pg9 alone.
+    _so_mix = M.phase_gate_default(
+        {"buildCommands": {"test": "x", "lintProbe": "p",
+                           "claimsMatchCode": "c",
+                           "notes": "review-only: read it"}})
+    _so_none = M.phase_gate_default({"buildCommands": {"test": "x", "lint": "y"}})
+    check("pg11 ALLOW: an ordinary key stays in the default, a review-only key "
+          "is still skipped and reported under its own name, a sign-off key "
+          "under its own, and a plan naming no sign-off key reports none and "
+          "keeps the basis it always had: %r" % ((_so_mix, _so_none),),
+          _so_mix["entries"] == ["test"]
+          and sorted(_so_mix["reviewOnly"]) == ["claimsMatchCode", "notes"]
+          and _so_mix["signoffOnly"] == ["lintProbe"]
+          and _so_none["entries"] == ["test", "lint"]
+          and _so_none["signoffOnly"] == []
+          and _so_none["basis"] == "no meta.phaseGate: default is every "
+                                   "buildCommands key, in buildCommands order")
+    _so_keys = ["test", "lintProbe"]
+    _so_phase = _phase(status="in_progress", testGate=["test", "lintProbe"],
+                       desiredOutcome="x")
+    _so_w = M._check_phase_intent(_so_phase, "phase P0", _so_keys)
+    _so_hit = [x for x in _so_w if M._output.finding_code(x)
+               == "phases.signoff_only_gate.in-gate"]
+    _so_ok = M._check_phase_intent(
+        _phase(status="in_progress", testGate=["test"], desiredOutcome="x"),
+        "phase P0", _so_keys)
+    check("pg12 a phase testGate naming `lintProbe` is reported, saying the key "
+          "runs at sign-off and not as a gate step, and naming the key once; "
+          "a gate of ordinary keys draws nothing of that class: %r"
+          % (_so_w,),
+          len(_so_hit) == 1 and "lintProbe" in _so_hit[0]
+          and "at sign-off" in _so_hit[0] and "not as a gate step" in _so_hit[0]
+          and [x for x in _so_ok if M._output.finding_code(x)
+               == "phases.signoff_only_gate.in-gate"] == [])
+    _, _f, _tw = M._walk_phases(
+        [_phase(tasks=[_task("P0.1", tests={"gate": ["lintProbe"]}),
+                       _task("P0.2", tests={"gate": ["test"]})])], _so_keys)
+    _so_tw = [x for x in _tw if M._output.finding_code(x)
+              == "phases.signoff_only_gate.in-gate"]
+    check("pg13 a task's tests.gate naming it is reported against that task "
+          "alone, the task gating on an ordinary key is not: %r" % (_so_tw,),
+          len(_so_tw) == 1 and "P0.1" in _so_tw[0] and "P0.2" not in _so_tw[0])
+    _so_pg = [M._output.finding_code(x) for x in M._check_phase_gate(
+        {"meta": {"buildCommands": _so_cmds,
+                  "phaseGate": {"always": ["lintProbe"]}}})]
+    _so_pg_ex = [M._output.finding_code(x) for x in M._check_phase_gate(
+        {"meta": {"buildCommands": _so_cmds,
+                  "phaseGate": {"exclude": ["lintProbe"]}}})]
+    check("pg14 `meta.phaseGate.always` naming it is reported beside the "
+          "always/exclude overlap; `exclude` naming it is the harmless "
+          "spelling and draws nothing: %r" % ((_so_pg, _so_pg_ex),),
+          _so_pg == ["phases.signoff_only_gate.in-gate"] and _so_pg_ex == [])
 
 
     # --- meta.coupling: shape, plus the two new coded warnings -----------------

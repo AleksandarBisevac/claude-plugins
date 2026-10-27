@@ -8361,12 +8361,16 @@ def _default_phase_gate(assembled):
     that is a read of the diff and not a command is left out and named."""
     entries, basis = _default_phase_gate_entries(assembled)
     meta = assembled.get("meta")
-    skipped = _phases.phase_gate_default(
-        meta if isinstance(meta, dict) else {})["reviewOnly"]
+    default = _phases.phase_gate_default(meta if isinstance(meta, dict) else {})
+    skipped = default["reviewOnly"]
     if skipped:
         basis += ("; left out as review-only, not a command: %s -- the sign-off "
                   "reviewer is asked it instead"
                   % (_output.some_of(skipped, render=repr),))
+    if default["signoffOnly"]:
+        basis += ("; left out as a sign-off step, not a gate step: %s -- the "
+                  "sign-off runs it once over what the phase changed"
+                  % (_output.some_of(default["signoffOnly"], render=repr),))
     return entries, basis
 
 
@@ -8388,9 +8392,11 @@ def _default_phase_gate_entries(assembled):
     entries, always, excluded = (default["entries"], default["always"],
                                  default["excluded"])
     if not entries and not excluded:
-        # Every key was a read, not a command: nothing to run, and `exclude`
-        # removed nothing, so the sentence below would name a cause that is not.
-        return [], "every meta.buildCommands key is review-only, not a command"
+        # Every key was a read or a sign-off step, not a gate command: nothing
+        # to run, and `exclude` removed nothing, so the sentence below would
+        # name a cause that is not.
+        return [], ("every meta.buildCommands key is review-only or a sign-off "
+                    "step, not a gate command")
     if not entries:
         # CERTAIN, EVEN WITH NO EVIDENCE: `exclude` removed every buildCommands
         # key and `always` put none back, so there is nothing left to have run

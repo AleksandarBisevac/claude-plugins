@@ -1,0 +1,40 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__manifest_phases.py tests/test__manifest_vocab.py": "pass",
+    "cross-file: test__deps, test__output_lints, test_validate_manifest, test_audit_task, test__gate_derive, test__gate_feed, test__evidence_io, test__manifest_rules, test_run_test_gate (sweep, 9/9 files ok)": "pass",
+    "tests/test_drive_phase.py --selftest (607/607)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-27T17:28:45Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__manifest_phases.py tests/test__manifest_vocab.py` in a throwaway tree at HEAD exited 1 with 8 of 67 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - pg9 (house FAIL), pg10 (house FAIL), pg11 (house FAIL), pg12 (house FAIL), pg13 (house FAIL), pg14 (house FAIL), mv65 (house FAIL), mv66 (house FAIL): SELFTEST FAILED: 65/67 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - 3 times the recorded 21s of tests/test__manifest_phases.py, tests/test__manifest_vocab.py in .github/sweep-costs.json is only 62s; fix run: held back 21s of the deadline, the recorded slot-seconds of tests/test__manifest_phases.py, tests/test__manifest_vocab.py in .github/sweep-costs.json",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "_manifest_vocab: new LINT_PROBE_KEY, SIGNOFF_ONLY_GATES=(LINT_PROBE_KEY,), signoff_only_entry(entry), signoff_only_keys(build), beside the review-only catalog. _manifest_phases: re-exports them (LINT_PROBE_KEY, SIGNOFF_ONLY_KEYS, signoff_only_entry, signoff_only_keys); phase_gate_default skips sign-off-only keys from entries and from always, returns them as signoffOnly and names them in basis; new _signoff_only_gate (code phases.signoff_only_gate.in-gate) called from _check_phase_gate (meta.phaseGate.always only; exclude naming it stays quiet), _check_phase_intent (phase testGate) and _walk_phases (non-terminal task tests.gate). drive-phase.py: LINT_PROBE_KEY = _phases.LINT_PROBE_KEY (import layers allow it: drive-phase already imports _manifest_phases; no new import). Files outside the declared list: plugins/audit/scripts/manifest/audit-task.py (edit was allowed) - its _default_phase_gate now appends a sign-off-step clause to the basis it prints for /audit:phase add, and the all-keys-skipped message no longer says 'review-only' alone; no test pins that sentence (grep), and it has no new case of its own. Tests: pg9-pg14 in test__manifest_phases, mv65-mv66 in test__manifest_vocab, lp11 in test_drive_phase (plus import of _manifest_vocab there). Other readers of buildCommands keys checked: _gate_derive and run-test-gate read phase_gate_default (entries/rest/excluded), so they inherit the skip; run-test-gate gate_of/own resolve declared entries only; _gate_feed accepted_gates/review_asks are offers, not gate builders; fullGate naming lintProbe is NOT reported (outside the task's stated scope). Suites: phases+vocab 205 cases pass; drive_phase 607/607; nine cross-file suites 2760 cases pass.",
+    "descriptive": "A plan that names lintProbe no longer has it written into new phases' gates, and an explicit gate naming it is reported as a sign-off step."
+  },
+  "testsAdded": [
+    "pg9: lintProbe + no phaseGate -> default gate without it, named in basis",
+    "pg10: always cannot put it back",
+    "pg11: ALLOW/over-fire: ordinary key stays, review-only still skipped under its own name, plan without a sign-off key keeps the old basis",
+    "pg12: phase testGate naming it reported",
+    "pg13: task tests.gate naming it reported against that task only",
+    "pg14: phaseGate.always reported, exclude quiet",
+    "mv65/mv66 (vocab) and lp11 (drive) pin the catalog and the single key spelling"
+  ],
+  "casesAdded": [
+    [
+      "pg9",
+      "pg10",
+      "pg11",
+      "pg12",
+      "pg13",
+      "pg14"
+    ]
+  ],
+  "claims": "claims:\n1 _manifest_phases.py phase_gate_default (not_gate filter + signoffOnly/basis clause) does what its docstring now says; _signoff_only_gate docstring claims only the name-in-build_keys read it does; drive-phase.py LINT_PROBE_KEY = _phases.LINT_PROBE_KEY\n2 pg9/pg10/pg11 failed on unchanged code (FAIL output seen: entries included lintProbe); pg12-14 returned [] before; lp11 regex found ['LINT_PROBE_KEY = \"'] in HEAD's drive-phase.py (seen via git show HEAD) so it is red there; over-fire: pg11 (ordinary and review-only kept) and pg14 exclude-quiet; no mutation-restore cycle run beyond that, helper re-proves in submit\n3 grep REVIEW_ONLY|review_only|buildCommands keys over plugins/: readers building a gate from keys are phase_gate_default (fixed) and its callers audit-task._default_phase_gate_entries / _gate_derive / run-test-gate (inherit); audit-task basis sentence fixed; fullGate left (explicit list, outside task scope); _gate_feed left (offers, not gates)\n4 n/a - no rule addressed to an agent; the validator finding is the mechanism\n5 n/a - no property measured\n6 n/a - no guard; the check reads the entry's name against the declared buildCommands keys, not command text\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:329d5e6e4fdda2625c47d36175e074350be399499467e486525b129f7de81531\",\"dirtyDigest\":\"sha256:1ce0bac69bdd32294af6dd15b90cbf6048e0439a3cab5ff891b94d7963c40f63\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/drive-phase.py\":\"20f6a958b347ea63\",\"plugins/audit/scripts/manifest/_manifest_phases.py\":\"8fb7d1a95e91de0a\",\"plugins/audit/scripts/manifest/_manifest_vocab.py\":\"e950ce3f4907d009\",\"plugins/audit/scripts/manifest/audit-task.py\":\"27456f5c35e57caf\",\"tests/test__manifest_phases.py\":\"06b76955859bec0f\",\"tests/test__manifest_vocab.py\":\"4eaf75d352d5a419\",\"tests/test_drive_phase.py\":\"996475d5648cb86d\"},\"head\":\"e236bb23\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/manifest/_manifest_phases.py\",\"plugins/audit/scripts/manifest/_manifest_vocab.py\",\"tests/test__manifest_phases.py\",\"tests/test__manifest_vocab.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:9bc6c90bb470fbb402de7923dfe89b0680feff26ef2ed3f70aaf1c3dfc2da9f8\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

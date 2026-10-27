@@ -225,6 +225,26 @@ def _comma_joined_gate(entries, build_keys, where, field):
     return out
 
 
+def _signoff_only_gate(entries, build_keys, where, field):
+    """Warnings for gate entries that name a key the sign-off runs.
+
+    Such a key (`_manifest_vocab.SIGNOFF_ONLY_GATES`) is run once, by the
+    sign-off, over the files the phase changed; named in a gate it would run as
+    an ordinary step on every gate it appears in, and the lint probe mutates
+    the tree to prove a guard red. Only a name that IS a `buildCommands` key is
+    read, as `_comma_joined_gate` reads one: a literal command is a command.
+    """
+    return [_output.finding(
+        "phases.signoff_only_gate.in-gate",
+        "%s: %s entry %r runs at sign-off and not as a gate step - the "
+        "sign-off runs it once over what the phase changed, and as a gate "
+        "entry it would run on every gate that names it. Drop it from the "
+        "gate; to keep it out of a new phase's default, nothing is needed"
+        % (where, field, entry))
+        for entry in entries
+        if entry in build_keys and _vocab.signoff_only_entry(entry)]
+
+
 # --- what a NEW phase's gate defaults to -------------------------------------------
 def _phase_gate_lists(meta):
     """`(always, exclude, build_keys)` - the validated pieces `phase_gate_default`
@@ -252,6 +272,12 @@ REVIEW_ONLY_KEYS = _vocab.REVIEW_ONLY_GATES
 is_review_only = _vocab.is_review_only
 review_only_keys = _vocab.review_only_keys
 review_only_entry = _vocab.review_only_entry
+# ...and so is the sign-off-only rule, asked in the same two places for the same
+# reason: a key the sign-off runs is no more a gate step than a read is.
+LINT_PROBE_KEY = _vocab.LINT_PROBE_KEY
+SIGNOFF_ONLY_KEYS = _vocab.SIGNOFF_ONLY_GATES
+signoff_only_entry = _vocab.signoff_only_entry
+signoff_only_keys = _vocab.signoff_only_keys
 
 
 def phase_gate_default(meta):
@@ -276,14 +302,21 @@ def phase_gate_default(meta):
     ABSENT MEANS TODAY'S BEHAVIOUR EXACTLY: with no `phaseGate` at all, `always`
     and `exclude` are both empty, so `entries` is every `buildCommands` key, in
     buildCommands order, byte-identical to what `/audit:phase add` wrote before
-    this field existed.
+    this field existed - EXCEPT the keys that are not gate steps at all: a
+    review-only key (`reviewOnly`) and a sign-off-only one (`signoffOnly`), each
+    returned by name, and the latter named in `basis`.
     """
     always, exclude, build_keys = _phase_gate_lists(meta)
     # A READ IS NOT A COMMAND, so it is skipped HERE - the one derivation every
     # consumer asks - and returned by name so a caller can say it did.
-    review_only = review_only_keys((meta or {}).get("buildCommands"))
-    always = [a for a in always if a not in review_only]
-    build_keys = [k for k in build_keys if k not in review_only]
+    # ...AND SO IS A SIGN-OFF STEP, which the sign-off runs once and an ordinary
+    # gate must never run: `always` cannot put it back, for the same reason.
+    build = (meta or {}).get("buildCommands")
+    review_only = review_only_keys(build)
+    signoff_only = signoff_only_keys(build)
+    not_gate = set(review_only) | set(signoff_only)
+    always = [a for a in always if a not in not_gate]
+    build_keys = [k for k in build_keys if k not in not_gate]
     always_set = set(always)
     exclude_set = set(exclude) - always_set
     rest = [k for k in build_keys
@@ -308,8 +341,13 @@ def phase_gate_default(meta):
                     " after meta.phaseGate.always puts %d first (%s)"
                     % (len(always), _output.some_of(always, render=repr))
                     if always else ""))
+    if signoff_only:
+        basis += ("; %s left out - the sign-off runs %s, a gate step never "
+                  "does" % (_output.some_of(signoff_only, render=repr),
+                            "it" if len(signoff_only) == 1 else "them"))
     return {"entries": entries, "always": always, "rest": rest,
-            "excluded": excluded, "basis": basis, "reviewOnly": review_only}
+            "excluded": excluded, "basis": basis, "reviewOnly": review_only,
+            "signoffOnly": signoff_only}
 
 
 def phase_gate_suite_gap(manifest, suite_keys=None):
@@ -629,6 +667,10 @@ def _check_phase_gate(manifest):
                     "always is always, so %s stays in the default gate"
                     % (_output.some_of(both, render=repr),
                        "it" if len(both) == 1 else "they")))
+            # `exclude` naming one is the harmless spelling (the default skips
+            # it already), so only `always` - the list that would put it in - is read.
+            findings.extend(_signoff_only_gate(
+                always, build_keys, "meta.phaseGate", "always"))
             if "mode" in gate:
                 mode = gate.get("mode")
                 if mode not in PHASE_GATE_MODES:
@@ -733,6 +775,8 @@ def _check_phase_intent(phase, pwhere, build_keys):
         return []
     out = _comma_joined_gate(_gate_entries(phase.get("testGate")), build_keys,
                              pwhere, "testGate")
+    out.extend(_signoff_only_gate(_gate_entries(phase.get("testGate")),
+                                  build_keys, pwhere, "testGate"))
     if not (_mio.phase_running(phase) or _mio.signoff_due(phase)):
         return out
     outcome = phase.get("desiredOutcome")
@@ -1804,6 +1848,8 @@ def _walk_phases(phases, build_keys=()):
                                       if isinstance(tests, dict) else None)
             if task.get("status") not in TERMINAL:
                 w.extend(_comma_joined_gate(task_gate, build_keys, twhere,
+                                            "tests.gate"))
+                w.extend(_signoff_only_gate(task_gate, build_keys, twhere,
                                             "tests.gate"))
             # A WARNING, FOR EVERY TASK INCLUDING A FINISHED ONE: the verbs
             # refuse the shape when it is written now, but a plan written before

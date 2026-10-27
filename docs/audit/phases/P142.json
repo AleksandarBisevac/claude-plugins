@@ -42,48 +42,60 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py:7034-7037,7071-7073",
         "issue": "contradicts task clause \"a phase touching no such file runs none and says so\" / acceptance (2) \"prints that it ran none\" on the held path: a run that printed `ran none` is held as `state[\"lintProbe\"] = {\"head\": head}` (the word is not stored), and the held branch then appends `lint probe green (held at this HEAD)` - so any re-entry at the same HEAD (e.g. after the sign-off verb stopped) reports a probe that ran no row as green, the exact reading-as-a-proof the clause forbids.",
-        "resolution": "Store the word with the hold (`{\"head\": head, \"said\": \"ran none\"|\"green\"}`) and echo it on the held branch (`lint probe ran none (held at this HEAD)`); add an lp6 twin that holds a ran-none run and asserts the held did-line says ran none.",
-        "fixTask": "P142.12-6yq"
+        "resolution": "fixed in P142.12-6yq (e236bb23ae07): Store the word with the hold (`{\"head\": head, \"said\": \"ran none\"|\"green\"}`) and echo it on the held branch (`lint probe ran none (held at this HEAD)`); add an lp6 twin that holds a ran-none run and asserts the held did-line says ran none.",
+        "fixTask": "P142.12-6yq",
+        "commit": "e236bb23ae07",
+        "status": "fixed"
       },
       {
         "id": "P142-R4",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py:7076-7078 (bound at :373)",
         "issue": "The success print breaks the module's stated invariant `INSTRUCTION_BYTES = 300` (\"The bound every print that is not a stop stays inside\") whenever a probe runs: the executor's own measurement is 312 bytes in lp1's one-task fixture. This repo keeps tools/prove-gates.py, so from this change every sign-off here prints past the bound; lp1 does not assert the bound and dp3 only measures a probeless fixture, so nothing goes red.",
-        "resolution": "Make the probe clause fit (e.g. fold it into the `invariants clean` clause as `invariants clean, lint probe green|ran none`, or move the word into the sign-off summary) and extend dp3 (or lp1/lp2) to measure the success print of a probe-carrying fixture against INSTRUCTION_BYTES.",
-        "fixTask": "P142.12-6yq"
+        "resolution": "fixed in P142.12-6yq (e236bb23ae07): Make the probe clause fit (e.g. fold it into the `invariants clean` clause as `invariants clean, lint probe green|ran none`, or move the word into the sign-off summary) and extend dp3 (or lp1/lp2) to measure the success print of a probe-carrying fixture against INSTRUCTION_BYTES.",
+        "fixTask": "P142.12-6yq",
+        "commit": "e236bb23ae07",
+        "status": "fixed"
       },
       {
         "id": "P142-R5",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py:6958 (LINT_PROBE), 7025-7027",
         "issue": "A shipped product script now executes any project file that happens to sit at `tools/prove-gates.py` at every sign-off, by filename convention alone, with no plan key opting in: a user project with an unrelated script at that path has it run with `--changed <paths>` and its exit 1 read as a not-proven stop and any other non-zero exit as a refusal that blocks sign-off. Every other gate the driver runs is named by the plan (meta.buildCommands, meta.runtimeBoot); this one is not. The executor flagged it as (b).",
-        "resolution": "Key the probe off the plan (a `meta.buildCommands` entry or a dedicated meta key naming the probe command and declaring it speaks the `--changed` protocol), absent means skip; set it in this repo's plan. If that is out of this task's files, file it as a fix task before sign-off rather than shipping the filename convention.",
-        "fixTask": "P142.12-6yq"
+        "resolution": "fixed in P142.12-6yq (e236bb23ae07): Key the probe off the plan (a `meta.buildCommands` entry or a dedicated meta key naming the probe command and declaring it speaks the `--changed` protocol), absent means skip; set it in this repo's plan. If that is out of this task's files, file it as a fix task before sign-off rather than shipping the filename convention.",
+        "fixTask": "P142.12-6yq",
+        "commit": "e236bb23ae07",
+        "status": "fixed"
       },
       {
         "id": "P142-R6",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:6992-7004,7049-7053",
         "issue": "Acceptance (4) is checked as equality of porcelain status letters + paths only. A file already dirty before the run (` M`) that the probe leaves mutated still reads ` M` after, so a stranded mutation in an already-modified lint file passes; conversely, a second session editing the shared checkout during the minutes-long run produces a false `left the checkout changed` stop whose remedy (`restore the tree`) would tell the operator to discard someone else's work.",
-        "resolution": "For entries dirty before the run, also compare a content digest (git hash-object of each) before and after; and word the stop as 'changed during the probe run' naming the entries without prescribing a restore, or refuse to start the probe when a path in the changed set is already dirty.",
-        "fixTask": "P142.12-6yq"
+        "resolution": "fixed in P142.12-6yq (e236bb23ae07): For entries dirty before the run, also compare a content digest (git hash-object of each) before and after; and word the stop as 'changed during the probe run' naming the entries without prescribing a restore, or refuse to start the probe when a path in the changed set is already dirty.",
+        "fixTask": "P142.12-6yq",
+        "commit": "e236bb23ae07",
+        "status": "fixed"
       },
       {
         "id": "P142-R7",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:7029-7031",
         "issue": "`subprocess.run` of a minutes-long mutating probe carries no timeout, so a hung probe hangs the sign-off step indefinitely with the tree possibly mid-mutation.",
-        "resolution": "Pass a timeout (a generous bound or one read from the plan), catch `subprocess.TimeoutExpired` as a refusal stop; the status comparison in `finally` already reports what a killed run left.",
-        "fixTask": "P142.12-6yq"
+        "resolution": "fixed in P142.12-6yq (e236bb23ae07): Pass a timeout (a generous bound or one read from the plan), catch `subprocess.TimeoutExpired` as a refusal stop; the status comparison in `finally` already reports what a killed run left.",
+        "fixTask": "P142.12-6yq",
+        "commit": "e236bb23ae07",
+        "status": "fixed"
       },
       {
         "id": "P142-R8",
         "severity": "low",
         "file": "tests/test_drive_phase.py:6392-6393",
         "issue": "lp6's 'at another HEAD it runs once' twin calls `lint_probe(..., None)`, which short-circuits the hold on `if head and ...`; it never exercises a different SHA, so a hold that ignored the head comparison (e.g. `held.get(\"head\")` truthy) would still pass lp6.",
-        "resolution": "Call the twin with a different 40-hex head (`\"b\" * 40`) so the comparison itself is what lets it run.",
-        "fixTask": "P142.12-6yq"
+        "resolution": "fixed in P142.12-6yq (e236bb23ae07): Call the twin with a different 40-hex head (`\"b\" * 40`) so the comparison itself is what lets it run.",
+        "fixTask": "P142.12-6yq",
+        "commit": "e236bb23ae07",
+        "status": "fixed"
       },
       {
         "id": "P142-R9",
@@ -181,7 +193,8 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py:7368 (LINT_PROBE_KEY) crossing plugins/audit/scripts/manifest/_manifest_phases.py:263-296 (phase_gate_default)",
         "issue": "The diff makes the probe a meta.buildCommands key, but phase_gate_default() defaults a NEW phase's gate to EVERY buildCommands key not in meta.phaseGate.exclude (only review-only keys are skipped). Once the orchestrator sets lintProbe, /audit:phase add on a plan without a derived or excluding phaseGate writes `lintProbe` into each new phase's gate, so run-test-gate.py runs the mutating probe with no --changed (the whole probe, minutes, rewriting the tree) as an ordinary gate command. Neither the diff, phase-signoff.md 4b nor any case mentions or pins this; the other side of the boundary is untouched.",
-        "resolution": "Treat lintProbe as a key that is not a gate entry in phase_gate_default (a reserved set beside REVIEW_ONLY_GATES), with a case in the phase-gate-default suite; or at least state in step 4b that a plan naming lintProbe must list it in meta.phaseGate.exclude."
+        "resolution": "Treat lintProbe as a key that is not a gate entry in phase_gate_default (a reserved set beside REVIEW_ONLY_GATES), with a case in the phase-gate-default suite; or at least state in step 4b that a plan naming lintProbe must list it in meta.phaseGate.exclude.",
+        "fixTask": "P142.24-6yq"
       },
       {
         "id": "P142-R23",
@@ -198,7 +211,7 @@
         "resolution": "Keep the consequence in the done rule (terse form) and take the bytes from the probe clause or the did-line instead, or add a case pinning the wording the guide promises."
       }
     ],
-    "outcome": "[findings: 24 - 0 high, 9 med, 15 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 24 - 0 high, 9 med, 15 low; 6 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -947,7 +960,7 @@
     {
       "id": "P142.12-6yq",
       "title": "The sign-off lint probe is named by the plan, reports a held run by what it did, fits the print budget, and bounds and scopes its restore check",
-      "status": "in_progress",
+      "status": "done",
       "description": "Review findings on the sign-off lint probe that P142.6 added to drive-phase.py `lint_probe()` (fix them together, they share the function):\n- R3 (med): the hold stores only the HEAD, so a re-entry at the same HEAD after a run that printed `ran none` reports `lint probe green (held at this HEAD)`. Store the outcome word with the hold and print it back; a held ran-none run says ran none.\n- R4 (med): the success print is over INSTRUCTION_BYTES (300) with the probe clause. Shorten or merge the clause so every non-stop print fits, and make the byte-budget case measure a fixture that HAS a probe.\n- R5 (med): the shipped driver runs whatever sits at the hard-coded `tools/prove-gates.py`. The probe must be named by the plan: read a `meta.buildCommands` key (name it `lintProbe`; the driver appends `--changed <paths>`), and a plan without the key skips the step and says so in the did-line. The orchestrator sets the key on this repo's plan with `/audit:task build-command`; do not edit docs/audit.\n- R6 (low): the restore check compares status letters only; compare contents (hash) of files already modified before the run, and word the stop so it does not tell the operator to discard another session's edits.\n- R7 (low): give the probe run a timeout derived from the drive's own budget, and report a timeout as a stop naming it.\n- R8 (low): lp6's other-HEAD twin passes head=None; use a different SHA so a hold that ignores the head goes red.\nUpdate phase-signoff.md step 4b to match. Red-first each case against today's code. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -973,14 +986,23 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e236bb23ae07",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "No file changed in this attempt. The task tree holds the earlier work for the lint probe in plugins/audit/scripts/governance/drive-phase.py lint_probe(), tests/test_drive_phase.py, plugins/audit/reference/phase-signoff.md step 4b and PLUGIN-BUILD-GUIDE.md. Re-ran `python3 tests/test_drive_phase.py --selftest --stage lp-block` in that tree and it printed 'ALL PASS: 10/10 cases passed' (lp1 to lp10). I did not run the gate command `python3 tools/sweep-selftests.py tests/test_drive_phase.py`: the orchestrator said the full gate is red only because the tree stands at the old base d4a26f13 and the drive recuts it at the head after submit. The pipe hid the exit code, so the evidence is the ALL PASS line, not an exit code. Dependants of the four files were not re-inspected in this attempt: this attempt changed nothing, and the orchestrator reported the earlier work as read twice and found correct. Those verdicts therefore rest on the orchestrator's earlier read, not on a check made now.",
+        "descriptive": "The sign-off lint probe is named by meta.buildCommands.lintProbe, a held ran-none run says ran none, every probe print fits 300 bytes, a hung probe is a named timeout stop, and the restore check compares file contents."
       },
       "startedAt": "2026-10-27T17:04:11Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-27T17:17:06Z",
+      "verifiedBy": [
+        "lp1 and lp2: a phase touching a lint file runs the probe once and says green; a phase touching none says ran none",
+        "lp3: a surviving mutation stops the sign-off naming the row",
+        "lp4 and lp10: a probe that changes the checkout stops the sign-off, and a file already modified before the run and changed again by the probe is caught by content, with wording that does not tell the operator to discard earlier edits",
+        "lp5: a plan naming no lintProbe runs no probe and the did-line says the key is unset",
+        "lp6: a green held probe is not rerun at the same HEAD and does run at another HEAD, using a real different SHA",
+        "lp7: every success print of a probe drive is at most 300 bytes, measured on a fixture that has a probe",
+        "lp8: a held ran-none run prints ran none, never green",
+        "lp9: a hung probe times out as a named stop"
+      ],
       "notes": [
         {
           "at": "2026-10-26T10:05:54Z",
@@ -1008,6 +1030,17 @@
         "runId": "2026-10-27T17:13:08Z.e1f173",
         "status": "passed",
         "at": "2026-10-27T17:13:08Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "e236bb23ae07",
+        "at": "2026-10-27T17:17:06Z",
+        "return": "docs/audit/evidence/returns/P142.12-6yq/20261027T170411Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "task mode is regression with expectRedFirst false, so no red was owed; this attempt changed no file and only re-ran the block",
+        "at": "n/a"
       }
     },
     {
@@ -1682,6 +1715,74 @@
         "basis": "`python3 tools/sweep-selftests.py tests/test_stamp_verification.py` in a throwaway tree at HEAD exited 1 on \"AttributeError: module 'stamp_verification' has no attribute 'TIMEOUT_PER_COST'\" (read as python), and the task introduces 'TIMEOUT_PER_COST': absent from HEAD's module-level bindings of plugins/audit/scripts/governance/stamp-verification.py and bound in the working tree's; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; fix run: held back 240s of the deadline (the recorded 266s, capped at half the 480s deadline), the recorded slot-seconds of tests/test_stamp_verification.py in .github/sweep-costs.json",
         "status": "proved",
         "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P142.24-6yq",
+      "title": "A build command that runs at sign-off is never defaulted into a phase's gate",
+      "status": "in_progress",
+      "description": "Review finding P142-R22 (med), on P142.12-6yq at its landing. The sign-off lint probe is now named by `meta.buildCommands.lintProbe` (drive-phase.py `LINT_PROBE_KEY`). But `_manifest_phases.phase_gate_default()` defaults a new phase's gate to every `buildCommands` key that `meta.phaseGate.exclude` does not name. The only keys it skips are the review-only ones (`_manifest_vocab.review_only_keys`: the `REVIEW_ONLY_GATES` catalog, plus values starting `review-only:`). So once a plan sets `lintProbe`, `/audit:phase add` on a plan with no excluding `phaseGate` writes `lintProbe` into each new phase's gate. Then run-test-gate runs a probe that mutates the tree, as an ordinary gate step, on every task and phase gate.\n\nFix the vocabulary, not the one key:\n1. A `buildCommands` key can be a sign-off step rather than a gate command. Give the catalog that category beside the review-only one (`lintProbe` is its first member), in `_manifest_vocab`, and make it the one place both questions are answered.\n2. `phase_gate_default` skips sign-off-only keys exactly as it skips review-only keys, and its basis names what it skipped.\n3. A phase or task gate that names a sign-off-only key explicitly is reported by the plan's validation (validate-manifest), with a message that says the key runs at sign-off and not as a gate step. Find where `_check_phase_gate` warns about an always/exclude overlap and put the check beside it.\n4. Any other reader that builds a gate from `buildCommands` keys (grep `buildCommands` for derivations) reads the same predicate.\n\nRed-first each case:\n- a plan with `lintProbe` set and no `phaseGate` defaults a new phase's gate without it (red today);\n- an explicit gate entry naming it is reported;\n- over-fire: an ordinary key is still in the default, and a review-only key is still skipped.\nNo F/P/BUG ids in comments.",
+      "files": [
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "tests/test__manifest_phases.py",
+        "tests/test__manifest_vocab.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__manifest_phases.py: a plan that names lintProbe and no phaseGate defaults a new phase's gate without it, while an ordinary key stays and a review-only key is still skipped"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__manifest_phases.py tests/test__manifest_vocab.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "before-you-claim",
+        "no-silent-pass"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-27T17:18:05Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-27T17:17:58Z",
+          "text": "scope: plugins/audit/scripts/governance/drive-phase.py, plugins/audit/scripts/manifest/_manifest_phases.py, every path the finding(s) P142-R22 name"
+        },
+        {
+          "at": "2026-10-27T17:17:58Z",
+          "text": "scope: tests/test_drive_phase.py, the suite that tests plugins/audit/scripts/governance/drive-phase.py (python: it hands drive-phase.py to a loader through a module constant)"
+        },
+        {
+          "at": "2026-10-27T17:17:58Z",
+          "text": "scope: tests/test__manifest_phases.py, the suite that tests plugins/audit/scripts/manifest/_manifest_phases.py (python: its import closure reaches plugins/audit/scripts/manifest/_manifest_phases.py)"
+        }
+      ],
+      "fixes": [
+        "P142-R22"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-27T17:42:59Z.a05f01",
+        "status": "passed",
+        "at": "2026-10-27T17:42:59Z"
       }
     }
   ],

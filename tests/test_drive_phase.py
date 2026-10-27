@@ -65,6 +65,7 @@ import _output_lints  # noqa: E402  (the lint half, development code)
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402  (script_path, load_script)
 import _manifest_io as _mio                        # noqa: E402  (load_manifest, tasks_by_id)
+import _manifest_vocab as _vocab                   # noqa: E402  (LINT_PROBE_KEY: the key the driver and the default gate share)
 import _evidence_io as _evio                       # noqa: E402  (read_rows, project_config_for)
 import _tree_stamp                                 # noqa: E402  (the dirty digest a row records)
 import _filed_returns as _fr                       # noqa: E402  (return_path)
@@ -6533,6 +6534,19 @@ def _lint_probe_cases(check):
           and "src/f2.txt" in left_text
           and "restore the tree" not in left_text
           and quiet is None and any("green" in d for d in did_quiet))
+    # The key the driver reads and the key the default gate skips are one
+    # name: a driver holding its own copy could be renamed without the gate's
+    # default noticing, and the probe would be a gate step again.
+    with open(_loader.script_path(DRIVER), encoding="utf-8") as fh:
+        driver_source = fh.read()
+    own_literal = re.findall(r'^LINT_PROBE_KEY\s*=\s*"', driver_source, re.M)
+    check("lp11 the key naming the lint probe is read from the manifest "
+          "vocabulary, not spelled a second time in the driver, and is the "
+          "key a new phase's default gate skips: %r"
+          % ((M.LINT_PROBE_KEY, own_literal),),
+          M.LINT_PROBE_KEY is _vocab.LINT_PROBE_KEY
+          and M.LINT_PROBE_KEY == LP_PROBE_KEY and own_literal == []
+          and _vocab.signoff_only_entry(M.LINT_PROBE_KEY))
 
 
 def _boot_cases(check):

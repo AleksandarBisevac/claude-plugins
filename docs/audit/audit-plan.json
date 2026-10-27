@@ -4469,7 +4469,8 @@
       "P131.1",
       "P131.2",
       "P131.13",
-      "P138.2"
+      "P138.2",
+      "P142.24-6yq"
     ],
     "plugins/audit/scripts/manifest/_manifest_rules.py": [
       "P18.2",
@@ -4540,7 +4541,8 @@
       "P131.2",
       "P131.15-dau",
       "P131.13",
-      "P138.2"
+      "P138.2",
+      "P142.24-6yq"
     ],
     "plugins/audit/scripts/manifest/_merge_install.py": [
       "P60.5",
@@ -4772,7 +4774,8 @@
       "P138.3-myr",
       "P142.1",
       "P142.19-6yq",
-      "P142.22-6yq"
+      "P142.22-6yq",
+      "P142.24-6yq"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -10044,7 +10047,8 @@
       "P142.6",
       "P142.12-6yq",
       "P142.18-6yq",
-      "P142.20-6yq"
+      "P142.20-6yq",
+      "P142.24-6yq"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -11238,7 +11242,8 @@
     "tests/test__manifest_phases.py": [
       "P131.1",
       "P131.2",
-      "P131.13"
+      "P131.13",
+      "P142.24-6yq"
     ],
     "tests/test__manifest_rules.py": [
       "P131.1"
@@ -11252,7 +11257,8 @@
       "P131.2",
       "P129.7-izt",
       "P129.8-izt",
-      "P131.13"
+      "P131.13",
+      "P142.24-6yq"
     ],
     "tests/test__merge_install.py": [
       "P131.1"
@@ -11551,7 +11557,8 @@
       "P142.11-6yq",
       "P142.12-6yq",
       "P142.18-6yq",
-      "P142.20-6yq"
+      "P142.20-6yq",
+      "P142.24-6yq"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"

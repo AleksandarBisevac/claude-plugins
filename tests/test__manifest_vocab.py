@@ -996,6 +996,39 @@ def _cases(check):
           ro_keys({"a": "true", "claimsMatchCode": "echo x",
                    "b": " Review-Only: read"}) == ["claimsMatchCode", "b"])
 
+    # --- a sign-off step is the second category of key that is no gate command --
+    # Held beside the review-only one, so the question "which `buildCommands`
+    # keys are never gate steps" has one home and the readers of it cannot
+    # learn different answers.
+    so_names = (("LINT_PROBE_KEY", "LINT_PROBE_KEY"),
+                ("SIGNOFF_ONLY_GATES", "SIGNOFF_ONLY_KEYS"),
+                ("signoff_only_keys", "signoff_only_keys"),
+                ("signoff_only_entry", "signoff_only_entry"))
+    so_here = [n for n, _p in so_names if hasattr(M, n)]
+    so_same = [n for n, p in so_names
+               if hasattr(M, n) and getattr(_phases, p, None) is getattr(M, n)]
+    check("mv65 RED-FIRST: the sign-off-only rule is defined here, the lint "
+          "probe key is its first member, and _manifest_phases re-exports the "
+          "same objects: here=%r same=%r" % (so_here, so_same),
+          so_here == [n for n, _p in so_names]
+          and so_same == [n for n, _p in so_names]
+          and M.LINT_PROBE_KEY == "lintProbe"
+          and M.LINT_PROBE_KEY in M.SIGNOFF_ONLY_GATES)
+    so_keys = getattr(M, "signoff_only_keys", lambda b: "missing")
+    so_entry = getattr(M, "signoff_only_entry", lambda e: "missing")
+    check("mv66 `signoff_only_keys` names the catalog key in buildCommands "
+          "order whatever its value says and nothing else - not an ordinary "
+          "key, not a review-only one; a non-object reads as none; and the "
+          "two catalogs share no key, so a key is never both: %r"
+          % (so_keys({"a": "true", "lintProbe": "x", "b": "review-only: r"}),),
+          so_keys({"a": "true", "lintProbe": "x", "b": "review-only: r"})
+          == ["lintProbe"]
+          and so_keys(None) == [] and so_keys(["lintProbe"]) == []
+          and so_entry("lintProbe") is True and so_entry("lint") is False
+          and so_entry(None) is False and so_entry("") is False
+          and not (set(getattr(M, "SIGNOFF_ONLY_GATES", ("?",)))
+                   & set(M.REVIEW_ONLY_GATES)))
+
 
 def _selftest():
     return _harness.run(_cases)

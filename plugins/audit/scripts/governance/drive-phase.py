@@ -7365,7 +7365,10 @@ def red_gate_stop(ctx, phase, out, err):
 # lints living in those paths, in both directions; exit 0 with its summary lines
 # (`ran none` when no path held a lint), exit 1 with a `ROW NOT PROVEN:` line per
 # row that was not proven, any other exit a refusal.
-LINT_PROBE_KEY = "lintProbe"
+# The key is `_manifest_vocab`'s, reached through `_manifest_phases`: it is also
+# the name a new phase's default gate skips, and one spelling cannot be renamed
+# on one side only.
+LINT_PROBE_KEY = _phases.LINT_PROBE_KEY
 LINT_PROBE_NOT_PROVEN = "ROW NOT PROVEN"
 _LINT_PROBE_NONE = "ran none"
 _LINT_PROBE_SUMMARY = re.compile(r"^\d+ of \d+ |%s" % (_LINT_PROBE_NONE,))

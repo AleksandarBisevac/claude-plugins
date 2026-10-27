@@ -337,6 +337,36 @@ def review_only_entry(entry, build):
     return entry in REVIEW_ONLY_GATES or is_review_only(build.get(entry, entry))
 
 
+# --- sign-off only: a gate key that is a step of the sign-off, never a gate step --
+# The second category of `buildCommands` key that no gate defaults to, beside the
+# review-only one and asked in the same places. A review-only key is a read with no
+# command; this is a command that must not run as an ordinary gate step, because
+# the sign-off runs it once, over the files the phase changed, and it may mutate
+# the tree to prove a guard red - run on every task and phase gate it would do so
+# under whoever is gating. The drive reads the key name from here, so the name the
+# driver runs and the name the default gate skips cannot be renamed apart.
+LINT_PROBE_KEY = "lintProbe"
+# Not `*_KEYS` here, for the reason `REVIEW_ONLY_GATES` is not: these are names a
+# plan chooses under `buildCommands`. `_manifest_phases` re-exports it as
+# `SIGNOFF_ONLY_KEYS`. The lint probe is the first member.
+SIGNOFF_ONLY_GATES = (LINT_PROBE_KEY,)
+
+
+def signoff_only_entry(entry):
+    """Whether gate `entry` names a sign-off-only key. By NAME and not by value:
+    what makes the key a sign-off step is the role the plan gives it, not the
+    command it points at, and an entry that is a literal command is a command."""
+    return isinstance(entry, str) and entry.strip() in SIGNOFF_ONLY_GATES
+
+
+def signoff_only_keys(build):
+    """The `buildCommands` keys that run at sign-off and are never gate steps,
+    in `buildCommands` order; none for a `buildCommands` that is not an object."""
+    if not isinstance(build, dict):
+        return []
+    return [k for k in build if signoff_only_entry(k)]
+
+
 # --- a mute's expiry: one reading of `meta.muted[].until` -------------------------
 # The validator warns on an expired mute and the test-gate runner refuses to honour
 # one; if the two parsed the date or read the clock differently, a mute could read
