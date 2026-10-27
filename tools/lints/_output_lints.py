@@ -25,6 +25,7 @@ This module carries no `--selftest`; its cases live in `tests/test__output_lints
 import ast
 import functools
 import os
+import re
 import sys
 
 # The path bootstrap for a development module that lives OUTSIDE the plugin: it
@@ -1356,6 +1357,332 @@ def bare_output_cut_violations(dirs=None, pending=None):
     violations.extend((name, 0, "BARE_CUT_PENDING names a file that holds no "
                        "head-only cut of output any more - delete the row")
                       for name in sorted(pending) if name not in cut)
+    return sorted(violations)
+
+
+# --- a runner's output, read at a line end -------------------------------------
+# A child on Windows ends its lines `\r\n` and a run's bytes are decoded without
+# universal newlines, so a pattern compiled multiline and anchored at `$` either
+# stops matching at the `\r` or, behind a lazy `.+?`, keeps the `\r` in what it
+# captures. `_runner_output.plain_text()` is the one place a run's text loses
+# both; this lint finds such a pattern applied to text that did not come
+# through it.
+RUNNER_TEXT_NORMALISER = "plain_text"
+# The module that owns the normalisation, and with it the readers every other
+# module is meant to reach. Scoping the lint to the modules that import it is
+# what makes "runner output" a property of the file rather than a guess about
+# a variable.
+RUNNER_TEXT_HOME = "_runner_output"
+_PATTERN_APPLIERS = frozenset(("search", "match", "fullmatch", "findall",
+                               "finditer", "sub", "subn", "split"))
+# Where each applier takes the text it reads, when it is not the first argument.
+_PATTERN_TEXT_AT = {"sub": 1, "subn": 1}
+_INLINE_MULTILINE = re.compile(r"\(\?[aiLsux]*m[aiLmsux]*[):]")
+# Builtins that hand their argument's elements on unchanged, so iterating one
+# over line-end-free text is still line-end-free.
+_PASS_THROUGH = frozenset(("enumerate", "reversed", "sorted", "list", "tuple",
+                           "iter", "zip"))
+# `(file, function)` sites that still apply such a pattern to text they did not
+# normalise. A row is a debt and not a permission: it is reported once its site
+# holds no such read, so the table can only shrink. The rows below are in files
+# the change that added this lint did not own, so each waits for its own fix:
+#   * the `_runner_output` rows are private readers handed text their public
+#     caller already normalised (`failing_cases`, `read_tally`), so no `\r`
+#     reaches them today;
+#   * `final_error` captures `(.*)$` and `.strip()`s what it captured, so the
+#     `\r` is dropped after the match rather than before it.
+RUNNER_LINE_END_PENDING = (("governance/_runner_output.py", "_pytest_cases"),
+                           ("governance/_runner_output.py", "_pytest_tally"),
+                           ("governance/stamp-verification.py", "final_error"))
+_LINE_END_READ = ("a multiline pattern anchored at `$` applied to a run's text "
+                  "that did not pass through `_runner_output.plain_text()` - on "
+                  "a `\\r\\n` run it stops matching at the `\\r` or captures "
+                  "it; read the text through plain_text() first")
+
+
+def _anchors_line_end(source):
+    """Whether a regex source holds a `$` that is an anchor: not escaped, and
+    not inside a character class."""
+    i, in_class = 0, False
+    while i < len(source):
+        ch = source[i]
+        if ch == "\\":
+            i += 2
+            continue
+        if in_class:
+            in_class = ch != "]"
+        elif ch == "[":
+            in_class = True
+            # `]` straight after `[` or `[^` is a literal member, not the close.
+            i += 1
+            if source[i:i + 1] == "^":
+                i += 1
+            if source[i:i + 1] == "]":
+                i += 1
+            continue
+        elif ch == "$":
+            return True
+        i += 1
+    return False
+
+
+def _anchored_compile(node):
+    """Whether `node` is `<re>.compile(pattern, flags)` reading multiline -
+    `re.M`, `re.MULTILINE` or an inline `(?m)` - with a `$` anchor in a literal
+    part of its pattern."""
+    if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute) \
+            or node.func.attr != "compile" or not node.args:
+        return False
+    texts = [n.value for n in ast.walk(node.args[0])
+             if isinstance(n, ast.Constant) and isinstance(n.value, str)]
+    flags = list(node.args[1:]) + [k.value for k in node.keywords
+                                   if k.arg == "flags"]
+    multiline = any(isinstance(n, ast.Attribute) and n.attr in ("M", "MULTILINE")
+                    for f in flags for n in ast.walk(f)) \
+        or any(_INLINE_MULTILINE.search(t) for t in texts)
+    return multiline and any(_anchors_line_end(t) for t in texts)
+
+
+def _module_aliases(tree):
+    """`{local name: (module, attribute or None)}` for every import in `tree`."""
+    out = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                out[a.asname or a.name] = (a.name, None)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            for a in node.names:
+                out[a.asname or a.name] = (node.module, a.name)
+    return out
+
+
+def _module_anchored(tree):
+    """`(patterns, tables, borrowed)` bound at module level: names holding an
+    anchored multiline pattern, names holding a dict, tuple or list with one
+    inside, and `{name: (alias, attribute)}` for a name bound to another
+    module's attribute."""
+    patterns, tables, borrowed = set(), set(), {}
+    for stmt in tree.body:
+        if not isinstance(stmt, ast.Assign):
+            continue
+        names = [t.id for t in stmt.targets if isinstance(t, ast.Name)]
+        value = stmt.value
+        if _anchored_compile(value):
+            patterns.update(names)
+        elif isinstance(value, (ast.Dict, ast.Tuple, ast.List)) \
+                and any(_anchored_compile(n) for n in ast.walk(value)):
+            tables.update(names)
+        elif isinstance(value, ast.Attribute) and isinstance(value.value, ast.Name):
+            borrowed.update((n, (value.value.id, value.attr)) for n in names)
+    return patterns, tables, borrowed
+
+
+def _scope_body(scope):
+    """Every node in `scope`, nested function and class bodies excluded -
+    lambdas and comprehensions stay, since they read the scope's own names."""
+    out, stack = [], list(ast.iter_child_nodes(scope))
+    while stack:
+        node = stack.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        out.append(node)
+        stack.extend(ast.iter_child_nodes(node))
+    return out
+
+
+def _scope_bindings(nodes):
+    """`(assigned, looped)`: `{name: [value, ...]}` from plain assignments - a
+    value this cannot follow (a tuple target's, an augmented one) as None - and
+    `{name: iterable}` from every `for` and comprehension target."""
+    assigned, looped = {}, {}
+    for node in nodes:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    assigned.setdefault(target.id, []).append(node.value)
+                    continue
+                for n in ast.walk(target):
+                    if isinstance(n, ast.Name):
+                        assigned.setdefault(n.id, []).append(None)
+        elif isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name):
+            assigned.setdefault(node.target.id, []).append(None)
+        elif isinstance(node, (ast.For, ast.comprehension)):
+            for n in ast.walk(node.target):
+                if isinstance(n, ast.Name):
+                    looped[n.id] = node.iter
+    return assigned, looped
+
+
+def _line_end_free(expr, assigned, looped, seen=()):
+    """Whether `expr` is text that cannot hold a `\\r`: a literal, a
+    `plain_text(...)` call, the lines `.splitlines()` returns and anything
+    iterated out of them, a method of such text with only such arguments, or a
+    name every binding of which is one."""
+    if isinstance(expr, ast.Constant):
+        return True
+    if isinstance(expr, ast.Call):
+        if _call_name(expr) in (RUNNER_TEXT_NORMALISER, "splitlines"):
+            return True
+        if isinstance(expr.func, ast.Name) and expr.func.id in _PASS_THROUGH:
+            return all(_line_end_free(a, assigned, looped, seen)
+                       for a in expr.args)
+        return isinstance(expr.func, ast.Attribute) \
+            and _line_end_free(expr.func.value, assigned, looped, seen) \
+            and all(_line_end_free(a, assigned, looped, seen) for a in expr.args)
+    if isinstance(expr, ast.Subscript):
+        return _line_end_free(expr.value, assigned, looped, seen)
+    if isinstance(expr, ast.BoolOp):
+        return all(_line_end_free(v, assigned, looped, seen) for v in expr.values)
+    if isinstance(expr, ast.IfExp):
+        return _line_end_free(expr.body, assigned, looped, seen) \
+            and _line_end_free(expr.orelse, assigned, looped, seen)
+    if not isinstance(expr, ast.Name) or expr.id in seen:
+        return False
+    seen = seen + (expr.id,)
+    if expr.id in looped:
+        it = looped[expr.id]
+        return (isinstance(it, ast.Call) and _call_name(it) == "splitlines") \
+            or _line_end_free(it, assigned, looped, seen)
+    values = assigned.get(expr.id)
+    return bool(values) and all(v is not None
+                                and _line_end_free(v, assigned, looped, seen)
+                                for v in values)
+
+
+def _pattern_of(expr, resolve, local):
+    """Whether `expr` names an anchored multiline pattern: such a name, a
+    local bound to one, or an entry read out of a table holding them."""
+    if isinstance(expr, ast.Name) and expr.id in local:
+        return True
+    if isinstance(expr, ast.Subscript):
+        return resolve(expr.value) == "table"
+    if isinstance(expr, ast.Call) and isinstance(expr.func, ast.Attribute) \
+            and expr.func.attr == "get":
+        return resolve(expr.func.value) == "table"
+    return resolve(expr) == "pattern"
+
+
+def _scope_line_end_reads(scope, resolve):
+    """`[line]` of every anchored multiline pattern `scope` applies to text
+    `_line_end_free` cannot vouch for. `resolve(expr)` answers "pattern",
+    "table" or None for a module-level name or an imported module's attribute."""
+    nodes = _scope_body(scope)
+    assigned, looped = _scope_bindings(nodes)
+    local = set(name for name, it in looped.items() if resolve(it) == "table")
+    local.update(name for name, values in assigned.items()
+                 if values and all(v is not None and _pattern_of(v, resolve, local)
+                                   for v in values))
+    hits = []
+    for node in nodes:
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute) \
+                or node.func.attr not in _PATTERN_APPLIERS \
+                or not _pattern_of(node.func.value, resolve, local):
+            continue
+        at = _PATTERN_TEXT_AT.get(node.func.attr, 0)
+        text = node.args[at] if len(node.args) > at else next(
+            (k.value for k in node.keywords if k.arg == "string"), None)
+        if text is not None and not _line_end_free(text, assigned, looped):
+            hits.append(node.lineno)
+    return hits
+
+
+def _anchored_resolver(anchored, aliases, own):
+    """`resolve(expr)` for one module: "pattern" or "table" when `expr` is a
+    module-level name of that kind - its own, one borrowed from another module
+    as `name = alias.attr` or imported by name - or `alias.attr` naming one."""
+    patterns, tables, borrowed = own
+
+    def kind_in(module, attr):
+        p, t, _b = anchored.get(module, (set(), set(), {}))
+        return "pattern" if attr in p else ("table" if attr in t else None)
+
+    def through(alias, attr):
+        module, member = aliases.get(alias, (None, None))
+        return kind_in(module, attr) if module and member is None else None
+
+    def resolve(expr):
+        if isinstance(expr, ast.Attribute) and isinstance(expr.value, ast.Name):
+            return through(expr.value.id, expr.attr)
+        if not isinstance(expr, ast.Name):
+            return None
+        if expr.id in patterns:
+            return "pattern"
+        if expr.id in tables:
+            return "table"
+        if expr.id in borrowed:
+            return through(*borrowed[expr.id])
+        module, member = aliases.get(expr.id, (None, None))
+        return kind_in(module, member) if member else None
+    return resolve
+
+
+def runner_line_end_violations(dirs=None, home=RUNNER_TEXT_HOME, pending=None):
+    """(filename, line, what) for an anchored multiline pattern applied to a
+    run's text that did not pass through `plain_text`.
+
+    THE SHAPE: in `home` or a module under `dirs` that imports it, a call of
+    `search`, `match`, `fullmatch`, `findall`, `finditer`, `sub`, `subn` or
+    `split` on a pattern compiled with `re.M` (or `re.MULTILINE`, or an inline
+    `(?m)`) whose literal source holds an unescaped `$` outside a character
+    class - the module's own, one it borrowed from another module by name or
+    attribute, or an entry of a table of them - whose text argument is not
+    shown line-end-free inside the same function. Line-end-free is a literal,
+    a `plain_text(...)` call, a line out of `.splitlines()`, a method of such
+    text, or a local every assignment of which is one of those. A site
+    `pending` names by `(file, function)` is the debt: silenced while it holds
+    such a read, reported once it holds none.
+
+    WHY THE IMPORT IS THE SCOPE. Whether a string is a test runner's output is
+    not in the AST, and a lint that convicted every `$`-anchored read in the
+    plugin would convict markdown and git readers that never see a `\\r`.
+    Importing `home` is the file saying it reads runs.
+
+    WHAT IT CANNOT SEE, in the direction every scan in this file errs: a
+    module that reads runner output without importing `home`; a pattern
+    compiled inside a function, or applied through `re.search(pattern, text,
+    re.M)` without compiling; a pattern whose `$` sits only in a part built at
+    run time; flags passed through a name; and an assignment that rebinds a
+    checked name after the read, since bindings are read without their order.
+    A parameter is never vouched for, so a function handed text its CALLER
+    normalised is reported - it reads the text through `plain_text` itself,
+    which costs nothing because the normalisation is idempotent. So a clean
+    result means "none of this shape here", not "every reader of a run sees
+    plain text".
+    """
+    dirs = dirs if dirs is not None else (SCRIPTS_DIR,)
+    pending = set(RUNNER_LINE_END_PENDING if pending is None else pending)
+    parsed = {}
+    for d in dirs:
+        for name, path in lint_py_files(d):
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    parsed[name] = ast.parse(fh.read(), filename=name)
+            except (OSError, SyntaxError):
+                continue
+    stem = dict((name, os.path.splitext(os.path.basename(name))[0])
+                for name in parsed)
+    anchored = dict((stem[name], _module_anchored(tree))
+                    for name, tree in parsed.items())
+    violations, holding = set(), set()
+    for name, tree in parsed.items():
+        aliases = _module_aliases(tree)
+        if stem[name] != home \
+                and not any(module == home for module, _m in aliases.values()):
+            continue
+        resolve = _anchored_resolver(anchored, aliases, anchored[stem[name]])
+        scopes = [tree] + [n for n in ast.walk(tree)
+                           if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+        for scope in scopes:
+            site = (name, getattr(scope, "name", "<module>"))
+            for line in _scope_line_end_reads(scope, resolve):
+                holding.add(site)
+                if site not in pending:
+                    violations.add((name, line, _LINE_END_READ))
+    violations.update((name, 0, "RUNNER_LINE_END_PENDING names %s in %s, which "
+                       "applies no such pattern to unnormalised text any more "
+                       "- delete the row" % (function, name))
+                      for name, function in pending if (name, function)
+                      not in holding)
     return sorted(violations)
 
 

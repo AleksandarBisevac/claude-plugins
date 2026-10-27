@@ -886,7 +886,6 @@ def jest_worker_signal(exit_code, text, command=None):
                          JEST_EXEC_ERROR, exit_code))
 
 
-_CSI = re.compile(_CSI_TEXT)
 # The count heading playwright prints above each list of tests it names.
 _PLAYWRIGHT_HEADING = re.compile(
     r"^[ \t]*\d+ (failed|flaky|passed|skipped|interrupted|did not run)\b")
@@ -902,7 +901,7 @@ def playwright_listed(text, fate):
     runner says which fate each test met.
     """
     out, current = [], None
-    for line in _CSI.sub("", text or "").splitlines():
+    for line in _ro.plain_text(text).splitlines():
         heading = _PLAYWRIGHT_HEADING.match(line)
         if heading:
             current = heading.group(1)
@@ -953,6 +952,7 @@ def _named_failures(body):
     `failing_lines` for what to carry and by the mute rule for whether a
     failure was named at all, so the two cannot disagree about a run.
     """
+    body = _ro.plain_text(body)
     name, _joined, _words = summary_reader(body)
     # `.get`, NEVER `[name]`. The two tables are held together by a case rather
     # than by this line, and the case is the right mechanism - but a KeyError
@@ -1031,6 +1031,7 @@ def _suite_candidates(body):
     # THE SWEEP FIRST: its summary is the last line of its own run, so it is the
     # outermost runner, and a red file's output it reprints in full above that
     # line may carry another runner's summary that is not the step's.
+    body = _ro.plain_text(body)
     swept = _ro.sweep_failures(body)
     if swept is not None:
         return (_ro.SWEEP_RUNNER, [path for path, _why in swept],
@@ -1041,7 +1042,7 @@ def _suite_candidates(body):
     if name == "jest":
         return name, [header.group(1)
                       for header in (_JEST_SUITE_HEADER.match(line)
-                                     for line in _ANSI.sub("", body).splitlines())
+                                     for line in body.splitlines())
                       if header and header.group(0).strip().startswith("FAIL")
                       ], "jest's FAIL <path> header(s)"
     if name == "vitest":
@@ -1237,7 +1238,7 @@ def reached_a_verdict(text, command=None):
     whose last line IS a plan, and there is nothing in the bytes to tell that
     from a harness that closed with one.
     """
-    body = text or ""
+    body = _ro.plain_text(text)
     if wrapper_words(command):
         return False
     if summary_count(body) is not None:
@@ -3353,14 +3354,14 @@ def command_runner(command):
 def _named_failure_count(runner, text):
     """How many failures `runner` NAMED, one per failure, never deduplicated -
     the number its tally has to equal."""
+    text = _ro.plain_text(text)
     if runner == "jest":
         # Past `summaryThreshold` jest prints every failure a second time
         # under this heading (captured with more suites than the threshold),
         # so only the bullets above it are counted.
-        return len(jest_failures(_JEST_FAILURE_SUMMARY.split(
-            _ANSI.sub("", text), 1)[0]))
+        return len(jest_failures(_JEST_FAILURE_SUMMARY.split(text, 1)[0]))
     if runner == "vitest":
-        return len(_VITEST_FAILED_TEST.findall(_ANSI.sub("", text)))
+        return len(_VITEST_FAILED_TEST.findall(text))
     if runner == "playwright":
         return len(playwright_listed(text, "failed"))
     return len(_FAILURE_READERS[runner].findall(text))
@@ -3368,6 +3369,7 @@ def _named_failure_count(runner, text):
 
 def _stopped_early(runner, body):
     """The marker saying `runner` stopped before the suite finished, or None."""
+    body = _ro.plain_text(body)
     if runner == "pytest":
         hit = _PYTEST_STOPPED.search(body)
         return hit.group(0) if hit else None
@@ -3385,6 +3387,7 @@ def _stopped_early(runner, body):
 
 def _other_failures(runner, joined, body):
     """A non-pass state `runner` reported beside its named failures, or None."""
+    body = _ro.plain_text(body)
     if runner == "jest":
         line = _JEST_SNAPSHOTS.search(body)
         for count, word in _JEST_SNAPSHOT_FAILS.findall(
@@ -3427,7 +3430,7 @@ def mute_ineligible(command, code, text, preamble=None, runners=None):
     state; and it neither stopped early nor failed a coverage threshold.
     """
     runners = MUTE_RUNNERS if runners is None else runners
-    body = _CSI.sub("", text or "")
+    body = _ro.plain_text(text)
     bare = _without_preamble(command, preamble)
     if wrapper_words(bare):
         return ("the step wraps other runs and reports one line for each, so "
@@ -3460,7 +3463,7 @@ def mute_ineligible(command, code, text, preamble=None, runners=None):
     words = _TALLY_WORDS.get(runner, ("failed",))
     tally = sum(int(n) for n, word in _SUMMARY_PAIR.findall(joined)
                 if word in words)
-    named = _named_failure_count(runner, text or "")
+    named = _named_failure_count(runner, body)
     if tally != named:
         return ("%s tallied %d failure(s) and named %d, so a failure no mute "
                 "names is among them" % (runner, tally, named))

@@ -2260,11 +2260,122 @@ def _encoding_cases(check):
           and (project_hooks in L.ENCODING_DIRS) == os.path.isdir(project_hooks))
 
 
+def _line_end_cases(check):
+    """`runner_line_end_violations`: a multiline pattern anchored at `$`,
+    applied to a run's text that did not pass through `plain_text`, is
+    reported; the same read through `plain_text`, or a pattern that does not
+    anchor at a line end, is not."""
+    import shutil
+    import tempfile
+    le = tempfile.mkdtemp(prefix="audit-line-end-")
+    try:
+        def _le(rel, text):
+            with open(os.path.join(le, rel), "w", encoding="utf-8") as fh:
+                fh.write(text)
+
+        # The home: a normaliser and a table of anchored readers, as the real
+        # module holds them. Its own public reader normalises first.
+        _le("_runner_output.py",
+            "import re\n"
+            "READERS = {'pytest': re.compile(r'^FAILED (.+?)[ \\t]*$', re.M)}\n"
+            "def plain_text(text):\n"
+            "    return (text or '').replace('\\r\\n', '\\n')\n"
+            "def failing(text):\n"
+            "    return READERS['pytest'].findall(plain_text(text))\n")
+        # Every deny shape on one module that imports the home: its own
+        # pattern, a borrowed table read by key and by `.get`, a table looped
+        # over, a name bound to a table entry, and an inline `(?m)`.
+        _le("reader.py",
+            "import re\n"
+            "import _runner_output as _ro\n"
+            "_OWN = re.compile(r'^# tests[ \\t]+\\d+[ \\t]*$', re.M)\n"
+            "_ENDS = (('tap', re.compile('^1\\\\.\\\\.\\\\d+[ \\t]*$', re.M)),)\n"
+            "_INLINE = re.compile(r'(?m)^Snapshots:(.*)$')\n"
+            "_BORROWED = _ro.READERS\n"
+            "def own(text):\n"
+            "    return _OWN.search(text)\n"
+            "def keyed(text):\n"
+            "    return _BORROWED['pytest'].findall(text)\n"
+            "def got(text):\n"
+            "    return _ro.READERS.get('pytest').finditer(text)\n"
+            "def looped(text):\n"
+            "    body = text or ''\n"
+            "    return any(p.search(body) for _n, p in _ENDS)\n"
+            "def bound(text):\n"
+            "    reader = _ro.READERS['pytest']\n"
+            "    return reader.findall(text)\n"
+            "def inline(text):\n"
+            "    return _INLINE.sub('', text)\n")
+        # The allow shapes, each the one a widened rule convicts first.
+        _le("clean.py",
+            "import re\n"
+            "import _runner_output as _ro\n"
+            "from _runner_output import plain_text\n"
+            "_OWN = re.compile(r'^# tests[ \\t]+\\d+[ \\t]*$', re.M)\n"
+            "_ESCAPED = re.compile(r'^cost: \\$\\d+', re.M)\n"
+            "_CLASSED = re.compile(r'^[$#] prompt', re.M)\n"
+            "_SINGLE = re.compile(r'^done$')\n"
+            "def through_call(text):\n"
+            "    return _OWN.search(_ro.plain_text(text))\n"
+            "def through_name(text):\n"
+            "    body = plain_text(text)\n"
+            "    return _ro.READERS['pytest'].findall(body)\n"
+            "def by_line(text):\n"
+            "    lines = text.splitlines()\n"
+            "    return [_OWN.match(ln) for _i, ln in enumerate(lines)]\n"
+            "def literal():\n"
+            "    return _OWN.search('# tests 3')\n"
+            "def unanchored(text):\n"
+            "    return _ESCAPED.search(text) or _CLASSED.search(text)\n"
+            "def one_line(text):\n"
+            "    return _SINGLE.match(text)\n")
+        # A module that never imports the home reads no run through it: a
+        # markdown reader with the same anchored pattern is out of scope.
+        _le("markdown.py",
+            "import re\n"
+            "_HEAD = re.compile(r'^# (.+?)[ \\t]*$', re.M)\n"
+            "def heads(text):\n"
+            "    return _HEAD.findall(text)\n")
+        found = L.runner_line_end_violations((le,), pending=())
+        by_file = {}
+        for name, line, _what in found:
+            by_file.setdefault(name, []).append(line)
+        check("le1 a module importing `_runner_output` that applies a "
+              "multiline `$`-anchored pattern to text it did not pass "
+              "through plain_text is reported at each read - its own "
+              "pattern, a borrowed table by key and by .get, a looped table, "
+              "a name bound to an entry, an inline (?m): %r" % (by_file,),
+              by_file.get("reader.py") == [8, 10, 12, 15, 18, 20])
+        check("le2 ALLOW: plain_text by call and by a name bound to it, a "
+              "line out of splitlines, a literal, an escaped `$`, a `$` in a "
+              "class, a pattern with no multiline flag, the home's own "
+              "normalised reader and a module that never imports the home "
+              "are all quiet - each is what a widened rule convicts first: %r"
+              % (sorted(by_file),),
+              sorted(by_file) == ["reader.py"])
+        held = L.runner_line_end_violations(
+            (le,), pending=(("reader.py", "own"), ("clean.py", "literal")))
+        check("le3 a pending row silences its site, and a row whose site "
+              "holds no such read is itself reported, so the table can only "
+              "shrink: %r" % ([h[:2] for h in held],),
+              ("reader.py", 8) not in [h[:2] for h in held]
+              and ("reader.py", 10) in [h[:2] for h in held]
+              and [h for h in held if h[0] == "clean.py" and h[1] == 0])
+    finally:
+        shutil.rmtree(le, ignore_errors=True)
+    real = L.runner_line_end_violations()
+    check("le4 ...and the real tree applies no such pattern to unnormalised "
+          "run text outside the sites RUNNER_LINE_END_PENDING names - "
+          "run-test-gate reads every run through plain_text: %r" % (real,),
+          real == [])
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _ts_order_cases(check)
         _encoding_cases(check)
+        _line_end_cases(check)
     return _harness.run(body)
 
 

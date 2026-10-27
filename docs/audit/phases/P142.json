@@ -147,9 +147,23 @@
         "file": "tools/sweep-selftests.py:4111-4165 (bb1)",
         "issue": "The clause 'at some moment blocks of both run' rests on a-blocks sleeping 0.3 s, measured inside each child after its own interpreter start. It fails whenever b1's sleep starts more than 0.3 s after the last a-block's sleep began. That is start-up jitter, which the executor itself measured at load average 18-20 on 10 cores, and this case runs inside a full sweep's 8 workers. The other clauses (two b blocks at once, never more than four) are robust.",
         "resolution": "Lengthen the a nap (for example 1.5 s, still well under b's 3 s), or read concurrency off the rows' per-process windows that sweep() now returns, rather than off in-sleep spans."
+      },
+      {
+        "id": "P142-R18",
+        "severity": "low",
+        "file": "tools/lints/_output_lints.py:392-403",
+        "issue": "RUNNER_LINE_END_PENDING leaves the class open in _runner_output._pytest_cases/_pytest_tally and stamp-verification.final_error, and its comment explains the rows by a task boundary (\"files the change that added this lint did not own\"), which stops being true the moment another task touches them. The rows have no owner recorded where the next reader will look, and the docstring's own advice (a function handed normalised text should call plain_text itself, since it is idempotent) is not applied to these sites. runner_line_end_violations(pending=()) on the real tree returns exactly these three sites (_runner_output.py:444, :594, stamp-verification.py:728), so the debt is real and measured.",
+        "resolution": "State the reason in terms of the code (the public caller normalises; final_error strips after matching), not the change that added the lint, and file or name the follow-up task that deletes each row (calling plain_text inside the three functions costs nothing and removes them)."
+      },
+      {
+        "id": "P142-R19",
+        "severity": "low",
+        "file": "tests/test_run_test_gate.py:6071-6079",
+        "issue": "The house_red fixture is built with odd string surgery (\"SELFTEST FAILED: 2/3 cases \" + \"passed\\n\" and \"1/2 files ok, %d cases\\n\" % (5,)), which reads as a contrivance to get past the prose-number lint and makes the fixture harder to read than the output it imitates.",
+        "resolution": "Write the fixture as one literal block, or build it from the runner's own formatter if one exists, so the CRLF twin is visibly the same text."
       }
     ],
-    "outcome": "[findings: 17 - 0 high, 8 med, 9 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 19 - 0 high, 8 med, 11 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -898,7 +912,7 @@
     {
       "id": "P142.12-6yq",
       "title": "The sign-off lint probe is named by the plan, reports a held run by what it did, fits the print budget, and bounds and scopes its restore check",
-      "status": "blocked",
+      "status": "in_progress",
       "description": "Review findings on the sign-off lint probe that P142.6 added to drive-phase.py `lint_probe()` (fix them together, they share the function):\n- R3 (med): the hold stores only the HEAD, so a re-entry at the same HEAD after a run that printed `ran none` reports `lint probe green (held at this HEAD)`. Store the outcome word with the hold and print it back; a held ran-none run says ran none.\n- R4 (med): the success print is over INSTRUCTION_BYTES (300) with the probe clause. Shorten or merge the clause so every non-stop print fits, and make the byte-budget case measure a fixture that HAS a probe.\n- R5 (med): the shipped driver runs whatever sits at the hard-coded `tools/prove-gates.py`. The probe must be named by the plan: read a `meta.buildCommands` key (name it `lintProbe`; the driver appends `--changed <paths>`), and a plan without the key skips the step and says so in the did-line. The orchestrator sets the key on this repo's plan with `/audit:task build-command`; do not edit docs/audit.\n- R6 (low): the restore check compares status letters only; compare contents (hash) of files already modified before the run, and word the stop so it does not tell the operator to discard another session's edits.\n- R7 (low): give the probe run a timeout derived from the drive's own budget, and report a timeout as a stop naming it.\n- R8 (low): lp6's other-HEAD twin passes head=None; use a different SHA so a hold that ignores the head goes red.\nUpdate phase-signoff.md step 4b to match. Red-first each case against today's code. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -922,14 +936,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 2,
+      "attempts": 3,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-26T12:53:50Z",
+      "startedAt": "2026-10-27T12:16:44Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -956,16 +970,15 @@
       ],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-26T13:10:06Z.548ecc",
+        "runId": "2026-10-27T12:33:38Z.d4ce2c",
         "status": "failed",
-        "at": "2026-10-26T13:10:06Z"
-      },
-      "blockedReason": "Gate red only on tests/test__output_lints.py te11/ln1, which is red at HEAD d4a26f13 (pinned on tests/test__runner_output.py:469, from P142.9) and fixed by P142.16-6yq; the task's own regression (ds1) is fixed in attempt 2. Held until P142.16 lands, then unblocked and re-gated."
+        "at": "2026-10-27T12:33:38Z"
+      }
     },
     {
       "id": "P142.13-6yq",
       "title": "Every reader of a runner's output reads it through the one normalisation, so no private pattern sees Windows line ends",
-      "status": "blocked",
+      "status": "in_progress",
       "description": "The previous task normalised `\\r\\n` and lone `\\r` in `_runner_output.plain_text()` and routed every public reader of that module through it. The same class survives outside it: run-test-gate.py matches its private `_FAILURE_READERS` and `_VITEST_FAIL_LINE` patterns against raw run output (around its lines 972, 1048-1052 and 3366), so on a Windows run a pytest FAILED line yields `tests/test_x.py::test_a\\r` as the failing name.\n\nFix the class, not the three call sites: run-test-gate must read runner output only through `_runner_output.plain_text()` (or through `_runner_output`'s public readers, deleting a private copy that duplicates one). Then make it enforceable: one predicate in tools/lints/_output_lints.py that reports a module under plugins/audit/scripts which compiles a `re.M` pattern anchored at `$` and applies it to text that did not pass through `plain_text` - scope it narrowly enough to be honest (read the before-you-claim and no-silent-pass skills; state in its docstring what it cannot see), give it a row tools/prove-gates.py derives, and red-first both the deny and the allow case.\n\nRed-first every case against today's code. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -990,28 +1003,27 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-26T11:56:05Z",
+      "startedAt": "2026-10-27T12:16:46Z",
       "completedAt": null,
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-26T12:38:50Z.69b645",
-        "status": "failed",
-        "at": "2026-10-26T12:38:50Z"
-      },
-      "blockedReason": "Gate red only on tests/test__output_lints.py te11/ln1, red at HEAD d4a26f13 (tests/test__runner_output.py:469, from P142.9) and fixed by P142.16-6yq; held until it lands, then unblocked and re-gated."
+        "runId": "2026-10-27T12:39:45Z.1d9c38",
+        "status": "passed",
+        "at": "2026-10-27T12:39:45Z"
+      }
     },
     {
       "id": "P142.14-6yq",
       "title": "The sweep's block scheduler is described where it runs and where it is documented, and its per-block timeout has a case that can go red",
-      "status": "blocked",
+      "status": "in_progress",
       "description": "Review findings on the sweep's block scheduler (the two tasks before this one split suites into blocks and made blocks the sweep's unit):\n- med: the per-block timeout calibration (tools/sweep-selftests.py, the file_timeout call for a staged block) has no case behind it - every staged fixture passes empty or no costs, and the fixtures that pass costs carry no STAGES table so they reach the whole-suite fallback. Add a fixture with a STAGES table and a cost table, a ghost-only table, and a deadline variant; prove each red by mutating the calibration.\n- med: descriptions of the retired grant model are now false - CLAUDE.md (the paragraph on staged suites admitted with stage_grant slots), CONTRIBUTING.md (same rule), the .github/workflows/ci.yml comment beside the sweep shard matrix, sweep()'s docstring (ordering by run_order), and the costs_from_rows / shard comment / record_costs \"about\" text (\"wall seconds times the slots\", which --record-costs writes into .github/sweep-costs.json). State the block model once and point at it.\n- low: sh6 is titled \"a shard runs its costliest files FIRST\" but tests run_order, which sweep() no longer calls; make it test the order sweep() submits in.\n- low: tests/_harness.py replayed() keeps only the first entry for a duplicated label; a block run twice must fail by name.\n- low: bb1's overlap clause relies on a 0.3 s nap across interpreter starts; read the per-process windows instead.\nNo number in prose; no F/P/BUG ids in comments.",
       "files": [
         "tools/sweep-selftests.py",
@@ -1036,28 +1048,27 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-26T11:56:08Z",
+      "startedAt": "2026-10-27T12:16:48Z",
       "completedAt": null,
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-26T12:46:27Z.5cc2af",
-        "status": "failed",
-        "at": "2026-10-26T12:46:27Z"
-      },
-      "blockedReason": "Gate red only on tests/test__output_lints.py te11/ln1, red at HEAD d4a26f13 (tests/test__runner_output.py:469, from P142.9) and fixed by P142.16-6yq; held until it lands, then unblocked and re-gated."
+        "runId": "2026-10-27T12:45:43Z.283ded",
+        "status": "passed",
+        "at": "2026-10-27T12:45:43Z"
+      }
     },
     {
       "id": "P142.15-6yq",
       "title": "An agent session removes the temp directory it was given when it ends",
-      "status": "blocked",
+      "status": "pending",
       "description": "run-agent-session.py creates a session-writer-* / session-reviewer-* temp directory per session and never removes it. Remove it in finally on every exit path (success, failure, timeout, interrupt), keeping anything a caller is told to read out of it by copying first. Red-first the case against today's code. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/governance/run-agent-session.py",
@@ -1095,8 +1106,7 @@
         "runId": "2026-10-26T13:33:23Z.2d2dd6",
         "status": "failed",
         "at": "2026-10-26T13:33:23Z"
-      },
-      "blockedReason": "Gate red only on test__output_lints te11/ln1, red at its tree's base d92b9c64 and fixed on the phase head by P142.16-6yq (b10ddfdd); a rerun still runs in the old tree. Owner 2026-10-26: fix the tool first (P142.18-6yq: the task tree follows the phase head), then re-gate."
+      }
     },
     {
       "id": "P142.16-6yq",
@@ -1186,7 +1196,7 @@
     {
       "id": "P142.18-6yq",
       "title": "A task tree follows the phase head when the base moves under it, so a red the phase has since fixed is not charged to the task",
-      "status": "in_progress",
+      "status": "done",
       "description": "Observed in P142 on 2026-10-26: four returned tasks (their trees based at d4a26f13 / d92b9c64) went gate-red only on a suite that was red at their base; the phase then landed the fix (b10ddfdd), but a `rerun` still ran in the old tree (the run's testedState.head stayed at the old base), so the only exits were an owner override or a pointless retry. The gate judges a task on a base that is no longer the phase's.\n\nFix the structure: when the drive re-gates (rerun/retry) or before it gates a returned task, and the phase head has moved past the tree's base, bring the task tree to the phase head with the task's work carried - only when none of the task's changed files moved between the two commits (a fast check over `git diff --name-only base..head`); otherwise refuse by name, listing the overlapping files, and leave the tree untouched. Record the base change (old base, new base, the files that moved) in the run's record and in the carry so commit-task-work diffs the task's work against the new base and the stamp/scope digest is unaffected. Never rebase or rewrite a commit; the task tree holds uncommitted work over a detached HEAD, so the move is a checkout of the new head carrying the working-tree changes, verified byte-for-byte on the task's files after the move. Read drive-phase.py's rule \"never rebase - it rewrites the task commit SHAs\" and keep it true.\n\nNote: task P142.12-6yq has uncommitted work in its own tree that also edits drive-phase.py and tests/test_drive_phase.py (sign-off lint probe); keep your drive-phase change small and local to the gate/dispatch path so the two integrate cleanly.\n\nHigh risk: it moves a tree that holds an agent's only copy of its work. Red-first every case. Prove a failure mid-move leaves the work as it was. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/git/_worktrees.py",
@@ -1216,19 +1226,41 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "862b49412dda",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Attempt 5 enforces two invariants rather than patching the one path the review found. (1) KEPT IS DERIVED: advance_tree and advance_task_tree are now wrappers whose answer's `kept` is read off the disk at the end (_with_kept/_left_beside: the copy or its tombstone where one stands, else None; an error is added when something is left and none was said). The inner _advance/_advance_task never set kept. _drop_copy returns '' or why (rename and both rmtrees inside one try), _settle and every resume branch carry that text, and a tombstone that cannot be cleared refuses the move. (2) NEVER FORCE OVER UNKNOWN BYTES: _resume first runs _newer_work for both copy branches. HEAD must be a commit the move stood on; each work path must read as the copy holds it; every changed path must be work, a record (the copy's non-work paths plus the caller's is_record, now passed into _resume), or a moved path reading as the other commit's blob (_reads_as: rev-parse commit:path against hash-object). Anything else keeps the copy, changes nothing and names the paths. The end==base branch no longer uses the exact-status match: after the comparison it only drops. Finishing uses _answers_as with an is_record allowance, so refreshed records are no fault. (3) FSYNC: _keep_copy writes each bin and the git index through _write_synced (flush+fsync), fsyncs the directory, writes index.json through _write_aside (which now fsyncs before its rename), then fsyncs the directory again before anything moves. _fsync_dir does nothing on Windows, which will not open a directory to sync it. drive-phase.py: only advance_member's docstring changed; the stop is still `if said[\"kept\"]`. Tests: av32-av40 new; av27 rewritten. Red on the attempt-4 code (saved at <scratchpad>/a4-snapshot) before the fix: av32, av33, av34 and av35 (the newer a.txt/c.txt bytes were lost), av36 (exact-status refusal), av38 (index.json never written aside, no fsync); ab7 and ab8 (the drive went on, gated and removed the tree); av27 (the _write_synced point missing; its 108 kills otherwise settled). av37 was green on attempt-4 and av39/av40 were written later; all three are proved by mutation. Final runs, each exit 0: test__worktrees 153/153, test_drive_phase 583/583, test_manage_worktrees 74/74, test__filed_returns 117/117, test__deps 254/254, test__output_lints 169/169, ruff, vermin, gate 2/2 files 736 cases.",
+        "descriptive": "Whether a tree is settled is now read off the disk, and a leftover copy is never forced over work it does not account for; the p10 data loss is closed by an invariant."
       },
       "startedAt": "2026-10-27T11:02:17Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-27T12:16:25Z",
+      "verifiedBy": [
+        "av32-av33: the copy's rename refused after a counted move and after an undone one -> kept names the copy still on disk",
+        "av34: the reviewer's p10 end to end - failed drop, newer edits to a.txt and the tracked c.txt, next move: no byte changes, kept, both paths named",
+        "av35: newer edits after a kill and before the next move -> the same hold",
+        "av36 ALLOW: a recorded move whose copy stayed, records refreshed, work as copied -> copy dropped, settled",
+        "av37: the same with newer work -> held and named",
+        "av38: copy files and directory fsynced before index.json, index.json and the directory before the first checkout",
+        "av39 ALLOW / av40: git's checkout left part way (a moved file at the head's bytes) is undone and moved; a moved file holding bytes neither commit has is held",
+        "av27 rewritten: every call counted on an unarmed run then armed in turn, across a plain move, the undoing and finishing resume after a first kill, and a failing move's own undo; git armed before and after each writing call; a bigger work set; holds allowed only where the copy holds the work and a further move changes nothing",
+        "ab7/ab8: a copy that will not come down stops the drive after a counted move and after an undone move, with no gate row"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-27T12:00:51Z.bd8f44",
         "status": "passed",
         "at": "2026-10-27T12:00:51Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "862b49412dda",
+        "at": "2026-10-27T12:16:25Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-27T11:52:44Z",
+        "basis": "`python3 tests/test__worktrees.py --selftest` in a throwaway tree at HEAD exited 1 on \"AttributeError: module '_worktrees' has no attribute 'advance_tree'\" (read as python), and the task introduces 'advance_tree': absent from HEAD's module-level bindings of plugins/audit/scripts/git/_worktrees.py and bound in the working tree's; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {

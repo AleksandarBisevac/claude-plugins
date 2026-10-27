@@ -1,0 +1,43 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-27T12:24:45Z",
+    "basis": "`python3 tests/test_drive_phase.py --selftest --stage lp-block` in a throwaway tree at HEAD exited 1 with 6 of 10 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - lp7 (house FAIL), lp5 (house FAIL), lp8 (house FAIL), lp9 (house FAIL), lp10 (house FAIL): SELFTEST FAILED: 4/10 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Reviewed the carried work against the brief and found nothing wrong; no source edit this attempt. drive-phase.py lint_probe(): R5 meta.buildCommands.lintProbe read through _evidence_io.resolved_commands (LINT_PROBE_KEY), `--changed <shlex-quoted paths>` appended, a plan without the key appends `lintProbe unset` to the did-line and runs nothing; R3 the hold stores {head, word} and a held re-entry prints `lint probe <word> (held)`, so a held ran-none run says ran none; R4 shortened clauses, the done rule and the not-fast-forward line, largest lp fixture print under 300 bytes (lp7 measures fixtures that HAVE a probe: [199,272,246,284],[199,272,246,287],...); R6 checkout_status() returns {path: (letters, _journal_io.file_hash)} and status_moved() compares both, the stop says 'Put back only what the probe left' and never tells the operator to discard; R7 SIGNOFF_STEP_SECONDS=3600 bounds run_lint_probe() via _proc_group (tear_down on timeout) and is also passed to run-test-gate.py as --timeout, a timeout is a stop naming the bound; R8 lp6's other-HEAD twin is 'b'*40. phase-signoff.md 4b rewritten to match; PLUGIN-BUILD-GUIDE.md module-map line for drive-phase gains _proc_group. Evidence: `python3 tests/test_drive_phase.py --selftest --stage lp-block` exit 0, ALL PASS 10/10 (lp1-lp10); `python3 tools/sweep-selftests.py tests/test_drive_phase.py` exit 0, '1/1 files ok, 578 cases'. Dependants, all still correct: tests/test_drive_phase.py (lp cases changed with the work, PINNED_320_DID gains `lintProbe unset`, 578 cases green); tools/affected.py (static history rows; dropping LINT_PROBE removes an edge the driver no longer has); README.md and docs/research/pipeline-cost-design.md (neither describes the probe); detect-plan-skip.py, record-risk-confirmation.py, stamp-verification.py (name drive-phase by basename, read none of the changed functions); phase-signoff.md dependants require-plan.py, audit-plan.schema.json, _areas, _manifest_io, test__areas, test__refs, test_require_plan, check-prohibitions (only 4b's text changed); PLUGIN-BUILD-GUIDE.md dependants (only the generated drive-phase map line changed). Names used elsewhere (_carries, _clip, _mark, _marked, _counting, _follower_cases, _head, _load) are unchanged. Not re-run this attempt: test__filed_returns and test__deps (green in the previous attempt; the _journal_io.file_hash change they cover is untouched). The orchestrator still sets meta.buildCommands.lintProbe on the plan; docs/audit untouched.",
+    "descriptive": "The sign-off lint probe is named by the plan, says what a held run did, fits the print budget, is bounded by a timeout, and checks the restore by bytes without telling an operator to discard another session's edits."
+  },
+  "testsAdded": [
+    "held ran-none probe prints ran none and does not re-run (lp8)",
+    "plan naming no lintProbe runs none and says so (lp5)",
+    "every probe-bearing print fits the 300-byte budget (lp7)",
+    "a hung probe is stopped and reported as a timeout stop (lp9)",
+    "a pre-modified file mutated by the probe stops the sign-off, worded without discarding (lp10)"
+  ],
+  "casesAdded": [
+    [
+      "lp8"
+    ],
+    [
+      "lp5"
+    ],
+    [
+      "lp7"
+    ],
+    [
+      "lp9"
+    ],
+    [
+      "lp10"
+    ]
+  ],
+  "claims": "claims:\n1 lint_probe() in drive-phase.py prints `lint probe <word> (held)` from the stored word; phase-signoff.md 4b says only what lint_probe/run_lint_probe/status_moved do\n2 lp5 lp7 lp8 lp9 lp10 went red against HEAD in the red-first helper run (see redFirst); lp10 pre-modified-file rewrite caught by the shared hash\n3 n/a - this attempt changed no source; the class (a probe not named by the plan) was closed by dropping the hard-coded path, and the other readers of tools/prove-gates.py are the plan's own key\n4 4b names the mechanisms in its own text: lint_probe() and the lp cases of tests/test_drive_phase.py hold the ordering, comparison, bound and stops\n5 n/a - no property measured; sweep run once, 1408.8s of cost-table seconds is a wall of the whole staged suite, measured once\n6 n/a - no guard reading a command\n7 no count written into prose; case counts above are tallies of commands run, with the command beside them",
+  "stamp": "audit-stamp: {\"content\":\"sha256:16e091fe711cb8d1c1d79cfe5060b04e5a1c4fdbe686d25f4e429fe2adf9d99f\",\"dirtyDigest\":\"sha256:87391e7a0677ac2b1f83b21f392c1d05080b86a6ae5190a38254109e1f10cb3e\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"2ea49e986b36e8f0\",\"plugins/audit/reference/phase-signoff.md\":\"8951f3453ed2daf5\",\"plugins/audit/scripts/governance/drive-phase.py\":\"b2084d307d949bcf\",\"tests/test_drive_phase.py\":\"d4ccd5cca617a72b\"},\"head\":\"d4a26f13\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/phase-signoff.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:4a48d27428fc7b27d8ceacb268d502bdcaa01fb89468b6945686cc7989e25ecc\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

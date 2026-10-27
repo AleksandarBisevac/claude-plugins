@@ -6064,6 +6064,68 @@ def _suite_files_cases(check):
           precommit_step.get("measured") is not None
           and precommit_step.get("suiteReader") == "none")
 
+    # A child on Windows ends its lines `\r\n` and the gate decodes its bytes
+    # without universal newlines, so each fixture below is read twice: as
+    # written, and with every line ending CRLF. The pytest and vitest names
+    # carry a `\r` when a `$`-anchored pattern reads the raw text; the house
+    # run (a red suite inside the sweep) is the arm already read line by line,
+    # held here so a reader moved off that path is held to the same answer.
+    house_red = ("--- tests/test_cart.py: exited 1 ---\n"
+                 "FAIL ct3 a negative quantity is refused\n"
+                 "SELFTEST FAILED: 2/3 cases " + "passed\n"
+                 "FAIL  tests/test_cart.py: exited 1\n"
+                 "1/2 files ok, %d cases\n" % (5,))
+    pytest_red = ("FAILED tests/test_cart.py::test_negative - AssertionError\n"
+                  "ERROR tests/test_boot.py\n"
+                  "=== 1 failed, 2 passed in 0.12s ===\n")
+
+    def _crlf(text):
+        return text.replace("\n", "\r\n")
+
+    def _names(text):
+        step = _obs(1, text, "gate")
+        return (M.failing_lines(text, _ev_io.MAX_FAILING)[0],
+                M.failing_suites(text)[0],
+                step.get("failing"), step.get("failingSuites"))
+
+    ends = dict((runner, (_names(text), _names(_crlf(text))))
+                for runner, text in (("pytest", pytest_red),
+                                     ("vitest", VITEST_CART_FAIL),
+                                     ("house", house_red)))
+    check("sf12 a pytest, vitest and house run printed with CRLF yields the "
+          "same failing names and suites as with LF - in the readers and in "
+          "the step a red row records - and none of them carries a `\\r`: %r"
+          % (dict((r, v) for r, v in ends.items() if v[0] != v[1]),),
+          all(lf == crlf for lf, crlf in ends.values())
+          and ends["pytest"][0][0] == ["tests/test_cart.py::test_negative - "
+                                       "AssertionError", "tests/test_boot.py"]
+          and ends["pytest"][0][1] == ["tests/test_cart.py",
+                                       "tests/test_boot.py"]
+          and ends["vitest"][0][1] == ["src/cart.test.ts"]
+          and ends["house"][0][1] == ["tests/test_cart.py"]
+          and "\\r" not in repr(ends))
+
+    # The other readers of a run's text answer a verdict rather than a name,
+    # and each is a pattern anchored at the end of a line: TAP's closing
+    # tallies, vitest's `Test Files` count a bail is read from, and jest's
+    # `Summary of all failing tests` heading that a failure count stops at.
+    verdicts = (
+        ("tap tallies close the run",
+         M.reached_a_verdict, TAP_REPORT, True),
+        ("a vitest bail stopped early",
+         lambda t: "stopped early" in (M.mute_ineligible(
+             "npx vitest run --bail=1", 1, t) or ""), VITEST_BAIL, True),
+        ("jest past its summary threshold is one failure",
+         lambda t: M.mute_ineligible("npx jest", 1, t),
+         JEST_OVER_SUMMARY_THRESHOLD, None))
+    read = [(what, ask(text), ask(_crlf(text)), want)
+            for what, ask, text, want in verdicts]
+    check("sf13 ...and the verdict readers - TAP's tallies, vitest's bail, "
+          "jest's summary-threshold split - answer a CRLF run as they answer "
+          "the LF one: %r" % ([r for r in read if r[1] != r[2]
+                              or r[1] != r[3]],),
+          all(lf == crlf == want for _w, lf, crlf, want in read))
+
 
 def _mini_repo(prefix):
     """A real, empty git repository: `run_gate` asks git for the tree bracket."""

@@ -1,0 +1,39 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test__output_lints.py": "fail",
+    "ruff check (4 files)": "pass",
+    "vermin -t=3.8- (4 files)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-27T12:26:46Z",
+    "basis": "`python3 tests/test_run_test_gate.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 571 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sf12 (house FAIL): SELFTEST FAILED: 569/571 cases passed; --case le1 names no case that failed an assertion in this run; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Work from attempt 1 read against the brief and kept unchanged. run-test-gate.py reads every runner output through _runner_output.plain_text (_named_failures, _suite_candidates, reached_a_verdict, _named_failure_count, _stopped_early, _other_failures, mute_ineligible, playwright_listed); private _CSI deleted. New lint runner_line_end_violations plus RUNNER_LINE_END_PENDING in tools/lints/_output_lints.py. Cases sf12, sf13 (test_run_test_gate.py) and le1-le4 (test__output_lints.py). Gate in my tree at base d4a26f13: test_run_test_gate.py ok (571 cases); test__output_lints.py 171/173, the only failures te11 and ln1, both naming tests/test__runner_output.py:469, a file outside my scope that the phase head already fixed. Evidence they clear: in a scratch copy (git init, my four files plus HEAD's tests/test__runner_output.py from the phase branch) test__output_lints.py ran 172/173 with te11 and ln1 PASS; the one failure there, pn19, is a scratch artifact (missing tracked files). le1-le4 PASS. ruff and vermin exit 0. NOT DONE, and refused by the plan gate for the second time: the tools/prove-gates.py row. Edit refused verbatim: '[require-plan] tools/prove-gates.py is outside task P142.13-6yq, the task this worktree is bound to ... Only that task's files are open here.' Without it prove-gates coverage() and allow_coverage() both list runner_line_end_violations (measured in my tree: ['reach_graph', 'runner_line_end_violations'] each; reach_graph is a pre-existing gap from tools/affected.py). The right design needs tools/prove-gates.py in this task's files. Row to add before the 'one-project-resolver rule' row: ('runner_line_end_violations', L + '_output_lints.py', 'replace', 'def runner_line_end_violations(dirs=None, home=RUNNER_TEXT_HOME, pending=None):', same line + '\\n    return []', OUTL, 'le1'); allow rows for le2 (drop the import-scope continue; plain_text no longer vouching in 'in (RUNNER_TEXT_NORMALISER, \"splitlines\")' changed to 'in ()') and le3 (if site not in pending changed to if True), each shown red in attempt 1 in a scratch copy.",
+    "descriptive": "run-test-gate reads Windows-line-end runner output through the one normalisation, with a lint holding the class; the prove-gates row still needs a task that owns tools/prove-gates.py."
+  },
+  "testsAdded": [
+    "sf12/sf13: pytest, vitest and house output printed with CRLF yields the same failing names as with LF",
+    "le1-le4: a module applying a multiline end-anchored pattern to run output not passed through plain_text is reported; allow cases quiet; pending table shrinks only; real tree clean"
+  ],
+  "casesAdded": [
+    [
+      "sf12",
+      "sf13"
+    ],
+    [
+      "le1",
+      "le2",
+      "le3",
+      "le4"
+    ]
+  ],
+  "claims": "claims:\n1 run-test-gate.py now routes every reader through _ro.plain_text (diff: _named_failures, _suite_candidates, reached_a_verdict, _named_failure_count, _stopped_early, _other_failures, mute_ineligible, playwright_listed); the lint docstring in _output_lints.py states what it cannot see\n2 attempt 1: cripple (return []) -> le1 red; real-tree revert in reached_a_verdict -> le4 red; allow mutations -> le2/le3 red; restored. This attempt re-ran le1-le4 PASS, not re-mutated\n3 grep of the bare shape (_ANSI.sub, _CSI.sub, raw text into _FAILURE_READERS) in run-test-gate.py: all sites in the diff normalised; stamp-verification.final_error and _runner_output._pytest_cases/_pytest_tally left as RUNNER_LINE_END_PENDING rows because outside my files\n4 n/a - no rule to an agent; the lint runner_line_end_violations enforces it and its prove-gates row is blocked as stated\n5 n/a - no property recorded\n6 the lint reads the AST (pattern flags, call, text argument provenance), not command spelling; allow cases le2 proven quiet\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:ffc19de54f8af57d636de72fd1775b3bd79962a67139081a4fdd2c3a7afed6eb\",\"dirtyDigest\":\"sha256:408fc90dc74c764483816757cd046a80917264eca624b8040918e06c34a348b8\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/run-test-gate.py\":\"9ae52cb60f29967d\",\"tests/test__output_lints.py\":\"f509fa4f5c35bd6b\",\"tests/test_run_test_gate.py\":\"6c9d2e598f54aefa\",\"tools/lints/_output_lints.py\":\"2bbb8c284cc27dc1\"},\"head\":\"d4a26f13\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/run-test-gate.py\",\"tests/test__output_lints.py\",\"tests/test_run_test_gate.py\",\"tools/lints/_output_lints.py\"],\"scopeDigest\":\"sha256:451dcf0b4d5a1f7cb4c0915ec351e8ff99ecde9a81b387b50db2424347db5a7a\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": [
+    "tests/test__output_lints.py: a module applying a multiline end-anchored pattern to runner output it did not pass through plain_text is reported - not checked: the submit's command did not run `tests/test__output_lints.py`, so the ids bound to it were not compared with any printed label"
+  ]
+}

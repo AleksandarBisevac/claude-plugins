@@ -1,0 +1,34 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tools/sweep-selftests.py (own gate via run-test-gate --own --quiet --tree)": "pass",
+    "python3 tools/sweep-selftests.py --selftest": "pass",
+    "python3 tests/_harness.py --selftest": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "mode regression, expectRedFirst false: no red owed before the fix. The cases were instead proved red by mutating the calibration in the task tree and restoring (see outcome.technical).",
+    "at": "2026-10-27T12:20Z"
+  },
+  "outcome": {
+    "technical": "Attempt 2 re-read attempt 1's work in the tree against the brief and found it correct; no source change this attempt. Work: tools/sweep-selftests.py gains bt1-bt3 (staged fixture WITH a STAGES table: costs table gives each block ceil(3*1000/4)=750 on one slot; ghost-only table gives 1125, above the floor; deadline=60 cuts each block to 0<t<=60), sh6 rewritten to start order of a real sweep(jobs=1) == work_items order [b-heavy, c-split:s1..s3, a-light] (differs from path order and run_order), bb1 reads per-process windows from the row; prose: the blocks-not-suites comment above work_items() is the one statement of the model, sweep()/run_order/costs_from_rows/shard comment/record_costs about text corrected. tests/_harness.py: replayed() returns (results, strays, twice), replay_selftest fails a label run more than once by name, new case sr18. CLAUDE.md, CONTRIBUTING.md, ci.yml: grant-model sentences replaced by the block model in brief plus a pointer. Evidence this attempt (all from the task tree): python3 tools/sweep-selftests.py --selftest exit 0, 138/138; python3 tests/_harness.py --selftest 90/90; own gate run-test-gate.py docs/audit/audit-plan.json P142 --task P142.14-6yq --own --quiet --tree <tree> exit 0 GATE GREEN. Mutations on file_timeout call in one_block (each restored by Edit; git diff --stat identical before/after; __pycache__ purged between cycles): slots grant->1 => bt1 and bt2 FAIL (136/138; bt2 told 4500 at one slot); deadline min(cap_timeout,left) removed in child() => bt3 FAIL, plus tt2 and tt3 (135/138); staged=True->False => bt2 FAIL (137/138). Not proved by mutation in this attempt: sh6 and bb1 reworks, sr18. Not edited: .github/sweep-costs.json about text still says wall seconds times the slots; record_costs rewrites it on the next --record-costs. Earlier attempt noted tests/test__output_lints.py te11/ln1 red on tests/test__runner_output.py:469, a file not in this task; not rerun this attempt (the phase head fixed it per the orchestrator). DEPENDANTS: tools/sweep-selftests.py readers (evals.json, _output.py, _filed_returns.py, stamp-verification.py, _runner_collects.py, _runner_output.py): output format, row shape, budget line and constants unchanged - still correct; .github/sweep-costs.json: format unchanged, about text stale until next --record-costs; ci.yml: comment only, no job/slice/timeout-minutes changed - still correct; budget_line, coverage_findings, locale_decision, named_suites: signatures and behaviour unchanged - still correct. tests/_harness.py importers (test__ado_*, test__affected_tests, ...): run/check/fixture_root/staged_main unchanged; replayed() changed return shape, no caller outside _harness.py (attempt 1 git grep) - still correct; _group_present, _labels, _load_sweep (docstring only), _pid_present unchanged. CLAUDE.md and CONTRIBUTING.md readers by basename (guard-history-rewrite.py, test__output_lints, test__deps, test__areas, test_derive_phase_gate, tools/affected.py, check-committed-pii, check-example-ledgers, check-prohibitions, evals.json, _output.py): only the sweep paragraph changed - still correct.",
+    "descriptive": "The sweep's block model is stated once where it runs and the docs point there; a block's timeout calibration, its ghost fallback and its deadline cut each have a case that goes red when the calibration is mutated; submission order is read off a real run."
+  },
+  "testsAdded": [
+    "bt1-bt3: staged fixture with STAGES table and cost table, ghost-only table, and deadline variant, each read off the SWEEP_FILE_TIMEOUT and slots the block was told",
+    "sh6: order sweep() actually starts jobs equals work_items order",
+    "bb1: overlap read from per-process windows",
+    "sr18: replayed() fails a label run twice by name (in tests/_harness.py)"
+  ],
+  "casesAdded": [
+    [
+      "bt1",
+      "bt2",
+      "bt3",
+      "sh6"
+    ]
+  ],
+  "claims": "claims:\n1 tools/sweep-selftests.py one_block (file_timeout(path, costs, timeout, grant, staged=True)) is the calibration the bt1-bt3 cases and the comment above work_items() describe; sweep() docstring names work_items, which sweep() calls\n2 mutations on one_block/child, restored each time, pycache purged: slots 1 => bt1,bt2 red (136/138); deadline min removed => bt3 (also tt2,tt3) red (135/138); staged=False => bt2 red (137/138); restored 138/138. sh6, bb1, sr18 not mutated this attempt\n3 grep for the retired grant wording was done in attempt 1 over CLAUDE.md, CONTRIBUTING.md, ci.yml, sweep-selftests.py; .github/sweep-costs.json about text left stale because the task is told not to edit it and record_costs rewrites it\n4 n/a - no rule to an agent added\n5 n/a - no timing recorded\n6 n/a - no guard\n7 no number written into prose; the figures in the cases are computed from TIMEOUT_PER_COST in the fixtures",
+  "stamp": "audit-stamp: {\"content\":\"sha256:07b0132b0ed9ae94378e6d34531c71f6832b5ce3c699959dca38c57303bec3d8\",\"dirtyDigest\":\"sha256:8ceb06f64982dd7bf8646c3e1d72d8ed23b036d8bd8685ebc2fd436e01e82d85\",\"dirtyPaths\":{\".github/workflows/ci.yml\":\"0116bce022db66fa\",\"CLAUDE.md\":\"4fbbd68ae2907e7a\",\"CONTRIBUTING.md\":\"a4c7291d9c61e32d\",\"tests/_harness.py\":\"e2a85d47752be86a\",\"tools/sweep-selftests.py\":\"917bf8b45e46a421\"},\"head\":\"d4a26f13\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".github/workflows/ci.yml\",\"CLAUDE.md\",\"CONTRIBUTING.md\",\"tests/_harness.py\",\"tools/sweep-selftests.py\"],\"scopeDigest\":\"sha256:140aced4de56ad316de98f4fafeda0b6721a51710564d9a39eab12fe00a1d32e\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}
