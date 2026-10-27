@@ -1648,7 +1648,8 @@
       "P138.4-myr",
       "P138.5-myr",
       "P142.1",
-      "P142.12-6yq"
+      "P142.12-6yq",
+      "P142.19-6yq"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -4117,7 +4118,8 @@
       "P135.1",
       "P135.2",
       "P137.1",
-      "P142.1"
+      "P142.1",
+      "P142.19-6yq"
     ],
     "plugins/audit/scripts/governance/record-risk-confirmation.py": [
       "P42.6",
@@ -4764,7 +4766,8 @@
       "P137.7-3y3",
       "P138.2",
       "P138.3-myr",
-      "P142.1"
+      "P142.1",
+      "P142.19-6yq"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -10294,7 +10297,8 @@
       "P132.3",
       "P138.2",
       "P138.3-myr",
-      "P142.1"
+      "P142.1",
+      "P142.19-6yq"
     ],
     "docs/research/pipeline-cost-results.md": [
       "P118.19-v7t",
@@ -11463,7 +11467,8 @@
       "P137.7-3y3",
       "P138.2",
       "P138.3-myr",
-      "P142.1"
+      "P142.1",
+      "P142.19-6yq"
     ],
     "tests/test_audit_usage.py": [
       "P131.1"
@@ -11491,7 +11496,8 @@
       "P135.2",
       "P137.1",
       "P137.7-3y3",
-      "P142.1"
+      "P142.1",
+      "P142.19-6yq"
     ],
     "tests/test_derive_phase_gate.py": [
       "P131.1"
