@@ -45,6 +45,7 @@ import json
 import os
 import pathlib
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -15926,6 +15927,7 @@ def _leftover_cases(check):
     try:
         _attempt_cases(check, project, task, write, close, start, read, git,
                        backdate)
+        _held_work_cases(check, project, task, write, start, read, git)
         _close_evidence_cases(check, project, task, write, close, read, git)
         proj, mpath = project("clean", [task("P1.1", ["src/a.ts"])])
         code, text = close(proj)
@@ -16253,10 +16255,10 @@ def _attempt_cases(check, project, task, write, close, start, read, git,
     code, text = start(proj, "P1.2")
     check("ae1 `start` refuses a task whose declared file is dirty and declared "
           "by another task that has spent an attempt (blocked), names that task, "
-          "offers unblock-and-finish or a stash named by it, writes nothing: %r"
+          "offers unblock-and-finish or committing the change, writes nothing: %r"
           % ((code, text[-500:]),),
           code == M.E_USAGE and "P1.1" in text and "src/a.ts" in text
-          and "unblock" in text and "stash" in text and read(mpath) == before)
+          and "unblock" in text and "commit" in text and read(mpath) == before)
     proj, mpath = project("start-clean", [
         task("P1.1", ["src/a.ts"], status="blocked",
              blockedReason="attempts exhausted"),
@@ -16314,6 +16316,499 @@ def _attempt_cases(check, project, task, write, close, start, read, git,
           % ((code0, said[-200:], code, text[:400], code2, text2[-300:]),),
           code0 == 0 and code == M.E_USAGE and "src/c.ts" in text
           and "src/b.ts" not in text and code2 == 0)
+
+
+def _bash_guards():
+    """`[(script, mode)]` for every PreToolUse hook `hooks.json` registers on a
+    matcher a Bash call satisfies - read off the registration, so a guard added
+    there is asked by the remedy case below without an edit here."""
+    with open(os.path.join(_output.HOOKS_DIR, "hooks.json"), "r",
+              encoding="utf-8") as fh:
+        table = json.load(fh)
+    found = []
+    for entry in (table.get("hooks") or {}).get("PreToolUse") or []:
+        if not re.fullmatch(entry.get("matcher") or "", "Bash"):
+            continue
+        for hook in entry.get("hooks") or []:
+            spelled = re.search(r'py-launch\.sh"?\s+(\S+\.py)\s*(\S*)',
+                                hook.get("command") or "")
+            if spelled:
+                found.append((spelled.group(1), spelled.group(2)))
+    return found
+
+
+def _guard_refusals(proj, command):
+    """`[(script, decision)]` for each Bash guard that refuses `command` run in
+    `proj`, the way the session runs it: the hook as a process, the call on its
+    stdin, the project in `CLAUDE_PROJECT_DIR`. A refusal is an exit of 2 or a
+    `deny`/`ask` decision on stdout - an `ask` is no way past for an agent."""
+    payload = json.dumps({"tool_name": "Bash", "hook_event_name": "PreToolUse",
+                          "tool_input": {"command": command}, "cwd": proj,
+                          "session_id": "held-work-fixture"}).encode("utf-8")
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=proj)
+    refused = []
+    for script, mode in _bash_guards():
+        argv = [sys.executable, os.path.join(_output.HOOKS_DIR, script)]
+        out = subprocess.run(argv + ([mode] if mode else []), input=payload,
+                             cwd=proj, env=env, stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, timeout=60)
+        try:
+            said = json.loads(out.stdout.decode("utf-8", "replace") or "{}")
+        except ValueError:
+            said = {}
+        decision = ((said.get("hookSpecificOutput") or {})
+                    .get("permissionDecision") if isinstance(said, dict)
+                    else None)
+        if out.returncode == 2 or decision in ("deny", "ask"):
+            refused.append((script, decision or out.returncode))
+    return refused
+
+
+# THE ONE PREDICATE A REFUSAL'S WAYS PAST ARE HELD TO, imported by every suite
+# whose command prints one (`test_commit_task_work.py` too): a remedy a guard
+# of this plugin refuses is no way past, and the agent reading it has none.
+# The control is asked in the same project, so a fixture where the stash arm
+# cannot fire - no plan on disk - reads as a check that saw nothing, not as
+# a clean refusal.
+_UNQUOTED_GIT = re.compile(r"\bgit [^()`\n]*?(?=\)|\.\s|;|\n|$)")
+
+
+def _remedy_commands(text):
+    """Every command `text` spells: each backticked span, and each `git ...`
+    run written outside backticks up to the bracket, sentence end or line end
+    closing it - so a remedy spelled in parentheses is asked too."""
+    quoted = re.findall(r"`([^`\n]+)`", text or "")
+    bare = re.sub(r"`[^`\n]+`", " ", text or "")
+    return sorted(set(quoted + [m.strip() for m in _UNQUOTED_GIT.findall(bare)]))
+
+
+def _remedy_verdict(proj, text):
+    """`{commands, refused, control, guards}` for a refusal `text` printed in
+    `proj`: the commands it spells, `[(command, refusals)]` for each one a
+    Bash guard refuses, what those guards say of a stash in the same project
+    (the control that proves they can refuse here), and the guards asked."""
+    commands = _remedy_commands(text)
+    refused = [(c, why) for c, why in
+               ((c, _guard_refusals(proj, c)) for c in commands) if why]
+    return {"commands": commands, "refused": refused,
+            "control": _guard_refusals(proj, "git stash push -m held"),
+            "guards": [script for script, _mode in _bash_guards()]}
+
+
+def _remedies_pass(verdict):
+    """Whether a `_remedy_verdict` shows a refusal naming only ways past: some
+    command was spelled, none of them refused, and the control was refused by
+    the history guard, so the guards were able to refuse in that project."""
+    return (bool(verdict["commands"]) and not verdict["refused"]
+            and bool(verdict["control"])
+            and "guard-history-rewrite.py" in verdict["guards"])
+
+
+def _held_work_cases(check, project, task, write, start, read, git):
+    """`start` charges a held change to its other declarer unless the
+    evidence shows, path by path, that the bytes are the starting task's own
+    filed work and nobody else could have written into them; a declarer's
+    task tree is no such evidence. The way past the refusal it names is one
+    no Bash guard here refuses, and it runs from anywhere in the project."""
+    import io
+    import time
+    sv = _loader.load_script("stamp-verification.py",
+                             modname="stamp_verification_for_hw")
+
+    def task_tree(proj, task_id):
+        """`marker` - a detached linked worktree of `proj`'s repository beside
+        it, carrying the marker `manage-worktrees.py task-add` adopts a tree
+        by, naming `task_id`; None when it could not be made."""
+        path = proj + "-tree"
+        git(proj, "worktree", "add", "-q", "--detach", path)
+        admin = git(path, "rev-parse", "--git-dir").stdout.decode().strip()
+        admin = admin if os.path.isabs(admin) else os.path.join(path, admin)
+        if not os.path.isdir(admin):
+            return None
+        marker = os.path.join(admin, M._worktrees.PROVENANCE_FILE)
+        with open(marker, "w", encoding="utf-8") as fh:
+            json.dump({"createdBy": M._worktrees.PROVENANCE_MARK,
+                       "phaseId": "P1", "taskId": task_id,
+                       "base": "fixture"}, fh)
+        return marker
+
+    def holder_plan(name):
+        return project(name, [
+            task("P1.1", ["src/a.ts"], status="blocked",
+                 blockedReason="attempts exhausted"),
+            task("P1.2", ["src/a.ts"], status="pending", attempts=0)])
+
+    def verb(proj, argv, stdin=""):
+        lines = []
+        real = sys.stdin
+        sys.stdin = io.StringIO(stdin)
+        try:
+            code = M.main(list(argv) + ["--project-dir", proj],
+                          out=lines.append)
+        finally:
+            sys.stdin = real
+        return code, "\n".join(str(x) for x in lines)
+
+    def node(mpath, tid):
+        return _mio.tasks_by_id(_mio.load_manifest(mpath)).get(tid) or {}
+
+    # ---- a task tree is no alibi ---------------------------------------------------
+    # The release by marker is gone: a declarer with a marked tree can still have
+    # left its change in this checkout - an earlier attempt run here, a write by
+    # absolute path - and on a first start the release only moved the refusal to
+    # commit time, after spending an attempt.
+    proj, mpath = holder_plan("hw-tree-first")
+    marker = task_tree(proj, "P1.1")
+    write(proj, "src/a.ts", "P1.1's unfinished edit, left in the checkout\n")
+    before = read(mpath)
+    code, text = start(proj, "P1.2")
+    check("hw1 a first start over a change whose other declarer has a marked "
+          "task tree elsewhere is refused at the start, naming it, writing "
+          "nothing and spending no attempt: %r" % ((code, marker, text[-300:]),),
+          marker is not None and code == M.E_USAGE
+          and "src/a.ts holds an uncommitted change and P1.1" in text
+          and read(mpath) == before and "not charged" not in text)
+
+    proj, mpath = project("hw-tree-restart", [
+        task("P1.1", ["src/a.ts"], status="blocked",
+             blockedReason="attempts exhausted"),
+        task("P1.2", ["src/a.ts"], status="pending", attempts=0,
+             startedAt=None)])
+    steps = [start(proj, "P1.2")[0],
+             verb(proj, ["block", "P1.2", "--reason", "spent"])[0],
+             verb(proj, ["unblock", "P1.2", "--reason", "again"])[0]]
+    marker = task_tree(proj, "P1.1")
+    write(proj, "src/a.ts", "P1.1's unfinished edit, left in the checkout\n")
+    before = read(mpath)
+    code, text = start(proj, "P1.2")
+    check("hw2 a RESTART over the same change is refused too - its kept start "
+          "snapshot predates the change, so this start is the only check that "
+          "can stop P1.2's commit carrying P1.1's edit: %r"
+          % ((steps, code, marker, text[-300:]),),
+          steps == [0, 0, 0] and marker is not None and code == M.E_USAGE
+          and "src/a.ts holds an uncommitted change and P1.1" in text
+          and read(mpath) == before)
+
+    # ---- the change that is the starting task's own filed work ------------------
+    # One history, copied per case: P1.2 started and was blocked with the file
+    # clean, a full second before P1.1 ever starts, so the journal shows P1.2 was
+    # not running while P1.1 worked. Every case below differs from the ALLOW case
+    # by one thing, so each refusal is that thing's.
+    base, _base_plan = project("hw-history", [
+        task("P1.1", ["src/a.ts"], status="pending", attempts=0,
+             startedAt=None),
+        task("P1.2", ["src/a.ts"], status="pending", attempts=0,
+             startedAt=None)])
+    history = [start(base, "P1.2")[0],
+               verb(base, ["block", "P1.2", "--reason", "attempt spent"])[0]]
+    time.sleep(1.1)
+
+    def copy(name, source=None):
+        proj = os.path.join(os.path.dirname(base), name)
+        shutil.copytree(source or base, proj, symlinks=True)
+        return proj, os.path.join(proj, "docs", "audit", "audit-plan.json")
+
+    def stamp_line(proj, mpath):
+        lines = []
+        sv.main(["take", "--project", proj, "--manifest", mpath, "--task",
+                 "P1.1", "--json"], out=lines.append)
+        try:
+            return json.loads("\n".join(lines)).get("line")
+        except ValueError:
+            return None
+
+    def filing_row(proj, path):
+        """The journal row `drive-phase.py submit` appends after a filing,
+        built by the same function and appended by the same writer."""
+        row = _fr.filed_return_row(path, proj, "P1.1", "executor", "proved")
+        return bool(_journal_io.append_from_cli_why(proj, row)[0])
+
+    def hand_filed(proj, mpath, key=None, row=True):
+        """A return written straight to disk - the bytes `file-return` writes,
+        under P1.1's current start or under `key` - with the filing row or
+        without it."""
+        current = M.return_path(proj, mpath, node(mpath, "P1.1"), "executor")
+        path = (current if key is None else
+                os.path.join(os.path.dirname(current), key + ".executor.json"))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(_fr_executor(stamp=stamp_line(proj, mpath) or ""))
+        return filing_row(proj, path) if row else True
+
+    def row_then_file(proj, mpath):
+        """The filing row journaled BEFORE the return's bytes exist, so it
+        records no digest of them, and the checked read can only call the
+        return unchecked."""
+        path = M.return_path(proj, mpath, node(mpath, "P1.1"), "executor")
+        rowed = filing_row(proj, path)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(_fr_executor(stamp=stamp_line(proj, mpath) or ""))
+        return rowed
+
+    def file_by_verb(proj, mpath):
+        """`file-return`, then the row `submit` appends: what the drive does."""
+        code = verb(proj, ["file-return", "P1.1", "--role", "executor"],
+                    _fr_executor(stamp=stamp_line(proj, mpath) or ""))[0]
+        return [code, code == 0 and filing_row(proj, M.return_path(
+            proj, mpath, node(mpath, "P1.1"), "executor"))]
+
+    def restart_ready(proj):
+        return [verb(proj, ["block", "P1.1", "--reason", "spent"])[0],
+                verb(proj, ["unblock", "P1.1", "--reason", "again"])[0]]
+
+    # The journal orders rows from different writers by the second, and a
+    # change in the filing's own second cannot be placed - so each step whose
+    # order is evidence is a second apart, and every copy that differs only
+    # after it shares the wait. Phase A: P1.1 starts and writes its work; in
+    # the concurrent copy P1.2 runs at the same time.
+    # P1.2 works in a task tree of its own in every copy but one: that one is
+    # taken before the tree is made, so there P1.2 works in the shared checkout.
+    notree = copy("hw-history-no-tree")[0]
+    base_marker = task_tree(base, "P1.2")
+    begun, _begun_plan = copy("hw-begun")
+    begun_steps = [start(begun, "P1.1")[0]]
+    write(begun, "src/a.ts", "P1.1's filed work\n")
+    # The same history with P1.2 in the shared checkout: blocked through the
+    # whole window, yet its agent still writes here, and P1.1 writes on top.
+    same, same_plan = copy("hw-same-checkout", notree)
+    same_steps = [start(same, "P1.1")[0]]
+    write(same, "src/a.ts", "P1.2's edit, written while P1.2 is blocked\n")
+    write(same, "src/a.ts", "P1.2's edit, written while P1.2 is blocked\n"
+                            "P1.1's edit\n")
+    conc, conc_plan = copy("hw-concurrent")
+    conc_steps = [verb(conc, ["unblock", "P1.2", "--reason", "again"])[0],
+                  start(conc, "P1.1")[0], start(conc, "P1.2")[0]]
+    write(conc, "src/a.ts", "P1.2's unfinished edit\n")
+    write(conc, "src/a.ts", "P1.2's unfinished edit\nP1.1's edit\n")
+    time.sleep(1.1)
+    # Phase B: the filings, each its own way.
+    branches = {}
+    for name in ("hw-filed", "hw-unrowed", "hw-foreign-key",
+                 "hw-while-pending", "hw-verb-pending", "hw-row-first"):
+        branches[name] = copy(name, begun)
+    filed_steps = begun_steps + file_by_verb(*branches["hw-filed"])
+    unrowed_steps = begun_steps + [hand_filed(*branches["hw-unrowed"],
+                                              row=False)]
+    rowfirst_steps = begun_steps + [row_then_file(*branches["hw-row-first"])]
+    foreign_steps = begun_steps + [hand_filed(*branches["hw-foreign-key"],
+                                              key="20991231T000000Z")]
+    pending_steps = begun_steps + restart_ready(branches["hw-while-pending"][0])
+    vpending_steps = (begun_steps + restart_ready(branches["hw-verb-pending"][0])
+                      + file_by_verb(*branches["hw-verb-pending"])[:1])
+    conc_steps += file_by_verb(conc, conc_plan)
+    same_steps += file_by_verb(same, same_plan)
+    time.sleep(1.1)
+    # Phase C: the blocks and unblocks a restart follows, and the filing made
+    # while P1.1 was not running.
+    filed_steps += restart_ready(branches["hw-filed"][0])
+    unrowed_steps += restart_ready(branches["hw-unrowed"][0])
+    rowfirst_steps += restart_ready(branches["hw-row-first"][0])
+    foreign_steps += restart_ready(branches["hw-foreign-key"][0])
+    pending_steps.append(hand_filed(*branches["hw-while-pending"]))
+    conc_steps += [verb(conc, ["block", "P1.2", "--reason", "spent"])[0],
+                   verb(conc, ["block", "P1.1", "--reason", "spent"])[0],
+                   verb(conc, ["unblock", "P1.1", "--reason", "again"])[0]]
+    same_steps += restart_ready(same)
+
+    def refused_by_p12(proj, mpath):
+        before = read(mpath)
+        code, text = start(proj, "P1.1")
+        return (code == M.E_USAGE
+                and "src/a.ts holds an uncommitted change and P1.2" in text
+                and read(mpath) == before and "not charged" not in text,
+                code, text[-200:])
+
+    proj, mpath = copy("hw-own", branches["hw-filed"][0])
+    code, text = start(proj, "P1.1")
+    said = [ln for ln in text.splitlines() if "not charged" in ln]
+    check("hw3 ALLOW: a held file whose bytes are the starting task's own - "
+          "its return filed and journaled while it ran, under its own start, "
+          "the path clean in its start snapshot, and the other declarer not "
+          "running at any moment from that start to the filing - is not "
+          "charged, and the start says on what evidence: %r"
+          % ((history, filed_steps, code, said or text[-300:]),),
+          history == [0, 0] and filed_steps == [0, 0, True, 0, 0] and code == 0
+          and len(said) == 1 and "P1.2" in said[0] and "src/a.ts" in said[0])
+
+    # SECOND-DIRECTION CASES, one per piece of that evidence.
+    seen = [(name, steps) + refused_by_p12(*branches[name])
+            for name, steps in (("hw-unrowed", unrowed_steps),
+                                ("hw-foreign-key", foreign_steps),
+                                ("hw-while-pending", pending_steps),
+                                ("hw-verb-pending", vpending_steps),
+                                ("hw-row-first", rowfirst_steps))]
+    check("hw4 a return no filing row journals, one whose row records no "
+          "digest of its bytes, one under a key that is none of the task's "
+          "starts, and one put on disk while the task was not running vouch "
+          "for nothing; and `file-return` refuses an executor return for a "
+          "task that is not in_progress - each restart is refused naming "
+          "P1.2, writing nothing: %r" % (seen,),
+          [s[1] for s in seen] == [[0, True, 0, 0], [0, True, 0, 0],
+                                   [0, 0, 0, True], [0, 0, 0, M.E_USAGE],
+                                   [0, True, 0, 0]]
+          and all(s[2] for s in seen))
+
+    def moved(proj, mpath):
+        write(proj, "src/a.ts", "a change made after the filing\n")
+
+    def dirty_at_start(proj, mpath):
+        rec_path = M._scoped_commit.attempt_record_path(
+            M._run_state_dir(proj, _mio.read_json(os.path.join(
+                proj, ".claude", "audit.config.json"))), "P1.1")
+        with open(rec_path, "r", encoding="utf-8") as fh:
+            rec = json.load(fh)
+        rec["paths"]["src/a.ts"] = "0123456789abcdef"
+        with open(rec_path, "w", encoding="utf-8") as fh:
+            json.dump(rec, fh)
+
+    def edited_return(proj, mpath):
+        # The filed bytes changed after the filing row recorded them: the
+        # checked read refuses it, stamp and all still parsing.
+        path = M.return_path(proj, mpath, node(mpath, "P1.1"), "executor")
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write("\n")
+
+    def snapshot_after_filing(proj, mpath):
+        # The kept snapshot was taken after this return was filed - the
+        # return then speaks for bytes from before the start that vouches.
+        rec_path = M._scoped_commit.attempt_record_path(
+            M._run_state_dir(proj, _mio.read_json(os.path.join(
+                proj, ".claude", "audit.config.json"))), "P1.1")
+        with open(rec_path, "r", encoding="utf-8") as fh:
+            rec = json.load(fh)
+        rec["startedAt"] = "2099-01-01T00:00:00Z"
+        with open(rec_path, "w", encoding="utf-8") as fh:
+            json.dump(rec, fh)
+
+    seen = []
+    for name, then in (("hw-moved", moved),
+                       ("hw-dirty-at-start", dirty_at_start),
+                       ("hw-edited-return", edited_return),
+                       ("hw-snapshot-after", snapshot_after_filing)):
+        proj, mpath = copy(name, branches["hw-filed"][0])
+        then(proj, mpath)
+        seen.append((name, filed_steps) + refused_by_p12(proj, mpath))
+    proj, mpath = copy("hw-unread-journal", branches["hw-filed"][0])
+    plan = _mio.load_manifest(mpath)
+    cfg = _mio.read_json(os.path.join(proj, ".claude", "audit.config.json"))
+    held, released = M._held_reading(proj, proj, plan, node(mpath, "P1.1"),
+                                     mpath, cfg, rows=None)
+    held2, released2 = M._held_reading(proj, proj, plan, node(mpath, "P1.1"),
+                                       mpath, cfg)
+    check("hw5 bytes moved since the filing, a path already dirty in the "
+          "task's start snapshot, a return edited after its filing row, and "
+          "one filed before the snapshot's start are not its own work; and "
+          "with the journal unread nothing is released, where the same tree "
+          "read whole releases it: %r"
+          % ((seen, [h[:2] for h in held], released, released2),),
+          len(seen) == 4
+          and all(s[1] == [0, 0, True, 0, 0] and s[2] for s in seen)
+          and [h[:2] for h in held] == [("src/a.ts", "P1.2")]
+          and released == [] and not held2 and len(released2) == 1)
+
+    # The other declarer RUNNING inside the window: both started on a clean
+    # file, P1.2 wrote first and P1.1 on top, and P1.1 filed the bytes holding
+    # both - a start snapshot cannot see this, the journal's status rows can.
+    refused = refused_by_p12(conc, conc_plan)
+    check("hw6 a return whose bytes P1.2 could have written into - P1.2 was "
+          "in_progress between P1.1's start and its filing - vouches for "
+          "nothing: the restart is refused naming P1.2: %r"
+          % ((conc_steps, refused),),
+          conc_steps == [0, 0, 0, 0, True, 0, 0, 0] and refused[0])
+
+    # A declarer with no task tree of its own works in THIS checkout, and a
+    # blocked status does not stop an agent still running here from writing:
+    # every condition of the ALLOW case holds but the tree, and it is refused.
+    refused = refused_by_p12(same, same_plan)
+    check("hw10 a declarer with no task tree of its own is never released, "
+          "though the journal shows it blocked through the whole window - "
+          "its edit under the starter's is refused naming P1.2, while the "
+          "same history with P1.2 in its own tree (hw3) goes ahead: %r"
+          % ((same_steps, base_marker, refused),),
+          same_steps == [0, 0, True, 0, 0] and base_marker is not None
+          and refused[0])
+
+    # Whose tree is "its own": the marker on a linked worktree OTHER than the
+    # one the start reads, so asked from inside P1.2's own tree nobody counts.
+    elsewhere = M._tree_resident(base, ["P1.2"])
+    inside = M._tree_resident(base + "-tree", ["P1.2"])
+    check("hw12 a declarer's marker counts as its own tree only on a worktree "
+          "other than the one the start reads - asked from the main checkout "
+          "P1.2 has one, asked from inside that tree it has none: %r"
+          % ((elsewhere, inside),),
+          list(elsewhere) == ["P1.2"] and inside == {})
+
+    # A status chain with a link missing - a change the journal never saw -
+    # cannot say where the task was, whatever its ends say.
+    broken = [(1.0, 0, "pending", "in_progress"), (2.0, 1, "blocked",
+                                                   "pending")]
+    whole = [(1.0, 0, "pending", "in_progress"),
+             (2.0, 1, "in_progress", "blocked"), (3.0, 2, "blocked",
+                                                  "pending")]
+    check("hw11 a status chain whose change does not start where the one "
+          "before it ended answers can't-tell, where the whole chain answers "
+          "not-running: %r" % ((M._ran_within(broken, "pending", 5.0, 6.0),
+                                M._ran_within(whole, "pending", 5.0, 6.0)),),
+          M._ran_within(broken, "pending", 5.0, 6.0) is None
+          and M._ran_within(whole, "pending", 5.0, 6.0) is False)
+
+    # ---- the way past the refusal is one a guard lets through -------------------
+    proj, mpath = holder_plan("hw-remedy")
+    write(proj, "src/a.ts", "the blocked task's unfinished edit\n")
+    write(proj, "src/b.ts", "an unrelated change the remedy must not carry\n")
+    code, text = start(proj, "P1.2")
+    verdict = _remedy_verdict(proj, text)
+    spans = verdict["commands"]
+    check("hw7 the held-change refusal names its ways past - unblock the "
+          "declarer, or commit the change - and no command it spells is "
+          "refused by a Bash guard hooks.json registers, asked in the same "
+          "project, where a stash is refused: %r"
+          % ((code, verdict, text[-500:]),),
+          code == M.E_USAGE and _remedies_pass(verdict)
+          and any(s.startswith("/audit:task unblock P1.1") for s in spans)
+          and any(s.startswith("git -C ") and " commit " in s
+                  and "src/a.ts" in s for s in spans)
+          and "git stash" not in text)
+
+    # The commit it names, RUN as printed from a directory that is not the
+    # git root: it carries the held path and nothing else, under a message
+    # naming the task whose work it is, with no placeholder left to fill.
+    ident = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+                 GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+    commits = [s for s in spans if "git" in s and "commit" in s]
+    ran = []
+    for part in (commits[0].split(" && ") if commits else []):
+        argv = shlex.split(part)
+        ran.append(subprocess.run(argv, cwd=os.path.join(proj, "src"),
+                                  env=ident, stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE).returncode)
+    shown = git(proj, "show", "--name-only", "--format=%s", "HEAD"
+                ).stdout.decode().split("\n")
+    left = git(proj, "status", "--porcelain").stdout.decode()
+    check("hw8 the commit the refusal names, run as printed from inside the "
+          "project rather than the git root, commits src/a.ts alone under a "
+          "message naming P1.1, and the message carries no placeholder: %r"
+          % ((commits, ran, shown, left),),
+          len(commits) == 1 and ran and all(c == 0 for c in ran)
+          and "P1.1" in shown[0] and "<" not in commits[0]
+          and [ln for ln in shown[1:] if ln.strip()] == ["src/a.ts"]
+          and "src/b.ts" in left and "src/a.ts" not in left)
+
+    # The predicate itself, both directions: a refusal spelling a stash in
+    # parentheses - outside backticks, the way the remedy was once written -
+    # fails it, and one spelling only an unblock and a commit passes it.
+    stashed = _remedy_verdict(proj, "Finish it, or set it aside (git stash "
+                                    "push -m P1.1 -- src/a.ts), then start.")
+    clean = _remedy_verdict(proj, "Finish it (`/audit:task unblock P1.1 "
+                                  "--reason \"x\"`), or commit it (`git add -- "
+                                  "src/a.ts && git commit -m \"x\" -- "
+                                  "src/a.ts`).")
+    check("hw9 the shared remedy predicate fails a refusal naming a stash "
+          "outside backticks, and passes one naming only an unblock and a "
+          "commit: %r" % ((stashed, clean),),
+          not _remedies_pass(stashed) and stashed["refused"]
+          and _remedies_pass(clean))
 
 
 def _no_change_layout_cases(check, project, git, write, close, read):

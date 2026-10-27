@@ -1,0 +1,43 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test_commit_task_work.py tests/test__deps.py tests/test__output_lints.py tests/test_drive_phase.py": "pass",
+    "python3 tools/sweep-selftests.py tests/test__invariants.py tests/test__journal_io.py tests/test__refs.py tests/test__scoped_commit.py tests/test_audit_lookup.py tests/test_close_phase.py tests/test_guard_bash_writes.py tests/test_run_test_gate.py tests/test__filed_returns.py": "pass",
+    "python3 tools/check-git-pipeline.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-27T09:23:23Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test_commit_task_work.py` in a throwaway tree at HEAD exited 1 with 5 of 201 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - hw3 (house FAIL), hw4 (house FAIL), ctw-at11 (house FAIL), ctw-at12 (house FAIL), ctw-at13 (house FAIL): SELFTEST FAILED: 197/201 cases passed; --case hw1, hw2, hw5, hw6, hw7, hw8, hw9, hw10, hw11, hw12, ctw-at14, ctw-at15, ctw-at16, ctw-at17, ctw-at18 names no case that failed an assertion in this run; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; fix run: held back 240s of the deadline (the recorded 829s, capped at half the 480s deadline), the recorded slot-seconds of tests/test_audit_task.py, tests/test_commit_task_work.py in .github/sweep-costs.json",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "commit-task-work.py _commit_work: a task that is `done` AND records a `commit` now gets a work-commit refusal before anything is read or staged. The refusal names that commit (first 12 characters), says the task has no attempt left to commit, and points to a new task, or to reopen-with-a-concrete-reason then start, or to --state for the record. `done` with no commit recorded (the older close order) still commits; pending, blocked and cancelled are refused as in attempt 4. tests/test_commit_task_work.py: the shared builder test__invariants.build writes P1.1 as done WITH its commit, which under the new rule would be a closed task. The suite's Repos.make now applies `_unclosed`, which sets that task's commit to None in the working shard - the older close order the cases drive, where `done --commit` would be the next step. ctw15 (clean tree) checks the shard out and so lost that edit; it now applies `_unclosed` and commits it as a fixture commit before asserting the do-nothing answer. ctw-at17 now asserts status done AND commit None, and commits. New ctw-at18: P1.1 done against a recorded commit with an old startedAt, P1.2 blocked declaring the same file (shard plus fileIndex), P1.2's edit in the file, gate recorded. The work commit is refused naming the commit, with nothing committed or staged. Probe re-runs: probe_e E1 exit 1 (closed-task refusal), HEAD still 'base'; E2 done --commit gives 2 and done --no-change gives 2. probe_e3: gate green, commit with no override exit 1, HEAD still 'base'. probe_a: both starts exit 2. probe_a2: start 2, commit 1 (pending). probe_a3: start 2, commit 1 (pending). probe_b: restart 2, commit 1, HEAD:src/a.ts is the base bytes. probe_c: 2. probe_c2: file-return E_USAGE, start 2. probe_d3: restart 2, commit 1, base bytes at HEAD. probe_t: verdict about 0.45 s and passes (its last line still uses the pre-attempt-3 signature). Mutation rows (hw_mutations5.py, scratch export, anchor count asserted to be 1, pycache purged, restored): baseline lo-block 38/38, ae-block 18/18. E1 closed-task refusal removed -> ctw-at18 red. E2 over-fire, every done task refused -> ctw-at17 red. D4 re-check, non-running task let through -> ctw-at15 red. Restored 38/38 and 18/18. Tallies: five suites exit 0, 5/5 files, 2336 cases (test__deps 254, test__output_lints 169, test_audit_task 1125, test_commit_task_work 214, test_drive_phase 574). Neighbour sweep exit 0, 9/9 files, 2090 cases (test__invariants, the suite whose builder is shared, among them). check-git-pipeline exit 0. ruff and vermin clean. Every edit this attempt used the Edit tool. One Edit got 'The server-side auto mode classifier gave no verdict (error), so auto mode cannot determine the safety of Edit'; it was retried once as-is and applied. Note on the tree: `git status` in the task tree also shows docs/audit/audit-plan.json, docs/audit/phases/P142.json, docs/audit/journal/2026-10.482d7bf5-025e-4eb9-acc8.jsonl, docs/audit/evidence/2026-10.482d7bf5-025e-4eb9-acc8.jsonl and docs/audit/evidence/returns/P142.19-6yq/ modified. I made no edit under docs/audit; they are the drive's records, left as found. probe_d4 is left to the batch, as instructed. Dependants: commit-task-work.py's interface is unchanged (_changed_shards, _commit_state, attempt_state_dir and commit_work); the drive's commits run on in_progress tasks, and its --state paths are untouched (test_drive_phase green). tests/test_commit_task_work.py names used elsewhere (_head, _write, Repos, _hook) are unchanged; Repos.make's result now carries P1.1 with no commit, a change local to this suite. The other dependants are as in attempts 3 and 4.",
+    "descriptive": "commit-task-work no longer re-commits work for a task already closed against a commit, which used to sweep another task's held edit in by mtime; done-without-commit (the older close order) still commits."
+  },
+  "testsAdded": [
+    "hw1-hw12 as in attempt 4",
+    "ctw-at11..ctw-at16 as in attempt 4",
+    "ctw-at17 ALLOW now asserts the done task records no commit yet",
+    "ctw-at18 a work commit for a task done against a recorded commit is refused naming it, over another task's held edit"
+  ],
+  "casesAdded": [
+    [
+      "hw1",
+      "hw2",
+      "hw3",
+      "hw4",
+      "hw5",
+      "hw6",
+      "hw7",
+      "hw8",
+      "hw9",
+      "hw10",
+      "hw11",
+      "hw12"
+    ]
+  ],
+  "claims": "claims:\n1 commit-task-work.py _commit_work's closed-task branch does what its comment says, and ctw-at18 and probe_e/e3 show it\n2 E1 and E2 red in both directions, restored; D4 re-checked\n3 class: the work commit's status gate now covers done-with-commit too; probe_d4 was left to the batch by instruction; execute-task.md:650 stays stale and undeclared\n4 n/a - no new rule addressed to an agent beyond the refusal text, which names its own remedies\n5 remedy verdict about 0.45 s, measured on one run\n6 the decision reads the task's recorded status and commit fields, not text; the allow case ctw-at17 is shown beside the deny case ctw-at18\n7 n/a - no number written into docs or code",
+  "stamp": "audit-stamp: {\"content\":\"sha256:13322913bc2fbc9c6a9ec7ab88d1be8ccab9540a2b68b0823870955d473b31bf\",\"dirtyDigest\":\"sha256:f46282bc2441340c332ffceb38e99cc712baa28dc734c33679c13bbf17a8d7d5\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"a4d9bf9c97263ddd\",\"plugins/audit/reference/verbs-in-full.md\":\"3d618dc6f011aa0a\",\"plugins/audit/scripts/governance/commit-task-work.py\":\"4db45339e9ae862c\",\"plugins/audit/scripts/manifest/audit-task.py\":\"08733982bb24ea8c\",\"tests/test_audit_task.py\":\"13b0626f96b90364\",\"tests/test_commit_task_work.py\":\"1f5707ffbb22bfb6\"},\"head\":\"7ab4bdfd\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/verbs-in-full.md\",\"plugins/audit/scripts/governance/commit-task-work.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"tests/test_audit_task.py\",\"tests/test_commit_task_work.py\"],\"scopeDigest\":\"sha256:ce8727b069750c769884ffb7433e27649b74e4d8d531f6de302be38dfd3451a6\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

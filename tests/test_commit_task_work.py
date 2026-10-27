@@ -45,6 +45,8 @@ import _loader                                     # noqa: E402
 import _manifest_io as _mio                        # noqa: E402
 import _scoped_commit                              # noqa: E402
 import test__invariants as TI                      # noqa: E402  (the ONE git fixture)
+import test_audit_task as TAT                      # noqa: E402  (_remedy_verdict: the one
+#                                                    predicate a refusal's ways past are held to)
 
 M = _loader.load_script("commit-task-work.py", "ctw")
 # THE REAL RECORDER, driven in-process. A verdict the commit is bound to has to be
@@ -150,7 +152,7 @@ class Repos(object):
         self.made += 1
         root = os.path.join(self.tmp, "r%d" % (self.made,), "repo")
         os.makedirs(root)
-        return _mirrored(TI.build(root, **opts))
+        return _unclosed(_mirrored(TI.build(root, **opts)))
 
     def scratch(self, name):
         return os.path.join(self.tmp, "scratch-%s" % (name,))
@@ -182,6 +184,20 @@ def _mirrored(fx):
         TI._write_json(fx["manifest"], index)
         TI._git(fx["root"], "commit", "-q", "-m",
                 "fixture: the stubs mirror their shards", "--", INDEX_REL)
+    return fx
+
+
+def _unclosed(fx):
+    """`fx` with the task under test recorded `done` and NO commit yet, in the
+    working shard - the older close order this suite's cases drive (status
+    first, then the commit `done --commit` would record). The shared builder
+    also writes P1.1's commit into that shard, which is a task already closed
+    against it, and the committer refuses a work commit for one of those."""
+    shard = _mio.read_json(fx["shard"])
+    for task in shard.get("tasks") or []:
+        if task.get("id") == TASK and task.get("status") == "done":
+            task["commit"] = None
+    TI._write_json(fx["shard"], shard)
     return fx
 
 
@@ -572,8 +588,13 @@ def _ordinary_cases(check, repos):
     # The fixture leaves its last shard write uncommitted, which is what a
     # finished task really looks like - so it is put back here rather than
     # left, because the state under test is a tree with nothing in it for
-    # this commit to carry and not a tree that happens to be dirty.
+    # this commit to carry and not a tree that happens to be dirty. Committed
+    # with the task still unclosed (`_unclosed`), so the case reaches the
+    # do-nothing answer rather than the closed-task refusal ahead of it.
     TI._git(fx["root"], "checkout", "--", SHARD_REL)
+    _unclosed(fx)
+    TI._git(fx["root"], "commit", "-q", "-m", "fixture: P1.1 unclosed", "--",
+            SHARD_REL)
     before = _head(fx)
     code, text = _run(fx)
     check("ctw15 a clean tree makes NO commit and says which of the "
@@ -2270,6 +2291,174 @@ def _attempt_cases(check, repos):
           scode == 0 and code == 1 and OWNED in text
           and _const("PREDATES") in text and _head(fx) == before
           and _staged(fx) == [])
+    verdict = TAT._remedy_verdict(fx["root"], text)
+    check("ctw-at11 the predates refusal's ways past are commands no Bash "
+          "guard of this plugin refuses in the same project - finish the task "
+          "that made it, or commit the change on its own - and it names no "
+          "stash: %r" % ((code, verdict, text[:700]),),
+          code == 1 and TAT._remedies_pass(verdict)
+          and any(" commit " in c and OWNED in c
+                  for c in verdict["commands"])
+          and "stash" not in text)
+    # Its commit runs from anywhere in the project - `git -C` the root, since
+    # the paths are the root's - with no placeholder in it.
+    commits = [c for c in verdict["commands"] if "commit" in c and "git" in c]
+    check("ctw-at12 the predates refusal's commit names the git root with "
+          "`git -C` and carries no placeholder: %r" % (commits,),
+          len(commits) == 1 and "git -C " in commits[0]
+          and "<" not in commits[0])
+
+    # THE MIXED REFUSAL - dirty at the start and changed during the attempt -
+    # used to print no way past at all.
+    fx = repos.make()
+    _restartable(fx)
+    _write(os.path.join(fx["root"], OWNED), "a = 9  # another task's dirt\n")
+    scode, said = _start(fx)
+    _write(os.path.join(fx["root"], OWNED),
+           "a = 9  # another task's dirt\nb = 1  # and this attempt's\n")
+    _gate(fx)
+    code, text = _run(fx)
+    verdict = TAT._remedy_verdict(fx["root"], text)
+    check("ctw-at13 the mixed refusal names a way past no Bash guard refuses - "
+          "a `git -C` commit of the file on its own, naming what it holds: %r"
+          % ((scode, code, verdict, text[:700]),),
+          scode == 0 and code == 1 and _const("MIXED") in text
+          and TAT._remedies_pass(verdict)
+          and any("git -C " in c and "commit" in c and OWNED in c
+                  and "<" not in c for c in verdict["commands"]))
+
+    # Whose work it is, when the plan says: a started, unfinished task
+    # declaring the path is named - unblocked first when blocked - and in the
+    # commit's message; a finished one, or one never attempted, is not.
+    root = os.path.join(os.sep, "repo")
+    plan = {"phases": [{"id": "P1", "tasks": [
+        {"id": TASK, "files": [OWNED], "status": "in_progress", "attempts": 1},
+        {"id": "P1.2", "files": [OWNED], "status": "blocked", "attempts": 1},
+        {"id": "P1.3", "files": [OWNED], "status": "done", "attempts": 1},
+        {"id": "P1.4", "files": [OWNED], "status": "pending", "attempts": 0},
+        {"id": "P1.5", "files": [SIBLING], "status": "blocked",
+         "attempts": 1}]}]}
+    said = M.ways_past(plan, plan["phases"][0]["tasks"][0], root, root,
+                       [OWNED], "uncommitted work from before the attempt")
+    named = TAT._remedy_commands(said)
+    check("ctw-at14 the ways past name the started, unfinished declarer of the "
+          "path - its unblock and its id leading the commit message - and no "
+          "finished, unattempted or unrelated task: %r" % ((said, named),),
+          said.startswith("Finish P1.2 - unblocking it first")
+          and any(c.startswith("/audit:task unblock P1.2 ") for c in named)
+          and any(" commit -m 'P1.2: " in c for c in named)
+          and not any(t in said for t in ("P1.3", "P1.4", "P1.5")))
+
+    # A TASK COMMIT FOR A TASK THAT IS NOT RUNNING. Never started, and blocked
+    # after a start: each is refused before anything is staged, naming the
+    # status - a change in its file has no running attempt to belong to.
+    seen = []
+    fx = repos.make()
+    _restartable(fx)
+    _write(os.path.join(fx["root"], OWNED), "a = 7  # nobody's attempt\n")
+    before = _head(fx)
+    code, text = _run(fx)
+    seen.append(("pending", code, "pending, not in_progress" in text,
+                 _head(fx) == before and _staged(fx) == []))
+    fx = repos.make()
+    _restartable(fx)
+    scode, _said = _start(fx)
+    _write(os.path.join(fx["root"], OWNED), "a = 7  # written while blocked\n")
+    held = sys.stderr
+    sys.stderr = io.StringIO()
+    try:
+        bcode = AT.main(["block", TASK, "--reason", "spent", "--project-dir",
+                         fx["root"]], out=lambda *_a: None)
+    finally:
+        sys.stderr = held
+    before = _head(fx)
+    code, text = _run(fx)
+    seen.append(("blocked", scode, bcode, code,
+                 "blocked, not in_progress" in text,
+                 _head(fx) == before and _staged(fx) == []))
+    check("ctw-at15 a task commit for a task never started, and for one "
+          "blocked after its start, is refused naming the status, with nothing "
+          "committed or staged: %r" % (seen,),
+          seen[0][1:] == (1, True, True)
+          and seen[1][1:] == (0, 0, 1, True, True))
+
+    # SECOND-DIRECTION CASE, for a guard widened to refuse every status but
+    # in_progress: a `done` task - the older close order, status before the
+    # commit, which the shared fixture builder still follows - commits.
+    fx = repos.make()
+    _write(os.path.join(fx["root"], OWNED), "a = 2  # the task's own work\n")
+    _gate(fx)
+    node = _mio.read_json(fx["shard"])["tasks"][0]
+    code, text = _run(fx)
+    check("ctw-at17 ALLOW: a task recorded `done` before its commit, with no "
+          "commit recorded yet, still commits its work: %r"
+          % ((node.get("status"), node.get("commit"), code, text[:200]),),
+          node.get("status") == "done" and node.get("commit") is None
+          and code == 0 and "committed" in text)
+
+    # A TASK ALREADY CLOSED AGAINST ITS COMMIT has no attempt left to commit:
+    # its start record went with the close, so a held edit of another task in
+    # its file would be dated by mtime against the old start and swept in.
+    fx = repos.make()
+    closed = _head(fx)
+    shard = _mio.read_json(fx["shard"])
+    for t in shard["tasks"]:
+        if t.get("id") == TASK:
+            t.update({"commit": closed, "startedAt": "2026-01-01T00:00:00Z"})
+        elif t.get("id") == "P1.2":
+            t.update({"status": "blocked", "attempts": 1,
+                      "files": [SIBLING, OWNED]})
+    TI._write_json(fx["shard"], shard)
+    index = _mio.read_json(fx["manifest"])
+    index["fileIndex"][OWNED] = [TASK, "P1.2"]
+    TI._write_json(fx["manifest"], index)
+    TI._git(fx["root"], "add", "--", SHARD_REL, INDEX_REL)
+    TI._git(fx["root"], "commit", "-q", "-m", "fixture: P1.1 closed", "--",
+            SHARD_REL, INDEX_REL)
+    _write(os.path.join(fx["root"], OWNED), "a = 5  # P1.2's unfinished edit\n")
+    _gate(fx)
+    before = _head(fx)
+    code, text = _run(fx)
+    check("ctw-at18 a work commit for a task already `done` against a recorded "
+          "commit is refused naming that commit, over another task's held "
+          "edit in its file, with nothing committed or staged: %r"
+          % ((code, text[:500]),),
+          code == 1 and closed[:7] in text and "done" in text
+          and _head(fx) == before and _staged(fx) == [])
+
+    # A DECLARED PATH NO START CAN DATE, shared with another started,
+    # unfinished task: whose change it is cannot be told, so it is refused
+    # and the other task named. The same with no other declarer is not.
+    def undated(share):
+        fx = repos.make()
+        shard = _mio.read_json(fx["shard"])
+        for t in shard["tasks"]:
+            if t.get("id") == TASK:
+                t.update({"status": "in_progress", "attempts": 1,
+                          "commit": None, "completedAt": None,
+                          "startedAt": None})
+            elif t.get("id") == "P1.2":
+                t.update({"status": "blocked", "attempts": 1,
+                          "files": [SIBLING] + ([OWNED] if share else [])})
+        TI._write_json(fx["shard"], shard)
+        index = _mio.read_json(fx["manifest"])
+        if share:
+            index["fileIndex"][OWNED] = [TASK, "P1.2"]
+        TI._write_json(fx["manifest"], index)
+        TI._git(fx["root"], "add", "--", SHARD_REL, INDEX_REL)
+        TI._git(fx["root"], "commit", "-q", "-m", "fixture: undated", "--",
+                SHARD_REL, INDEX_REL)
+        _write(os.path.join(fx["root"], OWNED), "a = 8  # whose?\n")
+        _gate(fx)
+        return _run(fx)
+    code, text = undated(True)
+    code2, text2 = undated(False)
+    check("ctw-at16 a declared path no start can date, that another started, "
+          "unfinished task also declares, is refused naming that task; with "
+          "no other declarer the same path is not refused for it: %r"
+          % ((code, text[:600], code2, text2[:300]),),
+          code == 1 and _const("UNDATED_SHARED") in text and "P1.2" in text
+          and _const("UNDATED_SHARED") not in text2)
 
     fx = repos.make()
     _restartable(fx)

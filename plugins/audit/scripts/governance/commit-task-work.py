@@ -171,6 +171,7 @@ import argparse
 import json
 import os
 import pathlib
+import shlex
 import shutil
 import sys
 
@@ -545,10 +546,58 @@ def ignored_refusal(ignored, ignored_records):
 PREDATES = "changed before this attempt began"
 MIXED = ("changed before this attempt began AND again during it, so its diff "
          "holds both and this commit cannot carry one half of it")
-# The two ways past older dirt in a declared file: finish the run that made it,
-# or set it aside under that run's name.
-SET_ASIDE = ("finish the task that made it, or set it aside named by that task "
-             "(git stash push -m <its task id> -- <path>), then commit")
+UNDATED_SHARED = ("changed, with no start record or start time to date the "
+                  "change against, and another started, unfinished task "
+                  "declares it too, so whose change it is cannot be told")
+def _declarers(manifest, task, project, git_root, paths):
+    """`{task id: status}` for every OTHER task that has spent an attempt, is
+    not finished, and declares one of `paths` (git-root relative) - the tasks
+    whose unfinished work a change there most likely is."""
+    found = {}
+    for node in _mio.tasks_by_id(manifest).values():
+        if (not isinstance(node, dict) or node.get("id") == task.get("id")
+                or node.get("status") not in ("blocked", "in_progress")
+                or not (_mio.recorded_attempt(node) or 0)):
+            continue
+        names = [_vocab._strip_line_suffix(e).strip()
+                 for e in node.get("files") or [] if isinstance(e, str)]
+        rels = [_invariants._rel(os.path.join(project, n), git_root)
+                for n in names if n]
+        rels = [r for r in rels if r is not None]
+        if any(_scoped_commit.under_any(p, rels) for p in paths):
+            found[str(node.get("id"))] = node.get("status")
+    return found
+
+
+def ways_past(manifest, task, project, git_root, paths, what):
+    """The two ways past a change in `paths` (git-root relative) this commit
+    will not carry: finish the task that made it, or commit that change on its
+    own first. `what` says what the change is, for the commit's message.
+
+    Each is spelled as a command no Bash guard of this plugin refuses (held so
+    by the commit suite's remedy cases): a stash would be the shortest "set it
+    aside", and the history guard refuses it in any tree holding a plan. The
+    commit runs `git -C` the git root, because the paths are the root's and the
+    shell may stand anywhere in the project, and its message names whose work
+    it is - the declaring tasks when there are any - with nothing to fill in."""
+    owners = _declarers(manifest, task, project, git_root, paths)
+    named = ", ".join(sorted(owners))
+    root = shlex.quote(git_root)
+    spelled = " ".join(shlex.quote(p) for p in paths)
+    message = shlex.quote("%s: %s in %s, committed on its own before the %s "
+                          "commit" % (named or "an earlier run", what,
+                                      ", ".join(paths), task.get("id")))
+    unblock = " ".join(
+        "`/audit:task unblock %s --reason %s`"
+        % (o, shlex.quote("finish the change it left in %s"
+                          % (", ".join(paths),)))
+        for o in sorted(owners) if owners[o] == "blocked")
+    return ("Finish %s%s - or, when the change is work to keep as it stands, "
+            "commit it on its own (`git -C %s add -- %s && git -C %s commit -m "
+            "%s -- %s`), then commit"
+            % (named or "the task that made it",
+               (" - unblocking it first (%s)" % (unblock,)) if unblock else "",
+               root, spelled, root, message, spelled))
 
 
 def _them(paths):
@@ -604,10 +653,26 @@ def attempt_refusal(manifest, task, project, git_root, config, targets,
         parts.append("%s %s - %s (basis: %s). %s" % (
             "the declared file" if len(mine["predates"]) == 1
             else "the declared files", ", ".join(mine["predates"]), PREDATES,
-            mine["basis"], SET_ASIDE[0].upper() + SET_ASIDE[1:]))
+            mine["basis"], ways_past(manifest, task, project, git_root,
+                                     mine["predates"],
+                                     "uncommitted work from before the attempt")))
+    # NOTHING DATES IT, AND ANOTHER STARTED TASK DECLARES IT: with no start
+    # record and no `startedAt`, nothing says whether the change is this
+    # attempt's, and another started, unfinished declarer is the likeliest
+    # author - so it is refused rather than carried on no evidence at all.
+    shared = sorted(p for p in mine.get("undated") or []
+                    if _declarers(manifest, task, project, git_root, [p]))
+    if shared:
+        parts.append("%s - %s (basis: %s). %s" % (
+            ", ".join(shared), UNDATED_SHARED, mine["basis"],
+            ways_past(manifest, task, project, git_root, shared,
+                      "uncommitted work no start could date")))
     if mine["mixed"]:
-        parts.append("%s - %s (basis: %s)" % (", ".join(mine["mixed"]), MIXED,
-                                              mine["basis"]))
+        parts.append("%s - %s (basis: %s). %s" % (
+            ", ".join(mine["mixed"]), MIXED, mine["basis"],
+            ways_past(manifest, task, project, git_root, mine["mixed"],
+                      "work from before the attempt, with the attempt's own "
+                      "on top")))
     # THE QUESTION IS `_scoped_commit.undeclared_changes`, ASKED OF THE SAME
     # FUNCTION THE CLOSE AND THE SET-ASIDE ASK. What this commit stages beside
     # the task's files is the only list this reader supplies; the plugin's own
@@ -933,6 +998,37 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
                             git_root, config=config)
     allowed, skipped = targets["paths"], targets["skipped"]
     task_id, phase_id = str(task.get("id")), str(phase.get("id"))
+
+    # A TASK COMMIT CARRIES A RUNNING ATTEMPT'S WORK, so a task that is pending,
+    # blocked or cancelled has none to carry: a never-started task has no start
+    # record to tell its change from anyone's, and a restart `start` refused
+    # leaves the task pending with the first attempt's record, under which a
+    # change written since reads as this attempt's. Refused here, before
+    # anything is read or staged; the plan's own record still commits through
+    # `--state`, which this does not touch. `done` with NO commit recorded is
+    # let through: the older close order wrote the status before the commit,
+    # and that order's commit is the attempt's last act. `done` WITH a commit
+    # is a task already closed against it - its start record went with the
+    # close, so a change in its files now would be dated by mtime against a
+    # start long past and swept in as its work.
+    status = task.get("status")
+    if status == "done" and task.get("commit"):
+        return E_FAIL, _scoped_commit.answer(skipped, refused=(
+            "%s is done, closed against commit %s - it has no attempt left to "
+            "commit, and a change in its files now is not that attempt's. "
+            "Work it still owes is a new task (/audit:task add), or the task "
+            "reopened and started again (/audit:task reopen %s --reason "
+            "'its work is not all committed', then /audit:task start %s); the "
+            "plan's "
+            "record alone commits with --state"
+            % (task_id, str(task.get("commit"))[:12], task_id, task_id)))
+    if status not in ("in_progress", "done"):
+        return E_FAIL, _scoped_commit.answer(skipped, refused=(
+            "%s is %s, not in_progress - a task commit carries a running "
+            "attempt's work, and none is running. /audit:task start %s first "
+            "(its refusal, if it gives one, names whose change is in the way), "
+            "or commit the plan's record alone with --state"
+            % (task_id, status, task_id)))
 
     # BEFORE STAGING, so a refusal leaves the git index exactly as it was found.
     foreign, why = _scoped_commit.foreign_staged(git_root, allowed)

@@ -632,12 +632,46 @@ step 2 prescribes as an orchestrator `Edit`:
   `done` removes it. The output names it, or says it could not be written and that the commit
   and the close will date changes by mtime instead.
 
-A first start (not a retry) is **refused** when one of the task's declared files holds an
-uncommitted change and another not-done task that has spent an attempt (blocked, or
-in_progress) declares that file too. The change is most likely that task's unfinished work,
-and this task's commit would sweep it in. The refusal names the path and the task, and gives
-the two ways past: finish that task (unblock it first if it is blocked), or set its change
-aside under that task's name with `git stash push -m <its id> -- <path>`. Nothing is written.
+A start of a task that is not already `in_progress` is **refused** when one of the task's
+declared files holds an uncommitted change and another not-done task that has spent an attempt
+(blocked, or in_progress) declares that file too. The change is most likely that task's
+unfinished work, and this task's commit would sweep it in. On a restart this is the only check
+there is: the start snapshot is kept from the first attempt, so a change written since would
+read as this attempt's at commit time.
+
+One reading takes a path out of that charge, path by path and only on evidence: **the change
+is the starting task's own filed work.** All of these must hold, and the start names the
+evidence for each path it took out:
+
+  - the task's executor return was filed under one of its own journaled starts, while it was
+    `in_progress`, and its filing row is in the journal with the bytes the file still has;
+  - that return's stamp recorded the path's bytes, and they are its bytes now (one per-path
+    digest list from the stamp module on each side);
+  - the path was clean in the task's start snapshot, so nothing written before it began is
+    inside those bytes;
+  - every other task declaring the path works in a task tree of its own — a linked worktree,
+    other than the one the start runs in, whose marker names it — and was not `in_progress` at
+    any moment from that start to the filing, by the journal's status rows.
+
+The last condition rests on a premise, stated here because it is one: a task writes only in the
+tree its work lives in, and only while it runs. Status alone does not hold that in a shared
+checkout — a task the drive blocked on a timeout can still have its agent running there — so a
+declarer with no task tree of its own, or whose marker is on the tree the start runs in, is
+never taken out of the charge, whatever its status said. Its tree alone is no evidence either:
+it says where that work was meant to go, which is why the window is asked as well.
+
+Anything the journal cannot say — no filing row, a journal that will not read, a status change
+the journal never recorded or whose chain is broken, a change in the filing's own second —
+keeps the charge. And `file-return` refuses an executor return for a task that is not
+`in_progress`, so no return can be put on record for an attempt that is not running.
+
+What is left is refused. The refusal names the path and the task, and gives the two ways past,
+each a command no guard of this plugin refuses (the start suite's remedy cases run them through
+the guards): finish that task, unblocking it first when it is blocked
+(`/audit:task unblock <its id> --reason '...'`), or, when the change is work to keep as it
+stands, commit it as that task's, from anywhere in the project:
+`git -C <git root> add -- <path> && git -C <git root> commit -m '<its id>: ...' -- <path>`,
+spelled out in full, message included. Nothing is written.
 - **the phase around it, when that phase is still `pending`** — `status` and a `startedAt`
   of its own, from the same instant, in the same write. Until this, the control panel's
   save was the only thing in the plugin that promoted a phase at all, so a plan driven

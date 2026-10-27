@@ -344,6 +344,7 @@ import json
 import os
 import pathlib
 import re
+import shlex
 import subprocess
 import sys
 import types
@@ -466,6 +467,9 @@ import _worktrees             # noqa: E402  (which worktree the caller is standi
 #                                            `manage-worktrees.py` already read rather than
 #                                            a second `git worktree list` walk of this
 #                                            command's own)
+import _tree_stamp            # noqa: E402  (parse_stamp, take: the per-path digests a
+#                                            filed stamp recorded and the same list
+#                                            taken now, for a held change's bytes)
 import _proc_group            # noqa: E402  (shell_invocation: `record-listing` runs
 #                                            its version command under the shell a
 #                                            plan command runs under)
@@ -5369,41 +5373,318 @@ def _entry_warnings(phase):
     return out
 
 
-def _held_dirt(project, git_root, plan, node):
+def _held_dirt(project, git_root, plan, node, mpath=None, config=None):
     """`[(path, task id, status, attempt)]` - each of `node`'s declared files
     holding an uncommitted change that another not-done task which has spent an
-    attempt (blocked, or in_progress) also declares. That change is most likely
+    attempt (blocked, or in_progress) also declares, and that `_held_reading`
+    could not show to be anything but that task's. Such a change is most likely
     the other task's unfinished work, and nothing at commit time could tell it
     from this task's."""
+    return _held_reading(project, git_root, plan, node, mpath, config)[0]
+
+
+# `_held_reading`'s default for `rows`: read the journal itself. None is a
+# journal that could not be read, which releases nothing, so it cannot also
+# mean "not given".
+_READ_ROWS = ("read the journal",)
+
+
+def _held_reading(project, git_root, plan, node, mpath=None, config=None,
+                  rows=_READ_ROWS):
+    """`(held, released)` - `_held_dirt`'s list, and `[(path, task id, basis)]`
+    for each pairing it did not charge, with the evidence.
+
+    ATTRIBUTION IS PER PATH AND BY EVIDENCE: a held path is released only when
+    `_own_work_paths` shows its bytes are the starting task's own filed work
+    and that no other declarer could have written into them. Anything else -
+    a declarer's task tree elsewhere included, which says where its work was
+    meant to go and not where its bytes are - stays charged, and so does every
+    question that cannot be answered: a journal that will not read, a return
+    with no filing row, a stamp that does not parse, an exception anywhere in
+    the reading."""
     mine = _declared_rels(project, git_root, node)
     dirty = (_porcelain_paths(git_root, mine) or []) if mine else []
     if not dirty:
-        return []
+        return [], []
     holders = [t for t in _mio.tasks_by_id(plan).values()
                if isinstance(t, dict) and t.get("id") != node.get("id")
                and t.get("status") in ("blocked", "in_progress")
                and (_mio.recorded_attempt(t) or 0) > 0]
-    return [(path, str(t.get("id")), t.get("status"), _mio.recorded_attempt(t))
+    held = [(path, str(t.get("id")), t.get("status"), _mio.recorded_attempt(t))
             for path in dirty for t in holders
             if any(_touts.covers(f, path)
                    for f in _declared_rels(project, git_root, t))]
+    if not held or not mpath:
+        return held, []
+    if rows is _READ_ROWS:
+        rows = _filing_rows(project, config, mpath)
+    try:
+        vouched = _own_work_paths(project, git_root, mpath, config, plan, node,
+                                  held, rows)
+    except Exception:
+        vouched = {}
+    released = [(h[0], h[1], vouched[h[0]]) for h in held if h[0] in vouched]
+    return [h for h in held if h[0] not in vouched], released
 
 
-def _held_dirt_refusal(tid, held):
+def _status_events(rows, tid):
+    """`[(moment, row index, from, to)]` - every status change the journal
+    records for `tid`, in the journal's order: a `status` entry in a row's
+    `changes`, and the drive's `task.blocked` row. None when a row carrying
+    one names no readable moment - an order that cannot be read is no
+    evidence."""
+    out = []
+    for index, row in enumerate(rows):
+        details = row.get("details") if isinstance(row, dict) else None
+        if not isinstance(details, dict):
+            continue
+        found = [(c.get("from"), c.get("to"))
+                 for c in details.get("changes") or []
+                 if isinstance(c, dict) and c.get("field") == "status"
+                 and str(c.get("id")) == tid]
+        if (row.get("action") == "task.blocked"
+                and str(details.get("taskId")) == tid):
+            found.append((details.get("from"), "blocked"))
+        if not found:
+            continue
+        moment = _journal_io.row_moment(row)
+        if moment is None:
+            return None
+        out += [(moment, index, was, now) for was, now in found]
+    return out
+
+
+def _start_keys(rows, tid):
+    """The return keys of every start the journal records for `tid` - each
+    `startedAt` a row set, spelled as `_fr.return_start_key` names a return."""
+    keys = set()
+    for row in rows:
+        details = row.get("details") if isinstance(row, dict) else None
+        for c in (details or {}).get("changes") or [] if isinstance(
+                details, dict) else []:
+            if (isinstance(c, dict) and c.get("field") == "startedAt"
+                    and str(c.get("id")) == tid and c.get("to")):
+                keys.add(_fr.return_start_key(c.get("to")))
+    return keys
+
+
+def _ran_within(events, current, since, until):
+    """Whether a task with these `_status_events` was in_progress at any moment
+    from `since` to `until` - True, False, or None when the journal cannot say:
+    no events at all, a change that does not start where the one before it
+    ended, or a last change that does not end at the task's status now - each
+    a change the journal never saw. A second's resolution is all a row
+    carries, so a change in the boundary second counts as inside."""
+    if not events or events[-1][3] != current:
+        return None
+    if any(later[2] != earlier[3]
+           for earlier, later in zip(events, events[1:])):
+        return None
+    before = [e for e in events if e[0] < since]
+    status = before[-1][3] if before else events[0][2]
+    if status is None:
+        return None
+    if status == "in_progress":
+        return True
+    return any("in_progress" in (e[2], e[3])
+               for e in events if since <= e[0] <= until)
+
+
+def _filed_while_running(rows, tid, filing):
+    """Whether `tid` was in_progress when the filing row at index `filing` was
+    written. A change in the same journal file is ordered by that file's own
+    order; one in another file only by its moment, and one in the very second
+    of the filing cannot be placed before or after it - so it answers False,
+    the reading that releases nothing."""
+    events = _status_events(rows, tid)
+    if not events:
+        return False
+    row = rows[filing]
+    moment, where = _journal_io.row_moment(row), row.get("_file")
+    before = []
+    for event in events:
+        same_file = rows[event[1]].get("_file") == where
+        if same_file and event[1] < filing:
+            before.append(event)
+        elif not same_file and event[0] < moment:
+            before.append(event)
+        elif not same_file and event[0] == moment:
+            return False
+    return bool(before) and before[-1][3] == "in_progress"
+
+
+def _vouching_return(project, mpath, node, rows, since):
+    """`(path, row index, stamp)` for the starting task's newest executor
+    return that can vouch for anything, or None. One that can is: filed under
+    one of the task's own journaled starts; read through the checked read with
+    its filing row present and its bytes the ones that row recorded; filed at
+    or after `since`, the start its snapshot was taken at; filed while the
+    task was in_progress; carrying a stamp that parses with a per-path list."""
+    tid = str(node.get("id"))
+    current = return_path(project, mpath, node, "executor")
+    folder = os.path.dirname(current) if current else None
+    if not folder or not os.path.isdir(folder):
+        return None
+    keys = _start_keys(rows, tid)
+    suffix = ".executor.json"
+    for name in sorted((n for n in os.listdir(folder) if n.endswith(suffix)),
+                       reverse=True):
+        if name[:-len(suffix)] not in keys:
+            continue
+        path = os.path.join(folder, name)
+        _text, body, problem, unchecked = _fr.read_filed_return_checked(
+            path, rows, project)
+        row = _fr.already_filed_row(rows, path, project)
+        if problem or unchecked or row is None or not isinstance(body, dict):
+            continue
+        index = next(i for i, r in enumerate(rows) if r is row)
+        moment = _journal_io.row_moment(row)
+        if moment is None or moment < since:
+            continue
+        if not _filed_while_running(rows, tid, index):
+            continue
+        stamp, problem = _tree_stamp.parse_stamp(body.get("stamp"))
+        if problem or not isinstance(stamp.get("dirtyPaths"), dict):
+            continue
+        return path, index, stamp
+    return None
+
+
+def _own_work_paths(project, git_root, mpath, config, plan, node, held, rows):
+    """`{path: basis}` for each held path (git-root-relative) that is the
+    starting task's own filed work, by evidence; `{}` when any of it is
+    missing. A path is released only when ALL of these hold:
+
+      * the task's newest vouching return (`_vouching_return`) recorded the
+        path's bytes, and they are its bytes now - one per-path digest list
+        from `_tree_stamp.take` on each side, the filed one and one taken
+        now, so the two are the same arithmetic;
+      * the path was clean in the task's start snapshot, the one `start` kept
+        from its first attempt - so nothing written before the task began is
+        inside those bytes;
+      * every other declarer holding the path works in a task tree of its own
+        (`_tree_resident`) AND was not in_progress at any moment from that
+        start to the filing, by the journal's status rows - so nothing written
+        while the task worked is anyone else's.
+
+    THE PREMISE OF THE LAST CONDITION, said because it is one: a declarer
+    writes only in the tree its work lives in, and only while it runs. Status
+    alone does not hold that in a shared checkout - a declarer the drive
+    blocked on a timeout can still have its agent running here, writing - so
+    a declarer with no task tree of its own, or whose marker is on the very
+    tree the start runs in, is never released, whatever the window says. A
+    declarer with a tree elsewhere writes there; the window rules out the
+    rest, its attempts that ran beside this one.
+
+    `rows` None is a journal that could not be read: nothing is released."""
+    if rows is None:
+        return {}
+    tid = str(node.get("id"))
+    record, _why = _scoped_commit.read_attempt(_run_state_dir(project, config),
+                                               tid)
+    since = (_journal_io.row_moment({"ts": record.get("startedAt")})
+             if record is not None else None)
+    if since is None:
+        return {}
+    found = _vouching_return(project, mpath, node, rows, since)
+    if found is None:
+        return {}
+    path, index, stamp = found
+    until = _journal_io.row_moment(rows[index])
+    owner, cfg = _evidence_io.project_config_for(mpath, project)
+    excluded = sorted(set(_invariants.record_rels(
+        os.path.realpath(mpath), None, os.path.realpath(owner),
+        os.path.realpath(git_root), config=cfg)))
+    now = (_tree_stamp.take(git_root, [], excluded=excluded)[0]
+           .get("dirtyPaths"))
+    if not isinstance(now, dict):
+        return {}
+    then = stamp["dirtyPaths"]
+    by_id = _mio.tasks_by_id(plan)
+    trees = _tree_resident(git_root, sorted(set(h[1] for h in held)))
+    out = {}
+    for rel in sorted(set(h[0] for h in held)):
+        others = sorted(set(h[1] for h in held if h[0] == rel))
+        if rel in record["paths"] or then.get(rel) is None \
+                or then.get(rel) != now.get(rel):
+            continue
+        if any(o not in trees for o in others):
+            continue
+        if any(_ran_within(_status_events(rows, o),
+                           (by_id.get(o) or {}).get("status"), since, until)
+               is not False for o in others):
+            continue
+        out[rel] = ("its bytes are %s's own filed work - the return %s, "
+                    "filed while it ran, recorded them; the path was clean "
+                    "at its start (%s); and %s works in its own task tree "
+                    "(%s) and the journal shows it not in_progress from that "
+                    "start to the filing"
+                    % (tid, _output.posix_rel(path, project),
+                       record.get("startedAt"), ", ".join(others),
+                       "; ".join(trees[o] for o in others)))
+    return out
+
+
+def _tree_resident(git_root, task_ids):
+    """`{task id: tree}` for each of `task_ids` whose work lives in a task tree
+    of its own: a linked worktree of this repository, OTHER than the one
+    `git_root` stands in, carrying the marker that names the task - the reading
+    `drive-phase.py` adopts a kept tree by (`_worktrees.read_provenance` with
+    `expect_task`). The tree the change was read in is left out: a declarer
+    whose marker is there works HERE. `{}` when git will not list the
+    worktrees or name this one - no declarer then counts as elsewhere."""
+    listing = _worktrees.list_worktrees(git_root)
+    here = _worktrees.tree_root(git_root).get("root")
+    if listing.get("error") or not here:
+        return {}
+    found = {}
+    for tree in listing.get("trees") or []:
+        path = tree.get("path")
+        if (not path or tree.get("bare") or not os.path.isdir(path)
+                or _worktrees.same_tree(path, here)):
+            continue
+        for tid in task_ids:
+            if tid not in found and _worktrees.read_provenance(
+                    path, expect_task=tid).get("ours") is True:
+                found[tid] = path
+    return found
+
+
+def _held_dirt_refusal(tid, held, git_root):
     """The sentence `_held_dirt` earns: each path, the task holding it, and
-    the two ways past - finish that task, or set its change aside under its
-    name."""
-    first = held[0]
+    the two ways past - finish that task, or commit the change as that task's.
+
+    Each command it spells is one no Bash guard this plugin registers refuses
+    (held so by the start suite's remedy cases): a stash would be the shortest
+    "set it aside", and the history guard refuses it in a planned tree. The
+    commit runs `git -C` the git root, because the paths are the root's and the
+    shell may stand anywhere in the project; its message names the task whose
+    work it carries, so it lands attributed and with nothing left to fill in."""
+    paths = sorted(set(h[0] for h in held))
+    owners = sorted(set(h[1] for h in held))
+    blocked = sorted(set(h[1] for h in held if h[2] == "blocked"))
+    root = shlex.quote(git_root)
+    spelled = " ".join(shlex.quote(p) for p in paths)
+    message = shlex.quote("%s: uncommitted work in %s, committed on its own "
+                          "before %s starts" % (", ".join(owners),
+                                                ", ".join(paths), tid))
+    unblock = " ".join(
+        "`/audit:task unblock %s --reason %s`"
+        % (o, shlex.quote("finish the change it left in %s" % (
+            ", ".join(h[0] for h in held if h[1] == o),)))
+        for o in blocked)
     return ("[audit-task] REFUSED: %s cannot start - %s. A change there is most "
             "likely that task's unfinished work, and %s's commit would sweep it "
-            "in as its own. Finish it - unblocking it first when it is blocked "
-            "(/audit:task unblock %s --reason \"...\") - or set its change aside named by "
-            "it (git stash push -m %s -- %s), then start %s. Nothing written."
+            "in as its own. Finish that task%s - or, when the change is work "
+            "to keep as it stands, commit it as that task's (`git -C %s add -- "
+            "%s && git -C %s commit -m %s -- %s`), then start %s. Nothing "
+            "written."
             % (tid, "; ".join("%s holds an uncommitted change and %s (%s, "
                               "attempt %s) declares it too"
                               % (path, other, status, attempt)
                               for path, other, status, attempt in held),
-               tid, first[1], first[1], first[0], tid))
+               tid, (" - unblocking it first (%s)" % (unblock,)) if unblock
+               else "", root, spelled, root, message, spelled, tid))
 
 
 def _locked_start(args, project, config, mpath, tid, out):
@@ -5518,13 +5799,20 @@ def _locked_start(args, project, config, mpath, tid, out):
     git_root = os.path.abspath(os.path.join(project,
                                             (config or {}).get("gitRoot") or "."))
     # ANOTHER STARTED TASK'S UNFINISHED EDIT is refused here, before it can be
-    # read as this task's: a retry of this one continues its own work, so only
-    # a first start is asked.
-    held = ([] if status == "in_progress"
-            else _held_dirt(project, git_root, assembled, node))
+    # read as this task's: a retry of an in_progress one continues its own
+    # work, so only a start from another status is asked. On a RESTART this is
+    # the only check there is: `record_attempt` keeps the first attempt's
+    # snapshot, so a change written since reads as this attempt's at commit
+    # time. A pairing it did not charge is said with its evidence.
+    held, released = (([], []) if status == "in_progress"
+                      else _held_reading(project, git_root, assembled, node,
+                                         mpath, config))
     if held:
-        out(_held_dirt_refusal(tid, held))
+        out(_held_dirt_refusal(tid, held, git_root))
         return E_USAGE
+    for path, other, basis in released:
+        out("[audit-task] %s holds an uncommitted change %s also declares, not "
+            "charged to %s: %s" % (path, other, other, basis))
     entry = _phase_entry(git_root, assembled.get("meta") or {}, phase)
     if entry.get("refusal"):
         out(entry["refusal"])
@@ -6001,6 +6289,16 @@ def _locked_file_return(args, project, mpath, tid, role, text, out, config=None,
     if node.get("status") in _mio.TERMINAL:
         out("[audit-task] %s is already %s -- a return filed after the close is "
             "one the close never read" % (tid, node.get("status")))
+        return E_USAGE
+    if role == "executor" and node.get("status") != "in_progress":
+        # An executor return is the record of a running attempt, and `start`
+        # reads one as the task's own work when it decides whose a held
+        # change is - so one filed while nothing runs would vouch for bytes
+        # no attempt wrote.
+        out("[audit-task] REFUSED: %s is %s, not in_progress -- an executor "
+            "return records a running attempt, and none is running. "
+            "/audit:task start %s first. Nothing written."
+            % (tid, node.get("status"), tid))
         return E_USAGE
     path = return_path(project, mpath, node, role)
     if path is None:

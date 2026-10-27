@@ -1235,7 +1235,7 @@
     {
       "id": "P142.19-6yq",
       "title": "Starting a task does not charge it with another task's work that lives in that task's own tree, and names no remedy a guard refuses",
-      "status": "blocked",
+      "status": "in_progress",
       "description": "`audit-task.py` `_held_dirt` refuses `start` when one of the task's declared files holds an uncommitted change that another blocked/in_progress task with a spent attempt also declares, and `_held_dirt_refusal` offers two ways past: finish that task, or set the change aside with a named stash. Observed 2026-10-27 in P142: P142.18-6yq (single dispatch, works in the project checkout) was unblocked for attempt 3 and refused because P142.12-6yq (blocked) declares drive-phase.py and tests/test_drive_phase.py - but P142.12's work is in its own task tree (claude-plugins-P142.12-6yq, with a marker), and the checkout's bytes are exactly P142.18's attempt-2 filed work (stamp-verification compare: scopeDigest and dirtyDigest agree). `--force` does not pass it, and the stash it names is refused by the repo's guard-history-rewrite hook. So no supported exit existed.\n\nFix the class:\n1. A holder whose work lives in its own task tree (its marker/provenance via _worktrees, the same reading the drive uses) cannot be holding the project checkout's change - do not charge it.\n2. A change whose bytes match the starting task's own most recent filed return stamp (the scope/dirty digests stamp-verification computes - reuse that function, do not reimplement a digest) is that task's own work: not a refusal.\n3. The refusal never names a command any guard in this plugin refuses; drop the stash remedy and name the supported ones (finish/unblock the holder, or commit it).\n\nKeep the refusal for the case it exists for (another checkout-resident task's genuinely unfinished work). Red-first each case; prove the remaining refusal still fires. High risk: this guards against one task's commit sweeping in another's work. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -1261,23 +1261,22 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-27T08:17:59Z",
+      "startedAt": "2026-10-27T09:08:15Z",
       "completedAt": null,
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-27T09:07:57Z.102f48",
+        "runId": "2026-10-27T09:30:16Z.0c69f3",
         "status": "passed",
-        "at": "2026-10-27T09:07:57Z"
-      },
-      "blockedReason": "High-risk not confirmed yet: the delta re-review closed MED-1 and the status residual but reproduced one med: commit-task-work lets a done task through, so re-committing a task already done (with a commit recorded) sweeps a blocked task's held edit (probe_e). Next attempt lets done through only when no commit is recorded yet."
+        "at": "2026-10-27T09:30:16Z"
+      }
     }
   ],
   "request": "neka njihov dokument bude osnova! I u odnosu na to treba napraviti plan implementacije",
