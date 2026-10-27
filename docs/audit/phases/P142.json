@@ -1261,23 +1261,23 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 3,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-27T07:21:30Z",
+      "startedAt": "2026-10-27T08:17:59Z",
       "completedAt": null,
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-27T08:17:45Z.b2a448",
+        "runId": "2026-10-27T09:07:57Z.102f48",
         "status": "passed",
-        "at": "2026-10-27T08:17:45Z"
+        "at": "2026-10-27T09:07:57Z"
       },
-      "blockedReason": "High-risk not confirmed yet: the re-review closed both highs but reproduced MED-1 (a holder working inline in the same checkout and writing while blocked is released, and the commit carries its edit) and a MED residual in commit-task-work (it never checks the task's status; a never-started task's commit sweeps a held edit). Attempt 4 closes both."
+      "blockedReason": "High-risk not confirmed yet: the delta re-review closed MED-1 and the status residual but reproduced one med: commit-task-work lets a done task through, so re-committing a task already done (with a commit recorded) sweeps a blocked task's held edit (probe_e). Next attempt lets done through only when no commit is recorded yet."
     }
   ],
   "request": "neka njihov dokument bude osnova! I u odnosu na to treba napraviti plan implementacije",
