@@ -43,9 +43,13 @@ stays in the working tree: the rest of the shared index is what two parallel
 phases would meet on. The bytes are built by `stage_and_commit` against the
 parent the commit is ACTUALLY made on (`_scoped_commit.blob_builder`), never an
 earlier read, so another session's index commit landing in between is kept, not
-undone. `_invariants.commit_scope` grades with the same function from git
-afterwards. A row the working index lacks as well is refused, naming
-`audit-task.py reindex`: the working plan itself does not validate there.
+undone. The owned part is derived from ONE read of the shard, and the shard is
+committed at the bytes of that same read (`_scoped_commit.paired_blobs`), never
+restaged from the working file: a shard written while the commit runs - a task
+added beside it - stays in the working tree for the next commit, and cannot be
+committed without its rows. `_invariants.commit_scope` grades with the same
+function from git afterwards. A row the working index lacks as well is refused,
+naming `audit-task.py reindex`: the working plan itself does not validate there.
 
 WHAT A STATE COMMIT STAGES. The phase's manifest file, the journal directory, the
 evidence directory and the index - never a task's `files`, which is the whole
@@ -56,10 +60,11 @@ reference in it is held by the shards as this commit leaves them and it drops no
 row a committed shard still declares; otherwise only the phase's owned part is
 carried, laid over the parent as in a task commit, and the answer's `indexLeft`
 names what was left and which shard to commit first. Either way the phase's own
-stub is carried, so a stamp the caller reports committed is. It takes the index
-lock, because it may commit the file every structural command writes; a task
-commit takes none, because the index it carries is the parent's with its own
-part derived.
+stub is carried, so a stamp the caller reports committed is. In a sharded plan -
+asked of the index file on disk, since the assembled plan carries no stub - it
+takes the index lock for the whole commit, because it may commit the file every
+structural command writes; a task commit takes none, because the index it
+carries is the parent's with its own part derived.
 
 HOW THE EXCLUSION IS ENFORCED RATHER THAN INTENDED. Paths are staged EXPLICITLY
 (never `git add -A`), the git index is read BEFORE staging so work somebody else
@@ -441,21 +446,24 @@ def stage_targets(manifest, phase, task, manifest_path, project, git_root,
 
 def with_index(git_root, targets, carry):
     """`(targets, blobs)` - `targets` with the index added to `paths` and
-    `kinds`, and `blobs` (`{rel: build}`) the builder `stage_and_commit` runs
-    against the parent the commit is made on; `targets` unchanged and `blobs`
-    empty when the shard moves nothing the phase owns of the index.
+    `kinds` when the shard moves something the phase owns of the index, else
+    unchanged, and `blobs` (`{rel: build}`) the builders `stage_and_commit`
+    runs against the parent the commit is made on: the shard at the bytes its
+    index part was derived from, and the index when it rides
+    (`_scoped_commit.paired_blobs`).
 
-    THE BLOB IS THE PARENT'S INDEX WITH THE PHASE'S OWNED PART DERIVED FROM ITS
-    SHARD (`_scoped_commit.blob_builder`), never the working file: an index edit
-    the shard does not derive stays where it is."""
+    THE INDEX BLOB IS THE PARENT'S INDEX WITH THE PHASE'S OWNED PART DERIVED
+    FROM ITS SHARD (`_scoped_commit.blob_builder`), never the working file: an
+    index edit the shard does not derive stays where it is."""
     if not carry or carry.get("doc") is None:
-        return targets, {}
+        return targets, _scoped_commit.paired_blobs(carry, targets["kinds"])
     rel = carry["rel"]
     out = dict(targets)
     out["paths"] = list(targets["paths"]) + [rel]
     out["kinds"] = dict(targets["kinds"])
     out["kinds"][rel] = _scoped_commit.IN_INDEX
-    return out, {rel: _scoped_commit.blob_builder(git_root, carry)}
+    return out, _scoped_commit.paired_blobs(
+        carry, out["kinds"], _scoped_commit.blob_builder(git_root, carry))
 
 
 def index_lines(needs):
@@ -1143,7 +1151,8 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
     if why:
         return E_FAIL, _scoped_commit.answer(skipped, refused=why)
     # The part of the index the phase owns, when its shard moved it: built by
-    # `stage_and_commit` from the parent it commits onto, not from this read.
+    # `stage_and_commit` from the parent it commits onto, not from this read;
+    # and the shard at the bytes that part was derived from.
     carrying, blobs = with_index(git_root, targets, carry)
 
     def rows(nonce):
@@ -1172,7 +1181,7 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
         lambda nonce, why: _scoped_commit.withdraw(
             project, config, nonce, "commit-task-work",
             {"taskId": task_id, "phaseId": phase_id}, why), blobs=blobs)
-    needs = (carry or {}).get("needs") if blobs else {}
+    needs = carry.get("needs") if carry and carry["rel"] in blobs else {}
     if not done["committed"]:
         answer = _scoped_commit.answer(skipped, staged=done["staged"],
                                        foreign=done["foreign"],
@@ -1512,12 +1521,20 @@ def commit_state(manifest, phase, manifest_path, project, git_root, subject=None
     config = _journal_io.load_config(project) if config is None else config
     code, answer = _commit_state(manifest, phase, manifest_path, project,
                                  git_root, subject, config)
+    return code, state_answer(answer)
+
+
+def state_answer(answer):
+    """`answer` with every field `commit_state` documents, each one the
+    answer does not set at its empty value - the one shape a state commit
+    answers in, a refusal before the commit was decided included."""
+    out = dict(answer)
     for key, value in needs_fields(None).items():
-        answer.setdefault(key, value)
-    answer.setdefault("indexCarried", None)
-    answer.setdefault("indexRows", [])
-    answer.setdefault("indexLeft", [])
-    return code, answer
+        out.setdefault(key, value)
+    out.setdefault("indexCarried", None)
+    out.setdefault("indexRows", [])
+    out.setdefault("indexLeft", [])
+    return out
 
 
 def _commit_state(manifest, phase, manifest_path, project, git_root, subject,
@@ -1554,7 +1571,7 @@ def _commit_state(manifest, phase, manifest_path, project, git_root, subject,
 
     mode, build, notes = state_index(phase, manifest_path, git_root, carry)
     skipped = skipped + notes
-    paths, kinds, blobs = list(allowed), dict(targets["kinds"]), {}
+    paths, kinds = list(allowed), dict(targets["kinds"])
     if mode is not None:
         rel = carry["rel"]
         paths.append(rel)
@@ -1562,16 +1579,20 @@ def _commit_state(manifest, phase, manifest_path, project, git_root, subject,
         ignored = _scoped_commit.ignored_records({rel: kinds.get(rel)})
         if ignored:
             return E_FAIL, _scoped_commit.answer(skipped, refused=ignored)
-        blobs[rel] = build
     if not paths:
         return E_OK, _scoped_commit.answer(skipped,
                                            quiet=STATE_NOTHING_UNCOMMITTED)
+    # The shard at the bytes the index part was derived from, and the index
+    # when it rides: one read for both halves.
+    blobs = _scoped_commit.paired_blobs(carry, kinds,
+                                        build if mode is not None else None)
 
     # DECIDED BEFORE ANYTHING IS STAGED: the do-nothing answer is reached with
     # the git index untouched, so declining costs nothing and undoes nothing.
     # The index is decided by `state_index`, not by the working file's status.
     pending, why = _scoped_commit.uncommitted(
-        git_root, [p for p in paths if p not in blobs])
+        git_root, [p for p in paths
+                   if mode is None or p != carry["rel"]])
     if why:
         return E_FAIL, _scoped_commit.answer(skipped, refused=why)
     if not pending and mode is None:
@@ -1668,11 +1689,30 @@ def _load(path):
     return manifest, None
 
 
+def index_is_sharded(manifest_path):
+    """Is the plan at `manifest_path` in the sharded layout - asked of the index
+    file as it sits on disk. The assembled plan `_manifest_io.load_manifest`
+    returns has every stub replaced by its phase, so asking it answers no for
+    every plan, and the lock below was never taken. A file that cannot be read
+    here answers yes: a lock nobody needed costs a moment, a lock skipped
+    lets a structural write land between this commit's read and its staging."""
+    try:
+        return _mio.is_sharded(_mio.read_json(manifest_path))
+    except (OSError, ValueError):
+        return True
+
+
 def main_state(args, manifest, project, git_root, out):
     """The `--state` half of `main`: the phase looked up, the index lock taken
     in a sharded plan - the commit may carry the file every structural command
     writes, so a `/audit:task add` running beside it must not land half an edit
-    in it - and the answer printed."""
+    in it - and the answer printed.
+
+    UNDER `--json` STDOUT IS ONE OBJECT ON EVERY PATH. Its readers parse it
+    whole, and a line ahead of the object reads as no answer at all - a commit
+    that was made taken for one that was not. So the lock's own lines (a
+    refusal, or a hold this run re-entered) go to stderr there, and a refusal
+    is the answer object saying so, its `lockCode` the exit code."""
     phase = _invariants.phase_of(manifest, args.task)
     if phase is None:
         known = [str(p.get("id")) for p in (manifest.get("phases") or [])
@@ -1680,19 +1720,35 @@ def main_state(args, manifest, project, git_root, out):
         return _usage("no phase %r in %s (have: %s)"
                       % (args.task, args.manifest, ", ".join(known)))
     if not shutil.which("git"):
-        out("%s git is not on PATH, so nothing can be committed at all. Nothing "
-            "was staged." % (PREFIX,))
+        why = ("git is not on PATH, so nothing can be committed at all. "
+               "Nothing was staged.")
+        if args.as_json:
+            return _print(state_answer(_scoped_commit.answer(
+                [], refused=why)), E_FAIL, args, out)
+        out("%s %s" % (PREFIX, why))
         return E_FAIL
+    said = _panel_write.stderr_line if args.as_json else out
     lock = None
-    if _mio.is_sharded(manifest):
+    if index_is_sharded(args.manifest):
+        lines = []
+
+        def tee(line):
+            lines.append(line)
+            said(line)
         lock = _panel_write.acquire_index_lock(
             project, _panel_write.read_config(project),
-            os.path.abspath(args.manifest), args.takeover, out, PREFIX,
+            os.path.abspath(args.manifest), args.takeover, tee, PREFIX,
             "commit the phase's record and the manifest index")
         if isinstance(lock, int):
             # `_locks`' own code, passed through: E_LIVE says wait, E_STALE
             # says a human has to look. The lock module printed its message.
-            return lock
+            if not args.as_json:
+                return lock
+            answer = state_answer(_scoped_commit.answer([], refused=(
+                "the index lock was not taken, so nothing was staged: %s"
+                % (" ".join(line.strip() for line in lines),))))
+            answer["lockCode"] = lock
+            return _print(answer, lock, args, out)
     try:
         code, answer = commit_state(manifest, phase, args.manifest, project,
                                     git_root, subject=args.subject)
@@ -1701,8 +1757,7 @@ def main_state(args, manifest, project, git_root, out):
             # A release the lock declines says another run took this over
             # while the commit was being made; under `--json` it goes to
             # stderr, where it cannot break the one object stdout carries.
-            _panel_write.release_index_lock(
-                lock, out=(_panel_write.stderr_line if args.as_json else out))
+            _panel_write.release_index_lock(lock, out=said)
     return _print(answer, code, args, out)
 
 

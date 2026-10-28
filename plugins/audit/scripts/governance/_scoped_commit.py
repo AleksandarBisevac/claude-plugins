@@ -499,6 +499,17 @@ def _read_back(git_root, snap, paths, refuse_foreign):
     return "", []
 
 
+def unborn_head(git_root):
+    """True when HEAD names a branch that has no commit yet - git answers
+    "no such revision" for HEAD while HEAD itself is a symbolic ref. A HEAD git
+    cannot read for any other reason is not this, and answers False."""
+    code, _out, _err = run_git(git_root, ["rev-parse", "--verify", "-q", "HEAD"])
+    if code != 1:
+        return False
+    code, out, _err = run_git(git_root, ["symbolic-ref", "-q", "HEAD"])
+    return code == 0 and bool(out.strip())
+
+
 def commit_from_index(git_root, paths, paragraphs, head):
     """`(sha, why)` - a commit of `head` plus the index's entries under `paths`,
     and nothing else. `sha` is set when a commit was made, `why` when this
@@ -523,14 +534,24 @@ def commit_from_index(git_root, paths, paragraphs, head):
     commit landed in between, this refuses and names both SHAs, and resets
     nothing - the commit is there, and undoing it is a decision for whoever
     reads the refusal, not for this function.
+
+    AN UNBORN BRANCH IS A HEAD TOO - the state of a repository right after
+    `/audit:init`, before its first commit. `head` is empty there and HEAD
+    names a branch with no commit yet (`unborn_head`): the temporary index
+    starts empty, and both bindings hold in that shape - the branch must still
+    be unborn just before the commit, and the commit made must be a root.
+    An empty `head` anywhere else is a HEAD that could not be read, and that
+    refuses.
     """
-    if not head:
+    if not head and not unborn_head(git_root):
         return "", ("HEAD could not be read before staging, so a commit built "
                     "against it cannot be checked for having moved")
+    was = head or "no commit (an unborn branch)"
     tmp = tempfile.mkdtemp(prefix="audit-index-")
     index_file = os.path.join(tmp, "index")
     try:
-        code, out, err = run_git(git_root, ["read-tree", head],
+        code, out, err = run_git(git_root, ["read-tree", head] if head
+                                 else ["read-tree", "--empty"],
                                  index_file=index_file)
         if code != 0:
             return "", "git would not read HEAD into a temporary index (%s)" % (
@@ -555,9 +576,10 @@ def commit_from_index(git_root, paths, paragraphs, head):
                 _excerpt.reason_of(err, out),)
         code, now, _err = run_git(git_root, ["rev-parse", "--verify", "-q",
                                              "HEAD"])
-        if code != 0 or now.strip() != head:
+        now = now.strip() if code == 0 else ""
+        if now != head:
             return "", ("HEAD moved from %s to %s before the commit, so nothing "
-                        "was committed" % (head, now.strip() or "nothing"))
+                        "was committed" % (was, now or "nothing"))
         argv = ["commit", "-q"]
         for paragraph in paragraphs:
             argv.extend(["-m", paragraph])
@@ -566,16 +588,17 @@ def commit_from_index(git_root, paths, paragraphs, head):
             return "", "git refused the commit (%s)" % (
                 _excerpt.reason_of(err, out),)
         code, sha, err = run_git(git_root, ["rev-parse", "HEAD"])
-        code2, parent, _err2 = run_git(git_root, ["rev-parse", "HEAD^"])
-        sha, parent = sha.strip(), parent.strip()
+        code2, parent, _err2 = run_git(git_root, ["rev-parse", "--verify", "-q",
+                                                  "HEAD^"])
+        sha, parent = sha.strip(), (parent.strip() if code2 == 0 else "")
         if code != 0 or not sha:
             return "", ("the commit was made and git would not print its SHA "
                         "(%s)" % (_excerpt.reason_of(err),))
-        if code2 != 0 or parent != head:
+        if parent != head:
             return sha, ("the commit %s was made on %s and not on %s, the HEAD "
                          "read before staging - a commit landed in between, so "
                          "this one may undo it. Nothing was reset: inspect "
-                         "both and decide" % (sha, parent or "nothing", head))
+                         "both and decide" % (sha, parent or "nothing", was))
         return sha, ""
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -1497,16 +1520,30 @@ def rows_named(rows):
     return ", ".join("%s (%s)" % (path, tid) for path, tid in rows)
 
 
+def _document(path):
+    """`(bytes, parsed)` of the JSON file at `path`, from ONE read, or
+    `(None, None)` when it cannot be read or parsed."""
+    try:
+        with open(path, "rb") as fh:
+            data = fh.read()
+        return data, json.loads(data.decode("utf-8"))
+    except (OSError, ValueError):
+        return None, None
+
+
 def index_to_carry(phase, manifest_path, git_root):
     """`{"rel", "shardRel", "phaseId", "head", "now", "nowBytes", "body",
-    "needs", "doc", "unheld"}` - what the working shard of `phase` moves in the
-    part of the index the phase owns, read against HEAD now, or None in the
-    single-file layout (one file holds both halves) and when the index or the
-    shard lives outside the git root.
+    "bodyBytes", "needs", "doc", "unheld"}` - what the working shard of `phase`
+    moves in the part of the index the phase owns, read against HEAD now, or
+    None in the single-file layout (one file holds both halves) and when the
+    index or the shard lives outside the git root.
 
     `head` is the index HEAD holds (None when it holds none), `now` the working
     index parsed and `nowBytes` its bytes (both None when it cannot be read),
-    `body` the working shard. `needs` and `doc` are `_invariants.owned_index`
+    `body` the working shard parsed and `bodyBytes` the bytes it was parsed
+    from (both None likewise) - the bytes `paired_blobs` commits the shard at,
+    so the shard committed is the one the index part below was derived from.
+    `needs` and `doc` are `_invariants.owned_index`
     of HEAD's index against the working shard - `doc` None when that moves
     nothing - and `unheld` the rows it adds that the WORKING index lacks too.
     Those no commit should paper over: the working plan itself fails
@@ -1524,16 +1561,8 @@ def index_to_carry(phase, manifest_path, git_root):
     shard_rel = _invariants._rel(phase_file_abs, git_root)
     if rel is None or shard_rel is None:
         return None
-    try:
-        with open(index_abs, "rb") as fh:
-            now_bytes = fh.read()
-        now = json.loads(now_bytes.decode("utf-8"))
-    except (OSError, ValueError):
-        now_bytes, now = None, None
-    try:
-        body = _mio.read_json(phase_file_abs)
-    except Exception:
-        body = None
+    now_bytes, now = _document(index_abs)
+    body_bytes, body = _document(phase_file_abs)
     pid = str((phase or {}).get("id"))
     head = _invariants.json_at(git_root, "HEAD", rel)
     needs, doc = _invariants.owned_index(
@@ -1542,9 +1571,39 @@ def index_to_carry(phase, manifest_path, git_root):
     return {"rel": rel, "shardRel": shard_rel, "phaseId": pid, "head": head,
             "now": now if isinstance(now, dict) else None,
             "nowBytes": now_bytes if isinstance(now, dict) else None,
-            "body": body, "needs": needs,
+            "body": body, "bodyBytes": body_bytes if body is not None else None,
+            "needs": needs,
             "doc": doc if doc is not None and doc != head else None,
             "unheld": [row for row in needs["rows"] if row in lacking]}
+
+
+def paired_blobs(carry, kinds, index_build=None):
+    """`{rel: build}` for `stage_and_commit`'s `blobs`: the shard of `carry`
+    at the bytes `index_to_carry` read it as, whenever `kinds` (the commit's
+    `{rel: kind}`) gives the shard a kind `stage` would add from the working
+    file - an index entry, or a file only on disk - and the index at
+    `index_build` when the index rides too. Empty for no `carry` - the
+    single-file layout, where one file is both halves. Any other kind keeps
+    what `stage` does with it: a shard deliberately untracked and ignored is
+    committed as the deletion git holds, never added back.
+
+    ONE READ FOR BOTH HALVES. The index part a commit carries is derived from
+    `carry["body"]`; a shard staged from the working file later would commit
+    whatever was written there in between - a task added while the commit ran
+    - without the fileIndex rows it owes, and HEAD would hold a plan that
+    does not validate. Committing the shard at the bytes its index part came
+    from makes that split unreachable: a later write stays in the working tree,
+    for the next commit to carry with its rows."""
+    out = {}
+    if not carry:
+        return out
+    if carry.get("bodyBytes") is not None \
+            and kinds.get(carry["shardRel"]) in (IN_INDEX, ON_DISK):
+        data = carry["bodyBytes"]
+        out[carry["shardRel"]] = lambda _head: (data, "")
+    if index_build is not None:
+        out[carry["rel"]] = index_build
+    return out
 
 
 def blob_builder(git_root, carry, base=None):

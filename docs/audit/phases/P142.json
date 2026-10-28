@@ -2445,7 +2445,7 @@
     {
       "id": "P142.38-6yq",
       "title": "A staged suite's replay prints block output it cannot encode with replacement, keeps a killed block's partial output, and starts no job past the deadline",
-      "status": "in_progress",
+      "status": "done",
       "description": "The work is done and kept at refs/audit/kept/P142.32-6yq (one commit over the phase head it was cut from; `git diff <its parent> refs/audit/kept/P142.32-6yq` is the whole change). Apply it to your tree, check it against the phase head you were given, resolve anything the head has moved since, and run the gates.\n\nWhat it fixes. The sweep decodes a block's bytes as UTF-8. A staged suite's replay (tests/_harness.py replay_results) wrote that text to its own stdout, which on Windows is a strict cp1252 stream, so a block printing a character outside cp1252 crashed the replay: SELFTEST FAILED 0/1, every case hidden. 3.6.0 was green there. The change writes replayed output through `encodable`, which escapes what the stream cannot spell, so the tally stays exact. It also keeps a timed-out block's partial output for the replay (run_one's `partial`), and refuses by name any job whose start falls after the sweep's deadline, giving a replay at least REPLAY_RESERVE. The deadline cut is rounded up, not truncated.\n\nThis task is regression mode because each file holds both its cases and the code they test, so the red-first helper's HEAD copy carries the fix. The red is recorded instead by a pre-fix sweep of tests/_harness.py (exit 1, sr19 UnicodeEncodeError, 91/92) and by a mutation probe the orchestrator ran: 9 of 9 rows red, baselines green.\n\nWho depends on this: everything importing _harness (no signature or output contract changed), and every file naming tools/sweep-selftests.py by path (command line and row format unchanged; a job refused past the deadline now prints as FAILED with its reason). P143.6 will change block timing and sharding next; say what it must know. No F/P/BUG ids in comments.",
       "files": [
         "tests/_harness.py",
@@ -2474,19 +2474,36 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "70a6389fe761",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Applied the kept work: git diff 5ca403f0 refs/audit/kept/P142.32-6yq | git apply -3 (exit 0, both files applied cleanly). git log 5ca403f0..HEAD on the two files was empty, so the head 67b6799f had not moved under them and there was nothing to reconcile. apply -3 filled the index, so I ran git reset -q -- on both files; git diff --cached --name-only now prints nothing. git diff --stat names only tests/_harness.py (+61) and tools/sweep-selftests.py (+155/-16). sha256 of both working files equals the kept blobs (156bd28a... _harness, 940c169c... sweep). The change: _harness.encodable() plus replay_results writing through it; run_one keeps a killed child's partial stdout; block_entry passes that partial on as a killed block's out; not_started() plus the sweep's child() refuse any job admitted past the deadline, and a replay is exempt and gets at least REPLAY_RESERVE = 10s; the remaining time is rounded up; a staged suite none of whose blocks started is one not_started row with no replay. Gates, run in the tree: `python3 tools/sweep-selftests.py tests/_harness.py tools/sweep-selftests.py` exit 0, 2/2 files ok, 237 cases (_harness 93, sweep 144). `python3 tools/sweep-selftests.py --selftest` exit 0, ALL PASS 144/144, zero FAIL lines. The own-tests command exit 0, GATE GREEN (raw log .claude/logs/gate-raw/2026-10-28T00-38-27Z.fcb1df.log, 2/2 files ok, 237 cases). `python3 tests/_harness.py --selftest` exit 0, 93/93, and PASS lines for sr19 and sr19b; PASS tt3b, tt3c, tt3d appear in the sweep selftest. Extra checks: vermin -t=3.8- on both files exit 0; ruff check exit 0; prose_number_claims and house_style_violations report 0 hits in either file. A grep of the added lines for F/P/BUG ids found none (exit 1). Dependants: (a) Everything importing _harness is unchanged and still correct: encodable is new, replay_results keeps its signature, and what it writes differs only where the stream could not encode a character, which used to raise. Outside the two files, grep finds no reader of run_one, block_entry, replay_results or sweep_deadline. (b) test_stamp_verification.py uses load_costs and file_timeout; test_drive_phase.py uses locale_decision through _load_sweep; this change touches none of the three. (c) _runner_output.py, _runner_collects.py and stamp-verification.py read the sweep's command line and its FAIL rows. Both are unchanged: a refused job goes through grade as `FAIL <path>: not started: the sweep's deadline of Ns had passed`, which is the existing row shape. ci.yml, sweep-costs.json, the evals JSON, _output.py, _filed_returns.py and _warning_groups.budget_line name the file by path or by unchanged names, so they are still correct. For P143.6, which changes block timing and sharding: (1) the deadline cut now rounds up and refuses jobs instead of giving them a one-second timeout; (2) a replay is exempt and gets at least REPLAY_RESERVE, so any new per-block or per-shard deadline arithmetic must leave room for that reserve past the deadline; (3) a refused row has no seconds, so record_costs and load_costs skip it (line 1627). A suite cut part-way sums only the blocks that ran (suite_ran, line 1761), so a deadline-cut run fed to --record-costs records that suite low. (4) A refused row has no began_ns, so claude_verdicts windows skip it.",
+        "descriptive": "A staged suite's replay no longer crashes on a cp1252 stdout, a killed block's partial output reaches the replay, and no job starts past the sweep deadline except a replay with a reserve."
       },
       "startedAt": "2026-10-28T00:36:03Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-28T01:21:50Z",
+      "verifiedBy": [
+        "sr19: a staged suite replayed under PYTHONIOENCODING=cp1252, from a block whose output holds an e-acute, an arrow and U+FFFD, exits 0 with every case and the exact 3/3 tally, and prints the block's line once",
+        "sr19b: encodable escapes only what the stream's codec cannot spell; cp1252 keeps the e-acute and escapes the other two, utf-8 keeps all three (fails if a helper escapes every non-ASCII character)",
+        "tt3b: with one worker held by a hung file past the deadline, a queued file and a queued staged suite are not started; each is named with the deadline reason, and no seconds are recorded",
+        "tt3c: a staged suite cut by the deadline is still replayed past it: its killed block's partial print appears exactly once, the killed block and the refused block each fail by name with their reasons, and the tally is 0/2",
+        "tt3d: block_entry passes a killed block's partial output on as out with the timeout as why, keeps a finished block's own output and never its partial, and gives a refused block an empty out"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-28T01:06:06Z.086c0c",
         "status": "passed",
         "at": "2026-10-28T01:06:06Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "70a6389fe761",
+        "at": "2026-10-28T01:21:50Z",
+        "return": "docs/audit/evidence/returns/P142.38-6yq/20261028T003603Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "Regression mode, expectRedFirst false: each owned file holds both its cases and the code they test, so the helper's HEAD copy would carry the fix and cannot show the red. The red is the one the task description records: a pre-fix sweep of tests/_harness.py exited 1 with sr19 raising UnicodeEncodeError (91/92), and the orchestrator's mutation probe went red on 9 of 9 rows with green baselines. I did not re-prove it, and no helper run was made.",
+        "at": "not run - red recorded in the task description, before this attempt"
       }
     },
     {

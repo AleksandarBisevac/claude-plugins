@@ -31,9 +31,11 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 import io
 import json
 import os
+import platform
 import re
 import subprocess
 import sys
+import time
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 import _output                                     # noqa: E402
@@ -42,7 +44,9 @@ import _evidence_io                                # noqa: E402
 import _invariants                                 # noqa: E402
 import _journal_io                                 # noqa: E402
 import _loader                                     # noqa: E402
+import _locks                                      # noqa: E402
 import _manifest_io as _mio                        # noqa: E402
+import _panel_write                                # noqa: E402
 import _scoped_commit                              # noqa: E402
 import test__invariants as TI                      # noqa: E402  (the ONE git fixture)
 import test_audit_task as TAT                      # noqa: E402  (_remedy_verdict: the one
@@ -4082,6 +4086,312 @@ def _state_terse_cases(check, repos):
           and "nothing uncommitted" in qout)
 
 
+# --- the index lock, and the shard committed from the bytes its index came from
+# The state commit writes the shared index, so it holds the index lock for the
+# whole of the commit, as every other writer of the index does; and either
+# commit stages the shard from the very read its index part was derived from,
+# so a shard written between that read and the staging can only be left
+# uncommitted, never committed without its rows.
+
+
+def _index_claim_path(fx):
+    return os.path.join(_locks.lock_dir(fx["root"]),
+                        _panel_write.LOCK_NAME + ".lock")
+
+
+def _plant_index_claim(fx, pid):
+    """Another run's claim on the index lock, in the shape `_locks` writes for
+    a process's own write: a token this process does not carry, a pid that is
+    not this one, this host. Nobody but that run re-enters it."""
+    path = _index_claim_path(fx)
+    if not os.path.isdir(os.path.dirname(path)):
+        os.makedirs(os.path.dirname(path))
+    _locks._write_lock(path, {
+        "sessionId": "another-run", "pid": pid, "hostname": platform.node(),
+        "note": "a structural write", "token": "t-another-run",
+        "handedOff": False,
+        "startedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
+    return path
+
+
+def _gone_pid():
+    """The pid of a process that has already exited - a holder judged dead."""
+    child = subprocess.Popen([sys.executable, "-c", "pass"])
+    child.wait()
+    return child.pid
+
+
+def _racing_add(fx, seen):
+    """A stand-in for `_scoped_commit.stage` that, on its first call, runs the
+    real `/audit:task add` into the running phase - a shard and index write
+    landing after the commit decided what to carry and before it staged - and
+    records what the index lock said at that moment; then stages as the real
+    one does. `seen` collects `(addExit, claimHolderPid)` once."""
+    real = M._scoped_commit.stage
+
+    def racing(git_root, paths, kinds):
+        if not seen:
+            claim = _locks.read_lock(_index_claim_path(fx))
+            acode, _added = _add_task(fx, path=CONCURRENT)
+            seen.append((acode, (claim or {}).get("pid")))
+        return real(git_root, paths, kinds)
+    return real, racing
+
+
+CONCURRENT = "src/concurrent.py"
+
+
+def _added_ids(doc):
+    return [t.get("id") for t in (doc or {}).get("tasks") or []
+            if CONCURRENT in (t.get("files") or [])]
+
+
+@_own_repos
+def _index_lock_cases(check, repos):
+    """The state commit takes the index lock in a sharded plan and answers a
+    holder with the lock's own codes; a shard write landing mid-commit, on the
+    state commit and the task commit alike, never splits the shard from its
+    index rows at HEAD."""
+    # A LIVE HOLDER. Another run is writing the index right now.
+    fx = repos.make()
+    _structural_edit(fx)
+    claim = _plant_index_claim(fx, os.getppid())
+    before = _head(fx)
+    code, text = _state(fx)
+    held = _locks.read_lock(claim) or {}
+    check("lk1 RED-FIRST: a sharded plan whose index lock another LIVE run "
+          "holds - the state commit exits with the lock's live-holder code, "
+          "HEAD unmoved, nothing staged, and the holder's claim untouched: %r"
+          % ((code, text[-300:], held.get("token")),),
+          code == _locks.E_LIVE and _head(fx) == before and _staged(fx) == []
+          and held.get("token") == "t-another-run")
+    os.unlink(claim)
+
+    # A DEAD HOLDER: refused as stale until a human says take it over.
+    fx = repos.make()
+    _structural_edit(fx)
+    claim = _plant_index_claim(fx, _gone_pid())
+    before = _head(fx)
+    code, text = _state(fx)
+    check("lk2 RED-FIRST: a holder whose process is gone is refused with the "
+          "lock's stale code and the rerun it names, HEAD unmoved and nothing "
+          "staged: %r" % ((code, text[-300:]),),
+          code == _locks.E_STALE and "--takeover" in text
+          and _head(fx) == before and _staged(fx) == []
+          and os.path.exists(claim))
+    tcode, ttext = _state(fx, "--takeover")
+    after = _head(fx)
+    findings, _doc = (_validates_at(fx, after, repos.scratch("lk-takeover"))
+                      if after != before else (["no commit"], {}))
+    check("lk3 ...and `--takeover` takes that claim, commits the structural "
+          "edit as a pair validating on a fresh clone, and gives the lock "
+          "back: %r" % ((tcode, ttext[-300:], findings[:2]),),
+          tcode == 0 and after != before and findings == []
+          and not os.path.exists(claim))
+
+    # THE SECOND DIRECTION: a lock that refused with nobody holding it, or that
+    # the commit kept after it finished, would block every next writer.
+    fx = repos.make()
+    _structural_edit(fx)
+    before = _head(fx)
+    code, text = _state(fx)
+    check("lk4 OVER-FIRE TWIN: with no holder the state commit commits and "
+          "leaves no claim behind: %r" % ((code, text[-300:]),),
+          code == 0 and _head(fx) != before
+          and not os.path.exists(_index_claim_path(fx)))
+
+    # A SHARD WRITE LANDING DURING THE STATE COMMIT'S STAGING.
+    fx = repos.make()
+    _structural_edit(fx)
+    seen = []
+    real, racing = _racing_add(fx, seen)
+    before = _head(fx)
+    M._scoped_commit.stage = racing
+    try:
+        code, text = _state(fx)
+    finally:
+        M._scoped_commit.stage = real
+    after = _head(fx)
+    findings, _doc = (_validates_at(fx, after, repos.scratch("lk-state-race"))
+                      if after != before else (["no commit"], {}))
+    committed = _invariants.json_at(fx["root"], after, SHARD_REL)
+    check("lk5 RED-FIRST: the state commit holds the index lock while it "
+          "stages - the claim names this process at the moment staging "
+          "begins: %r" % (seen,),
+          len(seen) == 1 and seen[0][1] == os.getpid())
+    check("lk6 RED-FIRST: a `/audit:task add` landing between the state "
+          "commit's read and its staging cannot split the pair - HEAD "
+          "validates on a fresh clone, the added task is not in the committed "
+          "shard and is still in the working one: %r"
+          % ((seen, code, findings[:2], text[-200:]),),
+          len(seen) == 1 and seen[0][0] == 0 and code == 0 and after != before
+          and findings == [] and _added_ids(committed) == []
+          and len(_added_ids(_mio.read_json(fx["shard"]))) == 1)
+
+    # THE SAME WINDOW ON A TASK COMMIT, which takes no lock by design: the
+    # pair is held together by what is staged, not by who may write.
+    fx = repos.make()
+    _dirty_work(fx)
+    _gate(fx)
+    seen = []
+    real, racing = _racing_add(fx, seen)
+    before = _head(fx)
+    M._scoped_commit.stage = racing
+    try:
+        code, text = _run(fx)
+    finally:
+        M._scoped_commit.stage = real
+    after = _head(fx)
+    findings, _doc = (_validates_at(fx, after, repos.scratch("lk-task-race"))
+                      if after != before else (["no commit"], {}))
+    committed = _invariants.json_at(fx["root"], after, SHARD_REL)
+    check("lk7 RED-FIRST: a `/audit:task add` landing between the task "
+          "commit's read and its staging cannot split the pair - the commit "
+          "lands, HEAD validates on a fresh clone, the added task is not in "
+          "the committed shard and is still in the working one: %r"
+          % ((seen, code, findings[:2], text[-200:]),),
+          len(seen) == 1 and seen[0][0] == 0 and code == 0 and after != before
+          and findings == [] and _added_ids(committed) == []
+          and len(_added_ids(_mio.read_json(fx["shard"]))) == 1)
+
+    # THE SHARD PINNED TO ITS READ IS STILL WORK TO COMMIT. A state commit's
+    # do-nothing answer that skipped every pinned path, as it rightly skips the
+    # index `state_index` decides, would read a shard-only change as nothing
+    # uncommitted and never carry it.
+    fx = repos.make()
+    TI._evidence_file(fx["audit"], "passed")
+    TI._git(fx["root"], "add", "-A")
+    TI._git(fx["root"], "commit", "-q", "-m", "chore: settle the records")
+    _exhaust(fx)
+    before = _head(fx)
+    code, text = _state(fx)
+    after = _head(fx)
+    committed = _invariants.json_at(fx["root"], after, SHARD_REL) or {}
+    check("lk8 a state commit whose only change is the shard - a task blocked "
+          "with its attempts spent, no index row moved - commits the shard: %r"
+          % ((code, text[-300:]),),
+          code == 0 and after != before and SHARD_REL in _carried(fx, after)
+          and committed.get("tasks", [{}, {}])[1].get("status") == "blocked")
+
+
+def _state_json(fx, keep_tokens):
+    """`(exitCode, stdout, stderr)` of `--state --json` run as a command, the
+    way drive-phase and close-phase run it. `keep_tokens` passes this process's
+    lock tokens down, as a child of a run holding the index lock inherits
+    them."""
+    env = dict((k, v) for k, v in os.environ.items()
+               if not k.startswith("CLAUDE")
+               and (keep_tokens or k != _locks.TOKEN_ENV))
+    done = subprocess.run([sys.executable, _loader.script_path(
+        "commit-task-work.py"), fx["manifest"], PHASE, "--state", "--project",
+        fx["root"], "--json"], env=env, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, timeout=120)
+    return (done.returncode, done.stdout.decode("utf-8", "replace"),
+            done.stderr.decode("utf-8", "replace"))
+
+
+def _one_object(text):
+    """The JSON object `text` is in its entirety, or None - a line ahead of
+    the object, or after it, is no answer to a reader that parses stdout."""
+    try:
+        doc = json.loads(text)
+    except ValueError:
+        return None
+    return doc if isinstance(doc, dict) else None
+
+
+def _unborn(fx):
+    """`fx` with its history taken away: a repository on a branch with no
+    commit yet, every plan file untracked - the state right after
+    `/audit:init` in a fresh repository."""
+    _harness.remove_tree(os.path.join(fx["root"], ".git"))
+    for argv in (("init", "-q"), ("symbolic-ref", "HEAD", "refs/heads/main"),
+                 ("config", "user.email", "fixture@example.com"),
+                 ("config", "user.name", "Fixture"),
+                 ("config", "commit.gpgsign", "false")):
+        TI._git(fx["root"], *argv)
+    return fx
+
+
+@_own_repos
+def _lock_json_cases(check, repos):
+    """Under `--json` stdout is the one answer object whatever the lock said;
+    a state commit lands on an unborn branch; a shard taken out of git by hand
+    is not added back by the one-read pairing."""
+    # A HOLD RE-ENTERED: the parent run holds the lock, the child inherits its
+    # token, and the lock says so - on stderr, never ahead of the object.
+    fx = repos.make()
+    _structural_edit(fx)
+    before = _head(fx)
+    said = []
+    outer = _panel_write.acquire_index_lock(
+        fx["root"], _panel_write.read_config(fx["root"]),
+        os.path.abspath(fx["manifest"]), False, said.append, "[outer]",
+        "a parent run holding the index")
+    try:
+        code, stdout, stderr = _state_json(fx, keep_tokens=True)
+    finally:
+        _panel_write.release_index_lock(outer)
+    answer = _one_object(stdout) or {}
+    check("lk9 RED-FIRST: a `--state --json` run inside a parent's hold of the "
+          "index lock prints ONE JSON object on stdout naming the commit it "
+          "made, and the lock's re-entry line goes to stderr: %r"
+          % ((isinstance(outer, dict), code, stdout[:200], stderr[:200]),),
+          isinstance(outer, dict) and code == 0 and _head(fx) != before
+          and answer.get("committed") is True
+          and answer.get("commit") == _head(fx)
+          and "already yours" in stderr and "already yours" not in stdout)
+
+    # A REFUSAL: the answer is still one object, saying no commit was made.
+    fx = repos.make()
+    _structural_edit(fx)
+    claim = _plant_index_claim(fx, os.getppid())
+    before = _head(fx)
+    code, stdout, stderr = _state_json(fx, keep_tokens=False)
+    os.unlink(claim)
+    answer = _one_object(stdout) or {}
+    check("lk10 RED-FIRST: a `--state --json` run refused by a live holder "
+          "exits with the lock's code and prints ONE JSON object saying "
+          "nothing was committed, the lock's own lines on stderr: %r"
+          % ((code, stdout[:300], stderr[:200]),),
+          code == _locks.E_LIVE and _head(fx) == before
+          and answer.get("committed") is False and not answer.get("commit")
+          and answer.get("lockCode") == _locks.E_LIVE
+          and bool(answer.get("refused")) and "HELD" in stderr)
+
+    # AN UNBORN BRANCH: the shard pinned to its read still commits, as a root.
+    fx = _unborn(repos.make())
+    with io.open(fx["shard"], "rb") as fh:
+        shard_bytes = fh.read()
+    code, text = _state(fx)
+    made = subprocess.run(["git", "rev-list", "--count", "--all"],
+                          cwd=fx["root"], stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE).stdout.decode().strip()
+    shown = subprocess.run(["git", "show", "HEAD:%s" % (SHARD_REL,)],
+                           cwd=fx["root"], stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE)
+    check("lk11 a state commit on a branch with no commit yet makes "
+          "the root commit, carrying the shard at the bytes it was read as: %r"
+          % ((code, made, text[-300:]),),
+          code == 0 and made == "1" and shown.returncode == 0
+          and shown.stdout == shard_bytes)
+
+    # A SHARD TAKEN OUT OF GIT BY HAND, AND IGNORED, STAYS OUT.
+    fx = repos.make()
+    TI._git(fx["root"], "rm", "--cached", "-q", "--", SHARD_REL)
+    with io.open(os.path.join(fx["root"], ".gitignore"), "a",
+                 encoding="utf-8") as fh:
+        fh.write(u"\n%s\n" % (SHARD_REL,))
+    code, text = _state(fx)
+    in_head = TI._git(fx["root"], "ls-tree", "HEAD", "--", SHARD_REL).strip()
+    in_index = TI._git(fx["root"], "ls-files", "--", SHARD_REL).strip()
+    check("lk12 a shard the user untracked and ignored is committed as the "
+          "deletion git holds - not added back from its read - and stays on "
+          "disk: %r" % ((code, in_head, in_index, text[-200:]),),
+          code == 0 and in_head == "" and in_index == ""
+          and os.path.exists(fx["shard"]))
+
+
 STAGES = (("nm-block", "_no_maintenance_cases"),
           ("fg-block", "_fixture_git_cases"),("or-block", "_ordinary_cases"),("dc-block", "_declared_cases"),
           ("rc-block", "_records_cases"), ("ix-block", "_index_cases"),
@@ -4106,7 +4416,9 @@ STAGES = (("nm-block", "_no_maintenance_cases"),
           ("st-block", "_state_cases"),
           ("ss-block", "_state_staging_cases"),
           ("si-block", "_state_index_cases"),
-          ("tr-block", "_state_terse_cases"))
+          ("tr-block", "_state_terse_cases"),
+          ("lk-block", "_index_lock_cases"),
+          ("lj-block", "_lock_json_cases"))
 
 
 if __name__ == "__main__":
