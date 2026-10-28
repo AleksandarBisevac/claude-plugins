@@ -29,35 +29,40 @@
         "severity": "med",
         "file": "CHANGELOG.md:145-153",
         "issue": "The ### Fixed entry reports a defect that no release ever had. It says the state commit 'asked the assembled plan whether it was sharded ... so it never took the lock'. But `commit-task-work.py --state` does not exist at 0dfae3e7 (v3.6.0): `git show 0dfae3e7:plugins/audit/scripts/governance/commit-task-work.py` has no \"--state\", and the retired `commit-manifest-index.py` did take the index lock. `index_is_sharded` first appears in 52c80676, inside this same unreleased window, as a fix to the P142.1 verb. A reader on 3.6.0 would conclude they ran a lockless state commit. That is a claim about released behaviour the code history does not support.",
-        "resolution": "Drop the ### Fixed section and fold its content into the existing 'One commit verb' / Removed entries as what the verb does: `--state` takes the index lock in a sharded plan (it asks the index file on disk, and a file it cannot read counts as sharded), commits the shard from the bytes its index part was derived from, makes a root commit on a branch with no commit yet, and under `--json` keeps stdout one object with the lock's lines on stderr and a refusal carrying its `lockCode`."
+        "resolution": "Drop the ### Fixed section and fold its content into the existing 'One commit verb' / Removed entries as what the verb does: `--state` takes the index lock in a sharded plan (it asks the index file on disk, and a file it cannot read counts as sharded), commits the shard from the bytes its index part was derived from, makes a root commit on a branch with no commit yet, and under `--json` keeps stdout one object with the lock's lines on stderr and a refusal carrying its `lockCode`.",
+        "fixTask": "P147.2-bno"
       },
       {
         "id": "P147-R2",
         "severity": "low",
         "file": "CHANGELOG.md:134-138",
         "issue": "The non-UTF-8 path entry sits under ### Changed and says the drive 'now' reads such paths and, 'on Windows', compares them itself. `_git_path` and `_literal_matches` do not exist at 0dfae3e7; they were added by 1d95127f and a5f42ae9 with the recut and carry machinery, and 3bcd5772 only reworked them. So there is no 3.6.0 behaviour to have changed. Also `_changed_between` and `_unheld` now call `_literal_matches` on every platform, not only Windows, so 'on Windows' under-describes where the comparison happens.",
-        "resolution": "Fold the sentence into the recut / kept-tree entries as a property of reading a tree's work, and say the paths are compared by the drive rather than handed to git as pathspecs, with Windows named as the reason rather than the scope."
+        "resolution": "Fold the sentence into the recut / kept-tree entries as a property of reading a tree's work, and say the paths are compared by the drive rather than handed to git as pathspecs, with Windows named as the reason rather than the scope.",
+        "fixTask": "P147.3-bno"
       },
       {
         "id": "P147-R3",
         "severity": "low",
         "file": "CHANGELOG.md:62-64",
         "issue": "'a plan that could not be read gets nothing forced' is true only for a key that is not a redo's aside key. `_kept_tree_remedy` tests `_is_aside_key` first, so an aside-key tree gets `git worktree remove --force` and the save-first commands even when `task_ids` is None. The sentence follows 'offered to that kind of tree alone', which makes the unreadable-plan case read as covering that kind too.",
-        "resolution": "Say that a key which is neither a redo's nor a task of the plan, and any key when the plan could not be read, gets nothing forced (an unreadable plan offers `task-remove` only, once it reads)."
+        "resolution": "Say that a key which is neither a redo's nor a task of the plan, and any key when the plan could not be read, gets nothing forced (an unreadable plan offers `task-remove` only, once it reads).",
+        "fixTask": "P147.4-bno"
       },
       {
         "id": "P147-R4",
         "severity": "low",
         "file": "CHANGELOG.md:73-79",
         "issue": "'the fix run ... has the recorded cost of those suites held back from the runs before it' omits that `sweep_budget` caps the reserve at half the deadline (`min(recorded, timeout // 2)`). With a heavy suite the held-back share is not the recorded cost.",
-        "resolution": "Add 'up to half the deadline' (a word, no numeral) after 'held back'."
+        "resolution": "Add 'up to half the deadline' (a word, no numeral) after 'held back'.",
+        "fixTask": "P147.5-bno"
       },
       {
         "id": "P147-R5",
         "severity": "low",
         "file": "CHANGELOG.md:41-54",
         "issue": "'exit 1 with a `ROW NOT PROVEN:` line per row ... which stops the sign-off quoting each' - `lint_probe` quotes at most five (`rows[:5]`). Minor over-statement. Cosmetic: the start-charge entry has a short, awkwardly wrapped line ('running when. A repeated row for a state already reached folds').",
-        "resolution": "Say 'quoting the rows' and rewrap the start-charge entry."
+        "resolution": "Say 'quoting the rows' and rewrap the start-charge entry.",
+        "fixTask": "P147.6-bno"
       }
     ],
     "outcome": "[findings: 5 - 0 high, 1 med, 4 low; 0 with a recorded fix commit]"
@@ -67,8 +72,349 @@
     {
       "id": "P147.1",
       "title": "The CHANGELOG's unreleased section describes every user-visible change since 3.6.0",
-      "status": "in_progress",
+      "status": "done",
       "description": "CHANGELOG.md [Unreleased] covers only P142.1 (the one commit verb) and its Removed entry. Before 3.7.0 is cut, add, in the house style of earlier sections (### Added / Changed / Fixed / Removed, bold lead sentence, prose after), every user-visible change the plugin (plugins/audit/) landed since v3.6.0: read `git log --no-merges --format='%h %s' v3.6.0..HEAD -- plugins/audit` and each commit's diff and write each line from what landed, not from its title. Expected areas: sign-off runs the full gate once and probes a guarded lint only when the phase changed it, the lint probe named by the plan and bounded; red-first through a sweep-shaped command (passing suites with new cases red at HEAD, a suite file missing at HEAD, deadline sized from recorded cost); runner output normalised so CRLF from a Windows pipe is read the same everywhere; task trees following the phase head, recut with their work, never destroyed without proof they hold no work (redo keeps the old tree under a kept marker, one forced-removal function), and status advice naming what --force destroys; start-task charge accounting (repeated and echoed status rows); build commands that run at sign-off not defaulted into a phase gate; agent session temp cleanup; the state commit taking the index lock and committing on an unborn branch; the drive's Windows path handling (non-UTF-8 names). Tooling outside plugins/audit (tools/, tests/, ci.yml, prove-gates, sweep sharding) is not user-visible and gets no line. Keep the existing two entries; merge rather than duplicate. No number written into prose (`_output_lints.prose_number_claims` and `_deps.doc_prose_numbers` must stay empty); no F/P/BUG ids. Acceptance: every user-visible plugin change since v3.6.0 has a line; the prose lints are empty.",
+      "files": [
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__deps.py tests/test__output_lints.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "d95eee222219",
+      "outcome": {
+        "technical": "Edited only CHANGELOG.md [Unreleased]: kept the two existing entries (One commit verb; Removed commit-audit-state/commit-manifest-index) and added an Added section (sign-off lint probe via meta.buildCommands.lintProbe; kept-tree status row naming what --force destroys plus save-first commands; red-first through a sweep-shaped command; red-first deadline sized from recorded cost), more Changed entries (task tree follows phase head and is recut with its work; no drive step destroys a tree it cannot prove empty of work, redo keeps the old tree under a kept marker, one forced-removal function; start-task charge accounting incl. repeated and echoed status rows and hook call-began/run marks; sign-off-only build commands not defaulted into a phase gate, validator warning phases.signoff_only_gate.in-gate; runner output normalised through plain_text so CRLF reads the same; non-UTF-8 path bytes on Windows; agent session TMPDIR removed at end) and a Fixed entry (state commit takes the index lock in a sharded plan, commits on an unborn branch, one JSON object on stdout under --json). Each line was written from the diff: I read git show of every non-state commit in 0dfae3e7..HEAD touching plugins/audit (25 commits). Lines left out on purpose, with why: the commit titled 'Sign-off runs the full gate once' changed only the lint probe in plugins/audit (its diff there is drive-phase.py lint_probe and phase-signoff.md step 4b), so no full-gate-once claim is written; the Windows status-row commit (e47d66a1) changed only a docstring in audit-status.py, so no line; prove-gates worktree reaping (163b8a98) is tooling, only its sign-off wording in phase-signoff.md changed (folded into nothing user-visible beyond the probe entry). Gate: python3 tools/sweep-selftests.py tests/test__deps.py tests/test__output_lints.py -> exit 0, 2/2 files ok, 427 cases. Added lines checked: grep for digits and F/P/BUG ids finds only exit codes 0/1 and 'UTF-8'. Dependants (tests/test__deps.py, test__output.py, test__panel_settings.py, test__refs.py, tools/check-release-published.py, tools/lints/_deps.py, _output_lints.py, _refs.py): all still correct because this task changes only prose in CHANGELOG.md; the two suites that scan it (test__deps via doc_prose_numbers, test__output_lints via prose_number_claims) were run and are green; the other six read CHANGELOG.md only for its version headings/section structure, which is unchanged (no heading added or renamed except a new ### Added and ### Fixed under [Unreleased]); I did not run them (outside the task's gate), so that part is by reading the change, not by a run.",
+        "descriptive": "CHANGELOG [Unreleased] now describes every user-visible plugin change since 3.6.0 in house style, with the prose-number lints green."
+      },
+      "startedAt": "2026-10-28T22:10:23Z",
+      "completedAt": "2026-10-28T22:18:55Z",
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-28T22:15:51Z.516215",
+        "status": "passed",
+        "at": "2026-10-28T22:15:51Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "d95eee222219",
+        "at": "2026-10-28T22:18:55Z",
+        "return": "docs/audit/evidence/returns/P147.1/20261028T221023Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task (mode gate-only, expectRedFirst false): a documentation edit, no test added, so no red was owed",
+        "at": "n/a"
+      }
+    },
+    {
+      "id": "P147.2-bno",
+      "title": "fix P147-R1: The ### Fixed entry reports a defect that no release ever had. I...",
+      "status": "cancelled",
+      "description": "The ### Fixed entry reports a defect that no release ever had. It says the state commit 'asked the assembled plan whether it was sharded ... so it never took the lock'. But `commit-task-work.py --state` does not exist at 0dfae3e7 (v3.6.0): `git show 0dfae3e7:plugins/audit/scripts/governance/commit-task-work.py` has no \"--state\", and the retired `commit-manifest-index.py` did take the index lock. `index_is_sharded` first appears in 52c80676, inside this same unreleased window, as a fix to the P142.1 verb. A reader on 3.6.0 would conclude they ran a lockless state commit. That is a claim about released behaviour the code history does not support.\n\nResolution asked: Drop the ### Fixed section and fold its content into the existing 'One commit verb' / Removed entries as what the verb does: `--state` takes the index lock in a sharded plan (it asks the index file on disk, and a file it cannot read counts as sharded), commits the shard from the bytes its index part was derived from, makes a root commit on a branch with no commit yet, and under `--json` keeps stdout one object with the lock's lines on stderr and a refusal carrying its `lockCode`.",
+      "files": [
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "phase-no-paths"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: grouped: all five review findings are lines of one CHANGELOG section, fixed by one task"
+      },
+      "startedAt": "2026-10-28T22:19:08Z",
+      "completedAt": "2026-10-28T22:19:19Z",
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-28T22:19:06Z",
+          "text": "scope: CHANGELOG.md, every path the finding(s) P147-R1 name"
+        },
+        {
+          "at": "2026-10-28T22:19:06Z",
+          "text": "no suite: CHANGELOG.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__deps.py, tests/test__output.py, tests/test__panel_settings.py, tests/test__refs.py, tools/lints/_deps.py, tools/lints/_output_lints.py and 2 more"
+        },
+        {
+          "at": "2026-10-28T22:19:06Z",
+          "text": "gate-only, not tdd: every file P147-R1 names is a document (CHANGELOG.md) with no test of its own, so there is no case to write first and no red to show; the gate the task carries is its check"
+        }
+      ],
+      "fixes": [
+        "P147-R1"
+      ],
+      "reviewPerTask": "signals"
+    },
+    {
+      "id": "P147.3-bno",
+      "title": "fix P147-R2: The non-UTF-8 path entry sits under ### Changed and says the dri...",
+      "status": "cancelled",
+      "description": "The non-UTF-8 path entry sits under ### Changed and says the drive 'now' reads such paths and, 'on Windows', compares them itself. `_git_path` and `_literal_matches` do not exist at 0dfae3e7; they were added by 1d95127f and a5f42ae9 with the recut and carry machinery, and 3bcd5772 only reworked them. So there is no 3.6.0 behaviour to have changed. Also `_changed_between` and `_unheld` now call `_literal_matches` on every platform, not only Windows, so 'on Windows' under-describes where the comparison happens.\n\nResolution asked: Fold the sentence into the recut / kept-tree entries as a property of reading a tree's work, and say the paths are compared by the drive rather than handed to git as pathspecs, with Windows named as the reason rather than the scope.",
+      "files": [
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "phase-no-paths"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: grouped: all five review findings are lines of one CHANGELOG section, fixed by one task"
+      },
+      "startedAt": null,
+      "completedAt": "2026-10-28T22:19:19Z",
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-28T22:19:06Z",
+          "text": "scope: CHANGELOG.md, every path the finding(s) P147-R2 name"
+        },
+        {
+          "at": "2026-10-28T22:19:06Z",
+          "text": "no suite: CHANGELOG.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__deps.py, tests/test__output.py, tests/test__panel_settings.py, tests/test__refs.py, tools/lints/_deps.py, tools/lints/_output_lints.py and 2 more"
+        },
+        {
+          "at": "2026-10-28T22:19:06Z",
+          "text": "gate-only, not tdd: every file P147-R2 names is a document (CHANGELOG.md) with no test of its own, so there is no case to write first and no red to show; the gate the task carries is its check"
+        }
+      ],
+      "fixes": [
+        "P147-R2"
+      ]
+    },
+    {
+      "id": "P147.4-bno",
+      "title": "fix P147-R3: 'a plan that could not be read gets nothing forced' is true only...",
+      "status": "cancelled",
+      "description": "'a plan that could not be read gets nothing forced' is true only for a key that is not a redo's aside key. `_kept_tree_remedy` tests `_is_aside_key` first, so an aside-key tree gets `git worktree remove --force` and the save-first commands even when `task_ids` is None. The sentence follows 'offered to that kind of tree alone', which makes the unreadable-plan case read as covering that kind too.\n\nResolution asked: Say that a key which is neither a redo's nor a task of the plan, and any key when the plan could not be read, gets nothing forced (an unreadable plan offers `task-remove` only, once it reads).",
+      "files": [
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "phase-no-paths"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: grouped: all five review findings are lines of one CHANGELOG section, fixed by one task"
+      },
+      "startedAt": null,
+      "completedAt": "2026-10-28T22:19:20Z",
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-28T22:19:06Z",
+          "text": "scope: CHANGELOG.md, every path the finding(s) P147-R3 name"
+        },
+        {
+          "at": "2026-10-28T22:19:06Z",
+          "text": "no suite: CHANGELOG.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__deps.py, tests/test__output.py, tests/test__panel_settings.py, tests/test__refs.py, tools/lints/_deps.py, tools/lints/_output_lints.py and 2 more"
+        },
+        {
+          "at": "2026-10-28T22:19:06Z",
+          "text": "gate-only, not tdd: every file P147-R3 names is a document (CHANGELOG.md) with no test of its own, so there is no case to write first and no red to show; the gate the task carries is its check"
+        }
+      ],
+      "fixes": [
+        "P147-R3"
+      ]
+    },
+    {
+      "id": "P147.5-bno",
+      "title": "fix P147-R4: 'the fix run ... has the recorded cost of those suites held back...",
+      "status": "cancelled",
+      "description": "'the fix run ... has the recorded cost of those suites held back from the runs before it' omits that `sweep_budget` caps the reserve at half the deadline (`min(recorded, timeout // 2)`). With a heavy suite the held-back share is not the recorded cost.\n\nResolution asked: Add 'up to half the deadline' (a word, no numeral) after 'held back'.",
+      "files": [
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "phase-no-paths"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: grouped: all five review findings are lines of one CHANGELOG section, fixed by one task"
+      },
+      "startedAt": null,
+      "completedAt": "2026-10-28T22:19:21Z",
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-28T22:19:06Z",
+          "text": "scope: CHANGELOG.md, every path the finding(s) P147-R4 name"
+        },
+        {
+          "at": "2026-10-28T22:19:06Z",
+          "text": "no suite: CHANGELOG.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__deps.py, tests/test__output.py, tests/test__panel_settings.py, tests/test__refs.py, tools/lints/_deps.py, tools/lints/_output_lints.py and 2 more"
+        },
+        {
+          "at": "2026-10-28T22:19:06Z",
+          "text": "gate-only, not tdd: every file P147-R4 names is a document (CHANGELOG.md) with no test of its own, so there is no case to write first and no red to show; the gate the task carries is its check"
+        }
+      ],
+      "fixes": [
+        "P147-R4"
+      ]
+    },
+    {
+      "id": "P147.6-bno",
+      "title": "fix P147-R5: 'exit 1 with a `ROW NOT PROVEN:` line per row ... which stops th...",
+      "status": "cancelled",
+      "description": "'exit 1 with a `ROW NOT PROVEN:` line per row ... which stops the sign-off quoting each' - `lint_probe` quotes at most five (`rows[:5]`). Minor over-statement. Cosmetic: the start-charge entry has a short, awkwardly wrapped line ('running when. A repeated row for a state already reached folds').\n\nResolution asked: Say 'quoting the rows' and rewrap the start-charge entry.",
+      "files": [
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "phase-no-paths"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: grouped: all five review findings are lines of one CHANGELOG section, fixed by one task"
+      },
+      "startedAt": null,
+      "completedAt": "2026-10-28T22:19:22Z",
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-28T22:19:07Z",
+          "text": "scope: CHANGELOG.md, every path the finding(s) P147-R5 name"
+        },
+        {
+          "at": "2026-10-28T22:19:07Z",
+          "text": "no suite: CHANGELOG.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__deps.py, tests/test__output.py, tests/test__panel_settings.py, tests/test__refs.py, tools/lints/_deps.py, tools/lints/_output_lints.py and 2 more"
+        },
+        {
+          "at": "2026-10-28T22:19:07Z",
+          "text": "gate-only, not tdd: every file P147-R5 names is a document (CHANGELOG.md) with no test of its own, so there is no case to write first and no red to show; the gate the task carries is its check"
+        }
+      ],
+      "fixes": [
+        "P147-R5"
+      ]
+    },
+    {
+      "id": "P147.7-bno",
+      "title": "The 3.7.0 changelog states only what the code since 3.6.0 does: no fixed defect no release had, new behaviour under Added, each caveat the code carries",
+      "status": "in_progress",
+      "description": "Fix every review finding on CHANGELOG.md's [Unreleased] section; each line must state what the plugin code since v3.6.0 (0dfae3e7) does - verify against the code, not this text. No number in prose, no F/P/BUG ids.\n- P147-R1 (med) CHANGELOG.md:145-153: The ### Fixed entry reports a defect that no release ever had. It says the state commit 'asked the assembled plan whether it was sharded ... so it never took the lock'. But `commit-task-work.py --state` does not exist at 0dfae3e7 (v3.6.0): `git show 0dfae3e7:plugins/audit/scripts/governance/commit-task-work.py` has no \"--state\", and the retired `commit-manifest-index.py` did take the index lock. `index_is_sharded` first appears in 52c80676, inside this same unreleased window, as a fix to the P142.1 verb. A reader on 3.6.0 would conclude they ran a lockless state commit. That is a claim about released behaviour the code history does not support. Resolution: Drop the ### Fixed section and fold its content into the existing 'One commit verb' / Removed entries as what the verb does: `--state` takes the index lock in a sharded plan (it asks the index file on disk, and a file it cannot read counts as sharded), commits the shard from the bytes its index part was derived from, makes a root commit on a branch with no commit yet, and under `--json` keeps stdout one object with the lock's lines on stderr and a refusal carrying its `lockCode`.\n- P147-R2 (low) CHANGELOG.md:134-138: The non-UTF-8 path entry sits under ### Changed and says the drive 'now' reads such paths and, 'on Windows', compares them itself. `_git_path` and `_literal_matches` do not exist at 0dfae3e7; they were added by 1d95127f and a5f42ae9 with the recut and carry machinery, and 3bcd5772 only reworked them. So there is no 3.6.0 behaviour to have changed. Also `_changed_between` and `_unheld` now call `_literal_matches` on every platform, not only Windows, so 'on Windows' under-describes where the comparison happens. Resolution: Fold the sentence into the recut / kept-tree entries as a property of reading a tree's work, and say the paths are compared by the drive rather than handed to git as pathspecs, with Windows named as the reason rather than the scope.\n- P147-R3 (low) CHANGELOG.md:62-64: 'a plan that could not be read gets nothing forced' is true only for a key that is not a redo's aside key. `_kept_tree_remedy` tests `_is_aside_key` first, so an aside-key tree gets `git worktree remove --force` and the save-first commands even when `task_ids` is None. The sentence follows 'offered to that kind of tree alone', which makes the unreadable-plan case read as covering that kind too. Resolution: Say that a key which is neither a redo's nor a task of the plan, and any key when the plan could not be read, gets nothing forced (an unreadable plan offers `task-remove` only, once it reads).\n- P147-R4 (low) CHANGELOG.md:73-79: 'the fix run ... has the recorded cost of those suites held back from the runs before it' omits that `sweep_budget` caps the reserve at half the deadline (`min(recorded, timeout // 2)`). With a heavy suite the held-back share is not the recorded cost. Resolution: Add 'up to half the deadline' (a word, no numeral) after 'held back'.\n- P147-R5 (low) CHANGELOG.md:41-54: 'exit 1 with a `ROW NOT PROVEN:` line per row ... which stops the sign-off quoting each' - `lint_probe` quotes at most five (`rows[:5]`). Minor over-statement. Cosmetic: the start-charge entry has a short, awkwardly wrapped line ('running when. A repeated row for a state already reached folds'). Resolution: Say 'quoting the rows' and rewrap the start-charge entry.",
       "files": [
         "CHANGELOG.md"
       ],
@@ -93,14 +439,14 @@
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-28T22:10:23Z",
+      "startedAt": "2026-10-28T22:20:41Z",
       "completedAt": null,
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-28T22:15:51Z.516215",
+        "runId": "2026-10-28T22:26:36Z.e7a982",
         "status": "passed",
-        "at": "2026-10-28T22:15:51Z"
+        "at": "2026-10-28T22:26:36Z"
       }
     }
   ],
