@@ -1,7 +1,7 @@
 {
   "id": "P145",
   "title": "The release-tier CI is green on Windows: prove-gates' pool lifecycle and the sweep's deadline replay",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "Release-tier CI (ci.yml -f tier=release) green on the commit carrying P142, P144 and these fixes, every windows selftests shard included",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "f10ed7500bec4bd5f36315de0552416813e705c1",
   "branch": "audit/p145-the-release-tier-ci-is-green-o",
-  "mergedAt": null,
+  "mergedAt": "2026-10-28T20:15:00Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -156,5 +156,6 @@
     "runId": "2026-10-28T20:14:10Z.6af26e",
     "status": "passed",
     "at": "2026-10-28T20:14:10Z"
-  }
+  },
+  "mergedHead": "10237c35b7f1ceb3288b8a8ce100f34114518b4a"
 }
