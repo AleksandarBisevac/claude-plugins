@@ -22,19 +22,22 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P145-R1",
         "severity": "low",
         "file": "tools/prove-gates.py:3993",
         "issue": "pw5's registration conjunct `(still == [respelled] or (respelled is None and os.name == \"nt\"))` drops the second-spelling check entirely when os.symlink fails on Windows (no privilege). On that platform pw5 then proves only the reaper's old forward-slash behaviour, so the Windows-only half of the fix (canonical comparison of a differently spelled tree) is covered by pw14's injected resolver alone and never by a real git listing. The default `_canonical_path` (realpath + normcase on a real nt) is likewise not exercised against a real 8.3 name by any case this task adds; the only evidence that realpath expands RUNNER~1 is the pw6 line in CI log 123039432291.log, read on the runner's Python.",
-        "resolution": "No code change needed for the product. Either make pw5 fail loudly (not silently narrow) when the link cannot be made on nt, or note in the case text which spelling was exercised; confirm on the next windows-latest run that pw5, pw6 and pw13 pass with the symlink branch actually taken."
+        "resolution": "No code change needed for the product. Either make pw5 fail loudly (not silently narrow) when the link cannot be made on nt, or note in the case text which spelling was exercised; confirm on the next windows-latest run that pw5, pw6 and pw13 pass with the symlink branch actually taken.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       }
     ],
-    "outcome": "[findings: 1 - 0 high, 0 med, 1 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 1 - 0 high, 0 med, 1 low; 0 with a recorded fix commit]",
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "P145 makes the release-tier CI green on Windows. prove-gates' pool reaper compares pool roots, worktree paths and admin gitdirs on one canonical spelling and reports each reaped root as it was opened; the windows failures were the reported spelling, not a live pool reaped, and the dead-owner rule is unchanged. The sweep's deadline-replay case tt3c judges the replay without depending on how fast a runner starts a process. The one low finding is carried to BUG-29-dau.",
   "tasks": [
     {
       "id": "P145.1",
@@ -93,7 +96,7 @@
     {
       "id": "P145.2",
       "title": "prove-gates' pool reaper compares one canonical spelling of every path on Windows and never reaps a live run's pool",
-      "status": "in_progress",
+      "status": "done",
       "description": "Release-tier CI run 40751590388 (f10ed750), windows plain 1 and cp1252 1: tools/prove-gates.py --selftest fails pw5, pw6, pw13 (58/61); linux and macOS pass. Logs: <scratchpad>/ci144/123039432291.log and 123039432591.log (fetch with: gh run view 40751590388 --job 123039432291 --log-failed). pw5: 'spared [] (1 registered)' - the pool whose owner is LIVE was reaped, the exact property the reaper exists to keep (reap only on an explicit dead answer). Find out why on Windows: _locks.pid_alive's Windows probe (_pid_alive_windows) answering False for a live pid, the owner file's pid, or path spelling - the logs show three spellings of one temp root on Windows (C: then <home> with forward slashes, the same with backslashes, and <home> with its 8.3 short name RUNNER~1), and git worktree list prints forward slashes. pw6: the foreign tree after reap is listed but the case still fails - read its expectation. pw13: the by-name removal refused a pool tree as 'not under the pool root' when one side is RUNNER~1 and the other runneradmin, and dropped None. Fix the PRODUCT so every comparison of a worktree path, a pool root and an admin gitdir is made on one canonical spelling on Windows (realpath alone does not expand 8.3 names on every Python; os.path.normcase plus a long-name expansion, or comparing by os.path.samefile / file identity where the path exists). A reaper that removes a live run's pool on Windows is a med defect, not a test issue. Add POSIX-runnable cases that fail before the fix by injecting the Windows spellings (short name vs long name, slash direction, case) and, for pid liveness, an injected probe. Keep prove-gates' drive protocol byte-identical.",
       "files": [
         "tools/prove-gates.py"
@@ -116,27 +119,42 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ad94267b25e3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Diagnosis, from the CI log 123039432291.log lines 202-205: no live pool was reaped. In pw5, `spared` is [] and 1 tree is still registered, so the injected-live pool survived. pw5, pw6 and pw13 each fail on one conjunct only, `reaped == [<root as open_workers spelled it>]`: reap_stale returned roots as `git worktree list` prints them (C: then <home> with forward slashes), while open_workers keeps os.path.realpath (C: then <home> with backslashes). pw13's 'refused ... not under the pool root' (RUNNER~1 against runneradmin) is that case's EXPECTED refusal, since the foreign tree really is outside the pool, and 'dropped None' is the expected success. realpath did expand RUNNER~1 on that runner: pw6 found the foreign tree by realpath equality between git's long spelling and the fixture's short one. So I added no ctypes long-name pass. _locks._pid_alive_windows is not implicated: the failing cases inject `alive`. Fix, all in tools/prove-gates.py: (1) new _canonical_path(path, flavour=None) = normcase(realpath), the house spelling (same as stamp-verification._canonical_path); (2) _under(path, root, resolve=None) now delegates to _worktrees.within_tree, which uses a separator-neutral boundary, on canonical spellings; (3) new pure _admin_of(gitdirs, tree, resolve=None), so _drop_registration matches an admin gitdir through _worktrees.same_tree on canonical spellings; (4) reap_stale groups stale pools by canonical key and returns each root as realpath, the spelling open_workers records, computed before closing. No CLI output, exit code or drive protocol changed: the diff hunks are only in the pool helpers and the selftest. Tests: pw5 now respells the killed pool's registration through a symlinked parent (rewriting the admin gitdir), so on POSIX git lists a second spelling of one directory. It asserts the listing really shows that spelling and that the reported root is the opened one. pw14 is pure and runs on every OS: ntpath plus an injected Windows resolver (short to long name), covering slash/case folding of _canonical_path, _under across git, short and upper-case spellings, a prefix-sharing sibling and a foreign tree outside, and _admin_of picking the gitdir naming the tree under any spelling. pw15 uses the platform's real pid probe with no injection: a pool owned by this process stands, and one whose owner file names an exited child's pid is reaped. Mutations, run in a throwaway `git archive HEAD` export with this file copied over it and __pycache__ purged between runs: reap returning git's spelling -> pw5 FAIL; normcase dropped -> pw14 FAIL; _under on a bare prefix (over-fire) -> pw14 FAIL; _admin_of naming the first record -> pw14 FAIL; _under ignoring the resolver -> pw14 FAIL; probe always dead -> pw15 FAIL; probe always alive -> pw15 FAIL; restored -> all PASS. Commands: `python3 tools/sweep-selftests.py tools/prove-gates.py` exit 0 (63 cases, 47.1s); `python3 tools/prove-gates.py --selftest` exit 0 (63/63); `ruff check tools/prove-gates.py` exit 0; `vermin -t=3.8- --no-tips --violations tools/prove-gates.py` exit 0; sweep of tests/test__deps.py, test__gate_feed.py, test__output_lints.py, test_guard_bash_writes.py, test_drive_phase.py, test_render_report.py, test_stamp_verification.py exit 0 (7/7 files, 1984 cases); tests/test__refs.py exit 0 (292 cases); `prove-gates.py --list` exit 0. Dependants: .github/sweep-costs.json still correct (two cases added, local cost measured once at 47.1s, the table is not this task's); guard-bash-writes.py, tests/_harness.py, test__deps, test__gate_feed, test_drive_phase, test_guard_bash_writes still correct (they name the path or the mutation protocol, none of which changed; swept green); tools/affected.py and _deps.py still correct (`_call_name` unchanged; their `_under` is _invariants._under, not this one); `_git` and `selector_text` unchanged; prove-gates' own `_under` only gained an optional `resolve` argument. drive-phase lint_probe protocol is byte-identical (main/render untouched). tools/sweep-selftests.py is not touched in this tree (git status lists only tools/prove-gates.py), so nothing needed reverting. Launch-message note: the first launch message swapped the two P145 tasks. I followed the brief, as the later correction confirms.",
+        "descriptive": "prove-gates' pool reaper now reports each root it reaped in the spelling the run opened it under, and compares pool roots, worktree paths and admin gitdirs as one canonical path on Windows."
       },
       "startedAt": "2026-10-28T19:26:23Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-28T19:59:27Z",
+      "verifiedBy": [
+        "pw5 strengthened: a killed pool registered under a second spelling of its directory (symlinked parent) is reaped, and the reaper reports the root as the run opened it",
+        "pw14: Windows spellings of one directory (git's slashes, backslashes, RUNNER~1 vs runneradmin, upper case) are one directory to _canonical_path, _under and _admin_of; a prefix-sharing sibling and a foreign tree are not",
+        "pw15: with the real platform pid probe, a pool owned by a live process stands and one whose owner exited is reaped"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-28T19:56:39Z.0b98d2",
         "status": "passed",
         "at": "2026-10-28T19:56:39Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "ad94267b25e3",
+        "at": "2026-10-28T19:59:27Z",
+        "return": "docs/audit/evidence/returns/P145.2/20261028T192623Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "None owed: tests.mode regression, expectRedFirst false - and the helper could not separate the two anyway, because the cases live in the module they test (the declared test file IS tools/prove-gates.py, so copying it over HEAD carries the fix with it). What I watched instead, in my own worktree, cases drafted before any product edit: `python3 tools/prove-gates.py --selftest` exit 1, 'SELFTEST FAILED: 61/63 cases passed' - pw5 FAIL on an assertion (reaped [<tmp>/prove-gates-alias-mkujmipk/via/prove-gates-pool-9omw90i3] against <tmp resolved through /private>/prove-gates-pool-9omw90i3, i.e. the reaper reported git's spelling of the root, the Windows failure reproduced on macOS), pw14 FAIL as a missing symbol ('not injectable: NoneType object is not callable' - _canonical_path/_under(resolve)/_admin_of are introduced by this task), pw15 PASS on POSIX (a lock for the real Windows probe, not a red). After the fix: 63/63, exit 0.",
+        "at": "2026-10-28, before the product edit, in the P145.2 worktree (log <scratchpad>/p1452-red.log)"
       }
     }
   ],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "482d7bf5-025e-4eb9-acc8-1383e2a9aaa8",
-    "branch": "audit/p145-the-release-tier-ci-is-green-o",
-    "at": "2026-10-28T19:26:20Z"
-  },
-  "startedAt": "2026-10-28T19:26:20Z"
+  "startedAt": "2026-10-28T19:26:20Z",
+  "testEvidence": {
+    "runId": "2026-10-28T20:14:10Z.6af26e",
+    "status": "passed",
+    "at": "2026-10-28T20:14:10Z"
+  }
 }
