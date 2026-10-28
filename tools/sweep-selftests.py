@@ -231,6 +231,17 @@ TIMEOUT_PER_COST = 3
 # the three stops fitting.
 SWEEP_DEADLINE = 1380
 CI_SETUP_ALLOWANCE = 120
+# ...AND PAST IT NO JOB STARTS, except a replay, which is given at least this
+# many seconds however little of the deadline is left. A replay runs on the
+# slot its suite's last block held, a suite none of whose blocks started is
+# not replayed, and no block starts past the deadline - so the replays past it
+# are no more than the slots, run side by side, and together take at most this
+# out of the minute the render is left. On 2026-10-27, on macOS, a replay of
+# each of the four costliest staged suites over an empty list took 0.12-0.58s
+# in two runs five seconds apart (`time python3 tests/<suite> --selftest
+# --replay <file holding []>` re-derives it); this is ample over that for a
+# slower windows runner without eating the render's minute.
+REPLAY_RESERVE = 10
 
 # THE SPACED LEG. A user's temp directory, home or virtualenv can sit under a path
 # holding a space, and a path reached through a link is spelled two ways by
@@ -1181,13 +1192,18 @@ def run_one(rel_path, repo=None, encoding=None, timeout=DEFAULT_TIMEOUT,
     # THE WALL-CLOCK WINDOW this child ran in, for `claude_verdicts`: the monotonic
     # reading above measures a duration and cannot be compared with a file's stamp.
     began_ns = time.time_ns()
+    # WHAT A KILLED CHILD HAD PRINTED is kept apart from `output`, which is the
+    # sentence `grade` reads as a never-finished run's reason; `block_entry`
+    # hands it to the replay, so a block that hung still shows where it was.
+    partial = ""
     try:
         done = subprocess.run(argv, cwd=scratch, env=env, stdout=subprocess.PIPE,
                               stderr=subprocess.STDOUT, timeout=timeout)
         code = done.returncode
         output = child_text(done.stdout)
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
         code, output = None, "did not finish within %ds" % (timeout,)
+        partial = child_text(exc.stdout or b"")
     except OSError as exc:
         code, output = None, "could not be started: %s" % (exc,)
     ended_ns = time.time_ns()
@@ -1208,8 +1224,8 @@ def run_one(rel_path, repo=None, encoding=None, timeout=DEFAULT_TIMEOUT,
     for root in owned:
         remove_tree(root)
     return {"path": rel_path, "code": code, "output": output, "debris": debris,
-            "seconds": seconds, "grant": grant, "timeout": timeout,
-            "began_ns": began_ns, "ended_ns": ended_ns}
+            "partial": partial, "seconds": seconds, "grant": grant,
+            "timeout": timeout, "began_ns": began_ns, "ended_ns": ended_ns}
 
 
 def cases_in(output):
@@ -1676,7 +1692,9 @@ def record_costs(path, rows, swept, jobs, platform=None):
 # have given it (`file_timeout` at `stage_grant(jobs)`, `staged` so an untimed
 # suite gets the largest any entry would), which is what a block was allowed
 # when the suite ran its own pool, still cut by the deadline; cases bt1-bt3
-# read it off each block's environment. The replay is allowed the floor.
+# read it off each block's environment. The replay is allowed the floor, cut
+# by the deadline no lower than `REPLAY_RESERVE`; past the deadline no other
+# job starts, and each is named as not started (`not_started`).
 #
 # COSTS: a suite run this way holds one slot per process, so its row's
 # `seconds` - every block's and the replay's, summed (`suite_ran`) - are
@@ -1700,11 +1718,22 @@ def work_items(paths, costs, blocks):
 def block_entry(label, cases_path, ran):
     """What `_harness.replay_selftest` is told about one block the sweep ran:
     its label, the file it was told to write its cases to, its exit code and
-    output, and - when it never finished or never started - why."""
+    output, and - when it never finished or never started - why, with what a
+    block killed by its timeout had printed by then as its output."""
     never = ran["code"] is None
     return {"label": label, "cases": cases_path, "code": ran["code"],
-            "out": "" if never else ran["output"],
+            "out": (ran.get("partial") or "") if never else ran["output"],
             "why": ran["output"] if never else ""}
+
+
+def not_started(path, deadline):
+    """`run_one`'s shape for a job the sweep refused to start because its
+    `deadline` had passed: never finished, nothing left behind, no window, and
+    an output `grade` reads as the reason - so the file, or the block in its
+    suite's replay, is named rather than run for a second it cannot use."""
+    return {"path": path, "code": None, "debris": [], "refused": True,
+            "output": "not started: the sweep's deadline of %ds had passed"
+                      % (deadline,)}
 
 
 def suite_ran(path, blocks_ran, replay):
@@ -1758,7 +1787,8 @@ def sweep(paths, jobs=None, repo=None, encoding=None,
     writes down, and the slots it held (`grant`). `deadline`, seconds from
     this call, cuts each job's timeout to what is left of it when the job is
     admitted, so a file that hangs is named by then however late it started
-    (`sweep_deadline`).
+    (`sweep_deadline`), and a job admitted after it is not started but named
+    as such (`not_started`) - a replay excepted, given `REPLAY_RESERVE`.
 
     `exempt` is the spaced leg's table, `SPACED_EXEMPT` unless a caller hands
     one in; it is read on the spaced leg only.
@@ -1793,9 +1823,21 @@ def sweep(paths, jobs=None, repo=None, encoding=None,
     pending_blocks = dict((p, {"left": len(labels), "ran": []})
                           for p, labels in blocks.items() if labels)
 
-    def child(path, held, cap_timeout, extra=()):
-        left = (None if deadline is None
-                else max(1, int(deadline - (time.time() - started))))
+    def child(path, held, cap_timeout, extra=(), reserve=0):
+        # PAST THE DEADLINE A JOB IS NOT STARTED: a queue of jobs each given a
+        # one-second timeout still costs a slot-second apiece, and enough of
+        # them run the render past the job limit the deadline exists to beat.
+        # A replay (`reserve`, the least it is given) is never refused, so a
+        # suite whose blocks ran is not read as a hang for the second left.
+        # What is left is ROUNDED UP: a job cut by the deadline then runs to
+        # it rather than ending up to a second short, which would admit the
+        # next job before the deadline only to cut that one to a second too.
+        remaining = (None if deadline is None
+                     else deadline - (time.time() - started))
+        if remaining is not None and remaining <= 0 and not reserve:
+            return not_started(path, deadline)
+        left = (None if remaining is None
+                else max(1, reserve, int(-(-remaining // 1))))
         return run_one(path, repo, encoding,
                        cap_timeout if left is None else min(cap_timeout, left),
                        pycache, None, spaced, held,
@@ -1813,6 +1855,11 @@ def sweep(paths, jobs=None, repo=None, encoding=None,
             last = state["left"] == 0
         if not last:
             return None
+        # A SUITE NONE OF WHOSE BLOCKS STARTED is one row saying so, with no
+        # replay: only a suite with a block running at the deadline is
+        # replayed past it, so those replays number no more than the slots.
+        if all(r.get("refused") for _lab, _cp, r in state["ran"]):
+            return not_started(path, deadline)
         # THE LAST BLOCK OF THE SUITE TO END starts its replay, on the slot it
         # holds: the order the blocks ended in is the scheduler's, and the
         # replay puts them back in `STAGES` order.
@@ -1820,7 +1867,8 @@ def sweep(paths, jobs=None, repo=None, encoding=None,
         with io.open(listed, "w", encoding="utf-8") as fh:
             json.dump([block_entry(lab, cp, r) for lab, cp, r in state["ran"]],
                       fh)
-        replay = child(path, 1, timeout, ("--replay", listed))
+        replay = child(path, 1, timeout, ("--replay", listed),
+                       reserve=REPLAY_RESERVE)
         return suite_ran(path, [(lab, r) for lab, _cp, r in state["ran"]],
                          replay)
 
@@ -4357,8 +4405,8 @@ def _cases(check):
     check("bb4 a suite run as blocks stands for one result: the replay's exit "
           "and output, the debris of each finished block naming the block and "
           "none from a killed one, the seconds of every process summed, one "
-          "window each; the replay is told a killed block's why and not its "
-          "output: %r / %r" % (bb_suite, bb_entries),
+          "window each; the replay is told a killed block's why as its why, "
+          "never as its output: %r / %r" % (bb_suite, bb_entries),
           bb_suite["code"] == 1 and bb_suite["output"] == bb_replay["output"]
           and bb_suite["debris"] == ["block one, working directory: x",
                                      "home directory: z"]
@@ -4535,7 +4583,28 @@ def _cases(check):
             "a-slow": "import time\ntime.sleep(1.5)\n" + tt_ok,
             "b-quick": tt_ok,
             "hung": "import time\ntime.sleep(60)\n" + tt_ok,
+            # Two blocks: the first prints a line and hangs past the deadline,
+            # the second is queued behind it on the one worker.
+            "split-hang": (
+                "import sys, time\n"
+                "sys.path.insert(0, %r)\n"
+                "import _harness\n\n\n"
+                "def _x_cases(check):\n"
+                "    print('tt-partial-before-the-hang', flush=True)\n"
+                "    time.sleep(60)\n"
+                "    check('tx1 never reached', True)\n\n\n"
+                "def _y_cases(check):\n"
+                "    check('ty1 queued behind the hang', True)\n\n\n"
+                "STAGES = (('x-block', '_x_cases'), ('y-block', '_y_cases'))\n"
+                "if __name__ == '__main__':\n"
+                "    raise SystemExit(_harness.staged_main(sys.argv[1:], "
+                "STAGES, globals(), 'sweep-tt-'))\n"
+                % (os.path.join(REPO, "tests"),)),
         }
+        # The same suite with nothing to hang on: queued behind `hung`, none
+        # of its blocks is admitted before the deadline.
+        tt_files["split-quick"] = tt_files["split-hang"].replace(
+            "    time.sleep(60)\n", "")
         for tt_name, tt_body in tt_files.items():
             with io.open(os.path.join(tt_box, tt_name), "w",
                          encoding="utf-8") as fh:
@@ -4594,9 +4663,69 @@ def _cases(check):
               tt_hung["ok"] is False
               and "did not finish within" in (tt_hung.get("why") or "")
               and tt_took < 30)
+        # Costliest first, so `hung` holds the one worker past the deadline
+        # and `b-quick`, a file that passes in well under a second, is
+        # admitted after it: run, it would read green.
+        tt_t0 = time.time()
+        tt_queue = dict((r["path"], r) for r in sweep(
+            ["hung", "b-quick", "split-quick"], jobs=1, repo=tt_box,
+            costs={"hung": 100.0, "b-quick": 1.0, "split-quick": 1.0},
+            deadline=3))
+        tt_took = time.time() - tt_t0
+        tt_refused = "not started: the sweep's deadline of 3s had passed"
+        check("tt3b ...and a job admitted after the deadline is NOT STARTED but "
+              "named as such, where a one-second timeout would still have "
+              "spent a slot on it - a staged suite none of whose blocks "
+              "started is that one row, with no replay: %r after %.1fs"
+              % (dict((k, (v["ok"], v.get("why"), v.get("output")))
+                      for k, v in tt_queue.items()), tt_took),
+              tt_queue["b-quick"]["ok"] is False
+              and tt_queue["b-quick"].get("why") == tt_refused
+              and tt_queue["b-quick"].get("seconds") is None
+              and tt_queue["split-quick"]["ok"] is False
+              and tt_queue["split-quick"].get("why") == tt_refused
+              and tt_queue["split-quick"].get("output") == tt_refused
+              and tt_files["split-quick"].count("time.sleep") == 0
+              and "did not finish within" in (tt_queue["hung"].get("why") or "")
+              and tt_took < 30)
+        tt_t0 = time.time()
+        tt_cut = sweep(["split-hang"], jobs=1, repo=tt_box, deadline=2)[0]
+        tt_took = time.time() - tt_t0
+        tt_cut_out = tt_cut.get("output") or ""
+        check("tt3c ...a staged suite cut by the deadline is still REPLAYED, "
+              "past it, with what its killed block had printed, its block "
+              "killed by the timeout and its block refused each one failing "
+              "case naming why - the replay never read as a hang of its own: "
+              "ok %r after %.1fs, %r"
+              % (tt_cut.get("ok"), tt_took, tt_cut_out[-900:]),
+              tt_cut.get("ok") is False
+              and tt_cut_out.count("tt-partial-before-the-hang") == 1
+              and re.search(r"(?m)^FAIL x-block DID NOT REPORT .*did not "
+                            r"finish within \d+s", tt_cut_out) is not None
+              and re.search(r"(?m)^FAIL y-block DID NOT REPORT .*not started: "
+                            r"the sweep's deadline of 2s had passed",
+                            tt_cut_out) is not None
+              and "PASS ty1" not in tt_cut_out
+              and tt_cut_out.rstrip().endswith(
+                  "SELFTEST FAILED: 0/2 cases " + "passed")
+              and tt_took < 30)
     finally:
         remove_tree(tt_box)
 
+    tt_entries = [
+        block_entry("x", "x.json", {"code": None, "partial": "where it hung\n",
+                                    "output": "did not finish within 7s"}),
+        block_entry("y", "y.json", {"code": 0, "partial": "never read\n",
+                                    "output": "1/1 done\n"}),
+        block_entry("z", "z.json", not_started("z-suite", 9))]
+    check("tt3d block_entry hands the replay a killed block's partial output as "
+          "its output and the timeout as why, a finished block's own output "
+          "and never a partial, and a refused block an empty output: %r"
+          % (tt_entries,),
+          [(e["out"], e["why"]) for e in tt_entries]
+          == [("where it hung\n", "did not finish within 7s"),
+              ("1/1 done\n", ""),
+              ("", "not started: the sweep's deadline of 9s had passed")])
     tt_env = [sweep_deadline({"CI": "true"}), sweep_deadline({"CI": "false"}),
               sweep_deadline({})]
     check("tt4 the deadline applies on a CI runner, where a job limit exists to "

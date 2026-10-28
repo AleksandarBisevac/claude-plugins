@@ -1114,14 +1114,31 @@ def run_stages(check, script, labels, prefix, workers=None, timeout=None):
     replay_results(check, results)
 
 
+def encodable(text, stream):
+    """`text` as `stream` can write it: each character its encoding cannot
+    spell becomes a backslash escape, and every other character is kept.
+
+    A BLOCK'S OUTPUT IS TEXT ANOTHER PROCESS DECODED, and the stream it is
+    replayed to is this process's, in this process's codec - strict cp1252 on a
+    Windows pipe. The sweep reads a block's bytes as UTF-8, so a byte a legacy
+    codec wrote arrives as U+FFFD, which cp1252 cannot spell; written strictly,
+    one such character raised out of the replay and hid every case of the
+    suite behind a `0/1` tally. A stream that names no encoding (a `StringIO`)
+    is treated as UTF-8."""
+    encoding = getattr(stream, "encoding", None) or "utf-8"
+    return text.encode(encoding, "backslashreplace").decode(encoding)
+
+
 def replay_results(check, results):
     """Replay what each block of `results` reported, in that order, through
     `check`; a block that wrote no cases is ONE NAMED failing case, and a case
-    id claimed from call sites in two blocks is a duplicate."""
+    id claimed from call sites in two blocks is a duplicate. What each block
+    printed is written through `encodable`, so it cannot fail on this
+    process's codec."""
     sites = {}
     for res in results:
-        sys.stdout.write(res["out"])
-        sys.stderr.write(res["err"])
+        sys.stdout.write(encodable(res["out"], sys.stdout))
+        sys.stderr.write(encodable(res["err"], sys.stderr))
         if res["report"] is None:
             check("%s DID NOT REPORT - its process ended without writing its "
                   "cases, so the cases in THIS block did not run; every other "
@@ -2216,6 +2233,44 @@ def _stage_runner_cases(check):
           code == 1 and len(fails) == 1
           and fails[0].startswith("FAIL b-block RAN 2 TIMES")
           and out.count("PASS y1 ") == 1 and out.count("PASS x1 ") == 1)
+
+    # A block's output reaches the replay as text the sweep decoded, and the
+    # replay prints it to a stream in the child's own codec - strict cp1252 on a
+    # Windows pipe. The fixture text carries one character cp1252 holds and two
+    # it does not (an arrow, and the U+FFFD a cp1252 byte decodes to as UTF-8),
+    # so a replay that writes it strictly raises before a single case prints.
+    told = u"café → � printed by a passing block\n"
+    listed = os.path.join(work, "replay-legacy.json")
+    with open(listed, "w", encoding="utf-8") as fh:
+        json.dump([dict(a_entry, out=told + a_entry["out"]), b_entry], fh)
+    legacy = subprocess.run(
+        [sys.executable, good, "--selftest", "--replay", listed],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
+        env=dict(os.environ, PYTHONIOENCODING="cp1252", PYTHONUTF8="0"),
+        timeout=120)
+    shown = legacy.stdout.decode("cp1252", "replace")
+    order = [line.split()[1] for line in shown.splitlines()
+             if line.startswith(("PASS ", "FAIL "))]
+    told_lines = [line for line in shown.splitlines()
+                  if line.endswith("printed by a passing block")]
+    check("sr19 a block that printed text a strict cp1252 stdout cannot encode "
+          "replays green there, every case and the exact tally kept, and the "
+          "block's own line still printed once: exit %r, %r, %r, %r"
+          % (legacy.returncode, order, told_lines,
+             legacy.stderr.decode("cp1252", "replace")[-300:]),
+          legacy.returncode == 0 and order == ["x1", "x2", "y1"]
+          and shown.rstrip().endswith("ALL PASS: 3/3 cases " + "passed")
+          and len(told_lines) == 1 and told_lines[0].startswith(u"café "))
+    # sr19b's second half is the direction a helper that escaped every
+    # non-ASCII character would fail: a codec that spells the text keeps it.
+    import io
+    spelled = [encodable(told, io.TextIOWrapper(io.BytesIO(), encoding=enc))
+               for enc in ("cp1252", "utf-8")]
+    check("sr19b encodable escapes only what the stream's codec cannot spell - "
+          "cp1252 keeps the e-acute and escapes the arrow and U+FFFD, UTF-8 "
+          "keeps all three: %r" % (spelled,),
+          spelled == [u"café \\u2192 \\ufffd printed by a passing block\n",
+                      told])
 
 
 # A suite that pushes to a local bare repository with BARE git, no fixture prefix,
