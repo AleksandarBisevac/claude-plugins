@@ -22,31 +22,36 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P146-R1",
         "severity": "low",
         "file": "tests/test_usage_ledger.py (lf4)",
         "issue": "lf4 failed once on windows cp1252 2 of run 40765135807 (written=1 spent=0.75s of a 3.0s wait) and passed on the rerun: a wall-clock threshold on a loaded runner.",
-        "resolution": "Judge lf4 by whether append_rows waited on the lock at all (an injected clock or a counted wait), not by elapsed seconds."
+        "resolution": "Judge lf4 by whether append_rows waited on the lock at all (an injected clock or a counted wait), not by elapsed seconds.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P146-R2",
         "severity": "low",
         "file": "tests/test_integrate_task.py:377-379",
         "issue": "The closure probe runs with check=True and capture_output=True, so when the fresh interpreter fails (import error in _deps, a timeout on a loaded windows runner) the raised CalledProcessError prints only the exit status; the child's stderr, the one thing that names the cause, is captured and dropped. This is the same class of remote-only, hard-to-diagnose failure the task is fixing (a CI-only raise in block itf).",
-        "resolution": "Run without check=True, and on a non-zero returncode raise RuntimeError carrying done.stderr.decode('utf-8', 'replace') (and the returncode), as the 'lacks wanted' branch already does for an empty probe."
+        "resolution": "Run without check=True, and on a non-zero returncode raise RuntimeError carrying done.stderr.decode('utf-8', 'replace') (and the returncode), as the 'lacks wanted' branch already does for an empty probe.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       }
     ],
-    "outcome": "[findings: 2 - 0 high, 0 med, 2 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 2 - 0 high, 0 med, 2 low; 0 with a recorded fix commit]",
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "P146 keeps the integrate suite's map-owner fixture inside the fixture hang bound on a loaded windows runner: it seeds the module-map recipe's own import closure instead of all of the plugin's scripts and lints, so the base commit is a handful of files on every OS and the cases still run the real recipe. The two low findings are carried to BUG-29-dau.",
   "tasks": [
     {
       "id": "P146.1",
       "title": "The itf fixture copies only what the module-map recipe reads, so its base commit stays inside the fixture hang bound on windows",
-      "status": "in_progress",
+      "status": "done",
       "description": "Release-tier CI run 40765135807 (db9a980f, the merge of origin/main's archmap listing, which touches only .claude-plugin/marketplace.json), windows cp1252 3, attempt 1 AND its rerun: tests/test_integrate_task.py block itf raised while its cases were being built - 'git add -A did not finish within 30s' (tests/_harness.py git(), GIT_TIMEOUT), trace2 tail showing only cmd_ancestry. The same suite passed on every leg of run 40761628365 (10237c35, same code minus the merge). Logs: <scratchpad>/ci145m/123087138925.log and r2-123097921374.log. The fixture _world('itf', seed=_seed_map_owner) copies the whole of plugins/audit/scripts and tools/lints into a scratch repo and commits it with one git add -A, under the harness's 30 s hang bound tuned for small fixtures; on a loaded windows runner (four suites in parallel, Defender scanning fresh files) that add can exceed it. Find the structurally correct fix: preferably the fixture copies only what the map owner's recipe (_deps --write-map) actually reads, so the add is small on every OS; or the harness's fixture-git bound is derived from the work it is handed rather than one constant, with the hang still named. Do not raise the constant alone. Measure the fixture's file count and its add time locally before and after. Keep the itf case's meaning (an undeclared module-map edit whose bytes the recipe does not reproduce stays a decision; the over-fire direction too).",
       "files": [
         "tests/test_integrate_task.py"
@@ -67,27 +72,38 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "08b323d377d1",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tests/test_integrate_task.py only. _seed_map_owner no longer copytrees all of plugins/audit/scripts and tools/lints. A new _recipe_closure() starts a fresh interpreter (_CLOSURE_PROBE), imports _deps with tools/lints first on sys.path (the way `_deps.py --write-map` starts), and keeps every loaded module __file__ under SCRIPTS_DIR or LINTS_DIR, relative to REPO_ROOT. If tools/lints/_deps.py or scripts/_output.py is missing from the set, it raises RuntimeError, so an empty or broken probe cannot pass silently. Today the set is _output.py, _deps.py and _output_lints.py. _follower_cases computes the set once and seeds both itf and itg with it. What the recipe reads: module-level imports (_output, _output_lints, then install_path) plus render(), which AST-parses every .py under the fixture's scripts/ (_module_files -> _output.lint_py_files) and the guide. Over the closure the recipe still really renders and writes a map. A module render() loaded lazily would make _write_map fail (check=True), not pass. Measured locally on macOS with scratchpad/measure_itf.py, 4 runs per seed (same files as the fixture minus a.txt and audit-plan.json): old seed 233 files, git add -A 0.257-0.263s, recipe 5.31-5.47s; new seed 5 files, add 0.025s, recipe 0.089-0.091s. Whole suite run directly, two rounds with a 20s gap: HEAD copy 26.6s/26.3s, edited 4.5s/4.5s, 34/34 each time. Gates: sweep-selftests tests/test_integrate_task.py exit 0, 34 cases [5.0s]; --encoding cp1252 exit 0, 34 cases [4.8s], both halves ran. ruff exit 0, vermin -t=3.8- exit 0; prose_number_claims() and house_style_violations() report nothing for this file. The case meanings are unchanged; their teeth are shown in redFirst.basis. The fix is the closure, not the harness: tests/_harness.py and GIT_TIMEOUT are untouched. Process notes: the two seed= call-site replacements were made with a python heredoc through Bash (scripted replace with an asserted count of one each), not with Edit; Edit was never refused. I also ran a read-only `git stash list`; no stash was made. Dependants: test_commit_task_work.py imports test_integrate_task.GIT, which is unchanged, so still correct. .github/sweep-costs.json records this file at the 123.4 figure; it now over-states the cost, which is safe as a hang-timeout input, and re-recording is the orchestrator's call. PLUGIN-BUILD-GUIDE.md only names this file as where the cases live, so still correct; the fixture still reads it. integrate-task.py is unchanged and its follower path is still exercised in both directions. test_drive_phase.py's INTEGRATE_SUITE and its own _follower_cases do not touch these names, so still correct. Observation, out of scope: the first follower case prints no id (its label starts 'an undeclared module-map edit'), and has since it was added in 43c4ec1e.",
+        "descriptive": "The itf/itg fixture now commits the recipe's own import closure instead of the whole plugin, so its base git add -A is small on every OS while both follower directions stay meaningful."
       },
       "startedAt": "2026-10-28T21:17:46Z",
-      "completedAt": null,
+      "completedAt": "2026-10-28T21:32:04Z",
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-28T21:30:30Z.a0a61c",
         "status": "passed",
         "at": "2026-10-28T21:30:30Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "08b323d377d1",
+        "at": "2026-10-28T21:32:04Z",
+        "return": "docs/audit/evidence/returns/P146.1/20261028T211746Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task (expectRedFirst false, tests.add none): no new case is owed a red. The existing cases were still checked for teeth over the smaller fixture in a throwaway git-archive HEAD export with the edited suite copied in (scratchpad/mut, since deleted), never in the shared tree: follower guard never fires (condition -> if False) -> 'an undeclared module-map edit ...' and i9c FAIL, 32/34, exit 1; guard always fires (condition -> recipe match only) -> i9b FAIL, 33/34, exit 1; restored -> 34/34 exit 0. __pycache__ purged between runs; each mutation's landing counted with grep -c = 1.",
+        "at": "2026-10-28, executor session, before submit"
       }
     }
   ],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "482d7bf5-025e-4eb9-acc8-1383e2a9aaa8",
-    "branch": "audit/p146-the-integrate-suite-s-map-owne",
-    "at": "2026-10-28T21:17:46Z"
-  },
-  "startedAt": "2026-10-28T21:17:46Z"
+  "startedAt": "2026-10-28T21:17:46Z",
+  "testEvidence": {
+    "runId": "2026-10-28T21:44:31Z.6741db",
+    "status": "passed",
+    "at": "2026-10-28T21:44:31Z"
+  }
 }
