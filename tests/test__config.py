@@ -2728,6 +2728,53 @@ def _cases(check):
               M.call_start(cw_root, cw_cfg, cw_main) == 1000.0
               and M.call_start(cw_root, cw_cfg, cw_sub) == 2000.0
               and M.writer_key(cw_main) != M.writer_key(cw_sub))
+        # A start recorded with the call's id is one write of one record: a
+        # second write adding the id would leave a window in which the record
+        # names no call. Counted, so a writer that wrote twice turns this red.
+        cw_real_write, cw_writes = M.atomic_write_text, []
+
+        def cw_counting(path, text):
+            cw_writes.append(text)
+            return cw_real_write(path, text)
+        M.atomic_write_text = cw_counting
+        try:
+            cw_path = M.record_call_start(cw_root, cw_cfg, cw_main, now=3000.0,
+                                          call="toolu_x")
+        finally:
+            M.atomic_write_text = cw_real_write
+        with open(cw_path, "r", encoding="utf-8") as fh:
+            cw_held = json.load(fh)
+        cw_read = (M.call_start(cw_root, cw_cfg, cw_main),
+                   M.call_start(cw_root, cw_cfg, cw_main, call="toolu_x"),
+                   M.call_start(cw_root, cw_cfg, cw_main, call="toolu_y"))
+        M.record_call_start(cw_root, cw_cfg, cw_main, now=4000.0)
+        cw_unnamed = (M.call_start(cw_root, cw_cfg, cw_main),
+                      M.call_start(cw_root, cw_cfg, cw_main, call="toolu_x"))
+        check("cw5 a start recorded with its call's id is written once, the "
+              "moment and the id in one record; read for that call it is the "
+              "moment, for another call or from a record naming none it is "
+              "None, and read for no call it is the moment either way "
+              "(writes, record, reads, unnamed record): %r"
+              % ((cw_writes, cw_held, cw_read, cw_unnamed),),
+              len(cw_writes) == 1
+              and cw_held == {"at": 3000.0, M.CALL_ID_KEY: "toolu_x"}
+              and cw_read == (3000.0, 3000.0, None)
+              and cw_unnamed == (4000.0, None))
+        # A record holding valid JSON that is not an object, or a moment that
+        # is a boolean, is no start - and reading it never raises, for the
+        # guard's reading or for a call's.
+        cw_bad = []
+        for cw_text in ("[1]", "5", "null", '"x"', '{"at": true}'):
+            with open(cw_path, "w", encoding="utf-8") as fh:
+                fh.write(cw_text)
+            cw_bad.append(_harness.attempt(M.call_start, cw_root, cw_cfg,
+                                           cw_main))
+            cw_bad.append(_harness.attempt(M.call_start, cw_root, cw_cfg,
+                                           cw_main, call="toolu_x"))
+        check("cw6 a call-start record that is not an object, or whose moment "
+              "is a boolean, reads as no start for the guard and for a call, "
+              "and never raises: %r" % (cw_bad,),
+              cw_bad == [(True, None)] * 10)
         cw_file = os.path.join(cw_root, "f.txt")
         with open(cw_file, "w", encoding="utf-8") as fh:
             fh.write("x")

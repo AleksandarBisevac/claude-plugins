@@ -2982,7 +2982,7 @@
     {
       "id": "P142.45-6yq",
       "title": "repair_asides classifies a recorded move by git's record, so it never wedges the drive or takes back over a new tree",
-      "status": "in_progress",
+      "status": "done",
       "description": "A redo sets the old task tree aside: it records the move, locks git's record of it, renames the tree, and repairs. repair_asides runs at the start of every drive step and finishes any move still recorded. It chooses between \"never moved\", \"moved\" and \"stands at neither\" by which directory exists. It never asks git's own record. Adversarial probes in scratchpad/p142-43-adv/r2/ (the orchestrator gives the full path) reproduce two failures:\n- p3.py: a failed repair is followed by a human deleting the aside, with its record. Every later drive step then stops with \"put the tree at <aside>\", which is impossible. That wedges the whole phase, and no answer reaches it.\n- p4.py: a half-held repair (repair succeeded, a submodule repoint failed), then the aside is deleted and a new tree is cut at the task path. The next step rewrites the new tree's marker with the old record, says \"taken back\", and leaves the old record locked.\nFix by invariant: a recorded move is classified by git's record.\n- No admin dir: the record is gone, so forget the move with a did-line and never stop.\n- Take back only when admin_dir(from) is the recorded admin and its gitdir names `from`.\n- Repair only when the recorded admin is the record.\n- repair_asides may stop the drive only for a live locked record whose tree is missing. Its remedy must name an action that exists.\nSame functions, low:\n(a) _take_back_aside drops its entries even when its unlock failed, so the drive's own lock outlives the move (p2.py). Keep a record until the unlock holds.\n(b) _repoint_module stops forever when os.path.relpath cannot relate two drives. Write an absolute core.worktree there, as git does. aside_unread's remedy names the step that failed (the repoint or the read-back), not `git worktree repair`, which succeeds by hand.\n(c) `git worktree repair` needs git 2.30. Check the floor before the set-aside and refuse the redo with a clear stop, rather than after the rename.\n(d) audit-status lists a set-aside key under KEPT TREES with the remedy `task-remove <taskId>`, which cannot act on that key. Name a remedy that works for an aside.\nRed-first a case for each of the two failures and for (a)-(d). No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -3013,31 +3013,57 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "64286afb0cc0",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: repair_asides now settles each recorded move through _settle_move, classified by git's record of the tree (the admin dir the move recorded, the tree its gitdir names via _record_names, the marker and the lock in it via _lock_reason), never by which directory stands. No admin dir -> _forget_move with a did-line, never a stop (p3). Record names `from` and `from` holds it -> take back, but only when the marker names the set-aside key or the lock is the drive's; a tree cut there since (git reuses a pruned record's dir name, verified with git 2.53.0) is left alone (p4 and its reused-name variant). Record names `from` or the aside and the aside holds it -> repair. Otherwise the tree is missing: only a record under the drive's own ASIDE_LOCK stops (aside_missing), naming `git worktree repair <from>` when the tree is back at `from` (p2) or `git worktree unlock <path>` + `git worktree prune`; any other record is forgotten. (a) _take_back_aside drops the entries only once marker and unlock both held; otherwise the move stays recorded and the next step retries. (b) _repoint_module writes the absolute path when os.path.relpath raises ValueError across drives; _repair_moved_tree/_finish_aside now return (step, why) and aside_unread picks the remedy per step from ASIDE_REMEDY (repair, repoint, read-back, unlock). (c) _git_floor asks `git --version` before set_aside_tree records/locks/moves anything; below 2.30 the redo stops. audit-status.py: kept_trees_block takes the loaded manifest and gives each tree a remedy (_kept_tree_remedy): task-remove for a plan task, `/audit:phase <phase>` while asideMoves still records it, else `git worktree remove <path>`; _kept_tree_lines prints it on the row. PLUGIN-BUILD-GUIDE.md: the set-aside paragraph rewritten for the classification, the per-step remedy, the git floor, the absolute repoint and the status remedy; ta13b reference replaced. Tests: ta13 updated to the (step, why) contract; ta13b (cross-drive was a reason) replaced by ta18 (absolute path); new ta15, ta15b, ta16, ta16b, ta17, ta18, ta18b, ta18c, ta19 in _aside_record_cases; kt5, kt5b in test_audit_status. Red first, before the fix: `python3 tests/test_drive_phase.py --selftest --stage ta-block` -> SELFTEST FAILED 23/33 with ta13, ta15, ta15b, ta16, ta16b, ta17, ta18, ta18b, ta18c, ta19 FAIL; `python3 tests/test_audit_status.py --selftest` -> kt5, kt5b FAIL (sl1-sl3 also failed there, environmental: under the sweep the same suite is 400/400 ok). After: ta-block ALL PASS 33/33; `python3 tools/sweep-selftests.py tests/test_drive_phase.py` exit 0, 660 cases ok [1608.1s, 117 blocks]; `python3 tools/sweep-selftests.py tests/test_audit_status.py` exit 0, 400 cases; `python3 tools/sweep-selftests.py tests/test__output_lints.py tests/test__deps.py` exit 0, 427 cases; ruff exit 0; vermin -t=3.8- exit 0. Mutation probe scratchpad/P142.45-probe/mutations.py (copies the tree, asserts each anchor once and the edit landed, purges __pycache__, --tree PATH): 16 of 16 rows held - both baselines PASS, m1-m14 KILLED including over-fire rows m4 (never stop), m5 (always stop), m9, m11 (every git refused), m13. Reviewer probes rerun on this tree (scratchpad/P142.45-probe/adv/): p3 steps 0-2 -> None (was a stop each step); p4 -> new tree marker base unchanged, step stops naming unlock+prune; p2 -> stops naming `git worktree repair <from>`, entries kept, and running that remedy then next takes it back unlocked with state cleared (p2b.py). Dependants: tests/test_drive_phase.py changed as above; tools/affected.py, README.md, docs/research/pipeline-cost-design.md, detect-plan-skip.py, record-risk-confirmation.py, stamp-verification.py name drive-phase.py by path/basename and use none of the changed functions - still correct; _git_said/_index_flags/_carries/_clip untouched. audit-status.py: kept_trees_block keeps its two-argument call (ta1b passes, 3rd arg optional); docs/examples/azure-pipelines.yml, tools/verify.sh, tests/test_run_test_gate.py, CONTRIBUTING.md, pipeline-cost-results.md, demo-large.html read --gate/--json or other blocks - KEPT TREES renders only on the bare render and --json carries no such block (kt4 passes), so still correct. tests/test_audit_status.py dependants (_cases/_fixture/_selftest in test__status_facts.py, tools/affected.py) unchanged. PLUGIN-BUILD-GUIDE.md dependants (evals, _doctor_hygiene, test__deps etc.) read other sections; test__deps 254 cases ok. Not covered by a suite case: the p2 remedy path (verified by probe p2b only).",
+        "descriptive": "A recorded set-aside move is now settled by git's own record, so a deleted aside or record no longer wedges the drive, a new tree at the task path is never taken back, and every stop names a command that acts."
       },
       "startedAt": "2026-10-28T06:21:18Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-28T07:11:39Z",
+      "verifiedBy": [
+        "ta15: a move whose record and aside a human removed is forgotten with a did-line, no step stops",
+        "ta15b: a live drive-locked record whose tree is gone stops, and its unlock+prune remedy runs and the next step goes on",
+        "ta16: a new tree cut at the task path over a half-held move keeps its marker base; the stop names the unlock",
+        "ta16b: a new tree given the pruned record's directory name is not taken back",
+        "ta17: a take-back whose unlock fails keeps the move recorded; the next step unlocks it",
+        "ta18: a cross-drive submodule repoint writes an absolute core.worktree",
+        "ta18b/ta18c: a repoint or read-back failure stops naming that step, not git worktree repair",
+        "ta19: git older than 2.30 refuses the set-aside before the rename",
+        "kt5/kt5b: status names git worktree remove for a set-aside tree, task-remove for a task, the drive's next step for an unfinished move"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-28T07:04:31Z.c9fef0",
         "status": "passed",
         "at": "2026-10-28T07:04:31Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "64286afb0cc0",
+        "at": "2026-10-28T07:11:39Z",
+        "return": "docs/audit/evidence/returns/P142.45-6yq/20261028T062118Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-28T06:51:47Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD: the run timed out: no time was left of the 565-second deadline; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 565s, 3 times the recorded 1347s of tests/test_drive_phase.py in .github/sweep-costs.json, capped at the 565s the host's Bash limit leaves; fix run: held back 282s of the deadline (the recorded 1347s, capped at half the 565s deadline), the recorded slot-seconds of tests/test_drive_phase.py in .github/sweep-costs.json",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P142.46-6yq",
       "title": "A status row folds as the hook's echo only when the hook recorded that its call began before the verb row, so a later call's real restart keeps its charge",
-      "status": "pending",
+      "status": "in_progress",
       "description": "`_echoes` in audit-task.py decides whether a repeated status row is the journal-writes hook's echo of the verb row before it. If it is an echo, the row folds and does not count as a restart. This is the third round on the same fail-open. Each earlier round inferred the echo from what the rows happen to share: first the session, then the session plus a 610 s window. An adversarial review (scratchpad/p142-44-adv/, the orchestrator gives the full path; repro_failopen.py) still folds a real restart. The sequence: a verb blocks the task, something outside any tool call moves it back, and a later Bash call in the same session blocks it again inside the window. That row folds, and `_ran_within` answers False.\n\nStop inferring. Redesign so the echo is proven from what the hook records:\n1. journal-writes.py writes, on every status row it derives, the moment its own tool call began. That is the PreToolUse baseline time the row's `from` was read at. The PreToolUse sweep already keeps that baseline; carry its time.\n2. `_echoes` folds a hook row only when it records that start, the start is at or before the verb row's stamp, and the hook row is in the same journal file as the verb row (the same tree). A row that lacks the field is a row written before this change. For those, keep today's bounded reading, named in the code as the reading for rows that carry no start, so the history does not change its answers. Re-run p142-44-adv/scan.py and report that no live answer changed.\n3. Lows from the same review, in the same functions:\n   - `_hook_run` ends a run when a same-file row from another writer is stamped between the edit row and its derived row (repro_run.py). Bind the derived row to its edit row by what the hook writes, not by adjacency. For example, the derived row carries the edit row's hash, or both carry one call id.\n   - Branch 1 does not require the same tree (repro_tree.py).\n   - The docstring and hw21's text claim \"inside the tool call that wrote the verb's row\", which a gap cannot show.\n   - The 610 s derivation misses permission waits, MCP calls and BASH_MAX_TIMEOUT_MS. Once item 2 holds, state what the window still bounds, and only that.\nRed-first a case for each repro. The hook stays importless and stdlib-only, and its import budget (tools/bench-hooks.py --gate) must hold. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/hooks/journal-writes.py",
         "tests/test_journal_writes.py",
         "plugins/audit/scripts/manifest/audit-task.py",
-        "tests/test_audit_task.py"
+        "tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "tests/test__journal_io.py",
+        "plugins/audit/hooks/_config.py",
+        "tests/test__config.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -3059,16 +3085,88 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 3,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-28T09:01:58Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "notes": [
+        {
+          "at": "2026-10-28T08:02:40Z",
+          "text": "Retry after the adversarial review (scratchpad/p142-46-adv/; the orchestrator gives the full path).\n1. HIGH. callBegan and hookRun are not in _journal_io.DETAILS_KEYS, so normalise_details drops them on every append. No row on disk carries them, every new row takes the legacy window reading, and the fail-open is unchanged. tests/test__journal_io.py dk1 is red on this tree (repro_dropped.py, repro_e2e.py).\n   - Add both keys, arguing each one's three tests as the DETAILS_KEYS comment requires. callBegan is a time observed on this machine.\n   - Add an end-to-end case: drive the hook's real main() for Pre and Post, append through _journal_io, read the rows back with read_all, and ask _echoes. It must show a later call's restart not folding and a real echo folding. Red-first it on this tree as it stands. That is the case that was missing: every new case built marked rows in memory.\n   - The scope is widened to _journal_io.py and tests/test__journal_io.py.\n2. Low. A Post whose own Pre never ran stamps callBegan from an earlier call's slot (repro_nopre.py). Tie the start to its own call by tool_use_id, if Claude Code's Pre and Post hook inputs both carry it. Verify that from the hook payload documentation or a captured payload; do not assume it. When the ids do not match, write no callBegan.\n3. Low. A start floored to the second lets a call that began in the verb row's second fold through `<=`. Either keep sub-second precision for the start, or require strictly before when both are in the same second. State which, and why.\n4. Low, docstrings:\n   - _call_marks and _echoes_unstarted describe a row without the field only as an old row.\n   - \"both missing ... folds into nothing\" is false for the hookRun branch.\n   - callBegan's definition is wrong for the Edit lane.\nNo F/P/BUG ids in comments. Extend scratchpad/P142.46-probe/mutations.py with rows for items 1-3, including a row that drops a key from DETAILS_KEYS."
+        },
+        {
+          "at": "2026-10-28T09:01:57Z",
+          "text": "Retry 2. The gate is red on one case. The round-2 adversarial review (scratchpad/p142-46-adv/r2/) found 0 med and 5 low.\n1. Gate red: tests/test_drive_phase.py's tests-wide scan reports `test_audit_task.py: [17451]`. hw29's project() helper runs `git init` through a checked subprocess.run outside the fixture helper. Use the fixture helper the scan names (_harness's git fixture), as every other suite does.\n2. Low, a regression against HEAD. journal-writes.py `_own_call_start` calls `held.get(...)` before any dict check. A call-start record holding valid non-object JSON raises, and every row of that call is lost (r2/repro_corrupt_record.py). Return None unless it is a dict.\n3. Low. The marked fold has no time bound now. A call that began before the verb and runs past any bound hides an unrecorded round trip inside it. Keep the proven start, and also keep an upper bound on the row's distance from the verb, so it cannot be worse than HEAD's 610 s reading. State in the docstring what each condition proves.\n4. Low, docstrings:\n   (a) journal-writes.py:361 \"every slot a Post refreshes\": the sweep-lane Pre seed also writes slots without an id.\n   (b) _echoes_unstarted \"kept as it was\": _one_tree now gates legacy rows too.\n   (c) _journal_io's DETAILS_KEYS comment: callBegan is not type-checked by normalise_details, and it does add a new fact, the call's duration. Say so plainly.\n5. Low, structural. _record_call rewrites the call-start record after _config.record_call_start wrote it: two writes and a window with no id. Give record_call_start an optional call-id argument, so one writer makes one write. hooks/_config.py joins the scope for this.\n6. The same-second under-fold (hw30) is an accepted cost: it fails closed. State it in _echoes's docstring as a cost, not a hole.\nNo F/P/BUG ids in comments. Add probe rows for items 2, 3 and 5."
+        }
+      ],
+      "testEvidence": {
+        "runId": "2026-10-28T09:31:39Z.be2df9",
+        "status": "passed",
+        "at": "2026-10-28T09:31:39Z"
+      }
+    },
+    {
+      "id": "P142.47-6yq",
+      "title": "A redo moves no tree: the old tree stays where it is under a kept marker and the new tree is cut at a fresh path, so no state between a move and git's agreement exists to classify",
+      "status": "in_progress",
+      "description": "A redo keeps the old task tree, so nothing a reading of it misses is lost. Today it keeps the tree by MOVING it: rename to `<tree>.aside-<n>`, lock git's record, repair, repoint submodules, and `repair_asides` settles an unfinished move at the start of every drive step. Four adversarial review rounds in a row each found a med in that machinery: a prunable record between rename and repair; classification by directory; a wedge on a gone record; a stop on a tree moved to a third path whose remedy orphans it. Probes are in scratchpad/p142-43-adv/, p142-43-adv/r2/ and p142-45-adv/ (the orchestrator gives the full path). The class is the move itself: every state between \"renamed\" and \"git agrees\" is one more case to classify.\n\nRedesign so the redo moves nothing:\n- The old tree stays where it is. Only its marker is rewritten to the keptTrees key, and that key is recorded, so task-add never adopts it and status lists it.\n- The new tree is cut at a fresh path beside it. `add_tree` already passes `--path`.\n- `wave.trees[task]` then names the new path, and the carry ref and everything else follow `wave.trees`.\n\nThat deletes the rename, the lock, the repair, the submodule repoint, `asideMoves`, `_settle_move`, `repair_asides` and its per-step call, the git 2.30 floor and the STATE_WRITERS row for the rename, together with their cases. Delete them; do not keep them dormant.\n\nWhat stays:\n- the one keep-on-doubt remover `remove_task_tree`, still read strictly;\n- `retire_asides`;\n- the per-tree status remedies, with the remedy for a kept old tree being one that acts on it. `git worktree remove` refuses a tree with a submodule checked out, so do not name that bare; name what works, and say what `--force` deletes.\n\nAlso:\n- State where a second and third redo cut their trees, and that a path already taken is never reused.\n- A crash between the marker rewrite and the state write must leave a state the next step reads correctly. The tree is at its own path, so only marker and state can disagree. Settle that by the marker, which is what task-add reads.\n- Check every reader of `wave.trees` and `tree_path` that assumes the task's tree is at the default path: retire, close_wave, the sweep's kept-tree reason in _worktrees.py, and status. List each in your outcome.\n\nRed-first a case that a redo leaves the old tree's directory and git record untouched (same path, same admin dir, not locked), and keep every case that proves no work is lost. No F/P/BUG ids in comments.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/status/audit-status.py",
+        "tests/test_audit_status.py",
+        "tools/lints/_deps.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: a redo leaves the old tree's directory and git record untouched (same path, same admin dir, not locked) and cuts the new tree at a fresh path never reused; a crash between marker rewrite and state write settles by the marker; no work is lost; tests/test_audit_status.py: a kept old tree's remedy is one git runs on a tree holding work"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-28T07:12:01Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "notes": [
+        {
+          "at": "2026-10-28T08:04:18Z",
+          "text": "Retry after the adversarial review (scratchpad/p142-47-adv/). It found no path in the drive that loses work. Both meds are in status's advice:\n1. MED. The KEPT_TREE_FORCE warning understates what `git worktree remove --force` deletes. It also deletes the tree's admin dir, and with it the submodule repositories under .git/worktrees/<n>/modules, so commits that exist only there are destroyed. A commit on the tree's detached HEAD becomes unreachable, and gc collects it. This was verified by a git repro. Name both losses, with the command that saves each first: push or fetch the submodule commit, and pin the HEAD with a ref. Fix the guide sentence and _kept_tree_remedy's docstring to match.\n2. MED. When the plan cannot be read (task_ids None), _kept_tree_remedy gives `--force` to every kept tree, including a blocked task's kept tree that a later wave adopts. Give --force only to keys that are a redo's kept key (the set-aside key pattern). Every other key gets the non-forcing advice. Red-first a case with an unreadable plan.\n3. Low. recut_path's \"a path once taken is never cut at again\" is false: recuts is popped at task close and dropped at phase finish. Either make it true by asking git's records and directories, not only the state, or state what holds.\n4. Low. keep_old_tree picks the next key from the state alone. After a lost state it can reuse a key a kept tree's marker already carries. Choose the next n past every marker that carries that task's kept key, as well.\nEdit only the files in scope. No F/P/BUG ids in comments. Add probe rows for items 1, 2 and 4."
+        }
+      ],
+      "testEvidence": {
+        "runId": "2026-10-28T08:12:50Z.732963",
+        "status": "passed",
+        "at": "2026-10-28T08:12:50Z"
+      }
     }
   ],
   "request": "neka njihov dokument bude osnova! I u odnosu na to treba napraviti plan implementacije",

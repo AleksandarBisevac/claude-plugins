@@ -287,12 +287,32 @@ DETAILS_VERSION = 2
 # the same nonce as a trailer (`_invariants.ROW_TRAILER`). It passes the three
 # tests the way `runId` does: a join key between two records rather than a fact
 # about the machine, bounded like any value, and random, so it exposes nothing.
+# `hookRun` is the same kind of key, one level down: the journal-writes hook draws
+# one at random per diff and writes it on the edit row and on every row that diff
+# derives, so a reader binds a derived row to its edit row by the key rather than
+# by which rows happen to sit between them. It passes the three tests as
+# `commitNonce` does: a join key, bounded like any value, random.
+# `callBegan` FAILS THE FIRST TEST AS `reason` PASSED IT, and is here anyway, on a
+# narrower argument. It is a time this machine's clock observed - when the hook's
+# tool call began - not a field of the plan. What the first test keeps out is a
+# fact that DESCRIBES the machine: a path, a host, a command's text. A moment
+# describes nothing about it, and the row already carries one from the same
+# clock in the same spelling and resolution (`ts`). It does add a fact no row
+# carried before: with the row's `ts` beside it, how long the hook's tool call
+# ran - a call's duration, which says something about the work and nothing
+# about where it ran. `normalise_details` does not check its type: the hook
+# writes a stamp, or None when it could not tie a start to its own call, but
+# any value a writer hands over is kept, redacted and clipped as every other
+# value is, and it is `audit-task.py`'s reader that reads anything but a
+# stamp as no start. It is the evidence `audit-task.py` folds a hook row on:
+# without it a reader can only infer, from what two rows share, that the hook's
+# row is the record of the verb's change rather than of a later restart.
 DETAILS_KEYS = ("changes", "taskId", "phaseId", "field", "from", "to", "commit",
                 "completedAt", "mergedAt", "fromId", "toId", "fromPhase",
                 "toPhase", "reason", "truncated", "commandSha256", "commandBytes",
                 "program", "cwd", "runId", "attempt", "branch", "commitNonce",
                 "relinkedAfter", "relinkedThrough", "parent", "adoId", "mode",
-                "basis")
+                "basis", "callBegan", "hookRun")
 CHANGE_KEYS = ("id", "field", "from", "to")
 # The one key a writer may hand over that is NOT kept: `normalise_details` turns
 # it into `command_facts()` and drops the text. Named so the handover lint in

@@ -1669,7 +1669,8 @@
       "P142.40-6yq",
       "P142.42-6yq",
       "P142.43-6yq",
-      "P142.45-6yq"
+      "P142.45-6yq",
+      "P142.47-6yq"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2696,7 +2697,8 @@
       "P130.52-ywo",
       "P130.56-ywo",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P142.46-6yq"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -3908,7 +3910,8 @@
       "P130.8",
       "P131.1",
       "P131.2",
-      "P142.1"
+      "P142.1",
+      "P142.46-6yq"
     ],
     "plugins/audit/scripts/governance/_locks.py": [
       "P22.11",
@@ -5591,7 +5594,8 @@
       "P131.1",
       "P131.2",
       "P131.12",
-      "P142.45-6yq"
+      "P142.45-6yq",
+      "P142.47-6yq"
     ],
     "plugins/audit/scripts/status/audit-version.py": [
       "P67.1",
@@ -10090,7 +10094,8 @@
       "P142.40-6yq",
       "P142.42-6yq",
       "P142.43-6yq",
-      "P142.45-6yq"
+      "P142.45-6yq",
+      "P142.47-6yq"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -10966,7 +10971,8 @@
       "P142.20-6yq",
       "P142.31-6yq",
       "P142.40-6yq",
-      "P142.43-6yq"
+      "P142.43-6yq",
+      "P142.47-6yq"
     ],
     "tools/lints/_refs.py": [
       "P130.8",
@@ -11173,7 +11179,8 @@
     "tests/test__config.py": [
       "P131.1",
       "P131.2",
-      "P86.3"
+      "P86.3",
+      "P142.46-6yq"
     ],
     "tests/test__config_rules.py": [
       "P131.1",
@@ -11259,7 +11266,8 @@
     ],
     "tests/test__journal_io.py": [
       "P131.1",
-      "P142.1"
+      "P142.1",
+      "P142.46-6yq"
     ],
     "tests/test__json_schema.py": [
       "P131.1"
@@ -11523,7 +11531,8 @@
       "P131.1",
       "P131.12",
       "P129.7-izt",
-      "P142.45-6yq"
+      "P142.45-6yq",
+      "P142.47-6yq"
     ],
     "tests/test_audit_task.py": [
       "P131.1",
@@ -11623,7 +11632,8 @@
       "P142.40-6yq",
       "P142.42-6yq",
       "P142.43-6yq",
-      "P142.45-6yq"
+      "P142.45-6yq",
+      "P142.47-6yq"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"

@@ -5435,16 +5435,31 @@ def _held_reading(project, git_root, plan, node, mpath=None, config=None,
 _HOOK_VIA = "hook"
 _HOOK_PRIMARY = "manifest.edit"
 
-# How far apart a verb's row and the hook's record of the same write can be.
-# The verb writes its row during a tool call and the hook writes at
-# PostToolUse, once that call has ended, so the two are one call plus the
-# hook's own run apart. The plugin's verbs run as Bash commands, and Claude
-# Code's Bash tool takes a `timeout` of at most 600000 ms; hooks.json gives
-# journal-writes.py `_ECHO_HOOK_TIMEOUT_SECONDS` at PostToolUse, and each row
-# of one run is stamped inside it. The pause between the call's end and the
-# hook's start is counted by neither, and a host that raises the Bash cap
-# lengthens the call: an echo either pushes past the window answers
-# can't-tell, the reading that releases nothing.
+# The marks journal-writes.py writes in the details of every row it builds
+# from a diff (`_call_marks` there). `callBegan` is when the hook's own tool
+# call began with the diff's `from` side standing, in the `ts` spelling,
+# floored to the second: a start the hook ties to the call by its
+# `tool_use_id` - on the sweep lane the call's PreToolUse record, raised to
+# the slot's read when that is later; on the edit lane the read of the slot
+# that call's PreToolUse wrote - and None when it could tie none. `hookRun` is
+# one id an edit row shares with the rows it derives. A row whose details lack
+# the `callBegan` key says nothing about its start: written before the hook
+# recorded one, written since by an older copy of the hook still running
+# somewhere, or appended through a journal whose allow-list dropped the key.
+_HOOK_BEGAN = "callBegan"
+_HOOK_RUN_ID = "hookRun"
+
+# The window, read two ways and proving an echo in neither. For a row that
+# carries no start it is the whole reading, kept so the history keeps its
+# answers: those rows were folded inside it before the start was recorded. For
+# a row that does, it is a ceiling only: a call that began before the verb's
+# row may have run on while the task moved away and back, which its diff
+# cannot show, and the window caps that blind stretch at the one rows without
+# a start are read with. It counts a Bash call at the most Claude Code's Bash
+# tool takes as its `timeout`, 600000 ms, plus the PostToolUse timeout
+# hooks.json gives journal-writes.py; a permission wait, an MCP call, a host's
+# raised Bash cap and the pause before the hook starts are counted by neither,
+# and a row inside it may still come from a later call of the same session.
 _BASH_CALL_CAP_SECONDS = 600
 _ECHO_HOOK_TIMEOUT_SECONDS = 10
 _ECHO_WINDOW_SECONDS = _BASH_CALL_CAP_SECONDS + _ECHO_HOOK_TIMEOUT_SECONDS
@@ -5461,12 +5476,30 @@ def _row_origin(row):
     return (actor.get("via"), sessions, row.get("_file"), row.get("action"))
 
 
+def _call_marks(row):
+    """`(began, run)` - the moment `row`'s `callBegan` names (None when it is
+    None or does not read as a moment) and its `hookRun` (None when absent) -
+    or None when `row`'s details lack the `callBegan` key: a row from before
+    the hook recorded starts, from an older copy of the hook, or through a
+    journal that dropped the key (see `_HOOK_BEGAN`)."""
+    details = row.get("details") if isinstance(row, dict) else None
+    if not isinstance(details, dict) or _HOOK_BEGAN not in details:
+        return None
+    began = details.get(_HOOK_BEGAN)
+    run = details.get(_HOOK_RUN_ID)
+    return (_journal_io.row_moment({"ts": began})
+            if isinstance(began, str) else None,
+            str(run) if isinstance(run, str) and run else None)
+
+
 def _hook_run(row, index, before):
     """The row index of the hook edit row whose run `row` belongs to, given
     `before`, the run of the row before it in its own journal file: the hook
     appends its edit row and then the rows that edit derives, so a hook row
     other than an edit row continues the run before it, and any other writer's
-    row ends it. None when `row` is in no run."""
+    row ends it. None when `row` is in no run. Read by adjacency, so it is the
+    reading for rows that carry no `hookRun` only: a row of another writer
+    stamped in the run's second can be read between the two and end it."""
     via, _sessions, _name, action = _row_origin(row)
     if via != _HOOK_VIA:
         return None
@@ -5477,7 +5510,8 @@ def _status_events(rows, tid):
     """`[(moment, row index, from, to, origin)]` - every status change the
     journal records for `tid`, in the journal's order: a `status` entry in a
     row's `changes`, and the drive's `task.blocked` row; `origin` is
-    `_row_origin`'s with the row's hook run (`_hook_run`) after it. None when
+    `_row_origin`'s with the row's hook run (`_hook_run`) and its marks
+    (`_call_marks`) after it. None when
     a row carrying one names no readable moment - an order that cannot be read
     is no evidence."""
     out, runs = [], {}
@@ -5500,7 +5534,8 @@ def _status_events(rows, tid):
         moment = _journal_io.row_moment(row)
         if moment is None:
             return None
-        origin = _row_origin(row) + (runs.get(row.get("_file")),)
+        origin = _row_origin(row) + (runs.get(row.get("_file")),
+                                     _call_marks(row))
         out += [(moment, index, was, now, origin) for was, now in found]
     return out
 
@@ -5520,38 +5555,92 @@ def _start_keys(rows, tid):
 
 
 def _origin(event):
-    """An event's `_row_origin` and hook run; an event built without one names
-    no writer, and nothing about it can be proved an echo."""
-    return event[4] if len(event) > 4 else (None, (), None, None, None)
+    """An event's `_row_origin`, hook run and marks; an event built without
+    one names no writer, and nothing about it can be proved an echo."""
+    return event[4] if len(event) > 4 else (None, (), None, None, None, None)
+
+
+def _one_tree(name, was_name):
+    """Whether two journal files are one writer's in one tree: the name with
+    its month taken off (`_journal_io.writer_of`) - the session, and a linked
+    worktree's key after it - so a run across a month's end stays one."""
+    return (name is not None and was_name is not None
+            and _journal_io.writer_of(str(name))
+            == _journal_io.writer_of(str(was_name)))
 
 
 def _echoes(event, last):
     """Whether `event` is provably the journal-writes hook's record of the
     change the row before it (`last`) recorded: the same `from` and `to`,
-    written by the hook, and either
+    written by the hook, in the same tree's journal file as `last`, and
+    either
 
-      - after the row of the writer whose write the hook diffed: a named
-        writer other than the hook, under a session name the hook's row also
-        carries, since the hook records the tool calls of its own session,
-        at most `_ECHO_WINDOW_SECONDS` later - inside the tool call that
-        wrote the verb's row. Its edit row, or a row that edit row derived
-        when the edit row's list of changes was clipped before reaching this
-        task; or
-      - a derived row in the run of the edit row before it (`_hook_run`):
-        the same journal file, no other writer's row and no other edit row
-        between them, the same session names, at most
-        `_ECHO_HOOK_TIMEOUT_SECONDS` later.
+      - after the row of the writer whose write the hook diffed, a named
+        writer other than the hook, when both of these hold:
+          * the row records (`callBegan`) that its call began, with its
+            `from` standing, in a second EARLIER than `last`'s. This proves
+            the `from` is the state before `last`'s write, so the change the
+            row records holds the verb's rather than a restart begun after
+            it. Both stamps are floored to the second, so a start inside
+            `last`'s own second may have followed the write and is not
+            read as before it. That is an accepted cost, not a hole: an echo
+            whose call began in the verb row's own second answers
+            can't-tell, which releases nothing;
+          * the row is at most `_ECHO_WINDOW_SECONDS` after `last`. This
+            proves nothing about the echo. A call that began before the verb
+            row and ran on could have seen the task move away and back while
+            it ran, and a diff of its two ends cannot show that; the bound
+            caps that blind stretch at the window rows without a start are
+            read with, so a marked row is never read more loosely than one
+            without a start.
+        Its edit row, or a row that edit row derived when the edit row's list
+        of changes was clipped before reaching this task; or
+      - a derived row naming the `hookRun` of the hook edit row before it:
+        one run of the hook wrote both, whatever row was read between them.
 
-    The hook's row names as its `from` the plan at the start of ITS tool
-    call, so a row written after the verb's call had ended says the task was
-    in that state again - a change the journal does not hold. Another
-    session's hook row is never an echo: its call may have begun after the
-    verb's row, and no row records when it began. A second edit row of the
-    hook is never an echo either - each records a write of its own."""
-    via, sessions, name, action, run = _origin(event)
-    was_via, was_sessions, was_name, was_action, _was_run = _origin(last)
-    if via != _HOOK_VIA or event[2] is None or event[2:4] != last[2:4]:
+    The hook's row names as its `from` the plan as of its own call's start,
+    so a row whose call began after the verb's row says the task was in that
+    state again - a change the journal does not hold. A row whose
+    `callBegan` is None - the hook could tie no start to its call - folds
+    into no named writer's row; the `hookRun` binding of a derived row does
+    not read the start. A second edit row of the hook is never an echo - each
+    records a write of its own. A row whose details lack the `callBegan` key
+    is read by `_echoes_unstarted`."""
+    via, _sessions, name, action, _run, marks = _origin(event)
+    was_via, _was_sessions, was_name, was_action, _was_run, was_marks = \
+        _origin(last)
+    if via != _HOOK_VIA or event[2] is None or event[2:4] != last[2:4] \
+            or not _one_tree(name, was_name):
         return False
+    if marks is None:
+        return _echoes_unstarted(event, last)
+    began, run = marks
+    if was_via not in (None, "unknown", _HOOK_VIA):
+        return (began is not None and began < last[0]
+                and 0 <= event[0] - last[0] <= _ECHO_WINDOW_SECONDS)
+    return (action != _HOOK_PRIMARY and was_via == _HOOK_VIA
+            and was_action == _HOOK_PRIMARY and run is not None
+            and was_marks is not None and run == was_marks[1])
+
+
+def _echoes_unstarted(event, last):
+    """`_echoes`' reading for a hook row whose details lack the `callBegan`
+    key - written before the hook recorded starts, by an older copy of the
+    hook, or through a journal that dropped the key. It is the reading those
+    rows had, kept so the history keeps its answers, with one change:
+    `_echoes` asks `_one_tree` before it reaches here, so a hook row in
+    another tree's journal file, which this reading once folded after a named
+    writer's row, now never folds. The reading: after a named writer's row
+    under a session name the hook's row also carries, at most
+    `_ECHO_WINDOW_SECONDS` later; or a derived row in
+    the run of the edit row before it (`_hook_run`), in the same file under
+    the same session names, at most `_ECHO_HOOK_TIMEOUT_SECONDS` later. A gap
+    cannot show which call the row came from, so a later call of the same
+    session inside the window folds too; only the recorded start tells them
+    apart."""
+    via, sessions, name, action, run, _marks = _origin(event)
+    was_via, was_sessions, was_name, was_action, _was_run, _was_marks = \
+        _origin(last)
     gap = event[0] - last[0]
     if was_via not in (None, "unknown", _HOOK_VIA):
         return (bool(set(sessions) & set(was_sessions))

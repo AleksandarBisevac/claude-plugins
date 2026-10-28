@@ -140,6 +140,7 @@ import json
 import os
 import re
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _config  # noqa: E402
@@ -345,7 +346,7 @@ def _snapshot(path):
         return None, None          # no such file yet: the slot records that too
 
 
-def _write_slot(root, cfg, data, rel):
+def _write_slot(root, cfg, data, rel, call=None):
     """Snapshot `rel` into its (session, target) slot, overwriting whatever was
     there. Returns the slot path, or None when it could not be written.
 
@@ -353,18 +354,65 @@ def _write_slot(root, cfg, data, rel):
     an edit-tool write; Post refreshes it after reading, so the baseline is the
     target as of the last row in the journal rather than as of the last EDIT. Never
     raises: a slot that cannot be written costs a generic summary next time, never
-    a broken write."""
+    a broken write.
+
+    `call` is the `tool_use_id` of the edit-lane Pre that wrote the slot, kept
+    beside it so that call's Post - and no other - reads the slot's `ts` as the
+    moment its call began (`_slot_start`). A slot written without one - a
+    Post's refresh, or the sweep lane's Pre seed (`_pre_seed_sweep`) - is tied
+    to no call."""
     try:
         slot = _slot_path(root, cfg, data, rel)
         sha, text = _snapshot(os.path.join(str(root), rel))
         _config.ensure_local_dir(os.path.dirname(slot))
+        body = {"path": rel, "ts": _config.utc_stamp(),
+                "sha256": sha, "content": text}
+        if call is not None:
+            body[_config.CALL_ID_KEY] = call
         with open(slot, "w", encoding="utf-8", newline="\n") as fh:
-            json.dump({"path": rel,
-                       "ts": _config.utc_stamp(),
-                       "sha256": sha, "content": text}, fh)
+            json.dump(body, fh)
         return slot
     except Exception:
         return None
+
+
+# --- the call a row's baseline belongs to --------------------------------------
+# Both PreToolUse and PostToolUse payloads carry the call's `tool_use_id` (read
+# from Claude Code 2.1.311, which builds both hook inputs from the one id it runs
+# the call under; no payload captured from a live session is kept in this
+# repository). A start the Pre recorded counts as THIS call's only when it names
+# the Post's own id: a Pre that never ran - a hook timeout, a crash - leaves the
+# record of an earlier call, whose start says nothing about when this one began.
+# The sweep lane's record is `_config.record_call_start`'s, read back through
+# `_config.call_start`; the edit lane's is the slot its Pre wrote.
+
+
+def _tool_use_id(data):
+    """The payload's `tool_use_id`, or None when it names none."""
+    call = (data or {}).get("tool_use_id")
+    return call if isinstance(call, str) and call else None
+
+
+def _own_call_start(root, cfg, data):
+    """When this call's own sweep-lane Pre ran, as epoch seconds - the
+    recorded moment when the record names the Post's `tool_use_id` - or None:
+    no record, a record that is no start, no id on either side, or another
+    call's."""
+    call = _tool_use_id(data)
+    if call is None:
+        return None
+    return _config.call_start(root, cfg, data, call=call)
+
+
+def _slot_start(pre, data):
+    """When this call's own edit-lane Pre read the slot `pre`, as epoch
+    seconds - the slot's `ts` when the slot names the Post's `tool_use_id` -
+    or None when the slot was written by any other pass."""
+    call = _tool_use_id(data)
+    if call is None or not isinstance(pre, dict) \
+            or pre.get(_config.CALL_ID_KEY) != call:
+        return None
+    return _config.ts_epoch(pre.get("ts"))
 
 
 def pre_cache(data, *, cfg=None, root=None):
@@ -381,8 +429,9 @@ def pre_cache(data, *, cfg=None, root=None):
         if _swept_tool(data.get("tool_name")):
             # Noted before the switch is consulted: the window it opens is read
             # by guard-bash-writes too, which does not care whether the journal
-            # is on. One small write, no read.
-            _config.record_call_start(root, cfg, data)
+            # is on. One small write, no read; the call's id rides in it.
+            _config.record_call_start(root, cfg, data,
+                                      call=_tool_use_id(data))
         if not _config.journal_enabled(cfg):
             return None            # on Pre, the config on disk IS the pre-image
         if _swept_tool(data.get("tool_name")):
@@ -393,7 +442,7 @@ def pre_cache(data, *, cfg=None, root=None):
         action, rel, _tool, _ti, troot = _classify_placed(data, cfg, root)
         if action is None:
             return None
-        return _write_slot(troot, cfg, data, rel)
+        return _write_slot(troot, cfg, data, rel, call=_tool_use_id(data))
     except Exception:
         return None
 
@@ -885,7 +934,36 @@ def _not_recorded(events, recorded):
             if _record_key(ev.get("action"), ev.get("details")) not in recorded]
 
 
-def _manifest_rows(entry, rel, old_obj, new_obj, recorded=None):
+def _call_marks(pre, start):
+    """`(callBegan, hookRun)` for the rows one diff builds: the moment this
+    call is known to have begun with the diff's `from` side standing, in the
+    `ts` spelling, and an id this diff's rows share and no other run's do.
+
+    `start` is when this call's own Pre ran, tied to the call by its
+    `tool_use_id` - the sweep lane's recorded start (`_own_call_start`), or on
+    the edit lane the read of the slot that Pre wrote (`_slot_start`) - or
+    None when no start can be tied to it. Then `callBegan` is None: the row
+    says the hook asked and has no answer, so a reader folds it into no verb
+    row's change, while `hookRun` still binds the rows it derives to it.
+
+    A KNOWN START IS RAISED TO THE SLOT'S READ when that is later: the sweep
+    lane's Pre keeps a slot whose digest still matches the file, so a kept
+    slot's `ts` predates the call, but a slot this writer's other Post
+    refreshed while the call ran was read after it began, and the `from` it
+    gives is the plan at that later moment. A moment later than the true one
+    only stops a fold. Floored to the second, the resolution of every row's
+    `ts`: a reader folds the row only when this second is EARLIER than the
+    verb row's, which places the call's start before the verb's write
+    whatever fraction of either second the two fell in."""
+    if start is None:
+        return None, os.urandom(8).hex()
+    read = _config.ts_epoch(pre.get("ts")) if isinstance(pre, dict) else None
+    began = max(start, read) if read is not None else start
+    return (time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(began))),
+            os.urandom(8).hex())
+
+
+def _manifest_rows(entry, rel, old_obj, new_obj, recorded=None, marks=None):
     """(primary, chained) for a write to the manifest: the diff folded into the
     primary row, plus the completion rows derived from the SAME comparison.
 
@@ -896,7 +974,12 @@ def _manifest_rows(entry, rel, old_obj, new_obj, recorded=None):
 
     A missing document on EITHER side is the stated gap, not a quiet generic row:
     the write is known to have happened and the field-level answer is not
-    available, which is the same stated-gap shape whatever produced it."""
+    available, which is the same stated-gap shape whatever produced it.
+
+    `marks` is `_call_marks`' pair, written on every row a diff builds - the
+    edit row and each row it derives - so a reader can tell this call's
+    record of a change from a later call's, and bind a derived row to its edit
+    row by the run id rather than by what was read between them."""
     row = dict(entry)
     if old_obj is None or new_obj is None:
         row["summary"] = "%s (%s)" % (row["summary"], DERIVATION_MISSED)
@@ -907,6 +990,9 @@ def _manifest_rows(entry, rel, old_obj, new_obj, recorded=None):
         return row, []             # nothing this hook tracks moved: not a gap
     row["summary"] = diff["summary"]
     row["details"] = {"changes": diff["changes"]}
+    if marks is not None:
+        row["details"]["callBegan"] = marks[0]
+        row["details"]["hookRun"] = marks[1]
     # `recorded` may be the READER rather than the keys: the trail is the whole
     # project history, so it is read only for a write that derived something the
     # trail could already hold, and then once per call.
@@ -921,10 +1007,16 @@ def _manifest_rows(entry, rel, old_obj, new_obj, recorded=None):
                 "same record, written where the work ran" % held)
         row["summary"] = "%s; %s" % (row["summary"], note)
         row["details"]["reason"] = note
-    return row, [{"action": ev["action"], "target": rel,
-                  "summary": ev["summary"], "details": ev["details"],
-                  "actor": dict(row["actor"])}
-                 for ev in events]
+    chained = []
+    for ev in events:
+        details = dict(ev["details"])
+        if marks is not None:
+            details["callBegan"] = marks[0]
+            details["hookRun"] = marks[1]
+        chained.append({"action": ev["action"], "target": rel,
+                        "summary": ev["summary"], "details": details,
+                        "actor": dict(row["actor"])})
+    return row, chained
 
 
 def _config_rows(entry, old_obj, new_obj):
@@ -1109,7 +1201,10 @@ def _swept_tree(data, cfg, root, tool, enabled, project=None):
                    if old_obj is not None else None)
         primary, chained = (_config_rows(entry, old_obj, new_obj) if is_cfg
                             else _manifest_rows(entry, rel, old_obj, new_obj,
-                                                recorded=recorded))
+                                                recorded=recorded,
+                                                marks=_call_marks(
+                                                    pre, _own_call_start(
+                                                        project, cfg, data))))
         if peers:
             note = _config.window_note(peers)
             primary["summary"] = "%s (%s)" % (primary["summary"], note)
@@ -1214,7 +1309,10 @@ def post_rows(data, *, cfg=None, root=None):
                    if old_obj is not None else None)
         primary, chained = (_config_rows(entry, old_obj, new_obj)
                             if action == "config.edit"
-                            else _manifest_rows(entry, rel, old_obj, new_obj))
+                            else _manifest_rows(entry, rel, old_obj, new_obj,
+                                                marks=_call_marks(
+                                                    pre, _slot_start(pre,
+                                                                     data))))
         return [(root, row) for row in [primary] + chained]
     except Exception:
         return []

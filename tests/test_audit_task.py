@@ -16974,23 +16974,25 @@ def _held_work_cases(check, project, task, write, start, read, git):
     reversal = ran(crossed, "blocked", "2026-10-27T12:30:00Z",
                    "2026-10-27T12:50:00Z")
     # The allow half: one change written by a verb in a worktree's file and
-    # echoed by the hook in the session's main file in the same second, the
-    # hook's file sorting first. The two rows are one change whichever came
-    # first, and fold.
+    # by the hook in the session's main file in the same second, the hook's
+    # file sorting first. Any order of the two is the same chain, so the
+    # second is readable; two trees' files are two plan files, so the hook's
+    # row is no echo (hw26) and leaves its one second unaccounted - a window
+    # after that second answers not-running.
     pair = started + [
         prow("task.block", "2026-10-26T13:11:10Z", "in_progress", "blocked"),
         prow("manifest.edit", "2026-10-26T13:20:00Z", "blocked", "pending",
              via="hook"),
         prow("task.unblock", "2026-10-26T13:20:00Z", "blocked", "pending",
              name="2026-10.s-1.wt-0")]
-    folded = ran(pair, "pending", "2026-10-26T13:20:00Z",
+    folded = ran(pair, "pending", "2026-10-26T13:20:01Z",
                  "2026-10-26T13:25:00Z")
     check("hw19 two different changes in the same second from different "
           "journal files are not ordered by the file name they sort by - the "
-          "window after them answers can't-tell - while the same change from "
-          "a verb in one file and the hook's echo in another, the hook's "
-          "sorting first, still folds and answers not-running: %r"
-          % ((reversal, folded),),
+          "window after them answers can't-tell - while the same change "
+          "from two files in one second, the hook's sorting first, is "
+          "readable in either order and a window after it answers "
+          "not-running: %r" % ((reversal, folded),),
           reversal is None and folded is False)
 
     # The agreement with the writer, rather than a hand-built copy of its
@@ -17035,6 +17037,7 @@ def _held_work_cases(check, project, task, write, start, read, git):
           and from_hook is False)
 
     _echo_bound_cases(check, prow, ran, started)
+    _proven_echo_cases(check, prow, ran, started)
     _real_echo_cases(check)
 
     # ---- the way past the refusal is one a guard lets through -------------------
@@ -17114,10 +17117,11 @@ def _hook_post_timeout(script):
 
 
 def _echo_bound_cases(check, prow, ran, started):
-    """A repeated status row folds into the change before it only when the
-    rows prove it is the hook's record of that change: inside the tool call
-    that wrote the verb's row, or - for a row the hook derives - straight
-    after its own edit row in the same run."""
+    """The reading kept for rows that record no start (`_proven_echo_cases`
+    holds the one for rows that do): a hook row folds into the verb row before
+    it only in the same session's file inside the window, and a derived row
+    only straight after its own edit row in the same run. A gap cannot show
+    which call wrote the row; the window bounds these rows and no others."""
     verb_at = "2026-10-26T12:00:00Z"
     blocked = started + [prow("task.block", verb_at, "in_progress", "blocked")]
     window = getattr(M, "_ECHO_WINDOW_SECONDS", None)
@@ -17149,8 +17153,9 @@ def _echo_bound_cases(check, prow, ran, started):
                between(past_edge, 1, 2) if past_edge else "no window",
                between(crossed, 1, 2)]
     hook_timeout = _hook_post_timeout("journal-writes.py")
-    check("hw21 a same-session hook row repeating the verb's transition folds "
-          "only inside the tool call that wrote the verb's row: three hours "
+    check("hw21 a same-session hook row with no recorded start, repeating the "
+          "verb's transition, folds only inside the window kept for such "
+          "rows: three hours "
           "later it answers can't-tell inside the gap and not-running wholly "
           "after it, 576 s (the slowest echo the journal held on 2026-10-28) "
           "and the window's edge "
@@ -17221,6 +17226,329 @@ def _echo_bound_cases(check, prow, ran, started):
           "run's rows for other tasks, and one behind another session's file "
           "sorting between it and its edit row, fold: %r" % (derived_answers,),
           derived_answers == [None, False, None, None, False, False, False])
+
+
+def _proven_echo_cases(check, prow, ran, started):
+    """A hook row folds into the verb row before it when the hook recorded
+    that its call began in a second earlier than the verb row's, in the same
+    journal file; a derived row folds when it carries its edit row's run.
+    What the rows happen to share - a session, a gap - proves neither."""
+    verb_at = "2026-10-26T12:00:00Z"
+    blocked = started + [prow("task.block", verb_at, "in_progress", "blocked")]
+
+    def hooked(seconds, began=None, run=None, action="manifest.edit",
+               name="2026-10.s-1", sid="s-1"):
+        row = prow(action, _stamp(verb_at, seconds), "in_progress", "blocked",
+                   via="hook", sid=sid, name=name)
+        extra = {}
+        if began is False:
+            extra["callBegan"] = None       # asked, and no start tied to it
+        elif began is not None:
+            extra["callBegan"] = began if isinstance(began, str) \
+                else _stamp(verb_at, began)
+        if run is not None:
+            extra["hookRun"] = run
+        row["details"] = dict(row["details"], **extra)
+        return row
+
+    def between(rows, start, end):
+        return ran(rows, "blocked", _stamp(verb_at, start),
+                   _stamp(verb_at, end))
+
+    # The fail-open the session and the gap could not see: the verb blocks
+    # the task, something outside any tool call moves it back at +60 s, and a
+    # LATER call of the same session - its baseline read at +120 s - blocks it
+    # again, its row landing at +300 s. The row's `from` records the restart.
+    later_call = blocked + [hooked(300, began=120)]
+    # The allow half: the verb's own call, whose baseline was read before the
+    # verb row's second. A one-second-late baseline is the edge; the verb
+    # row's own second is hw30's, and a row past the window is hw32's.
+    own_call = blocked + [hooked(300, began=-2)]
+    edge = blocked + [hooked(300, began=1)]
+    garbled = blocked + [hooked(5, began="not a moment")]
+    answers = [between(later_call, 60, 240),
+               between(later_call, 400, 500),
+               between(own_call, 60, 240),
+               between(edge, 60, 240),
+               between(garbled, 1, 2)]
+    check("hw24 a same-session hook row whose call began after the verb row "
+          "does not fold, inside any window: can't-tell inside the gap and "
+          "not-running wholly after it; a row whose call began before the "
+          "verb row's second folds; a start one second late, or one that "
+          "does not read as a moment, does not fold: %r" % (answers,),
+          answers == [None, False, False, None, None])
+
+    # A call that began before the verb row and ran on: its `from` predates
+    # the verb's write, but its diff cannot show a move away and back made
+    # while it ran. The window caps how long that blind stretch may be, so a
+    # marked row is never read more loosely than a row with no start: at the
+    # window's edge it folds, one second past it it does not - can't-tell
+    # inside the gap, as an unmarked row past the window answers (hw27).
+    span = getattr(M, "_ECHO_WINDOW_SECONDS", None)
+    capped = ([between(blocked + [hooked(span, began=-30)], 1, 2),
+               between(blocked + [hooked(span + 1, began=-30)], 1, 2),
+               between(blocked + [hooked(1200, began=-30)], 60, 240)]
+              if span else ["no window"])
+    check("hw32 a hook row whose call began before the verb row folds only "
+          "inside the window after it: at the window's last second it folds, "
+          "one second past it, and twenty minutes on, it answers can't-tell "
+          "inside the gap: %r" % (capped,),
+          capped == [False, None, None])
+
+    # The derived row's half, bound by the run id both rows carry rather than
+    # by what sits between them: the same session's CLI row for another task,
+    # stamped in the edit row's second and read between the two.
+    edit = hooked(5, began=-2, run="r1")
+    other = {"action": "task.start", "ts": _stamp(verb_at, 5),
+             "actor": {"via": "cli", "sessionId": "s-1"},
+             "_file": "2026-10.s-1.jsonl",
+             "details": {"changes": [{"field": "status", "from": "pending",
+                                      "id": "P1.2", "to": "in_progress"}]}}
+    bound = blocked + [edit, other,
+                       hooked(6, began=-2, run="r1", action="task.blocked")]
+    foreign = blocked + [edit,
+                         hooked(6, began=-2, run="r2", action="task.blocked")]
+    unbound = blocked + [edit, other,
+                         hooked(6, began=-2, action="task.blocked")]
+    legacy = blocked + [hooked(5), other, hooked(6, action="task.blocked")]
+    derived = [between(bound, 5, 6), between(foreign, 5, 6),
+               between(unbound, 5, 6), between(legacy, 5, 6)]
+    check("hw25 a derived row stays bound to its edit row across an "
+          "interleaved writer when both carry one hook run, and folds; a "
+          "derived row naming another run, or naming none behind an "
+          "interleaved row, answers can't-tell, as a row written before the "
+          "run was recorded still does: %r" % (derived,),
+          derived == [False, None, None, None])
+
+    # The tree half: a verb row in a linked worktree's journal file and a
+    # same-session hook row in the main tree's file record two plan files,
+    # with or without a recorded start.
+    wt_verb = started + [prow("task.block", verb_at, "in_progress", "blocked",
+                              name="2026-10.s-1.wt-abcd1234")]
+    # One tree across a month's end: the verb row in October's file, the
+    # hook's row in November's - two file names, one writer.
+    month_end = "2026-10-31T23:59:58Z"
+    rollover = started + [
+        prow("task.block", month_end, "in_progress", "blocked"),
+        dict(prow("manifest.edit", _stamp(month_end, 5), "in_progress",
+                  "blocked", via="hook", name="2026-11.s-1"),
+             details={"changes": [{"field": "status", "from": "in_progress",
+                                   "id": "P1.1", "to": "blocked"}],
+                      "callBegan": _stamp(month_end, -1)})]
+    trees = [between(wt_verb + [hooked(540)], 120, 480),
+             between(wt_verb + [hooked(540, began=-2)], 120, 480),
+             between(blocked + [hooked(540)], 120, 480),
+             between(blocked + [hooked(540, began=-2)], 120, 480),
+             ran(rollover, "blocked", _stamp(month_end, 1),
+                 _stamp(month_end, 3))]
+    check("hw26 a hook row from another tree's journal file does not fold "
+          "into the verb row, recorded start or none, while the same rows in "
+          "one file still fold, and so do one tree's rows across a month's "
+          "end: %r" % (trees,),
+          trees == [None, None, False, False, False])
+
+    # Rows lacking the start's key - from before it was recorded, from an
+    # older copy of the hook, or through a journal that dropped it - keep the
+    # reading they had, named in the code as the reading for them: the same
+    # session's file, inside the window, folds; past it, or another session,
+    # does not. And a recorded start is the only reading for a row that has
+    # one - the window never folds it back in.
+    window = getattr(M, "_ECHO_WINDOW_SECONDS", None)
+    kept = [between(blocked + [hooked(576)], 60, 120),
+            between(blocked + [hooked(window)], 1, 2) if window else "none",
+            between(blocked + [hooked(window + 1)], 1, 2) if window else "none",
+            between(blocked + [hooked(5, sid="s-2", name="2026-10.s-2")], 1, 2),
+            between(blocked + [hooked(5, began=3)], 1, 2)]
+    check("hw27 rows without a recorded start keep their answers - inside the "
+          "window folds, one second past it and another session's row "
+          "answer can't-tell - and a recorded start after the verb row is "
+          "not folded by the window it sits inside: %r" % (kept,),
+          kept == [False, False, None, None, None])
+
+    # The agreement with the writer: the hook's own `_call_marks` and
+    # `_manifest_rows` build the edit row and the row it derives, marked with
+    # a baseline read before the verb row, then after it. A hook that renamed
+    # either mark, or stopped writing one on a derived row, turns this red.
+    jw = _loader.load(os.path.join(_harness.HOOKS_DIR, "journal-writes.py"),
+                      modname="journal_writes_for_marks")
+
+    def plan_doc(status):
+        return {"meta": {"version": 2}, "phases": [
+            {"id": "P1", "title": "p", "status": "in_progress", "tasks": [
+                {"id": "P1.1", "title": "t", "status": status,
+                 "attempts": 1}]}]}
+
+    def from_hook(read_at, tied=True):
+        """The rows for a call whose baseline was read `read_at` seconds from
+        the verb row; `tied` False is a call whose start could not be tied to
+        it (no Pre of its own), so the hook knows no start."""
+        entry = jw._entry("manifest.edit", "docs/audit/audit-plan.json",
+                          "Bash", {}, {"session_id": "s-1"}, None, {})
+        read = _stamp(verb_at, read_at)
+        primary, derived = jw._manifest_rows(
+            entry, entry["target"], plan_doc("in_progress"),
+            plan_doc("blocked"),
+            marks=jw._call_marks(
+                {"ts": read},
+                _journal_io.row_moment({"ts": read}) if tied else None))
+        return blocked + [dict(r, ts=_stamp(verb_at, 300),
+                               _file="2026-10.s-1.jsonl")
+                          for r in [primary] + derived]
+
+    # A writer without the marks fails this case rather than the block.
+    built = ([between(from_hook(-2), 60, 240),
+              between(from_hook(120), 60, 240),
+              between(from_hook(-2, tied=False), 60, 240)]
+             if callable(getattr(jw, "_call_marks", None))
+             else ["the hook builds no call marks"])
+    check("hw28 ALLOW and its twin through the writer: the rows the hook "
+          "builds for a block, marked with a baseline read before the verb "
+          "row, fold into it; marked with one read after it, or with no "
+          "start tied to the call, they answer can't-tell: %r" % (built,),
+          built == [False, None, None])
+
+    # A start in the verb row's own second. A row's stamp is floored to the
+    # second, so the verb wrote at some moment inside that second and a call
+    # that began inside it may have begun after the verb's write: only a start
+    # in an earlier second proves the baseline came first.
+    seconds = [between(blocked + [hooked(300, began=0)], 60, 240),
+               between(blocked + [hooked(300, began=-1)], 60, 240),
+               between(blocked + [hooked(300, began=0)], 400, 500)]
+    check("hw30 a hook row whose call began in the verb row's own second does "
+          "not fold - can't-tell inside the gap, not-running wholly after it "
+          "- while one that began a second earlier folds: %r" % (seconds,),
+          seconds == [None, False, False])
+
+    # A row the hook marked with no start (its call had no Pre of its own to
+    # tie one to) is not a row from before the marks: the window kept for
+    # those never folds it, while its derived row still binds by run.
+    untied = blocked + [hooked(5, began=False, run="r9"),
+                        hooked(6, began=False, run="r9",
+                               action="task.blocked")]
+    untied_answers = [between(untied, 1, 2),
+                      M._echoes(*reversed(M._status_events(untied,
+                                                           "P1.1")[-2:]))]
+    check("hw31 a hook row that records it knows no start does not fold into "
+          "the verb row inside the window, and its derived row still folds "
+          "into it by run: %r" % (untied_answers,),
+          untied_answers == [None, True])
+
+    _hook_driven_echo_cases(check)
+
+
+def _hook_driven_echo_cases(check):
+    """End to end: journal-writes.py's own `main()` for each Pre and Post, a
+    verb's row appended through `_journal_io` between them, every row read
+    back with `read_all`, and `_echoes` asked of what landed on disk. A mark
+    the append drops, a start the hook did not tie to its call, or a reader
+    that asked something the rows do not carry each turns this red; a case
+    built from hand-made rows sees none of them."""
+    jw = _loader.load(os.path.join(_harness.HOOKS_DIR, "journal-writes.py"),
+                      modname="journal_writes_end_to_end")
+    tmp = tempfile.mkdtemp(prefix="at-hook-echo-")
+    prev_env = os.environ.get("CLAUDE_PROJECT_DIR")
+    real_in, real_out = sys.stdin, sys.stdout
+    sid = "s-e2e"
+    man_rel = "docs/audit/audit-plan.json"
+
+    def next_second():
+        """Sleep past the next whole second, so two moments land in two
+        stamps whatever the clock read when the case began."""
+        now = time.time()
+        time.sleep(int(now) + 1.05 - now)
+
+    def project(name):
+        proj = os.path.join(tmp, name)
+        os.makedirs(os.path.join(proj, "docs", "audit"))
+        _harness.git(None, "init", "-q", proj)
+        return proj
+
+    def plan(proj, status, title="t"):
+        with open(os.path.join(proj, man_rel), "w", encoding="utf-8") as fh:
+            json.dump({"meta": {"version": 2}, "phases": [
+                {"id": "P1", "title": "p", "status": "in_progress",
+                 "tasks": [{"id": "P1.1", "title": title, "status": status,
+                            "attempts": 1}]}]}, fh)
+
+    def hook(proj, event, call):
+        os.environ["CLAUDE_PROJECT_DIR"] = proj
+        sys.stdin = io.StringIO(json.dumps({
+            "tool_name": "Bash", "session_id": sid, "cwd": proj,
+            "hook_event_name": event, "tool_use_id": call,
+            "tool_input": {"command": "python3 audit-task.py block P1.1"}}))
+        sys.stdout = io.StringIO()
+        try:
+            jw.main()
+        except SystemExit:
+            pass
+        finally:
+            sys.stdin, sys.stdout = real_in, real_out
+
+    def verb(proj):
+        """The verb's own row, appended the way a command appends it."""
+        plan(proj, "blocked")
+        _journal_io.append(proj, {
+            "action": "task.block", "target": man_rel,
+            "summary": "P1.1: in_progress -> blocked",
+            "actor": {"sessionId": sid, "via": "cli"},
+            "details": {"changes": [{"id": "P1.1", "field": "status",
+                                     "from": "in_progress",
+                                     "to": "blocked"}]}})
+
+    def asked(proj):
+        """[(action, via, _echoes(event, the event before))] for P1.1."""
+        events = M._status_events(_journal_io.read_all(proj), "P1.1") or []
+        return [(e[4][3], e[4][0], M._echoes(e, events[i - 1]) if i else None)
+                for i, e in enumerate(events)]
+
+    try:
+        # The echo: the call began in an earlier second than the verb's row,
+        # and the same call wrote the plan again after it (a title), so the
+        # hook's diff holds the status move no row's state accounts for.
+        echo = project("echo")
+        plan(echo, "in_progress")
+        hook(echo, "PreToolUse", "toolu_seed")
+        hook(echo, "PostToolUse", "toolu_seed")
+        hook(echo, "PreToolUse", "toolu_a")
+        next_second()
+        verb(echo)
+        plan(echo, "blocked", title="t2")
+        hook(echo, "PostToolUse", "toolu_a")
+        # The restart: the verb's call ends, the task is moved back with no
+        # row, and a LATER call of the same session blocks it again inside
+        # any window - its baseline read after the verb's row.
+        restart = project("restart")
+        plan(restart, "in_progress")
+        hook(restart, "PreToolUse", "toolu_seed")
+        hook(restart, "PostToolUse", "toolu_seed")
+        hook(restart, "PreToolUse", "toolu_a")
+        verb(restart)
+        hook(restart, "PostToolUse", "toolu_a")
+        plan(restart, "in_progress")
+        next_second()
+        hook(restart, "PreToolUse", "toolu_b")
+        plan(restart, "blocked", title="t3")
+        hook(restart, "PostToolUse", "toolu_b")
+        got = [asked(echo), asked(restart)]
+        check("hw29 through the hook's own Pre and Post and the journal's own "
+              "append and read: the hook's record of the verb's change, from "
+              "a call that began before the verb's row, folds and so does "
+              "the row it derives; a later call's restart in the same session "
+              "and inside the window does not fold, while its derived row "
+              "still folds into it: %r" % (got,),
+              got == [[("task.block", "cli", None),
+                       ("manifest.edit", "hook", True),
+                       ("task.blocked", "hook", True)],
+                      [("task.block", "cli", None),
+                       ("manifest.edit", "hook", False),
+                       ("task.blocked", "hook", True)]])
+    finally:
+        sys.stdin, sys.stdout = real_in, real_out
+        if prev_env is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = prev_env
+        _harness.remove_tree(tmp)
 
 
 def _status_moves(row):

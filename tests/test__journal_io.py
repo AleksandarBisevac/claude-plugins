@@ -3954,6 +3954,41 @@ def _details_key_cases(check):
     check("dk5 ...and the allow-list is still an allow-list: a key it does not "
           "hold is dropped, so listing one key did not turn the filter off: %r"
           % (_invented,), _invented == {"phaseId": "P1"})
+    _call_mark_round_trip(check)
+
+
+def _call_mark_round_trip(check):
+    """The journal-writes hook's two call marks, through a real append and
+    read back off the disk: the reader that folds a hook row asks the row for
+    them, so a mark the append drops turns every new row into one that records
+    no start. A recorded start of None - the hook could not tie a start to its
+    call - is kept as None, not dropped, so the row still says it was asked."""
+    tmp = tempfile.mkdtemp(prefix="journal-call-marks-")
+    try:
+        proj = os.path.join(tmp, "repo")
+        os.makedirs(os.path.join(proj, "docs", "audit"))
+        cfg = {"journal": {"enabled": True,
+                           "dir": os.path.join(proj, "journal")}}
+        change = [{"id": "P1.1", "field": "status", "from": "in_progress",
+                   "to": "blocked"}]
+        for began in ("2026-10-28T10:00:00Z", None):
+            M.append(proj, {
+                "action": "manifest.edit",
+                "target": "docs/audit/audit-plan.json",
+                "summary": "P1.1: status in_progress->blocked",
+                "actor": {"sessionId": "s-marks", "via": "hook"},
+                "details": {"changes": change, "callBegan": began,
+                            "hookRun": "0123456789abcdef"}}, config=cfg)
+        kept = [(r.get("details") or {}) for r in M.read_all(proj, config=cfg)]
+        got = [(d.get("callBegan", "absent"), d.get("hookRun", "absent"))
+               for d in kept]
+        check("dk6 a row the hook marks keeps `callBegan` and `hookRun` through "
+              "the append, read back from the file - a moment, and a start "
+              "the hook could not tie to its call kept as None: %r" % (got,),
+              got == [("2026-10-28T10:00:00Z", "0123456789abcdef"),
+                      (None, "0123456789abcdef")])
+    finally:
+        _harness.remove_tree(tmp)
 
 
 # --- ft: free text a caller hands over never carries a machine path ------------

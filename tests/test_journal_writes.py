@@ -390,11 +390,17 @@ def _cases(check):
                "to": "done"} in (entries[0].get("details") or {})
               .get("changes", []), repr(entries[0].get("details")))
         comp = [e for e in entries if e.get("action") == "task.complete"]
+        marks = ("callBegan", "hookRun")
         check("h3 ...and a task.complete row derived from the same diff - the "
-              "HOOK is the only writer of these",
-              len(comp) == 1 and comp[0]["details"] == {
+              "HOOK is the only writer of these - beside the call marks its "
+              "edit row carries too",
+              len(comp) == 1 and {k: v for k, v in comp[0]["details"].items()
+                                  if k not in marks} == {
                   "taskId": "P1.1", "phaseId": "P1", "from": "in_progress",
-                  "to": "done", "completedAt": "2026-08-11T00:00:00Z"},
+                  "to": "done", "completedAt": "2026-08-11T00:00:00Z"}
+              and all(comp[0]["details"].get(k)
+                      == entries[0]["details"].get(k) for k in marks)
+              and isinstance(comp[0]["details"].get("hookRun"), str),
               repr(comp))
         # A LATER FIX REVERSED THIS CASE, and the reversal is the fix. It used to assert
         # the Post pass DELETED the slot, which made the pre-image a one-shot
@@ -2072,6 +2078,201 @@ def _cases(check):
         shutil.rmtree(tmp_i, ignore_errors=True)
 
     _machine_path_value_cases(check)
+    _call_mark_cases(check)
+
+
+# --- cm: a status row says when its call's baseline stood ----------------------
+def _call_mark_cases(check):
+    """Driven through `main()`, Pre then Post, and read back from the journal
+    file, because a key the append drops is a key no reader ever sees. A start
+    counts only when the Pre that recorded it carried the Post's own
+    `tool_use_id`: a start left by another call's Pre says when THAT call
+    began, which is no bound on this one."""
+    import io
+    tmp = tempfile.mkdtemp(prefix="jw-call-marks-")
+    prev_env = os.environ.get("CLAUDE_PROJECT_DIR")
+    real_in, real_out = sys.stdin, sys.stdout
+    cfg = _config._deep_merge(_config.DEFAULTS, {})
+    try:
+        proj = os.path.join(tmp, "cm")
+        man_rel = "docs/audit/audit-plan.json"
+        man_abs = os.path.join(proj, man_rel)
+        os.makedirs(os.path.dirname(man_abs))
+
+        def write(status, title="t"):
+            with open(man_abs, "w", encoding="utf-8") as fh:
+                json.dump({"meta": {"version": 2}, "phases": [
+                    {"id": "P1", "title": "p", "status": "in_progress",
+                     "tasks": [{"id": "P1.1", "title": title,
+                                "status": status, "attempts": 1}]}]}, fh)
+
+        bash = {"tool_name": "Bash", "session_id": "cm-1", "cwd": proj,
+                "tool_input": {"command": "python3 -c 'write the plan'"}}
+        edit = {"tool_name": "Write", "session_id": "cm-1", "cwd": proj,
+                "tool_input": {"file_path": man_abs, "content": "x"}}
+
+        def hook(data, event, call):
+            payload = dict(data, hook_event_name=event)
+            if call is not None:
+                payload["tool_use_id"] = call
+            sys.stdin = io.StringIO(json.dumps(payload))
+            sys.stdout = io.StringIO()
+            try:
+                M.main()
+            except SystemExit:
+                pass
+            finally:
+                sys.stdin, sys.stdout = real_in, real_out
+
+        def baseline(started, read):
+            """The Pre's recorded start moved to `started` - mid-second, its
+            call id kept - and the slot's read to `read`, both stamps."""
+            path = _config._call_start_path(proj, cfg, bash)
+            with open(path, encoding="utf-8") as fh:
+                held = json.load(fh)
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(dict(held, at=_config.ts_epoch(started) + 0.6), fh)
+            slot = M._slot_path(proj, cfg, bash, man_rel)
+            with open(slot, encoding="utf-8") as fh:
+                held = json.load(fh)
+            with open(slot, "w", encoding="utf-8") as fh:
+                json.dump(dict(held, ts=read), fh)
+
+        def marks_since(count):
+            rows = [r for r in _journal_io.read_all(proj)
+                    if r.get("action") in ("manifest.edit", "task.blocked")]
+            return [(r.get("action"),
+                     (r.get("details") or {}).get("callBegan", "absent"),
+                     (r.get("details") or {}).get("hookRun"))
+                    for r in rows[count:]]
+
+        os.environ["CLAUDE_PROJECT_DIR"] = proj
+        write("in_progress")
+        hook(bash, "PreToolUse", "toolu_seed")
+        hook(bash, "PostToolUse", "toolu_seed")
+        # The first call: its recorded start is the later moment.
+        hook(bash, "PreToolUse", "toolu_1")
+        baseline("2026-10-26T12:00:00Z", "2026-10-26T11:00:00Z")
+        write("blocked")
+        hook(bash, "PostToolUse", "toolu_1")
+        # The second: a slot read after the call's own start - another Post
+        # of this writer refreshed it mid-call - is the later.
+        hook(bash, "PreToolUse", "toolu_2")
+        baseline("2026-10-26T12:30:00Z", "2026-10-26T13:00:00Z")
+        write("pending")
+        hook(bash, "PostToolUse", "toolu_2")
+        marks = marks_since(0)
+        runs = [m[2] for m in marks]
+        check("cm1 a derived status row records when its call began: the "
+              "edit row and the row it derives, read back from the journal, "
+              "carry the later of the call's own recorded start and the "
+              "slot's read, to the second, and one hook run id between them "
+              "that the next call's row does not share: %r" % (marks,),
+              [m[:2] for m in marks]
+              == [("manifest.edit", "2026-10-26T12:00:00Z"),
+                  ("task.blocked", "2026-10-26T12:00:00Z"),
+                  ("manifest.edit", "2026-10-26T13:00:00Z")]
+              and all(isinstance(r, str) and r for r in runs)
+              and runs[0] == runs[1] != runs[2])
+
+        # A Post whose own Pre never ran: the record is another call's. Then
+        # a Post carrying no id, and a record that carries none (a writer
+        # that recorded the moment alone).
+        seen = len(marks)
+        hook(bash, "PreToolUse", "toolu_3")
+        write("blocked", title="t3")
+        hook(bash, "PostToolUse", "toolu_4")
+        write("in_progress", title="t4")
+        hook(bash, "PreToolUse", "toolu_5")
+        write("blocked", title="t5")
+        hook(bash, "PostToolUse", None)
+        write("in_progress", title="t6")
+        hook(bash, "PreToolUse", "toolu_6")
+        _config.record_call_start(proj, cfg, bash)
+        write("blocked", title="t7")
+        hook(bash, "PostToolUse", "toolu_6")
+        untied = marks_since(seen)
+        check("cm2 a status row from a call whose start cannot be tied to it "
+              "by `tool_use_id` - its Pre never ran, the Post names no id, "
+              "or the record names none - records no start (None, not a "
+              "moment from another call) and still records its run: %r"
+              % (untied,),
+              [(m[0], m[1]) for m in untied]
+              == [("manifest.edit", None), ("task.blocked", None)] * 3
+              and all(isinstance(m[2], str) and m[2] for m in untied))
+
+        # The edit lane: its Pre writes the slot, so the slot's read is the
+        # call's start - when the slot names the call. A Post refreshes the
+        # slot without one, so a later Post with no Pre of its own finds
+        # nothing tied to it.
+        seen += len(untied)
+        write("in_progress", title="e1")
+        hook(edit, "PreToolUse", "toolu_e")
+        slot = M._slot_path(proj, cfg, edit, man_rel)
+        with open(slot, encoding="utf-8") as fh:
+            held = json.load(fh)
+        with open(slot, "w", encoding="utf-8") as fh:
+            json.dump(dict(held, ts="2026-10-26T14:00:00Z"), fh)
+        write("blocked", title="e1")
+        hook(edit, "PostToolUse", "toolu_e")
+        write("in_progress", title="e2")
+        hook(edit, "PostToolUse", "toolu_f")
+        lane = marks_since(seen)
+        check("cm3 on the edit lane a row records its slot's read as its "
+              "start when its own Pre wrote that slot, and no start when the "
+              "slot was left by another call: %r" % (lane,),
+              [(m[0], m[1]) for m in lane]
+              == [("manifest.edit", "2026-10-26T14:00:00Z"),
+                  ("task.blocked", "2026-10-26T14:00:00Z"),
+                  ("manifest.edit", None)])
+
+        # A call-start record holding valid JSON that is not an object: the
+        # call's rows are still written, with no start tied to it. A reader
+        # that asked the record for a key before asking whether it is an
+        # object raised here, and every row of the call was lost.
+        seen += len(lane)
+        record = _config._call_start_path(proj, cfg, bash)
+        for status, title, text in (("blocked", "k1", "[1]"),
+                                    ("in_progress", "k2", "5")):
+            hook(bash, "PreToolUse", "toolu_k")
+            with open(record, "w", encoding="utf-8") as fh:
+                fh.write(text)
+            write(status, title=title)
+            hook(bash, "PostToolUse", "toolu_k")
+        corrupt = marks_since(seen)
+        check("cm4 a call-start record that is valid JSON but not an object "
+              "(a list, a number) costs the call its start, never its rows: "
+              "%r" % (corrupt,),
+              [(m[0], m[1]) for m in corrupt]
+              == [("manifest.edit", None), ("task.blocked", None),
+                  ("manifest.edit", None)])
+
+        # The sweep lane's Pre records its call's start once, the moment and
+        # the id in one write: a record rewritten to add the id is, between
+        # the two writes, a record naming no call.
+        real_write, writes = _config.atomic_write_text, []
+
+        def counting(path, text):
+            if os.path.basename(str(path)).startswith("call-start-"):
+                writes.append(json.loads(text))
+            return real_write(path, text)
+        _config.atomic_write_text = counting
+        try:
+            hook(bash, "PreToolUse", "toolu_once")
+        finally:
+            _config.atomic_write_text = real_write
+        check("cm5 the sweep lane's Pre writes its call-start record once, "
+              "naming the call's id beside the moment: %r" % (writes,),
+              len(writes) == 1
+              and writes[0].get(_config.CALL_ID_KEY) == "toolu_once"
+              and isinstance(writes[0].get("at"), float))
+    finally:
+        sys.stdin, sys.stdout = real_in, real_out
+        if prev_env is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = prev_env
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 # --- mp: a value holding a machine path never costs the hook its own row -------

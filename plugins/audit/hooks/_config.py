@@ -4201,6 +4201,9 @@ def executor_context_bound_hours(cfg):
 # `None`, and every caller keeps its previous behaviour for it rather than
 # inventing a window.
 CALL_START_FILE = "call-start-%s.json"
+# The key a per-call record keeps the call's `tool_use_id` under: the
+# call-start record here, and journal-writes.py's edit-lane slot.
+CALL_ID_KEY = "toolUseId"
 WINDOW_SLACK_SECONDS = 2
 _SAFE_KEY = re.compile(r"[^A-Za-z0-9._-]+")
 
@@ -4224,29 +4227,47 @@ def _call_start_path(root, cfg, data):
                         CALL_START_FILE % writer_key(data))
 
 
-def record_call_start(root, cfg, data, now=None):
+def record_call_start(root, cfg, data, now=None, call=None):
     """PreToolUse: note when this writer's call began. Returns the file path, or
     None when it could not be written - never raises, because a hook that
-    cannot note a start has lost only the window, not the tool call."""
+    cannot note a start has lost only the window, not the tool call.
+
+    `call` is the call's `tool_use_id`, kept under `CALL_ID_KEY` in the same
+    record and the same write, so `call_start(..., call=)` can tell this
+    call's start from one an earlier call's Pre left. A record written in two
+    steps would, between them, be a start naming no call."""
     try:
         path = _call_start_path(root, cfg, data)
         ensure_local_dir(os.path.dirname(path))
-        atomic_write_text(path, json.dumps(
-            {"at": time.time() if now is None else now}))
+        held = {"at": time.time() if now is None else now}
+        if call is not None:
+            held[CALL_ID_KEY] = call
+        atomic_write_text(path, json.dumps(held))
         return path
     except Exception:
         return None
 
 
-def call_start(root, cfg, data):
+def call_start(root, cfg, data, call=None):
     """When this writer's current call began, as epoch seconds, or None when no
-    Pre pass recorded one (see NO START RECORDED above)."""
+    Pre pass recorded one (see NO START RECORDED above). With `call`, only a
+    record naming that `tool_use_id` answers: a Pre that never ran for this
+    call leaves the record of an earlier one, whose start bounds nothing
+    here. A record that is not an object, or whose moment is not a number, is
+    no start; never raises."""
     try:
         with open(_call_start_path(root, cfg, data), "r", encoding="utf-8") as fh:
-            at = json.load(fh).get("at")
-        return float(at) if isinstance(at, (int, float)) else None
+            held = json.load(fh)
     except Exception:
         return None
+    if not isinstance(held, dict):
+        return None
+    if call is not None and held.get(CALL_ID_KEY) != call:
+        return None
+    at = held.get("at")
+    if isinstance(at, bool) or not isinstance(at, (int, float)):
+        return None
+    return float(at)
 
 
 def changed_in_window(path, start):
