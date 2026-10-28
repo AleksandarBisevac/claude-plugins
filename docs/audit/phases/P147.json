@@ -1,7 +1,7 @@
 {
   "id": "P147",
   "title": "The 3.7.0 changelog",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "CHANGELOG.md's unreleased section describes every user-visible change since 3.6.0",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "bf853d390c6e1cb54008146a389a858473ef7afa",
   "branch": "audit/p147-the-3-7-0-changelog",
-  "mergedAt": null,
+  "mergedAt": "2026-10-28T22:40:29Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -494,5 +494,6 @@
     "runId": "2026-10-28T22:40:05Z.8662fb",
     "status": "passed",
     "at": "2026-10-28T22:40:05Z"
-  }
+  },
+  "mergedHead": "7da00eff53bc4a704deea321919f43c0b4e5528d"
 }
