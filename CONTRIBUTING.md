@@ -377,8 +377,11 @@ a legacy code page.
 
 The mutation probe (`tools/prove-gates.py`) never writes the checkout: every row mutates
 and restores a worker tree of its own — a detached `git worktree` at HEAD carrying the
-checkout's uncommitted edits and untracked files, under a scratch directory outside every
+checkout's uncommitted edits and the untracked files git does not ignore (an untracked nested
+repository is named on stderr and left out), under a scratch directory outside every
 checkout — so a sweep running beside it reads no half-mutated file, and it holds no marker.
+It removes only its own pool's worktree registrations, never with a global prune, and reaps a
+killed run's pool only when that run's pid is known to be gone.
 The sweep still refuses to start while a marker under the git dir names a live pid, and
 `python3 tools/orchestrator-state.py` still reports one, but no tool writes it any more —
 `git grep -n '_suite.hold(' -- '*.py'` finds only the fixtures of the suites that test those readers —

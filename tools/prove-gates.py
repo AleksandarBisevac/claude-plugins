@@ -34,13 +34,15 @@ chosen and where an allow case is not meaningful.
 
 WHAT IT COSTS. One suite per row, so a full run is minutes rather than seconds. The
 rows run concurrently, each in a WORKER TREE - a detached `git worktree` at HEAD
-carrying the checkout's uncommitted edits and untracked files, under a scratch
-directory outside every checkout - on all cores but two (every core under CI=true),
-and the report is rendered in the table's order whatever order they finish in. A
-row mutates its worker tree and restores it under redfirst's trap; the checkout
-itself is never written, and the trees are removed when the run ends, or by the
-next run when this one was killed. It is not a per-commit gate; run it before a
-release, or when a lint changes.
+carrying the checkout's uncommitted edits and its untracked files that are not
+ignored (an untracked nested repository is named on stderr and not carried), under
+a scratch directory outside every checkout - on all cores but two (every core under
+CI=true), and the report is rendered in the table's order whatever order they
+finish in. A row mutates its worker tree and restores it under redfirst's trap; the
+checkout itself is never written, and the trees are removed when the run ends - a
+SIGTERM included - or by the next run when this one was killed outright. Only the
+pool's own worktree registrations are ever removed. It is not a per-commit gate;
+run it before a release, or when a lint changes.
 
 `--changed <paths>` IS THE "WHEN A LINT CHANGES" HALF, and the drive's sign-off
 step is its caller: it hands over the files the phase changed, and only the rows
@@ -2225,9 +2227,9 @@ def undefined_cases(rows, repo=None):
     """`(lint, suite, selector)` for every row whose case no suite source defines.
 
     A SECOND CHECK ON THE SAME SELECTOR, AND THE ONE THAT NEEDS NO MUTATION.
-    `verdict()` reports LABEL GONE only on a run that mutates the tree and sends a
-    suite red, so a row keyed on an id that stopped existing - a label that lost
-    the space after its id reads as another id, `vb1 a` as `vb1a` - sat in the
+    `verdict()` reports LABEL GONE only on a run that mutates a worker tree and
+    sends a suite red, so a row keyed on an id that stopped existing - a label
+    that lost the space after its id reads as another id, `vb1 a` as `vb1a` - sat in the
     table until somebody ran the proof. Reading the suite's `check()` labels is
     the half the selftest can do on every sweep.
 
@@ -2323,7 +2325,7 @@ def verdict(target, gate, suite):
     SPLIT FROM `prove()` BECAUSE THE INTERESTING BRANCHES ARE THE ONES A LIVE RUN
     NEVER TAKES. An ambiguous selector, a selector naming nothing, and a row that
     names no case at all are all states of the TABLE, so driving them through
-    `prove()` would mean mutating the tree to prove something about a string. Here
+    `prove()` would mean mutating a worker tree to prove something about a string. Here
     they are a rendered report written out in the selftest, and the sweep runs
     them with everything else.
     """
@@ -2368,8 +2370,9 @@ def verdict(target, gate, suite):
 # THE REPAIR IS TO MOVE THE ROOT, NOT THE NAME. Pointing the child's temp root at a
 # per-run directory makes the fixed basename unique without `redfirst.sh` having to
 # emit the path it chose - which would be a contract change to the one script here
-# that mutates the working tree. It also sweeps up anything the mutated suite leaks,
-# for free, which is the same trick `sweep-selftests.py` plays on every suite it runs.
+# that mutates a tree (a worker tree; never the checkout). It also sweeps up
+# anything the mutated suite leaks, for free, which is the same trick
+# `sweep-selftests.py` plays on every suite it runs.
 LOG_BASENAME = "redfirst-gate.log"
 
 # All three, because the shell reads the first and `tempfile` reads the other two on
@@ -2410,9 +2413,21 @@ def _bytes_or_none(path):
         return None
 
 
-def prove(row, repo=None):
-    """Mutate, run the suite, restore - in `repo`, a worker tree. Returns a dict;
-    never raises on a red gate.
+def redfirst_call(rel, old, new, suite, tree, scratch, base=None):
+    """`{"argv", "cwd", "env"}` of the one child a row starts: `redfirst.sh`
+    mutating `rel` in the worker tree `tree`, then the row's suite, with every
+    temp root at `scratch`. A pure function of its arguments, so what a row's
+    child is handed is pinned by a case without starting anything."""
+    return {"argv": ["sh", "tools/redfirst.sh", rel, "--replace", old, new,
+                     "--allow-dirty", "--", sys.executable, suite, "--selftest"],
+            "cwd": tree, "env": worker_env(scratch, tree, base)}
+
+
+def prove(row, repo, run=None, base=None):
+    """Mutate, run the suite, restore - in `repo`, a worker tree, never the
+    checkout: there is no default tree. Returns a dict; never raises on a red
+    gate. `run` (default `subprocess.run`) and `base` (default the real
+    environment) are the seams a case reads the child's call through.
 
     `--allow-dirty` because the tree mirrors the checkout's own edits, so the file
     a row mutates may differ from HEAD by design. redfirst's refusal exists for a
@@ -2421,7 +2436,10 @@ def prove(row, repo=None):
     well, so a row that left its mutation behind is a verdict and not a silently
     poisoned tree for the next row on it."""
     lint, rel, _kind, _anchor, _payload, suite, target = row
-    tree = repo or REPO
+    if not repo:
+        raise ValueError("prove() needs a worker tree; the checkout is never one")
+    tree = repo
+    run = subprocess.run if run is None else run
     old, new = mutation(row, tree)
     if old is None:
         return {"lint": lint, "verdict": "UNANCHORED", "detail": new, "cases": []}
@@ -2429,11 +2447,9 @@ def prove(row, repo=None):
     before = _bytes_or_none(path)
     scratch = tempfile.mkdtemp(prefix="prove-gates-")
     try:
-        proc = subprocess.run(
-            ["sh", "tools/redfirst.sh", rel, "--replace", old, new,
-             "--allow-dirty", "--", sys.executable, suite, "--selftest"],
-            cwd=tree, env=worker_env(scratch, tree),
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        call = redfirst_call(rel, old, new, suite, tree, scratch, base)
+        proc = run(call["argv"], cwd=call["cwd"], env=call["env"],
+                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         text = proc.stdout.decode("utf-8", "replace")
         try:
             gate = io.open(gate_log_path(scratch), encoding="utf-8",
@@ -2592,7 +2608,14 @@ def main(argv):
     # written, and there is nothing mid-mutation for a sweep to read. Nor is a
     # second run refused: two runs hold two pools, and neither reads the other's.
     rows = (len(table) if want_red else 0) + (len(allow) if want_allow else 0)
-    removed = reap_stale(REPO)
+    # A pool that cannot be reaped or opened is a refusal (exit 2), never a row
+    # not proven: the drive reads exit 1 as a verdict on the lints.
+    try:
+        removed = reap_stale(REPO)
+    except (RuntimeError, OSError) as exc:
+        sys.stderr.write("prove-gates: could not look for a killed run's worker "
+                         "trees, so no row ran: %s\n" % (exc,))
+        return 2
     for root in removed:
         sys.stderr.write("prove-gates: took down %s, a pool its killed run left "
                          "registered\n" % (root,))
@@ -2605,6 +2628,10 @@ def main(argv):
                 sys.stderr.write("prove-gates: could not open the worker trees, "
                                  "so no row ran: %s\n" % (exc,))
                 return 2
+            for rel in pool.get("skipped") or ():
+                sys.stderr.write("prove-gates: %s is untracked and not a file (a "
+                                 "nested repository, most often), so the worker "
+                                 "trees do not carry it\n" % (rel,))
         return _prove(want_red, want_allow, table, allow,
                       only is None and changed is None,
                       trees=pool["trees"] if pool else None)
@@ -2667,17 +2694,27 @@ def changed_rows(rows, paths, homes=None):
 # restores the file; done in the one live tree that is one row at a time, and the
 # whole table outgrew the bound the drive's sign-off holds this probe to. So the
 # rows run concurrently, each in a worker tree: a detached `git worktree` at HEAD
-# carrying the checkout's tracked diff and its untracked, non-ignored files, so a
-# run over a dirty tree still proves what its author is looking at. What the
-# checkout sees is git registering and unregistering those trees under its git
-# dir; `git status` never lists that, which is what the drive compares around the
-# run.
+# carrying the checkout's tracked diff (staged into the tree's index) and its
+# untracked, non-ignored files, so a run over a dirty tree still proves what its
+# author is looking at. Ignored files are not carried, and neither is an untracked
+# nested repository - `_mirror` names each one it skips. What the checkout sees is
+# git registering and unregistering those trees under its git dir; `git status`
+# never lists that, which is what the drive compares around the run.
 #
 # A KILLED RUN NEVER REACHES ITS `finally`, so every pool carries an owner file
 # naming its pid, written before its first tree is added, and each run starts by
-# reaping the pools whose owner is gone (`reap_stale`). A pool whose owner is
-# alive is another run's, and is left alone.
+# reaping the pools whose owner is known to be gone (`reap_stale`). A pool whose
+# owner is alive, or whose owner cannot be judged, may be another run's, and is
+# left alone. A SIGTERM is turned into an exit (`__main__` below), so the drive's
+# timeout teardown still reaches the `finally` that closes the pool.
+#
+# ONLY THE POOL'S OWN REGISTRATIONS ARE EVER REMOVED. A bare `git worktree prune`
+# would also unregister every other worktree of the checkout whose directory is
+# missing - a kept audit tree with its provenance file among them - and the plugin
+# reaps only what it started. So a registration is dropped by name: a path under a
+# pool root, its admin directory checked to point there before it is deleted.
 POOL_OWNER = "prove-gates-pool.json"
+POOL_PREFIX = "prove-gates-pool-"
 
 # A worker tree is the checkout's content, not its git location: a caller running
 # under a git hook exports these, and a child reading them would act on the
@@ -2698,14 +2735,22 @@ def pool_size(rows, cpus=None, environ=None):
 def run_ordered(items, work, jobs):
     """`[work(item) for item in items]`, run on `jobs` threads, returned in the
     order of `items` whatever order they finish in - so a report rendered from it
-    is byte-stable under any scheduling. An exception in one item is raised here,
-    after every submitted item has finished."""
+    is byte-stable under any scheduling. An exception - one item's, or an
+    interrupt reaching the caller - cancels every item not yet started and is
+    raised here once the running ones have finished, so a Ctrl-C does not wait
+    out the whole queue."""
     from concurrent import futures
     if not items:
         return []
-    with futures.ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
+    pool = futures.ThreadPoolExecutor(max_workers=max(1, jobs))
+    pending = []
+    try:
         pending = [pool.submit(work, item) for item in items]
         return [f.result() for f in pending]
+    finally:
+        for f in pending:
+            f.cancel()
+        pool.shutdown(wait=True)
 
 
 def _git_env(base=None):
@@ -2754,22 +2799,27 @@ def _pool_parent():
 def _mirror(repo, tree):
     """Write the checkout's uncommitted content into `tree`, a fresh worktree at
     HEAD: the tracked diff against HEAD (staged and unstaged, deletions and binary
-    files included) and every untracked file git does not ignore. Returns a
-    problem string, or None."""
+    files included), applied to the tree's index as well so a staged new file is
+    tracked there too, and every untracked file git does not ignore. Returns
+    `(problem or None, skipped)` - `skipped` the untracked paths that are not a
+    file or a link (an untracked nested repository is listed as its directory),
+    which are not carried."""
     code, patch, err = _git(repo, [
         "diff", "HEAD", "--binary", "--no-ext-diff", "--no-textconv",
         "--no-renames", "--no-color", "--src-prefix=a/", "--dst-prefix=b/"])
     if code != 0:
-        return "git diff HEAD in %s: %s" % (repo, err.strip())
+        return "git diff HEAD in %s: %s" % (repo, err.strip()), []
     if patch.strip():
-        code, _o, err = _git(tree, ["apply", "--binary", "--whitespace=nowarn",
-                                    "-"], data=patch)
+        code, _o, err = _git(tree, ["apply", "--index", "--binary",
+                                    "--whitespace=nowarn", "-"], data=patch)
         if code != 0:
-            return "the checkout's diff does not apply to HEAD: %s" % (err.strip(),)
+            return ("the checkout's diff does not apply to HEAD: %s"
+                    % (err.strip(),)), []
     code, out, err = _git(repo, ["ls-files", "--others", "--exclude-standard",
                                  "-z"])
     if code != 0:
-        return "git ls-files in %s: %s" % (repo, err.strip())
+        return "git ls-files in %s: %s" % (repo, err.strip()), []
+    skipped = []
     for rel in [p.decode("utf-8", "surrogateescape") for p in out.split(b"\0") if p]:
         src, dst = os.path.join(repo, rel), os.path.join(tree, rel)
         parent = os.path.dirname(dst)
@@ -2779,24 +2829,26 @@ def _mirror(repo, tree):
             os.symlink(os.readlink(src), dst)
         elif os.path.isfile(src):
             shutil.copy2(src, dst)
-    return None
+        else:
+            skipped.append(rel)
+    return None, skipped
 
 
 def open_workers(repo, count):
-    """`{"root", "trees"}` - `count` worker trees mirroring `repo`'s current
-    content, under one fresh scratch directory outside every checkout. Raises
-    RuntimeError naming what failed, after taking down what it had made."""
+    """`{"root", "trees", "skipped"}` - `count` worker trees mirroring `repo`'s
+    current content, under one fresh scratch directory outside every checkout;
+    `skipped` is what `_mirror` could not carry, for the caller to say aloud.
+    Raises RuntimeError naming what failed, after taking down what it had made."""
     parent = _pool_parent()
     if parent is None:
         raise RuntimeError("no temp root without a checkout above it, so a worker "
                            "tree would be read as part of that checkout")
-    root = os.path.realpath(tempfile.mkdtemp(prefix="prove-gates-pool-",
-                                             dir=parent))
+    root = os.path.realpath(tempfile.mkdtemp(prefix=POOL_PREFIX, dir=parent))
     import json
     with io.open(os.path.join(root, POOL_OWNER), "w", encoding="utf-8") as fh:
         fh.write(u"%s\n" % json.dumps({"pid": os.getpid(),
                                       "repo": os.path.realpath(repo)}))
-    pool = {"root": root, "trees": []}
+    pool = {"root": root, "trees": [], "skipped": []}
     try:
         for i in range(count):
             tree = os.path.join(root, "w%d" % (i,))
@@ -2805,9 +2857,10 @@ def open_workers(repo, count):
             if code != 0:
                 raise RuntimeError("git worktree add %s: %s" % (tree, err.strip()))
             pool["trees"].append(tree)
-            problem = _mirror(repo, tree)
+            problem, skipped = _mirror(repo, tree)
             if problem:
                 raise RuntimeError(problem)
+            pool["skipped"] = skipped
     except BaseException:
         close_workers(repo, pool)
         raise
@@ -2827,10 +2880,49 @@ def close_workers(repo, pool):
                                     tree])
         if code != 0 and os.path.exists(tree):
             problems.append("git worktree remove %s: %s" % (tree, err.strip()))
-    _git(repo, ["worktree", "prune"])
-    if not _output.remove_tree(pool["root"]):
+        elif code != 0:
+            problem = _drop_registration(repo, tree, pool["root"])
+            if problem:
+                problems.append(problem)
+    if pool.get("root") and not _output.remove_tree(pool["root"]):
         problems.append("could not delete %s" % (pool["root"],))
     return problems
+
+
+def _under(path, root):
+    """True when `path` is `root` or below it, both resolved."""
+    path, root = os.path.realpath(path), os.path.realpath(root)
+    return path == root or path.startswith(root.rstrip(os.sep) + os.sep)
+
+
+def _drop_registration(repo, tree, root):
+    """Unregister the pool tree `tree`, whose directory is already gone, by
+    deleting its own admin directory - after reading that directory's `gitdir`
+    and finding it names `tree`, under the pool root `root`. Never a prune: that
+    would take every missing worktree of the checkout with it. Returns a
+    problem string, or None."""
+    if not _under(tree, root):
+        return "%s is not under the pool root %s; left registered" % (tree, root)
+    code, out, err = _git(repo, ["rev-parse", "--git-common-dir"])
+    if code != 0:
+        return "git rev-parse --git-common-dir in %s: %s" % (repo, err.strip())
+    common = out.decode("utf-8", "surrogateescape").strip()
+    # Relative to `repo` when git prints it relative; join keeps an absolute one.
+    admin_root = os.path.join(repo, common, "worktrees")
+    want = os.path.realpath(tree)
+    names = sorted(os.listdir(admin_root)) if os.path.isdir(admin_root) else []
+    for name in names:
+        admin = os.path.join(admin_root, name)
+        try:
+            with io.open(os.path.join(admin, "gitdir"), encoding="utf-8") as fh:
+                said = fh.read().strip()
+        except OSError:
+            continue
+        if os.path.realpath(os.path.dirname(said)) == want:
+            if _output.remove_tree(admin):
+                return None
+            return "could not delete %s, the registration of %s" % (admin, tree)
+    return "no admin directory of %s names %s" % (repo, tree)
 
 
 def _owner_pid(root):
@@ -2844,27 +2936,46 @@ def _owner_pid(root):
     return pid if isinstance(pid, int) else None
 
 
+def _pid_state(pid):
+    """True / False / None (cannot tell) - the plugin's own probe, read
+    three-valued. `_suite.pid_alive` folds the unknown into False, which is right
+    for an advisory marker and wrong for a pool: reaping on it would take down a
+    run that may still be using its trees."""
+    import _locks        # on sys.path through `install_path()` above
+    return _locks.pid_alive(pid)
+
+
+def _pool_tree(tree):
+    """True when `tree` is spelled the way `open_workers` names a worker tree:
+    `w<N>` directly under a directory named with the pool prefix."""
+    root = os.path.dirname(tree)
+    return (os.path.basename(root).startswith(POOL_PREFIX)
+            and re.match(r"w\d+$", os.path.basename(tree)) is not None)
+
+
 def reap_stale(repo, alive=None):
-    """Take down every pool a killed run left registered with `repo` - one whose
-    owner file names a pid that is gone - and return their roots, sorted. A tree
-    whose directory is already gone is only unregistered (`git worktree prune`);
-    a tree outside any pool is somebody else's, and never touched."""
-    if alive is None:
-        import _suite
-        alive = _suite.pid_alive
-    _git(repo, ["worktree", "prune"])
-    code, out, _err = _git(repo, ["worktree", "list", "--porcelain"])
+    """Take down every pool a killed run left registered with `repo` and return
+    their roots, sorted. A pool is stale when its owner file names a pid that is
+    known to be gone - `alive(pid)` is False, not merely falsy - or when its
+    root is gone altogether, owner file included, so no run can be using it. A
+    tree that is not a pool tree is somebody else's, and never touched. Raises
+    RuntimeError when git cannot list the worktrees: a run that cannot tell its
+    own stale trees from another's does not start."""
+    alive = _pid_state if alive is None else alive
+    code, out, err = _git(repo, ["worktree", "list", "--porcelain"])
     if code != 0:
-        return []
+        raise RuntimeError("git worktree list in %s: %s" % (repo, err.strip()))
     trees = [ln[len("worktree "):] for ln in
              out.decode("utf-8", "surrogateescape").splitlines()
              if ln.startswith("worktree ")]
     stale = {}
-    for tree in trees:
+    for tree in [t for t in trees if _pool_tree(t)]:
         root = os.path.dirname(tree)
-        pid = _owner_pid(root)
-        if pid is not None and not alive(pid):
-            stale.setdefault(root, []).append(tree)
+        if os.path.isdir(root):
+            pid = _owner_pid(root)
+            if pid is None or alive(pid) is not False:
+                continue
+        stale.setdefault(root, []).append(tree)
     for root in sorted(stale):
         close_workers(repo, {"root": root, "trees": stale[root]})
     return sorted(stale)
@@ -2965,7 +3076,7 @@ def _cases(check):
     # A ROW NAMING A CASE NO SUITE DEFINES, found without running a suite. A case
     # whose label lost the space after its id changes id silently (`vb1 a gate`
     # became `vb1a gate`), and a row keyed on the old id then reads LABEL GONE only
-    # on a run that mutates the tree - so the table is read against the suites'
+    # on a run that mutates a worker tree - so the table is read against the suites'
     # source here. The suite is a scratch file, not a path of the plugin, so the
     # case fails on this function and not on the tree it happens to run in.
     _c1d_dir = tempfile.mkdtemp(prefix="prove-gates-c1d-")
@@ -3422,8 +3533,9 @@ def _cases(check):
     # ASSERTED FROM THE AST, because the old form was `"--selftest" in
     # sys.argv[1:] or True` - a comment wearing a PASS line, which cannot fail and
     # so guaranteed nothing about the property it names. `prove()` is what mutates
-    # (it shells out to redfirst.sh), so the checkable statement is that the suite
-    # never reaches it.
+    # (it shells out to redfirst.sh), so the checkable statement is that `_cases`
+    # never calls it. The one case that does, `pw8`, hands it a recording runner
+    # and a scratch tree, so no child starts and nothing outside the scratch moves.
     _c6_tree = ast.parse(io.open(__file__, encoding="utf-8").read())
     _c6_fns = [_n for _n in _c6_tree.body
                if isinstance(_n, ast.FunctionDef) and _n.name == "_cases"]
@@ -3438,7 +3550,7 @@ def _cases(check):
     check("c6 THIS SUITE MUTATES NOTHING. It is run by the parallel sweep "
           "alongside every other suite in the tree, and a mutation here would "
           "change what all of them see mid-run - so the expensive half lives "
-          "in main() and this suite never reaches `prove()`: %r" % (_c6_calls,),
+          "in main() and `_cases` never calls `prove()`: %r" % (_c6_calls,),
           len(_c6_fns) == 1 and _c6_calls == [])
     _changed_cases(check)
     _worker_cases(check)
@@ -3643,7 +3755,8 @@ def _fixture_git(repo, *args):
 def _fixture_repo():
     """A scratch repository whose working tree differs from HEAD in every way a
     worker must mirror or must not: a modified tracked file, a staged one, a
-    deleted one, an untracked one (a space in its name), and an ignored one."""
+    deleted one, an untracked one (a space in its name), an ignored one, and a
+    new file that is staged but was never committed."""
     repo = tempfile.mkdtemp(prefix="prove-gates-fixture-")
     files = {"a.txt": "old\n", "s.txt": "old\n", "gone.txt": "here\n",
              ".gitignore": "ign.txt\n"}
@@ -3655,11 +3768,12 @@ def _fixture_repo():
         if code != 0:
             raise RuntimeError("fixture git %r: %s" % (args, out))
     for name, body in (("a.txt", "new\n"), ("s.txt", "staged\n"),
-                       ("b file.txt", "fresh\n"), ("ign.txt", "ignored\n")):
+                       ("b file.txt", "fresh\n"), ("ign.txt", "ignored\n"),
+                       ("n.txt", "added\n")):
         with io.open(os.path.join(repo, name), "w", encoding="utf-8") as fh:
             fh.write(body)
     os.remove(os.path.join(repo, "gone.txt"))
-    _fixture_git(repo, "add", "s.txt")
+    _fixture_git(repo, "add", "s.txt", "n.txt")
     return repo
 
 
@@ -3681,7 +3795,8 @@ def _registered(repo):
 
 def _worker_cases(check):
     """The parallel half: rows run in worker trees, never in the live checkout.
-    Every git here runs in a scratch fixture; nothing reaches `prove()`."""
+    Every git here runs in a scratch fixture; `prove()` is reached only by `pw8`,
+    through a recording runner that starts nothing."""
     import threading
     import time
     import _loader
@@ -3731,20 +3846,24 @@ def _worker_cases(check):
         trees = pool["trees"] if pool else []
         seen = dict((name, [_read_or_none(os.path.join(t, name)) for t in trees])
                     for name in ("a.txt", "s.txt", "b file.txt", "ign.txt",
-                                 "gone.txt"))
+                                 "gone.txt", "n.txt"))
+        indexed = [_fixture_git(t, "ls-files", "--error-unmatch", "n.txt")[0] == 0
+                   for t in trees]
         outside = all(not (os.path.realpath(t) + os.sep).startswith(
             os.path.realpath(repo) + os.sep) for t in trees)
         check("pw3 worker tree mirrors a dirty tracked file and an untracked file "
               "- the modified and the staged tracked file carry the working "
               "tree's bytes, the untracked file is there, the deleted file is "
-              "not, the ignored file is not, and every tree sits outside the "
-              "checkout: %r" % (seen,),
+              "not, the ignored file is not, a staged new file is there AND in "
+              "the worker's index, and every tree sits outside the checkout: "
+              "%r, staged-new indexed %r" % (seen, indexed),
               len(trees) == 2 and outside
               and seen["a.txt"] == ["new\n"] * 2
               and seen["s.txt"] == ["staged\n"] * 2
               and seen["b file.txt"] == ["fresh\n"] * 2
               and seen["ign.txt"] == [None] * 2
-              and seen["gone.txt"] == [None] * 2)
+              and seen["gone.txt"] == [None] * 2
+              and seen["n.txt"] == ["added\n"] * 2 and indexed == [True] * 2)
         problems = closer(repo, pool) if (closer and pool) else ["no close_workers"]
         left = _registered(repo)
         root_gone = bool(pool) and not os.path.exists(pool["root"])
@@ -3779,6 +3898,282 @@ def _worker_cases(check):
         for p in [x["root"] for x in (pool, killed) if x]:
             _output.remove_tree(p)
         _output.remove_tree(repo)
+    _foreign_cases(check, opener, closer, reaper)
+
+
+def _foreign_worktree(repo):
+    """A worktree of `repo` that is not the pool's, with a provenance file in its
+    admin directory, whose directory is then deleted by hand - the state a global
+    `git worktree prune` erases. Returns `(path, admin_dir, scratch_parent)`."""
+    parent = tempfile.mkdtemp(prefix="prove-gates-foreign-")
+    path = os.path.join(parent, "foreign")
+    code, out = _fixture_git(repo, "worktree", "add", "-q", "-b", "foreign", path)
+    if code != 0:
+        raise RuntimeError("fixture worktree add: %s" % out)
+    _c, admin = _fixture_git(path, "rev-parse", "--absolute-git-dir")
+    admin = admin.strip()
+    with io.open(os.path.join(admin, "audit-worktree.json"), "w",
+                 encoding="utf-8") as fh:
+        fh.write("{}\n")
+    _output.remove_tree(path)
+    return path, admin, parent
+
+
+def _foreign_cases(check, opener, closer, reaper):
+    """Reaping and closing touch only the pool's own registrations: a worktree
+    somebody else made, even one whose directory is gone, stays registered with
+    its provenance, and a pid whose liveness is unknown keeps its pool."""
+    repo = _fixture_repo()
+    parent, pools = None, []
+    try:
+        foreign, admin, parent = _foreign_worktree(repo)
+        mine = os.path.realpath(foreign)
+        killed = opener(repo, 1) if opener else None
+        pools.append(killed)
+        reaped = reaper(repo, alive=lambda pid: False) if reaper else None
+        after_reap = [p for p in _registered(repo) if os.path.realpath(p) == mine]
+        pool = opener(repo, 1) if opener else None
+        pools.append(pool)
+        problems = closer(repo, pool) if (closer and pool) else ["no close_workers"]
+        after_close = [p for p in _registered(repo) if os.path.realpath(p) == mine]
+        kept = os.path.isfile(os.path.join(admin, "audit-worktree.json"))
+        check("pw6 reaping removes only the pool's own worktree entries and leaves "
+              "a foreign worktree registered - a foreign tree whose directory was "
+              "deleted is still listed, provenance and all, after a dead owner's "
+              "pool is reaped and after a pool is closed, while both pools are "
+              "gone: reaped %r, foreign after reap %r, close problems %r, foreign "
+              "after close %r, provenance kept %r, pool registrations left %r"
+              % (reaped, after_reap, problems, after_close, kept,
+                 [p for p in _registered(repo) if os.path.realpath(p) != mine]),
+              bool(killed) and reaped == [killed["root"]] and len(after_reap) == 1
+              and problems == [] and len(after_close) == 1 and kept
+              and [p for p in _registered(repo) if os.path.realpath(p) != mine] == [])
+
+        # Unknown is not dead: a pid the platform cannot answer about may be a
+        # concurrent run's, and taking its pool down breaks that run mid-row.
+        unknown = opener(repo, 1) if opener else None
+        pools.append(unknown)
+        spared = reaper(repo, alive=lambda pid: None) if reaper else None
+        standing = bool(unknown) and os.path.isdir(unknown["root"])
+        check("pw7 an owner pid whose liveness is unknown keeps its pool - only an "
+              "explicit not-alive reaps: reaped %r, root standing %r"
+              % (spared, standing),
+              unknown is not None and spared == [] and standing)
+        close_workers(repo, unknown)
+
+        # A pool whose whole root was deleted (a temp cleaner) has no owner file
+        # left to ask, and no run can be using it: its registrations go, by name.
+        # The by-name removal is also driven directly, for the git that refuses
+        # `worktree remove` on a missing directory: it drops a pool tree's admin
+        # directory, and refuses a path outside the pool root it is handed.
+        gone = opener(repo, 1) if opener else None
+        pools.append(gone)
+        if gone:
+            _output.remove_tree(gone["root"])
+        reaped_gone = reaper(repo, alive=lambda pid: True) if reaper else None
+        direct = opener(repo, 1) if opener else None
+        pools.append(direct)
+        dropper = globals().get("_drop_registration")
+        refused = dropped = "no _drop_registration"
+        if dropper and direct:
+            refused = dropper(repo, foreign, direct["root"])
+            _output.remove_tree(direct["trees"][0])
+            dropped = dropper(repo, direct["trees"][0], direct["root"])
+        left = [os.path.realpath(p) for p in _registered(repo)]
+        check("pw13 a pool whose root is gone is unregistered by the next run, and "
+              "the by-name removal drops a pool tree's own admin directory while "
+              "refusing a path outside the pool - the foreign tree stays: reaped "
+              "%r, refused %r, dropped %r, registered %r"
+              % (reaped_gone, refused, dropped, left),
+              bool(gone) and reaped_gone == [gone["root"]]
+              and bool(refused) and "not under the pool root" in refused
+              and dropped is None and left == [mine]
+              and os.path.isfile(os.path.join(admin, "audit-worktree.json")))
+    finally:
+        for wt in _registered(repo):
+            _fixture_git(repo, "worktree", "remove", "--force", wt)
+        for p in [x["root"] for x in pools if x]:
+            _output.remove_tree(p)
+        for p in (parent, repo):
+            if p:
+                _output.remove_tree(p)
+    _isolation_cases(check)
+    _teardown_cases(check)
+
+
+def _isolation_cases(check):
+    """What one row's child is handed - argv, working directory, environment -
+    read off `prove()` itself through a recording runner, in a scratch tree, so
+    nothing is mutated and nothing is started. A real run would also pass with
+    the child in the checkout: the suite it names is there too."""
+    tree = tempfile.mkdtemp(prefix="prove-gates-isolation-")
+    calls = []
+    try:
+        with io.open(os.path.join(tree, "f.txt"), "w", encoding="utf-8") as fh:
+            fh.write(u"anchor line\n")
+        # Assembled, not written whole: a whole name here reads to the tools/
+        # basename lint as a reference to a suite that does not exist.
+        suite = "tests/test_probe" + ".py"
+        row = ("probe_lint", "f.txt", "replace", "anchor line", "mutated line",
+               suite, "c1 probe")
+        base = {"PATH": os.environ.get("PATH", ""), "CLAUDE_PROJECT_DIR": REPO,
+                "PWD": REPO, "GIT_DIR": os.path.join(REPO, ".git"),
+                "GIT_WORK_TREE": REPO, "GIT_INDEX_FILE": os.path.join(REPO, "idx")}
+        import types
+        done = types.SimpleNamespace(stdout=b"REDFIRST ok\n", returncode=0)
+
+        def record(argv, **kw):
+            calls.append(dict(kw, argv=list(argv),
+                              scratch_seen=os.path.isdir(kw.get("env", {})
+                                                         .get("TMPDIR", ""))))
+            return done
+
+        def leave_mutated(argv, **kw):
+            with io.open(os.path.join(tree, "f.txt"), "w", encoding="utf-8") as fh:
+                fh.write(u"mutated line\n")
+            return done
+        try:
+            prove(row, tree, run=record, base=base)
+            left = prove(row, tree, run=leave_mutated, base=base)
+        except TypeError as exc:      # a prove() that takes no runner pins nothing
+            left = {"verdict": "no injectable runner: %s" % (exc,)}
+        call = calls[0] if calls else {}
+        env = call.get("env") or {}
+        argv = call.get("argv") or []
+        scratch = env.get("TMPDIR", "")
+        mine = os.path.realpath(tree)
+        wrong = [k for k, ok in (
+            ("cwd is the worker tree", os.path.realpath(call.get("cwd") or "") == mine),
+            ("argv runs redfirst on the row's file, allowing a dirty tree, then the "
+             "row's suite", argv[:7] == ["sh", "tools/redfirst.sh", "f.txt",
+                                         "--replace", "anchor line", "mutated line",
+                                         "--allow-dirty"]
+             and argv[-4:] == ["--", sys.executable, suite, "--selftest"]),
+            ("CLAUDE_PROJECT_DIR and PWD repointed at the tree",
+             env.get("CLAUDE_PROJECT_DIR") == tree and env.get("PWD") == tree),
+            ("git's location variables dropped",
+             not [v for v in _GIT_LOCATION_VARS if v in env]),
+            ("every temp root is one scratch outside tree and checkout, gone after",
+             bool(scratch) and all(env.get(v) == scratch for v in _TEMP_VARS)
+             and call.get("scratch_seen") and not os.path.exists(scratch)
+             and not os.path.realpath(scratch).startswith(mine + os.sep)
+             and not os.path.realpath(scratch).startswith(
+                 os.path.realpath(REPO) + os.sep))) if not ok]
+        restored = _read_or_none(os.path.join(tree, "f.txt"))
+        check("pw8 a row's child runs in its worker tree and nowhere else - cwd "
+              "the tree, redfirst told --allow-dirty, CLAUDE_PROJECT_DIR and PWD "
+              "pointed at the tree, git's location variables gone, temp roots one "
+              "scratch - and a row that leaves its mutation behind is an ERROR "
+              "with the file put back from its pre-row bytes: wrong %r, left %r, "
+              "file now %r" % (wrong, left.get("verdict"), restored),
+              len(calls) == 1 and wrong == [] and left.get("verdict") == "ERROR"
+              and "left f.txt mutated" in (left.get("detail") or "")
+              and restored == "anchor line\n")
+    finally:
+        _output.remove_tree(tree)
+
+
+def _teardown_cases(check):
+    """How a run ends when it does not end normally: an interrupt cancels the
+    queue, a nested repository is named rather than silently left out, a pool
+    that cannot be reaped is a refusal, and a SIGTERM still reaches `finally`."""
+    import threading
+    import time
+    started = []
+    lock = threading.Lock()
+
+    def work(item):
+        with lock:
+            started.append(item)
+        time.sleep(0.05)
+        if item == 0:
+            raise KeyboardInterrupt
+        return item
+    raised = None
+    try:
+        run_ordered(list(range(6)), work, 1)
+    except KeyboardInterrupt:
+        raised = "KeyboardInterrupt"
+    time.sleep(0.2)            # anything not cancelled would have started by now
+    check("pw9 an interrupt in the queue cancels the rows not yet started rather "
+          "than waiting all of them out: raised %r, started %r"
+          % (raised, started),
+          raised == "KeyboardInterrupt" and 1 <= len(started) <= 2)
+
+    repo = _fixture_repo()
+    pool = None
+    try:
+        nested = os.path.join(repo, "vendor")
+        os.makedirs(nested)
+        _fixture_git(nested, "init", "-q")
+        with io.open(os.path.join(nested, "f.txt"), "w", encoding="utf-8") as fh:
+            fh.write(u"x = 1\n")
+        pool = open_workers(repo, 1)
+        carried = os.path.exists(os.path.join(pool["trees"][0], "vendor", "f.txt"))
+        check("pw10 an untracked nested repository is reported as not carried, "
+              "not dropped in silence: skipped %r, carried %r"
+              % (pool.get("skipped"), carried),
+              pool.get("skipped") == ["vendor/"] and not carried)
+    finally:
+        if pool:
+            close_workers(repo, pool)
+        _output.remove_tree(repo)
+
+    not_a_repo = tempfile.mkdtemp(prefix="prove-gates-norepo-")
+    try:
+        try:
+            got = ("returned", reap_stale(not_a_repo))
+        except RuntimeError as exc:
+            got = ("raised", str(exc)[:60])
+    finally:
+        _output.remove_tree(not_a_repo)
+    opened = []
+
+    def no_reap(repo, alive=None):
+        raise RuntimeError("git worktree list: fixture refusal")
+    fakes = {"reap_stale": no_reap,
+             "open_workers": lambda repo, count: opened.append(count)}
+    real = dict((n, globals()[n]) for n in fakes)
+    real_err = sys.stderr
+    buf = io.StringIO()
+    globals().update(fakes)
+    sys.stderr = buf
+    try:
+        code = main(["--only", "house_style_violations", "--red"])
+    except Exception as exc:          # a traceback is exit 1: not a refusal
+        code = "raised %s" % (type(exc).__name__,)
+    finally:
+        sys.stderr = real_err
+        globals().update(real)
+    check("pw11 a run that cannot list the worktrees to reap refuses with exit 2 "
+          "and opens no pool - exit 1 would read as a lint not proven: reap on a "
+          "non-repository %r, main %r, opened %r, said %r"
+          % (got, code, opened, buf.getvalue().strip()[:80]),
+          got[0] == "raised" and code == 2 and opened == []
+          and "no row ran" in buf.getvalue())
+
+    tree = ast.parse(io.open(__file__, encoding="utf-8").read())
+    mains = [n for n in tree.body if isinstance(n, ast.If)
+             and "__main__" in ast.dump(n.test)]
+    order = [c.func.attr if isinstance(c.func, ast.Attribute) else
+             getattr(c.func, "id", None)
+             for n in mains for c in ast.walk(n) if isinstance(c, ast.Call)]
+    installs = [c for n in mains for c in ast.walk(n) if isinstance(c, ast.Call)
+                and isinstance(c.func, ast.Attribute) and c.func.attr == "signal"
+                and len(c.args) == 2 and "SIGTERM" in ast.dump(c.args[0])
+                and getattr(c.args[1], "id", None) == "_exit_on_term"]
+    try:
+        _exit_on_term(15, None)
+        exited = None
+    except SystemExit as exc:
+        exited = exc.code
+    except NameError:
+        exited = "no handler"
+    check("pw12 a SIGTERM is raised as an exit, installed before main runs, so "
+          "main's finally closes the pool: installs %d, calls %r, exit %r"
+          % (len(installs), order, exited),
+          len(installs) == 1 and "main" in order
+          and order.index("signal") < order.index("main") and exited == 143)
 
 
 def _selftest():
@@ -3786,9 +4181,18 @@ def _selftest():
     return run(_cases)
 
 
+def _exit_on_term(signum, _frame):
+    """A SIGTERM - the drive's teardown of a probe past its bound - raised as an
+    exit, so `main`'s `finally` closes the worker pool instead of leaving it
+    registered with the checkout."""
+    raise SystemExit(128 + signum)
+
+
 if __name__ == "__main__":
     from _output import safe_stdio
     safe_stdio()
     if "--selftest" in sys.argv[1:]:
         sys.exit(_selftest())
+    import signal
+    signal.signal(signal.SIGTERM, _exit_on_term)
     sys.exit(main(sys.argv[1:]))

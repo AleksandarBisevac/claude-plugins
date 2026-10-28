@@ -415,31 +415,42 @@
         "severity": "med",
         "file": "tools/prove-gates.py:2394-2480",
         "issue": "The property this task exists for - a row never writes the checkout - rests on prove() passing cwd=tree, --allow-dirty, worker_env(scratch, tree) and the pre/post byte backstop, and no case reaches any of it. c6 (prove-gates.py, 'THIS SUITE MUTATES NOTHING') forbids the suite from calling prove(), ch2/ch4 replace prove with fake_prove, and grep finds no case naming worker_env, _git_env, _pool_parent, _under_a_checkout or _bytes_or_none. Changing cwd=tree back to REPO, dropping the CLAUDE_PROJECT_DIR/PWD repoint, or deleting the byte-compare would leave all 52 cases green (read, not run). The 1133 s full run shows it works today; nothing keeps it working.",
-        "resolution": "Factor the argv/cwd/env of the redfirst call into a pure function (or make the subprocess runner injectable) and assert in a pw case: cwd is the tree, '--allow-dirty' is in argv, CLAUDE_PROJECT_DIR and PWD equal the tree when present, GIT_DIR-family vars are absent, TMPDIR is the scratch. Add a case for the byte backstop using a stub redfirst in a fixture tree that leaves the file mutated (expects verdict ERROR and the file restored)."
+        "resolution": "Factor the argv/cwd/env of the redfirst call into a pure function (or make the subprocess runner injectable) and assert in a pw case: cwd is the tree, '--allow-dirty' is in argv, CLAUDE_PROJECT_DIR and PWD equal the tree when present, GIT_DIR-family vars are absent, TMPDIR is the scratch. Add a case for the byte backstop using a stub redfirst in a fixture tree that leaves the file mutated (expects verdict ERROR and the file restored).",
+        "fixTask": "P142.51-6yq"
       },
       {
         "id": "P142-R46",
         "severity": "med",
         "file": "plugins/audit/reference/phase-signoff.md:454",
         "issue": "contradicts task clause 'Update the docs that say prove-gates mutates the tree and restores each time': this shipped reference (read by the agent driving sign-off) still says 'The probe mutates the working tree and restores it under its own trap', and frames the driver's before/after status+bytes comparison as guarding that. The executor's grep covered only CLAUDE.md, CONTRIBUTING.md and PLUGIN-BUILD-GUIDE.md; this file is a doc saying exactly that and was not edited.",
-        "resolution": "Reword to: each row mutates and restores a worker tree outside the checkout; the checkout is never written, and the driver still compares git status and file bytes around the run, which now must see no change by construction."
+        "resolution": "Reword to: each row mutates and restores a worker tree outside the checkout; the checkout is never written, and the driver still compares git status and file bytes around the run, which now must see no change by construction.",
+        "fixTask": "P142.51-6yq"
       },
       {
         "id": "P142-R47",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:8211; tools/_suite.py:96-104",
         "issue": "Stale text the diff makes false (both confirmed): the lint_probe docstring says 'the probe mutates the working tree and restores it', and _suite.py's marker comment says 'prove-gates.py edits the working tree for minutes... a concurrent sweep read a half-mutated tree'. No tool calls _suite.hold now (git grep '_suite.hold(' finds only the fixtures in tools/orchestrator-state.py:244/250 and tools/sweep-selftests.py:4773/4781), so the marker readers (sweep-selftests marker_gate, orchestrator-state sweep_line) and hold() itself are live code with no production writer. Also tools/prove-gates.py:2228 and :2968 still say 'a run that mutates the tree' (true only of a worker tree).",
-        "resolution": "Fix the two comments/docstrings in a follow-up task; decide separately whether the marker machinery is retired or kept as the compatibility surface CONTRIBUTING.md now describes. Say 'a worker tree' at prove-gates.py:2228 and :2968."
+        "resolution": "Fix the two comments/docstrings in a follow-up task; decide separately whether the marker machinery is retired or kept as the compatibility surface CONTRIBUTING.md now describes. Say 'a worker tree' at prove-gates.py:2228 and :2968.",
+        "fixTask": "P142.51-6yq"
       },
       {
         "id": "P142-R48",
         "severity": "low",
         "file": "tools/prove-gates.py:2790-2810 (_mirror)",
         "issue": "A file that is staged-new in the checkout (in the index, absent from HEAD) is carried by 'git diff HEAD' but applied without --index, so it is untracked in the worker tree. A lint that walks tracked files (CLAUDE.md says several are derived off what git tracks) sees it in the checkout and not in the worker, so a by-hand run on a dirty tree can prove a slightly different tree than its author is looking at. pw3 covers a staged modification, not a staged addition. Read, not run; irrelevant at sign-off where everything is committed.",
-        "resolution": "Apply the patch with 'git apply --index' (or 'git add -N' the added paths in the worker), and give the pw3 fixture a staged-new file."
+        "resolution": "Apply the patch with 'git apply --index' (or 'git add -N' the added paths in the worker), and give the pw3 fixture a staged-new file.",
+        "fixTask": "P142.51-6yq"
+      },
+      {
+        "id": "P142-R49",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:2836-2857",
+        "issue": "_ordinary_task_gate's files arm hands every declared file to a path-scoped spelling, docs included; the runner_aware arm filters to suite paths but the ordinary one does not, so a task declaring CLAUDE.md/CONTRIBUTING.md got 'python3 tools/sweep-selftests.py tools/prove-gates.py CLAUDE.md ...', which the sweep refuses (exit 2, 'not a suite this sweep covers'), and the task gate was red before any work (P142.50's first judge). Separately, scope --tests-add on a pending task does not re-derive a gate derived from files.",
+        "resolution": "Filter the ordinary files arm to suite paths as the runner_aware arm does (falling through to the wide gate when none is a suite), and re-derive a files-basis gate when tests.add changes on a task that has not started."
       }
     ],
-    "outcome": "[findings: 48 - 0 high, 16 med, 32 low; 25 with a recorded fix commit]"
+    "outcome": "[findings: 49 - 0 high, 16 med, 33 low; 25 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -3466,7 +3477,7 @@
     {
       "id": "P142.50-6yq",
       "title": "prove-gates runs its rows in parallel, each in an isolated worktree of the checkout, so the live tree is never mutated and a phase-wide probe fits the sign-off bound",
-      "status": "in_progress",
+      "status": "done",
       "description": "MEASURED 2026-10-28: P142 sign-off stopped because meta.buildCommands.lintProbe (python3 tools/prove-gates.py --changed <70 phase paths>) ran 116 rows (67 red, 49 allow) serially and took about 74 min against drive-phase SIGNOFF_STEP_SECONDS=3600. A manual rerun was green on every row and left the tree unchanged, so the defect is the shape: rows run one at a time, each mutating the ONE live checkout via redfirst.sh, on a 10-core machine. Raising the bound is not the fix (the table only grows; the bound is tied to the gate's). DESIGN: prove() runs each row in a worker tree, never in the live checkout. Create a pool of worker trees (git worktree add --detach at HEAD, under a mkdtemp scratch outside every checkout) that mirror the checkout's current content (HEAD plus the tracked working-tree diff and untracked non-ignored files), so a by-hand run on a dirty tree still proves what the author is looking at. Run tools/redfirst.sh FROM the worker tree (it resolves its root from its own path) over a work queue across worker count = cores minus two (every core when CI=true, same rule as sweep-selftests.py). Each row keeps its own scratch TMPDIR as now. Results are collected and rendered in the table's order, so output stays byte-stable regardless of scheduling. Worker trees are removed in finally (git worktree remove --force plus prune) and a run that is killed leaves nothing registered that a later run cannot clean. The mutation marker (_suite.hold) protected the live tree from a concurrent sweep; decide from the code whether it is still needed once the live tree is never written, and state the answer in the comment. The drive's lint_probe compares the checkout around the run - it must now see no change by construction. Update the docs that say prove-gates mutates the tree and restores each time (CLAUDE.md Tests section, CONTRIBUTING.md, PLUGIN-BUILD-GUIDE.md) to say what is now true. New selftest cases (in prove-gates' own --selftest, which mutates nothing) for: ordering is stable, worker count rule, the worker tree mirrors a dirty tracked file and an untracked file, cleanup leaves no registered worktree. Measure a full --changed run with the P142 phase paths (git diff --name-only 0dfae3e7...HEAD minus docs/audit) before and after, and report both wall clocks.",
       "files": [
         "tools/prove-gates.py",
@@ -3492,14 +3503,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "05073d4ffc20",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/prove-gates.py: every row now runs in a worker tree, never in the checkout. New pool section: pool_size() (the sweep's default_jobs, loaded from tools/sweep-selftests.py via _loader rather than copied, capped at the row count); run_ordered() (ThreadPoolExecutor, results in item order); open_workers() (mkdtemp under the temp root, falling back to /tmp when a .git sits above it; owner file prove-gates-pool.json with pid written before the first `git worktree add --detach HEAD`; _mirror() applies `git diff HEAD --binary` and copies `ls-files --others --exclude-standard`); close_workers() (worktree remove --force --force, prune, _output.remove_tree); reap_stale() (takes down pools whose owner pid is dead, run at the start of every run; a live owner's pool and any non-pool worktree are left alone). git runs with core.hooksPath=devnull and GIT_DIR-family vars stripped. prove() runs `sh tools/redfirst.sh ... --allow-dirty` from the worker tree (cwd=tree, the tree's own redfirst copy; redfirst.sh unchanged), worker_env() points CLAUDE_PROJECT_DIR/PWD at the tree, and the row's file bytes are compared before/after as a backstop (ERROR verdict + restore if a row left it mutated). _prove() runs red+allow as ONE queue then renders each half in table order. _proved() refuses rows with no worker tree (never falls back to the checkout). MARKER DECISION: main() no longer holds _suite's marker: it existed so a concurrent sweep would not read a half-mutated checkout, and the checkout is never written now; a second run is not refused either (two pools, disjoint). A pool that cannot open exits 2 (the drive reads that as a refusal); close problems go to stderr. Selftest: _changed_run fakes the pool (no worktree registered with the checkout by the suite); ch2 now asserts sorted rows + rendered table order + one pool opened and no marker; ch3 asserts no pool. New cases pw1-pw5 in a scratch git fixture. Docs: CLAUDE.md Tests paragraph and CONTRIBUTING.md marker paragraph rewritten to the worker-tree model. PLUGIN-BUILD-GUIDE.md NOT edited: `grep -n prove-gates PLUGIN-BUILD-GUIDE.md` has 3 hits (lines 1629, 6215, 6220), none saying it mutates the tree. MEASURED AFTER (once, as briefed): `python3 tools/prove-gates.py --changed $(git diff --name-only 0dfae3e7...HEAD | grep -v '^docs/audit/')` (70 paths) started 2026-10-28T13:02:10Z, exit 0, 1133 s wall (about 18.9 min, vs the orchestrator's ~74 min BEFORE), summary lines `67 of 67 gates proven red` and `49 of 49 guards proven to stay quiet on known-good input`; `git status --porcelain --untracked-files=all` byte-identical before/after (cmp), shasum of every status-listed file identical, `git worktree list` identical before/after (no pool left registered). Evidence files: scratchpad/after50.log, status-before.txt, status-after.txt, hash-before.txt, hash-after.txt, wt-before.txt, wt-after.txt. Gates: the brief's command exits 2 printing `CLAUDE.md, CONTRIBUTING.md, PLUGIN-BUILD-GUIDE.md are not a suite this sweep covers ... nothing was run` (could-not-run); narrowed `python3 tools/sweep-selftests.py tools/prove-gates.py tests/test__deps.py tests/test__output_lints.py` exit 0, 3/3 files ok, 479 cases (prove-gates 52 cases); ruff check tools/prove-gates.py clean; vermin 3.8 clean. Mutation proof of the new cases, in-process monkeypatching (no file touched), scratchpad/mut50.py: completion-order and serial run_ordered -> pw1 red; mirror without untracked / without diff / copying the ignored file -> pw3 red; reap ignoring liveness either way -> pw5 red; close that removes nothing -> pw4, pw5 red; off-by-one pool_size -> pw2 red; restored -> none red. DEPENDANTS: drive-phase lint_probe/run_lint_probe - protocol byte-compatible (summary lines and ROW NOT PROVEN lines come from the unchanged render(); `ran none` is printed before any pool opens; the new pool-open failure exits 2 = refusal); its docstring sentence 'the probe mutates the working tree and restores it' is now stale (not my file). tools/_suite.py - marker functions unchanged; its comment at line 97 ('prove-gates.py edits the working tree for minutes') is now stale (not my file); pid_alive is now used by reap_stale. tools/sweep-selftests.py - marker_gate still correct (meets only stale markers now); scratch_debris unaffected (pw cases build and remove their fixture under the suite's TMPDIR; sweep green); NEW dependency: prove-gates loads its default_jobs by path, so renaming it reddens pw2. tools/orchestrator-state.py sweep_line - still correct, never sees a live marker from this tool. tools/affected.py (a15 path selection), tools/gate-parity.py, tools/bench-hooks.py, tools/check-committed-pii.py, tools/check-example-ledgers.py - name prove-gates for coverage()/row naming, which is unchanged: still correct. tools/redfirst.sh - unchanged, run from the worker tree's copy. .github/sweep-costs.json - prove-gates cost 55.4 s; measured 48.4 s in the sweep now: still adequate. plugins/audit/hooks/guard-bash-writes.py:1062/1084 - history of a past background run: still true as history. tests/_harness.py, test__deps.py, test_guard_bash_writes.py - case-id attribution (verdict()) unchanged: still correct. tests/test__gate_feed.py - path string in a fixture: unaffected. tests/test_drive_phase.py - writes its own stub at tools/prove-gates.py in a fixture: unaffected. Names used elsewhere (selector_text, _call_name, changed_paths, _selftest): unchanged. CLAUDE.md/CONTRIBUTING.md dependants (basename refs): only the prove-gates paragraphs changed; the .md prose lints (test__deps, test__output_lints) green. PLUGIN-BUILD-GUIDE.md: unchanged. Old stray dirs prove-gates-0j0fqqqq, -hefl5wnu (Oct 19) and -5s0lk364 (12:35 today, before this run) under the system temp root predate this run and were left alone.",
+        "descriptive": "prove-gates now proves every row in parallel worker trees and never writes the checkout; the phase-wide --changed probe went from about 74 min to 1133 s with the tree unchanged"
       },
       "startedAt": "2026-10-28T12:50:35Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-28T13:52:04Z",
+      "verifiedBy": [
+        "pw1 rows run concurrently and results return in table order whatever order they finish",
+        "pw2 worker count equals the sweep's default_jobs rule capped at the row count",
+        "pw3 a worker tree mirrors a modified and a staged tracked file and an untracked file, and leaves out a deleted and an ignored file, outside the checkout",
+        "pw4 closing the pool leaves no registered worktree, no scratch dir, and the checkout's status unchanged",
+        "pw5 a killed run's pool is reaped by the next run only when its owner pid is gone; a live owner's pool is spared"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-28T13:42:17Z.751bdf",
@@ -3511,7 +3528,100 @@
           "at": "2026-10-28T13:34:23Z",
           "text": "Gate reset to the task's one suite: the gate derived at add time from files handed CLAUDE.md, CONTRIBUTING.md and PLUGIN-BUILD-GUIDE.md to the sweep, which refuses non-suite paths, so it was red before any work. Defect (batch): the ordinary files arm of _ordinary_task_gate does not filter to suite paths as the runner_aware arm does, and scope --tests-add does not re-derive a gate derived from files."
         }
-      ]
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "05073d4ffc20",
+        "at": "2026-10-28T13:52:04Z",
+        "return": "docs/audit/evidence/returns/P142.50-6yq/20261028T125035Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-28T13:25:14Z",
+        "basis": "`python3 tools/sweep-selftests.py tools/prove-gates.py` in a throwaway tree at HEAD exited 1 on \"NameError: name '_rendered_order' is not defined\" (read as python), and the task introduces '_rendered_order': absent from HEAD's CLAUDE.md, CONTRIBUTING.md, PLUGIN-BUILD-GUIDE.md, tools/prove-gates.py and present in the working tree's tools/prove-gates.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - 3 times the recorded 56s of tools/prove-gates.py in .github/sweep-costs.json is only 167s; fix run: held back 56s of the deadline, the recorded slot-seconds of tools/prove-gates.py in .github/sweep-costs.json",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P142.51-6yq",
+      "title": "prove-gates reaps only its own pool's worktrees, only on a pid it knows is dead, and a row's isolation is pinned by a case",
+      "status": "in_progress",
+      "description": "Fixes for 05073d4f (P142.50). FILED: R45 med - prove()'s isolation (cwd=tree, --allow-dirty, worker_env repoint of CLAUDE_PROJECT_DIR/PWD, git location vars dropped, pre/post byte backstop) is reached by no case; factor the redfirst argv/cwd/env into a pure function (or inject the runner) and pin it in a pw case, red-first by reverting cwd to REPO and by dropping the repoint. R46 med - plugins/audit/reference/phase-signoff.md:454 still says the probe mutates the working tree and restores it; reword to what is true (rows mutate worker trees outside the checkout; the driver still compares status and bytes around the run, which now sees no change by construction). R47 low - stale text: drive-phase.py lint_probe docstring (about line 8211, DOCSTRING ONLY, no behaviour change in drive-phase.py), tools/_suite.py:96-104 marker comment, tools/lints/_deps.py:4605 'mutates the tree only between fresh processes', tools/orchestrator-state.py sweep_line wording 'the tree is mid-mutation', prove-gates.py:2228/2371/2968. R48 low - _mirror applies git diff HEAD without --index so a staged-new file is untracked in the worker; apply with --index (a staged rename then also mirrors) and give pw3 a staged-new file.\nADVERSARIAL REVIEW (reproduced by the orchestrator's reviewer): MED-A reap_stale and close_workers run a bare `git worktree prune` against the live repo, which deletes the registration (and the audit-worktree.json provenance) of ANY worktree whose directory is gone; the plugin's own rule (plugins/audit/scripts/git/_worktrees.py:100 'THE PLUGIN MAY ONLY REAP WHAT THE PLUGIN STARTED') forbids it. Remove only the pool's own entries, matched by path under the pool root (worktree remove --force, or deleting that entry's admin dir after verifying its gitdir points under the pool); never call a global prune. The tests.add case builds a fixture repo with a foreign worktree whose directory was deleted and shows it is still registered after reap_stale and close_workers. MED-B reap_stale uses _suite.pid_alive, which reads _locks.pid_alive() None (unknown) as dead; reap only on an explicit False.\nLOWS: (1) a SIGTERM'd run (drive-phase tears the process group down on timeout) skips finally and leaves registered w* trees that _filed_returns.settlement_checkouts and doctor read as checkouts; install a SIGTERM handler that raises SystemExit in main so finally runs. (2) Ctrl-C in run_ordered waits for the whole queue (3.8 has no cancel_futures); cancel pending futures or use a stop flag. (3) _mirror silently skips an untracked nested repo dir (ls-files shows dir/); say it aloud on stderr; docs must not overstate what is mirrored (ignored files such as node_modules are not). (4) reap_stale runs outside any try, so git missing gives a traceback exit 1, which the drive reads as not-proven; a pool that cannot open or reap must exit 2 (refusal), as the old no-git-dir path did. The marker readers (sweep-selftests marker_gate, orchestrator-state sweep_line) may stay; reword sweep_line only. Keep the drive protocol byte-identical (exit 0 plus summary lines, exit 1 plus ROW NOT PROVEN lines, any other exit a refusal).",
+      "files": [
+        "tools/prove-gates.py",
+        "plugins/audit/reference/phase-signoff.md",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tools/_suite.py",
+        "tools/lints/_deps.py",
+        "tools/orchestrator-state.py",
+        "CLAUDE.md",
+        "CONTRIBUTING.md",
+        "tools/prove-gates.py",
+        "plugins/audit/reference/phase-signoff.md",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tools/_suite.py",
+        "tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/prove-gates.py::reaping removes only the pool's own worktree entries and leaves a foreign worktree registered"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tools/prove-gates.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 2,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-28T14:35:45Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-28T13:53:43Z",
+          "text": "scope: tools/prove-gates.py, plugins/audit/reference/phase-signoff.md, plugins/audit/scripts/governance/drive-phase.py, tools/_suite.py, every path the finding(s) P142-R45, P142-R46, P142-R47, P142-R48 name"
+        },
+        {
+          "at": "2026-10-28T13:53:43Z",
+          "text": "scope: tests/test_drive_phase.py, the suite that tests plugins/audit/scripts/governance/drive-phase.py (python: it hands drive-phase.py to a loader through a module constant)"
+        },
+        {
+          "at": "2026-10-28T13:53:43Z",
+          "text": "no suite: tools/prove-gates.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-28T13:53:43Z",
+          "text": "no suite: tools/_suite.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-28T13:53:43Z",
+          "text": "no suite: plugins/audit/reference/phase-signoff.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are plugins/audit/scripts/manifest/_areas.py, tests/test__refs.py, tools/check-prohibitions.py"
+        }
+      ],
+      "fixes": [
+        "P142-R45",
+        "P142-R46",
+        "P142-R47",
+        "P142-R48"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-28T14:49:45Z.8c31f8",
+        "status": "passed",
+        "at": "2026-10-28T14:49:45Z"
+      }
     }
   ],
   "request": "neka njihov dokument bude osnova! I u odnosu na to treba napraviti plan implementacije",

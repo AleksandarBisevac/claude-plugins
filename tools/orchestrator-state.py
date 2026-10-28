@@ -119,8 +119,9 @@ def sweep_line(git_dir):
     from _suite import marker_state
     seen = marker_state(git_dir)
     if seen["state"] == "live":
-        return ("a mutating sweep is live (pid %d, since %s) - the tree is mid-"
-                "mutation, do not read a gate over it" % (seen["pid"], seen["started"]))
+        return ("a mutating sweep is live by its marker (pid %d, since %s) - only an "
+                "older prove-gates writes one, and it edits the checkout mid-row, so "
+                "do not read a gate over it" % (seen["pid"], seen["started"]))
     if seen["state"] == "unreadable":
         return "%s exists but cannot be read - whether a sweep is live is unknown" % (
             seen["path"],)

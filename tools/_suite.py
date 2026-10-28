@@ -94,13 +94,15 @@ remove_tree = _harness.remove_tree
 
 
 # --- the marker a mutating gate sweep holds ------------------------------------
-# `prove-gates.py` edits the working tree for minutes and restores it after each row.
-# Nothing another process could see said so, so a concurrent sweep read a half-mutated
-# tree and reported reds that were not real. The marker is a file under the git dir (not
-# the working tree, which is what is being mutated, and not tracked), carrying the pid
-# and the start time; the sweep refuses on a live one and `orchestrator-state.py`
-# reports it. A marker whose pid is gone is stale - a killed run cannot release it - and
-# is ignored aloud rather than wedging every later sweep.
+# An older `prove-gates.py` edited the working tree for minutes and restored it after
+# each row, and nothing another process could see said so, so a concurrent sweep read a
+# half-mutated tree and reported reds that were not real. The marker answered that: a
+# file under the git dir (not the working tree, and not tracked), carrying the pid and
+# the start time; the sweep refuses on a live one and `orchestrator-state.py` reports
+# it. A marker whose pid is gone is stale - a killed run cannot release it - and is
+# ignored aloud rather than wedging every later sweep. The probe now runs every row in a
+# worker tree outside the checkout and writes no marker; `hold` stays for the readers'
+# fixtures, so a live marker means an older copy of the probe is running.
 MARKER_NAME = "prove-gates-live.json"
 
 

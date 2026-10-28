@@ -4602,7 +4602,8 @@ def config_key_reads(script_dir=None, hooks_dir=None, vocabulary=None):
     gets a COPY (`reads` is a dict of lists and one caller's `.append()` must not
     become another's input); and the cache lives for one process, which is one
     run of a suite or one gate - the tree cannot change under it, and
-    `prove-gates.py` mutates the tree only between fresh processes.
+    `prove-gates.py` never mutates the checkout at all: each of its rows runs a
+    fresh process in a worker tree of its own.
 
     THE VOCABULARY IS PART OF THE KEY, NOT A REASON TO BYPASS. `config_read_violations`
     always hands one over explicitly, so a memo that treated "vocabulary given" as

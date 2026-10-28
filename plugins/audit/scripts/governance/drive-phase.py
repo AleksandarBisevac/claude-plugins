@@ -8208,10 +8208,12 @@ def lint_probe(ctx, state, phase, head):
     mutation again, and the held run is said by what it did.
 
     THE CHECKOUT IS COMPARED AROUND THE RUN, letters and bytes, because the
-    probe mutates the working tree and restores it, and an exit 0 says nothing
-    about whether it did: a row stranded mid-mutation is the failure the probe's
-    own trap exists for, and the sign-off verb must never bind a tree it left
-    behind. What moved is named and never prescribed away - the entry may be
+    probe is whatever command the plan names, and an exit 0 says nothing about
+    what it wrote: the source repository's probe mutates only worker trees
+    outside the checkout, so there the comparison sees no change by
+    construction, but a probe that mutates the checkout and strands a row is
+    the failure this exists for, and the sign-off verb must never bind a tree
+    a probe left behind. What moved is named and never prescribed away - the entry may be
     another session's edit made while the probe ran."""
     command = lint_probe_command(_mio.load_manifest(ctx["manifest"]))
     if command is None:

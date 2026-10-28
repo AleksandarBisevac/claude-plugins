@@ -451,10 +451,12 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    file — and the remedy is a fix task, as for a red gate. The run is held to
    `SIGNOFF_STEP_SECONDS`, the bound the driver also hands the phase gate as `--timeout`; a probe
    still running then has its process tree stopped, and the stop names the timeout and the bound.
-   The probe mutates the working tree and restores it under its own trap; the driver reads
+   This repository's probe never writes the checkout: each row mutates and restores a worker
+   tree of its own, outside the checkout, so its run leaves the checkout's status and bytes as
+   they were by construction. A plan may name any probe, though, so the driver still reads
    `git status` and the bytes of every listed file before and after the run and **stops, naming
-   the entries, when either differs**, whatever the probe's exit, so a tree it left behind is
-   never the one the verdict binds — the bytes because a file already modified before the run
+   the entries, when either differs**, whatever the probe's exit, so a tree a probe left behind
+   is never the one the verdict binds — the bytes because a file already modified before the run
    keeps its status letters whatever the probe writes into it. The stop names what moved and
    does not prescribe discarding it: an entry may be another session's edit made while the probe
    ran, so put back only what the probe left. A finished run is held at its HEAD in the drive's
