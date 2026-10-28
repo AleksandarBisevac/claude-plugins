@@ -9831,8 +9831,57 @@ def _carry_with(root, task_id, rel, text):
     return _carry_at(root, task_id) if sha else ""
 
 
+# A file of the base no member edits. Its bytes are read off the tree, never
+# compared with a literal: `_repo` writes it in text mode, so the base holds
+# "\r\n" on Windows, and a case holding it to an LF literal reads that
+# fixture's line ending as the drive's doing.
 _AR_IDLE = "src/f3.txt"
-_AR_IDLE_BASE = "v0\n"
+
+
+def _spelled_posix(arg):
+    """The bytes a POSIX command line carries for `arg` in a UTF-8 locale: an
+    escaped byte goes back as itself."""
+    return arg.encode("utf-8", "surrogateescape")
+
+
+def _spelled_windows(arg):
+    """The bytes git receives for `arg` through a Windows command line: the line
+    is UTF-16, and Git for Windows turns it into UTF-8, a lone surrogate
+    included - so an escaped byte arrives as the three bytes encoding the
+    surrogate, never as itself."""
+    return arg.encode("utf-8", "surrogatepass")
+
+
+_COMMAND_LINES = (("posix", _spelled_posix), ("windows", _spelled_windows))
+
+
+def _as_git_bytes(path):
+    """The bytes git printed for a path the drive decoded: UTF-8, a byte that
+    is not UTF-8 kept as an escape."""
+    return path.encode("utf-8", "surrogateescape")
+
+
+def _command_line_git(listing, spell):
+    """A `carry_git` stand-in answering every listing from `listing`, the raw
+    paths git would print, for a git reached through a command line that
+    carries an argument as `spell` does: a `:(literal)` pathspec matches as
+    git's does - the same bytes, or a directory above them - against the
+    bytes the command line carried. -> (fake, seen), `seen` each argv."""
+    seen = []
+    tag = b":(literal)"
+
+    def fake(where, argv, env=None, stdin=None):
+        seen.append(list(argv))
+        specs = [spell(a)[len(tag):] for a in argv
+                 if isinstance(a, str) and spell(a).startswith(tag)]
+        names = [n for n in listing if not specs
+                 or any(n == s or n.startswith(s + b"/") for s in specs)]
+        if "status" in argv:
+            return 0, b"".join(b" M " + n + b"\0" for n in names), ""
+        if argv[:1] in (["diff"], ["ls-files"]):
+            return 0, b"".join(n + b"\0" for n in names), ""
+        return 0, b"", ""
+    return fake, seen
 
 
 def _redo_refused_intact(M, root, mpath, tree, base, name):
@@ -10019,27 +10068,35 @@ def _recut_describes_cases(check, M):
     # The index holds a deletion the files do not show: `git rm --cached` of a
     # file nothing ignores. A commit of the tree's files cannot hold it.
     root_c, mpath_c, _h, tree_c, base_c, _r, _c, _t = _ar_at_decision(M, "arecutrc")
+    idle_c = os.path.join(tree_c, *_AR_IDLE.split("/"))
+    held_c = _read(idle_c)
     _harness.git(tree_c, "rm", "-q", "--cached", _AR_IDLE)
     refused_c, code_c, said_c = _redo_refused_intact(M, root_c, mpath_c, tree_c,
                                                      base_c, _AR_IDLE)
+    listed_c = _git_out(tree_c, "ls-files", "--", _AR_IDLE).strip()
+    after_c = _read(idle_c)
     check("ar20 a staged deletion of a file still on disk refuses the redo by "
-          "name, the tree's index as it was: %r" % ((code_c, said_c[-400:]),),
-          refused_c and _git_out(tree_c, "ls-files", "--", _AR_IDLE).strip() == ""
-          and _read(os.path.join(tree_c, *_AR_IDLE.split("/")))
-          == _AR_IDLE_BASE.encode())
+          "name, the tree's index as it was and the file as it stood: %r"
+          % ((refused_c, code_c, listed_c, held_c, after_c, said_c[-400:]),),
+          refused_c and listed_c == "" and after_c == held_c)
 
     # The index holds an edit the file no longer shows: staged, then the file
-    # put back. Its only copy is the index entry.
+    # put back - to the very bytes it held, read before the edit. Its only copy
+    # is the index entry.
     root_m, mpath_m, _h, tree_m, base_m, _r, _c, _t = _ar_at_decision(M, "arecutmm")
     idle_m = os.path.join(tree_m, *_AR_IDLE.split("/"))
+    held_m = _read(idle_m)
     _write_lf(idle_m, "staged by P1.1\n")
     _harness.git(tree_m, "add", _AR_IDLE)
-    _write_lf(idle_m, _AR_IDLE_BASE)
+    with open(idle_m, "wb") as fh:
+        fh.write(held_m)
     refused_m, code_m, said_m = _redo_refused_intact(M, root_m, mpath_m, tree_m,
                                                      base_m, _AR_IDLE)
+    staged_m = _git_out(tree_m, "show", ":" + _AR_IDLE)
     check("ar20b a staged edit whose file was put back refuses the redo by name, "
-          "the staged copy kept in the tree's index: %r" % ((code_m, said_m[-400:]),),
-          refused_m and _git_out(tree_m, "show", ":" + _AR_IDLE) == "staged by P1.1\n")
+          "the staged copy kept in the tree's index: %r"
+          % ((refused_m, code_m, staged_m, said_m[-400:]),),
+          refused_m and staged_m == "staged by P1.1\n")
 
     # OVER-FIRE of ar20/ar20b: a staged edit the file still shows is held by
     # the carry as the index holds it - an index check that refused every
@@ -10073,48 +10130,53 @@ def _recut_describes_cases(check, M):
     # A skip-worktree entry absent from disk is a file the tree does not check
     # out, not one the task deleted: the carry keeps it as the index does.
     root_k, mpath_k, _h, tree_k, _b, _r, _c, _t = _ar_at_decision(M, "arecutsk")
+    idle_k = os.path.join(tree_k, *_AR_IDLE.split("/"))
+    held_k = _read(idle_k)
     _harness.git(tree_k, "update-index", "--skip-worktree", _AR_IDLE)
-    os.remove(os.path.join(tree_k, *_AR_IDLE.split("/")))
+    os.remove(idle_k)
     code_k, said_k = _next(M, root_k, mpath_k, "--answer", "redo")
+    closed_k = _read(os.path.join(root_k, *_AR_IDLE.split("/")))
     check("ar21 a skip-worktree file absent from disk is not carried as a "
           "deletion: the recut carries the work alone and the member closes with "
-          "the file as the base held it: %r" % ((code_k, said_k[-500:]),),
+          "the file as the base held it: %r"
+          % ((code_k, _carried_part(said_k), held_k, closed_k, said_k[-500:]),),
           code_k == 0 and "merged three-way (src/f1.txt)" in said_k
           and _AR_IDLE not in _carried_part(said_k)
           and tasks_of(mpath_k)["P1.1"].get("status") == "done"
-          and _read(os.path.join(root_k, *_AR_IDLE.split("/")))
-          == _AR_IDLE_BASE.encode())
+          and closed_k == held_k)
 
-    # A path git names in bytes that are not UTF-8 must reach git again as the
-    # same bytes: a pathspec decoded with replacement characters matches
-    # nothing, so the path reads as held. Asked of the functions directly, as
-    # some filesystems refuse such a name outright.
+    # A path git names in bytes that are not UTF-8 must be answered for as
+    # those bytes: a narrowing that misses it reads the path as held. Asked of
+    # the functions directly, as some filesystems refuse such a name outright,
+    # under a git reached through each platform's command line - on Windows
+    # no argument can spell such a path at all. `dirt.txt` sits beside `dir`
+    # so a narrowing by bare prefix is told from git's own, and `other.txt`
+    # stands outside every narrowing so one that narrows nothing is red too.
     raw = b"caf\xe9.txt"
-    seen = []
-
-    def lister(where, argv, env=None, stdin=None):
-        seen.append(list(argv))
-        if "status" in argv:
-            return 0, b" M " + raw + b"\0", ""
-        if argv[:1] == ["diff"] and "--name-only" in argv and "--" not in argv:
-            return 0, raw + b"\0", ""
-        return 0, b"", ""
+    listing = [raw, b"dir/inner.txt", b"dirt.txt", b"other.txt"]
+    answered = []
     real_git = M.carry_git
-    M.carry_git = lister
-    try:
-        listed, _w = M.tree_changed("/nowhere")
-        between, _w = M._changed_between("/nowhere", "a", "b")
-        M._unheld("/nowhere", {}, listed or [])
-    finally:
-        M.carry_git = real_git
-    specs = [os.fsencode(a) for argv in seen for a in argv
-             if isinstance(a, str) and a.startswith(":(literal)")]
-    check("ar22 a path git lists in bytes that are not UTF-8 keeps its bytes: "
-          "the listings return it whole, and the pathspec handed back to git "
-          "names those bytes: %r" % ((listed, between, specs),),
-          [os.fsencode(p) for p in listed or []] == [raw]
-          and [os.fsencode(p) for p in between or []] == [raw]
-          and specs and all(s == b":(literal)" + raw for s in specs))
+    for platform, spell in _COMMAND_LINES:
+        M.carry_git, seen = _command_line_git(listing, spell)
+        try:
+            listed, _w = M.tree_changed("/nowhere")
+            named = [p for p in listed or [] if p.startswith("caf")]
+            between, _w = M._changed_between("/nowhere", "a", "b", named + ["dir"])
+            unheld, _left, _w = M._unheld("/nowhere", {}, named + ["other.txt"])
+        finally:
+            M.carry_git = real_git
+        answered.append((platform, [_as_git_bytes(p) for p in listed or []],
+                         [_as_git_bytes(p) for p in between or []],
+                         [_as_git_bytes(p) for p in unheld or []], len(seen)))
+    check("ar22 a path git lists in bytes that are not UTF-8 is answered for as "
+          "those bytes through a POSIX command line and a Windows one alike: the "
+          "listing returns it whole, and a listing narrowed to it - or to a "
+          "directory above a path - names it and nothing else: %r" % (answered,),
+          len(answered) == len(_COMMAND_LINES)
+          and all(sorted(got) == sorted(listing)
+                  and sorted(between) == [raw, b"dir/inner.txt"]
+                  and sorted(unheld) == [raw, b"other.txt"]
+                  for _p, got, between, unheld, _n in answered))
 
 
 def _recut_crash_cases(check, M):

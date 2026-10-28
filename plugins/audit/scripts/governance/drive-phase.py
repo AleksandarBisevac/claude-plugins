@@ -5002,10 +5002,14 @@ GITLINK_MODE = b"160000"
 
 
 def _git_path(raw):
-    """A path git printed, as the str that names the same bytes when it is
-    handed back to git as an argument: decoded the way the interpreter encodes
-    an argument, so a name that is not UTF-8 keeps its bytes rather than
-    becoming replacement characters a pathspec never matches."""
+    """A path git printed, as a str naming the same bytes: decoded the way the
+    interpreter decodes a file name, so the str opens the file git named and
+    `os.fsencode` gives the bytes back. Where that decoding refuses the bytes -
+    on Windows, a name that is not UTF-8 - each byte that is not UTF-8 is kept
+    as an escape instead of becoming a replacement character, so two such
+    names stay two. No command line carries that escape back to git as the
+    byte (a Windows one is UTF-16), so such a path is compared here, never
+    handed back as a pathspec (`_literal_matches`)."""
     try:
         return os.fsdecode(raw)
     except UnicodeDecodeError:
@@ -5018,17 +5022,30 @@ def _shown(path):
     return path.encode("utf-8", "surrogateescape").decode("utf-8", "replace")
 
 
+def _literal_matches(names, paths):
+    """Those of `names` a `:(literal)` pathspec of one of `paths` matches: the
+    same path, or one below it as a directory. Matched here, never handed to
+    git as pathspecs: an argument reaches git as the bytes its command line
+    carries, and a Windows command line is UTF-16 that Git for Windows turns
+    into UTF-8, so a path whose bytes are not UTF-8 has no spelling there - its
+    pathspec matches nothing, and the path would read as unchanged."""
+    wanted = set(paths)
+    return [n for n in names
+            if any("/".join(n.split("/")[:at]) in wanted
+                   for at in range(1, n.count("/") + 2))]
+
+
 def _changed_between(where, a, b, paths=None):
     """`(paths, why)` - the paths that differ between commits `a` and `b`,
-    narrowed to `paths` when given, renames read as a delete and an add, a
-    link to a nested repository listed whatever git is told to ignore; None
-    beside the reason git could not say."""
-    spec = ["--"] + [":(literal)%s" % (p,) for p in paths] if paths else []
+    narrowed to `paths` when given (`_literal_matches`), renames read as a
+    delete and an add, a link to a nested repository listed whatever git is
+    told to ignore; None beside the reason git could not say."""
     code, out, err = carry_git(where, ["diff", "--name-only", "-z", "--no-renames",
-                                       "--ignore-submodules=none", a, b] + spec)
+                                       "--ignore-submodules=none", a, b])
     if code != 0:
         return None, err or "git diff exited %d" % (code,)
-    return sorted(_git_path(n) for n in out.split(b"\0") if n), ""
+    names = sorted(_git_path(n) for n in out.split(b"\0") if n)
+    return (_literal_matches(names, paths) if paths else names), ""
 
 
 def recut_conflicts(ctx, patch, head):
@@ -5205,23 +5222,23 @@ def _unheld(tree, env, paths):
     edit, an untracked build file: those are the submodule's own changes, not
     the task's work, and are `left`, so the caller can say they stay in the
     tree; one checked out at another commit is not held. None, None beside why
-    when git could not compare."""
-    found, left = set(), set()
-    for at in range(0, len(paths), 100):
-        spec = ["--"] + [":(literal)%s" % (p,) for p in paths[at:at + 100]]
-        seen = []
-        for argv in (["diff", "--name-only", "-z", "--no-renames",
-                      "--ignore-submodules=dirty"],
-                     ["diff", "--name-only", "-z", "--no-renames",
-                      "--ignore-submodules=none"],
-                     ["ls-files", "-o", "--exclude-standard", "-z"]):
-            code, out, err = carry_git(tree, argv + spec, env)
-            if code != 0:
-                return None, None, err or "git %s exited %d" % (argv[0], code)
-            seen.append(set(_git_path(n) for n in out.split(b"\0") if n))
-        found.update(seen[0] | seen[2])
-        left.update(seen[1] - seen[0])
-    return sorted(found), sorted(left - found), ""
+    when git could not compare. Each listing is of the whole tree, narrowed to
+    `paths` by `_literal_matches`."""
+    if not paths:
+        return [], [], ""
+    seen = []
+    for argv in (["diff", "--name-only", "-z", "--no-renames",
+                  "--ignore-submodules=dirty"],
+                 ["diff", "--name-only", "-z", "--no-renames",
+                  "--ignore-submodules=none"],
+                 ["ls-files", "-o", "--exclude-standard", "-z"]):
+        code, out, err = carry_git(tree, argv, env)
+        if code != 0:
+            return None, None, err or "git %s exited %d" % (argv[0], code)
+        seen.append(set(_literal_matches(
+            [_git_path(n) for n in out.split(b"\0") if n], paths)))
+    found = seen[0] | seen[2]
+    return sorted(found), sorted((seen[1] - seen[0]) - found), ""
 
 
 def carry_commit(tree, records, task_id):
