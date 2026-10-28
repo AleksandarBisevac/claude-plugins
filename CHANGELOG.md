@@ -6,6 +6,47 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 
 ## [Unreleased]
 
+### Added
+- **Sign-off probes a guarded lint when the phase changed one.** A plan that names a command in
+  `meta.buildCommands.lintProbe` (set with `/audit:task build-command`) has it run once at
+  sign-off, after the invariants and before the verdict, from the project under the POSIX shell,
+  with `--changed` and every file the phase's tasks declare or their commits changed appended
+  (the plan's own records left out). The probe is the project's own tool, so it answers a small
+  protocol: exit 0 with `ran none` when no changed file held a lint, exit 1 with a
+  `ROW NOT PROVEN:` line per row it could not prove - which stops the sign-off quoting each,
+  with a fix task as the remedy - and any other exit is a refusal. The run is held to the same
+  bound the phase gate is handed, a probe still running then has its process tree stopped, and
+  a plan naming none skips the step and says `lintProbe unset`. The drive reads `git status` and
+  the bytes of every listed file before and after the run and stops, naming what moved, when
+  either differs, so a probe that left the checkout changed is never the tree the verdict
+  binds; a finished run is held at its HEAD with its word (`green` or `ran none`) and a
+  decision answered after it does not pay for the run again.
+- **A kept task tree's status row says what `--force` destroys, and how to save it first.**
+  `/audit:status` lists a tree a redo set aside with the forced remover and a warning naming
+  the uncommitted, untracked and ignored files it deletes, the submodules checked out in it and
+  - with the tree's git directory - the submodule repositories kept there, so a commit only one
+  of them holds is lost, and a commit on the tree's detached HEAD is left on no ref for gc. Under
+  it are `save first:` commands that pin the HEAD and push each submodule's HEAD and branches to
+  `refs/kept-trees/` in the repository's shared refs, which outlive the tree. `--force` is
+  offered to that kind of tree alone: a key that is a task of the plan keeps
+  `/audit:worktree task-remove`, any other key gets git's unforced remover, and a plan that
+  could not be read gets nothing forced.
+- **Red-first through a sweep-shaped command.** When the command runs `sweep-selftests.py` over
+  named suites, a sweep that passes with the task's new cases red at HEAD is read as the proof
+  (the quiet sweep prints only its summary, which is now read as a tally), each red case is
+  attributed to the file whose block printed it, and a file the task adds that does not exist
+  at HEAD is laid over as an empty file: the sweep grading it red for printing no contract is
+  its cases not existing, which is red for every case it adds. A file graded red in the task's
+  run is also checked against its own count in the fix run, so a failing case that went missing
+  is not hidden behind other files' totals.
+- **The red-first deadline is sized from what the command costs.** With no `--timeout`, a sweep
+  naming suites that `.github/sweep-costs.json` times gets the allowance the sweep itself gives
+  those suites before it calls them hung, when that is longer than the default and never longer
+  than the host's Bash limit; the fix run, the last of the runs, has the recorded cost of those
+  suites held back from the runs before it. The basis names the deadline and where it came from,
+  what was held back, and any suite the table has no cost for - there is no stand-in figure for
+  a measurement nobody made. `--timeout`, when given, is used as given.
+
 ### Changed
 - **One commit verb writes the index and the shard together.** A commit carrying a phase's shard
   (`commit-task-work.py <manifest> <taskId>`) now carries the part of the manifest index that
@@ -16,6 +57,72 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   and another session's index commit landing in between is kept. `verify-invariants`'
   `commit-scope` accepts such a commit only when its index is its parent's with that part derived
   the same way, and `audit-state-scope` no longer calls the index in a state commit a breach.
+- **A task tree follows the phase head, and is recut with its work when it cannot.** When the
+  phase moves past the base a task's tree was cut at, the drive brings the tree to the phase head
+  before its gate is measured - a checkout of the head carrying the uncommitted work, never a
+  rebase - so a red the phase has since fixed is not charged to the task. The move is refused by
+  name when the task changed a file that moved, checked byte for byte afterwards and undone from
+  a copy when the tree does not answer as the work alone, and it is recorded in the tree's
+  marker. A tree the mover refuses for that reason, or the integration refused, is recut at the
+  head with its work applied (three-way for a file the head moved, verified byte for byte for
+  the rest) and gated there, never gated at the base the phase has left; a recut refuses, and
+  leaves the tree and its carry ref as they were, when the work cannot be read whole or a
+  submodule, a nested repository or an unmerged path is in the way.
+- **No drive step destroys a task tree it cannot prove empty of work.** A redo moves no tree: the
+  old tree stays at its own path under a kept marker recorded in the drive state that `/audit:status`
+  lists, and the recut tree is cut at a fresh path beside it. Every forced removal of a task tree
+  goes through one function, which takes the tree down only when its work commit holds every file
+  it looks at, nothing it holds is outside that commit (no submodule checked out, no repository
+  of its own below the top, no staged state the work lacks), its work is carried or already in
+  the phase tree, the commit it stands on is held by the phase head and its marker names the
+  tree; on any doubt, or a reading that failed, it keeps the tree and says why on the did-line.
+  What it takes down is what git is told to ignore as well.
+- **Starting a task charges it only with changes that are not its own or an echo.** A start that
+  is not already `in_progress` is refused when a declared file holds an uncommitted change that
+  another unfinished, started task declares too, and the journal's status rows decide who was
+  running when. A repeated row for a state already reached folds
+  into the chain, a row folds as the journal hook's echo of the row before it only inside the
+  tool call that wrote that row (and a derived row only straight after its own edit row), and
+  the hook now records when its call began and a run id on the rows it writes, so a later call's
+  real restart keeps its charge while the drive's own duplicate rows still release it. A change
+  that is the starting task's own filed work is taken out of the charge on stated evidence, and
+  only when every other declarer works in a task tree of its own; anything the journal cannot
+  say keeps the charge. The refusal names the path and the task and spells two ways past that no
+  guard of this plugin refuses - finish the task, unblocking it first when it is blocked, or
+  commit the change on its own with `git -C <root> add` and `commit` spelled out - and a
+  `commit-task-work.py` commit refuses a pending, blocked or cancelled task, and a done one
+  closed against a commit, which have no attempt left to carry.
+- **Build commands that run at sign-off are not defaulted into a phase's gate.** A new phase's
+  derived gate leaves `lintProbe` out, as it leaves review-only keys, and says so in its basis;
+  `always` cannot put it back. The validator warns (`phases.signoff_only_gate.in-gate`) when a
+  phase's `testGate`, a task's `tests.gate` or `meta.phaseGate.always` names it, since the probe
+  would then run on every gate that names it rather than once over what the phase changed.
+- **Every reader of a runner's output reads it through one normalisation.** A child on Windows
+  ends its lines with CRLF and the bytes of a run are kept as they came, so every pattern
+  anchored at the end of a line matched nothing there. The tally, case, summary and sweep readers
+  - and the gate runner's own - now read the text through `plain_text`, which strips terminal
+  control sequences and turns CRLF and a lone CR into a line feed, so the same output reads the
+  same on every platform.
+- **The drive reads paths git prints whose names are not UTF-8.** A path is decoded the way the
+  interpreter decodes a file name, so the bytes of such a name are kept and two such names stay
+  two; on Windows, where a command line cannot carry those bytes back to git, the drive compares
+  such paths itself instead of handing them over as pathspecs, which would match nothing and
+  read the path as unchanged.
+- **An agent session removes the temp directory it was given when it ends.** `run-agent-session.py`
+  makes a `TMPDIR` for each session and used to leave it in the machine's temp; it is now removed
+  when the run ends - on success, on a failing or missing result, on a budget stop and on SIGINT
+  or SIGTERM, which are armed from before the directory is made. A removal that fails is named on
+  stderr and leaves the exit code as the session made it; a SIGKILL still leaves the directory.
+
+### Fixed
+- **The state commit now takes the index lock in a sharded plan.** `commit-task-work.py
+  <manifest> <phaseId> --state` asked the assembled plan whether it was sharded, which answers no
+  for every plan, so it never took the lock and a structural write such as `/audit:task add`
+  could land between its read and its staging; it asks the index file on disk now, and a file it
+  cannot read counts as sharded. It also commits the phase's shard from the same bytes its index
+  part was derived from, makes a root commit when the branch has no commit yet, and under
+  `--json` keeps stdout one object on every path, the lock's own lines going to stderr and a
+  refusal being the answer object with its `lockCode`.
 
 ### Removed
 - **`commit-audit-state.py` and `commit-manifest-index.py`.** Both are folded into

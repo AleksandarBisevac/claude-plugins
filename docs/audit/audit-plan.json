@@ -946,6 +946,12 @@
       "title": "The integrate suite's map-owner fixture commits in bounded time on a loaded windows runner",
       "status": "done",
       "shard": "phases/P146.json"
+    },
+    {
+      "id": "P147",
+      "title": "The 3.7.0 changelog",
+      "status": "in_progress",
+      "shard": "phases/P147.json"
     }
   ],
   "fileIndex": {
@@ -1223,7 +1229,8 @@
       "P130.57-ywo",
       "P130.59-ywo",
       "P131.2",
-      "P142.1"
+      "P142.1",
+      "P147.1"
     ],
     "CLAUDE.md": [
       "P32.10",

@@ -1,0 +1,31 @@
+{
+ "findings": [
+  {"id": 1, "severity": "med", "file": "CHANGELOG.md:145-153",
+   "issue": "The ### Fixed entry reports a defect that no release ever had. It says the state commit 'asked the assembled plan whether it was sharded ... so it never took the lock'. But `commit-task-work.py --state` does not exist at 0dfae3e7 (v3.6.0): `git show 0dfae3e7:plugins/audit/scripts/governance/commit-task-work.py` has no \"--state\", and the retired `commit-manifest-index.py` did take the index lock. `index_is_sharded` first appears in 52c80676, inside this same unreleased window, as a fix to the P142.1 verb. A reader on 3.6.0 would conclude they ran a lockless state commit. That is a claim about released behaviour the code history does not support.",
+   "resolution": "Drop the ### Fixed section and fold its content into the existing 'One commit verb' / Removed entries as what the verb does: `--state` takes the index lock in a sharded plan (it asks the index file on disk, and a file it cannot read counts as sharded), commits the shard from the bytes its index part was derived from, makes a root commit on a branch with no commit yet, and under `--json` keeps stdout one object with the lock's lines on stderr and a refusal carrying its `lockCode`."},
+  {"id": 2, "severity": "low", "file": "CHANGELOG.md:134-138",
+   "issue": "The non-UTF-8 path entry sits under ### Changed and says the drive 'now' reads such paths and, 'on Windows', compares them itself. `_git_path` and `_literal_matches` do not exist at 0dfae3e7; they were added by 1d95127f and a5f42ae9 with the recut and carry machinery, and 3bcd5772 only reworked them. So there is no 3.6.0 behaviour to have changed. Also `_changed_between` and `_unheld` now call `_literal_matches` on every platform, not only Windows, so 'on Windows' under-describes where the comparison happens.",
+   "resolution": "Fold the sentence into the recut / kept-tree entries as a property of reading a tree's work, and say the paths are compared by the drive rather than handed to git as pathspecs, with Windows named as the reason rather than the scope."},
+  {"id": 3, "severity": "low", "file": "CHANGELOG.md:62-64",
+   "issue": "'a plan that could not be read gets nothing forced' is true only for a key that is not a redo's aside key. `_kept_tree_remedy` tests `_is_aside_key` first, so an aside-key tree gets `git worktree remove --force` and the save-first commands even when `task_ids` is None. The sentence follows 'offered to that kind of tree alone', which makes the unreadable-plan case read as covering that kind too.",
+   "resolution": "Say that a key which is neither a redo's nor a task of the plan, and any key when the plan could not be read, gets nothing forced (an unreadable plan offers `task-remove` only, once it reads)."},
+  {"id": 4, "severity": "low", "file": "CHANGELOG.md:73-79",
+   "issue": "'the fix run ... has the recorded cost of those suites held back from the runs before it' omits that `sweep_budget` caps the reserve at half the deadline (`min(recorded, timeout // 2)`). With a heavy suite the held-back share is not the recorded cost.",
+   "resolution": "Add 'up to half the deadline' (a word, no numeral) after 'held back'."},
+  {"id": 5, "severity": "low", "file": "CHANGELOG.md:41-54",
+   "issue": "'exit 1 with a `ROW NOT PROVEN:` line per row ... which stops the sign-off quoting each' - `lint_probe` quotes at most five (`rows[:5]`). Minor over-statement. Cosmetic: the start-charge entry has a short, awkwardly wrapped line ('running when. A repeated row for a state already reached folds').",
+   "resolution": "Say 'quoting the rows' and rewrap the start-charge entry."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clause: 'add ... every user-visible change the plugin (plugins/audit/) landed since v3.6.0 ... written from what landed, not from its title ... Keep the existing two entries; merge rather than duplicate ... No number written into prose'. The diff keeps both existing entries and adds Added (lint probe, kept-tree status row, red-first through a sweep, red-first deadline), Changed (tree follows head and is recut, no drive step destroys unproven trees, start-charge accounting, sign-off-only build commands, one runner-output normalisation, non-UTF-8 paths, agent-session TMPDIR) and one Fixed entry. I checked these against the diffs: drive-phase.py lint_probe/run_lint_probe/checkout_status, audit-status.py _kept_tree_remedy, stamp-verification.py sized_deadline/sweep_budget/new_suite_baseline, _runner_output.plain_text/sweep_tally, run-agent-session.py _run finally, _manifest_phases/_manifest_vocab signoff_only, audit-task.py _echoes/_own_work_paths, journal-writes callBegan/hookRun, commit-task-work.py index_is_sharded/main_state. They are accurate except the points under findings. I found no user-visible plugin change without a line (close-phase, resume.md and README changes are the verb fold already in the existing entries). The executor's omissions are correct: aa9e37de changed only the lint probe in plugins/audit, so no 'full gate once' line, and e47d66a1 changed a docstring only. The executor's outcome describes the diff. Its 'nothing user-visible beyond the probe' for 163b8a98 holds. The one real defect is that the Fixed entry presents a bug in unreleased code as a fix to a shipped behaviour (finding 1).",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "The executor filed not-attempted: a gate-only documentation edit with no tests.add, so no red was owed. I read nothing that contradicts that.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "Read tests.gate: 'python3 tools/sweep-selftests.py tests/test__deps.py tests/test__output_lints.py', which selects those two files. The CHANGELOG-reaching cases are the live-tree scans at tests/test__deps.py:1866 (M.doc_prose_numbers()) and tests/test__output_lints.py:1317 (L.prose_number_claims()), plus the CHANGELOG exemption-row check at tests/test__deps.py:2500. They hold the no-numbers rule, which is what the task names, and they fail if a numeral shape is written into the prose. They do not and cannot check that a sentence is true of the code; that is this review's job. I did not run them (recorded gate run is passed)."
+ },
+ "verdict": "findings",
+ "tasks": []
+}
