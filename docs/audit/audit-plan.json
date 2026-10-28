@@ -920,7 +920,7 @@
     {
       "id": "P142",
       "title": "The gate ladder: affected checks per task, the full gate and tree scanners per phase, CI under eight minutes",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P142.json"
     },
     {

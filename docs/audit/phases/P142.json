@@ -1,7 +1,7 @@
 {
   "id": "P142",
   "title": "The gate ladder: affected checks per task, the full gate and tree scanners per phase, CI under eight minutes",
-  "status": "in_progress",
+  "status": "done",
   "description": "The same full set of checks runs per task, per phase, locally and in CI several times, and the set is large because the product carries its own tree lints as tests. Measured: a task gate in the dogfood plan took 716 s, of which the sweep was 384 s and the panel browser gate 282 s; a narrow task gate measured 1,327 s because derived affected steps re-ran 506 s of suites its own full-sweep key had already run; the sweep is 6 min 36 s of wall and 34.6 min of CPU, and CI runs take 12 to 15 minutes. The CI half of this ladder (one executable gate description, skip of a green SHA, the codec cells) is already the earlier F1 phase's; this phase adds the per-task and per-phase rungs and the remaining speed.",
   "desiredOutcome": "A task's gate is the selection of checks its change affects, trusted only after its miss rate was measured on this repository's history; tree scanners and the full gate, browser steps included, run once per phase and on push, never per task; a probe of the guarded lints runs at sign-off only when the phase changed them; the sweep's wall clock is under four minutes and CI is under eight minutes and 55 runner-minutes, each measured with the same command before and after; one commit verb writes the index and the shard together, so adding a task mid-phase never leaves the plan uncommittable; and red-first through a sweep-shaped command proves when the task's suites pass.",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "0dfae3e71be7d405626e62b95bab66ce743a3c69",
   "branch": "audit/p142-the-gate-ladder-affected-check",
-  "mergedAt": null,
+  "mergedAt": "2026-10-28T15:23:34Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -3718,5 +3718,6 @@
     "runId": "2026-10-28T15:05:25Z.30051d",
     "status": "passed",
     "at": "2026-10-28T15:05:25Z"
-  }
+  },
+  "mergedHead": "f06f113f73922e38d671a96547d8b51874a9b622"
 }
