@@ -2896,7 +2896,8 @@
       "P130.4",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P142.46-6yq"
     ],
     "plugins/audit/hooks/meter-usage.py": [
       "P15.4",
@@ -4801,7 +4802,8 @@
       "P142.24-6yq",
       "P142.35-6yq",
       "P142.41-6yq",
-      "P142.44-6yq"
+      "P142.44-6yq",
+      "P142.46-6yq"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -11539,7 +11541,8 @@
       "P142.22-6yq",
       "P142.35-6yq",
       "P142.41-6yq",
-      "P142.44-6yq"
+      "P142.44-6yq",
+      "P142.46-6yq"
     ],
     "tests/test_audit_usage.py": [
       "P131.1"
@@ -11672,7 +11675,8 @@
     ],
     "tests/test_journal_writes.py": [
       "P131.1",
-      "P109.6"
+      "P109.6",
+      "P142.46-6yq"
     ],
     "tests/test_manage_worktrees.py": [
       "P131.1",

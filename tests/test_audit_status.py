@@ -4335,6 +4335,39 @@ def _kept_tree_cases(check):
           "bare payload is pinned against the rollup",
           "keptTrees" not in json.loads(as_json))
 
+    # `task-remove` acts only on a task of the plan, and a tree a redo set
+    # aside is recorded under a key that is no task. Each row names a verb
+    # that acts on ITS tree: the plan's task keeps `task-remove`, a set-aside
+    # gets git's own remover, and one whose move the drive has not finished
+    # gets the drive's next step.
+    aside = os.path.join(root, "aside-tree")
+    moving = os.path.join(root, "moving-tree")
+    os.makedirs(aside)
+    os.makedirs(moving)
+    with open(os.path.join(drive, "P2.json"), "w", encoding="utf-8") as fh:
+        json.dump({"keptTrees": {"P2.1": kept, "P2.1 set aside 1": aside,
+                                 "P2.1 set aside 2": moving},
+                   "asideMoves": {"P2.1 set aside 2": {"from": kept}}}, fh)
+    rows = _cli([mpath], root)[1].splitlines()
+
+    def row(path):
+        hit = [ln for ln in rows if ln.rstrip().endswith(path)
+               or (" %s " % (path,)) in ln]
+        return hit[0] if len(hit) == 1 else "%d rows name %s" % (len(hit), path)
+    task_row, aside_row, moving_row = row(kept), row(aside), row(moving)
+    check("kt5 a set-aside tree's row names a remover that acts on it - git's "
+          "`git worktree remove <path>`, never `task-remove`, which refuses a "
+          "key that is no task - and the plan's task keeps `task-remove`: %r"
+          % ((task_row, aside_row),),
+          "git worktree remove %s" % (aside,) in aside_row
+          and "task-remove" not in aside_row
+          and "task-remove P2.1" in task_row
+          and "git worktree remove" not in task_row)
+    check("kt5b ...and a set-aside whose move the drive has not finished names "
+          "the drive's next step, which finishes it: %r" % (moving_row,),
+          "/audit:phase P2" in moving_row and "task-remove" not in moving_row
+          and "git worktree remove" not in moving_row)
+
 
 def _other_checkout_cases(check):
     """`/audit:status` run from ANOTHER checkout, no session behind it, answers

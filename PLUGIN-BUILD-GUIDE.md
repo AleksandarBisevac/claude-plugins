@@ -4519,13 +4519,30 @@ and reads as prunable, so a `git worktree prune` - the sweep's, the panel's, gc'
 the tree's index, marker and submodule repositories, and `git worktree add -f` there would share
 its git directory with a second tree. So the move is recorded under `asideMoves` in the drive
 state, then the record is locked (`git worktree lock`) before the move and unlocked only once git
-reads the tree where it went (`ta1c`); a repair that fails stops the drive naming `git worktree
-repair <aside>`, the record still locked, and the next step runs the repair again before anything
-is cut at the old path (`ta11`-`ta11c`). A run that died before the move is taken back on the next
-step (`ta14`); only a lock carrying the drive's own reason is ever taken off, and a record someone
-else locked is not set aside (`ta14b`, `ta14c`). A move that fails takes the set-aside back and
-says whatever of that did not hold (`ta12`, `ta12b`), and a submodule config the repair cannot
-read as a path is a reason, never a traceback (`ta13`, `ta13b`). It then cuts a new tree at the task's path and the phase HEAD, applies
+reads the tree where it went (`ta1c`); a repair that fails stops the drive naming the step that
+failed - `git worktree repair <aside>` for the repair (`ta11`-`ta11c`), the submodule repoint or
+the read-back for those, where running the repair by hand would settle nothing (`ta18b`,
+`ta18c`) - the record still locked, and the next step runs the repair again before anything is
+cut at the old path. The repair needs git 2.30, so an older git refuses the redo before anything
+is recorded, locked or moved (`ta19`). `repair_asides` settles each recorded move by GIT'S RECORD
+of the tree - the directory the move recorded, the tree its `gitdir` names, the marker and the
+lock in it - never by which directory stands, because a human may have deleted the set-aside
+tree, pruned the record or cut a new tree at the task's path since, and git gives a pruned
+record's directory name to the next tree cut there. A record that is gone is forgotten with a
+did-line, never a stop (`ta15`). A move that never happened is taken back - the record names the
+task's path, that path is its tree, and the marker names the set-aside key or the lock is the
+drive's (`ta14`) - so a tree cut there since is never taken back (`ta16`, `ta16b`); a take-back
+whose unlock fails keeps the move recorded until the unlock holds (`ta17`). The one stop is a
+live record under the drive's own lock whose tree is missing, and it names commands git runs:
+`git worktree repair <path>` when the tree is back at the task's path, else `git worktree unlock`
+and `git worktree prune` (`ta15b`). Only a lock carrying the drive's own reason is ever taken
+off, and a record someone else locked is not set aside (`ta14b`, `ta14c`). A move that fails
+takes the set-aside back and says whatever of that did not hold (`ta12`, `ta12b`); a submodule
+config the repair cannot read as a path is a reason, never a traceback (`ta13`), and a submodule
+checkout on another drive than its repository is pointed at by an absolute path, as git writes
+one (`ta18`). Status names a remover beside each kept tree that acts on it: `task-remove` for a
+task of the plan, `git worktree remove <path>` for a set-aside tree, whose key is no task, and
+the drive's next step while its move is unfinished (`kt5`, `kt5b`). It then cuts a new tree at the task's path and the phase HEAD, applies
 the work three-way, checks every carried path the head did not move byte for byte, and clears the
 gate mark so the gate is measured over the new tree - no executor is dispatched and no attempt is
 spent, because the work was not what failed (`wd1`-`wd4`, `ar2`). Once the recut tree holds the

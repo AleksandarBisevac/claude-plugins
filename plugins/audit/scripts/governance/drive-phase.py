@@ -4805,16 +4805,18 @@ def retire_asides(ctx, state, task_id, records=(), followers=()):
 
 
 def _repair_moved_tree(git_root, old, new, admin):
-    """'' once git reads the worktree moved from `old` to `new`, else why. `git
-    worktree repair` points the worktree's own records at `new`. A submodule
-    checked out in it records its checkout in its own repository under
-    `admin`, by a path that names the old directory, so each one found there is
-    pointed into the new one - `git worktree move` would do both, and refuses
-    any tree with a submodule checked out. Read back with a diff across the submodules,
-    which fails where git cannot enter one."""
+    """`(step, why)` - `("", "")` once git reads the worktree moved from `old`
+    to `new`, else the step that failed - "repair", "repoint" or "read-back" -
+    and why, so the stop names what to settle. `git worktree repair` points the
+    worktree's own records at `new`. A submodule checked out in it records its
+    checkout in its own repository under `admin`, by a path that names the old
+    directory, so each one found there is pointed into the new one - `git
+    worktree move` would do both, and refuses any tree with a submodule checked
+    out. Read back with a diff across the submodules, which fails where git
+    cannot enter one."""
     code, _out, err = carry_git(git_root, ["worktree", "repair", new])
     if code != 0:
-        return "git worktree repair: %s" % (err or "exit %d" % (code,),)
+        return "repair", "git worktree repair: %s" % (err or "exit %d" % (code,),)
     gone = os.path.realpath(old)
     for at, _dirs, files in os.walk(os.path.join(admin, "modules")):
         if "config" not in files:
@@ -4822,34 +4824,42 @@ def _repair_moved_tree(git_root, old, new, admin):
         cfg = os.path.join(at, "config")
         why = _repoint_module(git_root, cfg, at, gone, new)
         if why:
-            return why
+            return "repoint", why
     code, _out, err = carry_git(new, ["--no-optional-locks", "diff", "--quiet",
                                       "--ignore-submodules=none", "HEAD"],
                                 _own_index_env())
-    return "" if code in (0, 1) else "git does not read %s (%s)" % (
-        new, err or "exit %d" % (code,))
+    if code in (0, 1):
+        return "", ""
+    return "read-back", "git does not read %s (%s)" % (new, err or "exit %d" % (code,))
 
 
 def _repoint_module(git_root, cfg, at, gone, new):
     """'' once the submodule repository at `at`, whose config is `cfg`, points
     its checkout into `new` - or holds none under `gone` - else why. A config
-    git reads as bytes no UTF-8 decoder takes, or a checkout on another drive
-    than its repository (where no relative path joins them), is a reason, never
-    an exception: the tree has already moved when this runs."""
+    git reads as bytes no UTF-8 decoder takes is a reason, never an exception:
+    the tree has already moved when this runs. Where no relative path joins
+    the checkout to its repository - two drives - the path written is
+    absolute, which is what git writes there itself."""
     code, out, _err = carry_git(git_root, ["config", "--file", cfg, "--get",
                                            "core.worktree"])
     if code != 0:
         return ""
     try:
         was = os.path.realpath(os.path.join(at, out.decode("utf-8").strip()))
-        if was != gone and not was.startswith(gone + os.sep):
-            return ""
-        now = os.path.join(os.path.realpath(new), os.path.relpath(was, gone))
-        pointed = os.path.relpath(now, os.path.realpath(at)).replace(os.sep, "/")
-    except (UnicodeDecodeError, ValueError) as exc:
+    except UnicodeDecodeError as exc:
         return "%s could not be read as a path into %s (%s)" % (cfg, new, exc)
+    if was != gone and not was.startswith(gone + os.sep):
+        return ""
+    below = was[len(gone):].lstrip(os.sep)
+    now = os.path.join(os.path.realpath(new), below) if below \
+        else os.path.realpath(new)
+    try:
+        pointed = os.path.relpath(now, os.path.realpath(at))
+    except ValueError:
+        pointed = now
     code, _out, err = carry_git(git_root, ["config", "--file", cfg,
-                                           "core.worktree", pointed])
+                                           "core.worktree",
+                                           pointed.replace(os.sep, "/")])
     if code != 0:
         return "%s could not be pointed at %s (%s)" % (cfg, now, err)
     return ""
@@ -4879,22 +4889,28 @@ def _lock_for_move(git_root, tree):
     return "" if code == 0 else "git worktree lock: %s" % (err or "exit %d" % (code,),)
 
 
-def _unlock_moved(git_root, where, admin):
-    """'' once git's record of the tree at `where` holds no lock the drive
-    took, else why. git keeps a lock as a `locked` file in the record's
-    directory `admin`, holding the reason: no file is no lock, as after a human
-    unlocked it by hand, and a reason other than `ASIDE_LOCK` is someone
-    else's lock, left as it is."""
+def _lock_reason(admin):
+    """`(reason, why)` of the lock on git's record at `admin`: git keeps a
+    lock as a `locked` file in the record's directory, holding the reason. No
+    file is `(None, "")` - no lock; one that cannot be read is `(None, why)`."""
     try:
         with open(os.path.join(admin, "locked"), "r", encoding="utf-8",
                   errors="replace") as fh:
-            reason = fh.read().strip()
+            return fh.read().strip(), ""
     except FileNotFoundError:
-        return ""
+        return None, ""
     except OSError as exc:
-        return "its lock could not be read (%s)" % (exc,)
-    if reason != ASIDE_LOCK:
-        return ""
+        return None, "its lock could not be read (%s)" % (exc,)
+
+
+def _unlock_moved(git_root, where, admin):
+    """'' once git's record of the tree at `where` holds no lock the drive
+    took, else why. No lock is no lock, as after a human unlocked it by hand,
+    and a reason other than `ASIDE_LOCK` is someone else's lock, left as it
+    is."""
+    reason, why = _lock_reason(admin)
+    if why or reason != ASIDE_LOCK:
+        return why
     code, _out, err = carry_git(git_root, ["worktree", "unlock", where])
     return "" if code == 0 else "git worktree unlock: %s" % (err or "exit %d" % (code,),)
 
@@ -4908,72 +4924,217 @@ def _drop_move(state, key):
 
 
 def _finish_aside(git_root, move, aside):
-    """'' once git reads the set-aside tree at `aside` and its record is
-    unlocked, else why. Run again over a tree already read there, it changes
-    nothing: the repair is idempotent, and a module already pointed into
-    `aside` points nowhere under the path it left."""
-    why = _repair_moved_tree(git_root, move["from"], aside, move["admin"])
-    return why or _unlock_moved(git_root, aside, move["admin"])
+    """`("", "")` once git reads the set-aside tree at `aside` and its record
+    is unlocked, else the step that failed and why (`_repair_moved_tree`, or
+    "unlock"). Run again over a tree already read there, it changes nothing:
+    the repair is idempotent, and a module already pointed into `aside` points
+    nowhere under the path it left."""
+    step, why = _repair_moved_tree(git_root, move["from"], aside, move["admin"])
+    if step:
+        return step, why
+    why = _unlock_moved(git_root, aside, move["admin"])
+    return ("unlock", why) if why else ("", "")
 
 
 def _take_back_aside(ctx, state, key, tree, record, admin):
-    """Undo a set-aside whose move never happened: the marker names the task
-    again, the drive's lock on the record is given back, and neither the kept
-    entry nor the move is recorded. '' when all of that held, else what did
-    not."""
-    _path, unmarked = _worktrees.write_record(tree, record)
+    """Undo a set-aside whose move never happened: a marker naming `key` names
+    the task again, the drive's lock on the record is given back, and then
+    neither the kept entry nor the move is recorded. '' when all of that held,
+    else what did not - and then the move STAYS recorded, so the next step
+    takes it back again rather than leave the drive's lock with no record of
+    whose it is. A marker naming anything but `key` is not rewritten: the move
+    never wrote it."""
+    unmarked = ""
+    if _worktrees.read_provenance(tree, expect_task=str(key)).get("ours") is True:
+        _path, unmarked = _worktrees.write_record(tree, record)
     unlocked = _unlock_moved(ctx["gitRoot"], tree, admin)
-    drop_aside(state, key)
-    _drop_move(state, key)
+    if not (unmarked or unlocked):
+        drop_aside(state, key)
+        _drop_move(state, key)
     write_state(ctx, state)
     return "; ".join(
         ["its marker could not be put back and still names %r (%s)" % (key, unmarked)]
         * bool(unmarked)
-        + ["git's record of it is still locked (%s)" % (unlocked,)] * bool(unlocked))
+        + ["git's record of it is still locked (%s)" % (unlocked,)] * bool(unlocked)
+        + ["the move stays recorded, and the next step takes it back again"]
+        * bool(unmarked or unlocked))
 
 
-def repair_asides(ctx, state):
-    """None once git reads every set-aside tree where it was moved, else the
-    stop. A move recorded in `ASIDE_MOVES` is one whose repair did not hold -
-    it failed, or the run died between the move and the repair - so it is run
-    again here, before any step could cut a tree at the path the move left; a
-    move that never happened, the tree still at its own path, is taken back.
-    The drive does not go past a tree git cannot read: its record stays locked,
-    and the stop names the repair."""
-    moves = state.get(ASIDE_MOVES) or {}
-    for key in sorted(moves):
-        move = moves[key] or {}
-        aside = (state.get("keptTrees") or {}).get(key) or ""
-        if not os.path.isdir(aside) and os.path.isdir(move.get("from") or ""):
-            why = _take_back_aside(ctx, state, key, move["from"],
-                                   move.get("record") or {}, move.get("admin") or "")
-            ctx["did"].append("the tree set aside as %r was never moved from %s; "
-                              "it is taken back there%s" % (
-                                  key, move["from"], " but %s" % (why,) if why else ""))
-            continue
-        if not os.path.isdir(aside):
-            return _stopped(ctx, "the tree set aside as %r was moving from %s to %s "
-                            "and stands at neither; git's record of it stays "
-                            "locked, so nothing prunes it. Put the tree at %s, "
-                            "then next" % (key, move.get("from"), aside or "a path "
-                                           "the state does not name", aside))
-        why = _finish_aside(ctx["gitRoot"], move, aside)
-        if why:
-            return _stopped(ctx, aside_unread(key, aside, why))
+def _record_names(admin):
+    """The real path of the tree git's record at `admin` names - its `gitdir`
+    file holds that tree's `.git`, absolute or relative to `admin` - or ''
+    when it holds nothing that reads as one."""
+    try:
+        with open(os.path.join(admin, "gitdir"), "r", encoding="utf-8") as fh:
+            dot_git = fh.read().strip()
+    except (OSError, UnicodeDecodeError):
+        return ""
+    if not dot_git:
+        return ""
+    return os.path.realpath(os.path.dirname(os.path.join(admin, dot_git)))
+
+
+def _holds_record(path, admin):
+    """True when a directory stands at `path` and git names `admin` as its
+    git directory - the tree whose record that is."""
+    if not path or not os.path.isdir(path):
+        return False
+    found = _worktrees.admin_dir(path)
+    return bool(found) and os.path.realpath(found) == os.path.realpath(admin)
+
+
+def _forget_move(ctx, state, key, aside, why):
+    """Forget a recorded move that left nothing to repair or take back, with
+    the did-line saying why; the kept entry goes too unless its directory
+    still stands, which status then lists. None - this never stops."""
+    _drop_move(state, key)
+    standing = bool(aside) and os.path.isdir(aside)
+    if not standing:
+        drop_aside(state, key)
+    write_state(ctx, state)
+    ctx["did"].append("the move of the tree set aside as %r is forgotten: %s%s" % (
+        key, why, "; the directory at %s stands and stays listed" % (aside,)
+        if standing else ""))
+    return None
+
+
+def _settle_move(ctx, state, key, move, aside):
+    """None once the recorded move of `key` is finished, taken back or
+    forgotten, else the stop. The move is classified by git's record of the
+    tree - the directory `admin` recorded, the tree its `gitdir` names, the
+    marker and the lock in it - never by which directory happens to stand,
+    because a human may since have deleted the set-aside tree, pruned the
+    record or cut a new tree at the task's path, and git reuses a pruned
+    record's directory name for the next tree cut there:
+    - no record at `admin`: it is gone, so the move is forgotten;
+    - the record names `from` and `from` is its tree: the move never happened,
+      and is taken back - when the marker names `key` or the lock is the
+      drive's; a tree carrying neither is one cut since, and is left alone;
+    - the record names `from` or the set-aside path, and the set-aside path
+      is its tree: the move happened, and the repair runs again;
+    - otherwise the record's tree is missing, and only a record under the
+      drive's own lock stops the drive - nothing else would ever release it -
+      with a remedy whose commands git runs. Any other record is not the
+      drive's to hold, and the move is forgotten."""
+    admin, origin = move.get("admin") or "", move.get("from") or ""
+    if not admin or not os.path.isdir(admin):
+        return _forget_move(ctx, state, key, aside, "git's record of it is gone "
+                            "from %s" % (admin or "a directory the state does "
+                                         "not name",))
+    named = _record_names(admin)
+    reason, unread = _lock_reason(admin)
+    if named and named == os.path.realpath(origin) and _holds_record(origin, admin):
+        marked = _worktrees.read_provenance(origin, expect_task=str(key)).get("ours")
+        if marked is not True and reason != ASIDE_LOCK:
+            return _forget_move(ctx, state, key, aside, "the tree at %s carries "
+                                "neither the set-aside's marker nor the drive's "
+                                "lock - a tree cut there since - so it is left "
+                                "as it is" % (origin,))
+        why = _take_back_aside(ctx, state, key, origin, move.get("record") or {},
+                               admin)
+        ctx["did"].append("the tree set aside as %r was never moved from %s; "
+                          "it is taken back there%s" % (
+                              key, origin, " but %s" % (why,) if why else ""))
+        return None
+    if named and named in (os.path.realpath(origin), os.path.realpath(aside or origin)) \
+            and aside and _holds_record(aside, admin):
+        step, why = _finish_aside(ctx["gitRoot"], move, aside)
+        if step:
+            return _stopped(ctx, aside_unread(key, aside, step, why))
         _drop_move(state, key)
         write_state(ctx, state)
         ctx["did"].append("set-aside tree %r: git reads it at %s now, and its "
                           "record is unlocked" % (key, aside))
+        return None
+    if not named or reason != ASIDE_LOCK:
+        return _forget_move(ctx, state, key, aside, "git's record at %s %s, and "
+                            "%s" % (admin, "names %s, which is not where the "
+                                    "move left the tree" % (named,) if named
+                                    else "names no tree that can be read",
+                                    unread or ("the drive holds no lock on it"
+                                               if reason != ASIDE_LOCK else
+                                               "the drive's lock on it is left "
+                                               "in %s" % (admin,))))
+    return _stopped(ctx, aside_missing(key, named, origin, admin))
+
+
+def aside_missing(key, named, origin, admin):
+    """The stop for a set-aside whose record, under the drive's lock, names a
+    tree no directory holds. The lock keeps the record from every prune, and
+    nothing but these commands releases it."""
+    if _holds_record(origin, admin):
+        remedy = ("the tree is back at %s, where git's record does not name it: "
+                  "`git worktree repair %s` points the record at it, and next "
+                  "takes the set-aside back" % (origin, origin))
+    else:
+        remedy = ("put the tree back at %s, then next; or, if it is gone for "
+                  "good, `git worktree unlock %s` and then `git worktree prune`, "
+                  "which removes the record, and next forgets the move"
+                  % (named, named))
+    return ("the tree set aside as %r is not where git's record of it names, "
+            "%s, and the record stays locked by the drive, so nothing prunes "
+            "it; %s" % (key, named, remedy))
+
+
+def repair_asides(ctx, state):
+    """None once every recorded set-aside move is finished, taken back or
+    forgotten, else the stop (`_settle_move`). A move recorded in
+    `ASIDE_MOVES` is one whose repair did not hold - it failed, or the run
+    died before or after the move - so it is settled here, before any step
+    could cut a tree at the path the move left."""
+    for key in sorted(state.get(ASIDE_MOVES) or {}):
+        move = (state.get(ASIDE_MOVES) or {}).get(key) or {}
+        aside = (state.get("keptTrees") or {}).get(key) or ""
+        stop = _settle_move(ctx, state, key, move, aside)
+        if stop is not None:
+            return stop
     return None
 
 
-def aside_unread(key, aside, why):
-    """The stop for a set-aside tree git does not read where it was moved."""
+# What settles each step of a set-aside's repair. `git worktree repair` run by
+# hand settles only its own step: after a repoint or a read-back failed, the
+# repair already held, and running it again changes nothing.
+ASIDE_REMEDY = {
+    "repair": "settle what stops `git worktree repair %(aside)s`, then next, "
+              "which runs the repair again and unlocks it",
+    "repoint": "settle what stops the drive repointing the submodule "
+               "repository named above into %(aside)s - its `core.worktree` "
+               "- then next, which repoints it again and unlocks it",
+    "read-back": "settle what stops git reading %(aside)s (`git -C %(aside)s "
+                 "diff --quiet --ignore-submodules=none HEAD`), then next, "
+                 "which reads it again and unlocks it",
+    "unlock": "settle what stops `git worktree unlock %(aside)s`, then next, "
+              "which unlocks it",
+}
+
+
+def aside_unread(key, aside, step, why):
+    """The stop for a set-aside tree git does not read where it was moved,
+    naming the remedy for the `step` that failed."""
     return ("the tree set aside as %r is at %s with its work in it, and git "
             "does not read it there yet (%s). git's record of it stays locked, "
-            "so no prune and no forced add takes it; settle what stops "
-            "`git worktree repair %s`, then next, which runs the repair again "
-            "and unlocks it. Nothing was recut" % (key, aside, why, aside))
+            "so no prune and no forced add takes it; %s. Nothing was recut"
+            % (key, aside, why, ASIDE_REMEDY[step] % {"aside": aside}))
+
+
+# `git worktree repair`, which the move needs, arrived in git 2.30.
+WORKTREE_REPAIR_GIT = (2, 30)
+
+
+def _git_floor(git_root):
+    """'' when this git has `git worktree repair`, else why - asked before a
+    set-aside records, locks or moves anything."""
+    code, out, err = carry_git(git_root, ["--version"])
+    said = out.decode("utf-8", "replace").strip() if isinstance(out, bytes) \
+        else str(out or "").strip()
+    hit = re.search(r"(\d+)\.(\d+)", said)
+    if code != 0 or not hit:
+        return "git's version could not be read (%s)" % (
+            err or said or "exit %d" % (code,),)
+    if (int(hit.group(1)), int(hit.group(2))) < WORKTREE_REPAIR_GIT:
+        return ("%s is older than %d.%d, the first git with `git worktree "
+                "repair`, which the move needs" % ((said,) + WORKTREE_REPAIR_GIT))
+    return ""
 
 
 def set_aside_tree(ctx, state, task_id):
@@ -4982,15 +5143,18 @@ def set_aside_tree(ctx, state, task_id):
     task's path and nothing the old one holds is lost - or `(None, stop)`.
 
     The move is a rename of the directory and `_repair_moved_tree`: it works
-    for every tree, a submodule's checkout included. Before the rename, in
-    this order, the entry and the move are recorded, git's record of the tree
-    is locked (see `ASIDE_MOVES`) and the marker is rewritten to the entry's
-    key; a run that dies past any of those leaves a tree status lists, and the
-    next step finishes the move or takes it back (`repair_asides`), so no lock
-    the drive took outlives the move. A lock or a marker that cannot be
-    written, or a rename that fails, takes the set-aside back at once and says
-    whatever of that did not hold, so the tree left where it was answers to
-    the task again. A repair that fails stops with the record still locked."""
+    for every tree, a submodule's checkout included. A git older than the
+    repair (`_git_floor`) is refused before anything is recorded. Before the
+    rename, in this order, the entry and the move are recorded, git's record
+    of the tree is locked (see `ASIDE_MOVES`) and the marker is rewritten to
+    the entry's key; a run that dies past any of those leaves a tree status
+    lists, and the next step settles the move by git's record of it
+    (`repair_asides`). A lock or a marker that cannot be written, or a rename
+    that fails, takes the set-aside back at once and says whatever of that did
+    not hold - and a take-back that did not hold keeps the move recorded, so
+    the next step takes it back again and no lock the drive took is left with
+    no record of it. A repair that fails stops with the record still locked,
+    naming the step that failed."""
     wave = state.get("wave") or {}
     tree = (wave.get("trees") or {}).get(task_id)
     if not tree or not os.path.isdir(tree):
@@ -5003,6 +5167,11 @@ def set_aside_tree(ctx, state, task_id):
                               "%s; nothing was recut" % (
                                   task_id, tree, held.get("basis") or
                                   "git would not name its own git directory"))
+    why = _git_floor(ctx["gitRoot"])
+    if why:
+        return None, _stopped(ctx, "the tree of %s could not be set aside: %s; "
+                              "nothing was moved or recut - upgrade git, then "
+                              "answer redo again" % (task_id, why))
     kept = state.get("keptTrees") or {}
     count = 1
     while ASIDE_KEY % (task_id, count) in kept \
@@ -5041,9 +5210,9 @@ def set_aside_tree(ctx, state, task_id):
     (wave.get("bases") or {}).pop(task_id, None)
     wave["base"] = git_head(ctx) or wave.get("base")
     write_state(ctx, state)
-    why = _finish_aside(ctx["gitRoot"], move, aside)
-    if why:
-        return None, _stopped(ctx, aside_unread(key, aside, why))
+    step, why = _finish_aside(ctx["gitRoot"], move, aside)
+    if step:
+        return None, _stopped(ctx, aside_unread(key, aside, step, why))
     _drop_move(state, key)
     write_state(ctx, state)
     return {"key": key, "path": aside}, None

@@ -2047,10 +2047,26 @@ def success_line(lines):
     return None
 
 
-def kept_trees_block(manifest_path, project):
+def _kept_tree_remedy(task_id, path, phase, body, task_ids):
+    """The command that takes down the kept tree recorded under `task_id`.
+    `task-remove` acts only on a task of the plan, so a key that is none - a
+    tree a redo set aside - gets git's own remover, or, while the driver's
+    move of it is still recorded, the driver's next step, which finishes it.
+    `task_ids` None is a plan that could not be read: git's remover acts on
+    any of them."""
+    if task_ids is not None and task_id in task_ids:
+        return "/audit:worktree task-remove %s" % (task_id,)
+    if task_id in (body.get("asideMoves") or {}):
+        return "/audit:phase %s, whose next step finishes moving it" % (phase,)
+    return "git worktree remove %s" % (path,)
+
+
+def kept_trees_block(manifest_path, project, manifest=None):
     """Task trees a wave left standing: `{"trees": [{"phase", "taskId",
-    "path"}]}` read from the driver's state files, or `{"error": why}` when the
-    state directory could not be asked.
+    "path", "remedy"}]}` read from the driver's state files, or `{"error":
+    why}` when the state directory could not be asked. `remedy` is the command
+    that acts on that tree (`_kept_tree_remedy`), read against `manifest`, or
+    the plan at `manifest_path` when none is given.
 
     ONLY A TREE THAT IS STILL ON DISK IS LISTED. The driver names a kept tree
     once, in the print of the run that kept it, and records it until a later
@@ -2067,21 +2083,26 @@ def kept_trees_block(manifest_path, project):
         names = sorted(os.listdir(drive)) if os.path.isdir(drive) else []
     except Exception as exc:                       # defensive; see the docstring
         return {"error": "the driver's state could not be read: %s" % (exc,)}
+    plan = manifest if manifest is not None else _mio.load_manifest_safe(manifest_path)
+    task_ids = set(str(t.get("id")) for _ph, t in _mio.iter_tasks(plan)
+                   if isinstance(t, dict)) if plan else None
     trees = []
     for name in names:
         if not name.endswith(".json"):
             continue
-        body, _problem = _fr.drive_state(os.path.dirname(drive), name[:-len(".json")])
+        phase = name[:-len(".json")]
+        body, _problem = _fr.drive_state(os.path.dirname(drive), phase)
         for task_id, path in sorted((body.get("keptTrees") or {}).items()):
             if isinstance(path, str) and os.path.isdir(path):
-                trees.append({"phase": name[:-len(".json")], "taskId": task_id,
-                              "path": path})
+                trees.append({"phase": phase, "taskId": task_id, "path": path,
+                              "remedy": _kept_tree_remedy(task_id, path, phase,
+                                                          body, task_ids)})
     return {"trees": trees}
 
 
 def _kept_tree_lines(summary, pt=None):
     """`KEPT TREES` - the trees `kept_trees_block` found, one line each, with the
-    verb that takes one down. Nothing when the summary carries no such block
+    command that takes that one down. Nothing when the summary carries no such block
     (every caller but the bare render) or it found none."""
     pt = pt or _cli_fmt.PLAIN
     block = (summary or {}).get("keptTrees")
@@ -2094,9 +2115,11 @@ def _kept_tree_lines(summary, pt=None):
         return []
     out = ["", pt.paint("  KEPT TREES  %d task tree(s) a wave left standing, each "
                         "holding work the phase tree does not - take one down "
-                        "with /audit:worktree task-remove <taskId> once it is "
-                        "dealt with" % len(trees), "warn")]
-    out += ["    %-8s %-4s %s" % (t["taskId"], t["phase"], t["path"]) for t in trees]
+                        "with the command beside it once it is dealt with"
+                        % len(trees), "warn")]
+    out += ["    %-8s %-4s %s - %s" % (t["taskId"], t["phase"], t["path"],
+                                       t.get("remedy") or "no remover was named for it")
+            for t in trees]
     return out
 
 
@@ -2332,7 +2355,7 @@ def main(argv):
     # Kept trees travel on the lock's asymmetry for the same reason: a fact about
     # this checkout now, read by the surface a person opens, not by a payload.
     if not (want_json or want_gate):
-        summary["keptTrees"] = kept_trees_block(manifest_path, project)
+        summary["keptTrees"] = kept_trees_block(manifest_path, project, manifest)
 
     # THE THIRD PLACE'S OWN ANSWER, injected on the SAME asymmetry as `locks`
     # above and for a sibling reason: the human render's `tests` column names it

@@ -280,9 +280,51 @@
         "file": "plugins/audit/scripts/governance/drive-phase.py:4807-4815",
         "issue": "The redo now depends on git worktree repair (git 2.30 and later). On an older git the repair exits non-zero after the rename has happened, every redo stops with the record locked, and the retry in repair_asides can never succeed. Nothing checks the git version and no document states the floor (only the merge replay checks one, for another command). The previous mechanism (task-remove) worked on any git.",
         "resolution": "Check for the verb's presence (or git --version) before the rename and refuse the redo with nothing moved, or state the floor in the guide and doctor; failing before the rename is cheap, failing after it is the wedge of finding 1."
+      },
+      {
+        "id": "P142-R33",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:5049-5058,5061-5084",
+        "issue": "contradicts task clause \"repair_asides may stop the drive only for a live locked record whose tree is missing\": _settle_move's last branch (`if not named or reason != ASIDE_LOCK` ... else `_stopped(aside_missing(...))`) is reached whenever the record is live and drive-locked and names neither `from` nor a held `aside`; it never asks whether the tree the record names exists. A set-aside whose unlock failed, which a human then moved to a third path and repaired with git's own `git worktree repair <third>`, has `named` = third, an existing tree. It stops anyway, saying the tree is \"not where git's record names\" and that no directory holds it (the docstring says \"otherwise the record's tree is missing\"). Remedy 1 (\"put the tree back at <named>\") is a no-op because the tree is already there, so every step re-stops. Remedy 2 (`git worktree unlock <named>` + `prune`) works on the unlock but prune finds the tree, so the next step takes the `reason != ASIDE_LOCK` branch and _forget_move drops the keptTrees entry (the aside path is not standing), orphaning a tree that holds work from status. Confirmed from the code; the same orphaning follows for an unlocked record naming a third path. Probe q1 reproduces it.",
+        "resolution": "Gate the stop on `not os.path.isdir(named)` (or on `_holds_record(named, admin)` being false). When the named tree exists and holds the record, treat it as the moved tree: run `_finish_aside` against `named`, and re-point the kept entry at `named` (state[\"keptTrees\"][key] = named) so it stays listed. Add a case: tree moved to a third path and repaired by hand, then repair_asides finishes it, unlocks, and keeps it listed."
+      },
+      {
+        "id": "P142-R34",
+        "severity": "med",
+        "file": "plugins/audit/scripts/status/audit-status.py:2050-2060",
+        "issue": "contradicts task clause \"Name a remedy that works for an aside\": the remedy printed for a set-aside is a bare `git worktree remove <path>`. A set-aside is a tree that holds work, and `git help worktree` (git 2.53.0) says remove acts only on clean worktrees; \"Unclean worktrees or ones with submodules can be removed with --force\". So it refuses a set-aside holding uncommitted work or a submodule checkout. It also fails when git's record is gone: _forget_move leaves a standing aside directory listed (drive-phase.py:4986-4998), and remove fails on a path with no record. kt5 asserts only the spelling of the command, never that it acts, so the case cannot see this.",
+        "resolution": "Name a remover that works on a tree holding work and a submodule, for example `git worktree remove --force <path>`, stated as destroying the work. For a listed aside whose record is gone, name removing the directory. Either run the printed command in kt5 against a real unclean aside, or state in the line that it refuses a tree with work."
+      },
+      {
+        "id": "P142-R35",
+        "severity": "low",
+        "file": "plugins/audit/scripts/status/audit-status.py:2055-2056",
+        "issue": "The remedy `/audit:phase <phase>, whose next step finishes moving it` is false whenever the next step does not finish the move. _settle_move may take the move back, forget it, or stop (aside_missing) instead. The PLUGIN-BUILD-GUIDE paragraph repeats the claim.",
+        "resolution": "Word it as `/audit:phase <phase>, whose next step settles the recorded move`, in the line and in the guide."
+      },
+      {
+        "id": "P142-R36",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:5097-5110",
+        "issue": "The read-back remedy offers `git -C <aside> diff --quiet --ignore-submodules=none HEAD` as the command to settle. That command exits 1 on every set-aside holding work, which is the normal case, and _repair_moved_tree itself treats 0 and 1 as success (`code in (0, 1)`). A human running it sees exit 1 and reads it as the failure.",
+        "resolution": "Say that exit 0 or 1 is a read and any other exit is the failure, or drop `--quiet` from the printed command and tell the human to look for the error text."
+      },
+      {
+        "id": "P142-R37",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:5019-5030",
+        "issue": "A run that dies partway through a take-back, or before the lock, yields a false did-line. Marker restored and unlock done but write_state not reached: the next step finds the tree at `from` with the task marker and no lock, so it takes the `marked is not True and reason != ASIDE_LOCK` branch and writes \"carries neither the set-aside's marker nor the drive's lock - a tree cut there since\", though it is the original tree. The same happens in the common case of a run that died after recording the move and before locking (this is the ta14c path, which passes through _forget_move rather than a take-back and does not check the line). The state ends right; the sentence does not.",
+        "resolution": "Word the did-line for what was observed (`no marker or lock of the drive's was found at <origin>, so the recorded move is dropped`) without asserting a tree was cut since."
+      },
+      {
+        "id": "P142-R38",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:5026-5030,5049-5057",
+        "issue": "An unreadable `locked` file (`_lock_reason` -> `(None, why)`) is treated as `reason != ASIDE_LOCK`, so _settle_move forgets the move (both the first-branch and last-branch forget) while the drive's lock may still be on the record. The did-line quotes `unread`, but the lock is left with no record of whose it is, which is what the take-back change set out to prevent.",
+        "resolution": "When `unread` is non-empty, keep the move recorded and stop naming the file that could not be read, instead of forgetting it."
       }
     ],
-    "outcome": "[findings: 32 - 0 high, 10 med, 22 low; 10 with a recorded fix commit]"
+    "outcome": "[findings: 38 - 0 high, 12 med, 26 low; 10 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2876,7 +2918,7 @@
     {
       "id": "P142.44-6yq",
       "title": "A status row folds as the hook's echo only inside the tool call that wrote its verb row, and a derived row only straight after its own edit row",
-      "status": "in_progress",
+      "status": "done",
       "description": "P142.41 made `_status_chain` fold a repeated status row only when `_echoes` proves it is the journal-writes hook's record of the preceding verb row: same from/to, via hook, a shared session. An adversarial review found a fail-open left in it. The report and repro.py are in p142-41-adv/; the orchestrator gives the full path.\n\n1. MED. The first branch reads no time, so a same-session hook row that repeats in_progress->blocked hours later folds as an echo. Per `_pre_seed_sweep` in hooks/journal-writes.py, a hook row's `from` is the file as of the start of its own tool call. So a `from: in_progress` on a hook row whose call began after the verb row proves the task was running again, and that restart is exactly what the journal is missing. The plugin's own writers can lose it: 118 hook manifest.edit rows are truncated, and their clipped changes lists dropped status changes.\n2. LOW. The second branch (a derived task.blocked/task.complete after its own edit row) never checks adjacency or the moment, only that the previous event for the task is a hook edit in the same file and session.\n\nBind both branches to the mechanism. An echo is written at the end of the same tool call as its verb row, so it falls inside that call's duration. Derive the bound from the code: the hook runs at PostToolUse, and the longest call the plugin's tools allow is the Bash tool's timeout cap. Name the constant where it comes from, and do not hand-pick a number. The real journal's largest verb-to-echo gap was measured at 576 s (P128.19-0h5); re-measure it with the review's scan. A derived row folds only straight after its own edit row, at the same moment, in the same file. Anything else answers None.\n\nThe review also found two cross-session echoes, written by another session's hook a few seconds after the verb row (P123.35, P123.79-64p). They now answer None where they used to answer False. Judge whether a cross-session echo inside the bound is provable from what the rows record. If it is not, keep None (fail-closed) and say so.\n\nCases red on today's code; every real echo in docs/audit/journal still folds (re-run the review's scan1.py and gaps.py and report the counts). Deliver a mutation probe with over-fire rows. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -2906,25 +2948,41 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "67c43c00e876",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task.py: _echoes now binds both branches to the mechanism. Branch 1 (hook row after a non-hook verb row, shared session) also requires 0 <= gap <= _ECHO_WINDOW_SECONDS = _BASH_CALL_CAP_SECONDS (600, Claude Code's Bash timeout cap of 600000 ms) + _ECHO_HOOK_TIMEOUT_SECONDS (10, journal-writes.py's PostToolUse timeout in hooks.json, pinned by hw21). Branch 2 (derived row after the hook's edit row) also requires the row to sit in that edit row's run - new _hook_run(row, index, before), tracked per journal file in _status_events and carried as a fifth origin element: a hook edit row starts a run, a later hook row of the same file continues it, any other writer's row ends it - and 0 <= gap <= _ECHO_HOOK_TIMEOUT_SECONDS. _origin's default widened to five elements. Everything else answers not-an-echo, so the span stays unaccounted and _ran_within answers None. Cross-session echoes: kept None (fail-closed) - a hook row's from is the plan at the start of ITS call, and no row records when another session's call began, so a call that began after the verb's row (and saw an unrecorded restart) writes a byte-identical row; not provable from what the rows record. tests/test_audit_task.py: hw21, hw22, hw23 (lo-block, called from _held_work_cases after hw20) plus helpers _stamp, _hook_post_timeout, _echo_bound_cases, _status_moves, _real_echoes, _real_echo_cases; module-level `import time`. Gate: `python3 tools/sweep-selftests.py tests/test_audit_task.py` exit 0, 1136 cases, run twice (before and after the last fixture added). Review scans re-run against the edited tree with load.py's T pointed at the main checkout: gaps.py `branch1 606, branch2 29, n 635, max 576.0 s (P128.19-0h5)` - identical to the same scan over HEAD's audit-task.py; scan1.py distribution identical HEAD vs new (153 echo/True/True, 85 echo/True/False/False, 6 echo None, 9+8 out-of-gap, 844+56 nonecho). repro.py: R1 new None (head False), R1 with restart recorded True, R1b None, R2 None (head False), R2b None, control other session None. hw23 over the live journal: 16018 rows, 645 echoes, 317 with a derived row, largest gap 576.0 s, 5 cross-session repeats (P123.35 2 s, P123.37 1 s, P123.76-64p 72 s, P123.79-64p 23 s, P123.80-64p 22 s) not counted, all of which answered not-an-echo before this change as well (branch 1 already required a shared session). Mutation probe <scratchpad>/P142.44-probe/mutations.py: copies the tree, asserts each anchor once and the edit landed, purges __pycache__, 12 rows all ok, `PROBE PASS` exit 0 (probe-run3.txt beside it). Dependants: tests/test__output.py, PLUGIN-BUILD-GUIDE.md, docs/research/*.md, hooks/journal-writes.py, hooks/require-plan.py reference audit-task.py by path or basename for other functions; grep for _echoes/_status_chain/_hook_run/'Time is not read' outside the two task files finds nothing, and no CLI surface or path changed - still correct. journal-writes.py's PostToolUse timeout is now read by hw21; changing it turns hw21 red until _ECHO_HOOK_TIMEOUT_SECONDS follows. test_commit_task_work.py / test__filed_returns.py import names from test_audit_task.py that this change did not touch - still correct.",
+        "descriptive": "A repeated status row now folds as the hook's echo only within one tool call of its verb row, and a derived row only inside its own edit row's run, so an unrecorded restart reads can't-tell instead of not-running."
       },
       "startedAt": "2026-10-28T05:30:12Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-28T06:21:17Z",
+      "verifiedBy": [
+        "hw21: a same-session hook row repeating in_progress->blocked three hours later answers can't-tell inside the gap and not-running after it; 576 s and the window edge fold, one second past it can't-tell, another session's row at 5 s can't-tell; the window equals the Bash cap plus hooks.json's PostToolUse timeout for journal-writes.py",
+        "hw22: a derived row three hours or forty seconds after its edit row, or behind another run's edit row, answers can't-tell; one a second after its edit row, one behind the same run's rows for other tasks, and one behind another session's file sorting between, fold",
+        "hw23: every verb->same-session-hook echo in this repository's own journal, found by writers alone with no clock, still folds with no span left over the journal slice as read"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-28T06:04:03Z.3db3a3",
         "status": "passed",
         "at": "2026-10-28T06:04:03Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "67c43c00e876",
+        "at": "2026-10-28T06:21:17Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-28T05:55:34Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_audit_task.py` in a throwaway tree at HEAD exited 1 with 2 of 1136 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - hw21 (house FAIL), hw22 (house FAIL): SELFTEST FAILED: 1134/1136 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 565s, 3 times the recorded 606s of tests/test_audit_task.py in .github/sweep-costs.json, capped at the 565s the host's Bash limit leaves; fix run: held back 282s of the deadline (the recorded 606s, capped at half the 565s deadline), the recorded slot-seconds of tests/test_audit_task.py in .github/sweep-costs.json",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P142.45-6yq",
       "title": "repair_asides classifies a recorded move by git's record, so it never wedges the drive or takes back over a new tree",
-      "status": "pending",
+      "status": "in_progress",
       "description": "A redo sets the old task tree aside: it records the move, locks git's record of it, renames the tree, and repairs. repair_asides runs at the start of every drive step and finishes any move still recorded. It chooses between \"never moved\", \"moved\" and \"stands at neither\" by which directory exists. It never asks git's own record. Adversarial probes in scratchpad/p142-43-adv/r2/ (the orchestrator gives the full path) reproduce two failures:\n- p3.py: a failed repair is followed by a human deleting the aside, with its record. Every later drive step then stops with \"put the tree at <aside>\", which is impossible. That wedges the whole phase, and no answer reaches it.\n- p4.py: a half-held repair (repair succeeded, a submodule repoint failed), then the aside is deleted and a new tree is cut at the task path. The next step rewrites the new tree's marker with the old record, says \"taken back\", and leaves the old record locked.\nFix by invariant: a recorded move is classified by git's record.\n- No admin dir: the record is gone, so forget the move with a did-line and never stop.\n- Take back only when admin_dir(from) is the recorded admin and its gitdir names `from`.\n- Repair only when the recorded admin is the record.\n- repair_asides may stop the drive only for a live locked record whose tree is missing. Its remedy must name an action that exists.\nSame functions, low:\n(a) _take_back_aside drops its entries even when its unlock failed, so the drive's own lock outlives the move (p2.py). Keep a record until the unlock holds.\n(b) _repoint_module stops forever when os.path.relpath cannot relate two drives. Write an absolute core.worktree there, as git does. aside_unread's remedy names the step that failed (the repoint or the read-back), not `git worktree repair`, which succeeds by hand.\n(c) `git worktree repair` needs git 2.30. Check the floor before the set-aside and refuse the redo with a clear stop, rather than after the rename.\n(d) audit-status lists a set-aside key under KEPT TREES with the remedy `task-remove <taskId>`, which cannot act on that key. Name a remedy that works for an aside.\nRed-first a case for each of the two failures and for (a)-(d). No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -2941,6 +2999,54 @@
         "expectRedFirst": true,
         "gate": [
           "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-28T06:21:18Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-28T07:04:31Z.c9fef0",
+        "status": "passed",
+        "at": "2026-10-28T07:04:31Z"
+      }
+    },
+    {
+      "id": "P142.46-6yq",
+      "title": "A status row folds as the hook's echo only when the hook recorded that its call began before the verb row, so a later call's real restart keeps its charge",
+      "status": "pending",
+      "description": "`_echoes` in audit-task.py decides whether a repeated status row is the journal-writes hook's echo of the verb row before it. If it is an echo, the row folds and does not count as a restart. This is the third round on the same fail-open. Each earlier round inferred the echo from what the rows happen to share: first the session, then the session plus a 610 s window. An adversarial review (scratchpad/p142-44-adv/, the orchestrator gives the full path; repro_failopen.py) still folds a real restart. The sequence: a verb blocks the task, something outside any tool call moves it back, and a later Bash call in the same session blocks it again inside the window. That row folds, and `_ran_within` answers False.\n\nStop inferring. Redesign so the echo is proven from what the hook records:\n1. journal-writes.py writes, on every status row it derives, the moment its own tool call began. That is the PreToolUse baseline time the row's `from` was read at. The PreToolUse sweep already keeps that baseline; carry its time.\n2. `_echoes` folds a hook row only when it records that start, the start is at or before the verb row's stamp, and the hook row is in the same journal file as the verb row (the same tree). A row that lacks the field is a row written before this change. For those, keep today's bounded reading, named in the code as the reading for rows that carry no start, so the history does not change its answers. Re-run p142-44-adv/scan.py and report that no live answer changed.\n3. Lows from the same review, in the same functions:\n   - `_hook_run` ends a run when a same-file row from another writer is stamped between the edit row and its derived row (repro_run.py). Bind the derived row to its edit row by what the hook writes, not by adjacency. For example, the derived row carries the edit row's hash, or both carry one call id.\n   - Branch 1 does not require the same tree (repro_tree.py).\n   - The docstring and hw21's text claim \"inside the tool call that wrote the verb's row\", which a gap cannot show.\n   - The 610 s derivation misses permission waits, MCP calls and BASH_MAX_TIMEOUT_MS. Once item 2 holds, state what the window still bounds, and only that.\nRed-first a case for each repro. The hook stays importless and stdlib-only, and its import budget (tools/bench-hooks.py --gate) must hold. No F/P/BUG ids in comments.",
+      "files": [
+        "plugins/audit/hooks/journal-writes.py",
+        "tests/test_journal_writes.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_audit_task.py: a same-session hook row whose call began after the verb row does not fold; a derived row stays bound to its edit row across an interleaved writer; a hook row from another tree does not fold; rows without a recorded start keep their answers; tests/test_journal_writes.py: a derived status row records when its call began"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_task.py"
         ],
         "gateBasis": "tests.add"
       },
