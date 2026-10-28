@@ -50,6 +50,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 import _journal_io                                 # noqa: E402  (the journal rows several slices read)
@@ -17033,6 +17034,9 @@ def _held_work_cases(check, project, task, write, start, read, git):
           and folded_by is not None and folded_by[1] == []
           and from_hook is False)
 
+    _echo_bound_cases(check, prow, ran, started)
+    _real_echo_cases(check)
+
     # ---- the way past the refusal is one a guard lets through -------------------
     proj, mpath = holder_plan("hw-remedy")
     write(proj, "src/a.ts", "the blocked task's unfinished edit\n")
@@ -17089,6 +17093,217 @@ def _held_work_cases(check, project, task, write, start, read, git):
           "commit: %r" % ((stashed, clean),),
           not _remedies_pass(stashed) and stashed["refused"]
           and _remedies_pass(clean))
+
+
+def _stamp(base, seconds):
+    """`base` (a journal `ts`) moved by `seconds`, spelled as the writers do."""
+    moment = _journal_io.row_moment({"ts": base}) + seconds
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(moment))
+
+
+def _hook_post_timeout(script):
+    """The largest `timeout` hooks.json gives `script` at PostToolUse, in
+    seconds - how long the hook may run after the call it records ended."""
+    with open(os.path.join(_output.PLUGIN_ROOT, "hooks", "hooks.json"),
+              encoding="utf-8") as fh:
+        doc = json.load(fh)
+    found = [h.get("timeout") for block in doc["hooks"].get("PostToolUse", [])
+             for h in block.get("hooks", [])
+             if script in str(h.get("command", ""))]
+    return max(found) if found else None
+
+
+def _echo_bound_cases(check, prow, ran, started):
+    """A repeated status row folds into the change before it only when the
+    rows prove it is the hook's record of that change: inside the tool call
+    that wrote the verb's row, or - for a row the hook derives - straight
+    after its own edit row in the same run."""
+    verb_at = "2026-10-26T12:00:00Z"
+    blocked = started + [prow("task.block", verb_at, "in_progress", "blocked")]
+    window = getattr(M, "_ECHO_WINDOW_SECONDS", None)
+
+    def echoed_at(seconds, **kw):
+        return blocked + [prow("manifest.edit", _stamp(verb_at, seconds),
+                               "in_progress", "blocked", via="hook", **kw)]
+
+    def between(rows, start, end):
+        return ran(rows, "blocked", _stamp(verb_at, start),
+                   _stamp(verb_at, end))
+
+    # A same-session hook row hours after the verb: its `from` is the plan as
+    # of the start of ITS call, which began long after the verb's call ended,
+    # so it says the task was running again - a restart the journal lacks.
+    late = echoed_at(3 * 3600)
+    # The slowest echo this repository's journal held on 2026-10-28, and the
+    # window's own edge.
+    slow = echoed_at(576)
+    edge = echoed_at(window) if window is not None else None
+    past_edge = echoed_at(window + 1) if window is not None else None
+    # Another session's hook a few seconds after the verb: its call may have
+    # started after the verb's row, and no row records when it did.
+    crossed = echoed_at(5, sid="s-2", name="2026-10.s-2")
+    answers = [between(late, 600, 3600),
+               between(late, 3 * 3600 + 60, 3 * 3600 + 120),
+               between(slow, 60, 120),
+               between(edge, 1, 2) if edge else "no window",
+               between(past_edge, 1, 2) if past_edge else "no window",
+               between(crossed, 1, 2)]
+    hook_timeout = _hook_post_timeout("journal-writes.py")
+    check("hw21 a same-session hook row repeating the verb's transition folds "
+          "only inside the tool call that wrote the verb's row: three hours "
+          "later it answers can't-tell inside the gap and not-running wholly "
+          "after it, 576 s (the slowest echo the journal held on 2026-10-28) "
+          "and the window's edge "
+          "fold, one second past the edge answers can't-tell, another "
+          "session's row five seconds later answers can't-tell; and the "
+          "window is the Bash tool's cap plus the hook's own PostToolUse "
+          "timeout in hooks.json: %r"
+          % ((answers, window, hook_timeout,
+              getattr(M, "_ECHO_HOOK_TIMEOUT_SECONDS", None)),),
+          answers == [None, False, False, False, None, None]
+          and hook_timeout is not None
+          and getattr(M, "_ECHO_HOOK_TIMEOUT_SECONDS", None) == hook_timeout
+          and window == getattr(M, "_BASH_CALL_CAP_SECONDS", None)
+          + hook_timeout)
+
+    # The derived row's half. The hook writes its edit row and the rows it
+    # derives in one run, so a derived row folds only when the edit row before
+    # it, in its own file, is the task's previous event, within that run.
+    echo_at = _stamp(verb_at, 5)
+    edit = prow("manifest.edit", echo_at, "in_progress", "blocked",
+                via="hook")
+    echoed = blocked + [edit]
+
+    def derived(ts, tid="P1.1"):
+        row = prow("task.blocked", ts, "in_progress", "blocked", via="hook")
+        row["details"] = dict(row["details"], taskId=tid)
+        return row
+
+    def clipped(ts):
+        """A hook edit row whose change list was cut before naming P1.1."""
+        return {"action": "manifest.edit", "ts": ts,
+                "actor": {"via": "hook", "sessionId": "s-1"},
+                "_file": "2026-10.s-1.jsonl",
+                "details": {"truncated": True, "changes": [
+                    {"field": "status", "from": "pending", "id": "P1.%d" % i,
+                     "to": "in_progress"} for i in range(2, 14)]}}
+
+    hours = echoed + [derived(_stamp(verb_at, 3 * 3600))]
+    later = echoed + [derived(_stamp(verb_at, 40))]
+    run_between = echoed + [clipped(_stamp(verb_at, 7)),
+                            derived(_stamp(verb_at, 7))]
+    # The allow half: the stamp crossing a second inside the run, and the
+    # run's rows for other tasks between the edit row and this one.
+    next_second = echoed + [derived(_stamp(verb_at, 6))]
+    siblings = echoed + [derived(echo_at, tid="P1.2"),
+                         derived(echo_at, tid="P1.3"), derived(echo_at)]
+    # Another session's file sorting between the edit row and its derived
+    # row: a run is read in its own file, so it does not end the run.
+    other_file = {"action": "task.start", "ts": _stamp(verb_at, 6),
+                  "actor": {"via": "cli", "sessionId": "s-2"},
+                  "_file": "2026-10.s-2.jsonl",
+                  "details": {"changes": [{"field": "status",
+                                           "from": "pending", "id": "P1.9",
+                                           "to": "in_progress"}]}}
+    interleaved = echoed + [other_file, derived(_stamp(verb_at, 6))]
+    derived_answers = [between(hours, 600, 3600),
+                       between(hours, 3 * 3600 + 60, 3 * 3600 + 120),
+                       between(later, 20, 30),
+                       between(run_between, 6, 6),
+                       between(next_second, 1, 2),
+                       between(siblings, 1, 2),
+                       between(interleaved, 1, 2)]
+    check("hw22 a derived row folds only straight after its own edit row in "
+          "the same run: three hours after the echo it answers can't-tell "
+          "inside the gap and not-running after it, forty seconds after the "
+          "echo can't-tell, behind another run's edit row can't-tell; while "
+          "one stamped a second after its edit row, one behind the same "
+          "run's rows for other tasks, and one behind another session's file "
+          "sorting between it and its edit row, fold: %r" % (derived_answers,),
+          derived_answers == [None, False, None, None, False, False, False])
+
+
+def _status_moves(row):
+    """[(task, from, to)] for every status change `row` records with a
+    `from`: a change list's status entries, and a derived block or
+    completion row."""
+    details = row.get("details")
+    if not isinstance(details, dict):
+        return []
+    moves = [(str(c.get("id")), c.get("from"), c.get("to"))
+             for c in details.get("changes") or []
+             if isinstance(c, dict) and c.get("field") == "status"
+             and c.get("id") and c.get("from") is not None]
+    ends = {"task.blocked": "blocked", "task.complete": "done"}
+    if row.get("action") in ends and details.get("taskId") \
+            and details.get("from") is not None:
+        moves.append((str(details["taskId"]), details["from"],
+                      details.get("to") or ends[row["action"]]))
+    return moves
+
+
+def _real_echoes(rows):
+    """Every verb row in `rows` followed - as the task's next row naming
+    where it came from - by the same session's hook row recording the same
+    change, with the row the hook derived straight after that one in the
+    same file when there is one. Found by the rows' writers alone, with no clock read, so a
+    bound that cut a real echo off shows here as a pair that stopped
+    folding. Returns (pairs, cross) - `cross` counts the same shape written
+    by another session's hook, which is not counted an echo."""
+    seen = {}
+    for index, row in enumerate(rows):
+        actor = row.get("actor") if isinstance(row.get("actor"), dict) else {}
+        for tid, was, now in _status_moves(row):
+            seen.setdefault(tid, []).append((row, actor, was, now, index))
+    pairs, cross = [], 0
+    for tid, moves in sorted(seen.items()):
+        for at, (verb, vact, was, now, first) in enumerate(moves[:-1]):
+            echo, eact, ewas, enow, last = moves[at + 1]
+            if vact.get("via") in (None, "hook") \
+                    or eact.get("via") != "hook" or (ewas, enow) != (was, now):
+                continue
+            if eact.get("sessionId") != vact.get("sessionId"):
+                cross += 1
+                continue
+            tail = [m for m in moves[at + 2:at + 3]
+                    if m[0].get("action") in ("task.blocked", "task.complete")
+                    and echo.get("action") == "manifest.edit"
+                    and m[0].get("_file") == echo.get("_file")
+                    and (m[2], m[3]) == (was, now)
+                    and (m[1].get("sessionId") == eact.get("sessionId"))]
+            if tail:
+                last = tail[0][4]
+            pairs.append((tid, verb, echo, [m[0] for m in tail],
+                          (first, last + 1)))
+    return pairs, cross
+
+
+def _real_echo_cases(check):
+    """The allow half against this repository's own journal rather than rows
+    written to match the rule: every echo its writers left still folds."""
+    rows = _journal_io.read_all(_output.REPO_ROOT)
+    pairs, cross = _real_echoes(rows)
+    unfolded, gaps = [], []
+    for tid, verb, echo, tail, (first, end) in pairs:
+        # The journal as read, from the verb's row to the last row of the
+        # pair: every other writer's row and the hook's rows for other tasks
+        # in between stay where the journal put them.
+        events = M._status_events(rows[first:end], tid)
+        chain = M._status_chain(events)
+        gaps.append(_journal_io.row_moment(echo)
+                    - _journal_io.row_moment(verb))
+        if chain is None or chain[1] != []:
+            unfolded.append((tid, verb.get("ts"), echo.get("ts"),
+                             [t.get("ts") for t in tail]))
+    with_tail = sum(1 for p in pairs if p[3])
+    check("hw23 ALLOW: every echo in this repository's journal - a verb row, "
+          "the same session's hook row recording its change next, and the "
+          "rows the hook derived straight after - still folds with no span "
+          "left (%d rows read, %d echoes, %d with derived rows, largest gap "
+          "%r s, %d cross-session repeats not counted): %r"
+          % (len(rows), len(pairs), with_tail, max(gaps) if gaps else None,
+             cross, unfolded[:5]),
+          bool(rows and pairs and with_tail and not unfolded))
 
 
 def _no_change_layout_cases(check, project, git, write, close, read):

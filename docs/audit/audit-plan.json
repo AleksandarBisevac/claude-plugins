@@ -1668,7 +1668,8 @@
       "P142.31-6yq",
       "P142.40-6yq",
       "P142.42-6yq",
-      "P142.43-6yq"
+      "P142.43-6yq",
+      "P142.45-6yq"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -5587,7 +5588,8 @@
       "P130.8",
       "P131.1",
       "P131.2",
-      "P131.12"
+      "P131.12",
+      "P142.45-6yq"
     ],
     "plugins/audit/scripts/status/audit-version.py": [
       "P67.1",
@@ -10085,7 +10087,8 @@
       "P142.31-6yq",
       "P142.40-6yq",
       "P142.42-6yq",
-      "P142.43-6yq"
+      "P142.43-6yq",
+      "P142.45-6yq"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -11517,7 +11520,8 @@
     "tests/test_audit_status.py": [
       "P131.1",
       "P131.12",
-      "P129.7-izt"
+      "P129.7-izt",
+      "P142.45-6yq"
     ],
     "tests/test_audit_task.py": [
       "P131.1",
@@ -11615,7 +11619,8 @@
       "P142.37-6yq",
       "P142.40-6yq",
       "P142.42-6yq",
-      "P142.43-6yq"
+      "P142.43-6yq",
+      "P142.45-6yq"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"

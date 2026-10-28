@@ -5435,6 +5435,20 @@ def _held_reading(project, git_root, plan, node, mpath=None, config=None,
 _HOOK_VIA = "hook"
 _HOOK_PRIMARY = "manifest.edit"
 
+# How far apart a verb's row and the hook's record of the same write can be.
+# The verb writes its row during a tool call and the hook writes at
+# PostToolUse, once that call has ended, so the two are one call plus the
+# hook's own run apart. The plugin's verbs run as Bash commands, and Claude
+# Code's Bash tool takes a `timeout` of at most 600000 ms; hooks.json gives
+# journal-writes.py `_ECHO_HOOK_TIMEOUT_SECONDS` at PostToolUse, and each row
+# of one run is stamped inside it. The pause between the call's end and the
+# hook's start is counted by neither, and a host that raises the Bash cap
+# lengthens the call: an echo either pushes past the window answers
+# can't-tell, the reading that releases nothing.
+_BASH_CALL_CAP_SECONDS = 600
+_ECHO_HOOK_TIMEOUT_SECONDS = 10
+_ECHO_WINDOW_SECONDS = _BASH_CALL_CAP_SECONDS + _ECHO_HOOK_TIMEOUT_SECONDS
+
 
 def _row_origin(row):
     """`(via, sessions, file, action)` - who wrote `row`, under which session
@@ -5447,14 +5461,30 @@ def _row_origin(row):
     return (actor.get("via"), sessions, row.get("_file"), row.get("action"))
 
 
+def _hook_run(row, index, before):
+    """The row index of the hook edit row whose run `row` belongs to, given
+    `before`, the run of the row before it in its own journal file: the hook
+    appends its edit row and then the rows that edit derives, so a hook row
+    other than an edit row continues the run before it, and any other writer's
+    row ends it. None when `row` is in no run."""
+    via, _sessions, _name, action = _row_origin(row)
+    if via != _HOOK_VIA:
+        return None
+    return index if action == _HOOK_PRIMARY else before
+
+
 def _status_events(rows, tid):
     """`[(moment, row index, from, to, origin)]` - every status change the
     journal records for `tid`, in the journal's order: a `status` entry in a
     row's `changes`, and the drive's `task.blocked` row; `origin` is
-    `_row_origin`'s. None when a row carrying one names no readable moment -
-    an order that cannot be read is no evidence."""
-    out = []
+    `_row_origin`'s with the row's hook run (`_hook_run`) after it. None when
+    a row carrying one names no readable moment - an order that cannot be read
+    is no evidence."""
+    out, runs = [], {}
     for index, row in enumerate(rows):
+        if isinstance(row, dict):
+            runs[row.get("_file")] = _hook_run(row, index,
+                                               runs.get(row.get("_file")))
         details = row.get("details") if isinstance(row, dict) else None
         if not isinstance(details, dict):
             continue
@@ -5470,7 +5500,7 @@ def _status_events(rows, tid):
         moment = _journal_io.row_moment(row)
         if moment is None:
             return None
-        origin = _row_origin(row)
+        origin = _row_origin(row) + (runs.get(row.get("_file")),)
         out += [(moment, index, was, now, origin) for was, now in found]
     return out
 
@@ -5490,9 +5520,9 @@ def _start_keys(rows, tid):
 
 
 def _origin(event):
-    """An event's `_row_origin`; an event built without one names no writer,
-    and nothing about it can be proved an echo."""
-    return event[4] if len(event) > 4 else (None, (), None, None)
+    """An event's `_row_origin` and hook run; an event built without one names
+    no writer, and nothing about it can be proved an echo."""
+    return event[4] if len(event) > 4 else (None, (), None, None, None)
 
 
 def _echoes(event, last):
@@ -5502,26 +5532,36 @@ def _echoes(event, last):
 
       - after the row of the writer whose write the hook diffed: a named
         writer other than the hook, under a session name the hook's row also
-        carries, since the hook records the tool calls of its own session.
-        Its edit row, or a row that edit row derived when the edit row's
-        list of changes was clipped before reaching this task; or
-      - a derived row straight after its own edit row, in the same journal
-        file under the same session names.
+        carries, since the hook records the tool calls of its own session,
+        at most `_ECHO_WINDOW_SECONDS` later - inside the tool call that
+        wrote the verb's row. Its edit row, or a row that edit row derived
+        when the edit row's list of changes was clipped before reaching this
+        task; or
+      - a derived row in the run of the edit row before it (`_hook_run`):
+        the same journal file, no other writer's row and no other edit row
+        between them, the same session names, at most
+        `_ECHO_HOOK_TIMEOUT_SECONDS` later.
 
-    Time is not read: the hook writes when the tool call that ran the verb
-    ends, which may be seconds or minutes after the verb's own row. A second
-    edit row of the hook is never an echo - each records a write of its
-    own."""
-    via, sessions, name, action = _origin(event)
-    was_via, was_sessions, was_name, was_action = _origin(last)
+    The hook's row names as its `from` the plan at the start of ITS tool
+    call, so a row written after the verb's call had ended says the task was
+    in that state again - a change the journal does not hold. Another
+    session's hook row is never an echo: its call may have begun after the
+    verb's row, and no row records when it began. A second edit row of the
+    hook is never an echo either - each records a write of its own."""
+    via, sessions, name, action, run = _origin(event)
+    was_via, was_sessions, was_name, was_action, _was_run = _origin(last)
     if via != _HOOK_VIA or event[2] is None or event[2:4] != last[2:4]:
         return False
+    gap = event[0] - last[0]
     if was_via not in (None, "unknown", _HOOK_VIA):
-        return bool(set(sessions) & set(was_sessions))
+        return (bool(set(sessions) & set(was_sessions))
+                and 0 <= gap <= _ECHO_WINDOW_SECONDS)
     return (action != _HOOK_PRIMARY and was_via == _HOOK_VIA
             and was_action == _HOOK_PRIMARY
             and name is not None and name == was_name
-            and sessions == was_sessions)
+            and sessions == was_sessions
+            and run is not None and run == last[1]
+            and 0 <= gap <= _ECHO_HOOK_TIMEOUT_SECONDS)
 
 
 def _ordered_seconds(events):
