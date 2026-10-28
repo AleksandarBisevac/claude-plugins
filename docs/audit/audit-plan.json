@@ -934,6 +934,12 @@
       "title": "P142's suites pass on every CI runner: Windows paths across drives, spaced and linked temp roots",
       "status": "in_progress",
       "shard": "phases/P144.json"
+    },
+    {
+      "id": "P145",
+      "title": "The release-tier CI is green on Windows: prove-gates' pool lifecycle and the sweep's deadline replay",
+      "status": "in_progress",
+      "shard": "phases/P145.json"
     }
   ],
   "fileIndex": {
@@ -8189,7 +8195,8 @@
       "P142.51-6yq",
       "P144.1-6yq",
       "P144.6-ttw",
-      "P144.7-ttw"
+      "P144.7-ttw",
+      "P145.2"
     ],
     "tools/redfirst.sh": [
       "P55.13",
@@ -8243,7 +8250,8 @@
       "P142.37-6yq",
       "P142.38-6yq",
       "P144.5-ttw",
-      "P144.8-ttw"
+      "P144.8-ttw",
+      "P145.1"
     ],
     "tools/ui-tests/evidence-badge.test.mjs": [
       "P32.7",

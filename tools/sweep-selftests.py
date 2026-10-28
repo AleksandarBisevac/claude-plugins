@@ -5253,34 +5253,49 @@ def _cases(check):
     tt_box = tempfile.mkdtemp(prefix="sweep-deadline-")
     try:
         tt_ok = "print('1/1 cases passed')\n"
+        # WHERE THE HANGING BLOCK SAYS IT GOT AS FAR AS ITS PRINT, written
+        # after the print and before the hang - outside the child's watched
+        # scratch and home, so it is no stray of the run.
+        tt_witness = os.path.join(tt_box, "tt-printed")
+
+        def tt_split(x_body):
+            # Two blocks: the first runs `x_body`, the second is queued
+            # behind it on the one worker.
+            return ("import io, sys, time\n"
+                    "sys.path.insert(0, %r)\n"
+                    "import _harness\n\n\n"
+                    "def _x_cases(check):\n"
+                    "%s"
+                    "    check('tx1 never reached', True)\n\n\n"
+                    "def _y_cases(check):\n"
+                    "    check('ty1 queued behind the hang', True)\n\n\n"
+                    "STAGES = (('x-block', '_x_cases'), ('y-block', "
+                    "'_y_cases'))\n"
+                    "if __name__ == '__main__':\n"
+                    "    raise SystemExit(_harness.staged_main(sys.argv[1:], "
+                    "STAGES, globals(), 'sweep-tt-'))\n"
+                    % (os.path.join(REPO, "tests"), x_body))
+
+        def tt_hang(delay):
+            # Sleeps `delay` - a slow runner's start-up, made on purpose -
+            # prints a line, leaves the witness, and hangs past any deadline.
+            return tt_split("    time.sleep(%r)\n"
+                            "    print('tt-partial-before-the-hang', "
+                            "flush=True)\n"
+                            "    io.open(%r, 'w').close()\n"
+                            "    time.sleep(60)\n" % (delay, tt_witness))
         tt_files = {
             "plain-suite": tt_ok,
             "staged-suite": tt_ok + "if False:\n    staged_main()\n",
             "a-slow": "import time\ntime.sleep(1.5)\n" + tt_ok,
             "b-quick": tt_ok,
             "hung": "import time\ntime.sleep(60)\n" + tt_ok,
-            # Two blocks: the first prints a line and hangs past the deadline,
-            # the second is queued behind it on the one worker.
-            "split-hang": (
-                "import sys, time\n"
-                "sys.path.insert(0, %r)\n"
-                "import _harness\n\n\n"
-                "def _x_cases(check):\n"
-                "    print('tt-partial-before-the-hang', flush=True)\n"
-                "    time.sleep(60)\n"
-                "    check('tx1 never reached', True)\n\n\n"
-                "def _y_cases(check):\n"
-                "    check('ty1 queued behind the hang', True)\n\n\n"
-                "STAGES = (('x-block', '_x_cases'), ('y-block', '_y_cases'))\n"
-                "if __name__ == '__main__':\n"
-                "    raise SystemExit(_harness.staged_main(sys.argv[1:], "
-                "STAGES, globals(), 'sweep-tt-'))\n"
-                % (os.path.join(REPO, "tests"),)),
+            "split-hang": tt_hang(0),
+            # The same suite with nothing to hang on: queued behind `hung`,
+            # none of its blocks is admitted before the deadline.
+            "split-quick": tt_split(
+                "    print('tt-partial-before-the-hang', flush=True)\n"),
         }
-        # The same suite with nothing to hang on: queued behind `hung`, none
-        # of its blocks is admitted before the deadline.
-        tt_files["split-quick"] = tt_files["split-hang"].replace(
-            "    time.sleep(60)\n", "")
         for tt_name, tt_body in tt_files.items():
             with io.open(os.path.join(tt_box, tt_name), "w",
                          encoding="utf-8") as fh:
@@ -5364,27 +5379,58 @@ def _cases(check):
               and tt_files["split-quick"].count("time.sleep") == 0
               and "did not finish within" in (tt_queue["hung"].get("why") or "")
               and tt_took < 30)
-        tt_t0 = time.time()
-        tt_cut = sweep(["split-hang"], jobs=1, repo=tt_box, deadline=2)[0]
-        tt_took = time.time() - tt_t0
-        tt_cut_out = tt_cut.get("output") or ""
+        # WHETHER THE KILLED BLOCK PRINTED ANYTHING is the runner's speed, not
+        # the sweep's: a deadline is a wall-clock kill, and a block still
+        # starting up when it falls has printed nothing to carry. So the
+        # witness, not a margin, says which runs owe the partial line, and
+        # the deadline doubles until one does. The first run delays the
+        # print past its deadline on purpose - the slow runner made on every
+        # runner - so the runs that owe no partial line are judged too.
+        tt_tries = []
+        for tt_deadline, tt_delay in ((1, 2.0), (2, 0), (4, 0), (8, 0)):
+            if os.path.exists(tt_witness):
+                os.remove(tt_witness)
+            with io.open(os.path.join(tt_box, "split-hang"), "w",
+                         encoding="utf-8") as fh:
+                fh.write(tt_hang(tt_delay))
+            tt_t0 = time.time()
+            tt_cut = sweep(["split-hang"], jobs=1, repo=tt_box,
+                           deadline=tt_deadline)[0]
+            tt_tries.append({"deadline": tt_deadline, "ok": tt_cut.get("ok"),
+                             "printed": os.path.exists(tt_witness),
+                             "took": round(time.time() - tt_t0, 1),
+                             "out": tt_cut.get("output") or ""})
+            if tt_tries[-1]["printed"]:
+                break
+
+        def tt_cut_holds(run):
+            # Every run, printed or not: the timed-out block and the refused
+            # one each a failing case naming why, the replay never a hang of
+            # its own - and the partial line at most once, and exactly once
+            # in a run whose block got as far as printing it.
+            out = run["out"]
+            partial = out.count("tt-partial-before-the-hang")
+            return (run["ok"] is False
+                    and (partial == 1 if run["printed"] else partial <= 1)
+                    and re.search(r"(?m)^FAIL x-block DID NOT REPORT .*did "
+                                  r"not finish within \d+s", out) is not None
+                    and re.search(r"(?m)^FAIL y-block DID NOT REPORT .*not "
+                                  r"started: the sweep's deadline of %ds had "
+                                  r"passed" % (run["deadline"],), out)
+                    is not None
+                    and "PASS ty1" not in out
+                    and out.rstrip().endswith(
+                        "SELFTEST FAILED: 0/2 cases " + "passed")
+                    and run["took"] < 30)
         check("tt3c ...a staged suite cut by the deadline is still REPLAYED, "
               "past it, with what its killed block had printed, its block "
               "killed by the timeout and its block refused each one failing "
-              "case naming why - the replay never read as a hang of its own: "
-              "ok %r after %.1fs, %r"
-              % (tt_cut.get("ok"), tt_took, tt_cut_out[-900:]),
-              tt_cut.get("ok") is False
-              and tt_cut_out.count("tt-partial-before-the-hang") == 1
-              and re.search(r"(?m)^FAIL x-block DID NOT REPORT .*did not "
-                            r"finish within \d+s", tt_cut_out) is not None
-              and re.search(r"(?m)^FAIL y-block DID NOT REPORT .*not started: "
-                            r"the sweep's deadline of 2s had passed",
-                            tt_cut_out) is not None
-              and "PASS ty1" not in tt_cut_out
-              and tt_cut_out.rstrip().endswith(
-                  "SELFTEST FAILED: 0/2 cases " + "passed")
-              and tt_took < 30)
+              "case naming why - the replay never read as a hang of its own, "
+              "and the verdict is the same however slow the runner starts a "
+              "process: %r"
+              % ([dict(r, out=r["out"][-900:]) for r in tt_tries],),
+              tt_tries[-1]["printed"]
+              and all(tt_cut_holds(r) for r in tt_tries))
     finally:
         remove_tree(tt_box)
 
