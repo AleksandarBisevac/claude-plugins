@@ -1772,7 +1772,7 @@ def new_stage_baseline(head, cmd, stages):
     return sorted(set(labels))
 
 
-def baseline_problem(head, cmd, stages=()):
+def baseline_problem(head, cmd, stages=(), stubbed=()):
     """Why HEAD's own run is not a GREEN baseline, or None when it is.
 
     `head` is `{"code", "text", "problem", "absent"}` of HEAD's own test files
@@ -1797,8 +1797,13 @@ def baseline_problem(head, cmd, stages=()):
 
     A house run that failed ONLY its unknown-stage check, for labels among
     `stages` - the ones the task's test files introduce - is green too
-    (`new_stage_baseline`): the block is new at HEAD, as a new file is."""
+    (`new_stage_baseline`): the block is new at HEAD, as a new file is. So is
+    a sweep whose only red files are among `stubbed` - the declared test files
+    new at HEAD, laid over as empty files - each graded red for printing no
+    contract (`new_suite_baseline`): the sweep's counterpart of that exit 5."""
     if new_stage_baseline(head, cmd, stages) is not None:
+        return None
+    if new_suite_baseline(head, cmd, stubbed) is not None:
         return None
     if head is None:
         return "HEAD's own run was not made - %s" % (NARROW,)
@@ -1817,11 +1822,13 @@ def baseline_problem(head, cmd, stages=()):
     return None
 
 
-def fix_problem(fix, cmd, task_tally):
+def fix_problem(fix, cmd, task_tally, task_text):
     """Why the fix run does not show every failing case passing with the
     working tree's code, or None. The fix run must be green and must have run
     at least as many cases as the task's run, so a case that failed cannot
-    have gone missing instead of passing."""
+    have gone missing instead of passing - for a sweep, per file the task's
+    run (`task_text`) graded red (`sweep_count_problem`), since its summary
+    total is every file's; the totals only when no red file printed a tally."""
     if fix is None:
         return "the fix run was not made"
     if fix.get("problem"):
@@ -1832,6 +1839,8 @@ def fix_problem(fix, cmd, task_tally):
                 "pass (%s%s), so the red is not one the fix turns green"
                 % (_decisive_line(fix["text"], tally),
                    _sweep_failed_clause(fix["text"])))
+    if _sweep_args(cmd) is not None and sweep_red_counts(task_text):
+        return sweep_count_problem(task_text, fix["text"])
     if tally["collected"] < task_tally["collected"]:
         return ("the fix run collected %d case(s) and the task's run %d, so a "
                 "failing case may be missing rather than passing"
@@ -3408,14 +3417,21 @@ def red_verdict(run, ctx):
                                    deps_clause(ctx.get("deps"))))
     failing = (_failing_cases(text, tally["runner"], run["cmd"])
                if tally is not None and tally["runner"] is not None else [])
-    fresh = new_stage_baseline(run.get("head"), run["cmd"], ctx.get("stages"))
-    how = ("HEAD's own tests on HEAD's code failing only the unknown-stage check "
-           "for %s, which the task's test files add - the stage is new at HEAD: "
-           "its cases did not exist at HEAD, which is red for them"
-           % (", ".join("`%s`" % (s,) for s in fresh),) if fresh
-           else "HEAD's own tests green on HEAD's code")
     absent = ctx.get("absent") or []
     stubbed = [rel for rel in ctx.get("new") or [] if rel not in absent]
+    fresh = new_stage_baseline(run.get("head"), run["cmd"], ctx.get("stages"))
+    fresh_files = new_suite_baseline(run.get("head"), run["cmd"], stubbed)
+    if fresh:
+        how = ("HEAD's own tests on HEAD's code failing only the unknown-stage "
+               "check for %s, which the task's test files add - the stage is new "
+               "at HEAD: its cases did not exist at HEAD, which is red for them"
+               % (", ".join("`%s`" % (s,) for s in fresh),))
+    elif fresh_files:
+        how = ("HEAD's own tests green on HEAD's code but for the sweep grading the "
+               "empty file laid where the task adds %s red for printing no "
+               "contract: %s" % (", ".join(fresh_files), new_suite_clause(fresh_files)))
+    else:
+        how = "HEAD's own tests green on HEAD's code"
     if stubbed:
         how += (", its declared test files new at HEAD (%s) laid over as empty "
                 "files" % (", ".join(stubbed),))
@@ -3426,9 +3442,10 @@ def red_verdict(run, ctx):
         how += ", the task's run with its " + laid
     if ctx["cases"]:
         how = "named by --case, " + how
-    baseline = baseline_problem(run.get("head"), run["cmd"], ctx.get("stages"))
+    baseline = baseline_problem(run.get("head"), run["cmd"], ctx.get("stages"),
+                                stubbed)
     if verdict == V_RED:
-        problem = baseline or fix_problem(run.get("fix"), run["cmd"], tally)
+        problem = baseline or fix_problem(run.get("fix"), run["cmd"], tally, text)
         if problem is not None:
             return E_CANNOT_PROVE, verdict, {
                 "status": RED_CANNOT, "at": at,
@@ -3695,20 +3712,124 @@ SWEEP_COSTS_REL = ".github/sweep-costs.json"
 TIMEOUT_PER_COST = 3
 
 
+def _sweep_args(cmd):
+    """The arguments after the sweep's own script in `cmd`, forward-slashed, or
+    None when the command does not run the sweep."""
+    args = [str(a).replace("\\", "/") for a in cmd or ()]
+    starts = [i for i, a in enumerate(args) if a.rsplit("/", 1)[-1] == SWEEP_SCRIPT]
+    return args[starts[0] + 1:] if starts else None
+
+
 def sweep_suites(cmd):
     """The suites a sweep-shaped command names - repo-relative, forward-slashed,
     each once, in the order given - or None when the command is not the sweep or
     names no suite (a whole-tree sweep has no list to size a budget from)."""
-    args = [str(a).replace("\\", "/") for a in cmd or ()]
-    starts = [i for i, a in enumerate(args) if a.rsplit("/", 1)[-1] == SWEEP_SCRIPT]
-    if not starts:
+    args = _sweep_args(cmd)
+    if args is None:
         return None
     suites = []
-    for arg in args[starts[0] + 1:]:
+    for arg in args:
         rel = posixpath.normpath(arg)
         if arg.endswith(".py") and rel not in suites:
             suites.append(rel)
     return suites or None
+
+
+# --- a sweep-shaped command: a suite file the task adds, and each file's count ---
+# HEAD's run lays an EMPTY file where the task adds a suite, and the sweep grades
+# a file that exits 0 without printing the contract red, with this reason - its
+# `grade` in `tools/sweep-selftests.py` spells it, and a case of this module's
+# suite runs that real grading over a stub to hold the two together. Red for
+# that reason, and for no other, on a file HEAD does not have is every case the
+# file adds not existing at HEAD: the same red a stage HEAD's file lacks is.
+SWEEP_NO_CONTRACT = "no --selftest"
+
+
+def new_suite_baseline(head, cmd, stubbed):
+    """The files HEAD's run graded red, when it is the sweep's run and every file
+    it graded red is one of `stubbed` - a declared test file new at HEAD, laid
+    over as an empty file - red for printing no contract and for nothing else;
+    else None. A file HEAD has that prints no contract is a baseline that is not
+    green, and is never among `stubbed`."""
+    if not stubbed or head is None or head.get("problem") \
+            or head.get("code") in (0, None) or _sweep_args(cmd) is None:
+        return None
+    failed = _runner_output.sweep_failures(head["text"])
+    if not failed:
+        return None
+    paths = sorted(set(posixpath.normpath(p.replace("\\", "/")) for p, _w in failed))
+    if not all(why.startswith(SWEEP_NO_CONTRACT) for _p, why in failed) \
+            or not set(paths) <= set(stubbed):
+        return None
+    return paths
+
+
+def new_suite_clause(files):
+    """`A did not exist at HEAD, which is red for every case it adds` for the
+    files `new_suite_baseline` read as new, worded for one file or several."""
+    return "%s did not exist at HEAD, which is red for every case %s adds" % (
+        ", ".join(files), "it" if len(files) == 1 else "each")
+
+
+# A green file's row in the sweep's loud form: its path, then its own count of
+# cases. The quiet form prints none.
+_SWEEP_OK_ROW = re.compile(r"^  ok  +(\S(?:.*?\S)?) +(\d+) cases(?: +\[[^\]]*\])?[ \t]*$",
+                           re.M)
+
+
+def sweep_red_counts(text):
+    """`{path: collected}` - the house tally each file a sweep graded red printed
+    in the block the sweep reprints it under; a block printing no tally is left
+    out. Empty when `text` is not a sweep's run or no red file printed one."""
+    body = _runner_output.plain_text(text)
+    if _runner_output.sweep_summary(body) is None:
+        return {}
+    heads = list(_runner_output._SWEEP_BLOCK.finditer(body))
+    counts = {}
+    for i, head in enumerate(heads):
+        end = heads[i + 1].start() if i + 1 < len(heads) else len(body)
+        tally = _runner_output.read_tally(body[head.end():end])
+        if tally is not None and tally["runner"] == "house":
+            counts[head.group(1)] = tally["collected"]
+    return counts
+
+
+def sweep_ok_counts(text):
+    """`{path: cases}` off the sweep's loud rows for the files it graded ok."""
+    return dict((path, int(n)) for path, n in
+                _SWEEP_OK_ROW.findall(_runner_output.plain_text(text)))
+
+
+def sweep_count_problem(task_text, fix_text):
+    """Why a file the sweep graded red in the task's run may have lost a failing
+    case in the fix run, read per file, or None. The fix run's summary total
+    counts every file swept, so a file's own missing cases hide behind the
+    others'; each red file's count is set against its own row instead. A sweep of
+    one file has its summary as that file's row, which the quiet form leaves as
+    the only count printed."""
+    red = sweep_red_counts(task_text)
+    if not red:
+        return None
+    rows = sweep_ok_counts(fix_text)
+    summary = _runner_output.sweep_summary(fix_text)
+    short, unread = [], []
+    for path in sorted(red):
+        got = rows.get(path)
+        if got is None and summary is not None and summary["files"] == 1:
+            got = summary["cases"]
+        if got is None:
+            unread.append(path)
+        elif got < red[path]:
+            short.append("%s ran %d case(s) red and %d in the fix run"
+                         % (path, red[path], got))
+    if short:
+        return ("%s, so a failing case may be missing rather than passing"
+                % ("; ".join(short),))
+    if unread:
+        return ("the fix run's sweep printed no count of its own for %s (the quiet "
+                "form drops a green file's row), so a failing case there may be "
+                "missing rather than passing" % (", ".join(unread),))
+    return None
 
 
 def load_sweep_costs(root):
@@ -4008,8 +4129,10 @@ def run_red(args, cmd, out):
             verdict1 = (classify_run(run["code"], run["text"], cmd)[0]
                         if run["problem"] is None and run["code"] is not None
                         else None)
-            if verdict1 == V_RED and baseline_problem(run["head"], cmd,
-                                                      state["stages"]) is None:
+            if verdict1 == V_RED and baseline_problem(
+                    run["head"], cmd, state["stages"],
+                    [rel for rel in state["new"]
+                     if rel not in state["absent"]]) is None:
                 run["fix"], _c = _isolated_run(
                     root, path, scope["declared"] + scope["implementation"], cmd,
                     deadline, args.timeout, env, holder, "fix", deps=deps)

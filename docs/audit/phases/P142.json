@@ -2158,7 +2158,7 @@
     {
       "id": "P142.33-6yq",
       "title": "The sign-off probe re-proves every lint whose code or guarding suite the phase changed, as its docstring and the drive's protocol say",
-      "status": "in_progress",
+      "status": "done",
       "description": "The report is D-gates.md in p142-review/ (the orchestrator gives its full path) (finding 1). prove-gates --changed (changed_rows) picks rows by the file a row MUTATES. Its docstring and drive-phase lint_probe's protocol both say it picks the rows whose lint lives in the changed files. For most lints no red row mutates the lint's own file; re-derive how many with changed_rows over the real TABLE. So a phase that edits house_style_violations in tools/lints/_output_lints.py re-proves nothing, and a phase that weakens the guarding case in tests/test__output_lints.py selects no row. Select a row when the lint's home file, the file its row mutates, or the suite holding its guarding case changed. Derive each from the table and the code, not a hand list.\ndrive-phase.py's lint_probe calls this. Answer whether its text needs to change; if it does, name it in your outcome, because that file is another task's this phase. No F/P/BUG ids in comments.",
       "files": [
         "tools/prove-gates.py"
@@ -2185,19 +2185,35 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7e564df83727",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/prove-gates.py: changed_rows(rows, paths, homes=None) now keeps a row when the changed set holds the file defining its lint, the file its mutation edits (r[1]), or the suite holding its case (r[5]); an empty set keeps none. Homes come from the new lint_homes(), a projection of the new _derived_gates() - the one (file, lint) derivation that gate_names() and guard_files() now also project, so the lint set and the home set cannot drift apart. main() derives homes once per --changed run (skipped for an empty set); the 'ran none' message now names the three files. Module docstring, usage line and changed_rows docstring rewritten to the rule. Selftest: ch1 rewritten to exact equality against an independent TEXT reading of homes (_text_homes, a regex walk over plugins/ and tools/) over five path sets including a home-only and a suite-only set, so an over-firing selection is red; ch5 (home-only selection for every lint whose red rows all mutate another file - 43 today, house_style_violations among them - plus main() given only _output_lints.py proving all three house_style rows); ch6 (suite-only selection for every suite in both tables). ch2/ch3 labels reworded. Gate: `python3 tools/sweep-selftests.py tools/prove-gates.py` exit 0, 47/47 (run twice: 45.0s, 52.4s; the pre-fix red run took 34.6s, so the added tree walks cost seconds; .github/sweep-costs.json records 55.4s). ruff check exit 0; vermin -t=3.8- exit 0; prose_number_claims and house_style_violations report nothing in this file. Live: `prove-gates.py --list --changed tools/lints/_output_lints.py` now lists 3 house_style_violations rows (was 0 red rows per the review); `--changed README.md` still prints ran none, exit 0. Mutation probe (7 mutations, scratch copy, anchors asserted, __pycache__ purged): all killed, baseline green, exit 0. drive-phase.py needs a text change, not a code change: its protocol comment at plugins/audit/scripts/governance/drive-phase.py:7364-7365 ('runs the rows of the lints living in those paths') and plugins/audit/reference/phase-signoff.md:447-449 ('runs only the rows whose lint lives in one of those files') now understate the selection; both are other tasks' files this phase. drive-phase's 'ran none' token and ROW NOT PROVEN line are unchanged in shape. Dependants: .github/sweep-costs.json - still correct (path unchanged; suite time measured 45-52s against its 55.4s entry); guard-bash-writes.py, tests/_harness.py, tests/test__deps.py, tests/test__gate_feed.py, tests/test_drive_phase.py, tests/test_guard_bash_writes.py, tools/affected.py - still correct, each names the path or the row/label contract, and neither the path, the CLI flags, the row tuple shape nor the case-id reading changed; names selector_text, _call_name, changed_paths, _selftest - unchanged; changed_rows/gate_names/guard_files/lint_homes have no caller outside this file (git grep).",
+        "descriptive": "prove-gates --changed now re-proves a lint when its own file, a row's mutated file, or its guarding suite changed, instead of the mutated file alone."
       },
       "startedAt": "2026-10-27T23:54:26Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-28T00:30:26Z",
+      "verifiedBy": [
+        "ch5: changed_rows given only a lint's own file keeps every red and allow row of each lint whose red rows all mutate another file, and main() given only _output_lints.py proves every house_style_violations row in both directions",
+        "ch6: changed_rows given only a suite keeps every row whose case lives in that suite, for every suite in both tables",
+        "ch1 (rewritten): exact selection against an independent text reading of lint homes over five path sets, red on an over-firing selection"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-28T00:30:23Z.cdd0a1",
         "status": "passed",
         "at": "2026-10-28T00:30:23Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "7e564df83727",
+        "at": "2026-10-28T00:30:26Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-28T00:16:11Z",
+        "basis": "`python3 tools/sweep-selftests.py tools/prove-gates.py` in a throwaway tree at HEAD exited 1 on \"NameError: name 'lint_homes' is not defined. Did you mean: '_text_homes'?\" (read as python), and the task introduces '_text_homes': absent from HEAD's tools/prove-gates.py and present in the working tree's tools/prove-gates.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - 3 times the recorded 56s of tools/prove-gates.py in .github/sweep-costs.json is only 167s; fix run: held back 56s of the deadline, the recorded slot-seconds of tools/prove-gates.py in .github/sweep-costs.json",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -2239,7 +2255,12 @@
       "startedAt": "2026-10-27T23:54:29Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-28T00:35:59Z.e216ab",
+        "status": "passed",
+        "at": "2026-10-28T00:35:59Z"
+      }
     },
     {
       "id": "P142.35-6yq",

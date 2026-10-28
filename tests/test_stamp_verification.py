@@ -2271,7 +2271,7 @@ def _baseline_unit_cases(check):
                "==== 1 failed in 0.01s ====\n==== 1 passed in 0.01s ====\n")
     p2 = M.fix_problem({"code": 0, "problem": None, "text": two_fix},
                        ["sh", "-c", "pytest tests/test_new.py; pytest tests/test_b.py"],
-                       {"runner": "pytest", "collected": 1, "failed": 1})
+                       {"runner": "pytest", "collected": 1, "failed": 1}, "")
     p2_tally = M.read_tally(two_fix, None)
     check("sr171 pytest's tally sums every summary line, so a fix run whose first "
           "invocation still fails is not passing because its last one passed: %r %r"
@@ -2283,9 +2283,10 @@ def _baseline_unit_cases(check):
           % (summed,), summed["collected"] == 3 and summed["failed"] == 1)
     one = {"code": 0, "problem": None,
            "text": "PASS a\n" + _TALLY % ("ALL PASS", 1, 1) + "\n"}
-    fewer = M.fix_problem(one, [py, "t.py"], {"collected": 2})
-    same = M.fix_problem(one, [py, "t.py"], {"collected": 1})
-    red_fix = M.fix_problem(shapes["a red house run"], [py, "t.py"], {"collected": 1})
+    fewer = M.fix_problem(one, [py, "t.py"], {"collected": 2}, "")
+    same = M.fix_problem(one, [py, "t.py"], {"collected": 1}, "")
+    red_fix = M.fix_problem(shapes["a red house run"], [py, "t.py"], {"collected": 1},
+                             "")
     check("sr131 the fix run must be green and run no fewer cases than the task's "
           "run - a failing case may not go missing instead of passing: %r"
           % ((fewer, same, red_fix),),
@@ -5787,6 +5788,7 @@ STAGES = (
     ("sdr-block", "_drive_red_cases"),
     ("swc-block", "_sweep_cases"),
     ("swd-block", "_sweep_deadline_cases"),
+    ("swn-block", "_sweep_new_suite_cases"),
 )
 
 
@@ -5966,14 +5968,14 @@ def _sweep_cases(check):
     # The deny and allow lines for the reader, on text rather than a run: a
     # weakening that accepts any exit 0 as a pass turns the deny lines red.
     ok = M.fix_problem({"code": 0, "text": _SWEEP_GREEN, "problem": None},
-                       cmd, {"collected": 1})
+                       cmd, {"collected": 1}, "")
     no_summary = M.fix_problem({"code": 0, "text": "all done\n", "problem": None},
-                               cmd, {"collected": 1})
+                               cmd, {"collected": 1}, "")
     short = M.fix_problem({"code": 0, "problem": None, "text":
                            _sweep_row("a.py", 1) + "\n" + _sweep_total(1, 2, 1)},
-                          cmd, {"collected": 1})
+                          cmd, {"collected": 1}, "")
     empty = M.fix_problem({"code": 0, "text": _sweep_total(0, 0, 0),
-                           "problem": None}, cmd, {"collected": 1})
+                           "problem": None}, cmd, {"collected": 1}, "")
     check("swc3 a clean sweep summary is a pass (%r); exit 0 with no sweep summary, "
           "with a summary short of its files, or with no file swept is not"
           % (ok,),
@@ -5983,9 +5985,9 @@ def _sweep_cases(check):
     # A sweep run on Windows prints through a pipe whose bytes keep `\r\n`, and
     # the run is decoded as it came: the same verdicts must come off that text.
     crlf_ok = M.fix_problem({"code": 0, "text": _SWEEP_GREEN.replace("\n", "\r\n"),
-                             "problem": None}, cmd, {"collected": 1})
+                             "problem": None}, cmd, {"collected": 1}, "")
     crlf_red = M.fix_problem({"code": 1, "text": _SWEEP_RED.replace("\n", "\r\n"),
-                              "problem": None}, cmd, {"collected": 1}) or ""
+                              "problem": None}, cmd, {"collected": 1}, "") or ""
     check("swc3b the sweep's output with Windows line ends reads as its LF text "
           "does: the green summary is a pass, and a red run's reason names the "
           "file the sweep failed: %r / %r" % (crlf_ok, crlf_red[:300]),
@@ -6207,6 +6209,241 @@ def _sweep_deadline_cases(check):
           code_s == M.E_PROVED and block_s.get("status") == "proved"
           and "its cases did not exist at HEAD, which is red for them" in basis_s
           and "`zz`" in basis_s)
+
+
+# --- a brand-new suite under the sweep's own grading -------------------------
+# The stand-in above counts a file that prints no contract as ok, so it cannot
+# show what the real sweep does with the empty stub HEAD's run puts where a new
+# suite will be: it grades that file red. This one is the real sweep - its run,
+# its grade and its table - loaded from this checkout and pointed at the
+# fixture through `sweep(..., repo=)`; only the CLI around it is left out,
+# because that resolves its files against the repository it lives in.
+_REAL_SWEEP = """\
+import importlib.util, os, sys
+spec = importlib.util.spec_from_file_location("sweep_selftests_real", %r)
+real = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(real)
+here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+paths = [a for a in sys.argv[1:] if a.endswith(".py")]
+sys.exit(real.render(real.sweep(paths, jobs=1, repo=here), 1))
+""" % (os.path.join(_output.REPO_ROOT, "tools", "sweep-selftests.py"),)
+_NEW_SUITE = "tests/test_new.py"
+# HEAD's own suite: green at HEAD and in the task tree, so the only red a run
+# can show is the new file's.
+_OLD_SUITE = _red_test("import mine", "mine.v >= 1", label="old1")
+
+
+def _shrinking_test():
+    """A suite holding `old1` always and two more cases only on HEAD's code: on
+    the fix it passes with one case where the task run counted three, so two
+    failing cases went missing rather than turning green."""
+    return "\n".join([
+        "import os, sys", _PATH_LINE, "import mine",
+        "cases = [('old1', True)]",
+        "if mine.v == 1:",
+        "    cases += [('new1', False), ('new2', False)]",
+        "for label, ok in cases:",
+        "    print('%s %s' % ('PASS' if ok else 'FAIL', label))",
+        "n = sum(1 for _l, ok in cases if ok)",
+        "print(%r %% ('ALL PASS' if n == len(cases) else 'SELFTEST FAILED',"
+        " n, len(cases)))" % (_TALLY,),
+        "sys.exit(0 if n == len(cases) else 1)"]) + "\n"
+
+
+def _new_suite_repo(prefix, files, head_extra=None, wt_extra=None, head_test=None):
+    """`_red_repo` with the real sweep committed at HEAD beside `head_extra`, the
+    task tree's `wt_extra` written over it, and a task declaring `files` whose
+    tests are the suites among them."""
+    root, man = _red_repo(prefix, head_test or _OLD_SUITE,
+                          head_test=head_test or _OLD_SUITE)
+    committed = dict(head_extra or {})
+    committed["tools/sweep-selftests.py"] = _REAL_SWEEP
+    paths = sorted(committed)
+    for rel in paths:
+        dst = os.path.join(root, *rel.split("/"))
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        _write(dst, committed[rel])
+    _git(root, "add", *paths)
+    _git(root, "commit", "-q", "-m", "sweep", "--", *paths)
+    for rel, text in (wt_extra or {}).items():
+        _write(os.path.join(root, *rel.split("/")), text)
+    manifest = json.loads(json.dumps(MANIFEST))
+    task = manifest["phases"][0]["tasks"][0]
+    task["files"] = list(files)
+    task["tests"] = {"mode": "tdd", "add": ["%s: v is two" % (rel,) for rel in files
+                                            if rel.startswith("tests/")]}
+    _write(man, json.dumps(manifest))
+    return root, man
+
+
+def _sweep_new_suite_cases(check):
+    """A suite file the task adds is absent at HEAD, and the stub HEAD's run puts
+    in its place prints no contract, which the real sweep grades red. That red is
+    every one of the file's cases not existing at HEAD - red for them, as a stage
+    HEAD's file lacks is - and is said so; a file that DID exist at HEAD and
+    printed no contract there is still a baseline that is not green."""
+    py = sys.executable
+    new = _house_test("import mine", [("new1", "mine.v == 2")])
+    root, man = _new_suite_repo("stamp-swn-only-", ["src/mine.py", _NEW_SUITE],
+                                wt_extra={_NEW_SUITE: new})
+    probe = os.path.join(root, "tests", "test_probe_stub.py")
+    _write(probe, "")
+    stub = subprocess.run([py, "tools/sweep-selftests.py", "tests/test_probe_stub.py"],
+                          cwd=root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                          universal_newlines=True)
+    os.remove(probe)
+    check("swn0 the fixture's sweep is the real one: an empty suite file is graded "
+          "red for printing no contract, which the stand-in above counts as ok: "
+          "exit=%r %r" % (stub.returncode, stub.stdout[-300:]),
+          stub.returncode == 1 and "no --selftest" in stub.stdout)
+
+    code, got = _red(root, man, [py, "tools/sweep-selftests.py", _NEW_SUITE])
+    block = got.get("redFirst") or {}
+    basis = block.get("basis") or ""
+    check("swn1 a task whose only suite is a file absent at HEAD, run through the "
+          "real sweep, reads proved - HEAD's run grading the stub red for no "
+          "contract is that file's cases not existing at HEAD - and the basis "
+          "names the file and says so: %r"
+          % ((code, block.get("status"), basis[:500]),),
+          code == M.E_PROVED and block.get("status") == "proved"
+          and "%s did not exist at HEAD" % (_NEW_SUITE,) in basis
+          and "red for every case it adds" in basis)
+
+    both_root, both_man = _new_suite_repo(
+        "stamp-swn-both-", ["src/mine.py", "tests/test_mine.py", _NEW_SUITE],
+        wt_extra={_NEW_SUITE: new})
+    both_code, both = _red(both_root, both_man, [py, "tools/sweep-selftests.py",
+                                                 "tests/test_mine.py", _NEW_SUITE])
+    both_block = both.get("redFirst") or {}
+    both_basis = both_block.get("basis") or ""
+    check("swn2 ...and beside a suite HEAD already has, which stays green in every "
+          "run, the new file is still the one red at HEAD and the proof holds: %r"
+          % ((both_code, both_block.get("status"), both_basis[:500]),),
+          both_code == M.E_PROVED and both_block.get("status") == "proved"
+          and "%s did not exist at HEAD" % (_NEW_SUITE,) in both_basis)
+
+    # The over-fire direction: reading every no-contract file at HEAD as new
+    # would prove a red against a baseline that was simply not green. The second
+    # run sets such a file BESIDE a truly new one, so the new one's stub cannot
+    # vouch for a file HEAD has.
+    silent = "tests/test_silent.py"
+    old_root, old_man = _new_suite_repo(
+        "stamp-swn-silent-", ["src/mine.py", _NEW_SUITE],
+        head_extra={_NEW_SUITE: "print('no contract here')\n"},
+        wt_extra={_NEW_SUITE: new})
+    old_code, old = _red(old_root, old_man, [py, "tools/sweep-selftests.py", _NEW_SUITE])
+    mix_root, mix_man = _new_suite_repo(
+        "stamp-swn-mixed-", ["src/mine.py", _NEW_SUITE, silent],
+        head_extra={silent: "print('no contract here')\n"},
+        wt_extra={_NEW_SUITE: new, silent: _house_test("import mine",
+                                                       [("s1", "mine.v >= 1")])})
+    mix_code, mix = _red(mix_root, mix_man, [py, "tools/sweep-selftests.py",
+                                             _NEW_SUITE, silent])
+    got = [(c, (b.get("redFirst") or {}).get("status"),
+            (b.get("redFirst") or {}).get("basis") or "")
+           for c, b in ((old_code, old), (mix_code, mix))]
+    check("swn3 a suite file that EXISTED at HEAD and printed no contract there is "
+          "not read as new, alone or beside a file that is: HEAD's run is not "
+          "green, so the verdict is could-not-prove and the basis does not call "
+          "the file absent: %r" % ([(c, s, b[:400]) for c, s, b in got],),
+          all(c == M.E_CANNOT_PROVE and s == "could-not-prove"
+              and "did not exist at HEAD" not in b
+              and "HEAD's own tests on HEAD's code are not green" in b
+              for c, s, b in got))
+
+    shrink_root, shrink_man = _new_suite_repo(
+        "stamp-swn-shrink-", ["src/mine.py", "tests/test_b.py"],
+        head_test=_house_test("import mine", [("a%d" % i, "mine.v >= 1")
+                                              for i in range(18)]),
+        head_extra={"tests/test_b.py": _house_test("import mine", [("old1", "True")])},
+        wt_extra={"tests/test_b.py": _shrinking_test()})
+    s_code, shrunk = _red(shrink_root, shrink_man, [py, "tools/sweep-selftests.py",
+                                                   "tests/test_mine.py",
+                                                   "tests/test_b.py"])
+    s_block = shrunk.get("redFirst") or {}
+    s_basis = s_block.get("basis") or ""
+    check("swn4 the fix run's count of cases is read for the file that was red, not "
+          "summed over every file swept: tests/test_b.py ran three cases red and "
+          "passes with one, and the green suite beside it cannot cover the two "
+          "that went missing - could-not-prove, naming the file: %r"
+          % ((s_code, s_block.get("status"), s_basis[:500]),),
+          s_code == M.E_CANNOT_PROVE and s_block.get("status") == "could-not-prove"
+          and "tests/test_b.py" in s_basis)
+
+    # The per-file reading on text: the red file in `_SWEEP_RED` printed one case,
+    # and the fix run's row for it is what is set against that, never the total.
+    sweep = [py, "tools/sweep-selftests.py", "tools/check-example-pins.py",
+             "tools/release.py"]
+    green = {"code": 0, "problem": None, "text": _SWEEP_GREEN}
+    lost = {"code": 0, "problem": None, "text":
+            _sweep_row("tools/check-example-pins.py", 60)
+            + _sweep_row("tools/release.py", 0) + "\n" + _sweep_total(2, 2, 60)}
+    quiet = {"code": 0, "problem": None,
+             "text": "sweep: 2 files, 8 workers\n\n" + _sweep_total(2, 2, 67)}
+    one_red = ("sweep: 1 files, 8 workers\n"
+               + "  FAILED  %-58s exited 1  [0.2s]\n\n" % ("tools/release.py",)
+               + "--- tools/release.py: exited 1 ---\n"
+               + "FAIL rp1 a case\n" + _TALLY % ("SELFTEST FAILED", 1, 2) + "\n\n"
+               + "FAIL  tools/release.py: exited 1\n" + _sweep_total(0, 1, 0))
+    one_quiet = {"code": 0, "problem": None,
+                 "text": "sweep: 1 files, 8 workers\n\n" + _sweep_total(1, 1, 2)}
+    one_short = dict(one_quiet, text="sweep: 1 files, 8 workers\n\n"
+                     + _sweep_total(1, 1, 1))
+    one = [py, "tools/sweep-selftests.py", "tools/release.py"]
+    check("swn6 a quiet sweep of ONE file reads its summary as that file's row: "
+          "two cases red then two passing is a pass, one passing is not: %r"
+          % ((M.fix_problem(one_quiet, one, {"collected": 2}, one_red),
+              M.fix_problem(one_short, one, {"collected": 2}, one_red)),),
+          M.fix_problem(one_quiet, one, {"collected": 2}, one_red) is None
+          and "tools/release.py ran %d case(s) red and %d in the fix run" % (2, 1)
+          in (M.fix_problem(one_short, one, {"collected": 2}, one_red) or ""))
+    kept = M.fix_problem(green, sweep, {"collected": 1}, _SWEEP_RED)
+    kept_crlf = M.fix_problem(dict(green, text=_SWEEP_GREEN.replace("\n", "\r\n")),
+                              sweep, {"collected": 1}, _SWEEP_RED.replace("\n", "\r\n"))
+    gone = M.fix_problem(lost, sweep, {"collected": 1}, _SWEEP_RED) or ""
+    unread = M.fix_problem(quiet, sweep, {"collected": 1}, _SWEEP_RED) or ""
+    check("swn5 each red file's own count is read from the fix run's row for it: "
+          "the row's count at or above the red run's is a pass, LF or CRLF; a row "
+          "below it is not, though the total covers it; and a quiet sweep of two "
+          "files, which prints no row, says it could not read one rather than "
+          "falling back to the total: %r"
+          % ((kept, kept_crlf, gone[:200], unread[:200]),),
+          kept is None and kept_crlf is None
+          and "tools/release.py ran %d case(s) red and %d in the fix run" % (1, 0) in gone
+          and "no count of its own for tools/release.py" in unread)
+
+    # What the excusal reads, on text: the reason the sweep's `grade` gives a file
+    # with no contract (pinned against the real sweep by swn0 and swn1), on files
+    # that are all stubbed-new, from a command that runs the sweep.
+    def sweep_head(why, path=_NEW_SUITE):
+        return {"code": 1, "problem": None, "text":
+                "  FAILED  %-58s %s\n\n--- %s: %s ---\n(no output)\n\n"
+                "FAIL  %s: %s\n" % (path, why, path, why, path, why)
+                + _sweep_total(0, 1, 0)}
+    no_contract = M.SWEEP_NO_CONTRACT + " (every test and tool the sweep runs must carry one)"
+    sw = [py, "tools/sweep-selftests.py", _NEW_SUITE]
+    read = {
+        "stub, no contract": M.new_suite_baseline(sweep_head(no_contract), sw, [_NEW_SUITE]),
+        "stub, CRLF": M.new_suite_baseline(
+            dict(sweep_head(no_contract), text=sweep_head(no_contract)["text"]
+                 .replace("\n", "\r\n")), sw, [_NEW_SUITE]),
+        "stub, exited 1": M.new_suite_baseline(sweep_head("exited 1"), sw, [_NEW_SUITE]),
+        "not stubbed": M.new_suite_baseline(sweep_head(no_contract), sw, []),
+        "another file": M.new_suite_baseline(sweep_head(no_contract, "tests/test_x.py"),
+                                             sw, [_NEW_SUITE]),
+        "not the sweep": M.new_suite_baseline(sweep_head(no_contract),
+                                              [py, _NEW_SUITE], [_NEW_SUITE]),
+        "exit 0": M.new_suite_baseline(dict(sweep_head(no_contract), code=0), sw,
+                                       [_NEW_SUITE]),
+    }
+    check("swn7 a HEAD run is read as new suites only when it is the sweep's, red, "
+          "and every file it graded red is a stubbed-new one graded for no "
+          "contract - LF or CRLF; a stub red for another reason, a file not "
+          "stubbed and a command that is not the sweep are each not: %r" % (read,),
+          read["stub, no contract"] == read["stub, CRLF"] == [_NEW_SUITE]
+          and all(read[k] is None for k in ("stub, exited 1", "not stubbed",
+                                             "another file", "not the sweep",
+                                             "exit 0")))
 
 
 def _cli(argv, stdin_text=None):
