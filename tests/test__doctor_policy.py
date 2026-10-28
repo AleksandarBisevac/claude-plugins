@@ -454,8 +454,8 @@ def _cases(check):
         # `run-agent-session.py` loads the skills a task names into the session it
         # starts; doctor says whether the plan's names would resolve. Two answers to
         # "where does this name live" is how doctor goes green over a name the
-        # launcher then refuses, so both ask `_skill_places`. The scan inventory
-        # stays the WIDER mode: a name only the scan lists still resolves here.
+        # launcher then refuses, so both ask `_skill_places`, which takes no
+        # inventory: a name only the machine scan lists does not resolve here.
         L = _loader.load_script("run-agent-session.py", modname="run_agent_session_dp")
         _put(os.path.join(home, "skills"), "personal-only")
         _put(os.path.join(home, "skills"), "both-dup")

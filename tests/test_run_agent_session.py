@@ -39,6 +39,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 import hashlib
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -324,6 +325,17 @@ def _cases(check):
     e_budget, e_io = getattr(M, "E_BUDGET", None), getattr(M, "E_IO", None)
     root = tempfile.mkdtemp(prefix="ras-")
     try:
+        # Every run below hands the script a temp directory under `root`, and the
+        # script refuses one with a `.git` above it. A suite run from a TMPDIR inside
+        # a checkout would therefore fail every case with that refusal; this one
+        # case names the cause instead, and the rest are not run.
+        above = _git_above(root)
+        check("ras59 the suite's own temp root %s has no .git above it (the ambient "
+              "TMPDIR is %r); a checkout above it at %r would make the script refuse "
+              "every run below" % (root, os.environ.get("TMPDIR"), above),
+              above is None)
+        if above is not None:
+            return
         bindir = _install_stub(root)
 
         # --- the writer --------------------------------------------------------
@@ -533,8 +545,15 @@ def _cases(check):
         # variable a later CLI release exports. A top-level session does not carry
         # it, so the writer must not either: only a prefix rule drops it.
         unlisted_session = ["CLAUDE_CODE_FUTURE_SESSION_FLAG_Q81Z"]
-        # Credential names a plain top-level session inherits - the named keep list.
+        # Credential names a plain top-level session inherits: every name of the
+        # script's named keep list, written out here rather than read from it, so a
+        # name misspelled there drops the variable and this case sees it lost - and
+        # one name under the kept prefix.
         kept_credentials = {"CLAUDE_CODE_OAUTH_TOKEN": "tok-q81z",
+                            "CLAUDE_CODE_API_KEY_HELPER_TTL_MS": "60000",
+                            "CLAUDE_CODE_SKIP_BEDROCK_AUTH": "1",
+                            "CLAUDE_CODE_SKIP_VERTEX_AUTH": "1",
+                            "CLAUDE_CODE_SKIP_FOUNDRY_AUTH": "1",
                             "CLAUDE_CODE_USE_VERTEX": "1"}
         parent = dict((name, "parent-" + name) for name in parent_session)
         parent.update(dict((name, "parent-" + name) for name in unlisted_session))
@@ -573,8 +592,11 @@ def _cases(check):
         decoy_names = (list(kept_decoys) + list(kept_credentials) + unlisted_session
                        + parent_session)
         shifted = sorted(name for name in decoy_names if name != name.upper())
-        unrecorded = sorted(name for name in ("ORCH_KEEP_Q81Z",)
-                            if '"%s"' % name not in STUB)
+        # The recorder takes every CLAUDE* and AUDIT_* name by prefix; any other
+        # kept decoy is recorded only if the stub names it, so each is looked for.
+        unrecorded = sorted(name for name in kept_decoys
+                            if not name.startswith(("CLAUDE", "AUDIT_"))
+                            and '"%s"' % name not in STUB)
         check("ras31b every child-environment decoy is named in upper case, so the "
               "same name reaches the child on a platform that upper-cases environment "
               "keys, and the stub's recorder filters on it; shifted: %r unrecorded: %r"
@@ -631,10 +653,11 @@ def _cases(check):
             root, bindir, "writer", tag="it",
             env_extra=dict((name, inner_tmp) for name in ("TMPDIR", "TEMP", "TMP")))
         check("ras34 a parent temp directory that is itself inside a checkout is refused "
-              "with a code of its own (io-error), naming that directory, with no "
-              "fallback to another place: claude was never started, no traceback, and "
-              "nothing was made in it",
+              "with a code of its own (io-error), naming that directory and telling "
+              "the caller to repoint TMPDIR, with no fallback to another place: claude "
+              "was never started, no traceback, and nothing was made in it",
               e_io is not None and code == e_io and inner_tmp in out + err
+              and "point TMPDIR at a directory with no .git above it" in out + err
               and "Traceback" not in err and rec is None and os.listdir(inner_tmp) == [],
               "exit %r out %r err %r left %r" % (code, out[-300:], err[-300:],
                                                   os.listdir(inner_tmp)))
@@ -666,6 +689,15 @@ def _cases(check):
                       ("PARENT_SESSION_PREFIXES", "KEEP_SESSION_VARS",
                        "KEEP_SESSION_PREFIXES", "top-level")),
               "pointing %r comment %r" % (pointing, const_comment[:400]))
+        # The comment names the lists' members, so it is held to them: a name added
+        # to either tuple and not to the prose is red. Matched as a whole name, so
+        # one name cannot pass by sitting inside a longer one.
+        listed = list(M.PARENT_SESSION_VARS) + list(M.KEEP_SESSION_VARS)
+        unnamed = sorted(name for name in listed if not re.search(
+            r"(?<![A-Z0-9_])%s(?![A-Z0-9_])" % re.escape(name), const_comment))
+        check("ras30e every name PARENT_SESSION_VARS and KEEP_SESSION_VARS hold is "
+              "spelled out in the comment above them; unnamed: %r" % (unnamed,),
+              bool(listed) and not unnamed)
 
         # --- the --record file ---------------------------------------------------
         # One JSON line per run, appended: the same printed command run twice
@@ -1016,6 +1048,14 @@ def _skill_cases(check, M, root, bindir, e_io):
           "build",
           spot >= 0 and "does not list" in near and "2026-10-23" in near
           and "2.1.307" in near)
+    # The first mention is the module docstring; the line that puts the flag in the
+    # argv is the one a reader of the code meets, so the note must sit above it too.
+    code_at = source.find('argv += ["--append-system-prompt-file"')
+    above = source[max(0, code_at - 300):code_at]
+    check("ras50b ...and the line that adds the flag to the argv carries the same "
+          "note directly above it: %r" % (above[-300:],),
+          code_at >= 0 and "does not list" in above and "2026-10-23" in above
+          and "2.1.307" in above)
 
     # --- a skill file that cannot be read is an io-error, not a missing skill ---
     with open(user_only, "wb") as fh:

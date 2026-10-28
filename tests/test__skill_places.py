@@ -89,7 +89,7 @@ def _cases(check):
     check("sp9 a name that could leave the skills directories or is empty is a "
           "PROBLEM, never a path: %r" % (bad,), all(bad))
 
-    # --- the scan inventory is the wider mode -----------------------------------
+    # --- no second mode: the scan inventory widens nothing ---------------------
     gone = where("scanned")
     check("sp10 a bare name no directory holds is NOT found, however many other "
           "installed plugins ship it: there is one answer and no wider mode: %r"

@@ -952,6 +952,12 @@
       "title": "The 3.7.0 changelog",
       "status": "done",
       "shard": "phases/P147.json"
+    },
+    {
+      "id": "P148",
+      "title": "The carried low batch",
+      "status": "in_progress",
+      "shard": "phases/P148.json"
     }
   ],
   "fileIndex": {
@@ -1236,7 +1242,8 @@
       "P147.4-bno",
       "P147.5-bno",
       "P147.6-bno",
-      "P147.7-bno"
+      "P147.7-bno",
+      "P148.5"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1274,7 +1281,8 @@
       "P142.50-6yq",
       "P142.51-6yq",
       "P144.6-ttw",
-      "P144.7-ttw"
+      "P144.7-ttw",
+      "P148.5"
     ],
     "COMPATIBILITY.md": [
       "P18.8",
@@ -1714,7 +1722,8 @@
       "P142.47-6yq",
       "P142.48-6yq",
       "P142.49-6yq",
-      "P142.50-6yq"
+      "P142.50-6yq",
+      "P148.5"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2231,7 +2240,8 @@
       "P130.6",
       "P130.33-ywo",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P148.5"
     ],
     "plugins/audit/agents/audit-explorer.md": [
       "P4.1",
@@ -2278,7 +2288,8 @@
       "P131.1",
       "P131.2",
       "P131.8",
-      "P131.20-dau"
+      "P131.20-dau",
+      "P148.5"
     ],
     "plugins/audit/commands/audit.md": [
       "P1.6",
@@ -2454,7 +2465,8 @@
       "P129.7-izt",
       "P131.5",
       "P139.2-6sp",
-      "P139.3-6sp"
+      "P139.3-6sp",
+      "P148.5"
     ],
     "plugins/audit/commands/propose.md": [
       "P31.2",
@@ -2542,7 +2554,8 @@
       "P114.3-ffv",
       "P114.4-ffv",
       "P115.2-4yc",
-      "P118.9"
+      "P118.9",
+      "P148.5"
     ],
     "plugins/audit/commands/sync.md": [
       "P3.1",
@@ -3094,7 +3107,8 @@
       "P131.2",
       "P131.6",
       "P132.3",
-      "P142.1"
+      "P142.1",
+      "P148.5"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -3218,7 +3232,8 @@
       "P131.2",
       "P131.3",
       "P131.5",
-      "P142.1"
+      "P142.1",
+      "P148.5"
     ],
     "plugins/audit/reference/phase-signoff.md": [
       "P61.5",
@@ -3266,7 +3281,8 @@
       "P142.6",
       "P142.1",
       "P142.12-6yq",
-      "P142.51-6yq"
+      "P142.51-6yq",
+      "P148.5"
     ],
     "plugins/audit/schema/audit-config.schema.json": [
       "P41.1",
@@ -3699,7 +3715,8 @@
       "P131.2",
       "P142.1",
       "P142.18-6yq",
-      "P142.20-6yq"
+      "P142.20-6yq",
+      "P148.5"
     ],
     "plugins/audit/scripts/git/close-phase.py": [
       "P18.3",
@@ -3864,7 +3881,8 @@
       "P130.40-ywo",
       "P131.1",
       "P131.2",
-      "P131.17-dau"
+      "P131.17-dau",
+      "P148.6"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -4034,7 +4052,8 @@
       "P137.9-3y3",
       "P142.1",
       "P142.30-6yq",
-      "P142.39-6yq"
+      "P142.39-6yq",
+      "P148.6"
     ],
     "plugins/audit/scripts/governance/_tree_stamp.py": [
       "P43.4",
@@ -4193,7 +4212,8 @@
       "P142.1",
       "P142.19-6yq",
       "P142.30-6yq",
-      "P142.39-6yq"
+      "P142.39-6yq",
+      "P148.6"
     ],
     "plugins/audit/scripts/governance/record-risk-confirmation.py": [
       "P42.6",
@@ -4294,7 +4314,8 @@
       "P133.1",
       "P143.1-6yq",
       "P142.1",
-      "P142.13-6yq"
+      "P142.13-6yq",
+      "P148.6"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -4493,7 +4514,8 @@
       "P131.1",
       "P131.2",
       "P135.1",
-      "P137.7-3y3"
+      "P137.7-3y3",
+      "P148.6"
     ],
     "plugins/audit/scripts/manifest/_manifest_merge.py": [
       "P60.1"
@@ -4851,7 +4873,8 @@
       "P142.35-6yq",
       "P142.41-6yq",
       "P142.44-6yq",
-      "P142.46-6yq"
+      "P142.46-6yq",
+      "P148.7"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -4862,7 +4885,8 @@
       "P123.8",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P148.5"
     ],
     "plugins/audit/scripts/manifest/migrate-manifest.py": [
       "P10.3",
@@ -4879,7 +4903,8 @@
       "P123.65-64p",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P148.5"
     ],
     "plugins/audit/scripts/manifest/read-ado-links.py": [
       "P63.8",
@@ -4928,7 +4953,8 @@
       "P123.20",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P148.5"
     ],
     "plugins/audit/scripts/manifest/validate-manifest.py": [
       "P1.5",
@@ -5131,7 +5157,8 @@
       "P125.38-0h5",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P148.7"
     ],
     "plugins/audit/scripts/panel/panel-server.py": [
       "P10.2",
@@ -5356,7 +5383,8 @@
       "P131.2",
       "P131.15-dau",
       "P138.4-myr",
-      "P138.5-myr"
+      "P138.5-myr",
+      "P148.7"
     ],
     "plugins/audit/scripts/status/_doctor_report.py": [
       "P53.5",
@@ -5579,7 +5607,8 @@
       "P131.18-dau",
       "P132.3",
       "P132.4",
-      "P138.3-myr"
+      "P138.3-myr",
+      "P148.7"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -5643,7 +5672,8 @@
       "P142.47-6yq",
       "P142.48-6yq",
       "P142.49-6yq",
-      "P144.2-6yq"
+      "P144.2-6yq",
+      "P148.7"
     ],
     "plugins/audit/scripts/status/audit-version.py": [
       "P67.1",
@@ -8108,7 +8138,8 @@
       "P143.2-6yq",
       "P143.3-6yq",
       "P144.5-ttw",
-      "P144.8-ttw"
+      "P144.8-ttw",
+      "P148.3"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -8215,7 +8246,8 @@
       "P144.1-6yq",
       "P144.6-ttw",
       "P144.7-ttw",
-      "P145.2"
+      "P145.2",
+      "P148.4"
     ],
     "tools/redfirst.sh": [
       "P55.13",
@@ -8270,7 +8302,8 @@
       "P142.37-6yq",
       "P142.38-6yq",
       "P144.8-ttw",
-      "P145.1"
+      "P145.1",
+      "P148.3"
     ],
     "tools/ui-tests/evidence-badge.test.mjs": [
       "P32.7",
@@ -8382,7 +8415,8 @@
       "P130.30-ywo",
       "P130.40-ywo",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P148.5"
     ],
     "plugins/audit/tests/test_derive_phase_gate.py": [
       "P79.3",
@@ -9535,7 +9569,8 @@
       "P131.1",
       "P132.5-5mm",
       "P134.1",
-      "P142.51-6yq"
+      "P142.51-6yq",
+      "P148.3"
     ],
     "docs/research/guard-refusals-by-owner.md": [
       "P110.1",
@@ -9583,7 +9618,8 @@
       "P122.10-z4y",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P148.5"
     ],
     "plugins/audit/scripts/status/audit-logs.py": [
       "P102.10",
@@ -10160,7 +10196,8 @@
       "P142.48-6yq",
       "P142.49-6yq",
       "P142.51-6yq",
-      "P144.3-6yq"
+      "P144.3-6yq",
+      "P148.1"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -10421,7 +10458,8 @@
       "P138.2",
       "P138.3-myr",
       "P142.1",
-      "P142.19-6yq"
+      "P142.19-6yq",
+      "P148.5"
     ],
     "docs/research/pipeline-cost-results.md": [
       "P118.19-v7t",
@@ -10505,7 +10543,8 @@
       "P130.8",
       "P131.1",
       "P131.2",
-      "P138.3-myr"
+      "P138.3-myr",
+      "P148.7"
     ],
     "plugins/audit/scripts/manifest/ado-connect.py": [
       "P122.8-z4y",
@@ -10734,7 +10773,8 @@
     "tools/check-example-pins.py": [
       "P123.27",
       "P123.56-64p",
-      "P131.11"
+      "P131.11",
+      "P148.4"
     ],
     "plugins/audit/scripts/ui/report-css/tables.css": [
       "P123.28",
@@ -10800,7 +10840,8 @@
       "P142.29-6yq",
       "P143.5-6yq",
       "P144.5-ttw",
-      "P144.4-ttw"
+      "P144.4-ttw",
+      "P148.3"
     ],
     "docs/audit/phases/P127.json": [
       "P127.8-bgr"
@@ -10846,7 +10887,8 @@
       "P131.1",
       "P131.11",
       "P140.1",
-      "P140.2-ohy"
+      "P140.2-ohy",
+      "P148.8"
     ],
     "plugins/audit/hooks/hold-handback.py": [
       "P128.6-0h5"
@@ -11009,7 +11051,8 @@
     ],
     ".claude/skills/writing-python/SKILL.md": [
       "P130.7",
-      "P131.2"
+      "P131.2",
+      "P148.5"
     ],
     "plugins/audit/tests": [
       "P130.8"
@@ -11043,7 +11086,8 @@
       "P142.47-6yq",
       "P142.51-6yq",
       "P144.6-ttw",
-      "P144.7-ttw"
+      "P144.7-ttw",
+      "P148.5"
     ],
     "tools/lints/_refs.py": [
       "P130.8",
@@ -11201,7 +11245,8 @@
       "P142.32-6yq",
       "P142.37-6yq",
       "P142.38-6yq",
-      "P144.8-ttw"
+      "P144.8-ttw",
+      "P148.3"
     ],
     "tests/fixtures/pricing-page-2026-10-10.md": [
       "P131.1"
@@ -11285,7 +11330,9 @@
     "tests/test__doctor_policy.py": [
       "P131.1",
       "P138.4-myr",
-      "P138.5-myr"
+      "P138.5-myr",
+      "P148.2",
+      "P148.7"
     ],
     "tests/test__doctor_report.py": [
       "P131.1"
@@ -11300,7 +11347,8 @@
       "P132.5-5mm"
     ],
     "tests/test__evidence_io.py": [
-      "P131.1"
+      "P131.1",
+      "P148.6"
     ],
     "tests/test__evidence_view.py": [
       "P131.1"
@@ -11400,7 +11448,8 @@
       "P131.15-dau",
       "P131.19-dau",
       "P132.5-5mm",
-      "P142.8"
+      "P142.8",
+      "P148.4"
     ],
     "tests/test__panel_composition.py": [
       "P131.1"
@@ -11499,7 +11548,8 @@
       "P137.9-3y3",
       "P142.1",
       "P142.30-6yq",
-      "P142.39-6yq"
+      "P142.39-6yq",
+      "P148.6"
     ],
     "tests/test__status_facts.py": [
       "P131.1",
@@ -11598,7 +11648,8 @@
       "P132.3",
       "P132.4",
       "P132.5-5mm",
-      "P138.3-myr"
+      "P138.3-myr",
+      "P148.7"
     ],
     "tests/test_audit_status.py": [
       "P131.1",
@@ -11608,7 +11659,8 @@
       "P142.47-6yq",
       "P142.48-6yq",
       "P142.49-6yq",
-      "P144.2-6yq"
+      "P144.2-6yq",
+      "P148.7"
     ],
     "tests/test_audit_task.py": [
       "P131.1",
@@ -11627,7 +11679,8 @@
       "P142.35-6yq",
       "P142.41-6yq",
       "P142.44-6yq",
-      "P142.46-6yq"
+      "P142.46-6yq",
+      "P148.7"
     ],
     "tests/test_audit_usage.py": [
       "P131.1"
@@ -11658,7 +11711,8 @@
       "P142.1",
       "P142.19-6yq",
       "P142.30-6yq",
-      "P142.39-6yq"
+      "P142.39-6yq",
+      "P148.6"
     ],
     "tests/test_derive_phase_gate.py": [
       "P131.1"
@@ -11714,7 +11768,8 @@
       "P142.48-6yq",
       "P142.49-6yq",
       "P142.51-6yq",
-      "P144.3-6yq"
+      "P144.3-6yq",
+      "P148.1"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -11759,11 +11814,13 @@
     ],
     "tests/test_import_evidence.py": [
       "P131.1",
-      "P134.1"
+      "P134.1",
+      "P148.3"
     ],
     "tests/test_integrate_task.py": [
       "P131.1",
-      "P146.1"
+      "P146.1",
+      "P148.4"
     ],
     "tests/test_journal_writes.py": [
       "P131.1",
@@ -11840,7 +11897,8 @@
       "P134.1",
       "P143.1-6yq",
       "P142.1",
-      "P142.13-6yq"
+      "P142.13-6yq",
+      "P148.3"
     ],
     "tests/test_set_priority.py": [
       "P131.1"
@@ -11857,11 +11915,13 @@
       "P142.25-6yq",
       "P142.29-6yq",
       "P144.5-ttw",
-      "P142.34-6yq"
+      "P142.34-6yq",
+      "P148.9-xpz"
     ],
     "tests/test_usage_ledger.py": [
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P148.4"
     ],
     "tests/test_validate_config.py": [
       "P131.1"
@@ -11903,7 +11963,8 @@
       "P131.2",
       "P131.19-dau",
       "P132.5-5mm",
-      "P142.13-6yq"
+      "P142.13-6yq",
+      "P148.6"
     ],
     "tools/lints/_ui_theme_lints.py": [
       "P131.2"
@@ -11917,7 +11978,8 @@
       "P137.4-3y3",
       "P138.1",
       "P138.4-myr",
-      "P142.15-6yq"
+      "P142.15-6yq",
+      "P148.2"
     ],
     "tests/test_run_agent_session.py": [
       "P131.3",
@@ -11929,10 +11991,12 @@
       "P137.4-3y3",
       "P138.1",
       "P138.4-myr",
-      "P142.15-6yq"
+      "P142.15-6yq",
+      "P148.2"
     ],
     "plugins/audit/scripts/governance/_clause_coverage.py": [
-      "P131.7"
+      "P131.7",
+      "P148.5"
     ],
     "tests/test__clause_coverage.py": [
       "P131.7"
@@ -11962,14 +12026,17 @@
       "P142.3",
       "P142.10-6yq",
       "P143.4-6yq",
-      "P142.36-6yq"
+      "P142.36-6yq",
+      "P148.4"
     ],
     "plugins/audit/scripts/status/_impact.py": [
-      "P131.18-dau"
+      "P131.18-dau",
+      "P148.6"
     ],
     "tests/test__impact.py": [
       "P131.18-dau",
-      "P132.5-5mm"
+      "P132.5-5mm",
+      "P148.6"
     ],
     ".claude/audit.config.json": [
       "P132.4"
@@ -11983,7 +12050,8 @@
     ],
     "tests/test__skill_places.py": [
       "P138.4-myr",
-      "P138.5-myr"
+      "P138.5-myr",
+      "P148.2"
     ],
     "tests/test_verify_sh.py": [
       "P140.1"

@@ -1,0 +1,422 @@
+{
+  "id": "P148",
+  "title": "The carried low batch",
+  "status": "in_progress",
+  "description": "",
+  "desiredOutcome": "Every low review finding carried to BUG-29-dau is fixed in the code, or answered with the evidence that nothing is left to change, and the bug closes",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [],
+  "baseRef": "d8fed9b7f8a8d0946c988b31ba591a8f31217243",
+  "branch": "audit/p148-the-carried-low-batch",
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": [
+      {
+        "id": "P148-R1",
+        "severity": "med",
+        "file": "tests/test_stamp_verification.py",
+        "issue": "sr39 failed on the windows resample leg of run 40781798399 (c35ffffb): exit 3 in 7.1 s but the basis did not say timed out. The case builds a first run sleeping 3 s under a 7 s deadline, so whether the deadline lands in the second run, in the first, or not at all depends on how fast the runner starts interpreters; on a loaded windows runner the first run can eat the budget.",
+        "resolution": "Make sr39 independent of runner speed: drive the cut-off with a witness rather than a sleep sized against the deadline (as tt3c in tools/sweep-selftests.py does), so the second run is reached and cut off on any runner; keep the assertion that one deadline covers both runs.",
+        "fixTask": "P148.9-xpz"
+      }
+    ],
+    "outcome": "[findings: 1 - 0 high, 1 med, 0 low; 0 with a recorded fix commit]"
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P148.1",
+      "title": "The drive's carried lows: reviewer redispatch with its tree, writer-state cleanup, step texts, commit-header and attempt-start reads, kept-tree submit, wave-path cases",
+      "status": "in_progress",
+      "description": "Fix the low review findings P131-R19, P131-R38, P131-R41, P131-R42, P131-R43, P132-R1, P132-R2, P135-R3, P137-R20, P137-R21, P137-R28, P139-R4, P141-R1, P142-R23, P142-R24, P142-R27, P142-R43, P144-R3, carried to BUG-29-dau. Each finding's file, issue and resolution is in its phase shard (docs/audit/phases/<phase>.json, review.findings, by id). Read each against the code at HEAD first: lines have moved since it was filed. For each finding either fix it - with a case proven red first where the finding is about behaviour or a missing case - or, where HEAD no longer has the defect or the finding records a past return or plan record that nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id, one line each: fixed (what changed, which case) or no-change (why, with the line read). Edit only the declared files; a fix that needs another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-28T23:05:10Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
+    },
+    {
+      "id": "P148.2",
+      "title": "The agent session launcher's carried lows: kept session variables, temp-root refusal and teardown, and the cases and comments that describe them",
+      "status": "in_progress",
+      "description": "Fix the low review findings P135-R6, P135-R7, P135-R9, P135-R10, P136-R1, P137-R17, P137-R18, P137-R19, P138-R14, P138-R15, carried to BUG-29-dau. Each finding's file, issue and resolution is in its phase shard (docs/audit/phases/<phase>.json, review.findings, by id). Read each against the code at HEAD first: lines have moved since it was filed. For each finding either fix it - with a case proven red first where the finding is about behaviour or a missing case - or, where HEAD no longer has the defect or the finding records a past return or plan record that nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id, one line each: fixed (what changed, which case) or no-change (why, with the line read). Edit only the declared files; a fix that needs another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
+      "files": [
+        "plugins/audit/scripts/governance/run-agent-session.py",
+        "tests/test_run_agent_session.py",
+        "tests/test__doctor_policy.py",
+        "tests/test__skill_places.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_agent_session.py tests/test__doctor_policy.py tests/test__skill_places.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-28T23:05:13Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-28T23:22:03Z.879ebb",
+        "status": "passed",
+        "at": "2026-10-28T23:22:03Z"
+      }
+    },
+    {
+      "id": "P148.3",
+      "title": "The sweep runner's and harness's carried lows: slot grants, replay labels and encoding, cost-table text, live-write exemptions, scratch classification, cross-block id reach",
+      "status": "in_progress",
+      "description": "Fix the low review findings P132-R6, P134-R1, P134-R2, P137-R24, P137-R25, P142-R12, P142-R15, P142-R16, P142-R17, P142-R19, P142-R20, P142-R21, P142-R25, P142-R26, P144-R7, P144-R8, P144-R9, carried to BUG-29-dau. Each finding's file, issue and resolution is in its phase shard (docs/audit/phases/<phase>.json, review.findings, by id). Read each against the code at HEAD first: lines have moved since it was filed. For each finding either fix it - with a case proven red first where the finding is about behaviour or a missing case - or, where HEAD no longer has the defect or the finding records a past return or plan record that nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id, one line each: fixed (what changed, which case) or no-change (why, with the line read). Edit only the declared files; a fix that needs another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
+      "files": [
+        "tools/sweep-selftests.py",
+        "tests/_harness.py",
+        "tools/_suite.py",
+        "tests/test_import_evidence.py",
+        "tests/test_run_test_gate.py",
+        ".github/sweep-costs.json",
+        "tools/gate-parity.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tools/sweep-selftests.py tools/_suite.py tools/gate-parity.py tests/test_import_evidence.py tests/test_run_test_gate.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-28T23:05:16Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
+    },
+    {
+      "id": "P148.4",
+      "title": "The maintainer tools' carried lows: prove-gates reaping report and SIGTERM wait, example-pin and affected-miss measurement edges, command-file scan, timing-bound and probe-stderr cases",
+      "status": "pending",
+      "description": "Fix the low review findings P131-R7, P131-R26, P131-R27, P131-R32, P142-R50, P142-R51, P145-R1, P146-R1, P146-R2, carried to BUG-29-dau. Each finding's file, issue and resolution is in its phase shard (docs/audit/phases/<phase>.json, review.findings, by id). Read each against the code at HEAD first: lines have moved since it was filed. For each finding either fix it - with a case proven red first where the finding is about behaviour or a missing case - or, where HEAD no longer has the defect or the finding records a past return or plan record that nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id, one line each: fixed (what changed, which case) or no-change (why, with the line read). Edit only the declared files; a fix that needs another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
+      "files": [
+        "tools/prove-gates.py",
+        "tools/check-example-pins.py",
+        "tools/measure-affected-miss.py",
+        "tests/test__output.py",
+        "tests/test_usage_ledger.py",
+        "tests/test_integrate_task.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tools/prove-gates.py tools/check-example-pins.py tools/measure-affected-miss.py tests/test__output.py tests/test_usage_ledger.py tests/test_integrate_task.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P148.5",
+      "title": "The documents' carried lows: retired --selftest mentions, agent and reference texts that state an obligation or a tree's fate wrongly, and the changelog wrap",
+      "status": "pending",
+      "description": "Fix the low review findings P131-R2, P131-R5, P131-R10, P131-R24, P131-R44, P131-R45, P132-R3, P132-R8, P139-R5, P142-R44, P144-R2, P147-R6, carried to BUG-29-dau. Each finding's file, issue and resolution is in its phase shard (docs/audit/phases/<phase>.json, review.findings, by id). Read each against the code at HEAD first: lines have moved since it was filed. For each finding either fix it - with a case proven red first where the finding is about behaviour or a missing case - or, where HEAD no longer has the defect or the finding records a past return or plan record that nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id, one line each: fixed (what changed, which case) or no-change (why, with the line read). Edit only the declared files; a fix that needs another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
+      "files": [
+        "CLAUDE.md",
+        ".claude/skills/writing-python/SKILL.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md",
+        "plugins/audit/scripts/governance/derive-phase-gate.py",
+        "plugins/audit/scripts/manifest/migrate-manifest.py",
+        "plugins/audit/scripts/manifest/merge-manifest.py",
+        "plugins/audit/scripts/manifest/migrate-json-encoding.py",
+        "plugins/audit/scripts/manifest/set-priority.py",
+        "plugins/audit/scripts/governance/_clause_coverage.py",
+        "plugins/audit/scripts/git/_worktrees.py",
+        "tools/lints/_deps.py",
+        "plugins/audit/reference/phase-signoff.md",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/reference/verbs-in-full.md",
+        "plugins/audit/commands/status.md",
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/agents/audit-reviewer.md",
+        "plugins/audit/agents/audit-executor.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__deps.py tests/test__output_lints.py tests/test__refs.py tests/test__worktrees.py tests/test__clause_coverage.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P148.6",
+      "title": "The commit and evidence layer's carried lows: one spelling of the tree key, the tracked-file table, the scoped-commit scan and tracking direction, the runner line-end class, the impact rule for private names",
+      "status": "pending",
+      "description": "Fix the low review findings P131-R30, P131-R39, P135-R1, P135-R2, P137-R26, P137-R29, P142-R18, carried to BUG-29-dau. Each finding's file, issue and resolution is in its phase shard (docs/audit/phases/<phase>.json, review.findings, by id). Read each against the code at HEAD first: lines have moved since it was filed. For each finding either fix it - with a case proven red first where the finding is about behaviour or a missing case - or, where HEAD no longer has the defect or the finding records a past return or plan record that nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id, one line each: fixed (what changed, which case) or no-change (why, with the line read). Edit only the declared files; a fix that needs another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
+      "files": [
+        "plugins/audit/scripts/status/_impact.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "tools/lints/_output_lints.py",
+        "tests/test_commit_task_work.py",
+        "tests/test__scoped_commit.py",
+        "tests/test__impact.py",
+        "tests/test__evidence_io.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__impact.py tests/test__evidence_io.py tests/test_commit_task_work.py tests/test__scoped_commit.py tests/test__output_lints.py tests/test_run_test_gate.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P148.7",
+      "title": "The task verbs' and status readers' carried lows: a cancelled fix task releases its findings, a files-derived gate hands only suites, skill-default wording, portability grades and their cases",
+      "status": "pending",
+      "description": "Fix the low review findings P138-R9, P138-R10, P138-R11, P138-R16, P138-R17, P142-R49, P144-R1, P147-R7, carried to BUG-29-dau. Each finding's file, issue and resolution is in its phase shard (docs/audit/phases/<phase>.json, review.findings, by id). Read each against the code at HEAD first: lines have moved since it was filed. For each finding either fix it - with a case proven red first where the finding is about behaviour or a missing case - or, where HEAD no longer has the defect or the finding records a past return or plan record that nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id, one line each: fixed (what changed, which case) or no-change (why, with the line read). Edit only the declared files; a fix that needs another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/scripts/manifest/_manifest_typos.py",
+        "plugins/audit/scripts/status/_doctor_policy.py",
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "tests/test_audit_task.py",
+        "tests/test_audit_lookup.py",
+        "tests/test_audit_status.py",
+        "tests/test__doctor_policy.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test_audit_lookup.py tests/test_audit_status.py tests/test__doctor_policy.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P148.8",
+      "title": "The release tool's carried lows and the findings that record a past return: verify-release's step text, and an answer for each historical record",
+      "status": "pending",
+      "description": "Fix the low review findings P131-R3, P131-R6, P134-R3, P137-R30, P140-R5, P140-R6, P142-R2, carried to BUG-29-dau. Each finding's file, issue and resolution is in its phase shard (docs/audit/phases/<phase>.json, review.findings, by id). Read each against the code at HEAD first: lines have moved since it was filed. For each finding either fix it - with a case proven red first where the finding is about behaviour or a missing case - or, where HEAD no longer has the defect or the finding records a past return or plan record that nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id, one line each: fixed (what changed, which case) or no-change (why, with the line read). Edit only the declared files; a fix that needs another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
+      "files": [
+        "tools/release.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tools/release.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P148.9-xpz",
+      "title": "The red-first deadline case holds on any runner: one deadline covering both runs is shown by a witness, not by a sleep sized against it",
+      "status": "pending",
+      "description": "Fix P148-R1 (docs/audit/phases/P148.json review.findings): sr39 in tests/test_stamp_verification.py failed on the windows resample leg because its first run sleeps a fixed time against a fixed deadline. Make it independent of runner speed - e.g. the first run touches a witness and the second blocks until the deadline, or the deadline derived from the measured first run - so that on any runner the second run is reached and cut off, and the case still proves one deadline covers both runs. Prove it red first: the assertion must still fail against a helper that grants each run its own full deadline. Edit only the test file. No F/P/BUG ids in code.",
+      "files": [
+        "tests/test_stamp_verification.py",
+        "tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test_stamp_verification.py: Make sr39 independent of runner speed: drive the cut-off with a witness rather than a sleep sized against the deadline (as tt3c in tools/sweep-selftests.py ..."
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_stamp_verification.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-28T23:07:19Z",
+          "text": "scope: tests/test_stamp_verification.py, every path the finding(s) P148-R1 name"
+        },
+        {
+          "at": "2026-10-28T23:07:19Z",
+          "text": "no test runner in this task's gate for the test P148-R1 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test_stamp_verification.py'], derived as from --gate; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P148-R1"
+      ]
+    }
+  ],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "482d7bf5-025e-4eb9-acc8-1383e2a9aaa8",
+    "branch": "audit/p148-the-carried-low-batch",
+    "at": "2026-10-28T23:05:10Z"
+  },
+  "startedAt": "2026-10-28T23:05:10Z"
+}

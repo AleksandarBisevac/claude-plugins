@@ -62,9 +62,13 @@ a temp directory lands in a sibling's. That directory is made under the PARENT's
 directory (`tempfile.gettempdir()`, so a caller's TMPDIR is honoured) and not under
 the task's scratch: the drive keeps the scratch inside the project, and a TMPDIR below
 it put every fixture a session's suites built inside the real checkout. A parent temp
-directory with a `.git` above it is refused, naming it, and nothing else is tried.
+directory with a `.git` above it is refused, naming it, and nothing else is tried
+(`_parent_tmp` says why): a caller whose temp directory lies inside a checkout
+points TMPDIR somewhere with no `.git` above it, which the refusal itself says.
 The scratch keeps a record of where the TMPDIR was (`<its name>.tmpdir`, holding the
-path), since it never lies beneath it. THE TMPDIR IS REMOVED WHEN THE RUN ENDS
+path), since it never lies beneath it. Nothing in the drive reads that record back;
+it is for a reader looking for a directory the removal below did not reach.
+THE TMPDIR IS REMOVED WHEN THE RUN ENDS
 (`_run`'s `finally`, through `_output.remove_tree`), on success, on a failing or
 missing result, on a budget stop and on SIGINT or SIGTERM, which are armed from
 before the directory is made until the outcome is printed - a TMPDIR per session that
@@ -81,7 +85,10 @@ make the writer start as a child of the orchestrator's session, and a measured
 pipeline would not be the thing a plain session is compared against. A few names are
 dropped (`PARENT_SESSION_VARS`) and so is every name under `CLAUDE_CODE_`
 (`PARENT_SESSION_PREFIXES`), except the provider and credential switches a plain
-session inherits (`KEEP_SESSION_VARS`, `KEEP_SESSION_PREFIXES`). Everything else in
+session inherits (`KEEP_SESSION_VARS`, `KEEP_SESSION_PREFIXES` - a judgement,
+unverified against a CLI release). Any other `CLAUDE_CODE_` name is dropped on
+purpose, an exported configuration switch included; the comment above
+`PARENT_SESSION_VARS` says why, and how an operator keeps one. Everything else in
 the environment (PATH, HOME, credentials, provider switches) is passed on.
 
 THE STREAM IS SAVED under `<state-dir>/sessions/`, one file per run (a resumed
@@ -162,21 +169,40 @@ BUDGET_STOP = "error_max_budget_usd"
 SESSION_ID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
                         r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
-# What a parent Claude session exports to its children, and so what a top-level
-# session never has: the marker that a Claude process is the parent (CLAUDECODE),
-# its pid and effort (CLAUDE_PID, CLAUDE_EFFORT), its project directory
-# (CLAUDE_PROJECT_DIR), the plugin's lock tokens (AUDIT_LOCK_TOKENS), and the
-# session's own state under CLAUDE_CODE_ - session id, entrypoint, executable,
-# messaging socket and token, SSE port, child-session marker. Passed on, each makes
-# the child a child of the orchestrator's session, so the rule is: the names
-# outside CLAUDE_CODE_ are dropped by name (`PARENT_SESSION_VARS`), and everything
-# in that namespace is dropped by prefix (`PARENT_SESSION_PREFIXES`), which also
-# takes a session variable a later CLI release exports without this file being told
-# its name. The prefix would take what a top-level session does start with - the
-# provider and credential switches - so those are kept by name
-# (`KEEP_SESSION_VARS`) or by prefix (`KEEP_SESSION_PREFIXES`:
-# CLAUDE_CODE_USE_BEDROCK, CLAUDE_CODE_USE_VERTEX and the like). This runner sets
-# no CLAUDE_* variable of its own.
+# What a parent Claude session exports to the processes it starts. What is known of
+# every name here is that a session started from a plain shell does not have it;
+# that passing one on would change the child's behaviour has not been probed for
+# each. They are dropped for three different reasons:
+#   * the marker that a Claude process is the parent: CLAUDECODE outside the
+#     namespace, and the child-session marker inside it;
+#   * the parent session's own settings and location - its pid, its effort and its
+#     project directory (CLAUDE_PID, CLAUDE_EFFORT, CLAUDE_PROJECT_DIR) - which
+#     belong to the orchestrator's session and not to one started in a task's tree;
+#   * this plugin's lock state (AUDIT_LOCK_TOKENS), which a child would otherwise
+#     present as its own.
+# The rest of the parent's session state lives under CLAUDE_CODE_ (session id,
+# entrypoint, executable, messaging socket and token, SSE port). So the rule is:
+# the names outside that namespace are dropped by name (`PARENT_SESSION_VARS`:
+# CLAUDECODE, CLAUDE_PID, CLAUDE_EFFORT, AUDIT_LOCK_TOKENS, CLAUDE_PROJECT_DIR), and
+# everything in it is dropped by prefix (`PARENT_SESSION_PREFIXES`), which also takes
+# a session variable a later CLI release exports without this file being told its
+# name. The prefix would take what a top-level session does start with - the
+# provider and credential switches - so those are kept by name (`KEEP_SESSION_VARS`:
+# CLAUDE_CODE_OAUTH_TOKEN, CLAUDE_CODE_API_KEY_HELPER_TTL_MS,
+# CLAUDE_CODE_SKIP_BEDROCK_AUTH, CLAUDE_CODE_SKIP_VERTEX_AUTH,
+# CLAUDE_CODE_SKIP_FOUNDRY_AUTH) or by prefix (`KEEP_SESSION_PREFIXES`:
+# CLAUDE_CODE_USE_BEDROCK, CLAUDE_CODE_USE_VERTEX and the like). The keep names are a
+# judgement, unverified against a CLI release: no list of the CLI's own variables
+# was read to make them.
+# ANY OTHER CLAUDE_CODE_ NAME IS DROPPED ON PURPOSE, a configuration switch the
+# operator exported in the shell included (an output-token ceiling, a client
+# certificate, a DISABLE_ switch, a subagent model). That is the side this errs on:
+# a session variable passed on may start the writer as a child of the orchestrator's
+# session, while a dropped switch only makes it start as a session with no such
+# export would. An operator who needs one in the child sets it in the settings'
+# `env` block, which Claude Code documents as applied to every session and which the
+# child reads itself (documented, not probed here), or adds the name to
+# `KEEP_SESSION_VARS`. This runner sets no CLAUDE_* variable of its own.
 PARENT_SESSION_VARS = ("CLAUDECODE", "CLAUDE_PID", "CLAUDE_EFFORT", "AUDIT_LOCK_TOKENS",
                        "CLAUDE_PROJECT_DIR")
 PARENT_SESSION_PREFIXES = ("CLAUDE_CODE_",)
@@ -220,6 +246,8 @@ def session_argv(model, effort, budget, plugin_dir, agents_file=None, resume=Non
             "--output-format", "stream-json", "--verbose",
             "--max-budget-usd", budget, "--plugin-dir", plugin_dir]
     if skills_file is not None:
+        # `claude --help` does not list this flag; the CLI accepts it - probed on
+        # claude 2.1.307, 2026-10-23, the probe written out in the module docstring.
         argv += ["--append-system-prompt-file", skills_file]
     if agents_file is not None:
         argv += ["--agents", agents_file, "--agent", REVIEWER]
@@ -252,8 +280,8 @@ def find_skills(names, tree, user_home, plugin_root, running):
     Where a name lives is `_skill_places.resolve_skill`'s answer, the one doctor asks
     too - personal, then project, then the running plugin's own `skills/` (Claude
     Code's documented "personal over project", code.claude.com/docs/en/skills,
-    "Resolve skills that share a name") - and no inventory is passed, so only a
-    SKILL.md this launcher can read counts."""
+    "Resolve skills that share a name"). The resolver takes no inventory argument,
+    so the launcher and doctor get one answer from one function."""
     found, seen = [], set()
     for name in names:
         if name in seen:
