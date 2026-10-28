@@ -4514,8 +4514,10 @@ state directory, and KEEPS THE OLD TREE WHERE IT STANDS rather than taking it do
 (`keep_old_tree`): git's record of the tree, its index, its submodule repositories and every file
 in it stay as they were - the same path, the same admin directory, no lock (`ta1c`) - so no prune
 names its record and no forced add is cut over it (`ta11`, `ta11b`). Only its marker is rewritten,
-to a `keptTrees` key - `<id> set aside <n>` - so `task-add`, which adopts a tree by its marker,
-never takes it for the task's again, and status lists it (`ta1`, `ta1b`). Two writes make it kept:
+to a `keptTrees` key - `<id> set aside <n>`, n one past every key of the task the state records
+or a kept tree's marker on disk carries, so a lost state never hands a key out twice (`ta22`,
+`ta22b`) - so `task-add`, which adopts a tree by its marker, never takes it for the task's again,
+and status lists it (`ta1`, `ta1b`). Two writes make it kept:
 the marker first, then the drive state. A run that dies between them leaves a marker naming the key
 while the state still names the tree the task's, and the next step settles that BY THE MARKER
 (`settle_kept_markers`), which is what `task-add` reads: the tree is recorded kept, a tree is cut
@@ -4525,15 +4527,27 @@ written is a stop with nothing changed (`ar6d`). The recut tree is cut at a FRES
 first one (`recut_path`): the n-th redo of a task cuts at `<first tree>.redo-<n>` - the first at
 `.redo-1`, a second at `.redo-2`, a third at `.redo-3` - n one past the highest any redo of the
 task has cut, recorded under `recuts` in the drive state, and past any path a directory or git's
-record of a worktree still holds, so a path once taken is never cut at again (`ta20`, `ta20b`); a
-task no redo has kept a tree for is cut where it always was (`ta20c`). From then on `wave.trees`
+record of a worktree still holds, so no path either holds is cut at (`ta20`, `ta20b`). A path gone
+from both may be cut at again once the state forgets it - `recuts` goes with a task's other marks
+when a task-scoped drive closes it, and with the whole state at the phase's finish; a task no redo
+has kept a tree for is cut where it always was (`ta20c`). From then on `wave.trees`
 names the recut tree, the one the carry, the brief, the retirement and the wave's close read, none
 of which assumes a task's tree is at the default path (`ta1d`, `ta21b`).
 Status names a remover beside each kept tree that acts on it: `task-remove` for a task of the
 plan, and for a tree a redo kept, whose key is no task, `git worktree remove --force <path>` -
-bare, git refuses a tree holding uncommitted or untracked files or a checked-out submodule - with
-what `--force` deletes: its uncommitted, untracked and ignored files and each submodule checked
-out in it (`kt5`, `kt6`, `kt6b`). It then cuts the new tree at the phase HEAD, applies the work
+bare, git refuses a tree holding uncommitted or untracked files or a checked-out submodule
+(`kt5`, `kt6`, `kt6b`). Beside it is what `--force` destroys: its uncommitted, untracked and
+ignored files and each submodule checked out in it, and - since it deletes the tree's git
+directory - the submodule repositories kept there, with any commit only they hold, while a commit
+on the tree's detached HEAD is left on no ref for gc to collect. The save-first commands beside
+it put those into refs under `refs/kept-trees/<key>/`, which outlive the tree: `update-ref` pins
+the HEAD, and a `submodule foreach --recursive` push carries each submodule's HEAD and branches
+(`kt7`; `kt8` runs them as printed, removes the tree and gcs, and both commits still resolve;
+`kt8b` removes a twin with nothing saved and both are gone). Only the `<id> set aside <n>` shape
+is forced - a plan that cannot be read offers a task's key `task-remove` for when it reads, never
+`--force`, since a blocked task's tree is one a later wave adopts, and a key that is neither gets
+git's unforced remover (`kt9`, `kt9b`; `kt9c` pins status's copy of the shape to the driver's).
+The redo then cuts the new tree at the phase HEAD, applies the work
 three-way, checks every carried path the head did not move byte for byte, and clears the gate mark
 so the gate is measured over the new tree - no executor is dispatched and no attempt is spent,
 because the work was not what failed (`wd1`-`wd4`, `ar2`). Once the recut tree holds the work, the

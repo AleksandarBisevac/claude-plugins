@@ -10565,9 +10565,9 @@ def _checked_out(tree):
 def _kept_tree_cases(M, check):
     """A redo moves no tree, so what a reading of the old tree misses is never
     lost: git's record of it, its submodule repositories and its files stay
-    where they were. The recut tree is cut at a fresh path, a path once taken
-    is never cut at again, and a run that dies between the marker and the
-    state is settled by the marker."""
+    where they were. The recut tree is cut at a fresh path, never at one a
+    directory or git's record holds, and a run that dies between the marker
+    and the state is settled by the marker."""
     # A submodule checked out at the commit the base records, holding a commit
     # of its own on a branch no other repository has: the lenient reading lets
     # the redo go on, and that commit lives only in the submodule repository
@@ -10603,8 +10603,9 @@ def _kept_tree_cases(M, check):
           and " set aside " in str((M._worktrees.read_provenance(tree)
                                     .get("record") or {}).get("taskId")))
 
-    # Where a second and a third redo cut, and that no path once taken is cut
-    # at again: `recut_path` read against git's own records and the disk.
+    # Where a second and a third redo cut, and that no path the state, a
+    # directory or git's record holds is cut at: `recut_path` read against
+    # git's own records and the disk.
     root_p, mpath_p, first = _retire_fixture("tapaths")
     ctx_p = _drive_ctx(root_p, mpath_p)
 
@@ -10632,7 +10633,8 @@ def _kept_tree_cases(M, check):
     _harness.git(root_p, "worktree", "add", "-q", "--detach", first + ".redo-5")
     shutil.rmtree(first + ".redo-5")
     taken = cut_at({}, {"from": first, "n": 3})
-    check("ta20b a path once taken is never cut at again: with every kept tree "
+    check("ta20b no path the state records or the disk holds is cut at again: "
+          "with every kept tree "
           "removed the next cut goes past the highest recorded, and past a "
           "directory and a record git keeps for a tree whose directory is gone: "
           "%r" % ((gone, taken),),
@@ -10726,6 +10728,48 @@ def _kept_tree_cases(M, check):
           "key another task's redo keeps, stays the task's tree and nothing is "
           "recorded kept: %r" % ((own, other),),
           own == ({"P1.1": tree_o}, None, []) and other == own)
+    _kept_key_cases(M, check)
+
+
+def _kept_key_cases(M, check):
+    """A state that was lost forgets the keys a redo kept trees under, while
+    each kept tree's marker still names its own: the next key a redo keeps a
+    tree under goes past every marker on disk naming a key of that task, so
+    no two trees ever carry one key."""
+    def keep_with(prefix, keys):
+        root, mpath, tree = _retire_fixture(prefix)
+        head = _git_out(root, "rev-parse", "HEAD").strip()
+        for n, key in enumerate(keys):
+            other = os.path.join(os.path.dirname(tree), "old-%d" % (n,))
+            _harness.git(root, "worktree", "add", "-q", "--detach", other)
+            M._worktrees.write_record(other, {
+                "createdBy": "audit", "taskId": key, "phaseId": PHASE,
+                "setAsideFrom": key.split(" set aside ")[0], "base": head})
+        ctx = _drive_ctx(root, mpath)
+        state = {"wave": {"trees": {"P1.1": tree}, "base": head}}
+        with _Env(root):
+            kept, stop = M.keep_old_tree(ctx, state, "P1.1")
+        marker = (M._worktrees.read_provenance(tree).get("record") or {}).get("taskId")
+        return kept, stop, marker, dict(state.get("keptTrees") or {}), tree
+    kept, stop, marker, recorded, tree = keep_with(
+        "takeymark", ["P1.1 set aside 1", "P1.1 set aside 3"])
+    check("ta22 keep_old_tree picks a key no marker on disk carries: with the "
+          "state lost and kept trees marked `P1.1 set aside 1` and `... 3`, the "
+          "tree is kept as `P1.1 set aside 4`, its marker and the state agreeing: "
+          "%r" % ((kept, stop, marker, recorded),),
+          stop is None and kept == {"key": "P1.1 set aside 4", "path": tree}
+          and marker == "P1.1 set aside 4"
+          and recorded == {"P1.1 set aside 4": tree})
+    # OVER-FIRE: markers naming another task's kept key - one whose id the
+    # task's id is a prefix of included - move nothing; a chooser that counted
+    # every kept marker would skip past them.
+    kept_o, stop_o, marker_o, recorded_o, tree_o = keep_with(
+        "takeymarko", ["P1.2 set aside 5", "P1.10 set aside 7", "P1.1"])
+    check("ta22b OVER-FIRE: markers naming another task's kept key, or the task "
+          "itself, leave the first key free: %r"
+          % ((kept_o, stop_o, marker_o, recorded_o),),
+          stop_o is None and kept_o == {"key": "P1.1 set aside 1", "path": tree_o}
+          and marker_o == "P1.1 set aside 1")
 
 
 def _wave_hooks_cases(check):

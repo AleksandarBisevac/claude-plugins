@@ -251,105 +251,142 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py:4947-4959",
         "issue": "CONFIRMED (adversarial probes p3/p4, read against the code). repair_asides decides whether a recorded move happened by os.path.isdir(aside) / os.path.isdir(move['from']), not by git's record (admin/gitdir, the tree's .git file). (a) Aside missing and from present is read as 'never moved' and _take_back_aside runs: if the move did happen (rename done, repair failed, record still locked) and a human then removed the aside and a NEW tree was cut at the task path, take-back write_record()s the OLD record (old base) into the NEW tree's marker (write_record asks admin_dir(from), which is now the new tree's admin) and the unlock goes to the new tree's record, so the old admin stays locked with the drive's reason and the drop of keptTrees/asideMoves forgets it; recut_standing then refuses on base mismatch. (b) Aside and from both missing (human did worktree remove -f -f, or rm -rf of the aside, after a failed repair) returns the 'stands at neither' stop on EVERY drive step, because repair_asides is the first statement of drive_locked and the stop names no way to forget the entry: only hand-editing the drive state frees the drive. Nothing in the stop or the guide names that remedy.",
-        "resolution": "Classify off git's record: read move['admin']/gitdir (the path git still holds for the record) and the .git file of whatever stands at from/aside, and take back only where from's .git file names move['admin']; where it names another admin, treat from as someone else's tree: drop the entry without touching its marker or locks. Give the 'stands at neither' case an exit: when neither path stands and git's record at move['admin'] is gone or prunable, drop both entries with a did-line, or name a verb that does. Add a case for each: a new tree at from after the aside was deleted (marker untouched), and neither path standing (drive proceeds)."
+        "resolution": "fixed in P142.47-6yq (942899f24f2c): Classify off git's record: read move['admin']/gitdir (the path git still holds for the record) and the .git file of whatever stands at from/aside, and take back only where from's .git file names move['admin']; where it names another admin, treat from as someone else's tree: drop the entry without touching its marker or locks. Give the 'stands at neither' case an exit: when neither path stands and git's record at move['admin'] is gone or prunable, drop both entries with a did-line, or name a verb that does. Add a case for each: a new tree at from after the aside was deleted (marker untouched), and neither path standing (drive proceeds).",
+        "fixTask": "P142.47-6yq",
+        "commit": "942899f24f2c",
+        "status": "fixed"
       },
       {
         "id": "P142-R29",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:4919-4932",
         "issue": "CONFIRMED. _take_back_aside drops keptTrees and asideMoves and writes state unconditionally, even when _unlock_moved failed. The drive's lock then stays on git's record with no entry anywhere that names it, so no later step retries; the failure is only a did-line / stop sentence. Consequence: remove_task_tree's git worktree remove --force refuses a locked record (needs -f -f), so that tree is kept forever, and the record is never prunable.",
-        "resolution": "Keep the asideMoves entry (marked as take-back pending) while the unlock has not held, so repair_asides retries the unlock on the next step; drop the entries only once the unlock returned ''."
+        "resolution": "fixed in P142.47-6yq (942899f24f2c): Keep the asideMoves entry (marked as take-back pending) while the unlock has not held, so repair_asides retries the unlock on the next step; drop the entries only once the unlock returned ''.",
+        "fixTask": "P142.47-6yq",
+        "commit": "942899f24f2c",
+        "status": "fixed"
       },
       {
         "id": "P142-R30",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:4843-4850",
         "issue": "CONFIRMED. A relpath ValueError (checkout and submodule repository on different drives) is turned into a reason, which _repair_moved_tree returns, and repair_asides turns into a stop on every step, forever: the retry cannot succeed because the same relpath is computed again, and the lock stays on the record. ta13b pins this stop as the wanted outcome. git itself writes an absolute core.worktree when no relative path exists, so the fallback exists.",
-        "resolution": "On ValueError from relpath, write the absolute path (now) to core.worktree instead of returning a reason; keep the reason only for the undecodable-bytes case. Change ta13b to assert the config holds the absolute path and the repair returns ''."
+        "resolution": "fixed in P142.47-6yq (942899f24f2c): On ValueError from relpath, write the absolute path (now) to core.worktree instead of returning a reason; keep the reason only for the undecodable-bytes case. Change ta13b to assert the config holds the absolute path and the repair returns ''.",
+        "fixTask": "P142.47-6yq",
+        "commit": "942899f24f2c",
+        "status": "fixed"
       },
       {
         "id": "P142-R31",
         "severity": "low",
         "file": "plugins/audit/scripts/status/audit-status.py:2075-2097 (keys written at plugins/audit/scripts/governance/drive-phase.py:4769)",
         "issue": "CONFIRMED. The diff puts keys of the form '<id> set aside <n>' into keptTrees; kept_trees_block lists them as taskId and _kept_tree_lines tells the reader to take one down with '/audit:worktree task-remove <taskId>'. manage-worktrees.py do_task_remove:703 answers E_USAGE 'no task ... in this plan' for any id not in the manifest, so the printed remedy for an aside entry cannot work (the sentence also says each holds work the phase tree lacks, which a clean aside kept for a staged index does not). Crosses a boundary the diff changed: both sides named. ta1b asserts only that the path is listed.",
-        "resolution": "In kept_trees_block / _kept_tree_lines render an aside key with the real remedy (keep it until the task closes: the drive offers it to the remover at retire; or remove with git worktree remove after reading it), and add a status case asserting the line for an aside entry does not name task-remove."
+        "resolution": "fixed in P142.47-6yq (942899f24f2c): In kept_trees_block / _kept_tree_lines render an aside key with the real remedy (keep it until the task closes: the drive offers it to the remover at retire; or remove with git worktree remove after reading it), and add a status case asserting the line for an aside entry does not name task-remove.",
+        "fixTask": "P142.47-6yq",
+        "commit": "942899f24f2c",
+        "status": "fixed"
       },
       {
         "id": "P142-R32",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:4807-4815",
         "issue": "The redo now depends on git worktree repair (git 2.30 and later). On an older git the repair exits non-zero after the rename has happened, every redo stops with the record locked, and the retry in repair_asides can never succeed. Nothing checks the git version and no document states the floor (only the merge replay checks one, for another command). The previous mechanism (task-remove) worked on any git.",
-        "resolution": "Check for the verb's presence (or git --version) before the rename and refuse the redo with nothing moved, or state the floor in the guide and doctor; failing before the rename is cheap, failing after it is the wedge of finding 1."
+        "resolution": "fixed in P142.47-6yq (942899f24f2c): Check for the verb's presence (or git --version) before the rename and refuse the redo with nothing moved, or state the floor in the guide and doctor; failing before the rename is cheap, failing after it is the wedge of finding 1.",
+        "fixTask": "P142.47-6yq",
+        "commit": "942899f24f2c",
+        "status": "fixed"
       },
       {
         "id": "P142-R33",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py:5049-5058,5061-5084",
         "issue": "contradicts task clause \"repair_asides may stop the drive only for a live locked record whose tree is missing\": _settle_move's last branch (`if not named or reason != ASIDE_LOCK` ... else `_stopped(aside_missing(...))`) is reached whenever the record is live and drive-locked and names neither `from` nor a held `aside`; it never asks whether the tree the record names exists. A set-aside whose unlock failed, which a human then moved to a third path and repaired with git's own `git worktree repair <third>`, has `named` = third, an existing tree. It stops anyway, saying the tree is \"not where git's record names\" and that no directory holds it (the docstring says \"otherwise the record's tree is missing\"). Remedy 1 (\"put the tree back at <named>\") is a no-op because the tree is already there, so every step re-stops. Remedy 2 (`git worktree unlock <named>` + `prune`) works on the unlock but prune finds the tree, so the next step takes the `reason != ASIDE_LOCK` branch and _forget_move drops the keptTrees entry (the aside path is not standing), orphaning a tree that holds work from status. Confirmed from the code; the same orphaning follows for an unlocked record naming a third path. Probe q1 reproduces it.",
-        "resolution": "Gate the stop on `not os.path.isdir(named)` (or on `_holds_record(named, admin)` being false). When the named tree exists and holds the record, treat it as the moved tree: run `_finish_aside` against `named`, and re-point the kept entry at `named` (state[\"keptTrees\"][key] = named) so it stays listed. Add a case: tree moved to a third path and repaired by hand, then repair_asides finishes it, unlocks, and keeps it listed."
+        "resolution": "fixed in P142.47-6yq (942899f24f2c): Gate the stop on `not os.path.isdir(named)` (or on `_holds_record(named, admin)` being false). When the named tree exists and holds the record, treat it as the moved tree: run `_finish_aside` against `named`, and re-point the kept entry at `named` (state[\"keptTrees\"][key] = named) so it stays listed. Add a case: tree moved to a third path and repaired by hand, then repair_asides finishes it, unlocks, and keeps it listed.",
+        "fixTask": "P142.47-6yq",
+        "commit": "942899f24f2c",
+        "status": "fixed"
       },
       {
         "id": "P142-R34",
         "severity": "med",
         "file": "plugins/audit/scripts/status/audit-status.py:2050-2060",
         "issue": "contradicts task clause \"Name a remedy that works for an aside\": the remedy printed for a set-aside is a bare `git worktree remove <path>`. A set-aside is a tree that holds work, and `git help worktree` (git 2.53.0) says remove acts only on clean worktrees; \"Unclean worktrees or ones with submodules can be removed with --force\". So it refuses a set-aside holding uncommitted work or a submodule checkout. It also fails when git's record is gone: _forget_move leaves a standing aside directory listed (drive-phase.py:4986-4998), and remove fails on a path with no record. kt5 asserts only the spelling of the command, never that it acts, so the case cannot see this.",
-        "resolution": "Name a remover that works on a tree holding work and a submodule, for example `git worktree remove --force <path>`, stated as destroying the work. For a listed aside whose record is gone, name removing the directory. Either run the printed command in kt5 against a real unclean aside, or state in the line that it refuses a tree with work."
+        "resolution": "fixed in P142.47-6yq (942899f24f2c): Name a remover that works on a tree holding work and a submodule, for example `git worktree remove --force <path>`, stated as destroying the work. For a listed aside whose record is gone, name removing the directory. Either run the printed command in kt5 against a real unclean aside, or state in the line that it refuses a tree with work.",
+        "fixTask": "P142.47-6yq",
+        "commit": "942899f24f2c",
+        "status": "fixed"
       },
       {
         "id": "P142-R35",
         "severity": "low",
         "file": "plugins/audit/scripts/status/audit-status.py:2055-2056",
         "issue": "The remedy `/audit:phase <phase>, whose next step finishes moving it` is false whenever the next step does not finish the move. _settle_move may take the move back, forget it, or stop (aside_missing) instead. The PLUGIN-BUILD-GUIDE paragraph repeats the claim.",
-        "resolution": "Word it as `/audit:phase <phase>, whose next step settles the recorded move`, in the line and in the guide."
+        "resolution": "fixed in P142.47-6yq (942899f24f2c): Word it as `/audit:phase <phase>, whose next step settles the recorded move`, in the line and in the guide.",
+        "fixTask": "P142.47-6yq",
+        "commit": "942899f24f2c",
+        "status": "fixed"
       },
       {
         "id": "P142-R36",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:5097-5110",
         "issue": "The read-back remedy offers `git -C <aside> diff --quiet --ignore-submodules=none HEAD` as the command to settle. That command exits 1 on every set-aside holding work, which is the normal case, and _repair_moved_tree itself treats 0 and 1 as success (`code in (0, 1)`). A human running it sees exit 1 and reads it as the failure.",
-        "resolution": "Say that exit 0 or 1 is a read and any other exit is the failure, or drop `--quiet` from the printed command and tell the human to look for the error text."
+        "resolution": "fixed in P142.47-6yq (942899f24f2c): Say that exit 0 or 1 is a read and any other exit is the failure, or drop `--quiet` from the printed command and tell the human to look for the error text.",
+        "fixTask": "P142.47-6yq",
+        "commit": "942899f24f2c",
+        "status": "fixed"
       },
       {
         "id": "P142-R37",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:5019-5030",
         "issue": "A run that dies partway through a take-back, or before the lock, yields a false did-line. Marker restored and unlock done but write_state not reached: the next step finds the tree at `from` with the task marker and no lock, so it takes the `marked is not True and reason != ASIDE_LOCK` branch and writes \"carries neither the set-aside's marker nor the drive's lock - a tree cut there since\", though it is the original tree. The same happens in the common case of a run that died after recording the move and before locking (this is the ta14c path, which passes through _forget_move rather than a take-back and does not check the line). The state ends right; the sentence does not.",
-        "resolution": "Word the did-line for what was observed (`no marker or lock of the drive's was found at <origin>, so the recorded move is dropped`) without asserting a tree was cut since."
+        "resolution": "fixed in P142.47-6yq (942899f24f2c): Word the did-line for what was observed (`no marker or lock of the drive's was found at <origin>, so the recorded move is dropped`) without asserting a tree was cut since.",
+        "fixTask": "P142.47-6yq",
+        "commit": "942899f24f2c",
+        "status": "fixed"
       },
       {
         "id": "P142-R38",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:5026-5030,5049-5057",
         "issue": "An unreadable `locked` file (`_lock_reason` -> `(None, why)`) is treated as `reason != ASIDE_LOCK`, so _settle_move forgets the move (both the first-branch and last-branch forget) while the drive's lock may still be on the record. The did-line quotes `unread`, but the lock is left with no record of whose it is, which is what the take-back change set out to prevent.",
-        "resolution": "When `unread` is non-empty, keep the move recorded and stop naming the file that could not be read, instead of forgetting it."
+        "resolution": "fixed in P142.47-6yq (942899f24f2c): When `unread` is non-empty, keep the move recorded and stop naming the file that could not be read, instead of forgetting it.",
+        "fixTask": "P142.47-6yq",
+        "commit": "942899f24f2c",
+        "status": "fixed"
       },
       {
         "id": "P142-R39",
         "severity": "med",
         "file": "plugins/audit/scripts/status/audit-status.py:2054-2067",
         "issue": "KEPT_TREE_FORCE understates what the named `git worktree remove --force` destroys. It lists uncommitted, untracked and ignored files and 'each submodule checked out in it', but removing the worktree also deletes git's record directory, so commits that live only in a submodule repository under that record's modules/ directory are lost. This is the very data the task's own case ta11 proves a redo keeps. The tree's detached HEAD commits also become unreachable unless pinned. The tail 'carry what it holds first' does not tell the reader to look for either. Confirmed from the code: the text is the whole warning and mentions neither.",
-        "resolution": "Extend KEPT_TREE_FORCE to say it also deletes git's record of the tree, so commits held only in a checked-out submodule's repository and the tree's detached HEAD (if no ref holds it) are lost. Pin kt5 on those words."
+        "resolution": "Extend KEPT_TREE_FORCE to say it also deletes git's record of the tree, so commits held only in a checked-out submodule's repository and the tree's detached HEAD (if no ref holds it) are lost. Pin kt5 on those words.",
+        "fixTask": "P142.49-6yq"
       },
       {
         "id": "P142-R40",
         "severity": "med",
         "file": "plugins/audit/scripts/status/audit-status.py:2059-2067",
         "issue": "With the plan unreadable (task_ids None) the new `_kept_tree_remedy` names `git worktree remove --force` for EVERY kept tree, including a blocked member's tree that close_wave records under its task id (drive-phase.py:5936-5941) and that a later wave adopts by marker. Before the diff, a None plan gave the bare remover, which refuses a tree holding work. Now the one case where status cannot tell a task's tree from a kept old tree gets the destructive command. Confirmed: the only guard is `task_ids is not None and task_id in task_ids`.",
-        "resolution": "When task_ids is None, name the safe form (bare `git worktree remove <path>`, or say the plan could not be read and the key cannot be classified) and give the forced form only for a key matching the ` set aside <n>` shape (drive-phase.py _ASIDE_KEY_RE). Add a case for the unreadable-plan row."
+        "resolution": "When task_ids is None, name the safe form (bare `git worktree remove <path>`, or say the plan could not be read and the key cannot be classified) and give the forced form only for a key matching the ` set aside <n>` shape (drive-phase.py _ASIDE_KEY_RE). Add a case for the unreadable-plan row.",
+        "fixTask": "P142.49-6yq"
       },
       {
         "id": "P142-R41",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:4830-4845 and PLUGIN-BUILD-GUIDE.md redo paragraph",
         "issue": "The claim 'a path once taken is never cut at again' is stronger than the code. RECUTS is a dict keyed by task id and is not in KEPT_AT_TASK_CLOSE (line 905), so the generic loop at drive-phase.py:8673-8676 pops recuts[task] when the task closes. drop_state removes the whole file when the phase finishes. After that, if every kept tree has been removed, the high-water mark is gone and a later redo can start again at .redo-1. The lexists and git-listing checks stop it landing on a path that still exists, so no tree is overwritten, but a removed path can be reused. ta20b only proves the claim while the recuts entry is present.",
-        "resolution": "Either soften the guide and docstring to 'never cut at a path that still holds a directory or a git record', or add RECUTS to KEPT_AT_TASK_CLOSE and state that the mark ends with the phase."
+        "resolution": "Either soften the guide and docstring to 'never cut at a path that still holds a directory or a git record', or add RECUTS to KEPT_AT_TASK_CLOSE and state that the mark ends with the phase.",
+        "fixTask": "P142.49-6yq"
       },
       {
         "id": "P142-R42",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:4893-4899",
         "issue": "keep_old_tree picks the next key from state['keptTrees'] alone. A tree whose marker already names '<id> set aside <n>' but whose state entry is gone (drop_state at finish, or a forgotten entry) is not seen, so the key can be issued twice, and settle_kept_markers would then read the older tree's marker as a crash of the new redo. Confirmed from the code; reachable only after the state was lost.",
-        "resolution": "Also skip a key some wave tree's marker already names, or skip any key whose entry was ever recorded under recuts."
+        "resolution": "Also skip a key some wave tree's marker already names, or skip any key whose entry was ever recorded under recuts.",
+        "fixTask": "P142.49-6yq"
       },
       {
         "id": "P142-R43",
@@ -366,7 +403,7 @@
         "resolution": "Make the reason depend on whether the marker's taskId is a ` set aside <n>` key, and for that case name `git worktree remove --force <path>` or the driver's retire."
       }
     ],
-    "outcome": "[findings: 44 - 0 high, 14 med, 30 low; 10 with a recorded fix commit]"
+    "outcome": "[findings: 44 - 0 high, 14 med, 30 low; 21 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -3176,7 +3213,7 @@
     {
       "id": "P142.47-6yq",
       "title": "A redo moves no tree: the old tree stays where it is under a kept marker and the new tree is cut at a fresh path, so no state between a move and git's agreement exists to classify",
-      "status": "in_progress",
+      "status": "done",
       "description": "A redo keeps the old task tree, so nothing a reading of it misses is lost. Today it keeps the tree by MOVING it: rename to `<tree>.aside-<n>`, lock git's record, repair, repoint submodules, and `repair_asides` settles an unfinished move at the start of every drive step. Four adversarial review rounds in a row each found a med in that machinery: a prunable record between rename and repair; classification by directory; a wedge on a gone record; a stop on a tree moved to a third path whose remedy orphans it. Probes are in scratchpad/p142-43-adv/, p142-43-adv/r2/ and p142-45-adv/ (the orchestrator gives the full path). The class is the move itself: every state between \"renamed\" and \"git agrees\" is one more case to classify.\n\nRedesign so the redo moves nothing:\n- The old tree stays where it is. Only its marker is rewritten to the keptTrees key, and that key is recorded, so task-add never adopts it and status lists it.\n- The new tree is cut at a fresh path beside it. `add_tree` already passes `--path`.\n- `wave.trees[task]` then names the new path, and the carry ref and everything else follow `wave.trees`.\n\nThat deletes the rename, the lock, the repair, the submodule repoint, `asideMoves`, `_settle_move`, `repair_asides` and its per-step call, the git 2.30 floor and the STATE_WRITERS row for the rename, together with their cases. Delete them; do not keep them dormant.\n\nWhat stays:\n- the one keep-on-doubt remover `remove_task_tree`, still read strictly;\n- `retire_asides`;\n- the per-tree status remedies, with the remedy for a kept old tree being one that acts on it. `git worktree remove` refuses a tree with a submodule checked out, so do not name that bare; name what works, and say what `--force` deletes.\n\nAlso:\n- State where a second and third redo cut their trees, and that a path already taken is never reused.\n- A crash between the marker rewrite and the state write must leave a state the next step reads correctly. The tree is at its own path, so only marker and state can disagree. Settle that by the marker, which is what task-add reads.\n- Check every reader of `wave.trees` and `tree_path` that assumes the task's tree is at the default path: retire, close_wave, the sweep's kept-tree reason in _worktrees.py, and status. List each in your outcome.\n\nRed-first a case that a redo leaves the old tree's directory and git record untouched (same path, same admin dir, not locked), and keep every case that proves no work is lost. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -3208,14 +3245,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "942899f24f2c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: the redo now moves nothing. Deleted: _repair_moved_tree, _repoint_module, ASIDE_MOVES/asideMoves, ASIDE_LOCK, _lock_for_move, _lock_reason, _unlock_moved, _drop_move, _finish_aside, _take_back_aside, _record_names, _holds_record, _forget_move, _settle_move, aside_missing, repair_asides and its per-step call in drive_locked, ASIDE_REMEDY, aside_unread, WORKTREE_REPAIR_GIT/_git_floor (the git 2.30 floor), set_aside_tree (the only os.rename in the file). New: keep_old_tree (marker rewritten to the keptTrees key `<id> set aside <n>` with setAsideFrom, whole-or-nothing via _worktrees.write_record, THEN record_kept writes the state: keptTrees[key]=tree, wave.trees/bases pop, wave.base=HEAD; a marker write that fails is a stop with nothing changed); settle_kept_markers, run where repair_asides ran, settles a crash between those two writes BY THE MARKER (a wave tree whose marker names a key a redo of that same task keeps is recorded kept; never stops); recut_path, called by add_tree: once a redo of the task has kept a tree, the n-th redo cuts at `<first tree>.redo-<n>` (.redo-1, .redo-2, .redo-3), n = 1 + max(recorded `recuts[task].n`, n of each kept tree of the task), then past any path that lexists or that `git worktree list` records, so a taken path is never cut at again; add_tree records the `recuts` entry; a task with no kept tree is cut where tree_path/task-add always put it. recut_tree uses keep_old_tree, did-line now `tree of X recut at <sha> in <new path>, ...; old tree at <path> kept (why)|removed: ...`. remove_task_tree (strict) and retire_asides unchanged. tools/lints/_deps.py: the STATE_WRITERS row for set_aside_tree deleted. audit-status.py: _kept_tree_remedy(task_id, path, task_ids) - task-remove for a plan task, else `git worktree remove --force <path> - --force deletes its uncommitted and untracked files, its ignored files and each submodule checked out in it; carry what it holds first` (KEPT_TREE_FORCE); the asideMoves branch and the unused phase/body args removed. PLUGIN-BUILD-GUIDE.md: the redo paragraph rewritten (keep in place, marker-then-state, settle by marker, fresh path rule for 2nd/3rd redo, forced status remedy) and the remover/follow-on paragraphs reworded. Tests: test_drive_phase.py - ta1/ta1b/ta1c/ta1d rewritten (old tree same path, same admin dir, porcelain block identical, unlocked; recut at <tree>.redo-1, recorded in recuts); new ta11/ta11b (a submodule commit only on a branch of the old tree's submodule repo survives: prune -n names nothing, admin dir and modules/ stand, forced add refused), ta20/ta20b/ta20c (recut_path: 1st/2nd/3rd redo paths; never reused after every kept tree removed, past a stray dir and a stale git record; OVER-FIRE no redo path for a task with no kept tree or only another task's), ta21/ta21b/ta21c (crash after marker rewrite, before state write: next step records the tree kept under the marker's key, its work and base intact, cuts <tree>.redo-1, stop names the patch and `git apply --3way`; following that remedy the member closes on the merged work; OVER-FIRE a marker naming its own task or another task's key settles nothing); ar6d adapted to a refused marker write; ta2, ta10, ar18b reworded to the new did-lines; deleted as moot with the machinery: ta11/ta11b/ta11c (old repair-lock meaning), ta12, ta12b, ta13, ta14, ta14b, ta14c, ta15, ta15b, ta16, ta16b, ta17, ta18, ta18b, ta18c, ta19 and helpers _set_aside_repair_cases, _aside_record_cases, _aside_under, _steps, _failing_git. test_audit_status.py - kt5 now asserts the forced remover and what --force deletes; kt5b (asideMoves) deleted; new kt6 (bare remover refused on a kept tree holding work and a checked-out submodule) and kt6b (the row's command run as written on that real tree: exit 0, tree gone, git no longer lists it). Commands: gate `python3 tools/sweep-selftests.py tests/test_drive_phase.py` exit 0, 651 cases ok [1712.1s, 117 blocks]; `python3 tools/sweep-selftests.py tests/test__deps.py tests/test__output_lints.py tests/test_audit_status.py` exit 0, 828 cases (254/173/401); `ruff check plugins/audit tools tests` exit 0; `vermin -t=3.8- --no-tips --violations` on the five .py files exit 0; `--stage ar-block` 39/39. Mutation probe scratchpad/P142.47-probe/mutations.py --tree <tree> (copies the tree without .git/node_modules, asserts each anchor occurs once and the edit reads back, purges __pycache__): exit 0, 15 of 15 rows held - base-ta, base-kt PASS; m1 (cut at old path), m2 (marker not rewritten), m3 (state before marker), m4 (no settle), m7/m8/m9 (high-water/git record/dir ignored), m11 (bare status remover), m14 (failed marker write not a stop) KILLED; OVER-FIRE m5, m6 (settle any key / own-task marker) -> ta21c, m10 (another task's kept trees) -> ta20c, m12 (forced remover for a plan task) -> kt1,kt5 KILLED. A row for moving the gate-mark drop into record_kept survived (the stored-verdict basis already re-measures over a new tree), so that move was reverted, not kept. Probes: pA, pD (prune/add -f over a stale record) adapted as ta11/ta11b; pB (second redo collision) as ta20/ta20b; q2 (status remedy on a submodule tree) as kt6/kt6b plus a scratch check (git 2.53.0, measured once): a CLEAN tree with a checked-out submodule -> bare `git worktree remove` exit 128 `working trees containing submodules cannot be moved or removed`, `--force` exit 0; p1-p4, pC, q1, q3, q4 test the move/lock/repair and are moot; q5 (tree_work over a broken submodule .git) is not about the move and untouched. Readers of wave.trees/tree_path checked: retire_member (wave.trees[task], path-agnostic), close_wave (copies wave.trees into keptTrees by task id; a later task-add adopts by marker), step_member/advance/submit_tree/apply_answer (wave.trees), audit-lookup.py wave_tree (brief's tree:/base: lines, from state), status kept_trees_block (keptTrees, path-agnostic), hooks/_config task_binding (by marker), tree_path (only in add_tree, after recut_path) - none assumes the default path. NOT EDITED, out of scope: plugins/audit/scripts/git/_worktrees.py sweep_plan's kept reason, which for a kept tree reads `task tree for P1.1 set aside 1 (phase P1): the wave driver removes it with task-remove after integration` - path-agnostic and it still keeps the tree, but the wording is wrong for a kept key (task-remove refuses a key that is no task; the driver's retire removes it through remove_task_tree). Dependants: drive-phase.py - tests/test_drive_phase.py changed as above; tools/affected.py, PLUGIN-BUILD-GUIDE.md (changed), README.md, docs/research/pipeline-cost-design.md, detect-plan-skip.py, record-risk-confirmation.py, stamp-verification.py name it by path/basename and use none of the removed names (grep for asideMoves/repair_asides/set_aside_tree/worktree repair over README, docs/research, commands, agents, skills, CONTRIBUTING, SECURITY: no hit) - still correct; _git_said/_index_flags/_carries/_clip untouched. tests/test_drive_phase.py dependants (.github/sweep-costs.json - same blocks, no stage added; tests/test__runner_output.py, tests/test_run_test_gate.py use _counting/_follower_cases/_head, untouched; tools/affected.py, tools/sweep-selftests.py by path) still correct. audit-status.py dependants (azure-pipelines.yml, verify.sh, test_run_test_gate.py, CONTRIBUTING.md, pipeline-cost-results.md, demo-large.html; _area_lines etc. in test_audit_status) read --gate/--json/other blocks; only the KEPT TREES remedy text and _kept_tree_remedy's private signature changed (sole caller updated), kt4 still shows --json carries no such block - still correct. tests/test_audit_status.py dependants (_cases/_fixture/_selftest used by test__status_facts.py, tools/affected.py) unchanged. tools/lints/_deps.py dependants (_manifest_rules, _manifest_vocab, _doctor_policy, tests/test__deps.py etc.) - one STATE_WRITERS row removed, which the table requires once no rename exists; test__deps 254 cases ok. PLUGIN-BUILD-GUIDE.md dependants (evals, case.yaml, _doctor_hygiene, test__affected_tests, test__deps, test__doctor_trail, test__help) read other sections; test__deps green.",
+        "descriptive": "A redo no longer moves the old task tree: it is kept in place under a keptTrees key, the recut is cut at a never-reused <tree>.redo-<n> path, a crash between marker and state settles by the marker, and status names a remover that works on a kept tree holding work."
       },
       "startedAt": "2026-10-28T07:12:01Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-28T09:32:44Z",
+      "verifiedBy": [
+        "ta1/ta1b/ta1c/ta1d: a redo leaves the old tree at its own path with git's record identical (same admin dir, unlocked), listed by status, and cuts the recut at <tree>.redo-1",
+        "ta11/ta11b: a submodule commit held only in the old tree's submodule repository survives the redo; no prune names the record, no forced add takes the path",
+        "ta20/ta20b/ta20c: 2nd and 3rd redo paths; a taken path is never reused; over-fire twin for a task with no kept tree",
+        "ta21/ta21b/ta21c: a crash between marker rewrite and state write is settled by the marker and the drive goes on with no work lost; over-fire twin",
+        "ar6d: a marker that cannot be rewritten stops the redo with the tree, its work and its marker as they were",
+        "kt5/kt6/kt6b: a kept tree's status remedy is `git worktree remove --force <path>` with what --force deletes, and it runs on a real tree holding work and a submodule, where the bare remover is refused"
+      ],
       "reviewPerTask": "signals",
       "notes": [
         {
@@ -3227,6 +3271,139 @@
         "runId": "2026-10-28T08:12:50Z.732963",
         "status": "passed",
         "at": "2026-10-28T08:12:50Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "942899f24f2c",
+        "at": "2026-10-28T09:32:44Z",
+        "return": "docs/audit/evidence/returns/P142.47-6yq/20261028T071201Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-28T07:56:09Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD: the run timed out: no time was left of the 565-second deadline; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 565s, 3 times the recorded 1347s of tests/test_drive_phase.py in .github/sweep-costs.json, capped at the 565s the host's Bash limit leaves; fix run: held back 282s of the deadline (the recorded 1347s, capped at half the 565s deadline), the recorded slot-seconds of tests/test_drive_phase.py in .github/sweep-costs.json",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P142.48-6yq",
+      "title": "Status's advice for a kept tree names everything --force destroys, and offers --force only to a redo's kept tree",
+      "status": "cancelled",
+      "description": "The adversarial review of the change that keeps a redo's old tree in place (scratchpad/p142-47-adv/, the orchestrator gives the full path). It found no path in the drive that loses work. Both meds are in status's advice:\n1. MED. The KEPT_TREE_FORCE warning understates what `git worktree remove --force` deletes. It also deletes the tree's admin dir, and with it the submodule repositories under .git/worktrees/<n>/modules, so commits that exist only there are destroyed. A commit on the tree's detached HEAD becomes unreachable, and gc collects it. This was verified by a git repro. Name both losses, with the command that saves each first: push or fetch the submodule commit, and pin the HEAD with a ref. Fix the guide sentence and _kept_tree_remedy's docstring to match.\n2. MED. When the plan cannot be read (task_ids None), _kept_tree_remedy gives `--force` to every kept tree, including a blocked task's kept tree that a later wave adopts. Give --force only to keys that are a redo's kept key (the set-aside key pattern). Every other key gets the non-forcing advice. Red-first a case with an unreadable plan.\n3. Low. recut_path's \"a path once taken is never cut at again\" is false: recuts is popped at task close and dropped at phase finish. Either make it true by asking git's records and directories, not only the state, or state what holds.\n4. Low. keep_old_tree picks the next key from the state alone. After a lost state it can reuse a key a kept tree's marker already carries. Choose the next n past every marker that carries that task's kept key, as well.\nEdit only the files in scope. No F/P/BUG ids in comments. Add probe rows for items 1, 2 and 4.",
+      "files": [
+        "plugins/audit/scripts/status/audit-status.py",
+        "tests/test_audit_status.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_audit_status.py: the --force warning names submodule-only commits and the detached HEAD; an unreadable plan offers --force only to a redo's kept key; tests/test_drive_phase.py: keep_old_tree picks a key no marker on disk carries"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_status.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: Re-added with --fixes so the triage reads the findings as handed to it; never started"
+      },
+      "startedAt": null,
+      "completedAt": "2026-10-28T09:34:00Z",
+      "verifiedBy": []
+    },
+    {
+      "id": "P142.49-6yq",
+      "title": "Status's advice for a kept tree names everything --force destroys, and offers --force only to a redo's kept tree",
+      "status": "in_progress",
+      "description": "The adversarial review of the change that keeps a redo's old tree in place (scratchpad/p142-47-adv/, the orchestrator gives the full path). It found no path in the drive that loses work. Both meds are in status's advice:\n1. MED. The KEPT_TREE_FORCE warning understates what `git worktree remove --force` deletes. It also deletes the tree's admin dir, and with it the submodule repositories under .git/worktrees/<n>/modules, so commits that exist only there are destroyed. A commit on the tree's detached HEAD becomes unreachable, and gc collects it. This was verified by a git repro. Name both losses, with the command that saves each first: push or fetch the submodule commit, and pin the HEAD with a ref. Fix the guide sentence and _kept_tree_remedy's docstring to match.\n2. MED. When the plan cannot be read (task_ids None), _kept_tree_remedy gives `--force` to every kept tree, including a blocked task's kept tree that a later wave adopts. Give --force only to keys that are a redo's kept key (the set-aside key pattern). Every other key gets the non-forcing advice. Red-first a case with an unreadable plan.\n3. Low. recut_path's \"a path once taken is never cut at again\" is false: recuts is popped at task close and dropped at phase finish. Either make it true by asking git's records and directories, not only the state, or state what holds.\n4. Low. keep_old_tree picks the next key from the state alone. After a lost state it can reuse a key a kept tree's marker already carries. Choose the next n past every marker that carries that task's kept key, as well.\nEdit only the files in scope. No F/P/BUG ids in comments. Add probe rows for items 1, 2 and 4.",
+      "files": [
+        "plugins/audit/scripts/status/audit-status.py",
+        "tests/test_audit_status.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tests/test_audit_status.py",
+        "tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_audit_status.py: the --force warning names submodule-only commits and the detached HEAD; an unreadable plan offers --force only to a redo's kept key; tests/test_drive_phase.py: keep_old_tree picks a key no marker on disk carries"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_status.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-28T09:34:16Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-28T09:34:08Z",
+          "text": "scope: plugins/audit/scripts/status/audit-status.py, plugins/audit/scripts/governance/drive-phase.py, PLUGIN-BUILD-GUIDE.md, every path the finding(s) P142-R39, P142-R40, P142-R41, P142-R42 name"
+        },
+        {
+          "at": "2026-10-28T09:34:08Z",
+          "text": "scope: tests/test_audit_status.py, the suite that tests plugins/audit/scripts/status/audit-status.py (python: its import closure reaches plugins/audit/scripts/status/audit-status.py)"
+        },
+        {
+          "at": "2026-10-28T09:34:08Z",
+          "text": "scope: tests/test_drive_phase.py, the suite that tests plugins/audit/scripts/governance/drive-phase.py (python: it hands drive-phase.py to a loader through a module constant)"
+        },
+        {
+          "at": "2026-10-28T09:34:08Z",
+          "text": "no suite: PLUGIN-BUILD-GUIDE.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__affected_tests.py, tests/test__deps.py, tests/test__doctor_trail.py, tests/test__output.py, tests/test__refs.py, tests/test_drive_phase.py and 6 more"
+        }
+      ],
+      "fixes": [
+        "P142-R39",
+        "P142-R40",
+        "P142-R41",
+        "P142-R42"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-28T10:17:27Z.c3a687",
+        "status": "passed",
+        "at": "2026-10-28T10:17:27Z"
       }
     }
   ],

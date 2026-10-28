@@ -4771,9 +4771,11 @@ def retire_member(ctx, state, task):
 # A tree a redo set aside - kept where it stands (`keep_old_tree`) - is recorded
 # in `keptTrees`, the drive state status lists, under a key naming the task it
 # came from, and its marker names that key rather than the task, so `task-add`
-# never adopts it as the task's tree.
+# never adopts it as the task's tree. Status offers a forced remover to this
+# shape alone, and holds its own copy of it (audit-status.py `_ASIDE_KEY_RE`,
+# which `kt9c` pins to this one).
 ASIDE_KEY = "%s set aside %d"
-_ASIDE_KEY_RE = re.compile(r"^(.+) set aside \d+$")
+_ASIDE_KEY_RE = re.compile(r"^(.+) set aside (\d+)$")
 
 
 def asides_of(state, task_id):
@@ -4784,6 +4786,29 @@ def asides_of(state, task_id):
         if hit and hit.group(1) == str(task_id):
             found.append((key, path))
     return found
+
+
+def _aside_counts(ctx, state, task_id):
+    """`(counts, why)` - the n of every key a redo of `task_id` keeps a tree
+    under: the drive state's entries, and the key the marker of each tree git
+    lists, whose directory stands, carries - a marker outlives a state that
+    was lost, and the key it names is the one `task-add` and the settle read.
+    None beside the reason when git could not list its worktrees."""
+    listed = _worktrees.list_worktrees(ctx["gitRoot"])
+    if listed.get("error"):
+        return None, "git could not list its worktrees (%s)" % (listed["error"],)
+    keys = [key for key, _path in asides_of(state, task_id)]
+    for row in listed.get("trees") or []:
+        path = row.get("path")
+        if path and os.path.isdir(path):
+            keys.append(str((_worktrees.read_provenance(path).get("record") or {})
+                            .get("taskId") or ""))
+    counts = []
+    for key in keys:
+        hit = _ASIDE_KEY_RE.match(key)
+        if hit and hit.group(1) == str(task_id):
+            counts.append(int(hit.group(2)))
+    return counts, ""
 
 
 def drop_aside(state, key):
@@ -4839,9 +4864,14 @@ def recut_path(ctx, state, task_id):
     `<origin>`: the first redo at `.redo-1`, a second at `.redo-2`, a third at
     `.redo-3`. n is one past the highest any redo of the task has cut - the
     `RECUTS` entry, and each tree a redo of it keeps - and then past every path
-    a directory or git's record of a worktree still holds. So a path once taken
-    is never cut at again, whoever removed what stood there; a record git keeps
-    that its listing could not name is refused by `git worktree add` itself."""
+    a directory or git's record of a worktree still holds. So no path a
+    directory or git's record holds is cut at, whoever left it there; a record
+    git keeps that its listing could not name is refused by `git worktree add`
+    itself. A path that is gone from both may be cut at again once the state
+    forgets it: the `RECUTS` entry goes with the task's other marks when a
+    task-scoped drive closes it (`finish_task`) and with the whole state when
+    the phase finishes (`drop_state`), and with no entry and no kept tree
+    recorded this answers `(None, None)`."""
     held = (state.get(RECUTS) or {}).get(task_id) or {}
     kept = [p for _key, p in asides_of(state, task_id) if isinstance(p, str)]
     origin = held.get("from") or (_recut_origin(kept[0])[0] if kept else None)
@@ -4881,7 +4911,11 @@ def keep_old_tree(ctx, state, task_id):
     key and stops naming the tree as the task's (`record_kept`). A run that
     dies between them leaves a marker naming the key while the state still
     names the tree the task's, and the next step settles that by the marker
-    (`settle_kept_markers`), which is what `task-add` reads."""
+    (`settle_kept_markers`), which is what `task-add` reads.
+
+    The key's n is one past the highest any kept tree of the task is known by
+    (`_aside_counts`): the state's entries and the markers on disk, so a state
+    that was lost never hands out a key a kept tree's marker still names."""
     tree = ((state.get("wave") or {}).get("trees") or {}).get(task_id)
     if not tree or not os.path.isdir(tree):
         return None, _stopped(ctx, "the tree of %s is not at %s to keep; nothing "
@@ -4892,11 +4926,12 @@ def keep_old_tree(ctx, state, task_id):
                               "nothing was recut" % (
                                   task_id, tree, held.get("basis")
                                   or "its marker could not be read"))
-    kept = state.get("keptTrees") or {}
-    count = 1
-    while ASIDE_KEY % (task_id, count) in kept:
-        count += 1
-    key = ASIDE_KEY % (task_id, count)
+    counts, why = _aside_counts(ctx, state, task_id)
+    if counts is None:
+        return None, _stopped(ctx, "the tree of %s at %s could not be kept: %s, so "
+                              "no key could be chosen that no kept tree's marker "
+                              "carries; nothing was recut" % (task_id, tree, why))
+    key = ASIDE_KEY % (task_id, max([0] + counts) + 1)
     _path, why = _worktrees.write_record(tree, dict(held["record"], taskId=key,
                                                     setAsideFrom=str(task_id)))
     if why:

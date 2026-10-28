@@ -59,6 +59,8 @@ import argparse
 import json
 import os
 import pathlib
+import re
+import shlex
 import sys
 import textwrap
 
@@ -2047,32 +2049,99 @@ def success_line(lines):
     return None
 
 
-# What `--force` takes with a kept tree: git's bare `git worktree remove`
+# What `--force` takes with a kept tree. git's bare `git worktree remove`
 # refuses a tree with uncommitted or untracked files, and any tree with a
-# submodule checked out, so the remover named is the forced one - and the row
-# says what it deletes, since a kept tree is kept because it may hold work.
-KEPT_TREE_FORCE = ("--force deletes its uncommitted and untracked files, its "
-                   "ignored files and each submodule checked out in it; carry "
-                   "what it holds first")
+# submodule checked out, so the remover a redo's kept tree is offered is the
+# forced one - and the row says what it destroys, since a kept tree is kept
+# because it may hold work. Removing the tree removes its git directory under
+# `.git/worktrees/`, and the submodule repositories of a linked tree live
+# there, so a commit only one of them holds goes with it; the tree's detached
+# HEAD was the only ref its last commit had, so that commit is left for gc.
+# `kt8b` removes a tree that way with nothing saved and watches both go.
+KEPT_TREE_FORCE = ("--force deletes its uncommitted, untracked and ignored files "
+                   "and each submodule checked out in it, and with the tree's git "
+                   "directory the submodule repositories kept there, so a commit "
+                   "only one of them holds is destroyed; a commit on its detached "
+                   "HEAD is left on no ref, for gc to collect. Carry what it holds "
+                   "first, and save both with the commands below")
+
+# The key the driver records a redo's kept tree under (`ASIDE_KEY` in
+# drive-phase.py, `<id> set aside <n>`), which no task id has. Status cannot
+# import the driver, so the shape is held here and `kt9c` pins the two to
+# agree.
+_ASIDE_KEY_RE = re.compile(r"^(.+) set aside \d+$")
+
+
+def _is_aside_key(key):
+    """Is `key` the shape a redo's kept tree is recorded under?"""
+    return bool(_ASIDE_KEY_RE.match(str(key)))
+
+
+def _shell_word(text):
+    """`text` as one word of a POSIX shell command line - unchanged when it
+    holds nothing a shell reads, single-quoted otherwise."""
+    return shlex.quote(text)
+
+
+def _kept_tree_saves(task_id, path):
+    """The commands that save what `KEPT_TREE_FORCE` says --force destroys, in
+    the repository's shared refs, which outlive the tree:
+    `refs/kept-trees/<key>/HEAD` pins the tree's HEAD, and each submodule
+    checked out in it, nested ones included, pushes its HEAD and its branches
+    to `refs/kept-trees/<key>/modules/<its path>/`. A submodule push is told
+    the file transport is allowed because git refuses a local path inside
+    `submodule foreach` otherwise; a push that fails stops the loop and exits
+    non-zero, so a save that did not happen is never silent."""
+    ref = "refs/kept-trees/%s" % (re.sub(r"[^A-Za-z0-9._-]+", "-",
+                                         str(task_id)).strip("-."),)
+    target = '"%s"' % (re.sub(r'([\\"$`])', r"\\\1", path),)
+    push = ('git -c protocol.file.allow=always push -q %s '
+            '"+HEAD:%s/modules/$displaypath/HEAD" '
+            '"+refs/heads/*:%s/modules/$displaypath/heads/*"' % (target, ref, ref))
+    word = _shell_word(path)
+    return ["git -C %s update-ref %s/HEAD HEAD" % (word, ref),
+            "git -C %s submodule foreach --recursive %s" % (word, _shell_word(push))]
 
 
 def _kept_tree_remedy(task_id, path, task_ids):
-    """The command that takes down the kept tree recorded under `task_id`.
-    `task-remove` acts only on a task of the plan, so a key that is none - the
-    old tree a redo kept where it stood - gets git's own remover, forced
-    (`KEPT_TREE_FORCE`). `task_ids` None is a plan that could not be read:
-    git's remover acts on any of them."""
+    """`{"remedy", "warning", "saveFirst"}` for the kept tree recorded under
+    `task_id`: the command that takes it down, and - for the forced one alone -
+    what it destroys and the commands that save that first.
+
+    --force goes only to a key a redo keeps an old tree under
+    (`_is_aside_key`), which no task id has: `task-remove` refuses it, so it
+    gets git's own remover, forced, `KEPT_TREE_FORCE` and the saves
+    (`_kept_tree_saves`). A task of the plan keeps `task-remove`. `task_ids`
+    None is a plan that could not be read, which cannot say whether a key is
+    its task, so such a key is offered `task-remove` for when it reads - never
+    a forced remover, since a blocked task's tree is one a later wave adopts.
+    Any other key gets git's remover unforced, which git refuses while the
+    tree holds work or a submodule."""
+    if _is_aside_key(task_id):
+        return {"remedy": "git worktree remove --force %s" % (_shell_word(path),),
+                "warning": KEPT_TREE_FORCE,
+                "saveFirst": _kept_tree_saves(task_id, path)}
     if task_ids is not None and task_id in task_ids:
-        return "/audit:worktree task-remove %s" % (task_id,)
-    return "git worktree remove --force %s - %s" % (path, KEPT_TREE_FORCE)
+        said = "/audit:worktree task-remove %s" % (task_id,)
+    elif task_ids is None:
+        said = ("/audit:worktree task-remove %s once the plan can be read - it "
+                "could not be, so whether %s is its task is unknown, and nothing "
+                "forced is offered" % (task_id, task_id))
+    else:
+        said = ("git worktree remove %s - unforced: git refuses it while the tree "
+                "holds work or a submodule, so carry what it holds first"
+                % (_shell_word(path),))
+    return {"remedy": said, "warning": None, "saveFirst": []}
 
 
 def kept_trees_block(manifest_path, project, manifest=None):
     """Task trees a wave left standing: `{"trees": [{"phase", "taskId",
-    "path", "remedy"}]}` read from the driver's state files, or `{"error":
-    why}` when the state directory could not be asked. `remedy` is the command
-    that acts on that tree (`_kept_tree_remedy`), read against `manifest`, or
-    the plan at `manifest_path` when none is given.
+    "path", "remedy", "warning", "saveFirst"}]}` read from the driver's state
+    files, or `{"error": why}` when the state directory could not be asked.
+    `remedy` is the command that acts on that tree, `warning` what it destroys
+    when it forces and `saveFirst` the commands that save that first
+    (`_kept_tree_remedy`), read against `manifest`, or the plan at
+    `manifest_path` when none is given.
 
     ONLY A TREE THAT IS STILL ON DISK IS LISTED. The driver names a kept tree
     once, in the print of the run that kept it, and records it until a later
@@ -2100,9 +2169,8 @@ def kept_trees_block(manifest_path, project, manifest=None):
         body, _problem = _fr.drive_state(os.path.dirname(drive), phase)
         for task_id, path in sorted((body.get("keptTrees") or {}).items()):
             if isinstance(path, str) and os.path.isdir(path):
-                trees.append({"phase": phase, "taskId": task_id, "path": path,
-                              "remedy": _kept_tree_remedy(task_id, path,
-                                                          task_ids)})
+                trees.append(dict(_kept_tree_remedy(task_id, path, task_ids),
+                                  phase=phase, taskId=task_id, path=path))
     return {"trees": trees}
 
 
@@ -2123,9 +2191,13 @@ def _kept_tree_lines(summary, pt=None):
                         "holding work the phase tree does not - take one down "
                         "with the command beside it once it is dealt with"
                         % len(trees), "warn")]
-    out += ["    %-8s %-4s %s - %s" % (t["taskId"], t["phase"], t["path"],
-                                       t.get("remedy") or "no remover was named for it")
-            for t in trees]
+    for t in trees:
+        out.append("    %-8s %-4s %s - %s" % (t["taskId"], t["phase"], t["path"],
+                                              t.get("remedy")
+                                              or "no remover was named for it"))
+        if t.get("warning"):
+            out.append("      %s:" % (t["warning"],))
+        out += ["      save first: %s" % (cmd,) for cmd in t.get("saveFirst") or ()]
     return out
 
 

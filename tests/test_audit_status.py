@@ -4346,19 +4346,86 @@ def _kept_tree_cases(check):
     rows = _cli([mpath], root)[1].splitlines()
 
     def row(path):
-        hit = [ln for ln in rows if " %s " % (path,) in ln]
+        hit = [ln for ln in rows if " %s - " % (path,) in ln]
         return hit[0] if len(hit) == 1 else "%d rows name %s" % (len(hit), path)
     task_row, aside_row = row(kept), row(aside)
     check("kt5 a kept tree's row names a remover that acts on it - git's "
           "`git worktree remove --force <path>`, never `task-remove`, which "
-          "refuses a key that is no task - and says what --force deletes; the "
-          "plan's task keeps `task-remove`: %r" % ((task_row, aside_row),),
+          "refuses a key that is no task; the plan's task keeps `task-remove`: "
+          "%r" % ((task_row, aside_row),),
           "git worktree remove --force %s" % (aside,) in aside_row
-          and "uncommitted" in aside_row and "submodule" in aside_row
           and "task-remove" not in aside_row
           and "task-remove P2.1" in task_row
           and "git worktree remove" not in task_row)
+    # What --force destroys, said beside it: the files, and - with the tree's
+    # git directory - the submodule repositories kept there and the only ref
+    # its detached HEAD had. Each loss carries the command that saves it.
+    out = "\n".join(rows)
+    warned = [ln for ln in rows if "--force deletes" in ln]
+    pin = "git -C %s update-ref refs/kept-trees/P2.1-set-aside-1/HEAD HEAD" % (aside,)
+    push = ("git -C %s submodule foreach --recursive 'git -c "
+            "protocol.file.allow=always push -q \"%s\" " % (aside, aside))
+    check("kt7 the --force warning names what it destroys beyond the files - "
+          "a commit only a submodule repository in the tree's git directory "
+          "holds, and a commit on its detached HEAD, left to gc - and the "
+          "command that saves each first, said once, for the forced row "
+          "alone: %r" % (out[-1500:],),
+          len(warned) == 1 and "uncommitted" in warned[0]
+          and "submodule" in warned[0] and "detached HEAD" in warned[0]
+          and "gc" in warned[0] and "destroyed" in warned[0]
+          and out.count(pin) == 1 and out.count(push) == 1
+          and "kept-trees/P2.1" not in task_row)
+    _kept_unreadable_plan_cases(check, root, mpath, drive, kept, aside)
     _kept_remedy_runs_cases(check)
+
+
+def _kept_unreadable_plan_cases(check, root, mpath, drive, kept, aside):
+    """A plan that cannot be read says nothing about which keys are its tasks,
+    so --force goes only to a key a redo keeps an old tree under - the one
+    shape no task of any plan carries. A blocked task's tree a later wave
+    adopts keeps advice that forces nothing."""
+    broken = os.path.join(root, "broken-plan.json")
+    with open(broken, "w", encoding="utf-8") as fh:
+        fh.write("{ this is not json")
+    other = os.path.join(root, "other-tree")
+    os.makedirs(other, exist_ok=True)
+    with open(os.path.join(drive, "P2.json"), "w", encoding="utf-8") as fh:
+        json.dump({"keptTrees": {"P2.1": kept, "P2.1 set aside 1": aside,
+                                 "P9.9": other}}, fh)
+    block = M.kept_trees_block(broken, root)
+    by_key = dict((t.get("taskId"), t.get("remedy") or "")
+                  for t in block.get("trees") or [])
+    lines = M._kept_tree_lines({"keptTrees": block})
+    forced = [ln for ln in lines if "--force" in ln and "remove" in ln]
+    check("kt9 an unreadable plan offers --force only to a redo's kept key: "
+          "the task key's row forces nothing and names `task-remove`, the "
+          "aside key's row is git's forced remover: %r" % ((by_key, lines),),
+          set(by_key) == {"P2.1", "P2.1 set aside 1", "P9.9"}
+          and "--force" not in by_key["P2.1"]
+          and "task-remove P2.1" in by_key["P2.1"]
+          and "--force" not in by_key["P9.9"]
+          and by_key["P2.1 set aside 1"].startswith(
+              "git worktree remove --force %s" % (aside,))
+          and len(forced) == 1 and aside in forced[0])
+    readable = dict((t.get("taskId"), t.get("remedy") or "")
+                    for t in M.kept_trees_block(mpath, root).get("trees") or [])
+    check("kt9b ...and a readable plan whose key is neither its task nor a "
+          "redo's kept key gets git's unforced remover, which git refuses on "
+          "a tree holding work: %r" % (readable,),
+          readable.get("P9.9", "").startswith("git worktree remove %s" % (other,))
+          and "--force" not in readable.get("P9.9", "-")
+          and "task-remove P2.1" in readable.get("P2.1", ""))
+    drv = _loader.load_script("drive-phase.py", "drive_phase_kt_key", cache=False)
+    shapes = [drv.ASIDE_KEY % ("P2.1", 1), drv.ASIDE_KEY % ("P142.49-6yq", 12)]
+    pred = getattr(M, "_is_aside_key", None)
+    check("kt9c the key status forces is the shape the driver writes a kept "
+          "key in, and no task id has it: %r" % (shapes,),
+          pred is not None and all(pred(k) for k in shapes)
+          and not any(pred(k) for k in
+                      ("P2.1", "P2.1 set aside", "set aside 1", "P2.1 set aside x")))
+    with open(os.path.join(drive, "P2.json"), "w", encoding="utf-8") as fh:
+        json.dump({"keptTrees": {"P2.1": kept, "P2.1 set aside 1": aside}}, fh)
+    shutil.rmtree(other)
 
 
 def _kept_remedy_runs_cases(check):
@@ -4384,9 +4451,10 @@ def _kept_remedy_runs_cases(check):
                  "-q", src, "mod")
     _harness.git(root, "add", "-A")
     _harness.git(root, "commit", "-qm", "base")
-    _harness.git(root, "worktree", "add", "-q", "--detach", tree)
-    _harness.git(tree, "-c", "protocol.file.allow=always", "submodule",
-                 "update", "--init", "-q")
+    twin = os.path.join(base, "repo-P2.2")
+    made = {}
+    for where in (tree, twin):
+        made[where] = _kept_tree_holding_commits(root, where)
     with open(os.path.join(tree, "audit-plan.json"), "a", encoding="utf-8") as fh:
         fh.write("\n")
     with open(os.path.join(tree, "work.txt"), "w", encoding="utf-8") as fh:
@@ -4394,10 +4462,15 @@ def _kept_remedy_runs_cases(check):
     drive = os.path.join(root, ".claude", "state", "drive")
     os.makedirs(drive)
     with open(os.path.join(drive, "P2.json"), "w", encoding="utf-8") as fh:
-        json.dump({"keptTrees": {"P2.1 set aside 1": tree}}, fh)
-    rows = [ln for ln in _cli([mpath], root)[1].splitlines()
-            if " %s " % (tree,) in ln]
+        json.dump({"keptTrees": {"P2.1 set aside 1": tree,
+                                 "P2.2 set aside 1": twin}}, fh)
+    printed = _cli([mpath], root)[1].splitlines()
+    rows = [ln for ln in printed if " %s - " % (tree,) in ln]
     named = "git worktree remove --force %s" % (tree,)
+    saves = [ln.split("save first: ", 1)[1] for ln in printed
+             if "save first: " in ln and ("-C %s " % (tree,)) in ln]
+    saved = [subprocess.run(["sh", "-c", cmd], cwd=root, capture_output=True,
+                            encoding="utf-8", errors="replace") for cmd in saves]
     bare = subprocess.run(["git", "worktree", "remove", tree], cwd=root,
                           capture_output=True, encoding="utf-8", errors="replace")
     check("kt6 OVER-FIRE of the remedy: the bare `git worktree remove` is refused "
@@ -4413,6 +4486,52 @@ def _kept_remedy_runs_cases(check):
           "no more: %r" % ((rows, ran and (ran.returncode, ran.stderr[-200:])),),
           ran is not None and ran.returncode == 0 and not os.path.lexists(tree)
           and ("worktree %s" % (tree,)) not in listed)
+    # The twin is taken down the same way with nothing saved first: what the
+    # warning says --force destroys is gone once gc runs.
+    subprocess.run(["git", "worktree", "remove", "--force", twin], cwd=root,
+                   capture_output=True)
+    _harness.git(root, "-c", "gc.reflogExpireUnreachable=now",
+                 "-c", "gc.pruneExpire=now", "gc", "-q")
+    homes = (root, os.path.join(root, "mod"), src)
+
+    def resolves(sha):
+        return [h for h in homes
+                if subprocess.run(["git", "cat-file", "-e", sha + "^{commit}"],
+                                  cwd=h, capture_output=True).returncode == 0]
+    kept_shas = made[tree]
+    lost_shas = made[twin]
+    check("kt8 the two save-first commands the forced row prints, run as "
+          "written, keep the commit on the tree's detached HEAD and the commit "
+          "only its submodule repository held through the forced remove and "
+          "a gc: %r" % ((saves, [(r.returncode, r.stderr[-200:]) for r in saved],
+                         [(sha, resolves(sha)) for sha in kept_shas]),),
+          len(saves) == 2 and all(r.returncode == 0 for r in saved)
+          and all(root in resolves(sha) for sha in kept_shas))
+    check("kt8b ...and the twin removed the same way with nothing saved loses "
+          "both - the losses the warning names are real: %r"
+          % ([(sha, resolves(sha)) for sha in lost_shas],),
+          len(lost_shas) == 2 and not any(resolves(sha) for sha in lost_shas))
+
+
+def _kept_tree_holding_commits(root, where):
+    """A detached task tree of `root` whose submodule is checked out and holds
+    a commit no other repository has, and whose own detached HEAD is a commit
+    no ref names. -> [that HEAD's commit, the submodule's commit]."""
+    _harness.git(root, "worktree", "add", "-q", "--detach", where)
+    _harness.git(where, "-c", "protocol.file.allow=always", "submodule",
+                 "update", "--init", "-q")
+    mod = os.path.join(where, "mod")
+    with open(os.path.join(mod, "only-here.txt"), "w", encoding="utf-8") as fh:
+        fh.write("a commit only %s's submodule holds\n" % (os.path.basename(where),))
+    _harness.git(mod, "add", "-A")
+    _harness.git(mod, "commit", "-qm", "submodule only")
+    sub = _harness.git(mod, "rev-parse", "HEAD").strip()
+    with open(os.path.join(where, "top-%s.txt" % (os.path.basename(where),)),
+              "w", encoding="utf-8") as fh:
+        fh.write("committed on the detached HEAD\n")
+    _harness.git(where, "add", "top-%s.txt" % (os.path.basename(where),))
+    _harness.git(where, "commit", "-qm", "detached only")
+    return [_harness.git(where, "rev-parse", "HEAD").strip(), sub]
 
 
 def _other_checkout_cases(check):
