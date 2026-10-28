@@ -2079,7 +2079,17 @@ def _is_aside_key(key):
 
 def _shell_word(text):
     """`text` as one word of a POSIX shell command line - unchanged when it
-    holds nothing a shell reads, single-quoted otherwise."""
+    holds nothing a shell reads, single-quoted otherwise, so a path holding a
+    space, or a Windows path's backslashes, stays one word.
+
+    THE SHELL THESE ROWS ARE WRITTEN FOR IS A POSIX SHELL: sh or bash, and on
+    Windows the sh Git for Windows ships - the one Git Bash runs and the one
+    `_proc_group.locate_sh` resolves for every plan command this plugin runs.
+    It is not cmd.exe, where a single quote quotes nothing, nor PowerShell; a
+    row quoted for either would be wrong in the shell the rest of this
+    plugin's commands are run in. The inner command of a `submodule foreach`
+    save is read by the sh git itself starts, whatever shell typed the outer
+    one."""
     return shlex.quote(text)
 
 

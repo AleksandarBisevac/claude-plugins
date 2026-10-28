@@ -23,14 +23,23 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P144-R1",
+        "severity": "low",
+        "file": "tests/test_audit_status.py:4355-4392",
+        "issue": "No case pins the quoting on a plain run. kt5/kt7/kt9/kt9b/kt6b/kt8 only see a path that needs quoting when the sweep's TMPDIR holds a space (--spaced leg) or on Windows; on a plain POSIX run every fixture path is shell-safe, so `_shell_word` returning `text` unquoted would leave the task's own gate command (`sweep-selftests.py tests/test_audit_status.py`, 407 cases, run by me: exit 0) green. The executor's own mutation proof is red only under --spaced.",
+        "resolution": "Add one deterministic case that does not depend on the temp root: call `M._kept_tree_remedy('P2.1 set aside 1', <path with a space, a single quote and a backslash>, None)` and assert `_posix_words(remedy)` equals ['git','worktree','remove','--force', path] and that the saveFirst entries read back to the same one-word path through `_posix_words`. Then the fix is red on any leg, not only the spaced one."
+      }
+    ],
+    "outcome": "[findings: 1 - 0 high, 0 med, 1 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
     {
       "id": "P144.1-6yq",
       "title": "prove-gates' selftest reads its fixture tree when the fixture and the repository sit on different Windows drives",
-      "status": "in_progress",
+      "status": "done",
       "description": "CI run 40715565769 (release tier, f06f113f), windows plain 3 and cp1252 3: tools/prove-gates.py --selftest raised 'ValueError: path is on mount C:, start on mount D:' at _cases line 3153 'coverage(script_dir=_fx)' -> gate_names -> _derived_gates line 2011 (an os.path.relpath of a fixture dir under the temp root on C: against the repo on D:); every case after it did not run (8/9). Logs: <scratchpad>/ci142/122912182409.log. Make the derivation never relpath across drives (spell the fixture's paths relative to its own root, or compare by realpath without relpath), keep the cases' meaning, and add a case that fails on a POSIX host by simulating the cross-drive answer (inject the relpath, or a fixture outside the repo root) so the class is caught off Windows. Check every other relpath in prove-gates.py for the same shape.",
       "files": [
         "tools/prove-gates.py"
@@ -53,19 +62,32 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a16b64a7619f",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/prove-gates.py: _gate_sources() now returns (rel, path, tree), rel spelled against the root the walk started from: '<_GATE_ROOTS entry>/' + relpath(path, root) for the repo roots, relpath(path, script_dir) for a fixture. A walked file always shares its root's drive, so no relpath crosses drives. _derived_gates() reads that rel instead of os.path.relpath(path, repo_root) (the CI line 2011 crash). not_a_gate_problems() unpacks the triple. Over the live tree the derivation is byte-identical: HEAD's and the new module's _derived_gates(repo=R), guard_files(repo=R) and lint_homes(repo=R) compared equal (72 == 72 entries, True/True/True, exit 0). New case c1g: the same unproven-lint fixture, with os.path.relpath swapped for a stub that raises Windows' ValueError when exactly one side is under the fixture (simulated other drive) and delegates otherwise; it asserts the stub is armed (the patched name is the stub and it refuses the fixture-vs-REPO pair) and that coverage(script_dir=fixture) == ['probe_unproven_violations']; restored in finally. The arming probe calls the stub by name, because spelling os.path.relpath(<mkdtemp path>, REPO) tripped _suite.unsafe_relpath_violations() (seen: it reported prove-gates.py line 3196; now []). Every other drive-crossing call in the file checked: grep -n 'relpath|commonpath|relative_to|commonprefix' tools/prove-gates.py -> line 864/866 and 1555 are row payload strings/lint names, not calls; 2001 is the new within-root call; 3182-3205 the case's stub; 3675 _text_homes relpath(path, root) with path walked under os.path.join(root, top), same drive, left. Gates: sweep-selftests.py tools/prove-gates.py tests/test__refs.py exit 0 (61 + 292 cases ok); prove-gates --selftest exit 0, 61/61; sweep tools/_suite.py exit 0 (34 cases); ruff exit 0; vermin exit 0; prose_number_claims and house_style_violations report nothing for prove-gates.py. No full prove-gates run, as instructed. Dependants: drive-phase.py lint_probe - main()'s output and exit codes untouched (only _gate_sources/_derived_gates internals and one selftest case changed), still correct; tests/test__refs.py tb1 - the only .py basename literal added is _output.py, which exists, tb1 green in the sweep above; .github/sweep-costs.json, guard-bash-writes.py, tests/_harness.py, test__deps.py, test__gate_feed.py, test_drive_phase.py, test_guard_bash_writes.py, affected.py name the file's path, which did not move - still correct; names used elsewhere (_git, selector_text, _call_name, _under) unchanged, _under is only newly called by c1g; GUARD_FILES/lint_homes unchanged per the equality check above.",
+        "descriptive": "prove-gates' lint derivation no longer builds a relative path across drives, so its selftest survives a Windows runner whose temp directory is on another drive, and a POSIX case simulates that drive split."
       },
       "startedAt": "2026-10-28T15:50:25Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-28T16:52:28Z",
+      "verifiedBy": [
+        "c1g: the unproven-lint fixture is derived the same when os.path.relpath raises Windows' cross-drive ValueError for any pair with one side inside the fixture, with the injection shown armed first"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-28T16:31:12Z.e094b1",
         "status": "passed",
         "at": "2026-10-28T16:31:12Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "a16b64a7619f",
+        "at": "2026-10-28T16:52:28Z",
+        "return": "docs/audit/evidence/returns/P144.1-6yq/20261028T155025Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "Mode regression, expectRedFirst false, and the case and the fix live in the one file tools/prove-gates.py, so the helper's tree (HEAD plus the declared test files copied over it) carries the fix and cannot separate the two; no helper run was made. Reds watched by hand, for the record: (1) case c1g written BEFORE the fix, run in my tree on HEAD's derivation: `python3 tools/prove-gates.py --selftest` exit 1, 'FAIL c1g ... (injection armed: True; derived \"raised ValueError: path is on mount 'C:', start on mount 'D:'\")', 'SELFTEST FAILED: 60/61 cases passed'. (2) After the fix, in a throwaway `git archive HEAD` export under the scratchpad with the new file copied in and ONLY _derived_gates mutated back to os.path.relpath(path, repo_root): exit 1, the same FAIL c1g line and 60/61; export deleted. Fixed tree: exit 0, 'ALL PASS: 61/61 cases passed'.",
+        "at": "2026-10-28T15:59:45Z (hand runs, not the helper)"
       }
     },
     {

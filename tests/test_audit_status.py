@@ -46,6 +46,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -61,6 +62,9 @@ import _cli_fmt                                    # noqa: E402  (as audit-statu
 # the product's own writers, so the fixture has the shape a real phase run leaves
 # on disk instead of this file's memory of it.
 import _locks as _lockmod                          # noqa: E402
+# The kept-tree rows print commands for a POSIX shell, and the `kt` cases run
+# them as written under the one this plugin resolves - git's own sh on Windows.
+import _proc_group                                 # noqa: E402
 # The `fr` block writes ledger rows directly (bypassing `append_row`'s chain -
 # a --gate reader does not verify the chain, only `verify()` does) but reads
 # them back through this module's OWN `evidence_dir`, so the fixture and the
@@ -4351,9 +4355,11 @@ def _kept_tree_cases(check):
     task_row, aside_row = row(kept), row(aside)
     check("kt5 a kept tree's row names a remover that acts on it - git's "
           "`git worktree remove --force <path>`, never `task-remove`, which "
-          "refuses a key that is no task; the plan's task keeps `task-remove`: "
-          "%r" % ((task_row, aside_row),),
-          "git worktree remove --force %s" % (aside,) in aside_row
+          "refuses a key that is no task; the plan's task keeps `task-remove`; "
+          "read as a POSIX shell reads it, the path is one word, whatever it "
+          "holds: %r" % ((task_row, aside_row),),
+          _posix_words(_remedy_after(aside_row, aside))
+          == ["git", "worktree", "remove", "--force", aside]
           and "task-remove" not in aside_row
           and "task-remove P2.1" in task_row
           and "git worktree remove" not in task_row)
@@ -4362,18 +4368,25 @@ def _kept_tree_cases(check):
     # its detached HEAD had. Each loss carries the command that saves it.
     out = "\n".join(rows)
     warned = [ln for ln in rows if "--force deletes" in ln]
-    pin = "git -C %s update-ref refs/kept-trees/P2.1-set-aside-1/HEAD HEAD" % (aside,)
-    push = ("git -C %s submodule foreach --recursive 'git -c "
-            "protocol.file.allow=always push -q \"%s\" " % (aside, aside))
+    saves = [_posix_words(ln.split("save first: ", 1)[1]) or []
+             for ln in rows if "save first: " in ln]
+    pin = ["git", "-C", aside, "update-ref",
+           "refs/kept-trees/P2.1-set-aside-1/HEAD", "HEAD"]
+    pushes = [w for w in saves
+              if w[:6] == ["git", "-C", aside, "submodule", "foreach",
+                           "--recursive"] and len(w) == 7
+              and (_posix_words(w[6]) or [])[:6]
+              == ["git", "-c", "protocol.file.allow=always", "push", "-q", aside]]
     check("kt7 the --force warning names what it destroys beyond the files - "
           "a commit only a submodule repository in the tree's git directory "
           "holds, and a commit on its detached HEAD, left to gc - and the "
           "command that saves each first, said once, for the forced row "
-          "alone: %r" % (out[-1500:],),
+          "alone, each naming the tree as one POSIX shell word: %r"
+          % (out[-1500:],),
           len(warned) == 1 and "uncommitted" in warned[0]
           and "submodule" in warned[0] and "detached HEAD" in warned[0]
           and "gc" in warned[0] and "destroyed" in warned[0]
-          and out.count(pin) == 1 and out.count(push) == 1
+          and len(saves) == 2 and saves.count(pin) == 1 and len(pushes) == 1
           and "kept-trees/P2.1" not in task_row)
     _kept_unreadable_plan_cases(check, root, mpath, drive, kept, aside)
     _kept_remedy_runs_cases(check)
@@ -4404,15 +4417,16 @@ def _kept_unreadable_plan_cases(check, root, mpath, drive, kept, aside):
           and "--force" not in by_key["P2.1"]
           and "task-remove P2.1" in by_key["P2.1"]
           and "--force" not in by_key["P9.9"]
-          and by_key["P2.1 set aside 1"].startswith(
-              "git worktree remove --force %s" % (aside,))
+          and _posix_words(by_key["P2.1 set aside 1"])
+          == ["git", "worktree", "remove", "--force", aside]
           and len(forced) == 1 and aside in forced[0])
     readable = dict((t.get("taskId"), t.get("remedy") or "")
                     for t in M.kept_trees_block(mpath, root).get("trees") or [])
     check("kt9b ...and a readable plan whose key is neither its task nor a "
           "redo's kept key gets git's unforced remover, which git refuses on "
           "a tree holding work: %r" % (readable,),
-          readable.get("P9.9", "").startswith("git worktree remove %s" % (other,))
+          (_posix_words(readable.get("P9.9", "")) or [])[:5]
+          == ["git", "worktree", "remove", other, "-"]
           and "--force" not in readable.get("P9.9", "-")
           and "task-remove P2.1" in readable.get("P2.1", ""))
     drv = _loader.load_script("drive-phase.py", "drive_phase_kt_key", cache=False)
@@ -4466,26 +4480,31 @@ def _kept_remedy_runs_cases(check):
                                  "P2.2 set aside 1": twin}}, fh)
     printed = _cli([mpath], root)[1].splitlines()
     rows = [ln for ln in printed if " %s - " % (tree,) in ln]
-    named = "git worktree remove --force %s" % (tree,)
-    saves = [ln.split("save first: ", 1)[1] for ln in printed
-             if "save first: " in ln and ("-C %s " % (tree,)) in ln]
-    saved = [subprocess.run(["sh", "-c", cmd], cwd=root, capture_output=True,
-                            encoding="utf-8", errors="replace") for cmd in saves]
+    named = _remedy_after(rows[0], tree) if len(rows) == 1 else None
+    saves = [cmd for cmd in (ln.split("save first: ", 1)[1] for ln in printed
+                             if "save first: " in ln)
+             if (_posix_words(cmd) or [])[1:3] == ["-C", tree]]
+    saved = [_run_as_written(cmd, root) for cmd in saves]
     bare = subprocess.run(["git", "worktree", "remove", tree], cwd=root,
                           capture_output=True, encoding="utf-8", errors="replace")
     check("kt6 OVER-FIRE of the remedy: the bare `git worktree remove` is refused "
           "on a kept tree holding work and a submodule, and the tree stands: %r"
           % ((bare.returncode, bare.stderr[-200:]),),
           bare.returncode != 0 and os.path.isfile(os.path.join(tree, "work.txt")))
-    ran = subprocess.run(named.split(" ")[:4] + [tree], cwd=root,
-                         capture_output=True, encoding="utf-8", errors="replace") \
-        if len(rows) == 1 and named in rows[0] else None
-    listed = _harness.git(root, "worktree", "list", "--porcelain")
+    # Listed before the remover runs, in the spelling the after-check reads,
+    # so "git lists it no more" is a change watched and not a spelling that
+    # never matched.
+    listed_before = _one_spelling(tree) in _listed_worktrees(root)
+    ran = _run_as_written(named, root) \
+        if _posix_words(named) == ["git", "worktree", "remove", "--force", tree] \
+        else None
     check("kt6b the remover the kept tree's row names is one git runs on a tree "
-          "holding work: run as written it takes the tree down, and git lists it "
-          "no more: %r" % ((rows, ran and (ran.returncode, ran.stderr[-200:])),),
+          "holding work: run as written in a POSIX shell it takes the tree "
+          "down, and git lists it no more: %r"
+          % ((rows, ran and (ran.returncode, ran.stderr[-200:])),),
           ran is not None and ran.returncode == 0 and not os.path.lexists(tree)
-          and ("worktree %s" % (tree,)) not in listed)
+          and listed_before
+          and _one_spelling(tree) not in _listed_worktrees(root))
     # The twin is taken down the same way with nothing saved first: what the
     # warning says --force destroys is gone once gc runs.
     subprocess.run(["git", "worktree", "remove", "--force", twin], cwd=root,
@@ -4503,9 +4522,11 @@ def _kept_remedy_runs_cases(check):
     check("kt8 the two save-first commands the forced row prints, run as "
           "written, keep the commit on the tree's detached HEAD and the commit "
           "only its submodule repository held through the forced remove and "
-          "a gc: %r" % ((saves, [(r.returncode, r.stderr[-200:]) for r in saved],
+          "a gc: %r" % ((saves, [r and (r.returncode, r.stderr[-200:])
+                                 for r in saved],
                          [(sha, resolves(sha)) for sha in kept_shas]),),
-          len(saves) == 2 and all(r.returncode == 0 for r in saved)
+          len(saves) == 2
+          and all(r is not None and r.returncode == 0 for r in saved)
           and all(root in resolves(sha) for sha in kept_shas))
     check("kt8b ...and the twin removed the same way with nothing saved loses "
           "both - the losses the warning names are real: %r"
@@ -4532,6 +4553,54 @@ def _kept_tree_holding_commits(root, where):
     _harness.git(where, "add", "top-%s.txt" % (os.path.basename(where),))
     _harness.git(where, "commit", "-qm", "detached only")
     return [_harness.git(where, "rev-parse", "HEAD").strip(), sub]
+
+
+# The kept-tree rows print commands for a POSIX shell (see `_shell_word` in
+# audit-status.py), so the `kt` cases judge a printed command by what that
+# shell READS from it, never by the raw path appearing in its text: a path
+# holding a space, or a Windows path's backslashes, is one word only when it
+# is quoted, and a case looking for the bare path would demand the spelling
+# a shell splits in two.
+def _posix_words(command):
+    """The words a POSIX shell reads in `command`, or None when it cannot be
+    read as one (an unbalanced quote)."""
+    try:
+        return shlex.split(command) if isinstance(command, str) else None
+    except ValueError:
+        return None
+
+
+def _remedy_after(row, path):
+    """The command a `KEPT TREES` row names for the tree at `path` - the text
+    after the row's ` <path> - `, or None when the row names no such tree."""
+    cut = (row or "").split(" %s - " % (path,), 1)
+    return cut[1] if len(cut) == 2 else None
+
+
+def _run_as_written(command, cwd):
+    """`command` run byte for byte under the POSIX shell this plugin resolves
+    for its own commands (`_proc_group.shell_invocation`: /bin/sh, or the sh
+    Git for Windows ships), as a person pasting the row would run it; None
+    when no such shell exists, which every caller reads as a failure."""
+    argv, env, _refusal = _proc_group.shell_invocation(command)
+    if argv is None:
+        return None
+    return subprocess.run(argv, cwd=cwd, env=env, capture_output=True,
+                          encoding="utf-8", errors="replace")
+
+
+def _listed_worktrees(root):
+    """Every worktree `git worktree list` names for `root`, in one spelling:
+    git writes forward slashes on Windows and resolves a temp root reached
+    through a link, so each path is realpath'd and normcase'd, and a path is
+    looked up through `_one_spelling` too."""
+    out = _harness.git(root, "worktree", "list", "--porcelain")
+    return set(_one_spelling(ln[len("worktree "):]) for ln in out.splitlines()
+               if ln.startswith("worktree "))
+
+
+def _one_spelling(path):
+    return os.path.normcase(os.path.realpath(path))
 
 
 def _other_checkout_cases(check):
