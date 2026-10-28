@@ -1193,8 +1193,19 @@ def staged_selftest(stages, namespace, prefix, only=()):
 # when it never finished), `out` (its output) and `why` (set when it never
 # finished or never started). The sweep owns the writing, this the reading, and
 # `block_result` is the one reading of a block for both runners.
+#
+# A SHARDED SWEEP DEALS ONE SUITE'S BLOCKS TO SEVERAL PARTS, each a CI job of its
+# own, and each part replays the suite over the blocks it ran. The list then
+# also names every block dealt to another part, as `{label, elsewhere}`; such a
+# block is neither run nor missing here, and the replay says how many there
+# were. A label listed both as run here and as run elsewhere is a block run
+# twice. A case id claimed by blocks in two different parts is the one fault a
+# part cannot see; an unsharded run of the suite reads it.
 REPLAY_LINE = ("stage pool: %d blocks run by the sweep, each a job of its own, "
                "replayed here\n")
+REPLAY_PART_LINE = ("stage pool: %d of the suite's %d blocks run by this part of "
+                    "a sharded sweep, replayed here; the other %d ran in other "
+                    "parts and are replayed there\n")
 
 
 def replayed(stages, entries):
@@ -1207,15 +1218,24 @@ def replayed(stages, entries):
     A LABEL RUN TWICE IS NOT A BLOCK THAT RAN. Which of its runs stands for the
     block cannot be said - one may have passed and the other failed - so the
     caller fails it by name; the first run's result is still replayed, so its
-    cases stay readable."""
-    by, runs = {}, {}
+    cases stay readable.
+
+    AN ENTRY CARRYING `elsewhere` is a block another part of a sharded sweep
+    ran: it yields no result here, and it counts as a run, so a block listed
+    both ways is a block run twice."""
+    by, runs, away = {}, {}, set()
     for entry in entries:
         label = entry.get("label")
-        by.setdefault(label, entry)
         runs[label] = runs.get(label, 0) + 1
+        if entry.get("elsewhere"):
+            away.add(label)
+            continue
+        by.setdefault(label, entry)
     results = []
     for label, _fn in stages:
         entry = by.get(label)
+        if entry is None and label in away:
+            continue
         if entry is None:
             results.append(block_result(
                 label, None, None, "", "", "the sweep ran no block by this "
@@ -1224,7 +1244,8 @@ def replayed(stages, entries):
         results.append(block_result(label, entry.get("cases"), entry.get("code"),
                                     entry.get("out"), "", entry.get("why") or ""))
     staged = set(label for label, _fn in stages)
-    strays = sorted("%s" % (label,) for label in by if label not in staged)
+    strays = sorted("%s" % (label,) for label in set(by) | away
+                    if label not in staged)
     twice = dict(("%s" % (label,), n) for label, n in runs.items() if n > 1)
     return results, strays, twice
 
@@ -1249,7 +1270,12 @@ def replay_selftest(stages, namespace, path):
                   "not a list", False, repr(entries)[:200])
             return
         results, strays, twice = replayed(stages, entries)
-        sys.stdout.write(REPLAY_LINE % (len(results),))
+        away = len(stages) - len(results)
+        if away > 0:
+            sys.stdout.write(REPLAY_PART_LINE % (len(results), len(stages),
+                                                 away))
+        else:
+            sys.stdout.write(REPLAY_LINE % (len(results),))
         replay_results(check, results)
         for label in strays:
             check("%s RAN BUT IS NOT STAGED - the sweep ran a block this "
@@ -2233,6 +2259,21 @@ def _stage_runner_cases(check):
           code == 1 and len(fails) == 1
           and fails[0].startswith("FAIL b-block RAN 2 TIMES")
           and out.count("PASS y1 ") == 1 and out.count("PASS x1 ") == 1)
+    # A part of a sharded sweep ran `a-block` and was told `b-block` ran in
+    # another part: green over its own cases, the other block's neither run
+    # nor read as missing - the shape sr15 reports as a failure when the
+    # list does not say where `b-block` went.
+    code, out, _err = replay([a_entry, {"label": "b-block",
+                                        "elsewhere": "another part"}])
+    fails = [line for line in out.splitlines() if line.startswith("FAIL ")]
+    check("sr20 ...and a block the list names as run in another part of a "
+          "sharded sweep is neither replayed nor failed here, the part's own "
+          "blocks replay green, and the pool line counts both: exit %r, %r"
+          % (code, out[-400:]),
+          code == 0 and fails == [] and out.count("PASS x1 ") == 1
+          and "PASS y1 " not in out
+          and out.count(REPLAY_PART_LINE % (1, 2, 1)) == 1
+          and REPLAY_LINE % (1,) not in out)
 
     # A block's output reaches the replay as text the sweep decoded, and the
     # replay prints it to a stream in the child's own codec - strict cp1252 on a

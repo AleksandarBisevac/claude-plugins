@@ -193,23 +193,31 @@ DEFAULT_TIMEOUT = 300
 STAGE_GRANT_VAR = "SWEEP_STAGE_GRANT"
 FILE_TIMEOUT_VAR = "SWEEP_FILE_TIMEOUT"
 STAGE_GRANT_MAX = 6
-# THE PER-FILE TIMEOUT IS A HANG DETECTOR, calibrated per file from the cost
-# table rather than one cap for every file: `DEFAULT_TIMEOUT` (or `--timeout`)
-# is the floor, and a file the table records as heavy gets this many times its
-# recorded slot-seconds over the slots it holds now (`file_timeout`). So the
-# table decides two things, the shard split and these timeouts, and a stale
-# one can cost both: balance, and a timeout too tight for a file that grew past
-# this factor of its entry. It cannot cost coverage, and staleness by OMISSION
-# cannot tighten anything - a staged suite the table does not time is given the
-# largest timeout any entry would get at the same slots, an ordinary file the
-# floor. The table is recorded from windows logs (`--costs-from-log`), the
-# platform that binds, and keeps the longer timing when a log carries a file
-# twice, so its seconds already carry that platform's slowness and the factor
-# covers only how one windows run differs from another. Across runs
-# 38379717433 and 38382182020, plain and cp1252 cells both, no file timed at
-# 20s or more varied by more than 1.51x between its four timings, and a
-# factor of three over the longest of them is about twice that spread.
-# Re-derive it from the same comparison when the table is re-recorded.
+# THE PER-JOB TIMEOUT IS A HANG DETECTOR, calibrated per file - and per block
+# of a staged suite - from the cost table rather than one cap for every job:
+# `DEFAULT_TIMEOUT` (or `--timeout`) is the floor, and a job the table records
+# as heavy gets this many times its recorded slot-seconds over the slots it
+# holds now (`file_timeout`, `block_timeout`). So the table decides two
+# things, the shard split and these timeouts, and a stale one can cost both:
+# balance, and a timeout too tight for a job that grew past this factor of its
+# entry. It cannot cost coverage, and staleness by OMISSION cannot tighten
+# anything - a staged suite the table does not time is given the largest
+# timeout any entry would get, an ordinary file the floor. The table is
+# recorded from windows logs (`--costs-from-log`), the platform that binds, and
+# keeps the longer timing when the logs carry a job twice - the plain and the
+# cp1252 leg - so its seconds already carry that platform's slowness and the
+# factor covers only how one windows run differs from another. That spread has
+# grown: across runs 38379717433 and 38382182020 no file timed at 20s or more
+# varied by more than 1.51x between its four timings; within run 40549328014
+# a file's plain and cp1252 timings differed by up to 1.87x and within run
+# 40715565769 by up to 1.68x; and across those two runs the four timings of
+# `tools/prove-gates.py` spanned 3.22x, the slowest of them 2.44x the figure
+# the table recorded from the second run. A factor of three still sits over
+# that last ratio, which is the one a timeout has to fit; it is no longer
+# twice the spread. Re-derive the comparison when the table is re-recorded:
+# `costs_from_render` over each saved leg's logs, then the largest ratio
+# between the timings of each file above 20s, and of each timing to the
+# figure the table holds.
 TIMEOUT_PER_COST = 3
 # ...AND THE SWEEP NAMES A HUNG FILE BEFORE THE CI RUNNER KILLS THE JOB. A
 # runner that reaches the job's `timeout-minutes` cancels it and names no
@@ -217,19 +225,25 @@ TIMEOUT_PER_COST = 3
 # timeout is cut to what is left of `SWEEP_DEADLINE` seconds from the sweep's
 # start: a file that starts late, behind a staged suite that held the slots,
 # is given only the remainder. The arithmetic, against the `selftests` job's
-# `timeout-minutes: 26` in ci.yml = 1560s: `CI_SETUP_ALLOWANCE` for what the
+# `timeout-minutes: 33` in ci.yml = 1980s: `CI_SETUP_ALLOWANCE` for what the
 # cell does besides the sweep - checkout of the whole history, setup-python,
 # the post steps, and this runner's own discovery and render (the windows
 # cells of runs 38379717433 and 38382182020 spent 12-18s before the sweep
-# step and under 5s after it) - leaves 1440s, and the deadline sits 60s under
-# that, so the render that names the hung file has a minute to print it. The
-# deadline in turn sits above the heaviest calibrated timeout the table gives
-# (tt5 prints it), so it cuts a hang and never a heavy file's margin; when
-# this table was recorded that file was `test_drive_phase.py` at 1347s, which
-# is what moved the job from 25 minutes to 26 and no further. Case tt5 reads
-# the job's figure out of ci.yml and the table off disk, and fails when any of
-# the three stops fitting.
-SWEEP_DEADLINE = 1380
+# step and under 5s after it; those of run 40715565769 spent 15-41s before
+# it) - leaves 1860s, and the deadline sits 60s under that, so the render that
+# names the hung file has a minute to print it. The deadline in turn sits
+# above the heaviest calibrated timeout the table gives (tt5 prints it, with
+# the job it belongs to and its basis), so it cuts a hang and never a heavy
+# job's margin. Once the table timed blocks one by one that job was a single
+# block, `ar-block` of `test_drive_phase.py`, whose figure on the table of
+# 2026-10-28 called for 1789s - which is what moved the deadline from 1380s
+# and the job from 26 minutes to 33, while each part's own run is estimated
+# well under the old bound (ci.yml's `longest selftests` line carries that
+# estimate and its basis). A lighter heaviest block is what lets both come
+# back down. Case tt5 reads the job's
+# figure out of ci.yml and the table off disk, and fails when any of the
+# three stops fitting.
+SWEEP_DEADLINE = 1800
 CI_SETUP_ALLOWANCE = 120
 # ...AND PAST IT NO JOB STARTS, except a replay, which is given at least this
 # many seconds however little of the deadline is left. A replay runs on the
@@ -1484,31 +1498,46 @@ def slot_gate(slots):
 # --- shards: one leg split across several CI jobs -----------------------------
 # A leg run as ONE job is as slow as the whole tree on one runner. `--shard I/N`
 # runs the I-th of N parts, and the parts are built so that running all N runs
-# every file exactly once (`sh0`) - whatever the cost table says, because the table
-# only decides WHERE a file goes, never WHETHER. It also sets each file's timeout
-# (`file_timeout`, above), so a stale table can cost balance and a timeout too
-# tight for a file that grew past `TIMEOUT_PER_COST` times its entry, and never
+# every file - and every BLOCK of a staged suite - exactly once (`sh0`, `sd2`),
+# whatever the cost table says, because the table only decides WHERE a unit
+# goes, never WHETHER. It also sets each unit's timeout (`file_timeout`,
+# `block_timeout`, above), so a stale table can cost balance and a timeout too
+# tight for a unit that grew past `TIMEOUT_PER_COST` times its entry, and never
 # coverage. Staleness by omission costs neither a timeout nor a red sweep: an
 # entry naming a file no longer swept is ignored by the split, a swept file with
 # no entry is estimated for it and given a timeout no tighter than a recorded
-# file of its kind (tt0), and `table_notes()` reports either as a note.
+# unit of its kind (tt0, bk1), and `table_notes()` reports either as a note.
+#
+# THE UNIT IS A BLOCK, NOT A SUITE. A staged suite whose `STAGES` table the sweep
+# reads is dealt out block by block (`shard_units`): dealt as one file, the
+# heaviest suite held a part alone and set the whole run's critical path, while
+# the other parts finished in half the time. Each part runs the blocks it was
+# dealt and replays the suite over THEM (`part` in `sweep`); the replay list
+# names the blocks dealt elsewhere as such (`_harness.replayed`), so a part's
+# row is green over its own blocks and no block is read as missing. What one
+# part cannot see is a case id claimed by blocks in two different parts: that
+# check runs wherever the suite's blocks run in one sweep - every unsharded
+# run, the local sweep `verify.sh` runs included.
 #
 # BALANCED BY RECORDED COST, not by count. The staged suites take minutes while
 # most files take a second, so an even count can put two of them in one part and
 # leave that job the critical path of the whole run. The split is greedy
-# least-loaded over the files heaviest first, which keeps the heaviest in different
-# parts while there are parts to spare (`sh2`) and bounds any two parts' loads
-# within the single costliest file (`sh3`).
+# least-loaded over the units heaviest first, which keeps the heaviest in
+# different parts while there are parts to spare (`sh2`) and bounds any two
+# parts' loads within the single costliest unit (`sh3`, `sd1`).
 #
 # THE COSTS ARE RECORDED, NOT TYPED: `--record-costs .github/sweep-costs.json` writes
-# what a run measured, per file, as SLOT-SECONDS - what the file took out of the
-# budget (`costs_from_rows` says how a suite run block by block and one run whole
-# are each counted), so a staged suite weighs what it took out of a cell and not
-# only how long it ran. They are one platform's seconds, the table's
-# `platform` field says which, and it is recorded from windows because that
-# platform binds: the split reads only how files compare to each other, which
-# holds across machines far better than any one figure does, but a timeout
-# reads the figure itself, and a darwin figure under-states a windows file.
+# what a run measured as SLOT-SECONDS - what a unit took out of the budget - per
+# file under `costs`, and per block of a staged suite under `blocks`
+# (`costs_from_rows` and `block_costs_from_rows` say how each is counted), so a
+# staged suite weighs what it took out of a cell and not only how long it ran. A
+# suite with block figures has the sum of them as its file figure, which is
+# what lets the logs of parts that split its blocks record it whole. They are
+# one platform's seconds, the table's `platform` field says which, and it is
+# recorded from windows because that platform binds: the split reads only how
+# units compare to each other, which holds across machines far better than any
+# one figure does, but a timeout reads the figure itself, and a darwin figure
+# under-states a windows one.
 # KEPT UNDER `.github/`, not beside this file: it is CI's input, and a table of
 # repo paths under `tools/` would be read as basename references by `_refs`'
 # tool-name lint, which resolves names against the plugin's trees alone.
@@ -1531,6 +1560,29 @@ def load_costs(path):
             isinstance(v, (int, float)) for v in costs.values()):
         return {}, "%s carries no `costs` object of numbers" % (path,)
     return dict((k, float(v)) for k, v in costs.items()), None
+
+
+def load_block_costs(path):
+    """`({repo-relative path: {block label: seconds}}, problem)` - the table's
+    per-block figures. A table with no `blocks` object has none to give, which
+    is not a problem: every block then takes its suite's figure over its
+    blocks (`block_figure`). One whose `blocks` is not that shape is a problem
+    the caller prints, and gives nothing."""
+    try:
+        with io.open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (IOError, OSError, ValueError) as exc:
+        return {}, "no cost table read from %s (%s)" % (path, exc)
+    blocks = data.get("blocks", {}) if isinstance(data, dict) else None
+    shaped = isinstance(blocks, dict) and all(
+        isinstance(figs, dict)
+        and all(isinstance(v, (int, float)) for v in figs.values())
+        for figs in blocks.values())
+    if not shaped:
+        return {}, ("%s carries a `blocks` object that is not {path: {label: "
+                    "seconds}}" % (path,))
+    return dict((p, dict((lab, float(v)) for lab, v in figs.items()))
+                for p, figs in blocks.items()), None
 
 
 def _median(costs):
@@ -1577,32 +1629,132 @@ def cost_of(costs, path, estimate=None):
     return _median(costs) if estimate is None else estimate
 
 
-def run_order(paths, costs):
-    """`paths` costliest first, ties by path - the order `shard_paths` deals
-    files out in, so the heaviest land in different parts. It is not the order
-    a sweep submits in: that is `work_items`, which weighs a staged suite's
-    blocks one by one."""
-    costs = _live(costs, paths)
-    estimate = _median(costs)
-    return sorted(set(paths), key=lambda p: (-cost_of(costs, p, estimate), p))
+def block_figure(path, label, labels, costs, block_costs):
+    """`(slot-seconds, basis)` for block `label` of the staged suite `path`
+    whose blocks are `labels`: its own recorded figure (`"block"`), else its
+    suite's figure over its blocks (`"suite"`), else `(None, "untimed")`.
+
+    THE EVEN SHARE IS A FALLBACK, NOT AN ESTIMATE OF ANY ONE BLOCK: a suite's
+    blocks differ by two orders of magnitude, so the share stands in only
+    until a run has recorded the block, and the basis travels with the figure
+    so every reader can say which it used."""
+    own = (block_costs or {}).get(path) or {}
+    if label in own:
+        return own[label], "block"
+    if path in (costs or {}):
+        return costs[path] / max(1, len(labels)), "suite"
+    return None, "untimed"
 
 
-def shard_paths(paths, costs, count):
-    """`count` lists, each sorted, that partition `paths` - part I-1 is shard I/N.
+def _calibrated(cost, slots=1):
+    """`TIMEOUT_PER_COST` times `cost` spread over `slots`, rounded up."""
+    return int(-(-TIMEOUT_PER_COST * cost // max(1, slots)))
 
-    Greedy least-loaded over `run_order`, a tie going to the part holding fewer
-    files and then to the lower index, so the split is a function of the set of
-    paths and the table alone. The file-count tie-break is what keeps a part from
-    staying empty when costs round to zero."""
-    costs = _live(costs, paths)
-    estimate = _median(costs)
+
+def block_timeout(path, label, labels, costs, block_costs,
+                  floor=DEFAULT_TIMEOUT, cap=None):
+    """`(seconds, basis)` that block `label` of `path` may run, on the one slot
+    a block holds: `TIMEOUT_PER_COST` times its figure (`block_figure`, whose
+    basis this returns), never under `floor` and never over `cap`.
+
+    A SUITE THE TABLE DOES NOT TIME AT ALL is the stale-table case, and a block
+    of it must never be given less than a recorded one would: it gets the
+    largest timeout any entry gives at one slot - every block figure, and the
+    figure of every file the table holds no blocks for, a ghost's included,
+    which is what a rename leaves behind (`"untimed"`)."""
+    cost, basis = block_figure(path, label, labels, costs, block_costs)
+    if cost is not None:
+        seconds = _calibrated(cost)
+    else:
+        figures = [v for figs in (block_costs or {}).values()
+                   for v in figs.values()]
+        figures += [v for p, v in (costs or {}).items()
+                    if p not in (block_costs or {})]
+        seconds = max([_calibrated(v) for v in figures] or [floor])
+    seconds = max(floor, seconds)
+    return (seconds if cap is None else min(cap, seconds)), basis
+
+
+def unit_costs(paths, costs, blocks=None, block_costs=None):
+    """`{(path, label or None): slot-seconds}` for every unit the sweep runs
+    over `paths`: each block of a suite `blocks` gives labels for, at
+    `block_figure`, and every other file whole. A unit the table has no
+    figure for is ESTIMATED from the median of the live files' figures - the
+    median and not zero, since a split that thinks a unit is free piles every
+    such unit into whichever part is lightest."""
+    live = _live(costs or {}, paths)
+    estimate = _median(live)
+    units = {}
+    for path in set(paths):
+        labels = (blocks or {}).get(path)
+        if not labels:
+            units[(path, None)] = cost_of(live, path, estimate)
+            continue
+        for label in labels:
+            cost, _basis = block_figure(path, label, labels, live, block_costs)
+            units[(path, label)] = (estimate / len(labels) if cost is None
+                                    else cost)
+    return units
+
+
+def shard_units(paths, costs, count, blocks=None, block_costs=None):
+    """`count` parts, each a sorted list of `(path, label or None)` units, that
+    partition every file of `paths` and every block of each suite `blocks`
+    gives labels for - part I-1 is shard I/N.
+
+    Greedy least-loaded over the units costliest first (`unit_costs`), ties by
+    path and label, each tie in load going to the part holding fewer units and
+    then to the lower index, so the split is a function of the paths, the
+    labels and the table alone. The unit-count tie-break is what keeps a part
+    from staying empty when costs round to zero."""
+    units = unit_costs(paths, costs, blocks, block_costs)
     loads = [0.0] * count
     parts = [[] for _ in range(count)]
-    for path in run_order(paths, costs):
+    for unit in sorted(units, key=lambda u: (-units[u], u[0], u[1] or "")):
         at = min(range(count), key=lambda k: (loads[k], len(parts[k]), k))
-        parts[at].append(path)
-        loads[at] += cost_of(costs, path, estimate)
-    return [sorted(part) for part in parts]
+        parts[at].append(unit)
+        loads[at] += units[unit]
+    return [sorted(part, key=lambda u: (u[0], u[1] or "")) for part in parts]
+
+
+def shard_plan(part, blocks):
+    """`(paths, only)` that `sweep` runs for one part of `shard_units`: the
+    files it touches, sorted, and `{path: labels}` for each staged suite of
+    which it holds only some blocks, in `STAGES` order. A suite the part holds
+    whole is not in `only`, so it is run and replayed as in an unsharded
+    sweep."""
+    paths = sorted(set(p for p, _label in part))
+    here = {}
+    for path, label in part:
+        if label is not None:
+            here.setdefault(path, set()).add(label)
+    only = dict((p, [lab for lab in blocks[p] if lab in held])
+                for p, held in here.items()
+                if set(blocks.get(p) or []) != held)
+    return paths, only
+
+
+def shard_line(index, count, parts, swept, costs, block_costs, blocks, table):
+    """The line `--shard` prints with its part: what it holds, its load beside
+    every part's, and the basis of those loads - which table, how many files
+    it timed rather than estimated, and how many blocks were weighed by their
+    own figure rather than by their suite's figure over its blocks."""
+    flat = [u for part in parts for u in part]
+    figures = unit_costs(sorted(set(p for p, _l in flat)), costs, blocks,
+                         block_costs)
+    mine = parts[index - 1]
+    loads = ["%.0f" % sum(figures[u] for u in part) for part in parts]
+    files = sorted(set(p for p, _l in mine))
+    held = [u for u in mine if u[1] is not None]
+    own = len([u for u in held if u[1] in (block_costs or {}).get(u[0], {})])
+    timed = len([p for p in files if p in costs])
+    return ("shard %d/%d: %d files of the %d swept, %d blocks of their staged "
+            "suites; %s slot-seconds of the parts' %s, split by %s (%d files "
+            "timed there, %d estimated at its median; %d blocks weighed by "
+            "their own figure, %d by their suite's over its blocks)\n"
+            % (index, count, len(files), swept, len(held), loads[index - 1],
+               " / ".join(loads), table, timed, len(files) - timed, own,
+               len(held) - own))
 
 
 def parse_shard(text):
@@ -1628,30 +1780,70 @@ def costs_from_rows(rows):
                 for r in rows if r.get("seconds") is not None)
 
 
-def record_costs(path, rows, swept, jobs, platform=None):
-    """Write the cost table: this run's timings over the table already at `path`,
-    keeping only files the sweep still reaches, so one shard's run refreshes its
-    own files and a deleted file leaves the table. `platform` is where the
-    timings were taken - this machine's unless they were read off another's
-    log."""
-    old, _problem = load_costs(path)
+def block_costs_from_rows(rows):
+    """{path: {label: seconds, rounded}} for every block a run timed - each on
+    the one slot a block holds, so its seconds are its slot-seconds. A killed
+    block's are how long it was allowed, which is a floor for its cost."""
+    return dict((r["path"], dict((lab, round(s, 1))
+                                 for lab, s in r["block_seconds"].items()))
+                for r in rows if r.get("block_seconds"))
+
+
+def merge_costs(old, old_blocks, files, blocks, swept, labels=None):
+    """`(costs, blocks)` of a table: `files` and `blocks` measured now, over
+    the `old` ones, keeping only files in `swept` and - when `labels`
+    (`{path: labels}`) is given - only the blocks each suite still stages.
+
+    A BLOCK IS MERGED ONE BY ONE, never a suite at a time: a part of a sharded
+    sweep ran only some of a suite's blocks, and the rest stay as the part
+    that ran them recorded them - so does a block a deadline refused, which
+    a suite's own row would have summed as nothing. A suite with block
+    figures then has their sum as its file figure, whatever share of it one
+    run or one log carried."""
     merged = dict((k, v) for k, v in old.items() if k in swept)
-    merged.update(costs_from_rows(rows))
-    data = {"about": "Per-file slot-seconds of each `--selftest` - what the "
-                     "file took out of the sweep's budget: each process it "
-                     "ran as, its seconds times the slots it held, summed. A "
-                     "suite run block by block ran one process per block and "
-                     "one replay, each on one slot, so its figure is those "
-                     "processes' seconds summed; a file run whole is its "
-                     "seconds times the slots it held - written by "
-                     "`python3 tools/sweep-selftests.py --record-costs "
-                     ".github/sweep-costs.json`, or from a saved windows CI "
-                     "log with `--costs-from-log`. `--shard` reads how files "
-                     "compare, to balance the parts, and each file's timeout "
-                     "is a multiple of its own figure; re-record when the "
-                     "split it prints looks lopsided or a file has grown.",
+    merged.update(files)
+    by_block = {}
+    for source in (old_blocks, blocks):
+        for p, figs in source.items():
+            if p in swept:
+                by_block.setdefault(p, {}).update(figs)
+    if labels is not None:
+        by_block = dict((p, dict((lab, v) for lab, v in figs.items()
+                                 if lab in (labels.get(p) or [])))
+                        for p, figs in by_block.items())
+    by_block = dict((p, figs) for p, figs in by_block.items() if figs)
+    for p, figs in by_block.items():
+        merged[p] = round(sum(figs.values()), 1)
+    return merged, by_block
+
+
+def record_costs(path, rows, swept, jobs, platform=None, labels=None):
+    """Write the cost table: this run's timings over the table already at
+    `path` (`merge_costs`), keeping only files the sweep still reaches and,
+    given `labels`, only blocks their suites still stage - so one shard's run
+    refreshes its own files and blocks, and a deleted file or block leaves the
+    table. `platform` is where the timings were taken - this machine's unless
+    they were read off another's log."""
+    old, _problem = load_costs(path)
+    old_blocks, _problem = load_block_costs(path)
+    merged, by_block = merge_costs(old, old_blocks, costs_from_rows(rows),
+                                   block_costs_from_rows(rows), swept, labels)
+    data = {"about": "Slot-seconds of each `--selftest` - what it took out of "
+                     "the sweep's budget, its seconds times the slots it "
+                     "held. `blocks` holds each block of a suite run block "
+                     "by block, each its own process on one slot, and that "
+                     "suite's figure under `costs` is its blocks' summed; "
+                     "every other file's is its seconds times the slots it "
+                     "held - written by `python3 tools/sweep-selftests.py "
+                     "--record-costs .github/sweep-costs.json`, or from the "
+                     "saved windows CI logs of every part with "
+                     "`--costs-from-log`. `--shard` reads how files and "
+                     "blocks compare, to balance the parts, and each one's "
+                     "timeout is a multiple of its own figure; re-record "
+                     "when the split it prints looks lopsided or a suite has "
+                     "grown.",
             "platform": platform or sys.platform, "workers": jobs,
-            "costs": merged}
+            "costs": merged, "blocks": by_block}
     with io.open(path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(json.dumps(data, indent=1, sort_keys=True) + "\n")
 
@@ -1683,36 +1875,47 @@ def record_costs(path, rows, swept, jobs, platform=None):
 #
 # ORDER: every job by its estimated cost, costliest first (`work_items`), and
 # submitted in that order (case sh6 reads it off a real run). A block's
-# estimate is its file's recorded cost spread evenly over its blocks, since the
-# table times files and not blocks; that is longest-first list scheduling over
-# the budget, and it puts the heavy plain files ahead of a staged suite's many
-# small blocks instead of behind all of them.
+# estimate is its own recorded figure, or its file's figure spread evenly over
+# its blocks where the table has none for it (`block_figure`); that is
+# longest-first list scheduling over the budget, and it puts the heavy plain
+# files - and a suite's heaviest blocks - ahead of the many small ones instead
+# of behind them.
 #
-# A BLOCK'S TIMEOUT is its file's calibrated timeout at the slots a grant would
-# have given it (`file_timeout` at `stage_grant(jobs)`, `staged` so an untimed
-# suite gets the largest any entry would), which is what a block was allowed
-# when the suite ran its own pool, still cut by the deadline; cases bt1-bt3
-# read it off each block's environment. The replay is allowed the floor, cut
-# by the deadline no lower than `REPLAY_RESERVE`; past the deadline no other
-# job starts, and each is named as not started (`not_started`).
+# A BLOCK'S TIMEOUT is the per-cost factor times its own figure at the one
+# slot it holds (`block_timeout`), or times its suite's figure over its blocks
+# when it has none, still cut by the deadline; the basis each block's timeout
+# used is counted on the suite's row (`timeout_basis`) and on the budget line,
+# and cases bk1, bk2 and bt1-bt3 read it off each block's environment. The
+# replay is allowed the floor, cut by the deadline no lower than
+# `REPLAY_RESERVE`; past the deadline no other job starts, and each is named
+# as not started (`not_started`).
 #
 # COSTS: a suite run this way holds one slot per process, so its row's
-# `seconds` - every block's and the replay's, summed (`suite_ran`) - are
-# already the slot-seconds `--record-costs` writes (`costs_from_rows`).
-def work_items(paths, costs, blocks):
+# `seconds` - every block's and the replay's, summed (`suite_ran`) - are the
+# slot-seconds it took, and each block's own are on the row too
+# (`block_seconds`), printed one line a block by the loud form, which is what
+# `--record-costs` and `--costs-from-log` write per block.
+def work_items(paths, costs, blocks, block_costs=None, only=None):
     """`[(path, label or None)]`, the sweep's jobs in the order it submits
-    them: one per block of each suite `blocks` gives labels for, one per any
-    other file. Costliest estimate first, ties by path and then by the block's
-    place in its table, so the order is a function of its arguments alone."""
-    live = _live(costs or {}, paths)
-    estimate = _median(live)
+    them: one per block of each suite `blocks` gives labels for - only the
+    labels `only` names for a suite it names - and one per any other file.
+    Costliest estimate first (`unit_costs`), ties by path and then by the
+    block's place in its table, so the order is a function of its arguments
+    alone."""
+    units = unit_costs(paths, costs, blocks, block_costs)
     jobs = []
-    for path in set(paths):
-        cost = cost_of(live, path, estimate)
-        labels = blocks.get(path) or [None]
-        jobs.extend((-cost / len(labels), path, at, label)
-                    for at, label in enumerate(labels))
+    for (path, label), cost in units.items():
+        labels = (blocks or {}).get(path) or [None]
+        if label is not None and path in (only or {}) \
+                and label not in only[path]:
+            continue
+        jobs.append((-cost, path, labels.index(label), label))
     return [(path, label) for _cost, path, _at, label in sorted(jobs)]
+
+
+# What a replay list says of a block dealt to another part of a sharded sweep
+# (`_harness.replayed` reads any non-empty value as that).
+ELSEWHERE = "dealt to another part of this sharded sweep"
 
 
 def block_entry(label, cases_path, ran):
@@ -1745,7 +1948,18 @@ def suite_ran(path, blocks_ran, replay):
 
     A BLOCK THAT NEVER FINISHED LEAVES NO DEBRIS ON THE FILE: what a kill
     leaves in its scratch is the kill's, the rule `grade` applies to a file,
-    and the block is already a failing case in the replay."""
+    and the block is already a failing case in the replay.
+
+    EACH BLOCK'S OWN SECONDS travel as `block_seconds` - a killed block's are
+    how long it was allowed, a floor for its cost, and a block never started
+    has none - and how many blocks took each basis for their timeout
+    (`block_timeout`) as `timeout_basis`."""
+    block_seconds = dict((label, ran["seconds"]) for label, ran in blocks_ran
+                         if ran.get("seconds") is not None)
+    basis = {}
+    for _label, ran in blocks_ran:
+        if ran.get("basis"):
+            basis[ran["basis"]] = basis.get(ran["basis"], 0) + 1
     debris = []
     for label, ran in blocks_ran:
         if ran["code"] is not None:
@@ -1761,7 +1975,8 @@ def suite_ran(path, blocks_ran, replay):
             "seconds": sum(t for t in timed if t is not None),
             "timeout": max([ran.get("timeout") or 0
                             for _label, ran in blocks_ran] or [0]) or None,
-            "windows": spans}
+            "windows": spans, "block_seconds": block_seconds,
+            "timeout_basis": basis}
 
 
 def exempt_row(rel_path, reason):
@@ -1772,7 +1987,8 @@ def exempt_row(rel_path, reason):
 
 def sweep(paths, jobs=None, repo=None, encoding=None,
           timeout=DEFAULT_TIMEOUT, spaced=False, exempt=None, costs=None,
-          deadline=None, locale_vars=None, os_name=None):
+          deadline=None, locale_vars=None, os_name=None, block_costs=None,
+          part=None):
     """Run every path and return one graded row per file, sorted by path.
 
     `locale_vars` is the encoding pass's locale pins as `locale_decision`
@@ -1780,11 +1996,14 @@ def sweep(paths, jobs=None, repo=None, encoding=None,
 
     The jobs are blocks as well as files: a staged suite whose `STAGES` table
     can be read runs one job per block and then a replay, the model the
-    `blocks, not suites` comment above `work_items` states. `costs` orders the
-    submissions (`work_items`, costliest estimate first) and sets each job's
-    timeout (`file_timeout`, a block's at the slots a grant would have held);
-    each row carries the `seconds` its processes took, which `--record-costs`
-    writes down, and the slots it held (`grant`). `deadline`, seconds from
+    `blocks, not suites` comment above `work_items` states. `costs` and
+    `block_costs` order the submissions (`work_items`, costliest estimate
+    first) and set each job's timeout (`file_timeout` for a file,
+    `block_timeout` for a block); each row carries the `seconds` its processes
+    took and, for a suite run as blocks, each block's, which `--record-costs`
+    writes down, and the slots it held (`grant`). `part`, `{path: labels}`
+    from `shard_plan`, runs only those blocks of each suite it names, and that
+    suite's replay is told the rest ran in other parts. `deadline`, seconds from
     this call, cuts each job's timeout to what is left of it when the job is
     admitted, so a file that hangs is named by then however late it started
     (`sweep_deadline`), and a job admitted after it is not started but named
@@ -1813,14 +2032,16 @@ def sweep(paths, jobs=None, repo=None, encoding=None,
     rows.extend(exempt_row(p, exempt[p]) for p in paths if p in exempt)
     paths = [p for p in paths if p not in exempt]
     blocks = staged_blocks(paths, repo)
-    items = work_items(paths, costs, blocks)
+    part = dict((p, labels) for p, labels in (part or {}).items()
+                if blocks.get(p))
+    items = work_items(paths, costs, blocks, block_costs, part)
     grant = stage_grant(jobs)
     wait, done = slot_gate(jobs)
     started = time.time()
     # Per staged suite run as blocks: the blocks still to end, and what each
     # one that has ended left, under one lock.
     lock = threading.Lock()
-    pending_blocks = dict((p, {"left": len(labels), "ran": []})
+    pending_blocks = dict((p, {"left": len(part.get(p, labels)), "ran": []})
                           for p, labels in blocks.items() if labels)
 
     def child(path, held, cap_timeout, extra=(), reserve=0):
@@ -1845,9 +2066,12 @@ def sweep(paths, jobs=None, repo=None, encoding=None,
 
     def one_block(ticket, path, label):
         cases_path = os.path.join(box, "%d.json" % (ticket,))
-        ran = child(path, 1, file_timeout(path, costs, timeout, grant,
-                                          staged=True),
+        seconds, basis = block_timeout(path, label, blocks[path], costs,
+                                       block_costs, timeout)
+        ran = child(path, 1, seconds,
                     ("--stage", label, "--cases-to", cases_path))
+        if not ran.get("refused"):
+            ran = dict(ran, basis=basis)
         with lock:
             state = pending_blocks[path]
             state["ran"].append((label, cases_path, ran))
@@ -1862,11 +2086,15 @@ def sweep(paths, jobs=None, repo=None, encoding=None,
             return not_started(path, deadline)
         # THE LAST BLOCK OF THE SUITE TO END starts its replay, on the slot it
         # holds: the order the blocks ended in is the scheduler's, and the
-        # replay puts them back in `STAGES` order.
+        # replay puts them back in `STAGES` order. A block this part was not
+        # dealt is listed as run elsewhere, so the replay neither runs nor
+        # misses it.
         listed = os.path.join(box, "%d.replay.json" % (ticket,))
+        away = [{"label": lab, "elsewhere": ELSEWHERE} for lab in blocks[path]
+                if path in part and lab not in part[path]]
         with io.open(listed, "w", encoding="utf-8") as fh:
-            json.dump([block_entry(lab, cp, r) for lab, cp, r in state["ran"]],
-                      fh)
+            json.dump([block_entry(lab, cp, r) for lab, cp, r in state["ran"]]
+                      + away, fh)
         replay = child(path, 1, timeout, ("--replay", listed),
                        reserve=REPLAY_RESERVE)
         return suite_ran(path, [(lab, r) for lab, _cp, r in state["ran"]],
@@ -1930,7 +2158,9 @@ def sweep(paths, jobs=None, repo=None, encoding=None,
                          grant=ran.get("grant"), timeout=ran.get("timeout"),
                          blocks=ran.get("blocks"), windows=spans,
                          window=(min(starts) if starts else None,
-                                 max(ends) if ends else None)))
+                                 max(ends) if ends else None),
+                         block_seconds=ran.get("block_seconds"),
+                         timeout_basis=ran.get("timeout_basis")))
     unnamed = claude_row(loose)
     if unnamed is not None:
         rows.append(unnamed)
@@ -2003,7 +2233,18 @@ def render(rows, jobs, encoding=None, stream=None, spaced=False):
         else:
             out.write("  FAILED  %-58s %s%s\n"
                       % (row["path"], row["why"], timing(row)))
+        out.write("".join(block_lines(row)))
     return _render_tail(rows, bad, total_cases, out)
+
+
+def block_lines(row):
+    """`  block   <path> <label>  [12.3s]` for each block a suite run block
+    by block timed, in label order - its own seconds, so a CI log records
+    each block (`block_costs_from_render`) without a second run. A block a
+    deadline refused ran no process and has no line."""
+    figs = row.get("block_seconds") or {}
+    return ["  block   %-58s %s  [%.1fs]\n" % (row["path"], label, figs[label])
+            for label in sorted(figs)]
 
 
 # The suffix `timing()` writes, as a pattern `costs_from_render()` reads back.
@@ -2050,6 +2291,32 @@ def costs_from_render(text):
             slots = int(match.group(3) or 1) if match.group(4) == "slots" else 1
             seconds = round(float(match.group(2)) * slots, 1)
             found[path] = max(seconds, found.get(path, seconds))
+    return found
+
+
+# The line `block_lines()` writes, as a pattern `block_costs_from_render()`
+# reads back.
+BLOCK_TIMING = re.compile(r"^  block   +(\S+) +(\S(?:.*?\S)?)  \[([0-9.]+)s\]$")
+
+
+def block_costs_from_render(text):
+    """{path: {label: seconds}} read off the loud form's block lines, from a
+    CI log's timestamped, back-slashed lines too. A block printed more than
+    once - the logs of two legs - keeps its LONGEST timing, for the reason
+    `costs_from_render` gives; a block printed by one part and not another is
+    simply that part's, since every part ran different blocks."""
+    found = {}
+    for line in text.splitlines():
+        at = line.find("  block   ")
+        if at < 0:
+            continue
+        match = BLOCK_TIMING.match(line[at:].rstrip())
+        if match:
+            path = match.group(1).replace("\\", "/")
+            seconds = round(float(match.group(3)), 1)
+            figs = found.setdefault(path, {})
+            figs[match.group(2)] = max(seconds,
+                                       figs.get(match.group(2), seconds))
     return found
 
 
@@ -2185,29 +2452,67 @@ def _positive(text):
     return value if value >= 1 else None
 
 
-def budget_line(paths, jobs, costs, floor, repo=None, deadline=None):
+def unit_timeouts(paths, jobs, costs, floor, repo=None, cap=None,
+                  block_costs=None, part=None):
+    """`[(path, label or None, seconds, basis)]` - the timeout every job of a
+    sweep over `paths` is given before any deadline cuts it: a block's from
+    `block_timeout` (basis `block`, `suite` or `untimed`), and a staged suite
+    run whole at the grant it asks for and any other file at one slot from
+    `file_timeout` (basis `file`). `part` narrows a suite's blocks to the ones
+    a shard runs, as `sweep` does. The one computation behind the budget
+    line's figures and case tt5's bound."""
+    found = staged_blocks(paths, repo)
+    grant = stage_grant(jobs)
+    out = []
+    for path in sorted(paths):
+        labels = found.get(path)
+        if not labels:
+            out.append((path, None, file_timeout(
+                path, costs, floor, grant if path in found else 1,
+                staged=path in found, cap=cap), "file"))
+            continue
+        here = (part or {}).get(path, labels)
+        out.extend((path, label) + block_timeout(path, label, labels, costs,
+                                                 block_costs, floor, cap)
+                   for label in here)
+    return out
+
+
+def budget_line(paths, jobs, costs, floor, repo=None, deadline=None,
+                block_costs=None, part=None):
     """The one line saying how this run shares its budget, with the basis of
     each number: which staged suites run whole holding several slots, the
-    longest timeout the cost table gave any file over the floor, the deadline
-    when one applies, and which staged suites run block by block and how many
-    blocks that is."""
+    longest timeout the cost table gave any file or block over the floor, the
+    deadline when one applies, how many blocks took their timeout from their
+    own figure, how many from their suite's figure over its blocks and how
+    many had no figure for their suite - naming those suites - and which
+    staged suites run block by block and how many blocks that is."""
     found = staged_blocks(paths, repo)
     whole = sorted(p for p, labels in found.items() if not labels)
     split = sorted(p for p, labels in found.items() if labels)
-    grant = stage_grant(jobs)
-    longest = max([file_timeout(p, costs, floor, grant if p in found else 1,
-                                staged=p in found, cap=deadline)
-                   for p in paths] or [floor])
+    units = unit_timeouts(paths, jobs, costs, floor, repo, deadline,
+                          block_costs, part)
+    longest = max([u[2] for u in units] or [floor])
+
+    def took(basis):
+        hit = sorted(set(os.path.basename(u[0]) for u in units
+                         if u[3] == basis))
+        return (len([u for u in units if u[3] == basis]),
+                ", ".join(hit) or "none")
+    own, suite, untimed = took("block"), took("suite"), took("untimed")
     return ("budget: %d slots; %d staged suites hold up to %d each (%s); per-file "
-            "timeout %ds, up to %ds for a file the cost table times as heavy%s; "
-            "%d staged suites run block by block, a slot a block, %d blocks "
-            "(%s)\n"
+            "timeout %ds, up to %ds for a file or block the cost table times as "
+            "heavy%s; block timeouts: %d from the block's own figure, %d from "
+            "its suite's figure over its blocks (%s), %d with no figure for "
+            "their suite (%s); %d staged suites run block by block, a slot a "
+            "block, %d blocks (%s)\n"
             % (jobs, len(whole), stage_grant(jobs),
                ", ".join(os.path.basename(p) for p in whole) or "none",
                floor, longest,
                "" if deadline is None else
                "; every file named by %ds, the CI deadline" % (deadline,),
-               len(split), sum(len(found[p]) for p in split),
+               own[0], suite[0], suite[1], untimed[0], untimed[1],
+               len(split), len([u for u in units if u[1] is not None]),
                ", ".join(os.path.basename(p) for p in split) or "none"))
 
 
@@ -2223,18 +2528,24 @@ def record_from_log(log, record, platform, workers):
         return 2
     try:
         with io.open(log, encoding="utf-8", errors="replace") as fh:
-            found = costs_from_render(fh.read())
+            text = fh.read()
     except (IOError, OSError) as exc:
         sys.stderr.write("sweep-selftests: cannot read %s: %s\n" % (log, exc))
         return 2
+    found, per_block = costs_from_render(text), block_costs_from_render(text)
     if not found:
         sys.stderr.write("sweep-selftests: %s carries no timed row - nothing "
                          "recorded\n" % (log,))
         return 2
-    rows = [{"path": p, "seconds": v} for p, v in sorted(found.items())]
-    record_costs(record, rows, set(sweep_files()), workers, platform=platform)
-    sys.stdout.write("recorded %d files' seconds from %s into %s (%s)\n"
-                     % (len(rows), log, record, platform))
+    rows = [{"path": p, "seconds": v, "block_seconds": per_block.get(p)}
+            for p, v in sorted(found.items())]
+    swept = sweep_files()
+    record_costs(record, rows, set(swept), workers, platform=platform,
+                 labels=staged_blocks(swept))
+    sys.stdout.write("recorded %d files' seconds and %d blocks' from %s into "
+                     "%s (%s)\n"
+                     % (len(rows), sum(len(f) for f in per_block.values()),
+                        log, record, platform))
     return 0
 
 
@@ -2302,20 +2613,22 @@ def main(argv):
     swept = set(paths)
     if named:
         paths = named
-    for note in table_notes(costs, paths):
+    block_costs, block_problem = load_block_costs(COSTS_PATH)
+    for note in table_notes(costs, paths) + (
+            [block_problem] if block_problem and not cost_problem else []):
         sys.stdout.write("note: %s\n" % (note,))
+    part = None
     if shard is not None:
         index, count = shard
         whole = len(paths)
-        paths = shard_paths(paths, costs, count)[index - 1]
-        timed = len([p for p in paths if p in costs])
-        # THE BASIS OF THE SPLIT, printed with it: which table, and how much of
-        # this part it actually timed rather than estimated.
-        sys.stdout.write("shard %d/%d: %d files of the %d swept, split by %s "
-                         "(%d timed there, %d estimated at its median)\n"
-                         % (index, count, len(paths), whole,
-                            cost_problem or os.path.relpath(COSTS_PATH, REPO),
-                            timed, len(paths) - timed))
+        blocks = staged_blocks(paths)
+        units = shard_units(paths, costs, count, blocks, block_costs)
+        paths, part = shard_plan(units[index - 1], blocks)
+        # THE BASIS OF THE SPLIT, printed with it: which table, how much of
+        # this part it timed rather than estimated, and every part's load.
+        sys.stdout.write(shard_line(
+            index, count, units, whole, costs, block_costs, blocks,
+            cost_problem or os.path.relpath(COSTS_PATH, REPO)))
         if not paths:
             sys.stderr.write("sweep-selftests: shard %d/%d holds no file - "
                              "refusing to report a green part over nothing\n"
@@ -2333,12 +2646,14 @@ def main(argv):
         sys.stdout.write("%s\n" % (verdict["line"],))
         locale_vars = verdict["locale"]
     deadline = sweep_deadline()
-    sys.stdout.write(budget_line(paths, jobs, costs, timeout, deadline=deadline))
+    sys.stdout.write(budget_line(paths, jobs, costs, timeout, deadline=deadline,
+                                 block_costs=block_costs, part=part))
     rows = sweep(paths, jobs=jobs, encoding=encoding, timeout=timeout,
                  spaced=spaced, costs=costs, deadline=deadline,
-                 locale_vars=locale_vars, os_name=os_name)
+                 locale_vars=locale_vars, os_name=os_name,
+                 block_costs=block_costs, part=part)
     if record:
-        record_costs(record, rows, swept, jobs)
+        record_costs(record, rows, swept, jobs, labels=staged_blocks(swept))
     code = (render_quiet if quiet else render)(rows, jobs, encoding=encoding,
                                                spaced=spaced)
     return max(code, report_coverage(findings, accounted, named))
@@ -2896,11 +3211,282 @@ def _child_text_cases(check):
           and child_text(b"") == "")
 
 
+_BK_SUITE = ("import os, sys\n"
+             "sys.path.insert(0, %r)\n"
+             "import _harness\n\n\n"
+             "def _seen(check, tag):\n"
+             "    check('%%s1 timeout=%%s' %% (tag, os.environ.get(%r)), True)\n"
+             "%s\n\n"
+             "STAGES = (%s)\n"
+             "if __name__ == '__main__':\n"
+             "    raise SystemExit(_harness.staged_main(sys.argv[1:], STAGES, "
+             "globals(), 'sweep-bk-'))\n")
+
+
+def _bk_suite(labels):
+    """A staged suite of one block per label, each block printing one case that
+    carries the timeout the sweep handed it."""
+    blocks = "".join("\n\ndef _%s_cases(check):\n    _seen(check, %r)\n"
+                     % (lab.replace("-", "_"), "b" + lab.split("-")[0])
+                     for lab in labels)
+    rows = "".join("(%r, '_%s_cases'), " % (lab, lab.replace("-", "_"))
+                   for lab in labels)
+    return _BK_SUITE % (os.path.join(REPO, "tests"), FILE_TIMEOUT_VAR, blocks,
+                        rows)
+
+
+def _block_cost_cases(check):
+    """A staged suite's blocks are costed, timed and sharded one by one: a
+    block's timeout comes from its own figure when the table has one and from
+    its suite's figure over its blocks when not; `--shard` deals blocks, not
+    suites; a part replays the blocks it ran and leaves the rest to the parts
+    that ran them; and the recorder writes a figure per block, from a run or
+    from the logs of every part."""
+    import _harness
+
+    # --- a block's timeout, from its own figure ---------------------------
+    bk_labels = ["x-block", "y-block", "z-block"]
+    bk_costs = {"split": 900.0, "plain": 50.0}
+    bk_blocks = {"split": {"x-block": 400.0, "y-block": 20.0}}
+    bk_got = [block_timeout("split", lab, bk_labels, bk_costs, bk_blocks)
+              for lab in bk_labels]
+    bk_untimed = block_timeout("new", "a", ["a", "b"], bk_costs, bk_blocks)
+    bk_capped = block_timeout("split", "x-block", bk_labels, bk_costs,
+                              bk_blocks, cap=500)
+    # 3 x 400 for x: not the suite's figure at any slots (2700, 900, 675),
+    # not the even share (900); y's own 60 lifts to the floor; z has no
+    # figure of its own and takes the suite's 900 over its three blocks.
+    check("bk1 a block's timeout is the per-cost factor times ITS OWN figure "
+          "at the one slot it holds, never under the floor; a block the table "
+          "has no figure for takes its suite's figure over its blocks; a "
+          "suite the table does not time takes the largest any entry gives at "
+          "one slot; a cap bounds each - and each answer names its basis: %r"
+          % ([bk_got, bk_untimed, bk_capped],),
+          bk_got == [(TIMEOUT_PER_COST * 400, "block"),
+                     (DEFAULT_TIMEOUT, "block"),
+                     (int(TIMEOUT_PER_COST * 900.0 / 3), "suite")]
+          and bk_untimed == (TIMEOUT_PER_COST * 400, "untimed")
+          and bk_capped == (500, "block"))
+
+    bk_box = tempfile.mkdtemp(prefix="sweep-block-own-")
+    try:
+        with io.open(os.path.join(bk_box, "split-suite"), "w",
+                     encoding="utf-8") as fh:
+            fh.write(_bk_suite(["x-block", "y-block"]))
+        bk_row = sweep(["split-suite"], jobs=5, repo=bk_box,
+                       costs={"split-suite": 1000.0},
+                       block_costs={"split-suite": {"x-block": 400.0}})[0]
+        bk_budget = budget_line(["split-suite"], 5, {"split-suite": 1000.0},
+                                DEFAULT_TIMEOUT, repo=bk_box,
+                                block_costs={"split-suite": {"x-block": 400.0}})
+    finally:
+        remove_tree(bk_box)
+    bk_told = sorted(re.findall(r"(?m)^PASS b(x|y)1 timeout=(\d+)$",
+                                bk_row.get("output") or ""))
+    # x: 3 x 400 = 1200; y: 1000 over two blocks, 3 x 500 = 1500. The old
+    # calibration told both 3 x 1000 over the four slots a grant of five
+    # workers holds, 750.
+    check("bk2 a sweep tells each block the timeout its own figure gives, and "
+          "the suite's figure over its blocks to a block with none; the row "
+          "counts each basis and the budget line says how many blocks took "
+          "each: told %r, bases %r, %r"
+          % (bk_told, bk_row.get("timeout_basis"), bk_budget),
+          bk_told == [("x", str(TIMEOUT_PER_COST * 400)),
+                      ("y", str(TIMEOUT_PER_COST * 500))]
+          and bk_row.get("ok") is True
+          and bk_row.get("timeout_basis") == {"block": 1, "suite": 1}
+          and "1 from the block's own figure" in bk_budget
+          and "1 from its suite's figure over its blocks (split-suite)"
+          in bk_budget)
+
+    # --- the recorder: a figure per block ---------------------------------
+    bk_rows = [{"path": "s", "seconds": 61.0, "grant": 1, "blocks": 2,
+                "block_seconds": {"x": 40.04, "y": 20.0}},
+               {"path": "p", "seconds": 3.0}]
+    bk_tdir = tempfile.mkdtemp(prefix="sweep-block-record-")
+    try:
+        bk_table = os.path.join(bk_tdir, "costs.json")
+        with io.open(bk_table, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps({"costs": {"s": 100.0, "t": 7.0, "p": 1.0},
+                                 "blocks": {"s": {"x": 5.0, "z": 30.0,
+                                                  "gone": 9.0}}}))
+        record_costs(bk_table, bk_rows, {"s", "t", "p"}, 4, platform="test",
+                     labels={"s": ["x", "y", "z"]})
+        with io.open(bk_table, encoding="utf-8") as fh:
+            bk_written = json.load(fh)
+        bk_loaded = load_block_costs(bk_table)
+    finally:
+        remove_tree(bk_tdir)
+    # s's figure is its blocks summed, 40 + 20 + 30: not the row's own 61
+    # (that run's replay included, and only the blocks one part ran), not
+    # the old 100.
+    check("bk3 the recorder writes each block's figure, keeps a block another "
+          "part recorded, drops a block the suite no longer stages, and makes "
+          "a block-recorded suite's figure the sum of its blocks: %r / %r"
+          % (bk_written, bk_loaded),
+          block_costs_from_rows(bk_rows) == {"s": {"x": 40.0, "y": 20.0}}
+          and bk_written.get("blocks") == {"s": {"x": 40.0, "y": 20.0,
+                                                 "z": 30.0}}
+          and bk_written.get("costs") == {"s": 90.0, "t": 7.0, "p": 3.0}
+          and bk_loaded == ({"s": {"x": 40.0, "y": 20.0, "z": 30.0}}, None))
+
+    # --- a log of every part reads back block by block ----------------------
+    bk_live = "tests/test__output.py"
+    bk_lab = list(staged_blocks([bk_live]).get(bk_live) or [])
+    bk_parts = []
+    for bk_lo, bk_hi, bk_secs in ((0, 2, 10.0), (2, len(bk_lab), 30.0)):
+        buf = io.StringIO()
+        render([dict(grade(bk_live, 0, "1/1 cases passed\n", set()),
+                     seconds=bk_secs + 1.0, grant=1, blocks=bk_hi - bk_lo,
+                     block_seconds=dict((lab, bk_secs)
+                                        for lab in bk_lab[bk_lo:bk_hi]))],
+               4, stream=buf)
+        bk_parts.append(buf.getvalue())
+    bk_quiet = io.StringIO()
+    render_quiet([dict(grade(bk_live, 0, "1/1 cases passed\n", set()),
+                       seconds=3.0, grant=1, blocks=1,
+                       block_seconds={"a": 3.0})], 4, stream=bk_quiet)
+    bk_log_text = "\n".join("2026-10-28T15:47:16.3Z " + line.replace("/", "\\")
+                            for line in "".join(bk_parts).splitlines())
+    bk_ldir = tempfile.mkdtemp(prefix="sweep-block-log-")
+    try:
+        bk_log = os.path.join(bk_ldir, "parts.log")
+        with io.open(bk_log, "w", encoding="utf-8") as fh:
+            fh.write(bk_log_text + "\n")
+        bk_out = os.path.join(bk_ldir, "table.json")
+        bk_held = sys.stdout
+        sys.stdout = io.StringIO()
+        try:
+            bk_code = record_from_log(bk_log, bk_out, "windows-test", 4)
+        finally:
+            sys.stdout = bk_held
+        with io.open(bk_out, encoding="utf-8") as fh:
+            bk_fromlog = json.load(fh)
+    finally:
+        remove_tree(bk_ldir)
+    bk_want = round(2 * 10.0 + (len(bk_lab) - 2) * 30.0, 1)
+    # Read as files, the two parts' rows are one file printed twice, and the
+    # longer row (31s) would stand for the whole suite.
+    check("bk4 the loud form prints a line per block with its seconds, the "
+          "quiet form none, and the logs of two parts that split one suite's "
+          "blocks record every block and the suite as their sum (%r), not as "
+          "the longer part's row: exit %r, %r"
+          % (bk_want, bk_code, (bk_fromlog.get("costs") or {}).get(bk_live)),
+          len(bk_lab) > 2 and bk_code == 0
+          and "".join(bk_parts).count("\n  block   ") == len(bk_lab)
+          and "  block   " not in bk_quiet.getvalue()
+          and (bk_fromlog.get("blocks") or {}).get(bk_live)
+          == dict((lab, 10.0 if i < 2 else 30.0)
+                  for i, lab in enumerate(bk_lab))
+          and (bk_fromlog.get("costs") or {}).get(bk_live) == bk_want)
+
+    # --- --shard deals blocks, and every part replays what it ran -----------
+    sd_paths = ["big", "f0", "f1", "f2", "f3"]
+    sd_labels = ["a", "b", "c", "d", "e", "f", "g", "h"]
+    sd_figs = [100.0, 90.0, 80.0, 70.0, 60.0, 50.0, 40.0, 30.0]
+    sd_costs = dict(("f%d" % i, 20.0) for i in range(4))
+    sd_costs["big"] = sum(sd_figs)
+    sd_bc = {"big": dict(zip(sd_labels, sd_figs))}
+    sd_parts = shard_units(sd_paths, sd_costs, 3, {"big": sd_labels}, sd_bc)
+    sd_loads = [sum(sd_bc["big"][lab] if lab else sd_costs[p]
+                    for p, lab in part) for part in sd_parts]
+    sd_seen = sorted([u for part in sd_parts for u in part],
+                     key=lambda u: (u[0], u[1] or ""))
+    sd_plan = [shard_plan(part, {"big": sd_labels}) for part in sd_parts]
+    # Dealt as one file, `big` (520) would hold a part alone against 40 and
+    # 40 for the other two.
+    check("sd1 `--shard` deals a staged suite's BLOCKS by their own figures: "
+          "every block and every file lands in exactly one part, the suite in "
+          "each, the parts' loads within the costliest unit of each other, "
+          "and a part's plan names the suite's blocks it runs: %r, loads %r, "
+          "plans %r" % (sd_parts, sd_loads, sd_plan),
+          sd_seen == sorted([("big", lab) for lab in sd_labels]
+                            + [("f%d" % i, None) for i in range(4)],
+                            key=lambda u: (u[0], u[1] or ""))
+          and all(any(p == "big" for p, _l in part) for part in sd_parts)
+          and max(sd_loads) - min(sd_loads) <= 100.0
+          and all(sorted(plan[1].get("big") or []) == sorted(
+              lab for p, lab in part if p == "big")
+              for plan, part in zip(sd_plan, sd_parts))
+          and all(plan[0] == sorted(set(p for p, _l in part))
+                  for plan, part in zip(sd_plan, sd_parts)))
+
+    sd_full = sweep_files()
+    sd_live_blocks = staged_blocks(sd_full)
+    sd_costs_live, _sd_problem = load_costs(COSTS_PATH)
+    sd_bc_live, _sd_bproblem = load_block_costs(COSTS_PATH)
+    sd_want = sorted([(p, lab) for p in sd_full
+                      for lab in (sd_live_blocks.get(p) or [None])],
+                     key=lambda u: (u[0], u[1] or ""))
+    sd_bad = []
+    for sd_n in range(1, 7):
+        parts = shard_units(sd_full, sd_costs_live, sd_n, sd_live_blocks,
+                            sd_bc_live)
+        seen = sorted([u for part in parts for u in part],
+                      key=lambda u: (u[0], u[1] or ""))
+        if not (len(parts) == sd_n and all(parts) and seen == sd_want):
+            sd_bad.append(sd_n)
+    check("sd2 on the LIVE tree and the committed table, for N in 1..6 the "
+          "parts are N non-empty lists whose union is the whole tree BLOCK BY "
+          "BLOCK - every ordinary file once, every block of every staged suite "
+          "once: bad N = %r" % (sd_bad,),
+          sd_bad == [] and any(sd_live_blocks.values()))
+
+    sd_box = tempfile.mkdtemp(prefix="sweep-block-parts-")
+    try:
+        with io.open(os.path.join(sd_box, "c-split"), "w",
+                     encoding="utf-8") as fh:
+            fh.write(_bk_suite(["p-block", "q-block", "r-block"]))
+        sd_whole = sweep(["c-split"], jobs=3, repo=sd_box, costs={})[0]
+        sd_rows = [sweep(["c-split"], jobs=3, repo=sd_box, costs={},
+                         part={"c-split": only})[0]
+                   for only in (["p-block"], ["q-block", "r-block"])]
+    finally:
+        remove_tree(sd_box)
+
+    def sd_cases(row):
+        return sorted(line.split()[1] for line in
+                      (row.get("output") or "").splitlines()
+                      if line.startswith(("PASS ", "FAIL ")))
+    check("sd3 a suite whose blocks two parts split is replayed in each part "
+          "over the blocks it ran, green, each naming the blocks left to the "
+          "other part, and the two parts' cases together are the unsplit "
+          "run's: whole %r, parts %r, ok %r"
+          % (sd_cases(sd_whole), [sd_cases(r) for r in sd_rows],
+             [r.get("ok") for r in sd_rows]),
+          sd_whole.get("ok") is True
+          and sd_cases(sd_whole) == ["bp1", "bq1", "br1"]
+          and [r.get("ok") for r in sd_rows] == [True, True]
+          and sd_cases(sd_rows[0]) == ["bp1"]
+          and sd_cases(sd_rows[1]) == ["bq1", "br1"]
+          and (_harness.REPLAY_PART_LINE % (1, 3, 2))
+          in (sd_rows[0].get("output") or "")
+          and (_harness.REPLAY_PART_LINE % (2, 3, 1))
+          in (sd_rows[1].get("output") or ""))
+
+    sd_stages = (("a", "_a_cases"), ("b", "_b_cases"))
+    sd_results, sd_strays, sd_twice = _harness.replayed(
+        sd_stages, [{"label": "a", "cases": "a.json", "code": 0, "out": "",
+                     "why": ""},
+                    {"label": "a", "elsewhere": "another part"},
+                    {"label": "b", "elsewhere": "another part"}])
+    # The second direction of sd3: a block a part ran AND was told another
+    # part ran is the doubled block sr18 names, never read as one.
+    check("sd4 a replay list naming a block both as run here and as run "
+          "elsewhere counts it twice, and a block only run elsewhere yields no "
+          "result here: %r"
+          % ([[r["label"] for r in sd_results], sd_strays, sd_twice],),
+          [r["label"] for r in sd_results] == ["a"] and sd_strays == []
+          and sd_twice == {"a": 2})
+
+
 def _cases(check):
     """Every branch of `grade` plus the two refusals, driven without a subprocess."""
     _suite_root_cases(check)
     _claude_watch_cases(check)
     _child_text_cases(check)
+    import _harness
+    _harness.stage(check, "bk-block", _block_cost_cases)
     live = "tests/test__output.py"
 
     g = grade(live, 0, "ALL PASS: 7/7 cases passed\n")
@@ -3859,24 +4445,33 @@ def _cases(check):
     # --- --shard I/N: a deterministic, cost-balanced split of the file list ---
     sh_full = sweep_files()
     sh_costs, sh_problem = load_costs(COSTS_PATH)
+    sh_bcosts, _sh_bproblem = load_block_costs(COSTS_PATH)
+    sh_blocks = staged_blocks(sh_full)
+
+    def sh_split(paths, costs, count):
+        """`shard_units` as lists of paths, for a fixture with no blocks."""
+        return [[p for p, _label in part]
+                for part in shard_units(paths, costs, count)]
     sh_bad = []
     for sh_n in range(1, 5):
-        sh_parts = shard_paths(sh_full, sh_costs, sh_n)
-        sh_seen = [p for part in sh_parts for p in part]
+        sh_parts = shard_units(sh_full, sh_costs, sh_n, sh_blocks, sh_bcosts)
+        sh_seen = [u for part in sh_parts for u in part]
         if not (len(sh_parts) == sh_n and all(sh_parts)
                 and len(sh_seen) == len(set(sh_seen))
-                and set(sh_seen) == set(sh_full)):
+                and set(p for p, _l in sh_seen) == set(sh_full)):
             sh_bad.append(sh_n)
     check("sh0 for N in 1..4 the shards of the LIVE file list are N non-empty, "
           "disjoint parts whose union is exactly the full sweep - so running "
-          "every shard runs every file once: bad N = %r" % (sh_bad,),
+          "every shard runs every file once (sd2 holds it block by block): bad "
+          "N = %r" % (sh_bad,),
           sh_bad == [] and len(sh_full) > 100)
 
     sh_rev = list(reversed(sh_full))
     check("sh1 the split is deterministic and independent of the order the "
           "list arrives in, so every CI job computes the same shards",
-          all(shard_paths(sh_full, sh_costs, n) == shard_paths(sh_rev, sh_costs, n)
-              for n in range(1, 5)))
+          all(shard_units(sh_full, sh_costs, n, sh_blocks, sh_bcosts)
+              == shard_units(sh_rev, sh_costs, n, sh_blocks, sh_bcosts)
+              for n in range(1, 7)))
 
     # A table of the case's own: the four heaviest are far above the rest, so a
     # split that put two of them together is visibly unbalanced.
@@ -3887,7 +4482,7 @@ def _cases(check):
         sh_table[p] = 100.0
     sh_spread = []
     for sh_n in range(2, 5):
-        parts = shard_paths(sh_paths, sh_table, sh_n)
+        parts = sh_split(sh_paths, sh_table, sh_n)
         holding = [len([p for p in part if p in sh_heavy]) for part in parts]
         if max(holding) - min(holding) > 1:
             sh_spread.append((sh_n, holding))
@@ -3896,26 +4491,29 @@ def _cases(check):
           "while another holds none, for N in 2..4: %r" % (sh_spread,),
           sh_spread == [])
 
-    # ONE suite as heavy as nine others together: least-loaded keeps it ALONE in
-    # its part, while dealing the files out in turn would hand it four companions.
+    # ONE file as heavy as nine others together: least-loaded keeps it ALONE in
+    # its part, while dealing the files out in turn would hand it four
+    # companions. A staged suite whose table the sweep reads is no such unit:
+    # sd1 deals its blocks instead.
     sh_one = dict(("u/f%d" % i, 10.0) for i in range(9))
     sh_one["u/big"] = 100.0
-    sh_alone = shard_paths(sorted(sh_one), sh_one, 2)
-    check("sh8 the heaviest suite gets its part to itself while the others "
-          "together weigh less than it - the property that gives the slowest "
-          "staged suite its runner's cores: %r" % (sh_alone,),
+    sh_alone = sh_split(sorted(sh_one), sh_one, 2)
+    check("sh8 the heaviest unit gets its part to itself while the others "
+          "together weigh less than it: %r" % (sh_alone,),
           ["u/big"] in sh_alone and len(sh_alone[1 - sh_alone.index(["u/big"])]) == 9)
 
     sh_loads = []
-    for sh_n in range(2, 5):
-        parts = shard_paths(sh_full, sh_costs, sh_n)
-        loads = [sum(cost_of(sh_costs, p) for p in part) for part in parts]
-        top = max(cost_of(sh_costs, p) for p in sh_full)
+    sh_units = unit_costs(sh_full, sh_costs, sh_blocks, sh_bcosts)
+    for sh_n in range(2, 7):
+        parts = shard_units(sh_full, sh_costs, sh_n, sh_blocks, sh_bcosts)
+        loads = [sum(sh_units[u] for u in part) for part in parts]
+        top = max(sh_units.values())
         if max(loads) - min(loads) > top:
             sh_loads.append((sh_n, loads, top))
     check("sh3 on the live list and the committed cost table, no two shards' "
-          "recorded loads differ by more than the single costliest file - the "
-          "bound a greedy least-loaded split guarantees: %r" % (sh_loads,),
+          "loads differ by more than the single costliest unit - a file, or a "
+          "block of a staged suite - the bound a greedy least-loaded split "
+          "guarantees: %r" % (sh_loads,),
           sh_loads == [])
 
     check("sh4 --shard reads I/N and refuses what names no shard: %r"
@@ -3934,7 +4532,7 @@ def _cases(check):
     # helper: one worker, so the jobs start in exactly the order they were
     # submitted, and every job appends its own name to a log outside the
     # watched directories. The costs make that order differ from path order
-    # and from the files' own costliest-first order (`run_order`), where the
+    # and from the files' own costliest-first order, where the
     # split suite, as one file, is the heaviest: a block weighs its file's
     # cost over its blocks, which puts all three after the heavy plain file.
     so_log_dir = tempfile.mkdtemp(prefix="sweep-order-log-")
@@ -3984,7 +4582,7 @@ def _cases(check):
              [(r["path"], r["ok"], r.get("blocks")) for r in so_rows]),
           so_started == so_want
           and ["%s:%s" % (p, b) if b else p for p, b in so_items] == so_want
-          and run_order(so_paths, so_costs)[0] == "c-split"
+          and max(so_costs, key=so_costs.get) == "c-split"
           and [(r["path"], r["ok"], r.get("blocks")) for r in so_rows]
           == [("a-light", True, None), ("b-heavy", True, None),
               ("c-split", True, 3)])
@@ -3998,9 +4596,9 @@ def _cases(check):
     # still covers every swept file once, ignores the ghost, and says so.
     sh_ghost = dict((p, 1.0) for p in sh_paths[:10])
     sh_ghost["t/renamed-away"] = 500.0
-    sh_ghost_parts = shard_paths(sh_paths, sh_ghost, 3)
+    sh_ghost_parts = sh_split(sh_paths, sh_ghost, 3)
     sh_ghost_seen = sorted(p for part in sh_ghost_parts for p in part)
-    sh_ghost_plain = shard_paths(
+    sh_ghost_plain = sh_split(
         sh_paths, dict((p, 1.0) for p in sh_paths[:10]), 3)
     check("sh9 a table naming a file no longer swept and omitting swept ones "
           "still partitions the swept list exactly once, and the ghost entry "
@@ -4429,16 +5027,18 @@ def _cases(check):
           "where another suite ran: %r / %r" % (bb_by, bb_loose),
           bb_by == {"other": ["gap"], "blocks": ["inside"]} and bb_loose == [])
 
-    # --- a block's timeout is calibrated from its FILE's entry ----------------
+    # --- a block with no figure of its own: its FILE's entry over its blocks ---
     # A staged suite WITH a `STAGES` table, so the sweep runs it block by block;
     # the timeout fixtures further down carry none and reach the whole-suite
-    # fallback instead. Each block prints the timeout and the slots the sweep
-    # handed it, so what is read is what the child was told. Five workers give
-    # a grant of four slots (bg1 pins `stage_grant`), and the costs are chosen
-    # so the floor, the figure at one slot, the figure at the grant, the raw
-    # entry and the entry spread over the blocks are all different numbers:
-    # a calibration that dropped the slots, the factor or the ghost fallback,
-    # or divided by the blocks, reads as a number that moved.
+    # fallback instead. The table here has no block figures (bk2 has one), so
+    # each block takes its suite's figure over its blocks. Each block prints the
+    # timeout and the slots the sweep handed it, so what is read is what the
+    # child was told. Five workers give a grant of four slots (bg1 pins
+    # `stage_grant`), and the costs are chosen so the floor, the whole entry at
+    # one slot, the entry at the grant, the raw entry and the entry over the
+    # blocks at one slot are all different numbers: a calibration that went
+    # back to the grant, dropped the factor or the ghost fallback, or stopped
+    # dividing by the blocks, reads as a number that moved.
     bt_body = ("import os, sys\n"
                "sys.path.insert(0, %r)\n"
                "import _harness\n\n\n"
@@ -4480,22 +5080,23 @@ def _cases(check):
         if [(b, s) for b, _t, s in got] != [("x", "1"), ("y", "1")]:
             return None
         return [int(t) for _b, t, _s in got]
-    # 3 x 1000 / 4: neither the floor, nor 3000 (one slot), nor 1000 (the raw
-    # entry), nor 1500 or 375 (the entry spread over two blocks).
-    bt_want = int(-(-TIMEOUT_PER_COST * 1000.0 // 4))
+    # 3 x 1000 / 2 at one slot: neither the floor, nor 3000 (the whole entry
+    # at one slot), nor 1000 (the raw entry), nor 750 (the whole entry at the
+    # grant of four slots), nor 375 (the share at the grant).
+    bt_want = int(-(-TIMEOUT_PER_COST * 1000.0 // 2))
     check("bt1 a staged suite run block by block, its file timed by the cost "
-          "table, has each block told its FILE's calibrated timeout at the "
-          "slots a grant would hold - one slot held each - and its row "
+          "table and no block of it, has each block told its FILE's figure "
+          "over its blocks, calibrated at the one slot each holds, and its row "
           "carries it: told %r, rows %r" % (bt_seen, bt_rows),
           stage_grant(5) == 4
           and bt_told("table") == [bt_want, bt_want]
-          and bt_want not in (DEFAULT_TIMEOUT, 1000, 1500, 375,
+          and bt_want not in (DEFAULT_TIMEOUT, 1000, 750, 375,
                               TIMEOUT_PER_COST * 1000)
           and bt_rows["table"] == (True, 2, bt_want))
-    bt_ghost = int(-(-TIMEOUT_PER_COST * 1500.0 // 4))
+    bt_ghost = int(-(-TIMEOUT_PER_COST * 1500.0 // 1))
     check("bt2 ...a table timing only a file that is gone (the ghost a rename "
           "leaves) gives each block the largest timeout that entry would get "
-          "at the same slots, never the floor: told %r, rows %r"
+          "at the one slot a block holds, never the floor: told %r, rows %r"
           % (bt_seen.get("ghost"), bt_rows.get("ghost")),
           bt_told("ghost") == [bt_ghost, bt_ghost]
           and bt_ghost > DEFAULT_TIMEOUT
@@ -4739,23 +5340,25 @@ def _cases(check):
                        tt_ci, re.M)
     tt_minutes = int(tt_job.group(1)) if tt_job else None
     tt_costs, _tt_problem = load_costs(COSTS_PATH)
-    tt_live = sweep_files()
-    tt_staged = staged_paths(tt_live)
-    tt_grant = stage_grant(4)
-    tt_most = max(file_timeout(p, tt_costs, DEFAULT_TIMEOUT,
-                               tt_grant if p in tt_staged else 1,
-                               staged=p in tt_staged)
-                  for p in tt_live)
+    tt_bcosts, _tt_bproblem = load_block_costs(COSTS_PATH)
+    # Every job a sweep of the live tree starts, with the timeout it is given
+    # on four slots: a block's from its own figure or its suite's share, a
+    # file's at the slots it asks for.
+    tt_units = unit_timeouts(sweep_files(), 4, tt_costs, DEFAULT_TIMEOUT,
+                             block_costs=tt_bcosts)
+    tt_top = max(tt_units, key=lambda u: u[2])
+    tt_most = tt_top[2]
     check("tt5 the deadline plus the setup allowance fits inside the `selftests` "
           "job's own timeout-minutes in ci.yml, so a hung file is named before "
-          "the runner cancels the job, and no file's CALIBRATED timeout on the "
-          "live table, at the slots it asks for, reaches past it - so the "
-          "deadline cuts a hang, or a staged suite admitted late with fewer "
-          "slots, and never the margin a heavy file was given at its full "
-          "grant: deadline %ds + setup %ds vs %r minutes; longest "
-          "file timeout %ds" % (SWEEP_DEADLINE, CI_SETUP_ALLOWANCE, tt_minutes,
-                                tt_most),
-          tt_minutes is not None
+          "the runner cancels the job, and no file's or block's CALIBRATED "
+          "timeout on the live table, at the slots it asks for, reaches past "
+          "it - so the deadline cuts a hang, or a job admitted late, and never "
+          "the margin a heavy one was given: deadline %ds + setup %ds vs %r "
+          "minutes; longest timeout %ds (%s%s, basis %s)"
+          % (SWEEP_DEADLINE, CI_SETUP_ALLOWANCE, tt_minutes, tt_most,
+             tt_top[0], "" if tt_top[1] is None else " " + tt_top[1],
+             tt_top[3]),
+          tt_minutes is not None and len(tt_units) > 100
           and SWEEP_DEADLINE + CI_SETUP_ALLOWANCE < tt_minutes * 60
           and tt_most <= SWEEP_DEADLINE)
 

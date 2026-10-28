@@ -59,13 +59,19 @@ concurrency:
 #   gh run view <id> --json jobs --jq '.jobs[] | [.name, .conclusion, .startedAt, .completedAt]'
 # and rewrite its line when a job grows.
 #
-# The selftests figure is history from the one-cell-per-leg-and-shard matrix (ci.yml
-# run 38379717433, ci/p127 at 544576f, every job green, whole run 10m20s); its bound
-# sits at 26 rather than at twice its figure because the sweep's deadline must fit
-# inside it (tools/sweep-selftests.py `SWEEP_DEADLINE`, case tt5). Later runs went
-# past it: run 38929591548 (ci/p125 at 6652cd60) took 14m43s in its windows cp1252 1
-# cell, more than half the bound, so this line is due a re-measurement together with
-# that deadline.
+# The selftests job is a NEW SHAPE too, and its figure an ESTIMATE until its first
+# measured run replaces it. Its history: run 38379717433 (ci/p127 at 544576f) took
+# 9m18s at most in a cell, run 38929591548 14m43s, and run 40715565769 (f06f113f)
+# 23m43s, in the cell whose part held tests/test_drive_phase.py alone, because a part
+# then held whole files. The parts now deal a staged suite's blocks
+# (tools/sweep-selftests.py `shard_units`), four of them; the estimate is the
+# heaviest part's slot-seconds on the committed .github/sweep-costs.json over four
+# slots, at the lowest share of the slots a windows cell of run 40715565769 kept busy,
+# plus the longest time one of them spent before and after its sweep step. Its
+# bound sits at 33 because the sweep's deadline must fit inside it
+# (tools/sweep-selftests.py `SWEEP_DEADLINE`, case tt5), and the deadline in turn sits
+# above the heaviest block's calibrated timeout. `--shard I/N` prints every part's
+# load, so the estimate re-derives from the line it prints.
 #
 # THE OTHER JOBS ARE NEW SHAPES, and their figures are ESTIMATES built from the steps
 # each now runs, as those steps were measured in runs 38902667892 and 38929591548
@@ -77,16 +83,17 @@ concurrency:
 #   browser-panel / browser-report - the screenshot step, and the two interactive
 #              steps, of that manifest job, plus its node setup (run 38929591548)
 #   verified - checkout, setup-python and two API reads (no run yet)
-#   resample - the RESAMPLE table's draws against .github/sweep-costs.json on four
-#              slots, as the CI study derived it (no run yet)
-#   longest selftests: 9m18s (run 38379717433, windows-latest)
+# The resample figure is measured: its first finished run, run 40715565769 (f06f113f,
+# success), took 22m00s, past half the bound of 40 its estimate had set, so the bound
+# moved to twice the measurement.
+#   longest selftests: 13m35s (estimate, the heaviest of four parts, run 40715565769's windows cells)
 #   longest e2e: 1m41s (estimate, run 38902667892)
 #   longest lint: 1m36s (estimate, run 38929591548)
 #   longest manifests: 1m36s (estimate, runs 38929591548 + 38902667892)
 #   longest browser-panel: 6m24s (estimate, run 38929591548)
 #   longest browser-report: 7m19s (estimate, run 38929591548)
 #   longest verified: 0m30s (estimate, no run yet)
-#   longest resample: 13m30s (estimate, no run yet)
+#   longest resample: 22m00s (run 40715565769, windows-2025)
 # EVERY JOB PINS ITS RUNNER IMAGE, and so does every `os` value a matrix crosses. A
 # `*-latest` label is a pointer GitHub moves: `ubuntu-latest` went from ubuntu-24.04
 # to ubuntu-26.04 between two runs, and the new image could not install the browser
@@ -127,16 +134,19 @@ jobs:
           --workflow ci.yml --sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID"
           --exempt-job verified --exempt-job resample --output "$GITHUB_OUTPUT"
 
-  # ONE CELL PER SWEEP SLICE AND SHARD, all at once. Each sweep slice is split three
-  # ways by `--shard`, whose parts are balanced by the per-file costs in
-  # .github/sweep-costs.json and whose union is the whole tree (the runner's sh0 case).
-  # Inside a cell the sweep uses every core, because it reads `CI=true`, as ONE budget
-  # of slots, which schedules a staged suite's blocks one slot each - the model is
-  # stated once, in the `blocks, not suites` comment above work_items() in
-  # tools/sweep-selftests.py. Each file's timeout is calibrated from its cost, and
-  # the sweep cuts every timeout to its CI deadline, so a hung file is named before
-  # this job's bound cancels it with nothing named. Re-record the table from the
-  # windows cells' logs, the platform that binds:
+  # ONE CELL PER SWEEP SLICE AND SHARD, all at once. Each sweep slice is split four
+  # ways by `--shard`, which deals files AND a staged suite's blocks, balanced by the
+  # per-file and per-block costs in .github/sweep-costs.json; the parts' union is the
+  # whole tree, block by block (the runner's sh0 and sd cases), and each part replays
+  # the blocks it ran, naming the others as run elsewhere. Inside a cell the sweep uses
+  # every core, because it reads `CI=true`, as ONE budget of slots, which schedules a
+  # staged suite's blocks one slot each - the model is stated once, in the `blocks,
+  # not suites` comment above work_items() in tools/sweep-selftests.py. Each file's
+  # and each block's timeout is calibrated from its own cost, and the sweep cuts every
+  # timeout to its CI deadline, so a hung file is named before this job's bound
+  # cancels it with nothing named. Re-record the table from the windows cells' logs,
+  # the platform that binds; every cell's log prints its blocks' seconds, so take all
+  # of them:
   #   gh run view <id> --job <windows cell> --log > <saved log>   # each windows cell
   #   python tools/sweep-selftests.py --costs-from-log <saved logs, concatenated> \
   #       --platform windows-latest --record-costs .github/sweep-costs.json
@@ -154,13 +164,13 @@ jobs:
     name: selftests (${{ startsWith(matrix.os, 'windows') && 'windows' || 'linux' }}, ${{ matrix.leg }} ${{ matrix.shard }})
     needs: verified
     if: ${{ !cancelled() && needs.verified.outputs.run == '' }}
-    timeout-minutes: 26
+    timeout-minutes: 33
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, windows-2025]
         leg: [plain, stress, cp1252]
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4]
         exclude:
           - os: windows-2025
             leg: stress
@@ -186,7 +196,7 @@ jobs:
           python-version: "3.12"
       - name: verify slice
         shell: bash
-        run: sh tools/verify.sh --only ${{ matrix.slice }} --shard ${{ matrix.shard }}/3
+        run: sh tools/verify.sh --only ${{ matrix.slice }} --shard ${{ matrix.shard }}/4
 
   # The runner's own cases and the launcher-driven checks, on Windows, where threads,
   # subprocesses, a forced codec and an MSYS path all behave differently. The ubuntu
@@ -315,7 +325,7 @@ jobs:
     name: resample (windows)
     needs: verified
     if: ${{ !cancelled() && needs.verified.outputs.run == '' && inputs.tier == 'release' }}
-    timeout-minutes: 40
+    timeout-minutes: 44
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@v5

@@ -6196,6 +6196,38 @@ def _sweep_deadline_cases(check):
                                1)["seconds"]
           == sweep_mod.file_timeout("tests/x.py", mine, floor=1))
 
+    # The deadline above and every timeout the sweep gives are read off this
+    # table, so it has to be what the recorder writes. Written again from its
+    # own figures - each file's, and each block's of a suite the sweep runs
+    # block by block - its platform and workers, it must come back byte for
+    # byte. A table left as it was when the recorder changed what a figure
+    # means still carries the old `about` text, or lacks the `blocks` object,
+    # and fails here until it is recorded again from the windows CI logs
+    # (`--costs-from-log`).
+    with io.open(sweep_mod.COSTS_PATH, encoding="utf-8") as fh:
+        committed = fh.read()
+    doc = json.loads(committed)
+    per_block = doc.get("blocks") or {}
+    again_box = tempfile.mkdtemp(prefix="stamp-swd-table-")
+    try:
+        again = os.path.join(again_box, "sweep-costs.json")
+        sweep_mod.record_costs(
+            again, [{"path": p, "seconds": s, "block_seconds": per_block.get(p)}
+                    for p, s in sorted(table.items())],
+            set(table), doc.get("workers"), platform=doc.get("platform"))
+        with io.open(again, encoding="utf-8") as fh:
+            rewritten = fh.read()
+    finally:
+        _harness.remove_tree(again_box)
+    check("swd7 the committed cost table is byte for byte what the sweep's "
+          "recorder writes for its own figures, platform and workers - so it "
+          "was last written by the recorder that times a staged suite block "
+          "by block, not left over from before it: about %r vs %r, %d suites "
+          "with block figures"
+          % (doc.get("about", "")[:90],
+             json.loads(rewritten).get("about", "")[:90], len(per_block)),
+          table_problem is None and rewritten == committed)
+
     old = ("aa", [("old1", "mine.v >= 1")])
     root, man = _red_repo("stamp-swd-stage-", _staged_test(
         [old, ("zz", [("new1", "mine.v == 2")])]), head_test=_staged_test([old]))

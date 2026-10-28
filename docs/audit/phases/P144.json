@@ -164,7 +164,7 @@
     {
       "id": "P144.3-6yq",
       "title": "The drive's redo-recut cases hold on Windows: staged deletions, skip-worktree files and non-UTF-8 path bytes",
-      "status": "in_progress",
+      "status": "done",
       "description": "CI run 40715565769 (release tier, f06f113f), windows plain 1: tests/test_drive_phase.py ar20, ar20b, ar21, ar22 fail (649/653); windows cp1252 1: the ar block did not finish within 447 s (DID NOT REPORT). Linux and macOS pass. ar20: a staged deletion of a file still on disk - the redo is refused naming src/f3.txt 'staged as neither its base nor the work holds it', where the case expects a refusal by name with the index as it was (read the exact expectation); ar20b: a staged edit whose file was put back - the drive went on to an undeclared-change decision instead of refusing; ar21: a skip-worktree file absent from disk; ar22: a path in non-UTF-8 bytes - the pathspec handed to git is b':(literal)caf\\xed\\xb3\\xa9.txt' (surrogateescape re-encoded as UTF-8 surrogates) where the listing returned 'caf\\udce9.txt' - on Windows the filesystem encoding differs (os.fsencode is not surrogateescape there). Logs: <scratchpad>/ci142/122912182618.log; the cp1252 1 timeout: gh run view 40715565769 --job 122912182623 --log-failed. For each: decide whether the PRODUCT is wrong on Windows (git index reads, CRLF/autocrlf turning a put-back file into a modification, filesystem encoding of path bytes) or whether a case asserts a property Windows cannot hold (then the case says so by platform, with the reason, never silently skipped). Fix the product where it is wrong. Also say why the ar block takes > 447 s on cp1252 1 and whether its recorded cost in .github/sweep-costs.json needs re-recording (that file is not in scope - report it).",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -188,25 +188,40 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3bcd5772561f",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "PRODUCT (plugins/audit/scripts/governance/drive-phase.py): _changed_between and _unheld no longer hand git-printed paths back to git as :(literal) pathspecs on the command line; each lists the whole tree once and narrows in Python through the new _literal_matches(names, paths), which keeps git's literal-pathspec semantics (the same path, or one below it as a directory, '/'-bounded). Reason: a Windows command line is UTF-16 and Git for Windows turns it into UTF-8, so a path whose bytes are not UTF-8 (decoded by _git_path to a surrogate escape) reaches git as the three bytes of an encoded surrogate, the pathspec matches nothing, and the path reads as held/unchanged - fail-open in the carry check (_unheld) and in recut_wrong/carry_beside_work (_changed_between). The 100-path argv batching in _unheld is gone with the argv. _git_path's docstring now states what the decode does and why such a path is never handed back as a pathspec. CASES (tests/test_drive_phase.py): ar20, ar20b and ar21 asserted the base file src/f3.txt against the LF literal _AR_IDLE_BASE, while _repo writes it in text mode, so the base holds CRLF on Windows (the sweep sets GIT_CONFIG_NOSYSTEM, so core.autocrlf is unset and git stores those bytes as they are). The product was right in all three: ar20 refused by name (the file's CRLF only failed the literal); ar20b put back an LF copy over a CRLF base, which is a real change outside the task's files, so the drive correctly went on to undeclared-change; ar21 closed with the base's CRLF file. Each case now reads the file's bytes off the tree before acting and compares with those (ar20b puts back exactly those bytes); _AR_IDLE_BASE is removed, with a comment on _AR_IDLE saying why; each label now prints the compared values. ar22 is rewritten: a fake carry_git (_command_line_git) answers listings and matches :(literal) pathspecs against the bytes a command line carries, run under _COMMAND_LINES = posix (utf-8/surrogateescape) and windows (utf-8/surrogatepass), over the listing [caf\\xe9.txt, dir/inner.txt, dirt.txt, other.txt]; it asserts the listing comes back whole, _changed_between(paths=[caf, dir]) == [caf, dir/inner.txt] and _unheld(paths=[caf, other.txt]) == [caf, other.txt], so it fails if the narrowing drops the path, narrows nothing, ignores directories, or uses a bare prefix. EVIDENCE: (1) the ar22 body on the pre-fix product: 'posix PASS', 'windows FAIL between=[dir/inner.txt] unheld=[other.txt]' (the Windows bug, reproduced on macOS); after the fix both PASS. In-memory mutants of _literal_matches (no file edited): return-all, exact-only and bare-prefix each FAIL under both command lines. (2) Windows text mode emulated on macOS (scratch runner rebinding the suite's open() to write \\r\\n where no newline is given) over the ar block: HEAD's test file -> 'SELFTEST FAILED: 35/39', FAIL ar20, ar20b (the same undeclared-change src/f3.txt output as CI), ar21, plus ar22 (HEAD's version asserts the retired pathspec); this task's test file -> 'ALL PASS: 39/39'. (3) `python3 tests/test_drive_phase.py --selftest --stage ar-block` plain: exit 0, 39/39, 184 s on this Mac (measured once). (4) Gate: `python3 tools/sweep-selftests.py tests/test_drive_phase.py` exit 0, 'ok tests/test_drive_phase.py 653 cases [1672.3s, 117 blocks]'. (5) ruff check (both files) exit 0; vermin -t=3.8- exit 0; _deps.git_path_base_violations() == [] (the rows for _changed_between and _unheld are not stale: both still make a diff listing call); _output_lints house_style_violations, prose_number_claims, path_preamble_violations, depth_sensitive_paths: no hits. CP1252 1 TIMEOUT: the ar block holds 39 cases, each building a wave fixture with task worktrees and driving the drive several times, so it is dominated by git and Python process starts, which cost far more on Windows; it takes 184 s in one process on macOS. Its timeout comes from the file's recorded cost: sweep-selftests.file_timeout = TIMEOUT_PER_COST (3) x the recorded slot-seconds spread over the grant's slots, cut by the deadline, and .github/sweep-costs.json records 1346.4 for tests/test_drive_phase.py on windows-latest. That job's own row reports [4913.5s, 117 blocks] (windows plain 1: 4375.4s), so the file now costs about 3.2-3.6x its recorded figure (P142's cases), every block's timeout is sized off a stale figure, and cp1252's slower run pushed the ar block past 447 s. sweep-costs.json needs re-recording (`python3 tools/sweep-selftests.py --costs-from-log <windows log> --record-costs .github/sweep-costs.json`, or --record-costs); it is outside this task's files and was not touched. LEFT, NOT CHANGED: (a) _seed_from_index writes not-checked-out skip-worktree paths to update-index's stdin as os.fsencode(p); on Windows a path _git_path decoded through its escape fallback is re-encoded there as other bytes, and update-index fails, so carry_commit refuses out loud (not a silent pass). A true inverse needs a decode that is one-to-one on Windows, which would trade away opening files whose NTFS names carry unpaired surrogates; that is out of a minimal change. (b) tools/lints/_deps.py GIT_PATH_BASE_EXEMPT reason rows for drive-phase.py tree_changed (line ~1950) and _changed_between (~1971) still say the paths are 'handed back as literal pathspecs' - their prose is now stale, though the lint passes; that file is outside this task's files. (c) Other :(literal) sites: plugins/audit/scripts/manifest/audit-task.py:609 and drive-phase.py aside_patch/set_aside build pathspecs from plan entries (text), not from git-printed bytes, so they are outside this class. COST FACT: _unheld now makes three whole-tree listings instead of up to three per batch of 100 paths; its ls-files -o walks the untracked, non-ignored part of the tree once more (git status --untracked-files=all already walks it in the same carry_commit). DEPENDANTS: tests/test_drive_phase.py -> .github/sweep-costs.json: stale (see above), not made heavier by this task (ar22 now starts no git; ar20/20b/21 add file reads only); drive-phase.py: changed by this task, as stated; tests/test__runner_output.py, tests/test_run_test_gate.py (_counting, _follower_cases, _head), tools/affected.py, tools/sweep-selftests.py, PLUGIN-BUILD-GUIDE.md, docs/research/pipeline-cost-design.md: still correct, since no name or path they use was changed (only _AR_IDLE_BASE was removed, which `git grep` finds nowhere else). drive-phase.py -> tests/test_drive_phase.py: updated (ar22); tools/affected.py, PLUGIN-BUILD-GUIDE.md, README.md, docs/research/pipeline-cost-design.md, hooks/detect-plan-skip.py, record-risk-confirmation.py, stamp-verification.py: still correct, since they reference the file by path or basename and no CLI, verb or output changed; names used elsewhere (_carries, _git_said, _index_flags, _mark): unchanged; tools/lints/_deps.py: its lint passes, but two reason strings are now stale (see LEFT b).",
+        "descriptive": "The drive no longer passes git-printed paths back to git on the command line, where Windows cannot spell bytes that are not UTF-8, so the redo/carry checks hold on Windows; ar20/ar20b/ar21 now compare against the base's real bytes instead of an LF literal Windows' text-mode fixture never wrote."
       },
       "startedAt": "2026-10-28T15:50:31Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-28T16:52:40Z",
+      "verifiedBy": [
+        "ar20/ar20b/ar21: the base file is compared with the bytes read off the tree before the act (ar20b puts back exactly those bytes), so a fixture written with CRLF on Windows holds the same claim",
+        "ar22: a fake git matching :(literal) pathspecs against the bytes a POSIX and a Windows command line carry; the non-UTF-8 path is answered for under both, the narrowing keeps git's directory semantics, and paths outside it are excluded"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-28T16:46:24Z.f55503",
         "status": "passed",
         "at": "2026-10-28T16:46:24Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "3bcd5772561f",
+        "at": "2026-10-28T16:52:40Z",
+        "return": "docs/audit/evidence/returns/P144.3-6yq/20261028T155031Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-28T16:22:19Z",
+        "basis": "`python3 tests/test_drive_phase.py --selftest --stage ar-block` in a throwaway tree at HEAD: the run timed out after 153 s and its process group was torn down; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P144.4-ttw",
       "title": "The sweep's per-file cost table is re-recorded from the windows release-tier log, so a staged block's timeout fits the windows runner",
-      "status": "pending",
+      "status": "cancelled",
       "description": "CI run 40715565769 (release tier, f06f113f), windows cp1252 1: tests/test_drive_phase.py's ar block did not finish within 447 s (DID NOT REPORT). A block's timeout is derived from the file's recorded cost in .github/sweep-costs.json (test_drive_phase.py: 1346.4 slot-seconds), while that run reported 4913.5 s for the file on cp1252 and 4375.4 s on plain - about 3.2-3.6x the record. Re-record the table from the windows plain legs of that run (gh run view 40715565769 --job <id> --log for each windows plain shard, saved locally) with 'python3 tools/sweep-selftests.py --costs-from-log LOG --platform win32 --record-costs .github/sweep-costs.json', per the file's own 'about' text, merging all shards so every file has a figure; check that '--shard I/N' still prints a balanced split and that sweep-selftests' own --selftest and gate-parity.py pass on the new table. If one log cannot carry every file, say which files keep their old figure and why. Report the before/after figure for test_drive_phase.py and the derived ar-block timeout. This does not settle P142-R9 (true per-block costs, P143.6); say so in the outcome.",
       "files": [
         ".github/sweep-costs.json"
@@ -233,16 +248,85 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: Superseded by P143.6 (moved into P144): the true table turns tt5 red because sharding divides files and never a staged suite's blocks, so test_drive_phase.py holds a windows shard alone with about 150 s of slack and a block timeout of the whole suite's figure. The re-record this task made (all six windows cells of run 40715565769, 193 files, test_drive_phase.py 1346.4 -> 4913.5) is kept for P143.6 at <scratchpad>/costs1444/cand-all.json; the file is restored to HEAD."
+      },
+      "startedAt": "2026-10-28T16:52:43Z",
+      "completedAt": "2026-10-28T16:58:51Z",
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
+    },
+    {
+      "id": "P144.5-ttw",
+      "title": "A staged suite's blocks are timed and sharded by their own cost, so the true cost table balances the shards and fits CI's deadline",
+      "status": "in_progress",
+      "description": "The sweep's cost table was under-recorded. A re-record from the three plain Windows legs of CI run 40549328014 (e236bb23) is ready at refs/audit/kept/P142.25-6yq (commit d40f2bf4). It changes .github/sweep-costs.json and adds case swd7 to tests/test_stamp_verification.py, which holds the table byte for byte to the recorder's output. It could not land alone. With the true figures:\n(1) `--shard 1/3` holds tests/test_drive_phase.py alone (4615.2 slot-s, against 2830.0 and 2830.0 for the other shards), because sharding divides files and never a staged suite's blocks. The real step walls in that run were 21m30s, 11m33s and 11m25s.\n(2) `file_timeout` gives each block the whole suite's figure, so `python3 tools/sweep-selftests.py --selftest` goes red on tt5 (longest file timeout 4616 s against the job's 26-minute bound).\n\nDo, in tools/sweep-selftests.py:\n- Record a staged suite's cost per block, and size a block's timeout from that block's own figure. Fall back to the suite's figure divided by its blocks only where no per-block figure exists, and say which basis a timeout used.\n- Let `--shard I/N` divide a staged suite's blocks across shards, so the shards balance by block cost. Keep the union of all parts pinned to the whole tree, block by block. The replay that prints a suite's run has to work when its blocks ran on different shards; if it cannot, say why and choose the structurally correct alternative.\n- Then apply the kept re-record. Re-record per-block figures from the same logs if the log prints them; otherwise from the next CI run, with the command written in your outcome. Refresh the comments that quote stale figures: the spread above TIMEOUT_PER_COST (this run reached 2.19x, plain vs cp1252) and the test_drive_phase figure.\n\nWho depends on this: .github/workflows/ci.yml's shard matrix and its job time bounds (tools/gate-parity.py `shard_matrix_drift` and the `longest` line); tests/_harness.py staged_main and its replay; plugins/audit/scripts/governance/stamp-verification.py, which sizes red-first deadlines from the same table. Answer each.\n\nRed-first: a case per behaviour, red on today's code. Deliver scratchpad/probe/mutations.py (mutations3 engine). No F/P/BUG ids in comments.",
+      "files": [
+        "tools/sweep-selftests.py",
+        "tests/_harness.py",
+        ".github/sweep-costs.json",
+        "tests/test_stamp_verification.py",
+        "tools/gate-parity.py",
+        ".github/workflows/ci.yml"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/sweep-selftests.py: a block's timeout is sized from its own figure",
+          "tools/sweep-selftests.py: --shard divides a staged suite's blocks and the parts' union is the whole tree",
+          "tests/test_stamp_verification.py: swd7, the committed table is the recorder's output"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tools/sweep-selftests.py tools/sweep-selftests.py tests/test_stamp_verification.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim",
+        "reproducing-ci-locally"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-28T16:59:03Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-28T00:39:54Z",
+          "text": "From P142.38: a job past the sweep deadline is now refused by name (rounded-up cut), and a replay always gets at least REPLAY_RESERVE past it; leave room for that in any per-block or per-shard deadline. A refused row has no seconds or window, so record_costs and claude_verdicts skip it, and a deadline-cut suite sums only the blocks that ran, so a cut run fed to --record-costs records that suite too low: record from uncut runs only, or refuse a cut one."
+        },
+        {
+          "at": "2026-10-28T16:59:01Z",
+          "text": "Moved from P143 for the 3.7.0 release: release-tier CI run 40715565769 (f06f113f) timed out test_drive_phase.py's ar block on windows cp1252 1 (cut to the 1380 s deadline's remainder). A newer re-record than the kept d40f2bf4 exists: all six windows cells of run 40715565769, 193 files (16 the old table lacked), test_drive_phase.py 4913.5 slot-s (4375.4 plain only), saved at <scratchpad>/costs1444/cand-all.json with the six job logs beside it (plain1/2/3.log, cp1/2/3.log); prefer it over d40f2bf4 and say which you applied. The failed shards' figures are lower bounds (cp1252 1's includes the ar block killed at 447 s). Per-block figures: check whether these logs print per-block seconds."
+        }
+      ],
+      "movedFrom": {
+        "id": "P143.6-6yq",
+        "phase": "P143",
+        "at": "2026-10-28T16:58:52Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-28T17:55:50Z.87d738",
+        "status": "passed",
+        "at": "2026-10-28T17:55:50Z"
+      }
     }
   ],
   "reviewPerTask": "signals",
