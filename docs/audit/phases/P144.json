@@ -1,0 +1,204 @@
+{
+  "id": "P144",
+  "title": "P142's suites pass on every CI runner: Windows paths across drives, spaced and linked temp roots",
+  "status": "in_progress",
+  "description": "",
+  "desiredOutcome": "The release-tier CI run (ci.yml -f tier=release) is green on the commit that carries P142 and these fixes, every selftests leg included (linux stress, windows plain and cp1252)",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [],
+  "baseRef": "f06f113f73922e38d671a96547d8b51874a9b622",
+  "branch": "audit/p144-p142-s-suites-pass-on-every-ci",
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P144.1-6yq",
+      "title": "prove-gates' selftest reads its fixture tree when the fixture and the repository sit on different Windows drives",
+      "status": "in_progress",
+      "description": "CI run 40715565769 (release tier, f06f113f), windows plain 3 and cp1252 3: tools/prove-gates.py --selftest raised 'ValueError: path is on mount C:, start on mount D:' at _cases line 3153 'coverage(script_dir=_fx)' -> gate_names -> _derived_gates line 2011 (an os.path.relpath of a fixture dir under the temp root on C: against the repo on D:); every case after it did not run (8/9). Logs: <scratchpad>/ci142/122912182409.log. Make the derivation never relpath across drives (spell the fixture's paths relative to its own root, or compare by realpath without relpath), keep the cases' meaning, and add a case that fails on a POSIX host by simulating the cross-drive answer (inject the relpath, or a fixture outside the repo root) so the class is caught off Windows. Check every other relpath in prove-gates.py for the same shape.",
+      "files": [
+        "tools/prove-gates.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tools/prove-gates.py::c1"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tools/prove-gates.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-28T15:50:25Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-28T16:31:12Z.e094b1",
+        "status": "passed",
+        "at": "2026-10-28T16:31:12Z"
+      }
+    },
+    {
+      "id": "P144.2-6yq",
+      "title": "Status's kept-tree remover rows hold under a spaced, symlinked temp root and on Windows",
+      "status": "in_progress",
+      "description": "CI run 40715565769 (release tier, f06f113f): tests/test_audit_status.py kt5, kt6b, kt7, kt8, kt9, kt9b fail (401/407) on linux stress 3 (cp1252 + spaced, symlinked TMPDIR: '/tmp/sw-x/via/s p/...' where via is a link to real) and on windows plain 3 and cp1252 3. Example kt5: the aside row prints \"git worktree remove --force '/tmp/sw-xz1zqqsk/via/s p/audit-status-kt-yvs53rj2/aside-tree'\" (shlex-quoted because of the space) while the case expects the bare path; kt6b: the row names the 'real/' spelling while the fixture holds the 'via/' one, and running the row as written did not take the tree down (None). These cases came in with 152b7253 (kept-tree advice). Logs: <scratchpad>/ci142/122912183449.log (linux), <scratchpad>/ci142/122912182409.log (windows). Reproduce locally with 'python3 tools/sweep-selftests.py --spaced tests/test_audit_status.py' (and --encoding cp1252). Decide per case whether the PRODUCT is wrong (a printed command must run as written in the user's shell - on Windows too, where POSIX single quotes do not quote in cmd; say which shells the printed command targets and quote for them) or the CASE compares a spelling it should normalise (realpath both sides). Fix the product where it is wrong; never weaken a case to the observed output. The release-tier CI must be green on these legs.",
+      "files": [
+        "plugins/audit/scripts/status/audit-status.py",
+        "tests/test_audit_status.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test_audit_status.py::kt5"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_status.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-28T15:50:28Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-28T16:38:08Z.de6317",
+        "status": "passed",
+        "at": "2026-10-28T16:38:08Z"
+      }
+    },
+    {
+      "id": "P144.3-6yq",
+      "title": "The drive's redo-recut cases hold on Windows: staged deletions, skip-worktree files and non-UTF-8 path bytes",
+      "status": "in_progress",
+      "description": "CI run 40715565769 (release tier, f06f113f), windows plain 1: tests/test_drive_phase.py ar20, ar20b, ar21, ar22 fail (649/653); windows cp1252 1: the ar block did not finish within 447 s (DID NOT REPORT). Linux and macOS pass. ar20: a staged deletion of a file still on disk - the redo is refused naming src/f3.txt 'staged as neither its base nor the work holds it', where the case expects a refusal by name with the index as it was (read the exact expectation); ar20b: a staged edit whose file was put back - the drive went on to an undeclared-change decision instead of refusing; ar21: a skip-worktree file absent from disk; ar22: a path in non-UTF-8 bytes - the pathspec handed to git is b':(literal)caf\\xed\\xb3\\xa9.txt' (surrogateescape re-encoded as UTF-8 surrogates) where the listing returned 'caf\\udce9.txt' - on Windows the filesystem encoding differs (os.fsencode is not surrogateescape there). Logs: <scratchpad>/ci142/122912182618.log; the cp1252 1 timeout: gh run view 40715565769 --job 122912182623 --log-failed. For each: decide whether the PRODUCT is wrong on Windows (git index reads, CRLF/autocrlf turning a put-back file into a modification, filesystem encoding of path bytes) or whether a case asserts a property Windows cannot hold (then the case says so by platform, with the reason, never silently skipped). Fix the product where it is wrong. Also say why the ar block takes > 447 s on cp1252 1 and whether its recorded cost in .github/sweep-costs.json needs re-recording (that file is not in scope - report it).",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test_drive_phase.py::ar20"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-28T15:50:31Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-28T16:46:24Z.f55503",
+        "status": "passed",
+        "at": "2026-10-28T16:46:24Z"
+      }
+    },
+    {
+      "id": "P144.4-ttw",
+      "title": "The sweep's per-file cost table is re-recorded from the windows release-tier log, so a staged block's timeout fits the windows runner",
+      "status": "pending",
+      "description": "CI run 40715565769 (release tier, f06f113f), windows cp1252 1: tests/test_drive_phase.py's ar block did not finish within 447 s (DID NOT REPORT). A block's timeout is derived from the file's recorded cost in .github/sweep-costs.json (test_drive_phase.py: 1346.4 slot-seconds), while that run reported 4913.5 s for the file on cp1252 and 4375.4 s on plain - about 3.2-3.6x the record. Re-record the table from the windows plain legs of that run (gh run view 40715565769 --job <id> --log for each windows plain shard, saved locally) with 'python3 tools/sweep-selftests.py --costs-from-log LOG --platform win32 --record-costs .github/sweep-costs.json', per the file's own 'about' text, merging all shards so every file has a figure; check that '--shard I/N' still prints a balanced split and that sweep-selftests' own --selftest and gate-parity.py pass on the new table. If one log cannot carry every file, say which files keep their old figure and why. Report the before/after figure for test_drive_phase.py and the derived ar-block timeout. This does not settle P142-R9 (true per-block costs, P143.6); say so in the outcome.",
+      "files": [
+        ".github/sweep-costs.json"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "phase-no-paths"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "482d7bf5-025e-4eb9-acc8-1383e2a9aaa8",
+    "branch": "audit/p144-p142-s-suites-pass-on-every-ci",
+    "at": "2026-10-28T15:50:25Z"
+  },
+  "startedAt": "2026-10-28T15:50:25Z"
+}

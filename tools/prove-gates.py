@@ -1945,7 +1945,15 @@ _GATE_ROOTS = ("plugins/audit/scripts", "plugins/audit/hooks", "tools")
 
 
 def _gate_sources(script_dir=None, repo=None):
-    """[(path, tree)] for every file that could hold a guard — DERIVED, not listed.
+    """[(rel, path, tree)] for every file that could hold a guard — DERIVED, not
+    listed. `rel` is the file in forward slashes, repo-relative for a root under
+    the repository and relative to `script_dir` when one is given.
+
+    `rel` IS SPELLED AGAINST THE ROOT THE WALK STARTED FROM, never against the
+    repository: `script_dir` is a fixture under the temp directory, which on the
+    windows runner is on another drive than the checkout, and `os.path.relpath`
+    between two drives raises instead of answering. A file found by walking a root
+    is always on that root's drive, so the relative path below always exists.
 
     THE FILE-LEVEL HOLE, and it subsumes the earlier function-level one. Both
     derivation arms below used to iterate a HAND-WRITTEN tuple of paths, so
@@ -1977,12 +1985,12 @@ def _gate_sources(script_dir=None, repo=None):
     """
     repo_root = repo or REPO
     if script_dir is not None:
-        roots = [script_dir]
+        roots = [("", script_dir)]
     else:
-        roots = [os.path.join(repo_root, rel.replace("/", os.sep))
+        roots = [(rel + "/", os.path.join(repo_root, rel.replace("/", os.sep)))
                  for rel in _GATE_ROOTS]
     out = []
-    for root in roots:
+    for prefix, root in roots:
         for dirpath, _dirs, files in os.walk(root):
             if "__pycache__" in dirpath:
                 continue
@@ -1990,8 +1998,9 @@ def _gate_sources(script_dir=None, repo=None):
                 if not name.endswith(".py"):
                     continue
                 path = os.path.join(dirpath, name)
+                rel = prefix + os.path.relpath(path, root).replace(os.sep, "/")
                 try:
-                    out.append((path,
+                    out.append((rel, path,
                                 ast.parse(io.open(path, encoding="utf-8").read())))
                 except (OSError, SyntaxError):
                     continue
@@ -2000,15 +2009,15 @@ def _gate_sources(script_dir=None, repo=None):
 
 def _derived_gates(script_dir=None, repo=None):
     """`[(file, lint)]` for every load-bearing lint and the file defining it,
-    `file` repo-relative with forward slashes. The ONE reading of which function
+    `file` as `_gate_sources()` spells it: repo-relative with forward slashes, or
+    relative to `script_dir` when a case names one. The ONE reading of which function
     is a gate: `gate_names()`, `guard_files()` and `lint_homes()` are each a
     projection of it, so the set of lints and the set of their homes cannot be
     derived by two predicates that drift apart."""
     repo_root = repo or REPO
     excused = set(name for name, _why in NOT_A_GATE)
     out = []
-    for path, tree in _gate_sources(script_dir, repo_root):
-        rel = os.path.relpath(path, repo_root).replace(os.sep, "/")
+    for rel, _path, tree in _gate_sources(script_dir, repo_root):
         for node in tree.body:
             if not isinstance(node, ast.FunctionDef) or node.name.startswith("_"):
                 continue
@@ -2084,7 +2093,7 @@ def not_a_gate_problems(script_dir=None, repo=None, table=None):
     table = NOT_A_GATE if table is None else table
     reached = set()
     named = set()
-    for _path, tree in _gate_sources(script_dir, repo):
+    for _rel, _path, tree in _gate_sources(script_dir, repo):
         for node in tree.body:
             if not isinstance(node, ast.FunctionDef) or node.name.startswith("_"):
                 continue
@@ -3158,6 +3167,54 @@ def _cases(check):
           "derived or still carrying a row %r; a fixture lint with no row is "
           "reported as %r" % (_held, _unproven),
           _held == [] and _unproven == ["probe_unproven_violations"])
+
+    # THE SAME FIXTURE ON ANOTHER DRIVE. On the hosted windows runner the temp
+    # directory is on one drive and the checkout on another, and a relative path
+    # between two drives does not exist: `os.path.relpath` raises ValueError. The
+    # derivation once spelled every walked file relative to the REPOSITORY, so the
+    # fixture above raised there while the cases were still being built and every
+    # case after it went unrun. A posix host has one drive, so the windows answer is
+    # injected: for the length of this case `os.path.relpath` raises exactly where
+    # windows would - one side inside the fixture, the other outside it - and
+    # answers as before everywhere else. `_armed` is asked first - the patched
+    # name IS the stub, and the stub refuses the very pair the derivation once
+    # built - so a green below cannot come from an injection that never bit. The
+    # stub is called by its own name there: spelled through `os.path` with a
+    # scratch side and a checkout side, it is the shape `_suite`'s relative-path
+    # rule refuses, and that rule reads text, not which function a name is bound to.
+    _fx2 = tempfile.mkdtemp(prefix="prove-gates-drive-")
+    _real_relpath = os.path.relpath
+
+    def _across_drives(path, start=os.curdir):
+        if _under(path, _fx2) != _under(start, _fx2):
+            raise ValueError("path is on mount 'C:', start on mount 'D:'")
+        return _real_relpath(path, start)
+
+    try:
+        with io.open(os.path.join(_fx2, "_output.py"), "w",
+                     encoding="utf-8") as fh:
+            fh.write("def probe_unproven_violations():\n    return []\n")
+        os.path.relpath = _across_drives
+        try:
+            try:
+                _across_drives(os.path.join(_fx2, "_output.py"), REPO)
+                _armed = False
+            except ValueError:
+                _armed = os.path.relpath is _across_drives
+            try:
+                _crossed = coverage(script_dir=_fx2)
+            except ValueError as exc:
+                _crossed = "raised ValueError: %s" % (exc,)
+        finally:
+            os.path.relpath = _real_relpath
+    finally:
+        shutil.rmtree(_fx2, ignore_errors=True)
+    check("c1g ...and that fixture is derived the same when it sits on another "
+          "drive than the repository, which is where the windows runner's temp "
+          "directory sits: the walk spells each file against the root it walked, "
+          "never across to the repository (injection armed: %r; derived %r)"
+          % (_armed, _crossed),
+          _armed and _crossed == ["probe_unproven_violations"])
 
     unanchored = []
     for row in TABLE:

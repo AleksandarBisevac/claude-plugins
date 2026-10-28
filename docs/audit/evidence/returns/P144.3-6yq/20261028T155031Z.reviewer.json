@@ -1,0 +1,29 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low",
+   "file": "tools/lints/_deps.py:1950-1953,1968-1972",
+   "issue": "GIT_PATH_BASE_EXEMPT reason rows for drive-phase.py tree_changed and _changed_between still say the paths are 'handed back as literal pathspecs to git'. This diff removes exactly that for _changed_between (and _unheld) and tree_changed never did it, so the table now states the opposite of the code. The lint passes (it reads the rows' presence, not their prose), so nothing will catch it. The executor reported it as LEFT (b), the file being outside the task's files.",
+   "resolution": "Reword both rows to say the listings are narrowed in Python by _literal_matches, in a follow-up task that owns tools/lints/_deps.py."},
+  {"id": 2, "severity": "low",
+   "file": "tests/test_drive_phase.py:10157-10177",
+   "issue": "ar22's pathspec-matching branch in _command_line_git (the specs / startswith(tag) handling) is never reached by the fixed product, since _changed_between and _unheld now pass no pathspec. It only bites if someone reintroduces :(literal) arguments. That is the intended guard, but a reader cannot tell from the case that the branch is dormant, and nothing asserts that no argv in `seen` carries a pathspec. `len(seen)` is recorded in `answered` but never compared.",
+   "resolution": "Either assert that no recorded argv holds a ':(literal)' element (turning the dormant branch into a live pin that a reintroduction trips under the posix leg as well), or drop the unused `seen` count from `answered`."}
+ ],
+ "preExisting": [
+  {"id": 1, "severity": "med",
+   "file": ".github/sweep-costs.json (tests/test_drive_phase.py, windows-latest 1346.4)",
+   "issue": "The recorded cost is stale against the CI rows the executor quotes (4913.5 s and 4375.4 s for the file, roughly 3.2 to 3.6 times the record). Every block's timeout is sized off it (TIMEOUT_PER_COST), so the cp1252 ar block (DID NOT REPORT at 447 s) can time out again after this fix: the fix removes the four assertion failures, not the slowness. The desired outcome (release tier green, cp1252 leg included) depends on a re-record that is not in this task's files.",
+   "resolution": "Re-record with sweep-selftests.py --costs-from-log <windows log> --record-costs .github/sweep-costs.json in a task that owns that file, before the next release-tier dispatch."}
+ ],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clause: 'For each: decide whether the PRODUCT is wrong on Windows ... or whether a case asserts a property Windows cannot hold ... Fix the product where it is wrong. Also say why the ar block takes > 447 s on cp1252 1 and whether its recorded cost ... needs re-recording'. Diff: ar22 is a real product fault. drive-phase.py _changed_between (5038-5048) and _unheld (5214-5242) no longer hand :(literal) pathspecs of git-printed paths back to git; they list the whole tree once and narrow in the new _literal_matches (5025-5035), which keeps git's literal semantics (same path, or a path below it as a directory, '/'-bounded). I read it: the prefix loop covers every component prefix, an empty `paths` returns the whole listing in _changed_between as before, and _unheld returns [], [], '' early as it did for an empty batch loop. ar20, ar20b and ar21 are cases asserting an LF literal against a base file _repo writes in text mode, so each now reads the file's bytes off the tree before the act and compares with those (ar20b puts back those exact bytes); _AR_IDLE_BASE has no remaining reference (git grep). The cost question is answered: stale record, not touched, reported. Claim vs diff: the claim's description of the product change, the case changes, LEFT (a)-(c) and the dependants matches the diff in front of me. Not verifiable here, and the claim says so: the Windows CRLF/autocrlf reasoning for ar20/20b/21 and the cp1252 timing, which rest on the CI rows quoted and the executor's emulated-text-mode run. I ran python3 tests/test_drive_phase.py --selftest --stage ar-block once in the task tree: exit 0, ALL PASS 39/39 (ar20, ar20b, ar21, ar22 PASS, ar22 under both command lines), about 195 s here.",
+  "missing": [],
+  "redFirst": "could-not-prove",
+  "redFirstBasis": "The filed redFirst is could-not-prove: the ar-block selftest at HEAD in a throwaway tree timed out after 153 s and its process group was torn down (reason quoted from the filed basis, source red-first-helper). That holds as a refusal, and no assertion was seen failing in a gate run. The outcome also quotes ad-hoc evidence: the ar22 body on the pre-fix product failing under the windows command line, and the emulated Windows text-mode run of HEAD's test file giving 35/39. Those are the executor's own scratch runs, not a stamp-verification red, so I record them without upgrading the word.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "tests.gate is the literal command python3 tools/sweep-selftests.py tests/test_drive_phase.py, which selects the one file (653 cases per the filed gate). I could not read all of it. I read what reaches the changed behaviour: git grep finds _changed_between and _unheld called directly by ar22 only (tests/test_drive_phase.py:10164-10165). The other cases reach the narrowing through the recut and redo flows (ar17c, ar20 to ar21 at 10040-10160, which I read). ar22 would fail if the narrowing were deleted (the executor's return-all, exact-only and bare-prefix mutants, by claim), and the integration cases use whole-file refusals by name that do not depend on the narrowing's exactness. No swallowing try, empty filter or does-not-raise shape found in the cases read. This is a reading of the ar block region, not of the whole file."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

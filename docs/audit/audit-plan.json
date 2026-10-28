@@ -928,6 +928,12 @@
       "title": "The affected selection as the task gate",
       "status": "pending",
       "shard": "phases/P143.json"
+    },
+    {
+      "id": "P144",
+      "title": "P142's suites pass on every CI runner: Windows paths across drives, spaced and linked temp roots",
+      "status": "in_progress",
+      "shard": "phases/P144.json"
     }
   ],
   "fileIndex": {
@@ -5605,7 +5611,8 @@
       "P142.45-6yq",
       "P142.47-6yq",
       "P142.48-6yq",
-      "P142.49-6yq"
+      "P142.49-6yq",
+      "P144.2-6yq"
     ],
     "plugins/audit/scripts/status/audit-version.py": [
       "P67.1",
@@ -8171,7 +8178,8 @@
       "P142.17-6yq",
       "P142.33-6yq",
       "P142.50-6yq",
-      "P142.51-6yq"
+      "P142.51-6yq",
+      "P144.1-6yq"
     ],
     "tools/redfirst.sh": [
       "P55.13",
@@ -10112,7 +10120,8 @@
       "P142.47-6yq",
       "P142.48-6yq",
       "P142.49-6yq",
-      "P142.51-6yq"
+      "P142.51-6yq",
+      "P144.3-6yq"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -10749,7 +10758,8 @@
       "P142.8",
       "P142.1",
       "P142.25-6yq",
-      "P142.29-6yq"
+      "P142.29-6yq",
+      "P144.4-ttw"
     ],
     "docs/audit/phases/P127.json": [
       "P127.8-bgr"
@@ -11552,7 +11562,8 @@
       "P142.45-6yq",
       "P142.47-6yq",
       "P142.48-6yq",
-      "P142.49-6yq"
+      "P142.49-6yq",
+      "P144.2-6yq"
     ],
     "tests/test_audit_task.py": [
       "P131.1",
@@ -11656,7 +11667,8 @@
       "P142.47-6yq",
       "P142.48-6yq",
       "P142.49-6yq",
-      "P142.51-6yq"
+      "P142.51-6yq",
+      "P144.3-6yq"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
