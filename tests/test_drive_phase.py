@@ -9914,8 +9914,8 @@ def _recut_describes_cases(check, M):
 
     # ignore=dirty: the uncommitted edit inside the submodule is invisible the
     # same way. It is the submodule's own change, not the task's work, so it
-    # stops no redo; the old tree is set aside and kept, the edit in it, since
-    # a removal would delete it.
+    # stops no redo; the old tree is kept where it stands, the edit in it,
+    # since a removal would delete it.
     root_d, mpath_d, _h, tree_d, base_d, _r, _c, text_d = _ar_at_decision(
         M, "arecutid", prepare=_submodule_ignoring("dirty"))
     _dirty_submodule(tree_d)
@@ -9923,10 +9923,10 @@ def _recut_describes_cases(check, M):
     aside_d = _aside_said(said_d)
     edited_d = os.path.join(aside_d, *(_AR_MODULE.split("/") + ["lib.txt"]))
     check("ar18b a tree holding a submodule whose dirt git is told to ignore is "
-          "recut, its old tree set aside and kept for the submodule, the edit "
-          "inside it as it was: %r" % ((code_d, aside_d, said_d[-500:]),),
-          "redo" in _offers(text_d) and code_d == 0 and aside_d
-          and "set aside at %s, kept (%s" % (aside_d, _AR_MODULE) in said_d
+          "recut, its old tree kept where it stands for the submodule, the "
+          "edit inside it as it was: %r" % ((code_d, aside_d, said_d[-500:]),),
+          "redo" in _offers(text_d) and code_d == 0 and aside_d == tree_d
+          and "old tree at %s kept (%s" % (aside_d, _AR_MODULE) in said_d
           and os.path.isfile(edited_d)
           and _read(edited_d) == b"edited by P1.1, never committed\n")
 
@@ -10187,33 +10187,34 @@ def _recut_crash_cases(check, M):
           "three-way apply there: %r" % (said_a2[-400:],),
           "git apply --3way" in said_a2 and "already holds" not in said_a2)
 
-    # Stopped with the patch kept while the old tree still stands - the move
-    # that sets it aside failed - so the tree holds the work, and an apply
-    # there would fail on every path it names. The marker the move rewrote is
-    # put back, so the tree still answers to the task.
-    real_rename = os.rename
+    # Stopped with the patch kept while the old tree still stands as the
+    # task's - its marker could not be rewritten to the kept key - so the tree
+    # holds the work, and an apply there would fail on every path it names.
+    # The marker is written whole or not at all, so the tree still answers to
+    # the task.
     root_d, mpath_d, _head_d, tree_d, base_d, _rows_d, _c, _t = \
         _ar_at_decision(M, "arecutd")
+    real_record = M._worktrees.write_record
 
-    def refusing_move(src, dst, *rest, **kw):
-        if os.path.realpath(str(src)) == os.path.realpath(tree_d):
-            raise OSError(13, "fixture: the tree could not be moved")
-        return real_rename(src, dst, *rest, **kw)
-    M.os.rename = refusing_move
+    def refusing_marker(path, record, run=None):
+        if " set aside " in str(record.get("taskId")):
+            return "", "fixture: the marker could not be written"
+        return real_record(path, record, run=run)
+    M._worktrees.write_record = refusing_marker
     try:
         code_d, said_d = _next(M, root_d, mpath_d, "--answer", "redo")
     finally:
-        M.os.rename = real_rename
+        M._worktrees.write_record = real_record
     code_d2, said_d2 = _next(M, root_d, mpath_d)
     marked_d = M._worktrees.read_provenance(tree_d, expect_task="P1.1").get("ours")
     asides_d = [k for k in (_drive_state(root_d).get("keptTrees") or {})
                 if "set aside" in k]
-    check("ar6d a redo stopped before its old tree was set aside leaves that "
-          "tree holding the work, its marker naming the task and no set-aside "
-          "recorded, and the stop says so instead of prescribing an apply "
+    check("ar6d a redo stopped before its old tree was kept leaves that tree "
+          "holding the work, its marker naming the task and nothing recorded "
+          "kept, and the stop says so instead of prescribing an apply "
           "there: %r" % ((code_d, said_d[-300:], code_d2, said_d2[-500:],
                           marked_d, asides_d),),
-          code_d != 0 and "fixture: the tree could not be moved" in said_d
+          code_d != 0 and "fixture: the marker could not be written" in said_d
           and code_d2 != 0 and not _no_patch(root_d)
           and _tree_of(root_d, "P1.1") == tree_d and marked_d is True
           and not asides_d
@@ -10266,11 +10267,11 @@ def _recut_crash_cases(check, M):
 # --- a redo sets the old tree aside; one remover keeps a tree on any doubt -----
 _TA_SETTLED = _AR_WORK.replace("six\n", "six, settled by hand\n")
 _TA_SETTLED_MERGED = _AR_MERGED.replace(b"six\n", b"six, settled by hand\n")
-_TA_ASIDE = re.compile(r"old tree set aside at (.+?)(?: and removed|, kept)")
+_TA_ASIDE = re.compile(r"old tree at (.+?) (?:removed|kept)")
 
 
 def _aside_said(said):
-    """The set-aside path the redo's did-line names, or ''."""
+    """The old tree's path the redo's did-line names, or ''."""
     hit = _TA_ASIDE.search(said or "")
     return hit.group(1) if hit else ""
 
@@ -10360,38 +10361,57 @@ def _set_aside_cases(check):
     root, mpath, _head, tree, _base, _rows, _c, text = _ar_at_decision(M, "tasettle")
     _harness.git(tree, "add", "-A")
     _write_lf(os.path.join(tree, "src", "f1.txt"), _TA_SETTLED)
+    admin = os.path.realpath(M._worktrees.admin_dir(tree))
+    block_before = _worktree_block(root, tree)
     code, said = _next(M, root, mpath, "--answer", "redo")
     aside = _aside_said(said)
     kept = dict(_drive_state(root).get("keptTrees") or {})
+    key = [k for k, p in kept.items() if p == tree]
+    marker = M._worktrees.read_provenance(tree).get("record") or {}
     check("ta1 a redo over a tree whose index holds the integrator's staging, "
-          "edited since, recuts: the old tree is set aside beside the task's "
-          "tree path, named in the did-line and recorded, its index and file "
-          "as they were, and the member closes on the settled work merged: %r"
-          % ((code, aside, kept, said[-700:]),),
+          "edited since, recuts and moves nothing: the old tree stays at its "
+          "own path, named in the did-line and recorded under the key its "
+          "marker now names, its index and file as they were, and the member "
+          "closes on the settled work merged: %r"
+          % ((code, aside, kept, marker, said[-700:]),),
           "redo" in _offers(text) and code == 0 and "redo refused" not in said
-          and aside and aside != tree and os.path.isdir(aside)
-          and os.path.dirname(aside) == os.path.dirname(tree)
-          and aside in kept.values()
-          and _git_out(aside, "show", ":src/f1.txt") == _AR_WORK
-          and _read(os.path.join(aside, "src", "f1.txt")) == _TA_SETTLED.encode()
+          and aside == tree and os.path.isdir(tree) and len(key) == 1
+          and marker.get("taskId") == key[0]
+          and _git_out(tree, "show", ":src/f1.txt") == _AR_WORK
+          and _read(os.path.join(tree, "src", "f1.txt")) == _TA_SETTLED.encode()
           and tasks_of(mpath)["P1.1"].get("status") == "done"
           and _read(os.path.join(root, "src", "f1.txt")) == _TA_SETTLED_MERGED)
     status = _loader.load_script("audit-status.py", "audit_status_ta", cache=False)
     with _Env(root):
         listed = status.kept_trees_block(mpath, root)
-    check("ta1b ...and status lists the set-aside tree among the trees a wave "
-          "left standing: %r" % (listed,),
+    check("ta1b ...and status lists the kept tree among the trees a wave left "
+          "standing: %r" % (listed,),
           aside and aside in [t.get("path") for t in listed.get("trees") or []])
-    # OVER-FIRE twin of ta11: the lock a set-aside takes while it moves the
-    # tree is given back once git reads the tree at its new path.
-    block = _worktree_block(root, aside) if aside else []
-    check("ta1c ...and git lists the set-aside tree at its new path, unlocked: "
-          "%r" % (block,), block and not _is_locked(block))
+    # git's record of the old tree is the one it had: the same path, the same
+    # admin directory, no lock. A move - or a lock taken for one - fails it.
+    block = _worktree_block(root, tree)
+    check("ta1c ...and git's record of the old tree is untouched: the same path, "
+          "the same admin directory, not locked: %r"
+          % ((admin, block_before, block),),
+          admin and block and block == block_before and not _is_locked(block)
+          and os.path.realpath(M._worktrees.admin_dir(tree)) == admin
+          and os.path.isfile(os.path.join(admin, "gitdir"))
+          and not os.path.lexists(os.path.join(admin, "locked")))
+    # The new tree is cut at a path of its own beside the old one - the
+    # did-line names it; the member closed, so retiring it has taken it down.
+    hit = re.search(r"tree of P1\.1 recut at [0-9a-f]+ in (.+?), ", said)
+    recut = hit.group(1) if hit else ""
+    check("ta1d ...and the recut tree was cut at a fresh path beside the old "
+          "one, the first redo's, which no kept tree shares: %r"
+          % ((recut, tree, kept),),
+          recut == tree + ".redo-1" and recut not in kept.values()
+          and (_drive_state(root).get(M.RECUTS) or {}).get("P1.1")
+          == {"from": tree, "n": 1})
 
     # A submodule the base holds and the tree never checked out holds nothing:
     # the redo recuts, and the old tree, holding nothing the recut lacks, is
-    # removed once the recut holds the work. OVER-FIRE twin of ta1: a set-aside
-    # that kept every tree would leave this one standing.
+    # removed once the recut holds the work. OVER-FIRE twin of ta1: a redo
+    # that kept every old tree would leave this one standing.
     root_u, mpath_u, _h, tree_u, _b, _r, _c, text_u = _ar_at_decision(
         M, "tauninit", prepare=_with_submodule)
     bare_u = not os.path.lexists(os.path.join(tree_u, *(_AR_MODULE.split("/")
@@ -10399,11 +10419,11 @@ def _set_aside_cases(check):
     code_u, said_u = _next(M, root_u, mpath_u, "--answer", "redo")
     aside_u = _aside_said(said_u)
     check("ta2 a tree whose base holds a submodule it never checked out is "
-          "recut, and its old tree, set aside, is removed once the recut holds "
-          "its work: %r" % ((bare_u, code_u, aside_u, said_u[-600:]),),
+          "recut, and its old tree, kept at its own path, is removed once the "
+          "recut holds its work: %r" % ((bare_u, code_u, aside_u, said_u[-600:]),),
           "redo" in _offers(text_u) and bare_u and code_u == 0
-          and "redo refused" not in said_u and aside_u
-          and "set aside at %s and removed" % (aside_u,) in said_u
+          and "redo refused" not in said_u and aside_u == tree_u
+          and "old tree at %s removed" % (aside_u,) in said_u
           and not os.path.lexists(aside_u)
           and tasks_of(mpath_u)["P1.1"].get("status") == "done")
 
@@ -10481,10 +10501,10 @@ def _set_aside_cases(check):
           stop is None and standing
           and any("kept" in d and "P1.9" in d for d in did))
 
-    # A tree a redo set aside, clean and integrated, goes when the task is
-    # retired, and its entry with it; the member's own tree too.
+    # A tree a redo kept, clean and integrated, goes when the task is retired,
+    # and its entry with it; the member's own tree too.
     root_s, mpath_s, tree_s = _retire_fixture("tasetaside")
-    aside_s = tree_s + ".aside-1"
+    aside_s = tree_s + "-kept"
     _harness.git(root_s, "worktree", "add", "-q", "--detach", aside_s)
     M._worktrees.write_record(aside_s, {
         "createdBy": "audit", "taskId": "P1.1 set aside 1", "phaseId": PHASE,
@@ -10493,7 +10513,7 @@ def _set_aside_cases(check):
     stop, did, standing, left = _retired(M, root_s, mpath_s, tree_s,
                                          {"P1.1 set aside 1": aside_s})
     check("ta10 retiring a closed member takes down the clean tree a redo of it "
-          "set aside, through the same remover, and forgets its entry: %r"
+          "kept, through the same remover, and forgets its entry: %r"
           % ((stop, did, standing, left),),
           stop is None and not standing and not os.path.isdir(aside_s)
           and not left
@@ -10534,7 +10554,7 @@ def _set_aside_cases(check):
           and os.path.isfile(os.path.join(tree_d, *(_AR_MODULE.split("/")
                                                     + ["build.out"])))
           and any("kept" in d and _AR_MODULE in d for d in did))
-    _set_aside_repair_cases(M, check)
+    _kept_tree_cases(M, check)
 
 
 def _checked_out(tree):
@@ -10542,414 +10562,170 @@ def _checked_out(tree):
     _harness.git(tree, *(_FILE_PROTOCOL + ("submodule", "update", "--init", "-q")))
 
 
-def _set_aside_repair_cases(M, check):
-    """Between the move of a set-aside tree and git reading it at its new path,
-    git's record of the tree names the old path, which `git worktree prune`
-    reads as gone - deleting the record's directory, the tree's index, its
-    marker and every submodule repository kept there - and which `git worktree
-    add -f` takes over. The record is locked from before the move until git
-    reads the tree where it went, and a repair that failed is run again on the
-    next step."""
+def _kept_tree_cases(M, check):
+    """A redo moves no tree, so what a reading of the old tree misses is never
+    lost: git's record of it, its submodule repositories and its files stay
+    where they were. The recut tree is cut at a fresh path, a path once taken
+    is never cut at again, and a run that dies between the marker and the
+    state is settled by the marker."""
+    # A submodule checked out at the commit the base records, holding a commit
+    # of its own on a branch no other repository has: the lenient reading lets
+    # the redo go on, and that commit lives only in the submodule repository
+    # kept in the old tree's git directory - which a prune of a stale record
+    # would delete.
     root, mpath, _h, tree, _b, _r, _c, text = _ar_at_decision(
-        M, "tarepair", prepare=_with_submodule)
+        M, "takeepmod", prepare=_with_submodule)
     _checked_out(tree)
-    admin = M._worktrees.admin_dir(tree)
-    real_git = M.carry_git
-
-    def failing_repair(where, argv, env=None, stdin=None):
-        if argv[:2] == ["worktree", "repair"]:
-            return 1, b"", "fixture: the repair failed"
-        return real_git(where, argv, env=env, stdin=stdin)
-    M.carry_git = failing_repair
-    try:
-        code, said = _next(M, root, mpath, "--answer", "redo")
-    finally:
-        M.carry_git = real_git
-    asides = [p for k, p in (_drive_state(root).get("keptTrees") or {}).items()
-              if "set aside" in k]
-    aside = asides[0] if len(asides) == 1 else ""
-    block = _worktree_block(root, tree)
+    mod = os.path.join(tree, *_AR_MODULE.split("/"))
+    _write_lf(os.path.join(mod, "local.txt"), "a commit only this checkout has\n")
+    _harness.git(mod, "add", "-A")
+    _harness.git(mod, "commit", "-qm", "local only")
+    only = _git_out(mod, "rev-parse", "HEAD").strip()
+    _harness.git(mod, "branch", "-q", "keep")
+    _harness.git(mod, "checkout", "-q", "--detach", "HEAD~1")
+    admin = os.path.realpath(M._worktrees.admin_dir(tree))
+    code, said = _next(M, root, mpath, "--answer", "redo")
     code_p, pruned = _git_said(root, "worktree", "prune", "-n", "-v")
-    check("ta11 a set-aside whose repair fails leaves git's record of the tree "
-          "locked, so a prune names nothing and the record's directory - the "
-          "submodule repository under it too - stands; the stop names the "
-          "repair: %r" % ((code, aside, block, code_p, pruned, said[-500:]),),
-          "redo" in _offers(text) and code != 0 and aside
-          and os.path.isdir(aside) and "fixture: the repair failed" in said
-          and "git worktree repair %s" % (aside,) in said
-          and _is_locked(block) and code_p == 0 and not pruned.strip()
-          and os.path.isdir(os.path.join(admin, "modules")))
-    code_f, forced = _git_said(root, "worktree", "add", "-f", "--detach", tree)
-    check("ta11b ...and a forced add at the task's path is refused over the "
-          "locked record, so no second tree shares its git directory: %r"
-          % ((code_f, forced),), code_f != 0 and not os.path.lexists(tree))
-    _next(M, root, mpath)
-    moved = _worktree_block(root, aside) if aside else []
-    code_p, pruned = _git_said(root, "worktree", "prune", "-n", "-v")
-    mod = os.path.join(aside, *_AR_MODULE.split("/")) if aside else ""
-    check("ta11c ...and the next step runs the repair again: git lists the tree "
-          "at its new path, unlocked, a prune names nothing, and its submodule "
-          "reads there: %r" % ((moved, code_p, pruned),),
-          moved and not _is_locked(moved) and code_p == 0 and not pruned.strip()
+    check("ta11 a redo over a tree whose submodule holds a commit no other "
+          "repository has keeps the tree where it stands: no prune names its "
+          "record, its git directory is the one it had, and the commit reads in "
+          "its submodule: %r" % ((code, code_p, pruned, said[-500:]),),
+          "redo" in _offers(text) and code == 0 and _aside_said(said) == tree
+          and code_p == 0 and not pruned.strip()
+          and os.path.realpath(M._worktrees.admin_dir(tree)) == admin
           and os.path.isdir(os.path.join(admin, "modules"))
-          and _git_said(mod, "status", "--porcelain")[0] == 0)
+          and _git_out(mod, "rev-parse", "keep").strip() == only)
+    code_f, forced = _git_said(root, "worktree", "add", "-f", "--detach", tree)
+    check("ta11b ...and no tree is cut over it: a forced add at its path is "
+          "refused, and its marker still names the key it is kept under: %r"
+          % ((code_f, forced[-200:]),),
+          code_f != 0 and _git_out(mod, "rev-parse", "keep").strip() == only
+          and " set aside " in str((M._worktrees.read_provenance(tree)
+                                    .get("record") or {}).get("taskId")))
 
-    # The move fails and so does putting the marker back: the stop says the
-    # marker still names the set-aside key rather than that all is as it was.
-    root_x, mpath_x, tree_x = _retire_fixture("tarestore")
-    ctx_x = _drive_ctx(root_x, mpath_x)
-    state_x = {"wave": {"trees": {"P1.1": tree_x}, "records": ["docs/audit"]}}
-    real_rename, real_record = os.rename, M._worktrees.write_record
-    written = []
+    # Where a second and a third redo cut, and that no path once taken is cut
+    # at again: `recut_path` read against git's own records and the disk.
+    root_p, mpath_p, first = _retire_fixture("tapaths")
+    ctx_p = _drive_ctx(root_p, mpath_p)
 
-    def refusing_move(src, dst, *rest, **kw):
-        if os.path.realpath(str(src)) == os.path.realpath(tree_x):
-            raise OSError(13, "fixture: the tree could not be moved")
-        return real_rename(src, dst, *rest, **kw)
+    def cut_at(kept, recuts=None):
+        state = {"keptTrees": dict(kept)}
+        if recuts is not None:
+            state[M.RECUTS] = {"P1.1": dict(recuts)}
+        with _Env(root_p):
+            return M.recut_path(ctx_p, state, "P1.1")
+    one = cut_at({"P1.1 set aside 1": first})
+    two = cut_at({"P1.1 set aside 1": first, "P1.1 set aside 2": first + ".redo-1"},
+                 {"from": first, "n": 1})
+    three = cut_at({"P1.1 set aside 1": first, "P1.1 set aside 2": first + ".redo-1",
+                    "P1.1 set aside 3": first + ".redo-2"}, {"from": first, "n": 2})
+    check("ta20 the first redo cuts beside the task's first tree at .redo-1, a "
+          "second at .redo-2, a third at .redo-3, each recording where: %r"
+          % ((one, two, three),),
+          one == (first + ".redo-1", {"from": first, "n": 1})
+          and two == (first + ".redo-2", {"from": first, "n": 2})
+          and three == (first + ".redo-3", {"from": first, "n": 3}))
+    # Every kept tree since removed, and its entry with it: the record of the
+    # highest cut still holds, so .redo-1 is not cut at again.
+    gone = cut_at({}, {"from": first, "n": 3})
+    os.makedirs(first + ".redo-4")
+    _harness.git(root_p, "worktree", "add", "-q", "--detach", first + ".redo-5")
+    shutil.rmtree(first + ".redo-5")
+    taken = cut_at({}, {"from": first, "n": 3})
+    check("ta20b a path once taken is never cut at again: with every kept tree "
+          "removed the next cut goes past the highest recorded, and past a "
+          "directory and a record git keeps for a tree whose directory is gone: "
+          "%r" % ((gone, taken),),
+          gone == (first + ".redo-4", {"from": first, "n": 4})
+          and taken == (first + ".redo-6", {"from": first, "n": 6}))
+    # OVER-FIRE: a task no redo has kept a tree for is cut where `tree_path` or
+    # `task-add` puts it - a chooser that always answered a redo path would
+    # move every first tree.
+    check("ta20c OVER-FIRE: a task no redo has kept a tree for gets no redo "
+          "path: %r" % (cut_at({"P1.2 set aside 1": first}),),
+          cut_at({}) == (None, None)
+          and cut_at({"P1.2 set aside 1": first}) == (None, None))
 
-    def failing_restore(path, record, run=None):
-        written.append(record.get("taskId"))
-        if len(written) > 1:
-            return "", "fixture: the marker could not be written back"
-        return real_record(path, record, run=run)
-    M.os.rename, M._worktrees.write_record = refusing_move, failing_restore
-    try:
-        with _Env(root_x):
-            aside_x, stop_x = M.set_aside_tree(ctx_x, state_x, "P1.1")
-    finally:
-        M.os.rename, M._worktrees.write_record = real_rename, real_record
-    told = (stop_x or (0, ""))[1]
-    check("ta12 a set-aside whose move and marker restore both fail says the "
-          "marker still names the set-aside key: %r" % ((aside_x, told),),
-          aside_x is None and "fixture: the tree could not be moved" in told
-          and "fixture: the marker could not be written back" in told
-          and "P1.1 set aside 1" in told)
-    # The lock taken before the move goes with a move that never happened.
-    block_x = _worktree_block(root_x, tree_x)
-    check("ta12b ...and git's record of the tree, which never moved, is left "
-          "unlocked: %r" % (block_x,), block_x and not _is_locked(block_x))
-
-    # A run that dies after the lock and the marker, before the move: the next
-    # step finds the tree still at its own path and takes the set-aside back.
+    # The run dies between the marker naming the kept key and the state
+    # recording it: the next step reads the marker and settles by it.
     class _Died(Exception):
         pass
-    root_k, mpath_k, tree_k = _retire_fixture("tadied")
-    ctx_k = _drive_ctx(root_k, mpath_k)
-    state_k = {"wave": {"trees": {"P1.1": tree_k}, "records": ["docs/audit"]}}
+    root_k, mpath_k, _h, tree_k, base_k, _r, _c, _t = _ar_at_decision(M, "tacrash")
+    real_record = M._worktrees.write_record
 
-    def dying_move(src, dst, *rest, **kw):
-        raise _Died("fixture: the run dies before the move")
-    M.os.rename = dying_move
+    def dying(path, record, run=None):
+        said = real_record(path, record, run=run)
+        if " set aside " in str(record.get("taskId")):
+            raise _Died("fixture: the run dies after the marker is rewritten")
+        return said
+    M._worktrees.write_record = dying
+    died = False
     try:
-        with _Env(root_k):
-            M.set_aside_tree(ctx_k, state_k, "P1.1")
+        _next(M, root_k, mpath_k, "--answer", "redo")
     except _Died:
-        pass
+        died = True
     finally:
-        M.os.rename = real_rename
-    died_locked = _is_locked(_worktree_block(root_k, tree_k))
-    with _Env(root_k):
-        stop_k = M.repair_asides(ctx_k, state_k)
-    mine_k = M._worktrees.read_provenance(tree_k, expect_task="P1.1").get("ours")
-    check("ta14 a run that died between locking the tree and moving it is taken "
-          "back on the next step: the record unlocked, the marker naming the "
-          "task, no set-aside recorded: %r" % ((died_locked, stop_k, mine_k,
-                                                state_k, ctx_k["did"]),),
-          died_locked and stop_k is None and mine_k is True
-          and not _is_locked(_worktree_block(root_k, tree_k))
-          and not state_k.get("keptTrees") and not state_k.get("asideMoves")
-          and any("never moved" in d for d in ctx_k["did"]))
+        M._worktrees.write_record = real_record
+    between = (_tree_of(root_k, "P1.1"),
+               dict(_drive_state(root_k).get("keptTrees") or {}))
+    code_k, said_k = _next(M, root_k, mpath_k)
+    kept_k = dict(_drive_state(root_k).get("keptTrees") or {})
+    recut_k = _tree_of(root_k, "P1.1") or ""
+    patch = M.redo_patch(_drive_ctx(root_k, mpath_k), "P1.1")
+    check("ta21 a run that died between rewriting the old tree's marker and "
+          "writing the state is settled by the marker on the next step: the tree "
+          "is recorded kept under the key its marker names, with its work and "
+          "base as they were, a tree is cut for the task at a fresh path, and "
+          "the stop names the kept patch to apply there: %r"
+          % ((died, between, code_k, kept_k, recut_k, said_k[-600:]),),
+          died and between[0] == tree_k and not between[1]
+          and kept_k.get("P1.1 set aside 1") == tree_k
+          and (M._worktrees.read_provenance(tree_k).get("record") or {})
+          .get("taskId") == "P1.1 set aside 1"
+          and _read(os.path.join(tree_k, "src", "f1.txt")) == _AR_WORK.encode()
+          and _git_out(tree_k, "rev-parse", "HEAD").strip() == base_k
+          and recut_k == tree_k + ".redo-1" and os.path.isdir(recut_k)
+          and "as its marker says" in said_k
+          and code_k != 0 and patch in said_k and "git apply --3way" in said_k)
+    # Following the stop's remedy as written - apply the patch in the recut
+    # tree, take the patch and the pin away - the drive goes on, measures the
+    # gate in the recut tree, and the member closes on both edits.
+    applied, code_k2, said_k2 = None, None, ""
+    if os.path.isfile(patch) and os.path.isdir(recut_k):
+        with open(patch, "rb") as fh:
+            body = fh.read()
+        applied = subprocess.run(_GIT + ["apply", "--3way", "--whitespace=nowarn"],
+                                 cwd=recut_k, input=body,
+                                 capture_output=True).returncode
+        os.remove(patch)
+        _harness.git(root_k, "update-ref", "-d", M.redo_pin("P1.1"))
+        code_k2, said_k2 = _next(M, root_k, mpath_k)
+    check("ta21b ...and with the remedy followed the drive goes on in the recut "
+          "tree and the member closes on the work merged: %r"
+          % ((applied, code_k2, said_k2[-500:]),),
+          applied == 0 and code_k2 == 0
+          and tasks_of(mpath_k)["P1.1"].get("status") == "done"
+          and _read(os.path.join(root_k, "src", "f1.txt")) == _AR_MERGED)
 
-    # A lock someone else put on the record is theirs: the set-aside refuses
-    # rather than taking it, and nothing is moved or recorded.
-    root_o, mpath_o, tree_o = _retire_fixture("taforeign")
-    _harness.git(root_o, "worktree", "lock", "--reason", "a human's lock", tree_o)
+    # OVER-FIRE twins of ta21: a tree whose marker names its task, and one
+    # whose marker names a key another task's redo keeps, are not settled - a
+    # settle that read any key, or any marker, would take a live tree away.
+    root_o, mpath_o, tree_o = _retire_fixture("tasettleo")
     ctx_o = _drive_ctx(root_o, mpath_o)
-    state_o = {"wave": {"trees": {"P1.1": tree_o}, "records": ["docs/audit"]}}
+    state_o = {"wave": {"trees": {"P1.1": tree_o}, "base": "x"}}
     with _Env(root_o):
-        aside_o, stop_o = M.set_aside_tree(ctx_o, state_o, "P1.1")
-    block_o = _worktree_block(root_o, tree_o)
-    check("ta14b a tree whose record someone else locked is not set aside, and "
-          "their lock stays: %r" % ((aside_o, stop_o, block_o, state_o),),
-          aside_o is None and stop_o and "locked" in stop_o[1]
-          and os.path.isdir(tree_o) and "locked a human's lock" in block_o
-          and not state_o.get("keptTrees") and not state_o.get("asideMoves")
-          and M._worktrees.read_provenance(tree_o, expect_task="P1.1").get("ours"))
-    # A move recorded over that record - the run died before its own lock -
-    # is taken back without taking their lock off.
-    state_o2 = {"keptTrees": {"P1.1 set aside 1": tree_o + ".aside-1"},
-                "asideMoves": {"P1.1 set aside 1": {
-                    "from": tree_o, "admin": M._worktrees.admin_dir(tree_o),
-                    "record": M._worktrees.read_provenance(
-                        tree_o, expect_task="P1.1").get("record")}}}
+        M.settle_kept_markers(ctx_o, state_o)
+    own = (dict(state_o["wave"]["trees"]), state_o.get("keptTrees"), ctx_o["did"])
+    M._worktrees.write_record(tree_o, {
+        "createdBy": "audit", "taskId": "P1.2 set aside 1", "phaseId": PHASE,
+        "setAsideFrom": "P1.2", "base": _git_out(root_o, "rev-parse", "HEAD").strip()})
     with _Env(root_o):
-        stop_o2 = M.repair_asides(ctx_o, state_o2)
-    block_o2 = _worktree_block(root_o, tree_o)
-    check("ta14c ...and a set-aside recorded over it, taken back on the next "
-          "step, leaves their lock on: %r" % ((stop_o2, block_o2, state_o2),),
-          stop_o2 is None and "locked a human's lock" in block_o2
-          and not state_o2.get("keptTrees") and not state_o2.get("asideMoves"))
-
-    # What a submodule's config holds is read after the move: bytes no decoder
-    # reads, or a path on another drive, are a reason, never a traceback.
-    root_e, _mpath_e, tree_e = _retire_fixture("tadecode")
-    admin_e = M._worktrees.admin_dir(tree_e)
-    aside_e = tree_e + ".aside-1"
-    os.rename(tree_e, aside_e)
-    bad = os.path.join(admin_e, "modules", "bad")
-    os.makedirs(bad)
-    with open(os.path.join(bad, "config"), "wb") as fh:
-        fh.write(b"[core]\n\tworktree = ../\xff\xfe\n")
-    try:
-        said_e = M._repair_moved_tree(root_e, tree_e, aside_e, admin_e)
-    except Exception as exc:  # the case reports what escaped
-        said_e = exc
-    check("ta13 a submodule config whose worktree no decoder reads is a reason "
-          "the repair names, as the repoint's, not an exception: %r" % (said_e,),
-          isinstance(said_e, tuple) and said_e[0] == "repoint"
-          and os.path.join(bad, "config") in said_e[1])
-
-    # No relative path joins two drives; git writes an absolute core.worktree
-    # there, and so does the repoint - a reason here would stop every step.
-    root_v, _mpath_v, tree_v = _retire_fixture(
-        "tadrive", prepare=_with_submodule, then=_checked_out)
-    admin_v = M._worktrees.admin_dir(tree_v)
-    aside_v = tree_v + ".aside-1"
-    os.rename(tree_v, aside_v)
-    real_relpath = M.os.path.relpath
-
-    def across_drives(path, start=None):
-        raise ValueError("fixture: path is on mount 'D:', start on mount 'C:'")
-    M.os.path.relpath = across_drives
-    try:
-        said_v = M._repair_moved_tree(root_v, tree_v, aside_v, admin_v)
-    except Exception as exc:  # the case reports what escaped
-        said_v = exc
-    finally:
-        M.os.path.relpath = real_relpath
-    cfgs = [os.path.join(at, "config") for at, _d, files
-            in os.walk(os.path.join(admin_v, "modules")) if "config" in files]
-    pointed = [_git_out(root_v, "config", "--file", c, "--get",
-                        "core.worktree").strip() for c in cfgs]
-    want_v = os.path.join(os.path.realpath(aside_v),
-                          *_AR_MODULE.split("/")).replace(os.sep, "/")
-    check("ta18 a submodule checkout on another drive than its repository is "
-          "pointed at by an absolute path, as git writes one, and the repair "
-          "holds: %r" % ((said_v, pointed, want_v),),
-          said_v == ("", "") and pointed == [want_v])
-    _aside_record_cases(M, check)
-
-
-def _failing_git(M, verb, why, code=1):
-    """A `carry_git` that answers `code` and `why` for every call whose argv
-    starts with `verb`, and runs every other call for real."""
-    real = M.carry_git
-
-    def fake(where, argv, env=None, stdin=None):
-        if list(argv[:len(verb)]) == list(verb):
-            return code, b"", why
-        return real(where, argv, env=env, stdin=stdin)
-    return fake
-
-
-def _aside_under(M, prefix, prepare=None, then=None, git=None, repoint=None):
-    """P1.1's tree set aside by `set_aside_tree`, with `git` standing in for
-    `carry_git` and `repoint` for `_repoint_module` while it runs.
-    -> (root, mpath, tree, admin, ctx, state, stop)."""
-    root, mpath, tree = _retire_fixture(prefix, prepare=prepare, then=then)
-    admin = M._worktrees.admin_dir(tree)
-    ctx = _drive_ctx(root, mpath)
-    state = {"wave": {"trees": {"P1.1": tree}, "records": ["docs/audit"]}}
-    real_git, real_repoint = M.carry_git, M._repoint_module
-    M.carry_git = git or real_git
-    M._repoint_module = repoint or real_repoint
-    try:
-        with _Env(root):
-            _aside, stop = M.set_aside_tree(ctx, state, "P1.1")
-    finally:
-        M.carry_git, M._repoint_module = real_git, real_repoint
-    return root, mpath, tree, admin, ctx, state, stop
-
-
-def _steps(M, root, ctx, state, count=1):
-    """The answers of `count` calls of `repair_asides`, one per drive step."""
-    with _Env(root):
-        return [M.repair_asides(ctx, state) for _ in range(count)]
-
-
-def _aside_record_cases(M, check):
-    """A recorded move is classified by git's record of the tree - its
-    directory, the path it names, its marker and its lock - never by which
-    directory happens to stand. A record that is gone is forgotten; a tree
-    cut since at the task's path is never taken back; the drive stops only
-    for a live record it locked whose tree is missing, and the stop names
-    commands that exist."""
-    key = "P1.1 set aside 1"
-    repair_fails = _failing_git(M, ["worktree", "repair"],
-                                "fixture: the repair failed")
-
-    # The repair failed; a human then removes git's record and the set-aside
-    # directory. Nothing is left to repair, put back or unlock.
-    root, _m, tree, admin, ctx, state, stop = _aside_under(
-        M, "tagone", git=repair_fails)
-    aside = (state.get("keptTrees") or {}).get(key) or ""
-    _git_said(root, "worktree", "remove", "-f", "-f", tree)
-    shutil.rmtree(aside, ignore_errors=True)
-    steps = _steps(M, root, ctx, state, 3)
-    check("ta15 a recorded move whose record and set-aside tree a human "
-          "removed is forgotten with a did-line, and no step stops: %r"
-          % ((stop, os.path.isdir(admin), steps, state, ctx["did"][-3:]),),
-          stop and aside and not os.path.isdir(admin) and steps == [None] * 3
-          and not state.get("asideMoves") and not state.get("keptTrees")
-          and any(key in d and "forgotten" in d for d in ctx["did"]))
-
-    # OVER-FIRE twin of ta15: the record is live and still under the drive's
-    # lock, and the tree is gone - the one stop allowed. Its remedy is run as
-    # written, and the step after it goes on.
-    root, _m, tree, admin, ctx, state, stop = _aside_under(
-        M, "talive", git=repair_fails)
-    aside = (state.get("keptTrees") or {}).get(key) or ""
-    shutil.rmtree(aside, ignore_errors=True)
-    first = _steps(M, root, ctx, state)[0]
-    told = (first or (0, ""))[1]
-    unlock = "git worktree unlock %s" % (tree,)
-    ran = [_git_said(root, "worktree", "unlock", tree)[0],
-           _git_said(root, "worktree", "prune")[0]] \
-        if unlock in told and "git worktree prune" in told else []
-    after = _steps(M, root, ctx, state)
-    check("ta15b ...while a live record the drive locked, whose tree is gone, "
-          "stops the step with a remedy - unlock and prune - that runs, and "
-          "the step after it goes on: %r" % ((told[-400:], ran, after, state),),
-          first and ran == [0, 0] and after == [None]
-          and not state.get("asideMoves") and not state.get("keptTrees"))
-
-    # The repair held and a submodule repoint failed; the set-aside directory
-    # is deleted and a NEW tree is cut at the task's path, on a newer base.
-    def repoint_fails(*_a):
-        return "fixture: the submodule config was not written"
-    root, _m, tree, admin, ctx, state, stop = _aside_under(
-        M, "tanew", prepare=_with_submodule, then=_checked_out,
-        repoint=repoint_fails)
-    aside = (state.get("keptTrees") or {}).get(key) or ""
-    shutil.rmtree(aside, ignore_errors=True)
-    _write_lf(os.path.join(root, "b.txt"), "b\n")
-    _harness.git(root, "add", "b.txt")
-    _harness.git(root, "commit", "-qm", "a newer base")
-    newer = _git_out(root, "rev-parse", "HEAD").strip()
-    _harness.git(root, "worktree", "add", "-q", "--detach", tree)
-    M._worktrees.write_record(tree, {"createdBy": "audit", "taskId": "P1.1",
-                                     "phaseId": PHASE, "base": newer})
-    first = _steps(M, root, ctx, state)[0]
-    told = (first or (0, ""))[1]
-    marker = M._worktrees.read_provenance(tree, expect_task="P1.1")
-    check("ta16 a new tree cut at the task's path while a half-held move is "
-          "recorded is never taken back: its marker keeps its own base, and "
-          "the step stops on the old record, still locked, naming the unlock "
-          "of the path it names: %r" % ((stop, told[-400:], marker, ctx["did"][-2:]),),
-          stop and first and marker.get("ours") is True
-          and (marker.get("record") or {}).get("base") == newer
-          and not any("taken back" in d for d in ctx["did"])
-          and "git worktree unlock %s" % (aside,) in told
-          and os.path.isfile(os.path.join(admin, "locked")))
-
-    # The record pruned too, a new tree at the task's path is given the
-    # record's directory name again - git reuses it - so the directory and
-    # the path it names match the move, and only the marker and the lock
-    # tell the new tree apart.
-    _git_said(root, "worktree", "remove", "-f", "-f", tree)
-    _git_said(root, "worktree", "unlock", aside)
-    _git_said(root, "worktree", "prune")
-    _harness.git(root, "worktree", "add", "-q", "--detach", tree)
-    M._worktrees.write_record(tree, {"createdBy": "audit", "taskId": "P1.1",
-                                     "phaseId": PHASE, "base": newer})
-    reused = os.path.realpath(M._worktrees.admin_dir(tree)) \
-        == os.path.realpath(admin)
-    ctx["did"] = []
-    pending = key in (state.get("asideMoves") or {})
-    after = _steps(M, root, ctx, state)
-    marker = M._worktrees.read_provenance(tree, expect_task="P1.1")
-    check("ta16b ...and a new tree given the old record's directory name is "
-          "not taken back either: its marker keeps its base, and the move is "
-          "forgotten: %r" % ((reused, pending, after, marker, ctx["did"], state),),
-          reused and pending and after == [None] and marker.get("ours") is True
-          and (marker.get("record") or {}).get("base") == newer
-          and not any("taken back" in d for d in ctx["did"])
-          and not state.get("asideMoves"))
-
-    # The move never happened, and git's unlock fails when it is taken back:
-    # the record of the move stays until the unlock holds.
-    class _Died(Exception):
-        pass
-
-    def dying_move(src, dst, *rest, **kw):
-        raise _Died("fixture: the run dies before the move")
-    root, mpath, tree = _retire_fixture("taunlock")
-    ctx = _drive_ctx(root, mpath)
-    state = {"wave": {"trees": {"P1.1": tree}, "records": ["docs/audit"]}}
-    real_rename, real_git = os.rename, M.carry_git
-    M.os.rename = dying_move
-    try:
-        with _Env(root):
-            M.set_aside_tree(ctx, state, "P1.1")
-    except _Died:
-        pass
-    finally:
-        M.os.rename = real_rename
-    M.carry_git = _failing_git(M, ["worktree", "unlock"],
-                               "fixture: the unlock failed")
-    try:
-        first = _steps(M, root, ctx, state)[0]
-    finally:
-        M.carry_git = real_git
-    held = (dict(state.get("keptTrees") or {}), dict(state.get("asideMoves") or {}))
-    locked = _is_locked(_worktree_block(root, tree))
-    after = _steps(M, root, ctx, state)
-    check("ta17 a take-back whose unlock fails keeps the move recorded and says "
-          "so, and the next step unlocks it and forgets it: %r"
-          % ((first, held, locked, after, state, ctx["did"]),),
-          first is None and key in held[0] and key in held[1] and locked
-          and any("fixture: the unlock failed" in d for d in ctx["did"])
-          and after == [None] and not _is_locked(_worktree_block(root, tree))
-          and not state.get("asideMoves") and not state.get("keptTrees"))
-
-    # The stop names the step that failed. ta11 is the repair's; these are
-    # the repoint's and the read-back's, which `git worktree repair` run by
-    # hand would not settle.
-    root, _m, tree, admin, ctx, state, stop = _aside_under(
-        M, "tapoint", prepare=_with_submodule, then=_checked_out,
-        repoint=repoint_fails)
-    told = (stop or (0, ""))[1]
-    check("ta18b a set-aside whose submodule repoint fails stops naming the "
-          "repoint, not `git worktree repair`: %r" % (told[-500:],),
-          stop and "fixture: the submodule config was not written" in told
-          and "repoint" in told and "git worktree repair" not in told)
-    root, _m, tree, admin, ctx, state, stop = _aside_under(
-        M, "taread", git=_failing_git(M, ["--no-optional-locks", "diff"],
-                                      "fixture: git does not read it", 128))
-    told = (stop or (0, ""))[1]
-    check("ta18c ...and one whose read-back fails stops naming the read-back, "
-          "not `git worktree repair`: %r" % (told[-500:],),
-          stop and "fixture: git does not read it" in told
-          and "read" in told and "git worktree repair" not in told)
-
-    # `git worktree repair` arrived in git 2.30: an older git is refused
-    # before anything is recorded, locked or moved.
-    real = M.carry_git
-
-    def old_git(where, argv, env=None, stdin=None):
-        if list(argv[:1]) == ["--version"]:
-            return 0, b"git version 2.29.2\n", ""
-        return real(where, argv, env=env, stdin=stdin)
-    root, _m, tree, admin, ctx, state, stop = _aside_under(M, "taold", git=old_git)
-    told = (stop or (0, ""))[1]
-    check("ta19 a git older than 2.30 refuses the set-aside before the rename: "
-          "the tree stands at its path, unlocked, its marker naming the task, "
-          "nothing recorded, and the stop names the version: %r"
-          % ((told[-400:], state),),
-          stop and "2.29.2" in told and "2.30" in told and os.path.isdir(tree)
-          and not _is_locked(_worktree_block(root, tree))
-          and not state.get("keptTrees") and not state.get("asideMoves")
-          and M._worktrees.read_provenance(tree, expect_task="P1.1").get("ours"))
+        M.settle_kept_markers(ctx_o, state_o)
+    other = (dict(state_o["wave"]["trees"]), state_o.get("keptTrees"), ctx_o["did"])
+    check("ta21c OVER-FIRE: a wave tree whose marker names its own task, or a "
+          "key another task's redo keeps, stays the task's tree and nothing is "
+          "recorded kept: %r" % ((own, other),),
+          own == ({"P1.1": tree_o}, None, []) and other == own)
 
 
 def _wave_hooks_cases(check):

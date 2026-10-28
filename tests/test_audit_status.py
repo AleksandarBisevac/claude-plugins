@@ -4335,38 +4335,84 @@ def _kept_tree_cases(check):
           "bare payload is pinned against the rollup",
           "keptTrees" not in json.loads(as_json))
 
-    # `task-remove` acts only on a task of the plan, and a tree a redo set
-    # aside is recorded under a key that is no task. Each row names a verb
-    # that acts on ITS tree: the plan's task keeps `task-remove`, a set-aside
-    # gets git's own remover, and one whose move the drive has not finished
-    # gets the drive's next step.
+    # `task-remove` acts only on a task of the plan, and a tree a redo kept is
+    # recorded under a key that is no task. Each row names a verb that acts on
+    # ITS tree: the plan's task keeps `task-remove`, a kept tree gets git's own
+    # remover, forced - bare, git refuses a tree holding work or a submodule.
     aside = os.path.join(root, "aside-tree")
-    moving = os.path.join(root, "moving-tree")
     os.makedirs(aside)
-    os.makedirs(moving)
     with open(os.path.join(drive, "P2.json"), "w", encoding="utf-8") as fh:
-        json.dump({"keptTrees": {"P2.1": kept, "P2.1 set aside 1": aside,
-                                 "P2.1 set aside 2": moving},
-                   "asideMoves": {"P2.1 set aside 2": {"from": kept}}}, fh)
+        json.dump({"keptTrees": {"P2.1": kept, "P2.1 set aside 1": aside}}, fh)
     rows = _cli([mpath], root)[1].splitlines()
 
     def row(path):
-        hit = [ln for ln in rows if ln.rstrip().endswith(path)
-               or (" %s " % (path,)) in ln]
+        hit = [ln for ln in rows if " %s " % (path,) in ln]
         return hit[0] if len(hit) == 1 else "%d rows name %s" % (len(hit), path)
-    task_row, aside_row, moving_row = row(kept), row(aside), row(moving)
-    check("kt5 a set-aside tree's row names a remover that acts on it - git's "
-          "`git worktree remove <path>`, never `task-remove`, which refuses a "
-          "key that is no task - and the plan's task keeps `task-remove`: %r"
-          % ((task_row, aside_row),),
-          "git worktree remove %s" % (aside,) in aside_row
+    task_row, aside_row = row(kept), row(aside)
+    check("kt5 a kept tree's row names a remover that acts on it - git's "
+          "`git worktree remove --force <path>`, never `task-remove`, which "
+          "refuses a key that is no task - and says what --force deletes; the "
+          "plan's task keeps `task-remove`: %r" % ((task_row, aside_row),),
+          "git worktree remove --force %s" % (aside,) in aside_row
+          and "uncommitted" in aside_row and "submodule" in aside_row
           and "task-remove" not in aside_row
           and "task-remove P2.1" in task_row
           and "git worktree remove" not in task_row)
-    check("kt5b ...and a set-aside whose move the drive has not finished names "
-          "the drive's next step, which finishes it: %r" % (moving_row,),
-          "/audit:phase P2" in moving_row and "task-remove" not in moving_row
-          and "git worktree remove" not in moving_row)
+    _kept_remedy_runs_cases(check)
+
+
+def _kept_remedy_runs_cases(check):
+    """The remover status names beside a kept tree is run as written on a real
+    tree holding work - an uncommitted edit, an untracked file and a submodule
+    checked out - and takes it down; the bare `git worktree remove` beside it
+    is refused there, which is why the row never names it."""
+    base = os.path.realpath(_harness.fixture_root("audit-status-ktrun-"))
+    src = os.path.join(base, "modsrc")
+    root = os.path.join(base, "repo")
+    tree = os.path.join(base, "repo-P2.1")
+    for where in (src, root):
+        os.makedirs(where)
+        _harness.git(where, "init", "-q")
+    with open(os.path.join(src, "lib.txt"), "w", encoding="utf-8") as fh:
+        fh.write("module\n")
+    _harness.git(src, "add", "-A")
+    _harness.git(src, "commit", "-qm", "module")
+    mpath = os.path.join(root, "audit-plan.json")
+    with open(mpath, "w", encoding="utf-8") as fh:
+        json.dump(_fixture(), fh)
+    _harness.git(root, "-c", "protocol.file.allow=always", "submodule", "add",
+                 "-q", src, "mod")
+    _harness.git(root, "add", "-A")
+    _harness.git(root, "commit", "-qm", "base")
+    _harness.git(root, "worktree", "add", "-q", "--detach", tree)
+    _harness.git(tree, "-c", "protocol.file.allow=always", "submodule",
+                 "update", "--init", "-q")
+    with open(os.path.join(tree, "audit-plan.json"), "a", encoding="utf-8") as fh:
+        fh.write("\n")
+    with open(os.path.join(tree, "work.txt"), "w", encoding="utf-8") as fh:
+        fh.write("the task's work, never committed\n")
+    drive = os.path.join(root, ".claude", "state", "drive")
+    os.makedirs(drive)
+    with open(os.path.join(drive, "P2.json"), "w", encoding="utf-8") as fh:
+        json.dump({"keptTrees": {"P2.1 set aside 1": tree}}, fh)
+    rows = [ln for ln in _cli([mpath], root)[1].splitlines()
+            if " %s " % (tree,) in ln]
+    named = "git worktree remove --force %s" % (tree,)
+    bare = subprocess.run(["git", "worktree", "remove", tree], cwd=root,
+                          capture_output=True, encoding="utf-8", errors="replace")
+    check("kt6 OVER-FIRE of the remedy: the bare `git worktree remove` is refused "
+          "on a kept tree holding work and a submodule, and the tree stands: %r"
+          % ((bare.returncode, bare.stderr[-200:]),),
+          bare.returncode != 0 and os.path.isfile(os.path.join(tree, "work.txt")))
+    ran = subprocess.run(named.split(" ")[:4] + [tree], cwd=root,
+                         capture_output=True, encoding="utf-8", errors="replace") \
+        if len(rows) == 1 and named in rows[0] else None
+    listed = _harness.git(root, "worktree", "list", "--porcelain")
+    check("kt6b the remover the kept tree's row names is one git runs on a tree "
+          "holding work: run as written it takes the tree down, and git lists it "
+          "no more: %r" % ((rows, ran and (ran.returncode, ran.stderr[-200:])),),
+          ran is not None and ran.returncode == 0 and not os.path.lexists(tree)
+          and ("worktree %s" % (tree,)) not in listed)
 
 
 def _other_checkout_cases(check):

@@ -4510,64 +4510,55 @@ after the integrator's `git add -A` and a human's edit (`ta1`). It also refuses 
 holding a path the work lacks (`ar8`), or a three-way apply at the head, tried in a scratch index,
 that conflicts - each by name, with the tree and the carry ref as they were (`ar3`, `ar5`). Past
 that it pins the work commit to `refs/audit/redo/<id>`, writes the patch whole and synced into the
-state directory, and SETS THE OLD TREE ASIDE rather than taking it down (`set_aside_tree`): the
-directory is renamed beside the task's tree path and `git worktree repair` plus each submodule's
-recorded checkout path follow it (`git worktree move` refuses a tree with a submodule checked out), its
-marker names a `keptTrees` key - `<id> set aside <n>` - so `task-add` never adopts it, and status
-lists it (`ta1`, `ta1b`). Until the repair holds, git's record of the tree names the path it left
-and reads as prunable, so a `git worktree prune` - the sweep's, the panel's, gc's - would delete
-the tree's index, marker and submodule repositories, and `git worktree add -f` there would share
-its git directory with a second tree. So the move is recorded under `asideMoves` in the drive
-state, then the record is locked (`git worktree lock`) before the move and unlocked only once git
-reads the tree where it went (`ta1c`); a repair that fails stops the drive naming the step that
-failed - `git worktree repair <aside>` for the repair (`ta11`-`ta11c`), the submodule repoint or
-the read-back for those, where running the repair by hand would settle nothing (`ta18b`,
-`ta18c`) - the record still locked, and the next step runs the repair again before anything is
-cut at the old path. The repair needs git 2.30, so an older git refuses the redo before anything
-is recorded, locked or moved (`ta19`). `repair_asides` settles each recorded move by GIT'S RECORD
-of the tree - the directory the move recorded, the tree its `gitdir` names, the marker and the
-lock in it - never by which directory stands, because a human may have deleted the set-aside
-tree, pruned the record or cut a new tree at the task's path since, and git gives a pruned
-record's directory name to the next tree cut there. A record that is gone is forgotten with a
-did-line, never a stop (`ta15`). A move that never happened is taken back - the record names the
-task's path, that path is its tree, and the marker names the set-aside key or the lock is the
-drive's (`ta14`) - so a tree cut there since is never taken back (`ta16`, `ta16b`); a take-back
-whose unlock fails keeps the move recorded until the unlock holds (`ta17`). The one stop is a
-live record under the drive's own lock whose tree is missing, and it names commands git runs:
-`git worktree repair <path>` when the tree is back at the task's path, else `git worktree unlock`
-and `git worktree prune` (`ta15b`). Only a lock carrying the drive's own reason is ever taken
-off, and a record someone else locked is not set aside (`ta14b`, `ta14c`). A move that fails
-takes the set-aside back and says whatever of that did not hold (`ta12`, `ta12b`); a submodule
-config the repair cannot read as a path is a reason, never a traceback (`ta13`), and a submodule
-checkout on another drive than its repository is pointed at by an absolute path, as git writes
-one (`ta18`). Status names a remover beside each kept tree that acts on it: `task-remove` for a
-task of the plan, `git worktree remove <path>` for a set-aside tree, whose key is no task, and
-the drive's next step while its move is unfinished (`kt5`, `kt5b`). It then cuts a new tree at the task's path and the phase HEAD, applies
-the work three-way, checks every carried path the head did not move byte for byte, and clears the
-gate mark so the gate is measured over the new tree - no executor is dispatched and no attempt is
-spent, because the work was not what failed (`wd1`-`wd4`, `ar2`). Once the recut tree holds the
-work, the set-aside tree is offered to the one remover, which takes it down when it holds nothing
-but that work (`ta2`) and otherwise keeps it, the did-line naming where and why (`ta1`, `ar18b`).
+state directory, and KEEPS THE OLD TREE WHERE IT STANDS rather than taking it down or moving it
+(`keep_old_tree`): git's record of the tree, its index, its submodule repositories and every file
+in it stay as they were - the same path, the same admin directory, no lock (`ta1c`) - so no prune
+names its record and no forced add is cut over it (`ta11`, `ta11b`). Only its marker is rewritten,
+to a `keptTrees` key - `<id> set aside <n>` - so `task-add`, which adopts a tree by its marker,
+never takes it for the task's again, and status lists it (`ta1`, `ta1b`). Two writes make it kept:
+the marker first, then the drive state. A run that dies between them leaves a marker naming the key
+while the state still names the tree the task's, and the next step settles that BY THE MARKER
+(`settle_kept_markers`), which is what `task-add` reads: the tree is recorded kept, a tree is cut
+for the task beside it, and the stop names the kept patch to apply there (`ta21`, `ta21b`); a
+marker naming the task, or another task's key, settles nothing (`ta21c`). A marker that cannot be
+written is a stop with nothing changed (`ar6d`). The recut tree is cut at a FRESH PATH beside the
+first one (`recut_path`): the n-th redo of a task cuts at `<first tree>.redo-<n>` - the first at
+`.redo-1`, a second at `.redo-2`, a third at `.redo-3` - n one past the highest any redo of the
+task has cut, recorded under `recuts` in the drive state, and past any path a directory or git's
+record of a worktree still holds, so a path once taken is never cut at again (`ta20`, `ta20b`); a
+task no redo has kept a tree for is cut where it always was (`ta20c`). From then on `wave.trees`
+names the recut tree, the one the carry, the brief, the retirement and the wave's close read, none
+of which assumes a task's tree is at the default path (`ta1d`, `ta21b`).
+Status names a remover beside each kept tree that acts on it: `task-remove` for a task of the
+plan, and for a tree a redo kept, whose key is no task, `git worktree remove --force <path>` -
+bare, git refuses a tree holding uncommitted or untracked files or a checked-out submodule - with
+what `--force` deletes: its uncommitted, untracked and ignored files and each submodule checked
+out in it (`kt5`, `kt6`, `kt6b`). It then cuts the new tree at the phase HEAD, applies the work
+three-way, checks every carried path the head did not move byte for byte, and clears the gate mark
+so the gate is measured over the new tree - no executor is dispatched and no attempt is spent,
+because the work was not what failed (`wd1`-`wd4`, `ar2`). Once the recut tree holds the work, the
+kept tree is offered to the one remover, which takes it down when it holds nothing but that work
+(`ta2`) and otherwise keeps it, the did-line naming where and why (`ta1`, `ar18b`).
 
 **One remover, and it keeps a tree on any doubt.** `remove_task_tree` is the only place the drive
-force-removes a task tree; the recut's set-aside and `retire_member` (a closed member's tree, then
-each tree a redo of it set aside) both go through it. It asks, before touching anything, that the
+force-removes a task tree; the recut's kept tree and `retire_member` (a closed member's tree, then
+each tree a redo of it kept) both go through it. It asks, before touching anything, that the
 work commit reads every file it looks at, that the strict reading of `tree_undescribed` names
 nothing - no checked-out submodule or link directory holding files, no repository below the top,
 no staged state, no submodule repository in the tree's own git directory - that the work is
 carried (a recut verified it) or integrated (`tree_holds_only_integrated`, read over the work
 commit's paths so an assume-unchanged edit is compared too), that the phase head holds the commit
-the tree stands on, and that the tree's marker names the task or set-aside key. Any doubt keeps
+the tree stands on, and that the tree's marker names the task or the key it is kept under. Any doubt keeps
 the tree with a did-line naming why, and the drive goes on (`ta3`-`ta5`, `ta7c`); a clean tree
 whose work the phase tree holds is removed, with and without a submodule it never checked out
 (`ta6`, `ta6b`). Ignored files are not part of what it asks, and a removal deletes them with the
 tree, whatever wrote them. The
 filing's carry holds a submodule's own changes to be not the task's work - `carry_commit` writes
 the commit and its did-line says what it left (`ta7`, `ta7b`). A step failing after the old
-tree was set aside stops the drive naming the kept patch, and nothing runs in that member's tree
+tree was kept stops the drive naming the kept patch, and nothing runs in that member's tree
 until a human has applied it or taken it away (`ar6`, `ar7`). The stop prescribes the apply only
-where the tree lacks the work (`redo_held`): a redo stopped before the old tree was set aside -
-its marker put back when the move fails - or once the recut tree held the work, leaves a tree an
+where the tree lacks the work (`redo_held`): a redo stopped before the old tree was kept - its
+marker never rewritten - or once the recut tree held the work, leaves a tree an
 apply would fail over, and the stop says it holds the work (`ar6d`, `ar6e`); where the tree
 could not be read, it says how a path the head moved
 reads once merged and prescribes the apply only where the tree lacks the work (`ar6f`).

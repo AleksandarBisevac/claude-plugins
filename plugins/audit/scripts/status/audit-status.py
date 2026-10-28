@@ -2047,18 +2047,24 @@ def success_line(lines):
     return None
 
 
-def _kept_tree_remedy(task_id, path, phase, body, task_ids):
+# What `--force` takes with a kept tree: git's bare `git worktree remove`
+# refuses a tree with uncommitted or untracked files, and any tree with a
+# submodule checked out, so the remover named is the forced one - and the row
+# says what it deletes, since a kept tree is kept because it may hold work.
+KEPT_TREE_FORCE = ("--force deletes its uncommitted and untracked files, its "
+                   "ignored files and each submodule checked out in it; carry "
+                   "what it holds first")
+
+
+def _kept_tree_remedy(task_id, path, task_ids):
     """The command that takes down the kept tree recorded under `task_id`.
-    `task-remove` acts only on a task of the plan, so a key that is none - a
-    tree a redo set aside - gets git's own remover, or, while the driver's
-    move of it is still recorded, the driver's next step, which finishes it.
-    `task_ids` None is a plan that could not be read: git's remover acts on
-    any of them."""
+    `task-remove` acts only on a task of the plan, so a key that is none - the
+    old tree a redo kept where it stood - gets git's own remover, forced
+    (`KEPT_TREE_FORCE`). `task_ids` None is a plan that could not be read:
+    git's remover acts on any of them."""
     if task_ids is not None and task_id in task_ids:
         return "/audit:worktree task-remove %s" % (task_id,)
-    if task_id in (body.get("asideMoves") or {}):
-        return "/audit:phase %s, whose next step finishes moving it" % (phase,)
-    return "git worktree remove %s" % (path,)
+    return "git worktree remove --force %s - %s" % (path, KEPT_TREE_FORCE)
 
 
 def kept_trees_block(manifest_path, project, manifest=None):
@@ -2095,8 +2101,8 @@ def kept_trees_block(manifest_path, project, manifest=None):
         for task_id, path in sorted((body.get("keptTrees") or {}).items()):
             if isinstance(path, str) and os.path.isdir(path):
                 trees.append({"phase": phase, "taskId": task_id, "path": path,
-                              "remedy": _kept_tree_remedy(task_id, path, phase,
-                                                          body, task_ids)})
+                              "remedy": _kept_tree_remedy(task_id, path,
+                                                          task_ids)})
     return {"trees": trees}
 
 

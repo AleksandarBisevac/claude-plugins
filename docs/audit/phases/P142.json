@@ -322,9 +322,51 @@
         "file": "plugins/audit/scripts/governance/drive-phase.py:5026-5030,5049-5057",
         "issue": "An unreadable `locked` file (`_lock_reason` -> `(None, why)`) is treated as `reason != ASIDE_LOCK`, so _settle_move forgets the move (both the first-branch and last-branch forget) while the drive's lock may still be on the record. The did-line quotes `unread`, but the lock is left with no record of whose it is, which is what the take-back change set out to prevent.",
         "resolution": "When `unread` is non-empty, keep the move recorded and stop naming the file that could not be read, instead of forgetting it."
+      },
+      {
+        "id": "P142-R39",
+        "severity": "med",
+        "file": "plugins/audit/scripts/status/audit-status.py:2054-2067",
+        "issue": "KEPT_TREE_FORCE understates what the named `git worktree remove --force` destroys. It lists uncommitted, untracked and ignored files and 'each submodule checked out in it', but removing the worktree also deletes git's record directory, so commits that live only in a submodule repository under that record's modules/ directory are lost. This is the very data the task's own case ta11 proves a redo keeps. The tree's detached HEAD commits also become unreachable unless pinned. The tail 'carry what it holds first' does not tell the reader to look for either. Confirmed from the code: the text is the whole warning and mentions neither.",
+        "resolution": "Extend KEPT_TREE_FORCE to say it also deletes git's record of the tree, so commits held only in a checked-out submodule's repository and the tree's detached HEAD (if no ref holds it) are lost. Pin kt5 on those words."
+      },
+      {
+        "id": "P142-R40",
+        "severity": "med",
+        "file": "plugins/audit/scripts/status/audit-status.py:2059-2067",
+        "issue": "With the plan unreadable (task_ids None) the new `_kept_tree_remedy` names `git worktree remove --force` for EVERY kept tree, including a blocked member's tree that close_wave records under its task id (drive-phase.py:5936-5941) and that a later wave adopts by marker. Before the diff, a None plan gave the bare remover, which refuses a tree holding work. Now the one case where status cannot tell a task's tree from a kept old tree gets the destructive command. Confirmed: the only guard is `task_ids is not None and task_id in task_ids`.",
+        "resolution": "When task_ids is None, name the safe form (bare `git worktree remove <path>`, or say the plan could not be read and the key cannot be classified) and give the forced form only for a key matching the ` set aside <n>` shape (drive-phase.py _ASIDE_KEY_RE). Add a case for the unreadable-plan row."
+      },
+      {
+        "id": "P142-R41",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:4830-4845 and PLUGIN-BUILD-GUIDE.md redo paragraph",
+        "issue": "The claim 'a path once taken is never cut at again' is stronger than the code. RECUTS is a dict keyed by task id and is not in KEPT_AT_TASK_CLOSE (line 905), so the generic loop at drive-phase.py:8673-8676 pops recuts[task] when the task closes. drop_state removes the whole file when the phase finishes. After that, if every kept tree has been removed, the high-water mark is gone and a later redo can start again at .redo-1. The lexists and git-listing checks stop it landing on a path that still exists, so no tree is overwritten, but a removed path can be reused. ta20b only proves the claim while the recuts entry is present.",
+        "resolution": "Either soften the guide and docstring to 'never cut at a path that still holds a directory or a git record', or add RECUTS to KEPT_AT_TASK_CLOSE and state that the mark ends with the phase."
+      },
+      {
+        "id": "P142-R42",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:4893-4899",
+        "issue": "keep_old_tree picks the next key from state['keptTrees'] alone. A tree whose marker already names '<id> set aside <n>' but whose state entry is gone (drop_state at finish, or a forgotten entry) is not seen, so the key can be issued twice, and settle_kept_markers would then read the older tree's marker as a crash of the new redo. Confirmed from the code; reachable only after the state was lost.",
+        "resolution": "Also skip a key some wave tree's marker already names, or skip any key whose entry was ever recorded under recuts."
+      },
+      {
+        "id": "P142-R43",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:9178-9190",
+        "issue": "submit_tree reads wave.trees directly and never calls settle_kept_markers, which runs only in drive_locked. A submit that arrives after a redo died between the marker rewrite and the state write is keyed to the old tree, whose marker already names the kept key. Confirmed: no other caller of the settle.",
+        "resolution": "Call settle_kept_markers (or the marker read) in submit_tree before it resolves the tree, or document that submit is refused until the next drive step."
+      },
+      {
+        "id": "P142-R44",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/_worktrees.py:1299",
+        "issue": "The sweep's reason for a kept tree says 'the wave driver removes it with `task-remove` after integration', which is false for a kept old tree (its key is no task, and task-remove refuses it). The task's own list named this reader (the sweep's kept-tree reason in _worktrees.py); the executor checked it, called the wording wrong and left it. The sweep is path-agnostic and still keeps the tree, so no work is at risk, but it is the one remedy surface left naming a verb that cannot act on a kept old tree.",
+        "resolution": "Make the reason depend on whether the marker's taskId is a ` set aside <n>` key, and for that case name `git worktree remove --force <path>` or the driver's retire."
       }
     ],
-    "outcome": "[findings: 38 - 0 high, 12 med, 26 low; 10 with a recorded fix commit]"
+    "outcome": "[findings: 44 - 0 high, 14 med, 30 low; 10 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -3053,7 +3095,7 @@
     {
       "id": "P142.46-6yq",
       "title": "A status row folds as the hook's echo only when the hook recorded that its call began before the verb row, so a later call's real restart keeps its charge",
-      "status": "in_progress",
+      "status": "done",
       "description": "`_echoes` in audit-task.py decides whether a repeated status row is the journal-writes hook's echo of the verb row before it. If it is an echo, the row folds and does not count as a restart. This is the third round on the same fail-open. Each earlier round inferred the echo from what the rows happen to share: first the session, then the session plus a 610 s window. An adversarial review (scratchpad/p142-44-adv/, the orchestrator gives the full path; repro_failopen.py) still folds a real restart. The sequence: a verb blocks the task, something outside any tool call moves it back, and a later Bash call in the same session blocks it again inside the window. That row folds, and `_ran_within` answers False.\n\nStop inferring. Redesign so the echo is proven from what the hook records:\n1. journal-writes.py writes, on every status row it derives, the moment its own tool call began. That is the PreToolUse baseline time the row's `from` was read at. The PreToolUse sweep already keeps that baseline; carry its time.\n2. `_echoes` folds a hook row only when it records that start, the start is at or before the verb row's stamp, and the hook row is in the same journal file as the verb row (the same tree). A row that lacks the field is a row written before this change. For those, keep today's bounded reading, named in the code as the reading for rows that carry no start, so the history does not change its answers. Re-run p142-44-adv/scan.py and report that no live answer changed.\n3. Lows from the same review, in the same functions:\n   - `_hook_run` ends a run when a same-file row from another writer is stamped between the edit row and its derived row (repro_run.py). Bind the derived row to its edit row by what the hook writes, not by adjacency. For example, the derived row carries the edit row's hash, or both carry one call id.\n   - Branch 1 does not require the same tree (repro_tree.py).\n   - The docstring and hw21's text claim \"inside the tool call that wrote the verb's row\", which a gap cannot show.\n   - The 610 s derivation misses permission waits, MCP calls and BASH_MAX_TIMEOUT_MS. Once item 2 holds, state what the window still bounds, and only that.\nRed-first a case for each repro. The hook stays importless and stdlib-only, and its import budget (tools/bench-hooks.py --gate) must hold. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/hooks/journal-writes.py",
@@ -3087,14 +3129,21 @@
       "dependsOn": [],
       "attempts": 3,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "469e0cfb393b",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "RETRY 2 ITEMS. (1, gate red) tests/test_audit_task.py hw29's project() helper ran `git init` through a checked subprocess.run; it now calls `_harness.git(None, \"init\", \"-q\", proj)`. Evidence: `python3 tests/test_drive_phase.py --selftest` in this tree from a scratch cwd: exit 0, `ALL PASS: 660/660 cases passed`, zero `^FAIL` lines; the tests-wide scan case prints `165 file(s) scanned, bypasses {}, twin [2, 4, 5, 7, 10]` (scratchpad P142.46-probe/green3/drive_phase.txt). (2, low) The call-start record is now read in one place: `_config.call_start(root, cfg, data, call=None)` (_config.py:4251) loads the record inside a try, returns None unless it is a dict (:4263), and with `call` returns the moment only when the record's CALL_ID_KEY equals it. A boolean or non-number `at` is None too. journal-writes `_own_call_start` is now `_config.call_start(..., call=id)` (journal-writes.py:404) and no longer reads the private `_config._call_start_path`. The reviewer's repro_corrupt_record.py now prints `list rows: [('manifest.edit', None), ('task.blocked', None)]` and the same for `num`, with `ok` rows carrying a stamp. New cases: cw6 (test__config: '[1]', '5', 'null', '\"x\"' and '{\"at\": true}' read as None for both readings, never raising: 10 x (True, None)) and cm4 (test_journal_writes: driven through main(), a list record and a number record still journal manifest.edit/task.blocked/manifest.edit with callBegan None; before the fix it printed `[]`). Changed for guard-bash-writes: `call_start()` without `call` now also reads a boolean `at` as None, where it used to read it as float(True). The hook never writes one, and either answer keeps the guard's finding. (3, low) The marked fold now needs both `began < last[0]` and `0 <= event[0] - last[0] <= _ECHO_WINDOW_SECONDS` (audit-task.py:5620). The `_echoes` docstring says what each condition proves. The start proves the `from` predates the verb's write. The ceiling proves nothing about the echo: it caps the stretch in which a call that began before the verb could have seen a move away and back that a diff of its ends cannot show, at the same window unmarked rows use. The `_ECHO_WINDOW_SECONDS` comment now describes both readings. New case hw32: began -30 s, row at the window's last second folds (False); one second past it and at 1200 s, can't-tell (None). Before the fix it was `[False, False, False]`. hw24 lost its 1200 s long_call row (it folded there by design), which became hw32's third reading with the opposite answer. (4a) `_write_slot`'s docstring now says a slot without an id is a Post's refresh or the sweep lane's Pre seed (`_pre_seed_sweep`, journal-writes.py:514, calls `_write_slot` with no call). (4b) The `_echoes_unstarted` docstring now says it keeps the reading those rows had with one change: `_echoes` asks `_one_tree` first, so a hook row in another tree's journal file, which the old reading folded after a named writer's row, now never folds. (4c) The DETAILS_KEYS comment (_journal_io.py:~300) now says plainly that callBegan adds a fact no row carried before (with ts beside it, the call's duration), and that normalise_details does not check its type: any value is kept, redacted and clipped like any value, and the reader in audit-task.py reads anything but a stamp as no start. (5, structural) `_config.record_call_start(root, cfg, data, now=None, call=None)` writes `{at, toolUseId}` in one atomic_write_text (_config.py:4245), and `CALL_ID_KEY = \"toolUseId\"` moved to _config (:4206). journal-writes' `_record_call` is deleted, and the sweep-lane Pre calls `_config.record_call_start(..., call=_tool_use_id(data))` (:433). The edit-lane slot uses `_config.CALL_ID_KEY`. New cases: cw5 (test__config: atomic_write_text wrapped and counted, one write; record == {at: 3000.0, toolUseId}; reads (3000.0, 3000.0, None) for no call, its call and another call; a record with no id reads (4000.0, None)) and cm5 (test_journal_writes: a sweep-lane Pre through main() makes exactly one call-start write, naming its id). Before the fix cm5 printed two writes (the first without the id), and test__config's body raised `TypeError: record_call_start() got an unexpected keyword argument 'call'`. (6) The `_echoes` docstring states the same-second under-fold as an accepted cost, not a hole: an echo whose call began in the verb row's own second answers can't-tell, which releases nothing. RUNS (scratch cwd, __pycache__ purged). Red before the implementation (P142.46-probe/red3/): lo-block 57/58 (hw32), test_journal_writes 152/154 (cm4, cm5), test__config body raised at cw5 (333/334). Green (green3/): lo-block 58/58, test_journal_writes 154/154, test__config 363/363, test__journal_io 263/263. Gate `python3 tools/sweep-selftests.py tests/test_audit_task.py` from the tree: exit 0, `1/1 files ok, 1145 cases` (gate3.txt). Side suites through the sweep (test__output_lints, test__deps, test_guard_bash_writes, test_hooks, test_commit_task_work, test__evidence_io, test_audit_journal, test_repair_commits, test_journal_writes, test__journal_io, test__config): exit 0, `11/11 files ok, 2410 cases` (side3.txt). ruff check and `vermin -t=3.8- --no-tips --violations` on the eight files: both exit 0. `python3 tools/bench-hooks.py --gate`: exit 0 (3.14.7 only; it prints NOT MEASURED for 3.8-3.13). A grep of added lines for F/P/BUG ids: no hits. History scan (p142-46-adv/r2/scan.py; its head copy cmp-identical to `git show 64286afb` of audit-task.py), 09:11:40Z: main checkout rows 16069 -> Counter (True,True) 656, (False,False) 150, none 24, zero differing decisions; this tree's journal 653/150/24, zero differing. No journal row in the main checkout carries callBegan (grep -l over docs/audit/journal: 0 files), so the scan exercises the unmarked reading and the tree gate, not the marked fold. MUTATION PROBE extended (scratchpad P142.46-probe/mutations.py; attempt 2's copy kept as mutations-attempt2.py). It now covers four suites (test__config added). Anchors moved by this change were updated (STRICT, h8 now in _config, h9, h11). The old over-fire o1 (window on proven rows) is now the code, so it was replaced. New rows: item 2: c1 (non-object check dropped -> cw6, cm4), c4 (boolean moment read -> cw6), over-fire o6 (every record no start -> cw2, cw5, cm1). Item 3: m7 (ceiling dropped -> hw32), over-fire o1 (`<` for `<=` -> hw32). Item 5: c2 (two writes -> cw5, cm5), c3 (id not kept -> cw5, cm1, cm5, hw29). Baseline green on all four suites. Every row red where expected, PROBE PASS, exit 0 (probe3-run1.txt). Measured once. DEPENDANTS. journal-writes.py -> PLUGIN-BUILD-GUIDE.md: describes lanes and passes, not the call-start record's keys; still correct. -> _config.py: changed, as item 5 above. record_call_start gained `call` and call_start gained `call`; both default None, so every existing caller (guard-bash-writes:2005, journal-writes:1207 window, the tests) reads as before, except a boolean `at` (see item 2). -> detect-plan-skip.py, guard-bash-writes.py, hooks.json, audit-config.schema.json, _fmt.py, close-phase.py: no state-file name or row shape they read changed (call-start-*.json keeps its name; the record gains the toolUseId key that attempt 2's rewrite already added); test_guard_bash_writes green; still correct. Test names used elsewhere (_append_rows, _how, _journal_lib, _parse_preimage): unchanged. audit-task.py -> listed docs and hooks: `_echoes`/`_echoes_unstarted` are read only by the two task files; still correct. _journal_io.py -> its importers: this attempt changed only a comment; still correct. _config.py -> its importers (.claude/hooks/guard-release.py, the plugin hooks, _journal_io._own_identities): two optional keyword args and one constant added, nothing renamed or removed, test__config 363/363 and test_hooks green; still correct. test__config.py -> tools/bench-hooks.py (_text), test__manifest_phases/test__refs/test_guard_edits (_cases/_selftest): untouched names; still correct. test_journal_writes.py -> .github/sweep-costs.json: cm4/cm5 add well under a second, not re-recorded. test_audit_task.py -> test_commit_task_work, test__filed_returns: untouched helpers; the sweep runs test_audit_task in 1145 cases; costs file not re-recorded. test__journal_io.py: not changed this attempt.",
+        "descriptive": "The marked echo fold is capped at the same window as unmarked rows; the call-start record is written once with its call id and read in one place that never raises on a corrupt record; hw29 uses the fixture git helper, so the tests-wide scan is green again."
       },
       "startedAt": "2026-10-28T09:01:58Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-28T09:32:30Z",
+      "verifiedBy": [
+        "hw32 (test_audit_task): a hook row whose call began before the verb row folds only within the window after it",
+        "cm4 (test_journal_writes): a call-start record that is valid JSON but not an object costs the call its start, never its rows",
+        "cm5 (test_journal_writes): the sweep lane's Pre writes its call-start record once, naming the call id",
+        "cw5 (test__config): record_call_start with call writes once, holding both keys; call_start(call=) reads only its own call's record",
+        "cw6 (test__config): a non-object record, or a boolean moment, reads as no start for both readings and never raises",
+        "carried from attempts 1-2: hw24-hw31, cm1-cm3, dk6"
+      ],
       "reviewPerTask": "signals",
       "notes": [
         {
@@ -3110,6 +3159,18 @@
         "runId": "2026-10-28T09:31:39Z.be2df9",
         "status": "passed",
         "at": "2026-10-28T09:31:39Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "469e0cfb393b",
+        "at": "2026-10-28T09:32:30Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-28T09:21:44Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_audit_task.py` in a throwaway tree at HEAD exited 1 with 8 of 1145 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - hw24 (house FAIL), hw25 (house FAIL), hw26 (house FAIL), hw27 (house FAIL), hw28 (house FAIL), hw30 (house FAIL), hw31 (house FAIL), hw29 (house FAIL): SELFTEST FAILED: 1137/1145 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 565s, 3 times the recorded 606s of tests/test_audit_task.py in .github/sweep-costs.json, capped at the 565s the host's Bash limit leaves; fix run: held back 282s of the deadline (the recorded 606s, capped at half the 565s deadline), the recorded slot-seconds of tests/test_audit_task.py in .github/sweep-costs.json",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
