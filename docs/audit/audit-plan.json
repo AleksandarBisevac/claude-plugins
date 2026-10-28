@@ -4799,7 +4799,8 @@
       "P142.22-6yq",
       "P142.24-6yq",
       "P142.35-6yq",
-      "P142.41-6yq"
+      "P142.41-6yq",
+      "P142.44-6yq"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -10959,7 +10960,8 @@
       "P142.18-6yq",
       "P142.20-6yq",
       "P142.31-6yq",
-      "P142.40-6yq"
+      "P142.40-6yq",
+      "P142.43-6yq"
     ],
     "tools/lints/_refs.py": [
       "P130.8",
@@ -11532,7 +11534,8 @@
       "P142.19-6yq",
       "P142.22-6yq",
       "P142.35-6yq",
-      "P142.41-6yq"
+      "P142.41-6yq",
+      "P142.44-6yq"
     ],
     "tests/test_audit_usage.py": [
       "P131.1"

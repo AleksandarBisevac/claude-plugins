@@ -2410,6 +2410,11 @@ STATE_WRITERS = (
      "takes a newline argument so .gitattributes and the shim are written byte "
      "for byte - which the platform-text writer does not offer. Its temp name is "
      "mkstemp's own."),
+    ("scripts/governance/drive-phase.py", "set_aside_tree",
+     "a redo moves a whole task worktree DIRECTORY beside its own path so a "
+     "fresh tree is cut there without deleting the old one; `git worktree "
+     "move` refuses a tree with a submodule checked out, a file writer cannot "
+     "move a directory, and no file is written."),
     ("scripts/manifest/migrate-manifest.py", "_retire_shard_dir",
      "moves a whole shard DIRECTORY aside in one rename so a migration can never "
      "leave half a shard set; no file is written, and a file writer cannot move "

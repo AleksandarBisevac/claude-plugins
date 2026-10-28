@@ -4594,45 +4594,149 @@ def integrate_member(ctx, state, phase, task):
     return None
 
 
-def tree_holds_only_integrated(ctx, tree, records=(), followers=()):
-    """True when every path the tree changed holds the bytes the phase tree
-    holds - nothing in it would be lost with it; False when one differs; None
-    when git could not say. A path under `records` is left out: those bytes
-    are the phase tree's own committed records, put there by the refresh, and
-    the phase tree's working copy of them moves on with every row it writes.
-    So is a path in `followers`, one the integration took as a follower its
-    owner's recipe writes: the phase tree's copy is that recipe's output over
-    the phase tree - a sibling's change merged in moves it - so a member's
-    copy differing from it is a stale render, not work the phase tree lacks."""
-    skip = set(followers or ())
+def _file_bytes(root, rel):
+    """What `rel` holds under `root`, read the way taking the tree down would
+    lose it: a link's target, a file's bytes; None when neither stands there."""
+    path = os.path.join(root, *rel.split("/"))
     try:
-        done = subprocess.run(["git", "-C", tree, "status", "--porcelain", "-z",
-                               "--untracked-files=all", "--no-renames"],
-                              capture_output=True, timeout=60)
-    except (OSError, subprocess.SubprocessError):
+        if os.path.islink(path):
+            return ("link", os.readlink(path))
+        with open(path, "rb") as fh:
+            return fh.read()
+    except OSError:
         return None
-    if done.returncode != 0:
+
+
+def tree_holds_only_integrated(ctx, tree, records=(), followers=()):
+    """True when every path the tree's work changed holds the bytes the phase
+    tree holds - none of that work would be lost with the tree; False when one
+    differs; None when git could not say. The paths are those of the work
+    commit `carry_commit` builds, so a file git status does not look at - one
+    marked assume-unchanged, one force-added over an ignore rule - is compared
+    too. A path under `records` is left out: those bytes are the phase tree's
+    own committed records, put there by the refresh, and the phase tree's
+    working copy of them moves on with every row it writes. So is a path in
+    `followers`, one the integration took as a follower its owner's recipe
+    writes: the phase tree's copy is that recipe's output over the phase tree -
+    a sibling's change merged in moves it - so a member's copy differing from
+    it is a stale render, not work the phase tree lacks. What a commit of the
+    files cannot hold - a nested repository, a staged state - is
+    `tree_undescribed`'s, which `remove_task_tree` asks beside this."""
+    skip = set(followers or ())
+    sha, _why = carry_commit(tree, records, "retire")
+    if sha is None:
         return None
-    for item in done.stdout.split(b"\0"):
-        rel = _git_path(item[3:])
-        if not rel or rel in skip or _invariants.is_record_path(rel, records):
+    code, out, _err = carry_git(tree, ["diff", "--name-only", "-z", "--no-renames",
+                                       "--ignore-submodules=none", "%s^" % (sha,),
+                                       sha])
+    if code != 0:
+        return None
+    for rel in (_git_path(n) for n in out.split(b"\0") if n):
+        if rel in skip or _invariants.is_record_path(rel, records):
             continue
-        sides = []
-        for root in (tree, ctx["gitRoot"]):
-            try:
-                with open(os.path.join(root, rel), "rb") as fh:
-                    sides.append(fh.read())
-            except OSError:
-                sides.append(None)
-        if sides[0] != sides[1]:
+        if _file_bytes(tree, rel) != _file_bytes(ctx["gitRoot"], rel):
             return False
     return True
 
 
+# --- taking a task tree down: one remover, and it keeps the tree on any doubt -----
+def _same_content(where, a, b):
+    """True when commits `a` and `b` of `where` hold one tree, False when they
+    do not, None when git could not say."""
+    named = []
+    for rev in (a, b):
+        code, out, _err = carry_git(where, ["rev-parse", "--verify", "--quiet",
+                                            "%s^{tree}" % (rev,)])
+        if code != 0 or not out.strip():
+            return None
+        named.append(out.strip())
+    return named[0] == named[1]
+
+
+def _head_held(ctx, tree):
+    """`(held, why)` - whether the commit `tree` stands on is one the phase
+    head holds, so taking the tree down loses no commit made there."""
+    code, out, err = carry_git(tree, ["rev-parse", "--verify", "HEAD"])
+    at = out.decode("utf-8", "replace").strip() if code == 0 else ""
+    if not at:
+        return False, "git named no HEAD in it (%s)" % (err or "exit %d" % (code,),)
+    head = git_head(ctx)
+    if not head:
+        return False, "git named no HEAD in %s to hold its commit" % (ctx["gitRoot"],)
+    code, _out, err = carry_git(ctx["gitRoot"], ["merge-base", "--is-ancestor",
+                                                 at, head])
+    if code == 0:
+        return True, ""
+    if code == 1:
+        return False, ("it stands on %s, a commit the phase head %s does not hold"
+                       % (at[:12], head[:12]))
+    return False, ("whether the phase head holds the commit it stands on could "
+                   "not be read (%s)" % (err or "exit %d" % (code,),))
+
+
+def remove_task_tree(ctx, tree, marker, records=(), followers=(), carried=None):
+    """`(removed, why)` - THE ONE PLACE THE DRIVE FORCE-REMOVES A TASK TREE. It
+    takes `tree` down only when nothing in it would be lost - True beside ''
+    once it is gone - and on any doubt keeps it: False beside the reason, which
+    the caller says on a did-line, and the drive goes on. A reading that failed
+    is a doubt, never a clean tree: a kept tree costs disk, a removed one can
+    cost the only copy of work.
+
+    Asked in order, all before anything is touched:
+    - the work commit `carry_commit` builds holds every file it looks at as the
+      tree holds it;
+    - `tree_undescribed`, the strict reading, names nothing that commit cannot
+      hold: no submodule checked out, at whatever commit, no link directory
+      holding a file, no repository of its own below the top, no staged state
+      the work lacks, no submodule repository kept in the tree's own git
+      directory;
+    - what the work holds is carried - its tree is the tree of the commit
+      `carried` names, the work a recut verified in the tree that replaced this
+      one - or integrated: `tree_holds_only_integrated`, the record paths and
+      `followers` aside;
+    - the commit the tree stands on is one the phase head holds;
+    - the tree's marker names `marker` - the task, or the key a set-aside tree
+      is recorded under - and this process does not stand inside it.
+    IGNORED FILES ARE NOT ASKED AFTER AND GO WITH THE TREE: a removal deletes
+    every file in it git is told to ignore, whatever wrote it."""
+    if not os.path.isdir(tree):
+        return False, "no directory stands at it"
+    sha, why = carry_commit(tree, records, marker)
+    if sha is None:
+        return False, "its work could not be read whole: %s" % (_clip(why, 300),)
+    untold, why = tree_undescribed(tree, records, {"commit": sha}, strict=True)
+    if untold is None:
+        return False, "what it holds could not be read: %s" % (_clip(why, 300),)
+    if untold:
+        return False, _clip("; ".join(untold), 400)
+    if not (carried and _same_content(tree, sha, carried) is True):
+        clean = tree_holds_only_integrated(ctx, tree, records, followers)
+        if clean is not True:
+            return False, ("it holds bytes the phase tree lacks" if clean is False
+                           else "whether the phase tree holds its bytes could "
+                           "not be read")
+    held, why = _head_held(ctx, tree)
+    if not held:
+        return False, why
+    mine = _worktrees.read_provenance(tree, expect_task=str(marker))
+    if mine.get("ours") is not True:
+        return False, "its marker does not name %s (%s)" % (
+            marker, _clip(mine.get("basis") or "", 200))
+    if _worktrees.within_tree(tree, os.getcwd()):
+        return False, "this process stands inside it"
+    code, _out, err = carry_git(ctx["gitRoot"], ["worktree", "remove", "--force",
+                                                 tree])
+    if code != 0:
+        return False, "git worktree remove refused it (%s)" % (
+            err or "exit %d" % (code,),)
+    return True, ""
+
+
 def retire_member(ctx, state, task):
-    """Take down a closed member's tree when it holds nothing the phase tree
-    lacks; otherwise keep it and say so. A blocked member's tree is kept for
-    whoever unblocks it. None, or the stop."""
+    """Take down a closed member's tree, and each tree a redo of it set aside,
+    through `remove_task_tree`, which keeps a tree on any doubt; a kept tree is
+    named with why on a did-line and the drive goes on. A blocked member's tree
+    is kept for whoever unblocks it. None."""
     wave = state["wave"]
     tree = (wave.get("trees") or {}).get(task["id"])
     if not tree or task["id"] in (wave.get("retired") or []):
@@ -4642,46 +4746,307 @@ def retire_member(ctx, state, task):
     wave.setdefault("retired", []).append(task["id"])
     held = (((state.get("integrated") or {}).get(task["id"]) or {}).get("value")
             or {})
-    followers = held.get("followers") if isinstance(held, dict) else None
-    clean = tree_holds_only_integrated(ctx, tree, wave.get("records"),
-                                       followers or ()) \
-        if os.path.isdir(tree) else True
-    if clean is not True:
-        write_state(ctx, state)
-        ctx["did"].append("tree of %s kept at %s (%s)" % (
-            task["id"], tree, "it holds bytes the phase tree lacks" if clean is False
-            else "git could not describe it"))
-        return None
-    if os.path.isdir(tree):
-        _out, stop = _verb_or_stop(ctx, "manage-worktrees.py", [
-            "task-remove", ctx["manifest"], task["id"], "--project", ctx["project"],
-            "--force"])
-        if stop is not None:
-            return stop
-    wave["trees"].pop(task["id"], None)
+    followers = (held.get("followers") if isinstance(held, dict) else None) or ()
+    records = wave.get("records") or ()
+    if not os.path.isdir(tree):
+        wave["trees"].pop(task["id"], None)
+        ctx["did"].append("tree of %s was gone already from %s" % (task["id"], tree))
+    else:
+        removed, why = remove_task_tree(ctx, tree, task["id"], records, followers)
+        if removed:
+            wave["trees"].pop(task["id"], None)
+            ctx["did"].append("tree of %s removed" % (task["id"],))
+        else:
+            ctx["did"].append("tree of %s kept at %s (%s)" % (task["id"], tree, why))
+    retire_asides(ctx, state, task["id"], records, followers)
     write_state(ctx, state)
-    ctx["did"].append("tree of %s removed" % (task["id"],))
     return None
 
 
-def drop_tree(ctx, state, task_id):
-    """Take a member's tree down whatever it holds - a `redo` the human chose
-    recuts it at the phase HEAD - so a fresh one is made. None, or the stop."""
+# A tree a redo set aside is recorded in `keptTrees` - the drive state status
+# lists - under a key naming the task it came from, and its marker names that
+# key rather than the task, so `task-add` never adopts it as the task's tree.
+ASIDE_KEY = "%s set aside %d"
+_ASIDE_KEY_RE = re.compile(r"^(.+) set aside \d+$")
+
+
+def asides_of(state, task_id):
+    """`[(key, path)]` - the trees a redo of `task_id` set aside, by key."""
+    found = []
+    for key, path in sorted((state.get("keptTrees") or {}).items()):
+        hit = _ASIDE_KEY_RE.match(key)
+        if hit and hit.group(1) == str(task_id):
+            found.append((key, path))
+    return found
+
+
+def drop_aside(state, key):
+    """Forget the set-aside entry `key`, and `keptTrees` once it is empty."""
+    (state.get("keptTrees") or {}).pop(key, None)
+    if not state.get("keptTrees"):
+        state.pop("keptTrees", None)
+
+
+def retire_asides(ctx, state, task_id, records=(), followers=()):
+    """Offer each tree a redo of `task_id` set aside to `remove_task_tree` once
+    the task is closed, and name each on a did-line, removed or kept. An entry
+    whose directory no longer stands is forgotten."""
+    for key, path in asides_of(state, task_id):
+        if not os.path.isdir(path):
+            drop_aside(state, key)
+            continue
+        removed, why = remove_task_tree(ctx, path, key, records, followers)
+        if removed:
+            drop_aside(state, key)
+            ctx["did"].append("set-aside tree of %s removed from %s" % (task_id, path))
+        else:
+            ctx["did"].append("set-aside tree of %s kept at %s (%s)"
+                              % (task_id, path, why))
+
+
+def _repair_moved_tree(git_root, old, new, admin):
+    """'' once git reads the worktree moved from `old` to `new`, else why. `git
+    worktree repair` points the worktree's own records at `new`. A submodule
+    checked out in it records its checkout in its own repository under
+    `admin`, by a path that names the old directory, so each one found there is
+    pointed into the new one - `git worktree move` would do both, and refuses
+    any tree with a submodule checked out. Read back with a diff across the submodules,
+    which fails where git cannot enter one."""
+    code, _out, err = carry_git(git_root, ["worktree", "repair", new])
+    if code != 0:
+        return "git worktree repair: %s" % (err or "exit %d" % (code,),)
+    gone = os.path.realpath(old)
+    for at, _dirs, files in os.walk(os.path.join(admin, "modules")):
+        if "config" not in files:
+            continue
+        cfg = os.path.join(at, "config")
+        why = _repoint_module(git_root, cfg, at, gone, new)
+        if why:
+            return why
+    code, _out, err = carry_git(new, ["--no-optional-locks", "diff", "--quiet",
+                                      "--ignore-submodules=none", "HEAD"],
+                                _own_index_env())
+    return "" if code in (0, 1) else "git does not read %s (%s)" % (
+        new, err or "exit %d" % (code,))
+
+
+def _repoint_module(git_root, cfg, at, gone, new):
+    """'' once the submodule repository at `at`, whose config is `cfg`, points
+    its checkout into `new` - or holds none under `gone` - else why. A config
+    git reads as bytes no UTF-8 decoder takes, or a checkout on another drive
+    than its repository (where no relative path joins them), is a reason, never
+    an exception: the tree has already moved when this runs."""
+    code, out, _err = carry_git(git_root, ["config", "--file", cfg, "--get",
+                                           "core.worktree"])
+    if code != 0:
+        return ""
+    try:
+        was = os.path.realpath(os.path.join(at, out.decode("utf-8").strip()))
+        if was != gone and not was.startswith(gone + os.sep):
+            return ""
+        now = os.path.join(os.path.realpath(new), os.path.relpath(was, gone))
+        pointed = os.path.relpath(now, os.path.realpath(at)).replace(os.sep, "/")
+    except (UnicodeDecodeError, ValueError) as exc:
+        return "%s could not be read as a path into %s (%s)" % (cfg, new, exc)
+    code, _out, err = carry_git(git_root, ["config", "--file", cfg,
+                                           "core.worktree", pointed])
+    if code != 0:
+        return "%s could not be pointed at %s (%s)" % (cfg, now, err)
+    return ""
+
+
+# While a set-aside tree is moved, git's record of it names the path it left,
+# and until `git worktree repair` points it at the new one, git reads that
+# record as prunable: `git worktree prune` - which the sweep, the panel and gc
+# all run - would delete the record's directory, the tree's index, its marker
+# and every submodule repository kept there, and `git worktree add -f` at the
+# old path would hand a second tree the same directory. git refuses both over
+# a locked record, so the record is locked before the move and unlocked only
+# once git reads the tree where it went. Each move not yet read there is
+# recorded under `ASIDE_MOVES` in the drive state, and `repair_asides` runs
+# the repair again at the start of every step until it holds.
+ASIDE_MOVES = "asideMoves"
+ASIDE_LOCK = ("audit: a redo is setting this tree aside; the drive unlocks it "
+              "once git reads it where it was moved")
+
+
+def _lock_for_move(git_root, tree):
+    """'' once git's record of `tree` is locked for its move, else why - a
+    record locked already, by anyone, is a refusal: its lock is not ours to
+    take back. Where the tree goes is in the drive state, not the lock."""
+    code, _out, err = carry_git(git_root, ["worktree", "lock", "--reason",
+                                           ASIDE_LOCK, tree])
+    return "" if code == 0 else "git worktree lock: %s" % (err or "exit %d" % (code,),)
+
+
+def _unlock_moved(git_root, where, admin):
+    """'' once git's record of the tree at `where` holds no lock the drive
+    took, else why. git keeps a lock as a `locked` file in the record's
+    directory `admin`, holding the reason: no file is no lock, as after a human
+    unlocked it by hand, and a reason other than `ASIDE_LOCK` is someone
+    else's lock, left as it is."""
+    try:
+        with open(os.path.join(admin, "locked"), "r", encoding="utf-8",
+                  errors="replace") as fh:
+            reason = fh.read().strip()
+    except FileNotFoundError:
+        return ""
+    except OSError as exc:
+        return "its lock could not be read (%s)" % (exc,)
+    if reason != ASIDE_LOCK:
+        return ""
+    code, _out, err = carry_git(git_root, ["worktree", "unlock", where])
+    return "" if code == 0 else "git worktree unlock: %s" % (err or "exit %d" % (code,),)
+
+
+def _drop_move(state, key):
+    """Forget the move of the set-aside entry `key`, and `ASIDE_MOVES` once it
+    is empty."""
+    (state.get(ASIDE_MOVES) or {}).pop(key, None)
+    if not state.get(ASIDE_MOVES):
+        state.pop(ASIDE_MOVES, None)
+
+
+def _finish_aside(git_root, move, aside):
+    """'' once git reads the set-aside tree at `aside` and its record is
+    unlocked, else why. Run again over a tree already read there, it changes
+    nothing: the repair is idempotent, and a module already pointed into
+    `aside` points nowhere under the path it left."""
+    why = _repair_moved_tree(git_root, move["from"], aside, move["admin"])
+    return why or _unlock_moved(git_root, aside, move["admin"])
+
+
+def _take_back_aside(ctx, state, key, tree, record, admin):
+    """Undo a set-aside whose move never happened: the marker names the task
+    again, the drive's lock on the record is given back, and neither the kept
+    entry nor the move is recorded. '' when all of that held, else what did
+    not."""
+    _path, unmarked = _worktrees.write_record(tree, record)
+    unlocked = _unlock_moved(ctx["gitRoot"], tree, admin)
+    drop_aside(state, key)
+    _drop_move(state, key)
+    write_state(ctx, state)
+    return "; ".join(
+        ["its marker could not be put back and still names %r (%s)" % (key, unmarked)]
+        * bool(unmarked)
+        + ["git's record of it is still locked (%s)" % (unlocked,)] * bool(unlocked))
+
+
+def repair_asides(ctx, state):
+    """None once git reads every set-aside tree where it was moved, else the
+    stop. A move recorded in `ASIDE_MOVES` is one whose repair did not hold -
+    it failed, or the run died between the move and the repair - so it is run
+    again here, before any step could cut a tree at the path the move left; a
+    move that never happened, the tree still at its own path, is taken back.
+    The drive does not go past a tree git cannot read: its record stays locked,
+    and the stop names the repair."""
+    moves = state.get(ASIDE_MOVES) or {}
+    for key in sorted(moves):
+        move = moves[key] or {}
+        aside = (state.get("keptTrees") or {}).get(key) or ""
+        if not os.path.isdir(aside) and os.path.isdir(move.get("from") or ""):
+            why = _take_back_aside(ctx, state, key, move["from"],
+                                   move.get("record") or {}, move.get("admin") or "")
+            ctx["did"].append("the tree set aside as %r was never moved from %s; "
+                              "it is taken back there%s" % (
+                                  key, move["from"], " but %s" % (why,) if why else ""))
+            continue
+        if not os.path.isdir(aside):
+            return _stopped(ctx, "the tree set aside as %r was moving from %s to %s "
+                            "and stands at neither; git's record of it stays "
+                            "locked, so nothing prunes it. Put the tree at %s, "
+                            "then next" % (key, move.get("from"), aside or "a path "
+                                           "the state does not name", aside))
+        why = _finish_aside(ctx["gitRoot"], move, aside)
+        if why:
+            return _stopped(ctx, aside_unread(key, aside, why))
+        _drop_move(state, key)
+        write_state(ctx, state)
+        ctx["did"].append("set-aside tree %r: git reads it at %s now, and its "
+                          "record is unlocked" % (key, aside))
+    return None
+
+
+def aside_unread(key, aside, why):
+    """The stop for a set-aside tree git does not read where it was moved."""
+    return ("the tree set aside as %r is at %s with its work in it, and git "
+            "does not read it there yet (%s). git's record of it stays locked, "
+            "so no prune and no forced add takes it; settle what stops "
+            "`git worktree repair %s`, then next, which runs the repair again "
+            "and unlocks it. Nothing was recut" % (key, aside, why, aside))
+
+
+def set_aside_tree(ctx, state, task_id):
+    """`(aside, None)` - the member's tree moved to a path beside its own and
+    recorded, `aside` being {"key", "path"}, so a fresh tree is cut at the
+    task's path and nothing the old one holds is lost - or `(None, stop)`.
+
+    The move is a rename of the directory and `_repair_moved_tree`: it works
+    for every tree, a submodule's checkout included. Before the rename, in
+    this order, the entry and the move are recorded, git's record of the tree
+    is locked (see `ASIDE_MOVES`) and the marker is rewritten to the entry's
+    key; a run that dies past any of those leaves a tree status lists, and the
+    next step finishes the move or takes it back (`repair_asides`), so no lock
+    the drive took outlives the move. A lock or a marker that cannot be
+    written, or a rename that fails, takes the set-aside back at once and says
+    whatever of that did not hold, so the tree left where it was answers to
+    the task again. A repair that fails stops with the record still locked."""
     wave = state.get("wave") or {}
     tree = (wave.get("trees") or {}).get(task_id)
-    if not tree:
-        return None
-    if os.path.isdir(tree):
-        _out, stop = _verb_or_stop(ctx, "manage-worktrees.py", [
-            "task-remove", ctx["manifest"], task_id, "--project", ctx["project"],
-            "--force"])
-        if stop is not None:
-            return stop
+    if not tree or not os.path.isdir(tree):
+        return None, _stopped(ctx, "the tree of %s is not at %s to set aside; "
+                              "nothing was recut" % (task_id, tree or "a recorded path"))
+    held = _worktrees.read_provenance(tree, expect_task=str(task_id))
+    admin = _worktrees.admin_dir(tree)
+    if held.get("ours") is not True or not admin:
+        return None, _stopped(ctx, "the tree of %s at %s could not be set aside: "
+                              "%s; nothing was recut" % (
+                                  task_id, tree, held.get("basis") or
+                                  "git would not name its own git directory"))
+    kept = state.get("keptTrees") or {}
+    count = 1
+    while ASIDE_KEY % (task_id, count) in kept \
+            or os.path.lexists("%s.aside-%d" % (tree, count)):
+        count += 1
+    key, aside = ASIDE_KEY % (task_id, count), "%s.aside-%d" % (tree, count)
+    state.setdefault("keptTrees", {})[key] = aside
+    move = {"from": tree, "admin": admin, "record": held["record"]}
+    state.setdefault(ASIDE_MOVES, {})[key] = move
+    write_state(ctx, state)
+    why = _lock_for_move(ctx["gitRoot"], tree)
+    if why:
+        drop_aside(state, key)
+        _drop_move(state, key)
+        write_state(ctx, state)
+        return None, _stopped(ctx, "the tree of %s could not be set aside: git's "
+                              "record of it could not be locked for the move "
+                              "(%s); nothing was moved or recut" % (task_id, why))
+    _path, why = _worktrees.write_record(tree, dict(held["record"], taskId=key,
+                                                    setAsideFrom=str(task_id)))
+    if why:
+        undone = _take_back_aside(ctx, state, key, tree, held["record"], admin)
+        return None, _stopped(ctx, "the tree of %s could not be set aside: its "
+                              "marker could not name %r (%s); nothing was moved "
+                              "or recut%s" % (task_id, key, why, ", but %s" % (
+                                  undone,) if undone else ""))
+    try:
+        os.rename(tree, aside)
+    except OSError as exc:
+        why = _take_back_aside(ctx, state, key, tree, held["record"], admin)
+        return None, _stopped(ctx, "the tree of %s could not be set aside at %s "
+                              "(%s); it is where it was%s, and nothing was recut"
+                              % (task_id, aside, exc, ", but %s" % (why,) if why
+                                 else ""))
     wave["trees"].pop(task_id, None)
     (wave.get("bases") or {}).pop(task_id, None)
     wave["base"] = git_head(ctx) or wave.get("base")
     write_state(ctx, state)
-    return None
+    why = _finish_aside(ctx["gitRoot"], move, aside)
+    if why:
+        return None, _stopped(ctx, aside_unread(key, aside, why))
+    _drop_move(state, key)
+    write_state(ctx, state)
+    return {"key": key, "path": aside}, None
 
 
 def tree_work(tree, records, task_id):
@@ -4911,24 +5276,33 @@ def tree_changed(tree):
 
 
 def _unheld(tree, env, paths):
-    """`(paths, why)` - those of `paths` the scratch index `env` names does not
-    hold as `tree`'s files do: a path it holds with other bytes, or lacks while
-    the file stands and git does not ignore it. A path both lack - staged, then
-    deleted - is held, and so is an ignored file the scratch index lacks: git
-    ignores it on disk, and the index's own record of it is
-    `tree_undescribed`'s to compare. None beside why when git could not
-    compare."""
-    found = set()
+    """`(paths, left, why)` - those of `paths` the scratch index `env` names does
+    not hold as `tree`'s files do: a path it holds with other bytes, or lacks
+    while the file stands and git does not ignore it. A path both lack - staged,
+    then deleted - is held, and so is an ignored file the scratch index lacks:
+    git ignores it on disk, and the index's own record of it is
+    `tree_undescribed`'s to compare. A submodule checked out at the commit the
+    scratch index records is held whatever its checkout holds besides - an
+    edit, an untracked build file: those are the submodule's own changes, not
+    the task's work, and are `left`, so the caller can say they stay in the
+    tree; one checked out at another commit is not held. None, None beside why
+    when git could not compare."""
+    found, left = set(), set()
     for at in range(0, len(paths), 100):
         spec = ["--"] + [":(literal)%s" % (p,) for p in paths[at:at + 100]]
+        seen = []
         for argv in (["diff", "--name-only", "-z", "--no-renames",
+                      "--ignore-submodules=dirty"],
+                     ["diff", "--name-only", "-z", "--no-renames",
                       "--ignore-submodules=none"],
                      ["ls-files", "-o", "--exclude-standard", "-z"]):
             code, out, err = carry_git(tree, argv + spec, env)
             if code != 0:
-                return None, err or "git %s exited %d" % (argv[0], code)
-            found.update(_git_path(n) for n in out.split(b"\0") if n)
-    return sorted(found), ""
+                return None, None, err or "git %s exited %d" % (argv[0], code)
+            seen.append(set(_git_path(n) for n in out.split(b"\0") if n))
+        found.update(seen[0] | seen[2])
+        left.update(seen[1] - seen[0])
+    return sorted(found), sorted(left - found), ""
 
 
 def carry_commit(tree, records, task_id):
@@ -4946,7 +5320,15 @@ def carry_commit(tree, records, task_id):
     the filing's carry, the redo's read of the work, its check of the recut
     tree - treats the commit as the whole of the files; so it is no commit at
     all, and `why` names the paths. What the files cannot show - a staged state,
-    a nested repository - is `tree_undescribed`'s, asked before a recut."""
+    a nested repository - is `tree_undescribed`'s, asked before a recut and
+    before any removal.
+
+    A SUBMODULE'S OWN CHANGES ARE NOT THE TASK'S WORK: a checkout standing at
+    the commit its link records is held whatever it holds besides (`_unheld`),
+    so build output inside a submodule never stops the filing's carry. The
+    commit is written then, and `why` - '' otherwise - says which submodules
+    kept changes of their own in the tree; a caller that reads `why` only when
+    `sha` is None loses nothing by it."""
     scratch = tempfile.mkdtemp(prefix="audit-carry-")
     try:
         env = dict(os.environ, GIT_INDEX_FILE=os.path.join(scratch, "index"),
@@ -4977,7 +5359,7 @@ def carry_commit(tree, records, task_id):
         if changed is None:
             return None, why
         looked = sorted(set(changed) | (set(flags) - set(not_out)))
-        unheld, why = _unheld(tree, env, [
+        unheld, left, why = _unheld(tree, env, [
             p for p in looked if not _invariants.is_record_path(p, records)])
         if unheld is None:
             return None, why
@@ -4997,46 +5379,120 @@ def carry_commit(tree, records, task_id):
             head.decode("utf-8").strip(), "-m", "work of %s" % (task_id,)], env)
         if code != 0:
             return None, err or "git commit-tree exited %d" % (code,)
-        return out2.decode("utf-8").strip(), ""
+        return out2.decode("utf-8").strip(), (
+            "the changes inside submodule %s are that submodule's own, not the "
+            "task's work, and were left in %s" % (
+                _clip(", ".join(_shown(p) for p in left), 200), tree)
+            if left else "")
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
 
-def tree_undescribed(tree, records, work):
+def _link_checkout(tree, rel, recorded, strict):
+    """What the directory of the link `rel` holds that a commit of `tree` does
+    not, as a finding; '' when nothing. A checkout - a `.git` there - standing
+    at another commit than `recorded` holds a commit the link does not name,
+    and one whose HEAD git cannot name is a doubt, both in either reading; one
+    standing at `recorded` holds only its own changes, which the strict reading
+    names because the tree's removal deletes them. A link never checked out
+    holds nothing - unless, strictly read, files stand in its directory."""
+    path = os.path.join(tree, *rel.split("/"))
+    if os.path.lexists(os.path.join(path, ".git")):
+        code, out, err = carry_git(path, ["rev-parse", "--verify", "HEAD"],
+                                   _own_index_env())
+        at = out.decode("utf-8", "replace").strip() if code == 0 else ""
+        if not at:
+            return "%s is a submodule whose checkout git could not read (%s)" % (
+                _shown(rel), err or "exit %d" % (code,))
+        if at != recorded:
+            return ("%s is a submodule checked out at %s, a commit its link does "
+                    "not record" % (_shown(rel), at[:12]))
+        return ("%s is a submodule checked out in the tree, whose own changes go "
+                "with the tree" % (_shown(rel),)) if strict else ""
+    if not strict:
+        return ""
+    try:
+        held = os.listdir(path)
+    except FileNotFoundError:
+        held = []
+    except OSError as exc:
+        return "%s could not be read (%s)" % (_shown(rel), exc)
+    return ("%s is a link whose directory holds files no commit records"
+            % (_shown(rel),)) if held else ""
+
+
+def tree_undescribed(tree, records, work, strict=True):
     """`(what, why)` - what in `tree` the work commit `work["commit"]` and the
     tree's own index do not describe between them, each named; [] when they
-    describe the tree whole, so taking it down loses nothing the recut does not
-    put back. None beside why when it could not be read. The recut asks this
-    before anything comes down, and refuses on any answer but [].
+    describe the tree whole. None beside why when it could not be read.
+    IGNORED FILES ARE NOT PART OF WHAT IT DESCRIBES: git leaves a file it
+    ignores out of the work, and nothing here asks after one - a tree taken
+    down deletes every ignored file in it, whatever wrote it: a setup's
+    install, a build's output, or a file an agent left under an ignore rule.
 
-    Two questions, each read off git's own records and the disk rather than off
-    a listing a setting can narrow, so `submodule.<name>.ignore`,
-    `diff.ignoreSubmodules` and the ignore rules hide nothing from either:
+    Read off git's own records and the disk rather than off a listing a setting
+    can narrow, so `submodule.<name>.ignore`, `diff.ignoreSubmodules` and the
+    ignore rules hide nothing. `strict` is the reading a removal follows
+    (`remove_task_tree`): everything taking the tree down would delete. The
+    redo asks it with `strict` false, since it sets the old tree aside rather
+    than taking it down: there the question is only what a recut cannot carry,
+    and what is left is kept in the set-aside tree.
 
-    - Is anything in the tree a repository of its own? A link to one - mode
-      160000 in the tree's index, at its HEAD or in the work - names commits
-      kept in the tree's modules directory, and a `.git` anywhere below the
-      tree's top is a repository whose objects live in the tree. Removing the
-      tree deletes them, and no commit of this repository carries them.
-    - Does the index record a state the work does not hold? A path the index
-      stages against HEAD and also holds otherwise than the work does is a
-      staged state the files do not show - a deletion of a file still on disk,
-      an edit whose file was put back, a conflict - and the work, read from the
-      files, cannot carry it. A path staged as the work holds it is carried,
-      and an intent-to-add entry stages nothing. The record paths are the
+    - A link to a nested repository - mode 160000 in the tree's index, at its
+      HEAD or in the work - whose commit differs between them, or whose
+      checkout stands at another commit, is named in either reading: no commit
+      of this repository carries that commit. One that is the same throughout
+      and never checked out holds nothing, and is not named. Strictly, a
+      checkout standing at the recorded commit is named as well, as is a
+      repository the tree's own git directory keeps under `modules`, since the
+      tree's removal deletes both.
+    - A `.git` anywhere else below the tree's top is a repository whose objects
+      live in the tree, named in either reading.
+    - A path the index stages against HEAD and also holds otherwise than the
+      work does is a staged state the files do not show - a deletion of a file
+      still on disk, an edit whose file was put back - named strictly. The
+      lenient reading leaves out the one the disk has moved past since: a path
+      the work also changes against HEAD, as after the integrator's `add -A`
+      and a human's edit, where the file is the work. An unmerged path is named
+      in either reading. A path staged as the work holds it is carried, an
+      intent-to-add entry stages nothing, and the record paths are the
       phase's, refreshed into the new tree, and are left out."""
     found = []
-    linked = set()
-    for argv, env in ((["ls-files", "-s", "-z"], _own_index_env()),
-                      (["ls-tree", "-r", "-z", "--full-tree", "HEAD"], None),
-                      (["ls-tree", "-r", "-z", "--full-tree", work["commit"]], None)):
+    held = []
+    for argv, env, at in ((["ls-files", "-s", "-z"], _own_index_env(), 1),
+                          (["ls-tree", "-r", "-z", "--full-tree", "HEAD"], None, 2),
+                          (["ls-tree", "-r", "-z", "--full-tree", work["commit"]],
+                           None, 2)):
         code, out, err = carry_git(tree, argv, env)
         if code != 0:
             return None, err or "git %s exited %d" % (argv[0], code)
-        linked.update(_git_path(item.split(b"\t", 1)[1]) for item in out.split(b"\0")
-                      if b"\t" in item and item.split(b" ", 1)[0] == GITLINK_MODE)
-    found.extend("%s is a link to a nested repository" % (_shown(p),)
-                 for p in sorted(linked))
+        links = {}
+        for item in out.split(b"\0"):
+            if b"\t" not in item:
+                continue
+            head, name = item.split(b"\t", 1)
+            fields = head.split(b" ")
+            if fields[0] == GITLINK_MODE and len(fields) > at:
+                links[_git_path(name)] = fields[at].decode("ascii", "replace")
+        held.append(links)
+    linked = sorted(set(held[0]) | set(held[1]) | set(held[2]))
+    for rel in linked:
+        shas = set(listed.get(rel) for listed in held)
+        if len(shas) > 1:
+            found.append("%s is a link to a nested repository whose commit the "
+                         "work moves" % (_shown(rel),))
+            continue
+        what = _link_checkout(tree, rel, shas.pop(), strict)
+        if what:
+            found.append(what)
+    if strict:
+        admin = _worktrees.admin_dir(tree)
+        if not admin:
+            return None, "git would not name the git directory of %s" % (tree,)
+        modules = os.path.join(admin, "modules")
+        if os.path.isdir(modules) and os.listdir(modules):
+            found.append("its git directory keeps submodule repositories at %s"
+                         % (modules,))
     nested, why = _nested_repositories(tree)
     if nested is None:
         return None, why
@@ -5051,9 +5507,23 @@ def tree_undescribed(tree, records, work):
         if code != 0:
             return None, err or "git diff-index exited %d" % (code,)
         staged.append(set(_git_path(n) for n in out.split(b"\0") if n))
+    code, out, err = carry_git(tree, ["ls-files", "-u", "-z"], _own_index_env())
+    if code != 0:
+        return None, err or "git ls-files exited %d" % (code,)
+    unmerged = set(_git_path(item.split(b"\t", 1)[1])
+                   for item in out.split(b"\0") if b"\t" in item)
+    passed = set()
+    if not strict:
+        moved, why = _changed_between(tree, "HEAD", work["commit"])
+        if moved is None:
+            return None, why
+        passed = set(moved)
+    found.extend("%s is unmerged in the tree's index" % (_shown(p),)
+                 for p in sorted(unmerged)
+                 if not _invariants.is_record_path(p, records))
     found.extend("%s is staged in the tree's index as neither its base nor the "
                  "work holds it" % (_shown(p),)
-                 for p in sorted(staged[0] & staged[1])
+                 for p in sorted((staged[0] & staged[1]) - passed - unmerged)
                  if not _invariants.is_record_path(p, records))
     return found, ""
 
@@ -5102,7 +5572,9 @@ def carry_remote(ctx):
 def carry_work(ctx, task, tree, records):
     """Leave a filed member's work in `refs/audit/carry/<id>` and push it. What
     could not be done is said on the did-line, never raised and never silent:
-    the filing stands, but the work then lives in the tree alone."""
+    the filing stands, but the work then lives in the tree alone. What the
+    carry left in the tree on purpose - a submodule's own changes - is said on
+    a did-line of its own."""
     sha, why = carry_commit(tree, records, task["id"])
     if sha is None:
         ctx["did"].append("work of %s not carried: %s" % (task["id"], why))
@@ -5112,6 +5584,9 @@ def carry_work(ctx, task, tree, records):
     if code != 0:
         ctx["did"].append("work of %s not carried: update-ref %s" % (task["id"], err))
         return
+    if why:
+        ctx["did"].append("work of %s carried without what is not its own: %s"
+                          % (task["id"], why))
     if not carry_pushes(ctx):
         _push, problem = _config_rules.carry_push_setting(ctx["config"])
         ctx["did"].append("work of %s carried in %s, local only: %s, so it does "
@@ -5209,9 +5684,9 @@ def redo_patch(ctx, task_id):
 def redo_held(ctx, state, task_id, tree):
     """`(held, why)` - whether `tree` already holds the work a redo pinned to
     `redo_pin`. A redo stops with its patch kept in three states, and only one
-    lacks the work: stopped before the old tree came down (that tree, at the
-    work's base, still holds it), stopped between taking it down and applying
-    the work (a tree at the head without it), and stopped once the recut tree
+    lacks the work: stopped before the old tree was set aside (that tree, at
+    the work's base, still holds it), stopped between setting it aside and
+    applying the work (a tree at the head without it), and stopped once the recut tree
     held it but before the patch was taken away. So the tree is read the way
     `recut_wrong` reads a recut: True when no work path is left unmerged, each
     path its HEAD did not move since the work's base reads as the pinned commit
@@ -5330,7 +5805,7 @@ def recut_standing(ctx, task, tree):
 
 def keep_redo_work(ctx, task_id, work, kept):
     """Pin the work commit and write the patch whole and synced
-    (`_worktrees.keep_bytes`) before the old tree comes down. '' when both are
+    (`_worktrees.keep_bytes`) before the old tree is set aside. '' when both are
     kept, else why."""
     code, _out, err = carry_git(ctx["gitRoot"], ["update-ref", redo_pin(task_id),
                                                  work["commit"]])
@@ -5360,6 +5835,15 @@ def recut_tree(ctx, state, task):
     integration refused and for one the mover would not bring to the head. None,
     or the stop.
 
+    THE OLD TREE IS NOT TAKEN DOWN TO MAKE ROOM FOR THE NEW ONE. It is set
+    aside (`set_aside_tree`) - moved beside the task's tree path and recorded
+    in `keptTrees`, which status lists - and the new tree is cut at the task's
+    path. Only once the recut tree holds the work is the set-aside tree offered
+    to `remove_task_tree`, the one remover, which takes it down - its ignored
+    files with it - only when it holds nothing else but that work, and
+    otherwise keeps it and says why. So what a reading of the old tree could
+    miss costs disk, never the work.
+
     Every refusal comes before the old tree is touched, and each leaves the
     tree, its work and its carry ref as they were. What the recut stands on is
     asked first (`recut_standing`): the tree is there - a tree that is gone is
@@ -5369,18 +5853,20 @@ def recut_tree(ctx, state, task):
     the way the carry reads it (`tree_work`, the record paths left out - they
     are the phase's, refreshed into the new tree), and that read refuses when
     any file it was to look at is not held by it as the tree holds it
-    (`carry_commit`). THE ONE QUESTION BEFORE ANYTHING COMES DOWN is then
-    `tree_undescribed`: the work commit and the tree's own index describe the
-    tree whole, and nothing in it is a repository of its own - a link to one
-    in the index, at HEAD or in the work, or a `.git` anywhere below the top -
-    whatever git is told to ignore; any answer but none refuses the redo,
-    naming each thing. A path the filed carry ref holds as work and
+    (`carry_commit`). `tree_undescribed`, read leniently, then names what a
+    recut cannot carry - a link whose commit the work moves or whose checkout
+    stands elsewhere, a repository of its own below the top, an unmerged path,
+    a staged state the disk has not moved past - whatever git is told to
+    ignore; any answer but none refuses the redo, naming each thing. A link
+    never checked out, a submodule's own changes and an index state the disk
+    supersedes stop nothing: the set-aside tree keeps them. A path the filed
+    carry ref holds as work and
     the tree's work lacks refuses the redo (`carry_beside_work`); a three-way
     apply of the work at the head is tried in a scratch index
     (`recut_conflicts`), a conflict refusing it by name. Past them, the work commit is pinned to `refs/audit/redo/<id>`
     and the patch written whole to a file of the state directory, both kept
     until the recut tree holds every carried path as `recut_wrong` checks it,
-    so a step failing after the old tree came down never loses the only copy;
+    so a step failing after the old tree was set aside names a copy of its own;
     the stop names the file, and `advance` runs nothing in the member's tree
     while it is there. The carry ref is moved to the recut tree only once the
     work is verified there."""
@@ -5404,14 +5890,14 @@ def recut_tree(ctx, state, task):
                         "its recorded base %s; nothing was recut, and its tree "
                         "and %s are as they were" % (
                             task["id"], work["base"][:12], base[:12], ref))
-    untold, why = tree_undescribed(tree, records, work)
+    untold, why = tree_undescribed(tree, records, work, strict=False)
     if untold is None:
         return _stopped(ctx, "whether the work of %s describes its tree whole "
                         "could not be read (%s), so nothing was recut and no "
                         "attempt is spent" % (task["id"], why))
     if untold:
         return _stopped(ctx, "redo refused: the tree of %s holds what a recut "
-                        "cannot carry and taking it down would lose - %s; "
+                        "cannot carry - %s; "
                         "nothing was recut, and its tree and %s are as they "
                         "were - settle it in the tree and answer again, or "
                         "block" % (task["id"], _clip("; ".join(untold), 400), ref))
@@ -5456,36 +5942,38 @@ def recut_tree(ctx, state, task):
         why = keep_redo_work(ctx, task["id"], work, kept)
         if why:
             return _stopped(ctx, "the work of %s could not be kept before its tree "
-                            "came down (%s); nothing was recut, and its tree and "
+                            "was set aside (%s); nothing was recut, and its tree and "
                             "%s are as they were" % (task["id"], why, ref))
 
-    keeping = ("the redo of %s stopped once its old tree was coming down: its "
-               "work is kept as %s and %s is as it was, and no attempt is spent"
-               % (task["id"], kept, ref))
+    def keeping(where):
+        return ("the redo of %s stopped %s: its work is kept as %s and %s is as "
+                "it was, and no attempt is spent" % (task["id"], where, kept, ref))
 
-    def after_drop(why):
-        return _stopped(ctx, "%s - %s" % (_clip(why, 300), keeping))
-
-    def kept_beside(stop):
+    def kept_beside(stop, where):
         # A verb's own stop keeps its kind and words; the keeping is added.
-        return stop if not work["patch"] else (stop[0], "%s\n%s" % (stop[1], keeping))
-    stop = drop_tree(ctx, state, task["id"])
+        return stop if not work["patch"] else (stop[0], "%s\n%s" % (stop[1],
+                                                                    keeping(where)))
+    aside, stop = set_aside_tree(ctx, state, task["id"])
     if stop is not None:
-        return kept_beside(stop)
+        return kept_beside(stop, "as its old tree was being set aside")
+    past = "once its old tree was set aside at %s" % (aside["path"],)
+
+    def after_aside(why):
+        return _stopped(ctx, "%s - %s" % (_clip(why, 300), keeping(past)))
     new, stop = add_tree(ctx, state, task)
     if stop is not None:
-        return kept_beside(stop)
+        return kept_beside(stop, past)
     if work["patch"]:
         code, _out, err = carry_git(new, ["apply", "--3way", "--whitespace=nowarn"],
                                     stdin=work["patch"])
         if code != 0:
-            return after_drop("the work does not apply in the tree recut at %s "
-                              "(%s)" % (head[:12], err or "git apply exited %d"
-                                        % (code,)))
+            return after_aside("the work does not apply in the tree recut at %s "
+                               "(%s)" % (head[:12], err or "git apply exited %d"
+                                         % (code,)))
         wrong = recut_wrong(ctx, new, task["id"], records, work, moved)
         if wrong:
-            return after_drop("the recut tree does not hold the work as it was: %s"
-                              % (", ".join(wrong),))
+            return after_aside("the recut tree does not hold the work as it was: "
+                               "%s" % (", ".join(wrong),))
         if carry:
             carry_work(ctx, task, new, records)
     (state.get("gated") or {}).pop(task["id"], None)
@@ -5496,27 +5984,39 @@ def recut_tree(ctx, state, task):
         why = drop_redo_work(task["id"], kept, ctx["gitRoot"])
         if why:
             return _stopped(ctx, "the tree of %s is recut at %s and holds its work, "
-                            "and what the redo kept could not be taken away (%s); "
-                            "remove it by hand, then next" % (
-                                task["id"], head[:12], why))
+                            "its old tree is set aside at %s, and what the redo "
+                            "kept could not be taken away (%s); remove it by hand, "
+                            "then next" % (task["id"], head[:12], aside["path"], why))
+    removed, why = remove_task_tree(ctx, aside["path"], aside["key"], records,
+                                    carried=work["commit"])
+    if removed:
+        drop_aside(state, aside["key"])
+        write_state(ctx, state)
     ctx["did"].append(recut_said(task["id"], state["wave"]["base"], work, moved,
-                                 ref if carry else None))
+                                 ref if carry else None, aside["path"],
+                                 "" if removed else why))
     return None
 
 
-def recut_said(task_id, at, work, moved, carry):
+def recut_said(task_id, at, work, moved, carry, aside="", kept_why=""):
     """The did-line of a recut that held: each carried path under what it got -
     a path the head moved merged three-way, one it did not verified byte for
-    byte - and a claim only where a path was carried that way."""
+    byte - and a claim only where a path was carried that way; then where the
+    old tree was set aside, and whether it was removed or kept, with why."""
     merged = [p for p in work["paths"] if p in moved]
     compared = [p for p in work["paths"] if p not in moved]
     parts = (["merged three-way (%s)" % (_clip(", ".join(merged), 120),)] * bool(merged)
              + ["verified byte for byte (%s)" % (_clip(", ".join(compared), 120),)]
              * bool(compared)
              + ["none of %s left behind" % (carry,)] * bool(carry and work["paths"]))
-    return "tree of %s recut at %s, %s" % (
+    where = ""
+    if aside:
+        where = ("; old tree set aside at %s, kept (%s)" % (aside, kept_why)
+                 if kept_why else "; old tree set aside at %s and removed: it "
+                 "held nothing but the work the recut tree holds" % (aside,))
+    return "tree of %s recut at %s, %s%s" % (
         task_id, at[:12], "its work carried over: %s" % ("; ".join(parts),)
-        if work["paths"] else "with no work to carry")
+        if work["paths"] else "with no work to carry", where)
 
 
 def open_wave(ctx, state, picked, width, basis):
@@ -8440,6 +8940,9 @@ def refresh_triage(ctx, state, phase, pending):
 
 def drive_locked(ctx, state, answer, reason, fixes):
     """The body of `drive`, run with the phase lock held."""
+    stop = repair_asides(ctx, state)
+    if stop is not None:
+        return stop
     manifest, phase = load_phase(ctx)
     pending = state.get("pending")
     if pending and not pending_still_applies(ctx, manifest, pending):
