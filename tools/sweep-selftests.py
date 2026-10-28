@@ -1506,7 +1506,9 @@ def slot_gate(slots):
 # coverage. Staleness by omission costs neither a timeout nor a red sweep: an
 # entry naming a file no longer swept is ignored by the split, a swept file with
 # no entry is estimated for it and given a timeout no tighter than a recorded
-# unit of its kind (tt0, bk1), and `table_notes()` reports either as a note.
+# unit of its kind (tt0, bk1) - a block missing from a suite the table times
+# block by block, no tighter than that suite's largest block (bk5) - and
+# `table_notes()` reports either as a note.
 #
 # THE UNIT IS A BLOCK, NOT A SUITE. A staged suite whose `STAGES` table the sweep
 # reads is dealt out block by block (`shard_units`): dealt as one file, the
@@ -1514,10 +1516,12 @@ def slot_gate(slots):
 # the other parts finished in half the time. Each part runs the blocks it was
 # dealt and replays the suite over THEM (`part` in `sweep`); the replay list
 # names the blocks dealt elsewhere as such (`_harness.replayed`), so a part's
-# row is green over its own blocks and no block is read as missing. What one
-# part cannot see is a case id claimed by blocks in two different parts: that
-# check runs wherever the suite's blocks run in one sweep - every unsharded
-# run, the local sweep `verify.sh` runs included.
+# row is green over its own blocks and no block is read as missing. A case id
+# claimed by blocks in two different parts is in no call site one part
+# collects, so every replay reads it off the suite's source
+# (`_harness.cross_block_ids`) whichever blocks it was dealt - every CI part
+# checks it, not only an unsharded run; an id built when its case runs is in
+# no source, and only a sweep running both blocks reads that one.
 #
 # BALANCED BY RECORDED COST, not by count. The staged suites take minutes while
 # most files take a second, so an even count can put two of them in one part and
@@ -1631,18 +1635,32 @@ def cost_of(costs, path, estimate=None):
 
 def block_figure(path, label, labels, costs, block_costs):
     """`(slot-seconds, basis)` for block `label` of the staged suite `path`
-    whose blocks are `labels`: its own recorded figure (`"block"`), else its
-    suite's figure over its blocks (`"suite"`), else `(None, "untimed")`.
+    whose blocks are `labels`: its own recorded figure (`"block"`); else the
+    larger of its suite's figure over its blocks (`"suite"`) and its suite's
+    largest recorded block (`"largest"`); else `(None, "untimed")`.
 
     THE EVEN SHARE IS A FALLBACK, NOT AN ESTIMATE OF ANY ONE BLOCK: a suite's
     blocks differ by two orders of magnitude, so the share stands in only
     until a run has recorded the block, and the basis travels with the figure
-    so every reader can say which it used."""
+    so every reader can say which it used.
+
+    A BLOCK MISSING FROM A SUITE THE TABLE TIMES BLOCK BY BLOCK takes no less
+    than that suite's largest recorded block, a label no longer staged
+    included. A rename leaves the heavy block's figure under its old label,
+    and a suite's figure spread evenly over its blocks sits far under its
+    heaviest one, so the share alone timed a renamed heavy block at the floor
+    - a staleness by omission tightening a timeout, which `block_timeout`'s
+    untimed rule exists to rule out."""
     own = (block_costs or {}).get(path) or {}
     if label in own:
         return own[label], "block"
-    if path in (costs or {}):
-        return costs[path] / max(1, len(labels)), "suite"
+    share = (costs[path] / max(1, len(labels))
+             if path in (costs or {}) else None)
+    largest = max(own.values()) if own else None
+    if largest is not None and (share is None or largest > share):
+        return largest, "largest"
+    if share is not None:
+        return share, "suite"
     return None, "untimed"
 
 
@@ -1661,7 +1679,9 @@ def block_timeout(path, label, labels, costs, block_costs,
     of it must never be given less than a recorded one would: it gets the
     largest timeout any entry gives at one slot - every block figure, and the
     figure of every file the table holds no blocks for, a ghost's included,
-    which is what a rename leaves behind (`"untimed"`)."""
+    which is what a rename leaves behind (`"untimed"`). A block missing from a
+    suite the table does time gets the same guarantee within its suite: no
+    less than its largest recorded block (`"largest"`, `block_figure`)."""
     cost, basis = block_figure(path, label, labels, costs, block_costs)
     if cost is not None:
         seconds = _calibrated(cost)
@@ -1737,8 +1757,8 @@ def shard_plan(part, blocks):
 def shard_line(index, count, parts, swept, costs, block_costs, blocks, table):
     """The line `--shard` prints with its part: what it holds, its load beside
     every part's, and the basis of those loads - which table, how many files
-    it timed rather than estimated, and how many blocks were weighed by their
-    own figure rather than by their suite's figure over its blocks."""
+    it timed rather than estimated, and how many blocks were weighed by each
+    basis `block_figure` names."""
     flat = [u for part in parts for u in part]
     figures = unit_costs(sorted(set(p for p, _l in flat)), costs, blocks,
                          block_costs)
@@ -1746,15 +1766,18 @@ def shard_line(index, count, parts, swept, costs, block_costs, blocks, table):
     loads = ["%.0f" % sum(figures[u] for u in part) for part in parts]
     files = sorted(set(p for p, _l in mine))
     held = [u for u in mine if u[1] is not None]
-    own = len([u for u in held if u[1] in (block_costs or {}).get(u[0], {})])
+    bases = [block_figure(p, lab, (blocks or {}).get(p) or [], costs,
+                          block_costs)[1] for p, lab in held]
     timed = len([p for p in files if p in costs])
     return ("shard %d/%d: %d files of the %d swept, %d blocks of their staged "
             "suites; %s slot-seconds of the parts' %s, split by %s (%d files "
             "timed there, %d estimated at its median; %d blocks weighed by "
-            "their own figure, %d by their suite's over its blocks)\n"
+            "their own figure, %d by their suite's over its blocks, %d by "
+            "their suite's largest, %d estimated from the median)\n"
             % (index, count, len(files), swept, len(held), loads[index - 1],
-               " / ".join(loads), table, timed, len(files) - timed, own,
-               len(held) - own))
+               " / ".join(loads), table, timed, len(files) - timed,
+               bases.count("block"), bases.count("suite"),
+               bases.count("largest"), bases.count("untimed")))
 
 
 def parse_shard(text):
@@ -1875,15 +1898,16 @@ def record_costs(path, rows, swept, jobs, platform=None, labels=None):
 #
 # ORDER: every job by its estimated cost, costliest first (`work_items`), and
 # submitted in that order (case sh6 reads it off a real run). A block's
-# estimate is its own recorded figure, or its file's figure spread evenly over
-# its blocks where the table has none for it (`block_figure`); that is
+# estimate is its own recorded figure, or - where the table has none for it -
+# its file's figure spread evenly over its blocks, or its suite's largest
+# recorded block when that is more (`block_figure`); that is
 # longest-first list scheduling over the budget, and it puts the heavy plain
 # files - and a suite's heaviest blocks - ahead of the many small ones instead
 # of behind them.
 #
 # A BLOCK'S TIMEOUT is the per-cost factor times its own figure at the one
-# slot it holds (`block_timeout`), or times its suite's figure over its blocks
-# when it has none, still cut by the deadline; the basis each block's timeout
+# slot it holds (`block_timeout`), or times the figure `block_figure` stands
+# in with when it has none, still cut by the deadline; the basis each block's timeout
 # used is counted on the suite's row (`timeout_basis`) and on the budget line,
 # and cases bk1, bk2 and bt1-bt3 read it off each block's environment. The
 # replay is allowed the floor, cut by the deadline no lower than
@@ -2456,7 +2480,8 @@ def unit_timeouts(paths, jobs, costs, floor, repo=None, cap=None,
                   block_costs=None, part=None):
     """`[(path, label or None, seconds, basis)]` - the timeout every job of a
     sweep over `paths` is given before any deadline cuts it: a block's from
-    `block_timeout` (basis `block`, `suite` or `untimed`), and a staged suite
+    `block_timeout` (basis `block`, `suite`, `largest` or `untimed`), and a
+    staged suite
     run whole at the grant it asks for and any other file at one slot from
     `file_timeout` (basis `file`). `part` narrows a suite's blocks to the ones
     a shard runs, as `sweep` does. The one computation behind the budget
@@ -2484,8 +2509,9 @@ def budget_line(paths, jobs, costs, floor, repo=None, deadline=None,
     each number: which staged suites run whole holding several slots, the
     longest timeout the cost table gave any file or block over the floor, the
     deadline when one applies, how many blocks took their timeout from their
-    own figure, how many from their suite's figure over its blocks and how
-    many had no figure for their suite - naming those suites - and which
+    own figure, how many from their suite's figure over its blocks, how many
+    from their suite's largest recorded block and how many had no figure for
+    their suite - naming those suites - and which
     staged suites run block by block and how many blocks that is."""
     found = staged_blocks(paths, repo)
     whole = sorted(p for p, labels in found.items() if not labels)
@@ -2500,10 +2526,12 @@ def budget_line(paths, jobs, costs, floor, repo=None, deadline=None,
         return (len([u for u in units if u[3] == basis]),
                 ", ".join(hit) or "none")
     own, suite, untimed = took("block"), took("suite"), took("untimed")
+    largest = took("largest")
     return ("budget: %d slots; %d staged suites hold up to %d each (%s); per-file "
             "timeout %ds, up to %ds for a file or block the cost table times as "
             "heavy%s; block timeouts: %d from the block's own figure, %d from "
-            "its suite's figure over its blocks (%s), %d with no figure for "
+            "its suite's figure over its blocks (%s), %d from its suite's "
+            "largest recorded block (%s), %d with no figure for "
             "their suite (%s); %d staged suites run block by block, a slot a "
             "block, %d blocks (%s)\n"
             % (jobs, len(whole), stage_grant(jobs),
@@ -2511,7 +2539,8 @@ def budget_line(paths, jobs, costs, floor, repo=None, deadline=None,
                floor, longest,
                "" if deadline is None else
                "; every file named by %ds, the CI deadline" % (deadline,),
-               own[0], suite[0], suite[1], untimed[0], untimed[1],
+               own[0], suite[0], suite[1], largest[0], largest[1],
+               untimed[0], untimed[1],
                len(split), len([u for u in units if u[1] is not None]),
                ", ".join(os.path.basename(p) for p in split) or "none"))
 
@@ -3255,16 +3284,18 @@ def _block_cost_cases(check):
                               bk_blocks, cap=500)
     # 3 x 400 for x: not the suite's figure at any slots (2700, 900, 675),
     # not the even share (900); y's own 60 lifts to the floor; z has no
-    # figure of its own and takes the suite's 900 over its three blocks.
+    # figure of its own, and the suite's largest block (400) is more than
+    # its 900 over three blocks.
     check("bk1 a block's timeout is the per-cost factor times ITS OWN figure "
           "at the one slot it holds, never under the floor; a block the table "
-          "has no figure for takes its suite's figure over its blocks; a "
+          "has no figure for takes the larger of its suite's figure over its "
+          "blocks and its suite's largest block; a "
           "suite the table does not time takes the largest any entry gives at "
           "one slot; a cap bounds each - and each answer names its basis: %r"
           % ([bk_got, bk_untimed, bk_capped],),
           bk_got == [(TIMEOUT_PER_COST * 400, "block"),
                      (DEFAULT_TIMEOUT, "block"),
-                     (int(TIMEOUT_PER_COST * 900.0 / 3), "suite")]
+                     (TIMEOUT_PER_COST * 400, "largest")]
           and bk_untimed == (TIMEOUT_PER_COST * 400, "untimed")
           and bk_capped == (500, "block"))
 
@@ -3279,6 +3310,10 @@ def _block_cost_cases(check):
         bk_budget = budget_line(["split-suite"], 5, {"split-suite": 1000.0},
                                 DEFAULT_TIMEOUT, repo=bk_box,
                                 block_costs={"split-suite": {"x-block": 400.0}})
+        bk_budget_rn = budget_line(
+            ["split-suite"], 5, {"split-suite": 1000.0}, DEFAULT_TIMEOUT,
+            repo=bk_box, block_costs={"split-suite": {"x-block": 400.0,
+                                                      "gone-block": 900.0}})
     finally:
         remove_tree(bk_box)
     bk_told = sorted(re.findall(r"(?m)^PASS b(x|y)1 timeout=(\d+)$",
@@ -3298,6 +3333,46 @@ def _block_cost_cases(check):
           and "1 from the block's own figure" in bk_budget
           and "1 from its suite's figure over its blocks (split-suite)"
           in bk_budget)
+
+    # --- a block missing from a suite the table times block by block -------
+    # A rename leaves the heavy block's figure under its old label, and the
+    # suite's figure is the sum the other blocks were recorded at; the even
+    # share of that sum (1000 over three, 1000 at the factor) would kill a
+    # block that took 600 the run before. bk2's `y` is the other direction:
+    # an even share above the suite's largest block is kept.
+    bk_rn_labels = ["heavy-renamed", "a-block", "b-block"]
+    bk_rn = block_timeout("rn", "heavy-renamed", bk_rn_labels, {"rn": 1000.0},
+                          {"rn": {"heavy": 600.0, "a-block": 200.0,
+                                  "b-block": 200.0}})
+    bk_live_path = "tests/test_drive_phase.py"
+    bk_live_costs, _bk_problem = load_costs(COSTS_PATH)
+    bk_live_bc, _bk_bproblem = load_block_costs(COSTS_PATH)
+    bk_live_figs = bk_live_bc.get(bk_live_path) or {}
+    bk_live_top = max(bk_live_figs, key=bk_live_figs.get) if bk_live_figs \
+        else None
+    bk_live_labels = list(staged_blocks([bk_live_path]).get(bk_live_path)
+                          or [])
+    bk_live_renamed = [lab + "-renamed" if lab == bk_live_top else lab
+                       for lab in bk_live_labels]
+    bk_live_was = block_timeout(bk_live_path, bk_live_top, bk_live_labels,
+                                bk_live_costs, bk_live_bc)
+    bk_live_now = block_timeout(bk_live_path, "%s-renamed" % (bk_live_top,),
+                                bk_live_renamed, bk_live_costs, bk_live_bc)
+    check("bk5 a block the table has no figure for, in a suite it times block "
+          "by block - a rename, or a block added - is never timed tighter than "
+          "the suite's largest recorded block, ghost labels included, and says "
+          "so in its basis; on the live table, renaming %s's heaviest block "
+          "(%r) keeps its timeout; the budget line counts the blocks timed "
+          "that way: fixture %r, live before %r, after %r; %r"
+          % (bk_live_path, bk_live_top, bk_rn, bk_live_was, bk_live_now,
+             bk_budget_rn),
+          bk_rn == (TIMEOUT_PER_COST * 600, "largest")
+          and "1 from its suite's largest recorded block (split-suite)" \
+          in bk_budget_rn
+          and "0 from its suite's figure over its blocks" in bk_budget_rn
+          and bk_live_top in bk_live_labels and len(bk_live_labels) > 2
+          and bk_live_was[1] == "block"
+          and bk_live_now == (bk_live_was[0], "largest"))
 
     # --- the recorder: a figure per block ---------------------------------
     bk_rows = [{"path": "s", "seconds": 61.0, "grant": 1, "blocks": 2,

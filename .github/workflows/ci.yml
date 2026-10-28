@@ -138,7 +138,10 @@ jobs:
   # ways by `--shard`, which deals files AND a staged suite's blocks, balanced by the
   # per-file and per-block costs in .github/sweep-costs.json; the parts' union is the
   # whole tree, block by block (the runner's sh0 and sd cases), and each part replays
-  # the blocks it ran, naming the others as run elsewhere. Inside a cell the sweep uses
+  # the blocks it ran, naming the others as run elsewhere. A case id two blocks of one
+  # suite write is read off the suite's source by every replay (tests/_harness.py
+  # `cross_block_ids`, cases sr3c and sr21), so each part checks it whichever blocks it
+  # was dealt; no job reads a part's run against another's. Inside a cell the sweep uses
   # every core, because it reads `CI=true`, as ONE budget of slots, which schedules a
   # staged suite's blocks one slot each - the model is stated once, in the `blocks,
   # not suites` comment above work_items() in tools/sweep-selftests.py. Each file's

@@ -50,8 +50,10 @@
         "severity": "med",
         "file": "tools/prove-gates.py:925-928",
         "issue": "ee9ce74e moved ci.yml's selftests matrix to 4 shards; prove-gates' shard_matrix_drift row still anchors on the 3-shard line, so prove-gates' own case c2 is red on HEAD ('anchor occurs 0 time(s)') and the full sweep fails (192/193 files).",
-        "resolution": "Re-anchor the row on the 4-shard line with a replacement that still drops a shard, and run the row live.",
-        "fixTask": "P144.7-ttw"
+        "resolution": "fixed in P144.7-ttw (9293cb1de468): Re-anchor the row on the 4-shard line with a replacement that still drops a shard, and run the row live.",
+        "fixTask": "P144.7-ttw",
+        "commit": "9293cb1de468",
+        "status": "fixed"
       },
       {
         "id": "P144-R5",
@@ -70,7 +72,7 @@
         "fixTask": "P144.8-ttw"
       }
     ],
-    "outcome": "[findings: 6 - 0 high, 3 med, 3 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 6 - 0 high, 3 med, 3 low; 1 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -410,7 +412,7 @@
     {
       "id": "P144.7-ttw",
       "title": "prove-gates' shard-matrix row and the docs follow the block-sharded, four-part sweep",
-      "status": "in_progress",
+      "status": "done",
       "description": "ee9ce74e (P144.5) moved ci.yml's selftests matrix from 3 to 4 shards and made the sweep shard and time a staged suite by its blocks. Left behind: (1) tools/prove-gates.py's shard_matrix_drift row (about lines 925-928) anchors on the old 3-shard matrix line, which no longer occurs, so prove-gates' own case c2 is red ('anchor occurs 0 time(s)') and the full sweep fails on it. Re-anchor on the 4-shard line with a replacement that still drops a shard, so gate-parity's sv7 is still what goes red; run the row live with: python3 tools/prove-gates.py --only shard_matrix_drift. (2) CONTRIBUTING.md (about 318-319, 336-337) and CLAUDE.md (about line 235) still describe per-file balancing and per-file block timeouts; say what is true now (a staged suite's blocks are sharded and timed by their own figures, with the fallback the code states) without writing numbers the tools print. (3) tools/lints/_deps.py GIT_PATH_BASE_EXEMPT reason rows for drive-phase.py tree_changed and _changed_between still say the paths are handed back as literal pathspecs; since 3bcd5772 the listings are narrowed in Python by _literal_matches, so reword them (this was review finding P144-R2, carried to the batch before this task existed). Run: python3 tools/prove-gates.py --selftest; python3 tests/test__deps.py --selftest; python3 tools/sweep-selftests.py tools/prove-gates.py tests/test__deps.py.",
       "files": [
         "tools/prove-gates.py",
@@ -437,14 +439,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9293cb1de468",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "(1) tools/prove-gates.py shard_matrix_drift row re-anchored from '        shard: [1, 2, 3]' -> '[1, 2]' to '        shard: [1, 2, 3, 4]' -> '        shard: [1, 2, 3]', which still drops a part (part 4 of --shard I/4), so gate-parity's sv7 is what goes red. Live: `python3 tools/prove-gates.py --only shard_matrix_drift` exit 0, 'shard_matrix_drift RED sv7' and the over-fire direction red on sv0, sv11, sv7; git worktree list, git status --porcelain and ci.yml's md5 identical before and after. (2) CONTRIBUTING.md CI-shards passage: the parts now deal an ordinary file whole and a staged suite block by block, each part replaying over its own blocks and naming the rest as run elsewhere, balanced by per-file and per-block costs; coverage pinned by sh0 and sd2; untimed-unit behaviour (median for an untimed file, suite figure over its blocks for an untimed block, largest-any-entry timeout for an untimed staged suite, cases tt0, tt1, bt2); pointer to the `shards` comment above parse_shard(). Its timeout sentence now says each job's timeout comes from its own slot-seconds: a file's figure, a block's own figure at the one slot it holds, or its suite's figure over its blocks (bt1-bt3), with only a fallback suite that runs whole calibrated at the slots it was admitted with (sweep-selftests.py:2105-2114, block_timeout/block_figure at :1632-1676). CLAUDE.md Tests section says the same in short form, and its loud-form sentence now says every block's seconds are printed and recorded block by block. No counts written. (3) tools/lints/_deps.py GIT_PATH_BASE_EXEMPT: the tree_changed and _changed_between reasons now say the listings are compared and narrowed in Python by _literal_matches and are never handed back to git as pathspecs, and the _unheld row (same stale class) says it lists whole-tree changes against a scratch index and narrows them by _literal_matches. Verified against drive-phase.py:5025-5047 and :5198-5245, and every caller of both (:4987, :5082-5105, :5294-5299, :5453, :5641-5664, :5875, and work['paths'] uses at :5086-5958, all Python comparisons). Runs: prove-gates --selftest exit 0, 61/61; tests/test__deps.py --selftest exit 0, 254/254; sweep-selftests.py tools/prove-gates.py tests/test__deps.py exit 0, '2/2 files ok, 315 cases'; doc_prose_numbers() and prose_number_claims() report nothing in my files; gate-parity.py exit 0. Dependants: tools/gate-parity.py is unchanged and still correct, since sv7 is the case the row reddens (observed live). tests/test__deps.py still passes (254/254): every exempt row is present and only its reason text changed. .github/sweep-costs.json, tests/_harness.py, guard-bash-writes.py, test__gate_feed.py, test_drive_phase.py, test_guard_bash_writes.py and tools/affected.py are unaffected, because no path or name they read was renamed or moved, and the only prove-gates edit is one row's anchor strings. CLAUDE.md/CONTRIBUTING.md dependants (guard-history-rewrite, _harness, the lint suites, affected.py, check-* tools, before-you-claim evals) are unaffected: no heading, anchor or command they cite was renamed; only sentences inside the Tests/CI-shards paragraphs changed. tools/lints/_deps.py importers are unaffected, because no name changed, only three string reasons. Left, not my files: tools/sweep-selftests.py:8 and tools/verify.sh:8 still show '--shard 2/3' as usage examples, which are valid invocations; gate-parity.py's fixture matrix (2245-2302) is its own and was deliberately left. A fallback hit: the CONTRIBUTING fallback-wording tweak went through a python3 one-liner in Bash rather than Edit, on my own file.",
+        "descriptive": "prove-gates' shard-matrix row is proven red again against the 4-part matrix, and the docs and exempt reasons now describe block-sharded, block-timed sweeps and Python-side path narrowing"
       },
       "startedAt": "2026-10-28T17:56:52Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-28T18:13:26Z",
+      "verifiedBy": [
+        "prove-gates c2 (pre-existing) is green again: the shard_matrix_drift row's anchor occurs exactly once in ci.yml, now on the 4-part matrix line"
+      ],
       "notes": [
         {
           "at": "2026-10-28T17:56:51Z",
@@ -463,12 +467,23 @@
         "runId": "2026-10-28T18:09:44Z.45d595",
         "status": "passed",
         "at": "2026-10-28T18:09:44Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "9293cb1de468",
+        "at": "2026-10-28T18:13:26Z",
+        "return": "docs/audit/evidence/returns/P144.7-ttw/20261028T175652Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task with expectRedFirst false, and the case it binds (prove-gates c2) is pre-existing: its red is HEAD itself, where the row's anchor '        shard: [1, 2, 3]' occurs 0 times in .github/workflows/ci.yml (observed: python count of the old anchor = 0, new 4-part line = 1; git show HEAD:tools/prove-gates.py lines 926-927 hold the old anchor). The helper needs a green HEAD baseline of the declared test file, and the declared test file IS the fix, so no throwaway-tree red was owed or possible",
+        "at": "n/a - no helper run"
       }
     },
     {
       "id": "P144.8-ttw",
       "title": "A staged block with no recorded figure is never timed tighter than its suite's heaviest block, and duplicate case ids across blocks are checked on every CI run",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Review of ee9ce74e (block-sharded sweep) found two meds, recorded as P144-R5 and P144-R6 with their scenarios and resolutions - read them. R5: block_figure/block_timeout give a block missing from a timed suite's figures the 300 s floor (reproduced by renaming test_drive_phase.py's ar-block). R6: duplicate case ids across a staged suite's blocks are checked by no per-PR CI job since each shard replays only its own blocks. Fix both structurally; red-first a case for each; keep the union-of-parts pin (sd2), tt5, gate-parity and the ci.yml matrix consistent. If R6's fix needs a new CI step or job, give it a time bound backed by a measured or stated-estimate longest line as gate-parity requires. Lows from the same review (seeded windows block figures are darwin-shaped; merge_costs relabels platform after a partial re-record; replay count per leg) go to the batch - do not fix them here.",
       "files": [
         "tools/sweep-selftests.py",
@@ -494,14 +509,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-28T18:13:27Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -521,7 +536,13 @@
       "fixes": [
         "P144-R5",
         "P144-R6"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-28T18:42:38Z.bc1605",
+        "status": "passed",
+        "at": "2026-10-28T18:42:38Z"
+      }
     }
   ],
   "reviewPerTask": "signals",

@@ -993,10 +993,91 @@ def stage_reach(src, stages):
             "doubled": sorted(n for n, k in runs.items() if k > 1)}
 
 
+def _written_id(node):
+    """The case id the first argument of a `check()` call spells in the source:
+    the leading token of the string literal it starts with - a `%` format or a
+    `+` concatenation reads its leftmost operand - when that token is an
+    identifier (`case_id`); None for a label built when the case runs."""
+    while isinstance(node, ast.BinOp):
+        node = node.left
+    if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
+        return None
+    return case_id(node.value)
+
+
+def block_written_ids(src, stages):
+    """`{case id: {line: set of block labels}}` - every `check()` call in
+    `src` whose first argument spells its id in the source (`_written_id`),
+    keyed by the line it is written on, with the labels of the `STAGES` rows
+    that reach it: a row reaches its function and every top-level function
+    any reached one names, called or handed on."""
+    tree = ast.parse(src)
+    defs = dict((node.name, node) for node in tree.body
+                if isinstance(node, ast.FunctionDef))
+
+    def named(name):
+        return set(node.id for node in ast.walk(defs[name])
+                   if isinstance(node, ast.Name) and node.id in defs)
+
+    def written(name):
+        return [(node.lineno, _written_id(node.args[0]))
+                for node in ast.walk(defs[name])
+                if isinstance(node, ast.Call) and node.args
+                and isinstance(node.func, ast.Name) and node.func.id == "check"]
+    found = {}
+    for label, fn in stages:
+        seen, todo = set(), [fn]
+        while todo:
+            name = todo.pop()
+            if name in seen or name not in defs:
+                continue
+            seen.add(name)
+            todo.extend(named(name))
+        for name in seen:
+            for line, cid in written(name):
+                if cid is not None:
+                    found.setdefault(cid, {}).setdefault(line, set()).add(label)
+    return found
+
+
+def cross_block_ids(src, stages):
+    """Extra FAILING cases for a case id written on two lines that two
+    different blocks reach; empty when there is none.
+
+    READ OFF THE SOURCE, NOT OFF A RUN. A sharded sweep deals one suite's
+    blocks to several CI jobs, each replaying only the blocks it ran, so the
+    call sites a replay collects (`replay_results`) never hold two blocks
+    another part ran - and a check that read them would pass or fail by how
+    the blocks happened to be dealt. The source is the same in every part, so
+    every replay and every full run reads the same answer here.
+
+    WHAT IT LEAVES TO THE RUN: two lines of ONE block, which every run of that
+    block reads at its call sites, and an id built when the case runs, which
+    no reading of the source can spell - a part that runs both blocks still
+    reads that one, and nothing reads it across parts."""
+    faults = []
+    for cid, lines in sorted(block_written_ids(src, stages).items()):
+        # Two lines are two blocks' unless one block, and only it, reaches both.
+        apart = [(a, b) for a in lines for b in lines if a < b
+                 and not (lines[a] == lines[b] and len(lines[a]) == 1)]
+        if not apart:
+            continue
+        faults.append(
+            ("DUPLICATE CASE ID `%s` ACROSS BLOCKS - written at %s, so a run "
+             "of those blocks prints two cases under one id wherever each "
+             "block runs; prove-gates.py credits a mutation to the case whose "
+             "id went red, and an id naming two cases defeats that verdict"
+             % (cid, ", ".join("line %d (%s)" % (line, ", ".join(sorted(labs)))
+                               for line, labs in sorted(lines.items()))),
+             False, ""))
+    return faults
+
+
 def stage_faults(src, stages):
     """Extra FAILING cases for a `STAGES` table that does not run every block of
-    `src` exactly once; empty when it does - so a clean suite's case list is the
-    one it had before it was staged."""
+    `src` exactly once, and for a case id two blocks write (`cross_block_ids`);
+    empty when neither - so a clean suite's case list is the one it had before
+    it was staged."""
     got = stage_reach(src, stages)
     faults = []
     if got["orphans"]:
@@ -1007,7 +1088,7 @@ def stage_faults(src, stages):
         faults.append(("STAGED BLOCKS RUN TWICE - %r is both a `STAGES` row and "
                        "called by a block that is one" % (got["doubled"],),
                        False, ""))
-    return faults
+    return faults + cross_block_ids(src, stages)
 
 
 def collect_stages(stages, namespace, only, path):
@@ -1199,8 +1280,11 @@ def staged_selftest(stages, namespace, prefix, only=()):
 # also names every block dealt to another part, as `{label, elsewhere}`; such a
 # block is neither run nor missing here, and the replay says how many there
 # were. A label listed both as run here and as run elsewhere is a block run
-# twice. A case id claimed by blocks in two different parts is the one fault a
-# part cannot see; an unsharded run of the suite reads it.
+# twice. A case id claimed by blocks in two different parts is in no call site
+# one part collects, so it is read off the source instead (`cross_block_ids`,
+# in `stage_faults`), which every replay reads whichever blocks it was dealt;
+# an id built when its case runs is in no source, and only a run holding both
+# blocks - an unsharded one - reads that.
 REPLAY_LINE = ("stage pool: %d blocks run by the sweep, each a job of its own, "
                "replayed here\n")
 REPLAY_PART_LINE = ("stage pool: %d of the suite's %d blocks run by this part of "
@@ -2077,6 +2161,41 @@ def _stage_runner_cases(check):
           [(ok, "_b_cases" in lab, "_c_cases" in lab) for lab, ok, _d in lifted]
           == [(False, False, True), (False, True, False)])
 
+    # Read off the source, so it holds whichever blocks a run reached: `k1`
+    # is written in two blocks, and `k5` in one block and in a helper only
+    # the other block calls - the two faults here. `k2` is one line two
+    # blocks reach through a helper - one authored site; `k3` is two lines
+    # of ONE block, which every run of that block reads at runtime; `k4`'s
+    # first spelling is built when the case runs, so no source reading can
+    # name it - each is the direction a reading that over-fires would fail.
+    ids_src = ("def _a_cases(check):\n"
+               "    check('k1 in a', True)\n"
+               "    _shared(check)\n"
+               "    check('k3 first', True)\n"
+               "    check('k3 again in a', True)\n"
+               "    check('k%d built' % (4,), True)\n"
+               "    check('k5 in a', True)\n\n\n"
+               "def _b_cases(check):\n"
+               "    check('k1 in b too %r' % (1,), True)\n"
+               "    _shared(check)\n"
+               "    check('k4 literal', True)\n"
+               "    _only_b(check)\n\n\n"
+               "def _shared(check):\n"
+               "    check('k2 shared helper', True)\n\n\n"
+               "def _only_b(check):\n"
+               "    check('k5 through a helper of b', True)\n")
+    cross = stage_faults(ids_src, (("a", "_a_cases"), ("b", "_b_cases")))
+    check("sr3c stage_faults reads a case id written in two BLOCKS off the "
+          "source, through the helpers a block calls - one failing case per "
+          "id, naming each line and its block - and no case for one line two "
+          "blocks share, two lines of one block, or an id built at runtime: "
+          "%r" % (cross,),
+          [(lab.split(" - ")[0], ok) for lab, ok, _d in cross]
+          == [("DUPLICATE CASE ID `k1` ACROSS BLOCKS", False),
+              ("DUPLICATE CASE ID `k5` ACROSS BLOCKS", False)]
+          and "line 2 (a), line 11 (b)," in cross[0][0]
+          and "line 7 (a), line 22 (b)," in cross[1][0])
+
     work = fixture_root("harness-staged-")
     good = os.path.join(work, "good_suite.py")
     bad = os.path.join(work, "bad_suite.py")
@@ -2274,6 +2393,25 @@ def _stage_runner_cases(check):
           and "PASS y1 " not in out
           and out.count(REPLAY_PART_LINE % (1, 2, 1)) == 1
           and REPLAY_LINE % (1,) not in out)
+    # The part that ran `d-block` alone: `e-block`, the other block claiming
+    # `z1`, ran in another part, so no call site this replay collects names
+    # it twice - the source does.
+    d_path = os.path.join(work, "d-block.cases.json")
+    suite(bad, "--selftest", "--stage", "d-block", "--cases-to", d_path)
+    d_list = os.path.join(work, "replay-part-dup.json")
+    with open(d_list, "w", encoding="utf-8") as fh:
+        json.dump([{"label": "d-block", "cases": d_path, "code": 0, "out": "",
+                    "why": ""}]
+                  + [{"label": lab, "elsewhere": "another part"}
+                     for lab in ("a-block", "b-block", "e-block", "s-block")],
+                  fh)
+    code, out, _err = suite(bad, "--selftest", "--replay", d_list)
+    check("sr21 ...and a part that ran only one of two blocks claiming one case "
+          "id still fails it by name, so a sharded sweep checks every suite "
+          "whichever blocks each part ran: exit %r, %r" % (code, out[-700:]),
+          code == 1 and out.count(REPLAY_PART_LINE % (1, 5, 4)) == 1
+          and out.count("DUPLICATE CASE ID `z1` ACROSS BLOCKS") == 1
+          and "(d-block)" in out and "(e-block)" in out)
 
     # A block's output reaches the replay as text the sweep decoded, and the
     # replay prints it to a stream in the child's own codec - strict cp1252 on a
