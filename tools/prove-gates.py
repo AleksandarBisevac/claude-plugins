@@ -7,7 +7,7 @@ until it over-fires, and require it to have been proven QUIET.
     tools/prove-gates.py --red           # only the break-it-and-see-red half
     tools/prove-gates.py --allow         # only the stays-quiet half
     tools/prove-gates.py --only layer    # the rows whose name contains this
-    tools/prove-gates.py --changed a b   # the rows whose lint lives in these files
+    tools/prove-gates.py --changed a b   # the rows a change to these files touches
     tools/prove-gates.py --list          # the tables, without running anything
     tools/prove-gates.py --selftest      # this file's own cases; MUTATES NOTHING
 
@@ -38,10 +38,12 @@ trap). It is not a per-commit gate; run it before a release, or when a lint chan
 
 `--changed <paths>` IS THE "WHEN A LINT CHANGES" HALF, and the drive's sign-off
 step is its caller: it hands over the files the phase changed, and only the rows
-whose lint lives in one of them run, both directions unless `--red`/`--allow`
-narrows it. A set naming no such file runs nothing and prints `ran none` rather
-than exiting silently, and a row that is not proven prints a `ROW NOT PROVEN:`
-line naming its direction, lint and file - the line that stop quotes.
+one of them touches run - the lint's own file, the file the row mutates, or the
+suite holding the case it names (`changed_rows()`) - both directions unless
+`--red`/`--allow` narrows it. A set naming no such file runs nothing and prints
+`ran none` rather than exiting silently, and a row that is not proven prints a
+`ROW NOT PROVEN:` line naming its direction, lint and the file it mutates - the
+line that stop quotes.
 
 `--selftest` NEVER MUTATES. It checks the table against the tree - that every anchor
 still exists exactly once, that no load-bearing lint is missing a row, and that no
@@ -1988,6 +1990,35 @@ def _gate_sources(script_dir=None, repo=None):
     return out
 
 
+def _derived_gates(script_dir=None, repo=None):
+    """`[(file, lint)]` for every load-bearing lint and the file defining it,
+    `file` repo-relative with forward slashes. The ONE reading of which function
+    is a gate: `gate_names()`, `guard_files()` and `lint_homes()` are each a
+    projection of it, so the set of lints and the set of their homes cannot be
+    derived by two predicates that drift apart."""
+    repo_root = repo or REPO
+    excused = set(name for name, _why in NOT_A_GATE)
+    out = []
+    for path, tree in _gate_sources(script_dir, repo_root):
+        rel = os.path.relpath(path, repo_root).replace(os.sep, "/")
+        for node in tree.body:
+            if not isinstance(node, ast.FunctionDef) or node.name.startswith("_"):
+                continue
+            # A NARROWING WAS TRIED HERE AND MEASURED WRONG, which is worth more
+            # than the space it costs. The idea was that a function you must hand
+            # data to is a comparator rather than a rule - it would have removed
+            # `vocab_drift`, which really is the pure half of `schema_vocab_drift`
+            # beside it. It also removed `hierarchy_violations`,
+            # `conformance_violations` and `provenance_tag_violations`, every one
+            # of which is a real lint with rows in both tables. A required argument
+            # does not tell a comparator from a rule; only what the caller does
+            # with it would, and `_needs_an_argument` cannot see that.
+            if (node.name.endswith(_GATE_SHAPES) or node.name in _GATE_NAMED
+                    or (walks_the_tree(node) and node.name not in excused)):
+                out.append((rel, node.name))
+    return sorted(set(out))
+
+
 def guard_files(repo=None):
     """Repo-relative paths an ALLOW row may mutate: every file holding a lint.
 
@@ -2002,18 +2033,7 @@ def guard_files(repo=None):
     admitting every file under the roots would admit every document and artifact a
     tool reads.
     """
-    repo_root = repo or REPO
-    excused = set(name for name, _why in NOT_A_GATE)
-    out = set()
-    for path, tree in _gate_sources(repo=repo_root):
-        for node in tree.body:
-            if not isinstance(node, ast.FunctionDef) or node.name.startswith("_"):
-                continue
-            if (node.name.endswith(_GATE_SHAPES) or node.name in _GATE_NAMED
-                    or (walks_the_tree(node) and node.name not in excused)):
-                out.add(os.path.relpath(path, repo_root).replace(os.sep, "/"))
-                break
-    return tuple(sorted(out))
+    return tuple(sorted(set(rel for rel, _name in _derived_gates(repo=repo))))
 
 
 # Bound after the two functions it needs, and after `NOT_A_GATE` above them: a
@@ -2037,26 +2057,7 @@ def gate_names(script_dir=None, repo=None):
     looking complete. `walks_the_tree()` reaches those by what they DO, and
     `NOT_A_GATE` is where a walk that is not a verdict says so out loud.
     """
-    found = []
-    excused = set(name for name, _why in NOT_A_GATE)
-    for _path, tree in _gate_sources(script_dir, repo):
-        for node in tree.body:
-            if not isinstance(node, ast.FunctionDef) or node.name.startswith("_"):
-                continue
-            # A NARROWING WAS TRIED HERE AND MEASURED WRONG, which is worth more
-            # than the space it costs. The idea was that a function you must hand
-            # data to is a comparator rather than a rule - it would have removed
-            # `vocab_drift`, which really is the pure half of `schema_vocab_drift`
-            # beside it. It also removed `hierarchy_violations`,
-            # `conformance_violations` and `provenance_tag_violations`, every one
-            # of which is a real lint with rows in both tables. A required argument
-            # does not tell a comparator from a rule; only what the caller does
-            # with it would, and `_needs_an_argument` cannot see that.
-            if node.name.endswith(_GATE_SHAPES) or node.name in _GATE_NAMED:
-                found.append(node.name)
-            elif walks_the_tree(node) and node.name not in excused:
-                found.append(node.name)
-    return sorted(set(found))
+    return sorted(set(name for _rel, name in _derived_gates(script_dir, repo)))
 
 
 def not_a_gate_problems(script_dir=None, repo=None, table=None):
@@ -2514,13 +2515,16 @@ def main(argv):
     allow = [r for r in ALLOW if only is None or only in r[0]]
     changed = changed_paths(argv)
     if changed is not None:
-        table, allow = changed_rows(table, changed), changed_rows(allow, changed)
+        homes = lint_homes() if any(changed) else {}
+        table = changed_rows(table, changed, homes)
+        allow = changed_rows(allow, changed, homes)
         # NOTHING TO RUN IS SAID, AND IT IS SAID BEFORE THE MARKER. A set that
         # names no lint file is the common case at a phase's sign-off, and a
         # silent exit 0 there would read as every guarded lint proven.
         if not ((want_red and table) or (want_allow and allow)):
             sys.stdout.write("prove-gates: --changed named %d path(s) and none "
-                             "is the file of a lint a %s row names, so ran none\n"
+                             "is a lint's own file, the file a %s row mutates "
+                             "or the suite holding its case, so ran none\n"
                              % (len(changed), "/".join(
                                  d for d, on in (("red", want_red),
                                                  ("allow", want_allow)) if on)))
@@ -2584,11 +2588,31 @@ def _repo_rel(path):
     return text
 
 
-def changed_rows(rows, paths):
-    """The rows whose lint lives in one of `paths` - a row's file is the one its
-    mutation edits, which is the file holding the lint it proves."""
+def lint_homes(repo=None):
+    """`{lint: (file, ...)}` - the file or files defining each load-bearing lint,
+    projected off `_derived_gates()`, the walk `coverage()` derives the lints by."""
+    homes = {}
+    for rel, name in _derived_gates(repo=repo):
+        homes.setdefault(name, []).append(rel)
+    return dict((name, tuple(files)) for name, files in homes.items())
+
+
+def changed_rows(rows, paths, homes=None):
+    """The rows a change to one of `paths` owes a re-proof: a row is kept when
+    the set holds the file DEFINING its lint (`homes`, else `lint_homes()`), the
+    file its mutation edits, or the suite holding the case that must go red.
+
+    THREE FILES, NOT ONE, because a row's mutated file is the thing its lint
+    guards and is mostly not the lint's own file - most red rows plant their
+    violation in some module the lint walks. Selecting by that file alone let a
+    phase that weakened a lint, or the suite case guarding it, re-prove none of
+    its rows, while the sign-off read the probe as green."""
     wanted = set(_repo_rel(p) for p in paths if p)
-    return [r for r in rows if r[1] in wanted]
+    if not wanted:
+        return []
+    homes = lint_homes() if homes is None else homes
+    return [r for r in rows if r[1] in wanted or r[5] in wanted
+            or any(h in wanted for h in homes.get(r[0], ()))]
 
 
 def _proved(rows):
@@ -3176,28 +3200,112 @@ def _changed_run(argv, survives=()):
     return code, buf.getvalue(), proved, holds
 
 
+def _text_homes(names, repo=None):
+    """`{lint: [files holding "def <lint>(" at column 0]}` over `plugins/` and
+    `tools/`, read as TEXT. Deliberately not the walk `changed_rows` reads, so the
+    cases below compare two readings of where a lint lives instead of one reading
+    with itself."""
+    root = repo or REPO
+    want = set(names)
+    homes = {}
+    for top in ("plugins", "tools"):
+        for dirpath, dirs, files in os.walk(os.path.join(root, top)):
+            dirs[:] = sorted(d for d in dirs
+                             if d not in ("__pycache__", "node_modules"))
+            for name in sorted(f for f in files if f.endswith(".py")):
+                path = os.path.join(dirpath, name)
+                with open(path, encoding="utf-8") as fh:
+                    text = fh.read()
+                rel = os.path.relpath(path, root).replace(os.sep, "/")
+                for hit in re.findall(r"^def ([A-Za-z_]\w*)\(", text, re.M):
+                    if hit in want:
+                        homes.setdefault(hit, []).append(rel)
+    return homes
+
+
+def _rows_touched(rows, paths, homes):
+    """The rows a change to `paths` owes a re-proof: the lint's home, the file the
+    row mutates, or the suite holding the case that must go red."""
+    want = set(p[2:] if p.startswith("./") else p for p in paths)
+    return [r for r in rows if r[1] in want or r[5] in want
+            or any(h in want for h in homes.get(r[0], ()))]
+
+
 def _changed_cases(check):
-    """`--changed <paths>`: the rows whose lint lives in those paths, both
-    directions, and nothing for a set that names no lint file - said aloud."""
+    """`--changed <paths>`: the rows a change to those paths owes a re-proof -
+    by the lint's home, the file a row mutates, or the suite holding its case -
+    both directions, and nothing for a set that names no such file, said aloud."""
     both = sorted(set(r[1] for r in TABLE) & set(r[1] for r in ALLOW))
     lint_file = both[0] if both else ""
-    red_rows = [r for r in TABLE if r[1] == lint_file]
-    allow_rows = [r for r in ALLOW if r[1] == lint_file]
+    homes = _text_homes(set(r[0] for r in TABLE + ALLOW))
+    red_rows = _rows_touched(TABLE, [lint_file], homes)
+    allow_rows = _rows_touched(ALLOW, [lint_file], homes)
     pick = globals().get("changed_rows")
-    got = ((pick(TABLE, [lint_file, "README.md"]), pick(TABLE, []),
-            pick(TABLE, ["./" + lint_file])) if pick else None)
-    check("ch1 changed_rows keeps exactly the rows whose lint lives in a changed "
-          "path - every row of %s and none of another file, a `./` spelling "
-          "included - and an empty set keeps none: %r"
-          % (lint_file, [len(g) for g in got] if got else "no changed_rows"),
-          bool(red_rows) and got is not None
-          and got == (red_rows, [], red_rows))
+    derived = lint_homes()
+    # A lint whose every red row mutates some OTHER file than the one defining
+    # it: the shape a selection by mutated file alone re-proves nothing for.
+    away = sorted(n for n, h in homes.items()
+                  if len(h) == 1 and any(r[0] == n for r in TABLE)
+                  and all(r[1] != h[0] for r in TABLE if r[0] == n))
+    sets = ([lint_file, "README.md"], [], ["./" + lint_file],
+            [homes.get("house_style_violations", [""])[0]], [OUTL])
+    # The home-only set goes through the default derivation - the one set whose
+    # answer changes if that default reads no homes - and the rest through one
+    # derivation handed in: a walk of the tree is seconds, not a lookup.
+    got = ([pick(TABLE, s) if i == 3 else pick(TABLE, s, derived)
+            for i, s in enumerate(sets)] if pick else None)
+    want = [_rows_touched(TABLE, s, homes) for s in sets]
+    check("ch1 changed_rows keeps EXACTLY the rows a changed path touches - a "
+          "lint's home, the file a row mutates, the suite holding its case - a "
+          "`./` spelling included, and an empty set keeps none. Exact, so a "
+          "selection widened to every row is red here: %r"
+          % ([(len(g), len(w)) for g, w in zip(got, want)] if got
+             else "no changed_rows",),
+          bool(red_rows) and got is not None and got == want
+          and got[1] == [] and all(len(g) < len(TABLE) for g in got))
+
+    lost = {}
+    for name in away:
+        home = homes[name][0]
+        for rows in (TABLE, ALLOW):
+            mine = [r for r in rows if r[0] == name]
+            kept = pick(rows, [home], derived) if pick else []
+            if [r for r in mine if r not in kept]:
+                lost[name] = home
+    home = homes.get("house_style_violations", [""])[0]
+    code, said, proved, _h = _changed_run(["--changed", home])
+    mine = [r for r in TABLE + ALLOW if r[0] == "house_style_violations"]
+    check("ch5 --changed names a lint's rows when only the lint's OWN file "
+          "changed, though every red row of it mutates another file - %d such "
+          "lints, house_style_violations among them, and main() given only its "
+          "home proves every row of it in both directions; lints whose rows the "
+          "home file left out: %r; main: %r"
+          % (len(away), sorted(lost.items())[:6],
+             (code, len([r for r in mine if r in proved]), len(mine))),
+          pick is not None and "house_style_violations" in away
+          and lost == {} and code == 0 and bool(mine)
+          and all(r in proved for r in mine))
+
+    suites = sorted(set(r[5] for r in TABLE + ALLOW))
+    apart = [r for r in TABLE
+             if r[5] != r[1] and r[5] not in homes.get(r[0], ())]
+    missed = []
+    for suite in suites:
+        for rows in (TABLE, ALLOW):
+            kept = pick(rows, [suite], derived) if pick else []
+            missed.extend("%s -> %s" % (suite, r[0]) for r in rows
+                          if r[5] == suite and r not in kept)
+    check("ch6 --changed names a lint's rows when only its GUARDING SUITE "
+          "changed - the file holding the case a row needs red, which is "
+          "neither the lint's home nor the mutated file for %d red rows; rows "
+          "their suite left out: %r" % (len(apart), sorted(set(missed))[:6]),
+          pick is not None and bool(apart) and missed == [])
 
     code, said, proved, holds = _changed_run(["--changed", lint_file,
                                               "README.md"])
-    check("ch2 --changed with a lint's file proves that lint's rows in BOTH "
-          "directions - its red rows, then its allow rows - and no row of any "
-          "other file: %r" % ((code, len(proved), len(red_rows), len(allow_rows),
+    check("ch2 --changed with a lint's file proves the rows it touches in BOTH "
+          "directions - its red rows, then its allow rows - and no other row: "
+          "%r" % ((code, len(proved), len(red_rows), len(allow_rows),
                                said[-200:]),),
           code == 0 and bool(allow_rows) and proved == red_rows + allow_rows
           and len(holds) == 1 and "go RED" in said and "stay QUIET" in said)
@@ -3205,7 +3313,7 @@ def _changed_cases(check):
     runs = [_changed_run(argv) for argv in (["--changed"],
                                             ["--changed", "README.md"],
                                             ["--changed", "README.md", "--red"])]
-    check("ch3 an empty set, or one naming no file a row's lint lives in, runs "
+    check("ch3 an empty set, or one naming no file any row is touched by, runs "
           "NO row, holds no marker, exits 0 and SAYS it ran none - it never "
           "reads as a proof of everything: %r"
           % ([(c, len(p), len(h), s.strip()[-120:]) for c, s, p, h in runs],),

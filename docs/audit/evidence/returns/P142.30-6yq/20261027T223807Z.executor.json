@@ -1,0 +1,41 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_commit_task_work.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-27T22:57:55Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_commit_task_work.py` in a throwaway tree at HEAD exited 1 with 6 of 222 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - lk1 (house FAIL), lk2 (house FAIL), lk3 (house FAIL), lk5 (house FAIL), lk6 (house FAIL), lk7 (house FAIL): SELFTEST FAILED: 216/222 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 565s, 3 times the recorded 223s of tests/test_commit_task_work.py in .github/sweep-costs.json, capped at the 565s the host's Bash limit leaves; fix run: held back 223s of the deadline, the recorded slot-seconds of tests/test_commit_task_work.py in .github/sweep-costs.json",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "commit-task-work.py: new index_is_sharded(manifest_path) asks _mio.is_sharded of the index file read off disk (an unreadable file answers yes), and main_state gates the index lock on it, so in a sharded plan the --state commit takes the lock for the whole commit and passes E_LIVE (3) / E_STALE (4) through, with --takeover reachable. _scoped_commit.py: index_to_carry reads index and shard through one _document(path) -> (bytes, parsed) read each and returns bodyBytes beside body; new paired_blobs(carry, paths, index_build) returns {shardRel: the read bytes, indexRel: build} for stage_and_commit's blobs, so the shard is committed at the bytes its owned index part was derived from. Task commit: with_index always returns paired_blobs (shard pinned, index when it rides), and `needs` is reported only when the index rel is among the blobs. State commit: blobs = paired_blobs(...), and the do-nothing check now skips only the index (when state_index decided it), not the pinned shard. Header docstring updated for both. Tests: new lk-block in tests/test_commit_task_work.py (lk1-lk8). Gate `python3 tools/sweep-selftests.py tests/test_commit_task_work.py` exit 0, 222 cases. Also swept exit 0: test__scoped_commit 60, test__invariants 136, test_audit_task 1127, test__output_lints 173, test__deps 254, test__refs 292, test__id_refs 16, test__affected_tests 22. ruff and vermin -t=3.8- exit 0 on the three changed files. Reviewer probes (A-probe p2/p3/p4, REPO pointed by env) on a git-archive HEAD export: lock calls [], and validate at HEAD 'task P1.3-bps: file src/concurrent.py missing from fileIndex' for both state and task commits; on the fixed tree: one acquire_index_lock call, validate at HEAD [] for both. Mutation table <scratchpad>/P142.30-probe/mutations.py (mutations3 engine; anchors asserted exactly once and checked landed, __pycache__ purged after mutate and restore), run: `python3 mutations.py <tree> <scratch>`, exit 0, every row red on its cases: lock on assembled plan -> lk1 lk2 lk5 (+lk3); lock never released -> lk3 lk4; shard restaged on both commits -> lk6 lk7; task commit only -> lk7; do-nothing skipping the pinned shard -> lk8. Dependants: _scoped_commit's importers (close-phase, drive-phase, audit-task, _live_copy, tools/affected) use none of the changed functions (git grep for index_to_carry|blob_builder|with_index|nowBytes outside the two files: no hits), index_to_carry's keys are only added to; _invariants._commit_state and the grader read git, unchanged; guard-bash-writes, _worktrees, PLUGIN-BUILD-GUIDE, handbook and pipeline-cost-design name the file only. Not done (out of this task's description): review findings 3 and 4 (PLUGIN-BUILD-GUIDE.md:3445-3452 and the 'other two scoped commits' / 'two siblings' wording in commit-task-work.py).",
+    "descriptive": "The state commit takes the index lock in a sharded plan, and both commits stage the shard from the same read its index part came from, so a concurrent task add can no longer leave HEAD with a plan that does not validate."
+  },
+  "testsAdded": [
+    "lk1 a live holder of the index lock refuses the state commit with E_LIVE, HEAD unmoved, nothing staged, the claim untouched",
+    "lk2 a dead holder is refused with E_STALE naming --takeover",
+    "lk3 --takeover commits a validating pair and releases the lock",
+    "lk4 over-fire twin: no holder commits and leaves no claim",
+    "lk5 the claim names this process while staging",
+    "lk6 a /audit:task add landing mid state commit leaves HEAD validating and the added task in the working shard only",
+    "lk7 the same window on a task commit",
+    "lk8 a shard-only change is still committed by the state commit"
+  ],
+  "casesAdded": [
+    [
+      "lk1",
+      "lk2",
+      "lk3",
+      "lk4",
+      "lk5",
+      "lk6",
+      "lk7",
+      "lk8"
+    ]
+  ],
+  "claims": "claims:\n1 commit-task-work.py index_is_sharded + main_state's `if index_is_sharded(args.manifest)` is the lock decision the docstring describes; _scoped_commit.paired_blobs is the one-read pairing the header and with_index docstrings describe\n2 mutations.py rows: lock on assembled plan -> lk1 lk2 lk5 red; release dropped -> lk3 lk4 red; shard blob dropped -> lk6 lk7 red; task-only -> lk7 red; pending skipping the shard -> lk8 red; all restored, mutations.log exit 0\n3 class: both commits restage the shard (task and state) - both fixed through paired_blobs; the lock decision on the assembled plan: git grep is_sharded(manifest) in commit-task-work.py had the one hit, replaced\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard reading a command\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:c1c6bede83eeb3220670daa0b4490698d2fea27ccd554c74285aef35c05ff204\",\"dirtyDigest\":\"sha256:39818a0019eb2ca4d8c21063ce43253ee16b3d75fd8aa619883037ada2c5b2ef\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/_scoped_commit.py\":\"bf1bbe2a906981e5\",\"plugins/audit/scripts/governance/commit-task-work.py\":\"962ea29b68c5a68c\",\"tests/test_commit_task_work.py\":\"5fe377396d60e06c\"},\"head\":\"5ca403f0\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/_scoped_commit.py\",\"plugins/audit/scripts/governance/commit-task-work.py\",\"tests/test__scoped_commit.py\",\"tests/test_commit_task_work.py\"],\"scopeDigest\":\"sha256:e0a3caf7511aa98f3329a1ccc220aab71f0a026e97a9a6121abed1c8ead26ecf\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

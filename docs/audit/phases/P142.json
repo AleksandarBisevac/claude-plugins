@@ -28,7 +28,8 @@
         "severity": "med",
         "file": "tools/measure-affected-miss.py (no diff); task outcome",
         "issue": "contradicts task clause: acceptance (5) 'the measured result over 20 commits is recorded in the task outcome with the commit range'. The outcome records a 2-commit window (ad586f07b..d33730d60) in which one commit timed out at 1200s (NOT MEASURED) and the other was a full-set selection ('so no suite can be missed'), giving 'misses 0 of 1 commits (mutation); 0 of 1 runs (CI)'. That is zero evidence about the miss rate and not the 20-commit measurement the clause asks for; the executor itself says the 20-commit run is 'still owed by the orchestrator'. The 'misses 0 of 1' line must not be read as a clean miss rate.",
-        "resolution": "Run the 20-commit command the outcome names on a quiet machine (python3 tools/measure-affected-miss.py --commits 20 --budget-minutes 240 --timeout 2400 --ci-limit 30 --json) and record its output and commit range in the outcome before the task closes done; or, if the orchestrator decides the measurement is out of scope for this task, split it into its own task rather than close this one as met. If the task is closed with no change (--no-change --reason), the reason must say acceptance (5) is unmeasured."
+        "resolution": "Run the 20-commit command the outcome names on a quiet machine (python3 tools/measure-affected-miss.py --commits 20 --budget-minutes 240 --timeout 2400 --ci-limit 30 --json) and record its output and commit range in the outcome before the task closes done; or, if the orchestrator decides the measurement is out of scope for this task, split it into its own task rather than close this one as met. If the task is closed with no change (--no-change --reason), the reason must say acceptance (5) is unmeasured.",
+        "fixTask": "P142.36-6yq"
       },
       {
         "id": "P142-R2",
@@ -110,7 +111,8 @@
         "severity": "med",
         "file": "tools/sweep-selftests.py:1361-1400 (the scheduler change); the bound is tests/test_drive_phase.py",
         "issue": "contradicts task clause 'Acceptance: (1) time python3 tools/sweep-selftests.py is under 240 s wall on this machine twice, at least 20 minutes apart'. The executor measured 370.5 s and 370.9 s (20 min 11 s apart) and says itself that this is NOT MET. Its stated bound is test_drive_phase.py (about 209.6 s holding 6 of 8 slots; its blocks total 1343 process-seconds). The phase's desired outcome ('the sweep's wall clock is under four minutes') is therefore still open after this task.",
-        "resolution": "Open a follow-up task scoped to the bound the executor measured: cut the work in test_drive_phase.py's heaviest blocks, and/or add one cross-suite block pool in tests/_harness.py so blocks from different staged suites share the sweep's slots. Re-measure with the same command twice, 20 minutes apart. Alternatively, amend the description if 240 s is not reachable on this machine."
+        "resolution": "Open a follow-up task scoped to the bound the executor measured: cut the work in test_drive_phase.py's heaviest blocks, and/or add one cross-suite block pool in tests/_harness.py so blocks from different staged suites share the sweep's slots. Re-measure with the same command twice, 20 minutes apart. Alternatively, amend the description if 240 s is not reachable on this machine.",
+        "fixTask": "P142.37-6yq"
       },
       {
         "id": "P142-R11",
@@ -144,8 +146,10 @@
         "severity": "med",
         "file": "CLAUDE.md:239-243; CONTRIBUTING.md:330-334; .github/workflows/ci.yml:134-135; tools/sweep-selftests.py:1713 (sweep docstring), :1587-1590 (costs_from_rows docstring), :1604-1612 (record_costs 'about' text), :1474-1478 (shard comment)",
         "issue": "These still describe the grant model the diff retired for every staged suite in the tree. CLAUDE.md says a staged_main suite 'is admitted with stage_grant(jobs) slots ... and is told the number in SWEEP_STAGE_GRANT, which sizes its block pool'. CONTRIBUTING.md and the ci.yml comment say the same. sweep()'s docstring says '`costs` orders the submissions (`run_order`)', but sweep() now orders by work_items. costs_from_rows, the shard comment and the record_costs 'about' string say the recorded figure is 'wall seconds times the slots ... the file held', but a block-run suite's figure is now the sum of its processes' seconds. The 'about' string is written into the committed .github/sweep-costs.json on the next --record-costs. The executor named the first three as followers, but no case and no task holds them.",
-        "resolution": "Rewrite each to the block model in this task or a follower task filed before sign-off: blocks are run as the sweep's jobs, one slot each, and replayed via --replay; a suite whose STAGES is not a literal runs whole on a grant; a block-run suite's cost is the summed slot-seconds of its processes. Fix sweep()'s docstring to name work_items.",
-        "fixTask": "P142.27-6yq"
+        "resolution": "fixed in P142.27-6yq (5ca403f01ad4): Rewrite each to the block model in this task or a follower task filed before sign-off: blocks are run as the sweep's jobs, one slot each, and replayed via --replay; a suite whose STAGES is not a literal runs whole on a grant; a block-run suite's cost is the summed slot-seconds of its processes. Fix sweep()'s docstring to name work_items.",
+        "fixTask": "P142.27-6yq",
+        "commit": "5ca403f01ad4",
+        "status": "fixed"
       },
       {
         "id": "P142-R15",
@@ -229,7 +233,7 @@
         "resolution": "File a task that either replaces the about string in the table with the bytes record_costs now writes (no cost values touched) or re-records the table from the Windows cells' logs, and name the file in its scope."
       }
     ],
-    "outcome": "[findings: 25 - 0 high, 9 med, 16 low; 9 with a recorded fix commit]"
+    "outcome": "[findings: 25 - 0 high, 9 med, 16 low; 10 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1799,7 +1803,7 @@
     {
       "id": "P142.27-6yq",
       "title": "fix P142-R14: These still describe the grant model the diff retired for every...",
-      "status": "in_progress",
+      "status": "done",
       "description": "These still describe the grant model the diff retired for every staged suite in the tree. CLAUDE.md says a staged_main suite 'is admitted with stage_grant(jobs) slots ... and is told the number in SWEEP_STAGE_GRANT, which sizes its block pool'. CONTRIBUTING.md and the ci.yml comment say the same. sweep()'s docstring says '`costs` orders the submissions (`run_order`)', but sweep() now orders by work_items. costs_from_rows, the shard comment and the record_costs 'about' string say the recorded figure is 'wall seconds times the slots ... the file held', but a block-run suite's figure is now the sum of its processes' seconds. The 'about' string is written into the committed .github/sweep-costs.json on the next --record-costs. The executor named the first three as followers, but no case and no task holds them.\n\nResolution asked: Rewrite each to the block model in this task or a follower task filed before sign-off: blocks are run as the sweep's jobs, one slot each, and replayed via --replay; a suite whose STAGES is not a literal runs whole on a grant; a block-run suite's cost is the summed slot-seconds of its processes. Fix sweep()'s docstring to name work_items.",
       "files": [
         "CLAUDE.md",
@@ -1830,13 +1834,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "5ca403f01ad4",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Checked every sentence the finding quotes against HEAD 57fd38c4 before editing. Commit 9eeea6d5 (P142.14) had already rewritten all but one of them. `grep -n -i 'stage_grant\\|SWEEP_STAGE_GRANT\\|grant\\|block pool\\|run_order\\|times the slots' CLAUDE.md CONTRIBUTING.md .github/workflows/ci.yml tools/sweep-selftests.py` was the grep run. (1) CLAUDE.md: no `stage_grant` or `SWEEP_STAGE_GRANT` hit; lines 239-242 already state the block model and point to the `blocks, not suites` comment. No edit. (2) ci.yml: its only `grant` hit is line 145, about symlink privilege; lines 134-135 already state the block model. No edit. (3) CONTRIBUTING.md: lines 331-337 state the block model. The `stage_grant(jobs)` / `SWEEP_STAGE_GRANT` hits at 346-347 belong to the `budget:` sentence and describe only staged suites that run whole, the fallback for a table that is not a literal. That matches `budget_line` (tools/sweep-selftests.py:2147-2161) and the fallback comment (1661-1664). Line 340 (`a block is given its file's figure at the slots a grant would hold`) matches the code comment at 1673. No edit. (4) sweep()'s docstring already names `work_items` (1751-1752). `git show 9eeea6d5` shows that commit removed the line `costs orders the submissions (run_order)`. No edit. (5) costs_from_rows' docstring (1604-1610) already counts a block-run suite as the sum over its blocks and its replay, and a whole-run file as wall seconds times slots. No edit. (6) The shard comment (1487-1491) defers to costs_from_rows for how each kind is counted. No edit. (7) EDITED: record_costs' `about` string (tools/sweep-selftests.py:1624-1629). HEAD's wording, `the seconds of each process it ran as, times the slots that process held (one per block of a suite run block by block)`, never said the per-process figures were summed and left out the replay process. It now says: each process the file ran as, seconds times slots held, summed. A suite run block by block ran one process per block plus one replay, each on one slot, so its figure is those processes' seconds summed. A file run whole is its seconds times the slots it held. suite_ran (1726-1731) sums the blocks' and the replay's seconds with grant 1, and costs_from_rows (1611) multiplies by grant, which confirms the wording. The committed .github/sweep-costs.json still carries the old `wall seconds times the slots ... the file held` text and was not touched, as ordered; a later task re-records it. Ran: `python3 tools/sweep-selftests.py tools/sweep-selftests.py tests/test__deps.py tests/test__output_lints.py` exit 0, `3/3 files ok, 568 cases`; `ruff check tools/sweep-selftests.py` exit 0. Under executor.runsGate own-tests there was nothing of my own to run, so gates is {}. Dependants: CLAUDE.md, CONTRIBUTING.md and ci.yml are byte-unchanged, so every dependant listed for them is unaffected. tools/sweep-selftests.py changed only inside a string literal that is written to .github/sweep-costs.json on the next --record-costs. No name, signature or behaviour changed, so tests/test_stamp_verification.py (file_timeout, load_costs), _warning_groups.py (budget_line), PLUGIN-BUILD-GUIDE.md (coverage_findings) and ci.yml are still correct. .github/sweep-costs.json gets the new text when it is re-recorded. No case pins the about text: `git grep 'process it ran as'` had one hit, the source line itself.",
+        "descriptive": "The grant-model sentences the finding quotes were already rewritten at HEAD; the one stale wording left, the cost table's `about` text, now says a block-run suite's figure is its processes' seconds summed"
       },
       "startedAt": "2026-10-27T22:00:26Z",
-      "completedAt": null,
+      "completedAt": "2026-10-27T22:17:49Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -1872,6 +1876,17 @@
         "runId": "2026-10-27T22:16:38Z.aa2fc9",
         "status": "passed",
         "at": "2026-10-27T22:16:38Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "5ca403f01ad4",
+        "at": "2026-10-27T22:17:49Z",
+        "return": "docs/audit/evidence/returns/P142.27-6yq/20261027T220026Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "tests.expectRedFirst is false on this tdd task: it names no case to prove a red by, so no red-first proof is owed",
+        "at": "2026-10-27T22:04:15Z"
       }
     },
     {
@@ -2006,6 +2021,542 @@
       "fixes": [
         "P142-R20"
       ]
+    },
+    {
+      "id": "P142.30-6yq",
+      "title": "The state commit takes the index lock in a sharded plan, and commits the shard from the same bytes the index part was derived from",
+      "status": "cancelled",
+      "description": "Two defects, reproduced. The reviewer's report is A-commit.md in p142-review/ (the orchestrator gives its full path); the probes are in A-probe/ there (p2_lock.py, p3_race.py, p4_task_race.py). Run them to see each fail today.\n1. commit-task-work.py main_state checks _mio.is_sharded() on the ASSEMBLED manifest (from _mio.load_manifest), which is always False, so the --state commit never takes the index lock. The commit-manifest-index.py it replaced always took it (git show 0dfae3e7:plugins/audit/scripts/governance/commit-manifest-index.py, about line 638). Decide the sharded layout from the index file as read off the disk, and keep exit codes E_LIVE/E_STALE and --takeover reachable.\n2. _scoped_commit.py derives the index part from a shard read taken before staging, but stages the shard from the working file later. A shard write in between commits the shard without its index rows, and HEAD then fails validation. Stage the shard from the same bytes the index part was derived from, on the task commit as on the state commit, so the two cannot be committed apart by construction.\nCases red on today's code for each. Deliver scratchpad/probe/mutations.py (mutations3 engine). No F/P/BUG ids in comments.",
+      "files": [
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "tests/test_commit_task_work.py",
+        "tests/test__scoped_commit.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_commit_task_work.py: a held index lock refuses the state commit, and a shard written during staging cannot be committed apart from its index part"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_commit_task_work.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: Its filed return predates the adversarial review, which found two meds in it (--json stdout corrupted when the lock is re-entered; a state commit refused on an unborn HEAD) and two lows. The fixes were made in its tree, but one return is filed per start, so the work is re-added as a new task, kept at refs/audit/kept/P142.30-6yq."
+      },
+      "startedAt": "2026-10-27T22:38:07Z",
+      "completedAt": "2026-10-27T23:25:00Z",
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-27T23:07:37Z.75e9a6",
+        "status": "passed",
+        "at": "2026-10-27T23:07:37Z"
+      }
+    },
+    {
+      "id": "P142.31-6yq",
+      "title": "A recut carries every path the task's tree holds as work, force-added files included, and refuses a tree whose change touches a submodule pointer",
+      "status": "cancelled",
+      "description": "Two ways a redo loses a task's only copy of its work, both reproduced. The report is B-worktrees.md in p142-review/ (the orchestrator gives its full path); the probes are b/forceadd.py and b/gitlink.py there.\n1. tree_work reads the recut's work through a scratch index built from read-tree HEAD plus add -A. That leaves out a file staged with git add -f over an ignore rule. task-remove --force then deletes the old tree while the recut says its work carried over. 3.6.0 read the tree's own index. Read the work so that every path the tree's own index or worktree holds as changed is carried; the mover and integrate-task already count a force-added file as work. Verify after the carry that every such path is in the carry commit, and refuse before drop_tree otherwise.\n2. _links_added refuses only a gitlink the base lacks. A submodule pointer the task moved (160000 to 160000) passes, and git worktree remove --force deletes the worktree's modules dir with the task's submodule commit. Refuse any change touching mode 160000, as the mover already refuses a changed directory.\nAlso fix redo_left's remedy text: two crash windows leave the tree already holding the work, so a prescribed git apply --3way fails there. Say how to tell which case holds.\nThis is the code that can destroy work, so prove each case red and deliver scratchpad/probe/mutations.py (mutations3 engine). No F/P/BUG ids in comments.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "tools/lints/_deps.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: a force-added ignored file survives a recut, and a moved submodule pointer refuses the recut before anything is dropped"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: Its filed return predates an adversarial review that found a HIGH (a submodule set to ignore=all hides its pointer and edits from status, add -A and the link check, so the recut removes the tree and the submodule's commits) and a MED over-fire (an ignored file untracked with git rm --cached makes every recut refuse). Same class as the defect it fixed, so it is redone by invariant as a new task carrying this work, kept at refs/audit/kept/P142.31-6yq."
+      },
+      "startedAt": "2026-10-27T22:38:10Z",
+      "completedAt": "2026-10-27T23:54:19Z",
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
+    },
+    {
+      "id": "P142.32-6yq",
+      "title": "A staged suite's replay prints block output it cannot encode with replacement, never failing the suite over its own stdout",
+      "status": "cancelled",
+      "description": "The report is C-sweep.md in p142-review/ (the orchestrator gives its full path); the probe is c-probe/probe1.py there. The sweep decodes a block's bytes as UTF-8 (child_text). The replay (tests/_harness.py replay_results, about line 1123) writes that text to its own stdout, which on Windows is a strict cp1252 stream. A block printing a character outside cp1252 then raises UnicodeEncodeError, the row reads SELFTEST FAILED 0/1 with every case hidden, and 3.6.0 was green on the same suite. Write the replayed output so it cannot fail on the stream's encoding, by writing the bytes or by replacing what cannot be encoded, and keep the case tally exact. Write a case that is red on today's code on posix by forcing a strict cp1252 stdout.\nTwo lows in the same lines, if cheap: a timed-out block's partial output (exc.stdout in run_one) never reaches the replay that sr2b and stream_text describe; and queued jobs still start after the deadline with a 1 s timeout instead of being refused by name. No F/P/BUG ids in comments.",
+      "files": [
+        "tests/_harness.py",
+        "tools/sweep-selftests.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/_harness.py: a block printing non-ASCII text replays green under a strict cp1252 stdout"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/_harness.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim",
+        "reproducing-ci-locally"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: Finished but unfileable as tdd: tests/_harness.py and tools/sweep-selftests.py each hold both the new cases and the code they test, so the red-first helper's HEAD copy carries the fix and cannot be red, and a tdd task cannot file without it. The red was shown by a pre-fix run (sr19 UnicodeEncodeError, 91/92) and by a mutation probe (9 of 9 red, green baselines). Re-added as a regression task carrying the same work, kept at refs/audit/kept/P142.32-6yq."
+      },
+      "startedAt": "2026-10-27T22:38:13Z",
+      "completedAt": "2026-10-27T23:12:46Z",
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
+    },
+    {
+      "id": "P142.33-6yq",
+      "title": "The sign-off probe re-proves every lint whose code or guarding suite the phase changed, as its docstring and the drive's protocol say",
+      "status": "in_progress",
+      "description": "The report is D-gates.md in p142-review/ (the orchestrator gives its full path) (finding 1). prove-gates --changed (changed_rows) picks rows by the file a row MUTATES. Its docstring and drive-phase lint_probe's protocol both say it picks the rows whose lint lives in the changed files. For most lints no red row mutates the lint's own file; re-derive how many with changed_rows over the real TABLE. So a phase that edits house_style_violations in tools/lints/_output_lints.py re-proves nothing, and a phase that weakens the guarding case in tests/test__output_lints.py selects no row. Select a row when the lint's home file, the file its row mutates, or the suite holding its guarding case changed. Derive each from the table and the code, not a hand list.\ndrive-phase.py's lint_probe calls this. Answer whether its text needs to change; if it does, name it in your outcome, because that file is another task's this phase. No F/P/BUG ids in comments.",
+      "files": [
+        "tools/prove-gates.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/prove-gates.py: --changed names a lint's rows when only the lint's own file changed, and when only its guarding suite changed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tools/prove-gates.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-27T23:54:26Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-28T00:30:23Z.cdd0a1",
+        "status": "passed",
+        "at": "2026-10-28T00:30:23Z"
+      }
+    },
+    {
+      "id": "P142.34-6yq",
+      "title": "Red-first through a sweep-shaped command proves the cases of a suite file that does not exist at HEAD",
+      "status": "in_progress",
+      "description": "The report is D-gates.md in p142-review/ (the orchestrator gives its full path) (findings 2 and 3). With a sweep-shaped command, HEAD's run stubs a brand-new suite file empty, and the real sweep grades an empty file red ('no --selftest'). The baseline is never green, so the result is could-not-prove although every new case was red at HEAD by not existing. The swc and swd cases miss it: their stand-in sweep accepts a file with no contract, and their test file already exists at HEAD. A suite file absent at HEAD is red for every case it adds, the same basis a missing stage already has. Make the helper say so, and drive the case through the real tools/sweep-selftests.py grading, not a stand-in.\nLow in the same code: fix_problem's 'a failing case may be missing' check compares the red file's own tally with the sweep's total over every file, so cases vanishing from the target suite are masked when there is more than one suite. Compare per file. No F/P/BUG ids in comments.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_stamp_verification.py: a task adding a brand-new suite file under a real sweep command proves red, not could-not-prove"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_stamp_verification.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-27T23:54:29Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
+    },
+    {
+      "id": "P142.35-6yq",
+      "title": "Starting a task folds a repeated status row only when it repeats the row before it in time, so a restart the journal missed keeps the charge",
+      "status": "cancelled",
+      "description": "The report is E-verbs-docs.md in p142-review/ (the orchestrator gives its full path); the probe is e/fold.py there. _status_chain folds a later in_progress->blocked row as a repeat when the chain already stands at blocked, however far apart the rows are. That row proves the task was in_progress again in between, so a restart the journal never recorded is folded away. _ran_within then answers False (not running) where the pre-fold rule answered None (can't tell), and start can release a held path: the guard fails open. That contradicts plugins/audit/reference/verbs-in-full.md around line 663, which says a broken chain keeps the charge. Fold only a true duplicate (the same transition written twice by one writer: same from/to, and adjacent with no other row of that task between). Answer None for anything else broken. Cases red on today's code: rows far apart, and a window ending before the repeat. hw13 and hw14 stay green.\nLow in the same area: a lintProbe key named in meta.fullGate or in a testGate runs the tree-mutating probe as an ordinary step after only a warning (e/full.py). Refuse it in validation, as sign-off-only keys already are for phase gates. That fix is in _manifest_phases.py or run-test-gate.py, which are not this task's files: say in your outcome where it belongs, and do not edit them. No F/P/BUG ids in comments.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_audit_task.py: two in_progress->blocked rows far apart read as can't-tell, never as not-running"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_task.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: An adversarial review found a med over-fire on this repo's own journal: the hook's real duplicate block rows (0-9 s after the drive's row) now open an 'unaccounted' span, so a start landing in it answers can't-tell where HEAD answered not-running, reopening the fault P142.22 closed. Re-added to identify a duplicate by provenance instead of by time; work kept at refs/audit/kept/P142.35-6yq."
+      },
+      "startedAt": "2026-10-27T23:54:32Z",
+      "completedAt": "2026-10-28T00:23:11Z",
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
+    },
+    {
+      "id": "P142.36-6yq",
+      "title": "fix P142-R1: contradicts task clause: acceptance (5) 'the measured result ove...",
+      "status": "cancelled",
+      "description": "contradicts task clause: acceptance (5) 'the measured result over 20 commits is recorded in the task outcome with the commit range'. The outcome records a 2-commit window (ad586f07b..d33730d60) in which one commit timed out at 1200s (NOT MEASURED) and the other was a full-set selection ('so no suite can be missed'), giving 'misses 0 of 1 commits (mutation); 0 of 1 runs (CI)'. That is zero evidence about the miss rate and not the 20-commit measurement the clause asks for; the executor itself says the 20-commit run is 'still owed by the orchestrator'. The 'misses 0 of 1' line must not be read as a clean miss rate.\n\nResolution asked: Run the 20-commit command the outcome names on a quiet machine (python3 tools/measure-affected-miss.py --commits 20 --budget-minutes 240 --timeout 2400 --ci-limit 30 --json) and record its output and commit range in the outcome before the task closes done; or, if the orchestrator decides the measurement is out of scope for this task, split it into its own task rather than close this one as met. If the task is closed with no change (--no-change --reason), the reason must say acceptance (5) is unmeasured.",
+      "files": [
+        "tools/measure-affected-miss.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "files-no-suite"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: No code change owed: the 20-commit measurement P142-R1 asks for was taken at d36d84e8 (20 of 26 measured) and its misses are filed as F809, with the selector fixes in P143.4; the finding is left at sign-off with that record."
+      },
+      "startedAt": null,
+      "completedAt": "2026-10-27T22:38:26Z",
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-27T22:38:02Z",
+          "text": "scope: tools/measure-affected-miss.py, every path the finding(s) P142-R1 name"
+        },
+        {
+          "at": "2026-10-27T22:38:02Z",
+          "text": "no suite: tools/measure-affected-miss.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-27T22:38:02Z",
+          "text": "no tests.add clause for P142-R1: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P142-R1"
+      ]
+    },
+    {
+      "id": "P142.37-6yq",
+      "title": "fix P142-R10: contradicts task clause 'Acceptance: (1) time python3 tools/swe...",
+      "status": "cancelled",
+      "description": "contradicts task clause 'Acceptance: (1) time python3 tools/sweep-selftests.py is under 240 s wall on this machine twice, at least 20 minutes apart'. The executor measured 370.5 s and 370.9 s (20 min 11 s apart) and says itself that this is NOT MET. Its stated bound is test_drive_phase.py (about 209.6 s holding 6 of 8 slots; its blocks total 1343 process-seconds). The phase's desired outcome ('the sweep's wall clock is under four minutes') is therefore still open after this task.\n\nResolution asked: Open a follow-up task scoped to the bound the executor measured: cut the work in test_drive_phase.py's heaviest blocks, and/or add one cross-suite block pool in tests/_harness.py so blocks from different staged suites share the sweep's slots. Re-measure with the same command twice, 20 minutes apart. Alternatively, amend the description if 240 s is not reachable on this machine.",
+      "files": [
+        "tools/sweep-selftests.py",
+        "tests/test_drive_phase.py",
+        "tests/_harness.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: Open a follow-up task scoped to the bound the executor measured: cut the work in test_drive_phase.py's heaviest blocks, and/or add one cross-suite block pool ..."
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: Moved by the owner's D13: the sweep under four minutes is a 3.8.0 change to test_drive_phase's structure, tracked as P143.5; the finding is left at sign-off with that record."
+      },
+      "startedAt": null,
+      "completedAt": "2026-10-27T22:38:27Z",
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-27T22:38:06Z",
+          "text": "scope: tools/sweep-selftests.py, tests/test_drive_phase.py, tests/_harness.py, every path the finding(s) P142-R10 name"
+        },
+        {
+          "at": "2026-10-27T22:38:06Z",
+          "text": "no suite: tools/sweep-selftests.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-27T22:38:06Z",
+          "text": "no test runner in this task's gate for the test P142-R10 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test_drive_phase.py'], derived as narrowed to this task's tests.add paths, in the spelling meta.phaseGate.derived.spelling records; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P142-R10"
+      ]
+    },
+    {
+      "id": "P142.38-6yq",
+      "title": "A staged suite's replay prints block output it cannot encode with replacement, keeps a killed block's partial output, and starts no job past the deadline",
+      "status": "pending",
+      "description": "The work is done and kept at refs/audit/kept/P142.32-6yq (one commit over the phase head it was cut from; `git diff <its parent> refs/audit/kept/P142.32-6yq` is the whole change). Apply it to your tree, check it against the phase head you were given, resolve anything the head has moved since, and run the gates.\n\nWhat it fixes. The sweep decodes a block's bytes as UTF-8. A staged suite's replay (tests/_harness.py replay_results) wrote that text to its own stdout, which on Windows is a strict cp1252 stream, so a block printing a character outside cp1252 crashed the replay: SELFTEST FAILED 0/1, every case hidden. 3.6.0 was green there. The change writes replayed output through `encodable`, which escapes what the stream cannot spell, so the tally stays exact. It also keeps a timed-out block's partial output for the replay (run_one's `partial`), and refuses by name any job whose start falls after the sweep's deadline, giving a replay at least REPLAY_RESERVE. The deadline cut is rounded up, not truncated.\n\nThis task is regression mode because each file holds both its cases and the code they test, so the red-first helper's HEAD copy carries the fix. The red is recorded instead by a pre-fix sweep of tests/_harness.py (exit 1, sr19 UnicodeEncodeError, 91/92) and by a mutation probe the orchestrator ran: 9 of 9 rows red, baselines green.\n\nWho depends on this: everything importing _harness (no signature or output contract changed), and every file naming tools/sweep-selftests.py by path (command line and row format unchanged; a job refused past the deadline now prints as FAILED with its reason). P143.6 will change block timing and sharding next; say what it must know. No F/P/BUG ids in comments.",
+      "files": [
+        "tests/_harness.py",
+        "tools/sweep-selftests.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/_harness.py: sr19, sr19b - a block printing non-ASCII text replays green under a strict cp1252 stdout",
+          "tools/sweep-selftests.py: tt3b, tt3c, tt3d - a killed block's partial output reaches the replay, and no job starts past the deadline"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/_harness.py tools/sweep-selftests.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P142.39-6yq",
+      "title": "The state commit takes the index lock in a sharded plan, keeps stdout one JSON object, commits on an unborn branch, and commits the shard from the bytes its index part came from",
+      "status": "pending",
+      "description": "The work is done and kept at refs/audit/kept/P142.30-6yq: one commit over the phase head it was cut from, and `git diff <its parent> refs/audit/kept/P142.30-6yq` is the whole change. Apply it to your tree, check it against the phase head you were given, resolve anything the head has moved since, run the gates and prove red-first through the helper.\n\nWhat it fixes, each reproduced before the fix:\n1. commit-task-work --state asked _mio.is_sharded of the ASSEMBLED manifest, which is always False, so it never took the index lock. It now decides the layout from the index file on disk, takes the lock for the whole commit, and passes the lock's exit codes and --takeover through.\n2. _scoped_commit derived the index part from one shard read but staged the shard from the working file later, so a write between them committed the two apart. Now the shard is committed from the same bytes the index part was derived from, on task and state commits alike.\n3. Found by the adversarial review of the first cut: under --json, the lock's lines went to stdout ahead of the JSON object, so callers read a made commit as \"nothing to commit\". Every lock line now goes to stderr under --json.\n4. Also from that review: a state commit on an unborn HEAD was refused, which 3.6.0 allowed. It commits there now.\n5. Also from that review: a shard the user deliberately untracked was put back. The shard is now pinned only for the kinds stage() adds.\n\nWho depends on this: close-phase.py, drive-phase.py keep_record/commit_signoff and audit-task.py run or print `commit-task-work.py --state`, and read its JSON answer. None of them holds the index lock while running it; a nested holder re-enters (E_OURS). Answer each. No F/P/BUG ids in comments.",
+      "files": [
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "tests/test_commit_task_work.py",
+        "tests/test__scoped_commit.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_commit_task_work.py: lk1-lk8 and the cases for a re-entered lock's JSON stdout and an unborn HEAD"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_commit_task_work.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P142.40-6yq",
+      "title": "A recut drops a task tree only when the carry commit describes that tree completely; any submodule or nested repository refuses it",
+      "status": "pending",
+      "description": "A redo removes a task's worktree (`git worktree remove --force`) and recuts it at the phase head with the work re-applied. It can destroy a task's only copy of its work. Defects in it have now been found three times in this phase, each fixed by naming one more shape, so this task fixes it by invariant: the tree is dropped only when the carry commit plus the tree's own index describe it completely, and everything the carry cannot represent refuses the recut before anything is dropped.\n\nStart from the work kept at refs/audit/kept/P142.31-6yq: one commit over the phase head it was cut from; `git diff <its parent> refs/audit/kept/P142.31-6yq` is the whole change. It already does three things: carry_commit seeds its scratch index from the tree's own index, so force-added files are carried; a check compares every path git status lists with the scratch index byte for byte; and _links_touched refuses any change touching mode 160000. Apply it, then make these hold. Each was reproduced by an adversarial review against that work:\n1. HIGH: a submodule with `submodule.<name>.ignore=all` (or `diff.ignoreSubmodules=all`) hides its pointer change from git status, from add -A and from the link check. The work reads empty, nothing is pinned, and the remove deletes .git/worktrees/<wt>/modules/<sub> with the submodule's commits. ignore=dirty loses uncommitted edits inside it the same way. Invariant: a tree holding ANY gitlink entry (in its index, its HEAD or the carry) or any nested .git refuses the recut, whatever git's ignore settings say. Every status and diff the check runs uses --ignore-submodules=none.\n2. MED, over-fire: `_unheld` runs `ls-files -o` without `--exclude-standard`, so an ignored file untracked with `git rm --cached` (the ordinary node_modules clean-up) is \"unheld\" forever, and the task can never be filed or redone. Count a path the scratch index lacks and git ignores on disk as held.\n3. A staged state the worktree does not show is not carried, and the check cannot notice it, because it compares the scratch index with the worktree only. Two shapes: (a) `git rm --cached` of a tracked file that is not ignored, (b) a staged edit whose worktree copy was reverted (MM). Decide what the work is in each case. The structurally correct answer is that the index is part of the work. Then either carry it or refuse; never drop it silently.\n4. Lows, cheap and in the same lines:\n   - skip-worktree and assume-unchanged entries are not copied by the seed, so a skip-worktree file absent from disk is carried as a deletion. Copy the flags or refuse.\n   - redo_left's fallback text can prescribe an apply over a tree that already holds the work, for a path the head moved.\n   - non-UTF-8 path bytes decoded with \"replace\" become pathspecs that match nothing, so the path reads as held. Keep the bytes.\n   - _seed_from_index's docstring overclaims what it copies.\n\nThe review's probes are in p142-31-adv/ (the orchestrator gives its full path). Run probe.py through probe4.py before and after. Prove each case red, and deliver a mutation probe with an over-fire row for each refusal. No F/P/BUG ids in comments.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "tools/lints/_deps.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: ar15-ar17b, ar6d, ar6e and a case per shape below: ignore=all and ignore=dirty submodules, diff.ignoreSubmodules=all, an ignored file untracked with git rm --cached, a staged-only change (rm --cached of a tracked file; MM with the worktree reverted)"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P142.41-6yq",
+      "title": "Starting a task folds a status row only when it is the hook's echo of the row before it, so a restart the journal missed keeps the charge and the drive's own duplicates still release",
+      "status": "pending",
+      "description": "`audit-task.py start` may release a path another task holds when that holder is provably not running. It reads the holder's status chain from the journal (`_status_chain`, `_ran_within`): True means running, False means not running, None means can't tell, and None keeps the charge.\n\nTwo attempts have failed in opposite directions:\n- P142.22's fold read any later in_progress->blocked row as a repeat, however far apart. That folded away a restart the journal never recorded, and answered False. Fail-open.\n- The kept attempt (refs/audit/kept/P142.35-6yq; `git diff <its parent> <ref>` is the whole change) marks the time between a row and its repeat as an unaccounted span and answers None inside it. Over this repo's own journal that over-fires. The drive writes task.block at T. The hook's manifest.edit and task.blocked rows echo the same in_progress->blocked at T+1..9, and the next wave's starts land inside that gap, so they now answer None where HEAD answered False. An adversarial review measured it on docs/audit/journal/*.jsonl: 16 holder/starter pairs, for example P142.14-6yq/P142.15-6yq and P142.4/P142.6.\n\nFix by provenance, not by time. A row is a duplicate only when it is provably an echo of the row before it: the same task, the same from and to, written by the hook (actor.via \"hook\") as the derived record of a change whose own row (via cli or a drive verb) immediately precedes it, with no other row of that task between them. Read the real journal to confirm which writers produce which echo, and derive the rule from the code that writes the rows, not from a timing. Fold an echo with no span. Anything else that repeats or breaks the chain answers None.\n\nAlso fix, because it is the same ordering: same-second rows from different journal files cannot be ordered (read_all breaks ties by file name), and `_filed_while_running` already says so. `_status_chain` must not read that order as causal; such a pair answers None unless it is an echo pair.\n\nCases, each red on the right code:\n- the real duplicate shape, with a start inside the echo gap: False;\n- a lagged repeat with no source row: None;\n- the cross-file same-second reversal: None;\n- and the existing cases hw11 and hw13-hw16 kept green.\nRe-run the review's journal scan (scan.py and near.py in p142-35-adv/; the orchestrator gives its full path) before and after, and report the counts. Deliver a mutation probe with over-fire rows. No F/P/BUG ids in comments.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_audit_task.py: a hook echo folds and a start inside it releases; a lagged repeat with no source row answers can't-tell; same-second rows from different journal files are not ordered"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_task.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "request": "neka njihov dokument bude osnova! I u odnosu na to treba napraviti plan implementacije",
