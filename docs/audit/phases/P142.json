@@ -361,32 +361,40 @@
         "severity": "med",
         "file": "plugins/audit/scripts/status/audit-status.py:2054-2067",
         "issue": "KEPT_TREE_FORCE understates what the named `git worktree remove --force` destroys. It lists uncommitted, untracked and ignored files and 'each submodule checked out in it', but removing the worktree also deletes git's record directory, so commits that live only in a submodule repository under that record's modules/ directory are lost. This is the very data the task's own case ta11 proves a redo keeps. The tree's detached HEAD commits also become unreachable unless pinned. The tail 'carry what it holds first' does not tell the reader to look for either. Confirmed from the code: the text is the whole warning and mentions neither.",
-        "resolution": "Extend KEPT_TREE_FORCE to say it also deletes git's record of the tree, so commits held only in a checked-out submodule's repository and the tree's detached HEAD (if no ref holds it) are lost. Pin kt5 on those words.",
-        "fixTask": "P142.49-6yq"
+        "resolution": "fixed in P142.49-6yq (152b7253f131): Extend KEPT_TREE_FORCE to say it also deletes git's record of the tree, so commits held only in a checked-out submodule's repository and the tree's detached HEAD (if no ref holds it) are lost. Pin kt5 on those words.",
+        "fixTask": "P142.49-6yq",
+        "commit": "152b7253f131",
+        "status": "fixed"
       },
       {
         "id": "P142-R40",
         "severity": "med",
         "file": "plugins/audit/scripts/status/audit-status.py:2059-2067",
         "issue": "With the plan unreadable (task_ids None) the new `_kept_tree_remedy` names `git worktree remove --force` for EVERY kept tree, including a blocked member's tree that close_wave records under its task id (drive-phase.py:5936-5941) and that a later wave adopts by marker. Before the diff, a None plan gave the bare remover, which refuses a tree holding work. Now the one case where status cannot tell a task's tree from a kept old tree gets the destructive command. Confirmed: the only guard is `task_ids is not None and task_id in task_ids`.",
-        "resolution": "When task_ids is None, name the safe form (bare `git worktree remove <path>`, or say the plan could not be read and the key cannot be classified) and give the forced form only for a key matching the ` set aside <n>` shape (drive-phase.py _ASIDE_KEY_RE). Add a case for the unreadable-plan row.",
-        "fixTask": "P142.49-6yq"
+        "resolution": "fixed in P142.49-6yq (152b7253f131): When task_ids is None, name the safe form (bare `git worktree remove <path>`, or say the plan could not be read and the key cannot be classified) and give the forced form only for a key matching the ` set aside <n>` shape (drive-phase.py _ASIDE_KEY_RE). Add a case for the unreadable-plan row.",
+        "fixTask": "P142.49-6yq",
+        "commit": "152b7253f131",
+        "status": "fixed"
       },
       {
         "id": "P142-R41",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:4830-4845 and PLUGIN-BUILD-GUIDE.md redo paragraph",
         "issue": "The claim 'a path once taken is never cut at again' is stronger than the code. RECUTS is a dict keyed by task id and is not in KEPT_AT_TASK_CLOSE (line 905), so the generic loop at drive-phase.py:8673-8676 pops recuts[task] when the task closes. drop_state removes the whole file when the phase finishes. After that, if every kept tree has been removed, the high-water mark is gone and a later redo can start again at .redo-1. The lexists and git-listing checks stop it landing on a path that still exists, so no tree is overwritten, but a removed path can be reused. ta20b only proves the claim while the recuts entry is present.",
-        "resolution": "Either soften the guide and docstring to 'never cut at a path that still holds a directory or a git record', or add RECUTS to KEPT_AT_TASK_CLOSE and state that the mark ends with the phase.",
-        "fixTask": "P142.49-6yq"
+        "resolution": "fixed in P142.49-6yq (152b7253f131): Either soften the guide and docstring to 'never cut at a path that still holds a directory or a git record', or add RECUTS to KEPT_AT_TASK_CLOSE and state that the mark ends with the phase.",
+        "fixTask": "P142.49-6yq",
+        "commit": "152b7253f131",
+        "status": "fixed"
       },
       {
         "id": "P142-R42",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:4893-4899",
         "issue": "keep_old_tree picks the next key from state['keptTrees'] alone. A tree whose marker already names '<id> set aside <n>' but whose state entry is gone (drop_state at finish, or a forgotten entry) is not seen, so the key can be issued twice, and settle_kept_markers would then read the older tree's marker as a crash of the new redo. Confirmed from the code; reachable only after the state was lost.",
-        "resolution": "Also skip a key some wave tree's marker already names, or skip any key whose entry was ever recorded under recuts.",
-        "fixTask": "P142.49-6yq"
+        "resolution": "fixed in P142.49-6yq (152b7253f131): Also skip a key some wave tree's marker already names, or skip any key whose entry was ever recorded under recuts.",
+        "fixTask": "P142.49-6yq",
+        "commit": "152b7253f131",
+        "status": "fixed"
       },
       {
         "id": "P142-R43",
@@ -401,9 +409,37 @@
         "file": "plugins/audit/scripts/git/_worktrees.py:1299",
         "issue": "The sweep's reason for a kept tree says 'the wave driver removes it with `task-remove` after integration', which is false for a kept old tree (its key is no task, and task-remove refuses it). The task's own list named this reader (the sweep's kept-tree reason in _worktrees.py); the executor checked it, called the wording wrong and left it. The sweep is path-agnostic and still keeps the tree, so no work is at risk, but it is the one remedy surface left naming a verb that cannot act on a kept old tree.",
         "resolution": "Make the reason depend on whether the marker's taskId is a ` set aside <n>` key, and for that case name `git worktree remove --force <path>` or the driver's retire."
+      },
+      {
+        "id": "P142-R45",
+        "severity": "med",
+        "file": "tools/prove-gates.py:2394-2480",
+        "issue": "The property this task exists for - a row never writes the checkout - rests on prove() passing cwd=tree, --allow-dirty, worker_env(scratch, tree) and the pre/post byte backstop, and no case reaches any of it. c6 (prove-gates.py, 'THIS SUITE MUTATES NOTHING') forbids the suite from calling prove(), ch2/ch4 replace prove with fake_prove, and grep finds no case naming worker_env, _git_env, _pool_parent, _under_a_checkout or _bytes_or_none. Changing cwd=tree back to REPO, dropping the CLAUDE_PROJECT_DIR/PWD repoint, or deleting the byte-compare would leave all 52 cases green (read, not run). The 1133 s full run shows it works today; nothing keeps it working.",
+        "resolution": "Factor the argv/cwd/env of the redfirst call into a pure function (or make the subprocess runner injectable) and assert in a pw case: cwd is the tree, '--allow-dirty' is in argv, CLAUDE_PROJECT_DIR and PWD equal the tree when present, GIT_DIR-family vars are absent, TMPDIR is the scratch. Add a case for the byte backstop using a stub redfirst in a fixture tree that leaves the file mutated (expects verdict ERROR and the file restored)."
+      },
+      {
+        "id": "P142-R46",
+        "severity": "med",
+        "file": "plugins/audit/reference/phase-signoff.md:454",
+        "issue": "contradicts task clause 'Update the docs that say prove-gates mutates the tree and restores each time': this shipped reference (read by the agent driving sign-off) still says 'The probe mutates the working tree and restores it under its own trap', and frames the driver's before/after status+bytes comparison as guarding that. The executor's grep covered only CLAUDE.md, CONTRIBUTING.md and PLUGIN-BUILD-GUIDE.md; this file is a doc saying exactly that and was not edited.",
+        "resolution": "Reword to: each row mutates and restores a worker tree outside the checkout; the checkout is never written, and the driver still compares git status and file bytes around the run, which now must see no change by construction."
+      },
+      {
+        "id": "P142-R47",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:8211; tools/_suite.py:96-104",
+        "issue": "Stale text the diff makes false (both confirmed): the lint_probe docstring says 'the probe mutates the working tree and restores it', and _suite.py's marker comment says 'prove-gates.py edits the working tree for minutes... a concurrent sweep read a half-mutated tree'. No tool calls _suite.hold now (git grep '_suite.hold(' finds only the fixtures in tools/orchestrator-state.py:244/250 and tools/sweep-selftests.py:4773/4781), so the marker readers (sweep-selftests marker_gate, orchestrator-state sweep_line) and hold() itself are live code with no production writer. Also tools/prove-gates.py:2228 and :2968 still say 'a run that mutates the tree' (true only of a worker tree).",
+        "resolution": "Fix the two comments/docstrings in a follow-up task; decide separately whether the marker machinery is retired or kept as the compatibility surface CONTRIBUTING.md now describes. Say 'a worker tree' at prove-gates.py:2228 and :2968."
+      },
+      {
+        "id": "P142-R48",
+        "severity": "low",
+        "file": "tools/prove-gates.py:2790-2810 (_mirror)",
+        "issue": "A file that is staged-new in the checkout (in the index, absent from HEAD) is carried by 'git diff HEAD' but applied without --index, so it is untracked in the worker tree. A lint that walks tracked files (CLAUDE.md says several are derived off what git tracks) sees it in the checkout and not in the worker, so a by-hand run on a dirty tree can prove a slightly different tree than its author is looking at. pw3 covers a staged modification, not a staged addition. Read, not run; irrelevant at sign-off where everything is committed.",
+        "resolution": "Apply the patch with 'git apply --index' (or 'git add -N' the added paths in the worker), and give the pw3 fixture a staged-new file."
       }
     ],
-    "outcome": "[findings: 44 - 0 high, 14 med, 30 low; 21 with a recorded fix commit]"
+    "outcome": "[findings: 48 - 0 high, 16 med, 32 low; 25 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -3331,7 +3367,7 @@
     {
       "id": "P142.49-6yq",
       "title": "Status's advice for a kept tree names everything --force destroys, and offers --force only to a redo's kept tree",
-      "status": "in_progress",
+      "status": "done",
       "description": "The adversarial review of the change that keeps a redo's old tree in place (scratchpad/p142-47-adv/, the orchestrator gives the full path). It found no path in the drive that loses work. Both meds are in status's advice:\n1. MED. The KEPT_TREE_FORCE warning understates what `git worktree remove --force` deletes. It also deletes the tree's admin dir, and with it the submodule repositories under .git/worktrees/<n>/modules, so commits that exist only there are destroyed. A commit on the tree's detached HEAD becomes unreachable, and gc collects it. This was verified by a git repro. Name both losses, with the command that saves each first: push or fetch the submodule commit, and pin the HEAD with a ref. Fix the guide sentence and _kept_tree_remedy's docstring to match.\n2. MED. When the plan cannot be read (task_ids None), _kept_tree_remedy gives `--force` to every kept tree, including a blocked task's kept tree that a later wave adopts. Give --force only to keys that are a redo's kept key (the set-aside key pattern). Every other key gets the non-forcing advice. Red-first a case with an unreadable plan.\n3. Low. recut_path's \"a path once taken is never cut at again\" is false: recuts is popped at task close and dropped at phase finish. Either make it true by asking git's records and directories, not only the state, or state what holds.\n4. Low. keep_old_tree picks the next key from the state alone. After a lost state it can reuse a key a kept tree's marker already carries. Choose the next n past every marker that carries that task's kept key, as well.\nEdit only the files in scope. No F/P/BUG ids in comments. Add probe rows for items 1, 2 and 4.",
       "files": [
         "plugins/audit/scripts/status/audit-status.py",
@@ -3367,14 +3403,23 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "152b7253f131",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-status.py: KEPT_TREE_FORCE now names both losses beyond the files - the submodule repositories under the tree's git directory (a commit only they hold is destroyed) and a commit on the detached HEAD left on no ref for gc. New _kept_tree_saves prints two save-first commands per forced row: a ref pin of the tree's HEAD at refs/kept-trees/<key>/HEAD, and a submodule foreach --recursive push (with -c protocol.file.allow=always, which git needs inside foreach) of each submodule's HEAD and branches into refs/kept-trees/<key>/modules/<path>/. _kept_tree_remedy returns {remedy, warning, saveFirst}; --force goes only to keys matching the new _is_aside_key (the driver's '<id> set aside <n>' shape, pinned by kt9c). Plan's task: task-remove. Unreadable plan (task_ids None): task-remove 'once the plan can be read', nothing forced. Any other key: unforced git worktree remove. Paths are shell-quoted (shlex.quote) in the printed commands. _kept_tree_lines prints the warning and each save-first line under the forced row. drive-phase.py: _ASIDE_KEY_RE gains a group for n; new _aside_counts reads the state's kept keys plus the marker of every tree git lists whose directory stands; keep_old_tree takes n = max+1 over both, and stops (nothing changed) if git cannot list its worktrees. recut_path docstring now says what holds: no path a directory or git's record holds is cut at, and the recuts entry goes with the task's marks in finish_task and with the state in drop_state (checked by grep: finish_task pops every task-keyed dict not in KEPT_AT_TASK_CLOSE). The guide paragraph and the driver-suite wording (ta20b label, _kept_tree_cases docstring) were changed to match. Git repro (<scratchpad>/P142.49-repro*, git 2.53.0): a forced remove plus gc with prune=now destroyed both the detached-HEAD commit and a submodule-only commit. After the two save commands, all four commits survived: the tree HEAD, the submodule HEAD, a submodule branch-only commit and a nested-submodule commit. A submodule with no branch and a tree with no initialised submodule both exit 0. Without the file-transport allowance the foreach push fails with 'transport file not allowed'. A conflicting ref layout fails loudly (exit 128). kt8 runs the printed commands through sh -c on a real repo, then force-removes and gcs, and both commits still resolve; kt8b removes a twin with nothing saved and both are gone. Runs: python3 tools/sweep-selftests.py tests/test_audit_status.py exit 0, 407 cases. python3 tools/sweep-selftests.py tests/test_drive_phase.py exit 0, 653 cases, 117 blocks. Stages wd/ar/kr/wt5/ta-block all green. ruff and vermin -t=3.8- on the four .py files exit 0. house_style_violations, prose_number_claims and doc_prose_numbers return []. Probe <scratchpad>/P142.49-probe/mutations.py --tree <checkout>: baseline green in a copy, 13 rows, every one KILLED (items 1, 2 and 4; over-fire rows m6, m9 and m12), exit 0. Dependants: audit-status.py's path dependants (azure-pipelines.yml, test_run_test_gate.py, verify.sh, CONTRIBUTING.md, pipeline-cost-results.md, demo-large.html) invoke the CLI, the --gate verdict or --json. The KEPT TREES block appears only in the bare render and --json carries no keptTrees (kt4 green), so they are still correct. test_drive_phase.py's ta1b reads kept_trees_block()['trees'][*]['path'], which is still present, and it is green. The names used elsewhere (_area_lines, _budget_lines and the rest) are untouched. _kept_tree_remedy's return changed from str to dict. git grep finds no caller but kept_trees_block. drive-phase.py's dependants: tools/affected.py, README, pipeline-cost-design.md, detect-plan-skip.py, record-risk-confirmation.py, stamp-verification.py and test_commit_task_work (_carries) touch nothing changed. keep_old_tree and recut_path keep their signatures. _ASIDE_KEY_RE's group(1) is unchanged for asides_of and settle_kept_markers. test_audit_status.py's dependants (sweep-costs.json, tools/affected.py, test__status_facts.py) use _cases, _fixture and _selftest, which are unchanged. PLUGIN-BUILD-GUIDE.md's dependants are basename references to other files, unaffected. Left, out of my files: the same loss class lives in _worktrees.py:1029 ('remove the worktree by hand with --force', which names ignored files but not submodule-only or detached-HEAD commits) and in commands/worktree.md:55-56/81 (task-remove/remove --force, 'state what it destroys before offering it', with no statement of these two losses). A detached task tree removed with task-remove --force loses the same two things. This is a candidate finding for the Faults section, not fixed here. While settling call shapes I read _kept_tree_remedy and kept_trees_block after drafting the case ideas but before writing the status cases, so those cases were written with the current code in view; every new case was still watched red before the fix.",
+        "descriptive": "Status's kept-tree advice now names everything --force destroys, with save-first commands verified to save each loss, offers --force only to a redo's kept key even when the plan cannot be read, and the driver never reuses a kept key a marker on disk still carries"
       },
       "startedAt": "2026-10-28T09:34:16Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-28T10:17:31Z",
+      "verifiedBy": [
+        "kt7: the forced row's warning names submodule-only and detached-HEAD loss, and the two save-first commands appear once, for the forced row alone",
+        "kt8: the printed save-first commands, run via sh on a real repo, keep both commits through a forced remove and gc",
+        "kt8b: a twin removed with nothing saved loses both commits (the warning's claim, measured)",
+        "kt9: an unreadable plan forces only the set-aside key; a task key and an unknown key get no --force",
+        "kt9b: a readable plan's key that is neither a task nor a set-aside key gets git's unforced remover",
+        "kt9c: status's set-aside shape matches the driver's ASIDE_KEY and rejects task-id shapes",
+        "ta22: with the state lost, keep_old_tree picks a key past every marker on disk (1 and 3 -> 4)",
+        "ta22b: over-fire twin - other tasks' kept markers, a prefix-sharing id's and the task's own marker leave key 1 free"
+      ],
       "notes": [
         {
           "at": "2026-10-28T09:34:08Z",
@@ -3404,7 +3449,69 @@
         "runId": "2026-10-28T10:17:27Z.c3a687",
         "status": "passed",
         "at": "2026-10-28T10:17:27Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "152b7253f131",
+        "at": "2026-10-28T10:17:31Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-28T10:09:17Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_audit_status.py` in a throwaway tree at HEAD exited 1 with 5 of 407 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - kt7 (house FAIL), kt9 (house FAIL), kt9b (house FAIL), kt9c (house FAIL), kt8 (house FAIL): SELFTEST FAILED: 402/407 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - 3 times the recorded 49s of tests/test_audit_status.py in .github/sweep-costs.json is only 147s; fix run: held back 49s of the deadline, the recorded slot-seconds of tests/test_audit_status.py in .github/sweep-costs.json",
+        "status": "proved",
+        "source": "red-first-helper"
       }
+    },
+    {
+      "id": "P142.50-6yq",
+      "title": "prove-gates runs its rows in parallel, each in an isolated worktree of the checkout, so the live tree is never mutated and a phase-wide probe fits the sign-off bound",
+      "status": "in_progress",
+      "description": "MEASURED 2026-10-28: P142 sign-off stopped because meta.buildCommands.lintProbe (python3 tools/prove-gates.py --changed <70 phase paths>) ran 116 rows (67 red, 49 allow) serially and took about 74 min against drive-phase SIGNOFF_STEP_SECONDS=3600. A manual rerun was green on every row and left the tree unchanged, so the defect is the shape: rows run one at a time, each mutating the ONE live checkout via redfirst.sh, on a 10-core machine. Raising the bound is not the fix (the table only grows; the bound is tied to the gate's). DESIGN: prove() runs each row in a worker tree, never in the live checkout. Create a pool of worker trees (git worktree add --detach at HEAD, under a mkdtemp scratch outside every checkout) that mirror the checkout's current content (HEAD plus the tracked working-tree diff and untracked non-ignored files), so a by-hand run on a dirty tree still proves what the author is looking at. Run tools/redfirst.sh FROM the worker tree (it resolves its root from its own path) over a work queue across worker count = cores minus two (every core when CI=true, same rule as sweep-selftests.py). Each row keeps its own scratch TMPDIR as now. Results are collected and rendered in the table's order, so output stays byte-stable regardless of scheduling. Worker trees are removed in finally (git worktree remove --force plus prune) and a run that is killed leaves nothing registered that a later run cannot clean. The mutation marker (_suite.hold) protected the live tree from a concurrent sweep; decide from the code whether it is still needed once the live tree is never written, and state the answer in the comment. The drive's lint_probe compares the checkout around the run - it must now see no change by construction. Update the docs that say prove-gates mutates the tree and restores each time (CLAUDE.md Tests section, CONTRIBUTING.md, PLUGIN-BUILD-GUIDE.md) to say what is now true. New selftest cases (in prove-gates' own --selftest, which mutates nothing) for: ordering is stable, worker count rule, the worker tree mirrors a dirty tracked file and an untracked file, cleanup leaves no registered worktree. Measure a full --changed run with the P142 phase paths (git diff --name-only 0dfae3e7...HEAD minus docs/audit) before and after, and report both wall clocks.",
+      "files": [
+        "tools/prove-gates.py",
+        "CLAUDE.md",
+        "CONTRIBUTING.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/prove-gates.py::worker tree mirrors a dirty tracked file and an untracked file"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tools/prove-gates.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-28T12:50:35Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-28T13:42:17Z.751bdf",
+        "status": "passed",
+        "at": "2026-10-28T13:42:17Z"
+      },
+      "notes": [
+        {
+          "at": "2026-10-28T13:34:23Z",
+          "text": "Gate reset to the task's one suite: the gate derived at add time from files handed CLAUDE.md, CONTRIBUTING.md and PLUGIN-BUILD-GUIDE.md to the sweep, which refuses non-suite paths, so it was red before any work. Defect (batch): the ordinary files arm of _ordinary_task_gate does not filter to suite paths as the runner_aware arm does, and scope --tests-add does not re-derive a gate derived from files."
+        }
+      ]
     }
   ],
   "request": "neka njihov dokument bude osnova! I u odnosu na to treba napraviti plan implementacije",
@@ -3420,5 +3527,10 @@
     "branch": "audit/p142-the-gate-ladder-affected-check",
     "at": "2026-10-25T10:10:28Z"
   },
-  "startedAt": "2026-10-25T10:10:28Z"
+  "startedAt": "2026-10-25T10:10:28Z",
+  "testEvidence": {
+    "runId": "2026-10-28T10:33:57Z.0cc6c1",
+    "status": "passed",
+    "at": "2026-10-28T10:33:57Z"
+  }
 }

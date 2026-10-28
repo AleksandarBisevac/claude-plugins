@@ -32,9 +32,15 @@ around. An allow row weakens the GUARD until it over-fires and requires a case
 asserting a known-good input to go red. Its own header says how the mutations are
 chosen and where an allow case is not meaningful.
 
-WHAT IT COSTS. One suite per row, so a full run is minutes rather than seconds, and
-it MUTATES THE WORKING TREE while it runs (restoring each time, under redfirst's
-trap). It is not a per-commit gate; run it before a release, or when a lint changes.
+WHAT IT COSTS. One suite per row, so a full run is minutes rather than seconds. The
+rows run concurrently, each in a WORKER TREE - a detached `git worktree` at HEAD
+carrying the checkout's uncommitted edits and untracked files, under a scratch
+directory outside every checkout - on all cores but two (every core under CI=true),
+and the report is rendered in the table's order whatever order they finish in. A
+row mutates its worker tree and restores it under redfirst's trap; the checkout
+itself is never written, and the trees are removed when the run ends, or by the
+next run when this one was killed. It is not a per-commit gate; run it before a
+release, or when a lint changes.
 
 `--changed <paths>` IS THE "WHEN A LINT CHANGES" HALF, and the drive's sign-off
 step is its caller: it hands over the files the phase changed, and only the rows
@@ -2385,18 +2391,48 @@ def gate_log_path(scratch):
     return os.path.join(scratch, LOG_BASENAME)
 
 
+def worker_env(scratch, tree, base=None):
+    """`redfirst_env()` for a row run in the worker tree `tree`: git's location
+    variables dropped, and a project or working directory the caller named
+    pointed at the tree, so the row's child never resolves the checkout."""
+    env = redfirst_env(scratch, _git_env(base))
+    for name in ("CLAUDE_PROJECT_DIR", "PWD"):
+        if name in env:
+            env[name] = tree
+    return env
+
+
+def _bytes_or_none(path):
+    try:
+        with open(path, "rb") as fh:
+            return fh.read()
+    except OSError:
+        return None
+
+
 def prove(row, repo=None):
-    """Mutate, run the suite, restore. Returns a dict; never raises on a red gate."""
+    """Mutate, run the suite, restore - in `repo`, a worker tree. Returns a dict;
+    never raises on a red gate.
+
+    `--allow-dirty` because the tree mirrors the checkout's own edits, so the file
+    a row mutates may differ from HEAD by design. redfirst's refusal exists for a
+    tree somebody else may be writing to, and a worker tree has one writer: the
+    row it is running. Its trap restores the file; the bytes are compared here as
+    well, so a row that left its mutation behind is a verdict and not a silently
+    poisoned tree for the next row on it."""
     lint, rel, _kind, _anchor, _payload, suite, target = row
-    old, new = mutation(row, repo)
+    tree = repo or REPO
+    old, new = mutation(row, tree)
     if old is None:
         return {"lint": lint, "verdict": "UNANCHORED", "detail": new, "cases": []}
+    path = os.path.join(tree, rel)
+    before = _bytes_or_none(path)
     scratch = tempfile.mkdtemp(prefix="prove-gates-")
     try:
         proc = subprocess.run(
-            ["sh", "tools/redfirst.sh", rel, "--replace", old, new, "--",
-             sys.executable, suite, "--selftest"],
-            cwd=repo or REPO, env=redfirst_env(scratch),
+            ["sh", "tools/redfirst.sh", rel, "--replace", old, new,
+             "--allow-dirty", "--", sys.executable, suite, "--selftest"],
+            cwd=tree, env=worker_env(scratch, tree),
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         text = proc.stdout.decode("utf-8", "replace")
         try:
@@ -2437,6 +2473,12 @@ def prove(row, repo=None):
         # shows it), and nothing fails the day one is taught to - the change
         # would have to add it to a slice, where review sees it.
         shutil.rmtree(scratch, ignore_errors=True)
+    if before is not None and _bytes_or_none(path) != before:
+        with open(path, "wb") as fh:
+            fh.write(before)
+        return {"lint": lint, "verdict": "ERROR",
+                "detail": "left %s mutated; put back from its pre-row bytes" % (rel,),
+                "cases": []}
     cases = failing_ids(gate)
     if "REDFIRST FAILED" in text:
         return {"lint": lint, "verdict": "STAYED GREEN",
@@ -2518,7 +2560,7 @@ def main(argv):
         homes = lint_homes() if any(changed) else {}
         table = changed_rows(table, changed, homes)
         allow = changed_rows(allow, changed, homes)
-        # NOTHING TO RUN IS SAID, AND IT IS SAID BEFORE THE MARKER. A set that
+        # NOTHING TO RUN IS SAID, AND IT IS SAID BEFORE ANY WORKER TREE. A set that
         # names no lint file is the common case at a phase's sign-off, and a
         # silent exit 0 there would read as every guarded lint proven.
         if not ((want_red and table) or (want_allow and allow)):
@@ -2543,28 +2585,33 @@ def main(argv):
                 sys.stdout.write("  %-5s %-28s %s\n"
                                  % ("allow", name, "no allow case; reason recorded"))
         return 0
-    # THE MARKER, held for the whole mutating run: a concurrent sweep refuses on it
-    # and orchestrator-state reports it. Released in `finally`; a killed run leaves a
-    # marker whose pid is dead, which readers ignore aloud.
-    import _suite
-    git_dir = _suite.git_dir_of(REPO)
-    if git_dir is None:
-        sys.stderr.write("prove-gates: no git dir under %s, so no marker could be "
-                         "held; refusing to mutate a tree nobody can see is "
-                         "mutating\n" % (REPO,))
-        return 2
-    seen = _suite.marker_state(git_dir)
-    if seen["state"] in ("live", "unreadable"):
-        sys.stderr.write("prove-gates: %s says another mutating run holds this tree "
-                         "(%s); refusing to start a second\n"
-                         % (seen["path"], seen["state"]))
-        return 2
-    marker = _suite.hold(git_dir)
+    # NO MARKER IS HELD. The one `_suite.hold` writes announced a run rewriting
+    # the checkout, so a concurrent sweep would refuse rather than read a
+    # half-mutated file;
+    # every row now runs in a worker tree (`open_workers`), the checkout is never
+    # written, and there is nothing mid-mutation for a sweep to read. Nor is a
+    # second run refused: two runs hold two pools, and neither reads the other's.
+    rows = (len(table) if want_red else 0) + (len(allow) if want_allow else 0)
+    removed = reap_stale(REPO)
+    for root in removed:
+        sys.stderr.write("prove-gates: took down %s, a pool its killed run left "
+                         "registered\n" % (root,))
+    pool = None
     try:
+        if rows:
+            try:
+                pool = open_workers(REPO, pool_size(rows))
+            except (RuntimeError, OSError) as exc:
+                sys.stderr.write("prove-gates: could not open the worker trees, "
+                                 "so no row ran: %s\n" % (exc,))
+                return 2
         return _prove(want_red, want_allow, table, allow,
-                      only is None and changed is None)
+                      only is None and changed is None,
+                      trees=pool["trees"] if pool else None)
     finally:
-        _suite.release(marker)
+        for problem in close_workers(REPO, pool):
+            sys.stderr.write("prove-gates: left behind - %s; the next run takes "
+                             "it down\n" % (problem,))
 
 
 def changed_paths(argv):
@@ -2615,27 +2662,258 @@ def changed_rows(rows, paths, homes=None):
             or any(h in wanted for h in homes.get(r[0], ()))]
 
 
-def _proved(rows):
-    """`prove()` over `rows`, each result carrying the file its row mutates, so
-    a row that is not proven can be named with it."""
-    return [dict(prove(row), file=row[1]) for row in rows]
+# --- the worker pool: every row runs in a tree of its own --------------------
+# A ROW NEVER RUNS IN THE CHECKOUT. Each one mutates a file, runs a suite and
+# restores the file; done in the one live tree that is one row at a time, and the
+# whole table outgrew the bound the drive's sign-off holds this probe to. So the
+# rows run concurrently, each in a worker tree: a detached `git worktree` at HEAD
+# carrying the checkout's tracked diff and its untracked, non-ignored files, so a
+# run over a dirty tree still proves what its author is looking at. What the
+# checkout sees is git registering and unregistering those trees under its git
+# dir; `git status` never lists that, which is what the drive compares around the
+# run.
+#
+# A KILLED RUN NEVER REACHES ITS `finally`, so every pool carries an owner file
+# naming its pid, written before its first tree is added, and each run starts by
+# reaping the pools whose owner is gone (`reap_stale`). A pool whose owner is
+# alive is another run's, and is left alone.
+POOL_OWNER = "prove-gates-pool.json"
+
+# A worker tree is the checkout's content, not its git location: a caller running
+# under a git hook exports these, and a child reading them would act on the
+# checkout instead of the tree it was started in.
+_GIT_LOCATION_VARS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE",
+                      "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY", "GIT_PREFIX")
 
 
-def _prove(want_red, want_allow, table, allow, whole):
-    """Both halves over the rows given. `whole` is a run over the entire table:
-    only then is a lint with no row reported missing, since a narrowed run
+def pool_size(rows, cpus=None, environ=None):
+    """How many worker trees a run over `rows` rows opens: the sweep's own rule
+    (`default_jobs` in `tools/sweep-selftests.py`, loaded rather than copied, so
+    the two cannot disagree), capped at the rows there are."""
+    import _loader
+    jobs = _loader.load(os.path.join(_here, "sweep-selftests.py")).default_jobs
+    return max(0, min(rows, jobs(cpus, environ)))
+
+
+def run_ordered(items, work, jobs):
+    """`[work(item) for item in items]`, run on `jobs` threads, returned in the
+    order of `items` whatever order they finish in - so a report rendered from it
+    is byte-stable under any scheduling. An exception in one item is raised here,
+    after every submitted item has finished."""
+    from concurrent import futures
+    if not items:
+        return []
+    with futures.ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
+        pending = [pool.submit(work, item) for item in items]
+        return [f.result() for f in pending]
+
+
+def _git_env(base=None):
+    env = dict(os.environ if base is None else base)
+    for name in _GIT_LOCATION_VARS:
+        env.pop(name, None)
+    return env
+
+
+def _git(cwd, args, data=None):
+    """`(code, stdout bytes, stderr text)` of git in `cwd`. Checkout hooks are
+    switched off: a worker tree is a scratch copy, not a checkout anybody works
+    in."""
+    proc = subprocess.run(
+        ["git", "-c", "core.hooksPath=%s" % (os.devnull,)] + list(args),
+        cwd=cwd, input=data, env=_git_env(),
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    return proc.returncode, proc.stdout, proc.stderr.decode("utf-8", "replace")
+
+
+def _under_a_checkout(path):
+    """True when `path` or a directory above it holds a `.git`: a worker tree
+    there would be read as part of that checkout by anything resolving one."""
+    here = os.path.realpath(path)
+    while True:
+        if os.path.exists(os.path.join(here, ".git")):
+            return True
+        up = os.path.dirname(here)
+        if up == here:
+            return False
+        here = up
+
+
+def _pool_parent():
+    """The temp root the pool goes under: the one `tempfile` names, else the
+    platform's own, whichever has no checkout above it. None when neither does."""
+    seen = [tempfile.gettempdir()]
+    if os.name == "posix":
+        seen.append("/tmp")
+    for cand in seen:
+        if os.path.isdir(cand) and not _under_a_checkout(cand):
+            return cand
+    return None
+
+
+def _mirror(repo, tree):
+    """Write the checkout's uncommitted content into `tree`, a fresh worktree at
+    HEAD: the tracked diff against HEAD (staged and unstaged, deletions and binary
+    files included) and every untracked file git does not ignore. Returns a
+    problem string, or None."""
+    code, patch, err = _git(repo, [
+        "diff", "HEAD", "--binary", "--no-ext-diff", "--no-textconv",
+        "--no-renames", "--no-color", "--src-prefix=a/", "--dst-prefix=b/"])
+    if code != 0:
+        return "git diff HEAD in %s: %s" % (repo, err.strip())
+    if patch.strip():
+        code, _o, err = _git(tree, ["apply", "--binary", "--whitespace=nowarn",
+                                    "-"], data=patch)
+        if code != 0:
+            return "the checkout's diff does not apply to HEAD: %s" % (err.strip(),)
+    code, out, err = _git(repo, ["ls-files", "--others", "--exclude-standard",
+                                 "-z"])
+    if code != 0:
+        return "git ls-files in %s: %s" % (repo, err.strip())
+    for rel in [p.decode("utf-8", "surrogateescape") for p in out.split(b"\0") if p]:
+        src, dst = os.path.join(repo, rel), os.path.join(tree, rel)
+        parent = os.path.dirname(dst)
+        if parent and not os.path.isdir(parent):
+            os.makedirs(parent)
+        if os.path.islink(src):
+            os.symlink(os.readlink(src), dst)
+        elif os.path.isfile(src):
+            shutil.copy2(src, dst)
+    return None
+
+
+def open_workers(repo, count):
+    """`{"root", "trees"}` - `count` worker trees mirroring `repo`'s current
+    content, under one fresh scratch directory outside every checkout. Raises
+    RuntimeError naming what failed, after taking down what it had made."""
+    parent = _pool_parent()
+    if parent is None:
+        raise RuntimeError("no temp root without a checkout above it, so a worker "
+                           "tree would be read as part of that checkout")
+    root = os.path.realpath(tempfile.mkdtemp(prefix="prove-gates-pool-",
+                                             dir=parent))
+    import json
+    with io.open(os.path.join(root, POOL_OWNER), "w", encoding="utf-8") as fh:
+        fh.write(u"%s\n" % json.dumps({"pid": os.getpid(),
+                                      "repo": os.path.realpath(repo)}))
+    pool = {"root": root, "trees": []}
+    try:
+        for i in range(count):
+            tree = os.path.join(root, "w%d" % (i,))
+            code, _o, err = _git(repo, ["worktree", "add", "--detach", "--quiet",
+                                        tree, "HEAD"])
+            if code != 0:
+                raise RuntimeError("git worktree add %s: %s" % (tree, err.strip()))
+            pool["trees"].append(tree)
+            problem = _mirror(repo, tree)
+            if problem:
+                raise RuntimeError(problem)
+    except BaseException:
+        close_workers(repo, pool)
+        raise
+    return pool
+
+
+def close_workers(repo, pool):
+    """Unregister and delete every tree of `pool`, then its scratch root.
+    Returns the problems - empty when nothing is left behind."""
+    if not pool:
+        return []
+    problems = []
+    for tree in pool.get("trees", ()):
+        # Twice forced: once for a tree a killed row left dirty, twice for one a
+        # killed `worktree add` left locked mid-creation.
+        code, _o, err = _git(repo, ["worktree", "remove", "--force", "--force",
+                                    tree])
+        if code != 0 and os.path.exists(tree):
+            problems.append("git worktree remove %s: %s" % (tree, err.strip()))
+    _git(repo, ["worktree", "prune"])
+    if not _output.remove_tree(pool["root"]):
+        problems.append("could not delete %s" % (pool["root"],))
+    return problems
+
+
+def _owner_pid(root):
+    """The pid in a pool root's owner file, or None when it holds none."""
+    import json
+    try:
+        with io.open(os.path.join(root, POOL_OWNER), encoding="utf-8") as fh:
+            pid = json.load(fh).get("pid")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return pid if isinstance(pid, int) else None
+
+
+def reap_stale(repo, alive=None):
+    """Take down every pool a killed run left registered with `repo` - one whose
+    owner file names a pid that is gone - and return their roots, sorted. A tree
+    whose directory is already gone is only unregistered (`git worktree prune`);
+    a tree outside any pool is somebody else's, and never touched."""
+    if alive is None:
+        import _suite
+        alive = _suite.pid_alive
+    _git(repo, ["worktree", "prune"])
+    code, out, _err = _git(repo, ["worktree", "list", "--porcelain"])
+    if code != 0:
+        return []
+    trees = [ln[len("worktree "):] for ln in
+             out.decode("utf-8", "surrogateescape").splitlines()
+             if ln.startswith("worktree ")]
+    stale = {}
+    for tree in trees:
+        root = os.path.dirname(tree)
+        pid = _owner_pid(root)
+        if pid is not None and not alive(pid):
+            stale.setdefault(root, []).append(tree)
+    for root in sorted(stale):
+        close_workers(repo, {"root": root, "trees": stale[root]})
+    return sorted(stale)
+
+
+def _proved(rows, trees=None):
+    """`prove()` over `rows`, each in a worker tree of its own and each result
+    carrying the file its row mutates, so a row that is not proven can be named
+    with it. Results come back in the order of `rows`."""
+    import queue
+    if not rows:
+        return []
+    if not trees:
+        # Never the checkout as a fallback: a row there is the live-tree mutation
+        # the pool exists to keep out of it.
+        raise RuntimeError("%d row(s) and no worker tree to run them in"
+                           % (len(rows),))
+    free = queue.Queue()
+    for tree in trees:
+        free.put(tree)
+
+    def one(row):
+        tree = free.get()
+        try:
+            return dict(prove(row, tree), file=row[1])
+        finally:
+            free.put(tree)
+    return run_ordered(list(rows), one, len(trees))
+
+
+def _prove(want_red, want_allow, table, allow, whole, trees=None):
+    """Both halves over the rows given, as ONE queue across the worker trees, then
+    rendered half by half in the table's order. `whole` is a run over the entire
+    table: only then is a lint with no row reported missing, since a narrowed run
     (`--only`, `--changed`) leaves rows out on purpose."""
+    red = list(table) if want_red else []
+    quiet = list(allow) if want_allow else []
+    done = _proved(red + quiet, trees)
     code = 0
     if want_red:
-        sys.stdout.write("proving %d gate(s) go RED; each mutates the tree and "
-                         "restores it\n" % (len(table),))
-        code |= render(_proved(table), coverage() if whole else [],
+        sys.stdout.write("proving %d gate(s) go RED; each mutates a worker tree "
+                         "and restores it\n" % (len(table),))
+        code |= render(done[:len(red)], coverage() if whole else [],
                        stale_rows(table), undefined=undefined_cases(table))
     if want_allow:
         sys.stdout.write("\nproving %d guard(s) stay QUIET; each weakens the GUARD "
                          "so it over-fires, and the named allow case must go red\n"
                          % (len(allow),))
-        code |= render(_proved(allow), allow_coverage() if whole else [],
+        code |= render(done[len(red):], allow_coverage() if whole else [],
                        stale_rows(allow), claim=ALLOW_CLAIM,
                        undefined=undefined_cases(allow), direction="allow")
     return code
@@ -3163,41 +3441,54 @@ def _cases(check):
           "in main() and this suite never reaches `prove()`: %r" % (_c6_calls,),
           len(_c6_fns) == 1 and _c6_calls == [])
     _changed_cases(check)
+    _worker_cases(check)
 
 
 def _changed_run(argv, survives=()):
-    """`(code, printed, proved, holds)` of `main(argv)` with the mutating half
+    """`(code, printed, proved, holds)` of `main(argv)` with the expensive half
     replaced: `prove` answers RED for every row - STAYED GREEN for a row whose
-    lint is in `survives` - and records which row it was handed, and the
-    marker the real run holds on this checkout's git dir is a recorder too, so
-    a case here never mutates the tree nor makes a concurrent sweep refuse."""
+    lint is in `survives` - and records which row it was handed; the worker pool
+    is a recorder too (`holds`, one entry per pool opened), so a case here never
+    registers a worktree with this checkout. The marker a run once held is
+    recorded as well, so a case can say it is no longer taken."""
     import _suite
-    proved, holds = [], []
+    import threading
+    proved, holds, marked = [], [], []
+    lock = threading.Lock()
 
     def fake_prove(row, repo=None):
-        proved.append(row)
+        with lock:
+            proved.append(row)
         if row[0] in survives:
             return {"lint": row[0], "verdict": "STAYED GREEN",
                     "detail": "the gate asserts nothing about this", "cases": []}
         return {"lint": row[0], "verdict": "RED", "detail": "x1", "cases": ["x1"]}
-    held = dict((n, getattr(_suite, n))
-                for n in ("git_dir_of", "marker_state", "hold", "release"))
-    real_prove, real_out = globals()["prove"], sys.stdout
-    globals()["prove"] = fake_prove
-    _suite.git_dir_of = lambda repo: tempfile.gettempdir()
-    _suite.marker_state = lambda git_dir: {"state": "absent", "path": git_dir}
-    _suite.hold = lambda git_dir: holds.append(git_dir)
-    _suite.release = lambda marker: None
+
+    def fake_open(repo, count):
+        holds.append(count)
+        return {"root": None, "trees": ["fake-tree-%d" % (i,)
+                                        for i in range(max(1, count))]}
+    fakes = {"prove": fake_prove, "open_workers": fake_open,
+             "close_workers": lambda repo, pool: [],
+             "reap_stale": lambda repo, alive=None: []}
+    real = dict((n, globals()[n]) for n in fakes)
+    real_hold, real_out = _suite.hold, sys.stdout
+    globals().update(fakes)
+    _suite.hold = lambda git_dir, pid=None: marked.append(git_dir)
     buf = io.StringIO()
     sys.stdout = buf
     try:
         code = main(argv)
     finally:
         sys.stdout = real_out
-        globals()["prove"] = real_prove
-        for name, fn in held.items():
-            setattr(_suite, name, fn)
-    return code, buf.getvalue(), proved, holds
+        globals().update(real)
+        _suite.hold = real_hold
+    return code, buf.getvalue(), proved, holds + marked
+
+
+def _rendered_order(text):
+    """The lint names of the rendered row lines, top to bottom."""
+    return re.findall(r"^  (\S+) +RED\b", text, re.M)
 
 
 def _text_homes(names, repo=None):
@@ -3304,17 +3595,21 @@ def _changed_cases(check):
     code, said, proved, holds = _changed_run(["--changed", lint_file,
                                               "README.md"])
     check("ch2 --changed with a lint's file proves the rows it touches in BOTH "
-          "directions - its red rows, then its allow rows - and no other row: "
+          "directions and no other row, opens one worker pool and holds no "
+          "marker, and renders its red rows, then its allow rows, in the "
+          "table's order whatever order they ran in: "
           "%r" % ((code, len(proved), len(red_rows), len(allow_rows),
                                said[-200:]),),
-          code == 0 and bool(allow_rows) and proved == red_rows + allow_rows
-          and len(holds) == 1 and "go RED" in said and "stay QUIET" in said)
+          code == 0 and bool(allow_rows)
+          and sorted(proved, key=repr) == sorted(red_rows + allow_rows, key=repr)
+          and len(holds) == 1 and "go RED" in said and "stay QUIET" in said
+          and _rendered_order(said) == [r[0] for r in red_rows + allow_rows])
 
     runs = [_changed_run(argv) for argv in (["--changed"],
                                             ["--changed", "README.md"],
                                             ["--changed", "README.md", "--red"])]
     check("ch3 an empty set, or one naming no file any row is touched by, runs "
-          "NO row, holds no marker, exits 0 and SAYS it ran none - it never "
+          "NO row, opens no worker tree, holds no marker, exits 0 and SAYS it ran none - it never "
           "reads as a proof of everything: %r"
           % ([(c, len(p), len(h), s.strip()[-120:]) for c, s, p, h in runs],),
           all(c == 0 and p == [] and h == [] and "ran none" in s
@@ -3333,6 +3628,157 @@ def _changed_cases(check):
           and any(ln.startswith("ROW NOT PROVEN: red ") for ln in named)
           and len(named) == len([r for r in red_rows + allow_rows
                                  if r[0] == victim]))
+
+
+def _fixture_git(repo, *args):
+    """`(code, stdout)` of git in a scratch fixture - never this checkout. The
+    identity is passed per call because the sweep hands a suite none."""
+    proc = subprocess.run(
+        ["git", "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid",
+         "-c", "commit.gpgsign=false"] + list(args),
+        cwd=repo, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    return proc.returncode, proc.stdout.decode("utf-8", "replace")
+
+
+def _fixture_repo():
+    """A scratch repository whose working tree differs from HEAD in every way a
+    worker must mirror or must not: a modified tracked file, a staged one, a
+    deleted one, an untracked one (a space in its name), and an ignored one."""
+    repo = tempfile.mkdtemp(prefix="prove-gates-fixture-")
+    files = {"a.txt": "old\n", "s.txt": "old\n", "gone.txt": "here\n",
+             ".gitignore": "ign.txt\n"}
+    for name, body in files.items():
+        with io.open(os.path.join(repo, name), "w", encoding="utf-8") as fh:
+            fh.write(body)
+    for args in (("init", "-q"), ("add", "-A"), ("commit", "-q", "-m", "base")):
+        code, out = _fixture_git(repo, *args)
+        if code != 0:
+            raise RuntimeError("fixture git %r: %s" % (args, out))
+    for name, body in (("a.txt", "new\n"), ("s.txt", "staged\n"),
+                       ("b file.txt", "fresh\n"), ("ign.txt", "ignored\n")):
+        with io.open(os.path.join(repo, name), "w", encoding="utf-8") as fh:
+            fh.write(body)
+    os.remove(os.path.join(repo, "gone.txt"))
+    _fixture_git(repo, "add", "s.txt")
+    return repo
+
+
+def _read_or_none(path):
+    if not os.path.isfile(path):
+        return None
+    with io.open(path, encoding="utf-8") as fh:
+        return fh.read()
+
+
+def _registered(repo):
+    """The worktree paths git has registered for `repo`, the main one excluded."""
+    code, out = _fixture_git(repo, "worktree", "list", "--porcelain")
+    main = os.path.realpath(repo)
+    return [ln[len("worktree "):] for ln in out.splitlines()
+            if ln.startswith("worktree ")
+            and os.path.realpath(ln[len("worktree "):]) != main]
+
+
+def _worker_cases(check):
+    """The parallel half: rows run in worker trees, never in the live checkout.
+    Every git here runs in a scratch fixture; nothing reaches `prove()`."""
+    import threading
+    import time
+    import _loader
+
+    # Inverse sleeps, so the order rows FINISH in is the reverse of the order
+    # they were handed in: a collector keyed on completion is red here.
+    done, live, peak = [], [0], [0]
+    lock = threading.Lock()
+
+    def work(item):
+        with lock:
+            live[0] += 1
+            peak[0] = max(peak[0], live[0])
+        time.sleep(0.03 * (6 - item))
+        with lock:
+            live[0] -= 1
+            done.append(item)
+        return item * 10
+    runner = globals().get("run_ordered")
+    got = runner(list(range(6)), work, 6) if runner else None
+    check("pw1 rows run concurrently and their results come back in the TABLE's "
+          "order whatever order they finish in, so the rendered output is "
+          "byte-stable under any scheduling: results %r, finished %r, peak %d"
+          % (got, done, peak[0]),
+          got == [0, 10, 20, 30, 40, 50] and done != sorted(done) and peak[0] > 1)
+
+    size = globals().get("pool_size")
+    sweep_rule = _loader.load(os.path.join(_here, "sweep-selftests.py")).default_jobs
+    grid = [(rows, cpus, env) for rows in (0, 1, 3, 200) for cpus in (1, 2, 3, 10)
+            for env in ({}, {"CI": "true"}, {"CI": "false"})]
+    wrong = [(r, c, e, size(r, c, e) if size else None,
+              min(r, sweep_rule(c, e))) for r, c, e in grid
+             if not size or size(r, c, e) != min(r, sweep_rule(c, e))]
+    check("pw2 the worker count is the sweep's own rule - all cores but two, "
+          "every core under CI=true, never below one - capped at the rows there "
+          "are, and none for no rows: %r" % (wrong[:4],),
+          size is not None and wrong == [] and size(200, 10, {}) == 8
+          and size(200, 10, {"CI": "true"}) == 10 and size(0, 10, {}) == 0)
+
+    opener, closer = globals().get("open_workers"), globals().get("close_workers")
+    reaper = globals().get("reap_stale")
+    repo = _fixture_repo()
+    pool, killed = None, None
+    try:
+        _c, before = _fixture_git(repo, "status", "--porcelain")
+        pool = opener(repo, 2) if opener else None
+        trees = pool["trees"] if pool else []
+        seen = dict((name, [_read_or_none(os.path.join(t, name)) for t in trees])
+                    for name in ("a.txt", "s.txt", "b file.txt", "ign.txt",
+                                 "gone.txt"))
+        outside = all(not (os.path.realpath(t) + os.sep).startswith(
+            os.path.realpath(repo) + os.sep) for t in trees)
+        check("pw3 worker tree mirrors a dirty tracked file and an untracked file "
+              "- the modified and the staged tracked file carry the working "
+              "tree's bytes, the untracked file is there, the deleted file is "
+              "not, the ignored file is not, and every tree sits outside the "
+              "checkout: %r" % (seen,),
+              len(trees) == 2 and outside
+              and seen["a.txt"] == ["new\n"] * 2
+              and seen["s.txt"] == ["staged\n"] * 2
+              and seen["b file.txt"] == ["fresh\n"] * 2
+              and seen["ign.txt"] == [None] * 2
+              and seen["gone.txt"] == [None] * 2)
+        problems = closer(repo, pool) if (closer and pool) else ["no close_workers"]
+        left = _registered(repo)
+        root_gone = bool(pool) and not os.path.exists(pool["root"])
+        _c, after = _fixture_git(repo, "status", "--porcelain")
+        status_kept = before == after
+        check("pw4 closing the pool leaves no registered worktree and no scratch "
+              "directory, and the checkout's status is what it was before the "
+              "pool opened: problems %r, registered %r, root gone %r, status "
+              "kept %r" % (problems, left, root_gone, status_kept),
+              problems == [] and left == [] and root_gone and status_kept)
+
+        # A run that is killed never reaches its `finally`. The pool it leaves is
+        # found by its owner marker and taken down by the next run - and only when
+        # its owner is gone, which is the half that keeps a CONCURRENT run's pool.
+        killed = opener(repo, 1) if opener else None
+        spared = reaper(repo, alive=lambda pid: True) if reaper else None
+        still = _registered(repo)
+        reaped = reaper(repo, alive=lambda pid: False) if reaper else None
+        after_reap = _registered(repo)
+        check("pw5 a killed run's pool is reaped by the next run - registration "
+              "and scratch both - only when its owner process is gone; a live "
+              "owner's pool is left alone: spared %r (%d registered), reaped %r "
+              "(%r registered, root gone %r)"
+              % (spared, len(still), reaped, after_reap,
+                 bool(killed) and not os.path.exists(killed["root"])),
+              killed is not None and spared == [] and len(still) == 1
+              and reaped == [killed["root"]] and after_reap == []
+              and not os.path.exists(killed["root"]))
+    finally:
+        for wt in _registered(repo):
+            _fixture_git(repo, "worktree", "remove", "--force", wt)
+        for p in [x["root"] for x in (pool, killed) if x]:
+            _output.remove_tree(p)
+        _output.remove_tree(repo)
 
 
 def _selftest():

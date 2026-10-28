@@ -340,8 +340,11 @@ python3 tools/prove-gates.py          # --list to see the table without running 
 
 does it for every load-bearing lint at once, in both directions — the case that must fail
 when the guarded thing breaks, and the allow case that must fail when the guard is weakened until
-it over-fires. It mutates the tree
-and restores each time, so it is minutes rather than seconds and is not a per-commit gate. Its
+it over-fires. It never writes the checkout: each row mutates and restores a **worker tree** — a
+detached `git worktree` at HEAD carrying the checkout's uncommitted edits and untracked files,
+under a scratch directory outside every checkout — and the rows run concurrently on the sweep's
+core count, reported in the table's order. The trees are removed when the run ends, or by the
+next run when one was killed. It is still minutes rather than seconds and is not a per-commit gate. Its
 tables are derived from the files that hold a lint, so a lint added without a row fails the
 sweep — which is how the annotation half of `house_style_violations()` was found unenforced
 after the document had claimed it for a long time.

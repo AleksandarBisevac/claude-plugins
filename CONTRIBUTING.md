@@ -375,11 +375,14 @@ command on a machine whose temp directory or virtualenv sits under one. It is po
 codec leg alone, for the Windows cells, where `--spaced` is refused and the pipe is already
 a legacy code page.
 
-A mutating gate sweep (`tools/prove-gates.py`) rewrites the working tree for minutes and
-holds a marker file under the git dir while it does. The sweep refuses to start while the
-marker's pid is alive, since it would read a half-mutated tree and report reds that are not
-real; a marker whose pid is gone is ignored, and the sweep says so.
-`python3 tools/orchestrator-state.py` prints the same fact.
+The mutation probe (`tools/prove-gates.py`) never writes the checkout: every row mutates
+and restores a worker tree of its own — a detached `git worktree` at HEAD carrying the
+checkout's uncommitted edits and untracked files, under a scratch directory outside every
+checkout — so a sweep running beside it reads no half-mutated file, and it holds no marker.
+The sweep still refuses to start while a marker under the git dir names a live pid, and
+`python3 tools/orchestrator-state.py` still reports one, but no tool writes it any more —
+`git grep -n '_suite.hold(' -- '*.py'` finds only the fixtures of the suites that test those readers —
+so a live one now means an older copy of the probe is running.
 
 ### The other per-run slices
 
