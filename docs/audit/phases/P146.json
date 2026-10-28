@@ -1,7 +1,7 @@
 {
   "id": "P146",
   "title": "The integrate suite's map-owner fixture commits in bounded time on a loaded windows runner",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "Release-tier CI (ci.yml -f tier=release) green on the commit that carries the merge of origin/main and this fix, every windows selftests shard included",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "db9a980fba4c444ccb374344d50c7ad2fe58f691",
   "branch": "audit/p146-the-integrate-suite-s-map-owne",
-  "mergedAt": null,
+  "mergedAt": "2026-10-28T21:44:42Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -105,5 +105,6 @@
     "runId": "2026-10-28T21:44:31Z.6741db",
     "status": "passed",
     "at": "2026-10-28T21:44:31Z"
-  }
+  },
+  "mergedHead": "2343f9eef25d7e8d1f19407cf466999ca99013ba"
 }
