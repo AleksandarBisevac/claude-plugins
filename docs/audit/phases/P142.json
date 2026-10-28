@@ -238,9 +238,16 @@
         "file": "tests/_harness.py:805-826 (run's print(text)), reached from replay_selftest at 1232-1262",
         "issue": "The replay now escapes what each block PRINTED (res out/err) through encodable, but the replay's own report is still written strictly: run() does print(text) of a _render() whose FAIL lines carry each failing case's label and detail, and those details are text the child produced and the sweep decoded as UTF-8 (a %r or str of a value holding an arrow or U+FFFD). Under the same strict cp1252 stdout a failing replayed case with such a detail still raises out of print(text), hiding the tally behind the same 0/1 the change set out to remove. It only bites when a case is already failing, so a green run is unaffected; sr19 covers the out path only, not a failing detail.",
         "resolution": "Write the rendered text through encodable(text, sys.stdout) in run() (or reconfigure the stream with errors=backslashreplace once at the replay's entry), and add a case beside sr19 whose replayed block FAILS with a non-cp1252 detail and still prints the exact tally under PYTHONIOENCODING=cp1252."
+      },
+      {
+        "id": "P142-R27",
+        "severity": "low",
+        "file": "tests/test_drive_phase.py:696-728",
+        "issue": "The ar17 comment says the redo is refused because the commit the read builds is checked against what git status lists in the tree. The refusal ar17 actually sees comes from tree_undescribed (the forced file is staged in the index as neither its base nor the work holds it), because _unheld counts an ignored file the scratch index lacks as held. The executor's own notes say so, and the mutation log agrees: the row 'carry commit trusted, never checked against the files' turns ar17b and ar17c red but not ar17. So ar17 would stay green with carry_commit's status-versus-scratch check deleted, and its title and comment name the wrong layer.",
+        "resolution": "Reword the ar17 comment and title to say the staged-state question refuses a forced file the read misses, and leave the status-versus-scratch check to ar17b and ar17c. Or point ar17 at a path the read misses that is not ignored, so it reaches carry_commit's check."
       }
     ],
-    "outcome": "[findings: 26 - 0 high, 9 med, 17 low; 10 with a recorded fix commit]"
+    "outcome": "[findings: 27 - 0 high, 9 med, 18 low; 10 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2509,7 +2516,7 @@
     {
       "id": "P142.39-6yq",
       "title": "The state commit takes the index lock in a sharded plan, keeps stdout one JSON object, commits on an unborn branch, and commits the shard from the bytes its index part came from",
-      "status": "in_progress",
+      "status": "done",
       "description": "The work is done and kept at refs/audit/kept/P142.30-6yq: one commit over the phase head it was cut from, and `git diff <its parent> refs/audit/kept/P142.30-6yq` is the whole change. Apply it to your tree, check it against the phase head you were given, resolve anything the head has moved since, run the gates and prove red-first through the helper.\n\nWhat it fixes, each reproduced before the fix:\n1. commit-task-work --state asked _mio.is_sharded of the ASSEMBLED manifest, which is always False, so it never took the index lock. It now decides the layout from the index file on disk, takes the lock for the whole commit, and passes the lock's exit codes and --takeover through.\n2. _scoped_commit derived the index part from one shard read but staged the shard from the working file later, so a write between them committed the two apart. Now the shard is committed from the same bytes the index part was derived from, on task and state commits alike.\n3. Found by the adversarial review of the first cut: under --json, the lock's lines went to stdout ahead of the JSON object, so callers read a made commit as \"nothing to commit\". Every lock line now goes to stderr under --json.\n4. Also from that review: a state commit on an unborn HEAD was refused, which 3.6.0 allowed. It commits there now.\n5. Also from that review: a shard the user deliberately untracked was put back. The shard is now pinned only for the kinds stage() adds.\n\nWho depends on this: close-phase.py, drive-phase.py keep_record/commit_signoff and audit-task.py run or print `commit-task-work.py --state`, and read its JSON answer. None of them holds the index lock while running it; a nested holder re-enters (E_OURS). Answer each. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/governance/commit-task-work.py",
@@ -2539,19 +2546,40 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "52c80676fc67",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Applied `git diff 5ca403f0 refs/audit/kept/P142.30-6yq | git apply -3` to the worktree (exit 0, all three hunks clean; HEAD 67b6799f had not moved any of the task's files since 5ca403f0, checked with `git diff --stat 5ca403f0 HEAD -- <files>` = empty), then reset the index for those files; `git diff --stat` names only commit-task-work.py, _scoped_commit.py, tests/test_commit_task_work.py. tests/test__scoped_commit.py is declared but needed no change: it still passes (`python3 tools/sweep-selftests.py tests/test__scoped_commit.py` -> 1/1 files ok, 60 cases). The change: (1) main_state decides the layout with index_is_sharded(args.manifest), reading the index file on disk (the assembled plan always answered unsharded, so the lock was never taken), holds the index lock for the whole commit, and passes --takeover and the lock's exit codes through; (2) _scoped_commit.index_to_carry keeps the shard bytes it parsed (bodyBytes) and paired_blobs commits the shard at those bytes on task and state commits, so a write landing between the read and staging stays in the working tree; (3) under --json every lock line goes to stderr and a lock refusal is one answer object with refused and lockCode, exit code = the lock's; state_answer fills the documented fields on every path; (4) commit_from_index accepts an empty head when unborn_head() says HEAD is a branch with no commit, starting from an empty temporary index and checking the commit made is a root; (5) paired_blobs pins the shard only for IN_INDEX/ON_DISK kinds, so a shard untracked and ignored by hand stays out. Gate: `python3 tools/sweep-selftests.py tests/test_commit_task_work.py` exit 0, 1/1 files ok, 226 cases. Blocks: `python3 tests/test_commit_task_work.py --selftest --stage lk-block --stage lj-block` -> ALL PASS 12/12. Adversarial repros, run against this tree (path-substituted copies in <scratchpad>/P142.39-repros): repro_ours.py -> exit 0, HEAD moved, 'JSON parses'; repro_edges.py -> A unborn: exit 0 and a commit in git log; B untracked+ignored: exit 0, shard in HEAD False, in index False. Original A-probes: p1_nonascii exit 0, HEAD index names P2.2 False and HEAD P2 shard holds P2.2 False (consistent pair); p2_lock acquire_index_lock called once with the index path; p3_race and p4_task_race 'validate at HEAD: []'. Mutation probe: `python3 -I <scratchpad>/P142.39-probe/mutations.py <home>/dev/audit-plugin/claude-plugins-P142.39-6yq --jobs 6` exit 0: baseline GREEN; m1 (lock decided from assembled plan) red lk1 lk2 lk3 lk5 lk9 lk10; m2 (takeover dropped) red lk3; m3 (shard not pinned to its read) red lk6 lk7; m4 (lock lines on stdout under --json) red lk9 lk10; m5 (json refusal prints no object) red lk10; m6 (unborn branch refused) red lk11; m7 (shard pinned whatever its kind) red lk12; m8 (pinned shard skipped by the do-nothing test) red lk8; over-fire o1 (lock never released) red lk3 lk4; over-fire o2 (every acquisition a refusal) red lk3 lk4 lk5 lk6 lk8 lk9 lk11 lk12. Each row mutates a private copy of plugins/ and tests/, asserts the anchor matched exactly once and the bytes on disk changed, and purges __pycache__ before running. ruff check on the three files: All checks passed. _output_lints.prose_number_claims() and house_style_violations() filtered to these files: []. No F/P/BUG ids in added lines. DEPENDANTS: close-phase.py _commit_verb/_commit_stamp runs `--state --json` and json.loads the whole stdout, treating exit!=0 or `refused` as a refusal - still correct and now safer: a lock refusal arrives as one object with `refused` naming the lock lines (before, a lock refusal never happened because the lock was never taken), and a re-entered hold no longer prepends a line that made its parse fail (lk9). drive-phase.py keep_record/commit_signoff run `--state --json` via _verb_or_stop (exit!=0 -> relay_refusal with stdout+stderr) and _state_answer json.loads stdout - still correct: E_LIVE/E_STALE now reach them as non-zero exits with the answer object on stdout and the lock text on stderr, both relayed; a successful commit's stdout is one object (lk9). audit-task.py commit_commands prints `--state --project .` (no --json) for a human: the non-json path keeps its lines on stdout as before; the human may now meet the lock's live/stale codes and its --takeover instruction, which is the intended behaviour. None of the three holds the index lock while running the verb; a parent that does and passes its token down re-enters (lk9 exercises exactly that). _scoped_commit importers: _live_copy.py, _worktrees.py (index_bytes), audit-task.py (drop_attempt) use functions this change does not touch - still correct. commit_from_index's only caller is stage_and_commit; its contract for a non-empty head is unchanged and test__scoped_commit's commit_from_index cases still pass. tools/lints/_deps.py lists commit_from_index in the path-door table; unborn_head runs only rev-parse/symbolic-ref (no path-listing verb), so it needs no row. _invariants._commit_state is a homonym (a different function), untouched. PLUGIN-BUILD-GUIDE.md:186, docs/research/pipeline-cost-design.md, docs/handbook.html, guard-bash-writes.py:1014 name the script or its --state mode without stating the lock or shard-staging behaviour that changed - still correct. tests/test_commit_task_work.py's dependants: .github/sweep-costs.json records this file's cost per file and two blocks were added (lk-block, lj-block), so the recorded seconds may now under-time it (not my file; re-record with --record-costs if the sweep flags it); tools/affected.py, tools/gate-parity.py, test__filed_returns.py, test__manifest_phases.py name the file by path and are unaffected; test__invariants (the TI fixture) and test__verdict_binding are used unchanged.",
+        "descriptive": "The state commit now takes the index lock in a sharded plan, keeps --json stdout one object, commits on an unborn branch, and commits the shard from the same bytes its index part came from, without re-adding a shard the user untracked."
       },
       "startedAt": "2026-10-28T00:36:06Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-28T01:22:01Z",
+      "verifiedBy": [
+        "lk1-lk3: a live holder is refused with E_LIVE and a dead one with E_STALE naming --takeover, and --takeover commits and releases",
+        "lk4: over-fire twin - no holder, commit made, no claim left",
+        "lk5-lk7: the lock is held at staging, and a /audit:task add landing mid-commit cannot split shard from index rows on state and task commits",
+        "lk8: a shard-only state commit still commits the shard",
+        "lk9: --state --json under a parent's hold prints one JSON object, re-entry line on stderr",
+        "lk10: --state --json refused by a live holder prints one object with lockCode",
+        "lk11: a state commit on an unborn branch makes the root commit with the shard's bytes",
+        "lk12: a shard untracked and ignored by hand is not added back"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-28T01:19:26Z.cde0ab",
         "status": "passed",
         "at": "2026-10-28T01:19:26Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "52c80676fc67",
+        "at": "2026-10-28T01:22:01Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-28T00:44:45Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_commit_task_work.py` in a throwaway tree at HEAD exited 1 with 8 of 226 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - lk1 (house FAIL), lk2 (house FAIL), lk3 (house FAIL), lk5 (house FAIL), lk6 (house FAIL), lk7 (house FAIL), lk9 (house FAIL), lk10 (house FAIL): SELFTEST FAILED: 218/226 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 565s, 3 times the recorded 223s of tests/test_commit_task_work.py in .github/sweep-costs.json, capped at the 565s the host's Bash limit leaves; fix run: held back 223s of the deadline, the recorded slot-seconds of tests/test_commit_task_work.py in .github/sweep-costs.json",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -2595,7 +2623,12 @@
       "startedAt": "2026-10-28T00:36:09Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-28T02:17:53Z.e44844",
+        "status": "passed",
+        "at": "2026-10-28T02:17:53Z"
+      }
     },
     {
       "id": "P142.41-6yq",
@@ -2626,6 +2659,92 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P142.42-6yq",
+      "title": "Every forced removal of a task tree asks the one predicate the recut asks, so retiring a closed member never deletes a submodule commit or a nested repository",
+      "status": "cancelled",
+      "description": "P142.40 made the recut ask one predicate, `tree_undescribed(tree, records, work)`, before it drops a tree. The predicate refuses on:\n- any gitlink in the tree's index, at HEAD or in the work;\n- any `.git` below the tree top, found by walking the disk;\n- a staged state the work lacks.\nIts status and diffs use --ignore-submodules=none.\n\nAnother path still force-removes a tree on a weaker reading. Retiring a closed member runs `retire_member`, then `tree_holds_only_integrated`, then `task-remove --force`. That reads git status without --ignore-submodules=none and compares files with open(). So a submodule commit, a submodule set to ignore=all, or a nested repository in that tree reads as \"held\" and is deleted with the tree.\n\nMake the invariant live at the choke point, not at each caller. Find every code path that removes a task tree with force: drop_tree, task-remove --force callers, retire, close or sweep paths in drive-phase and in the worktree scripts it calls. Make each go through one function that asks the predicate, together with \"is everything the tree holds already integrated or carried\", and refuses otherwise. List every such path in your outcome, with the line that routes it.\n\nIf a path lives in a file outside this task (plugins/audit/scripts/git/_worktrees.py, manage-worktrees.py), name it in your outcome and do not edit it. The orchestrator will widen the scope.\n\nCases red on today's code for retire. Each refusal gets an over-fire case: a clean integrated tree still retires. Deliver a mutation probe. No F/P/BUG ids in comments.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: retiring a closed member whose tree holds a submodule commit, a nested repository, or a submodule set to ignore=all refuses and keeps the tree"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P142.40-6yq"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: Replaced before any attempt by a task that removes the destructive step instead of tuning the predicate a fourth time (the adversarial review of P142.40)."
+      },
+      "startedAt": null,
+      "completedAt": "2026-10-28T02:08:38Z",
+      "verifiedBy": []
+    },
+    {
+      "id": "P142.43-6yq",
+      "title": "No drive step destroys a task tree it cannot prove empty of work: a redo sets the old tree aside, and every forced removal goes through one function that keeps the tree on any doubt",
+      "status": "pending",
+      "description": "The redo/recut and the retire of a closed member both force-remove a task worktree (`git worktree remove --force`). Four review rounds this phase have each found another shape the pre-removal check missed: force-added files, moved submodule pointers, ignore=all submodules, staged-only states, nested repos on retire. Each round's tightening then over-fired.\n\nThe kept P142.40 (landed before this task) made the recut ask one strict predicate, `tree_undescribed`. Its review found no path to loss but three over-fires:\n- any gitlink refuses, even a submodule never initialised in the task tree, so a repo with a submodule can never redo;\n- `carry_commit`'s `_unheld` check with --ignore-submodules=none refuses when an initialised submodule has build output inside it. Then `refs/audit/carry/<id>` is never written at filing, and that ref is the backup the gone-tree refusal points humans to. Regression;\n- integrate-task.py `task_changes` runs `git add -A` in the member tree's real index, so after a human settles an integration conflict by editing, the redo refuses on \"staged as neither base nor work holds it\". Redo is the answer to integration-refused.\nRetire still uses the weaker `tree_holds_only_integrated`, which deletes nested repos and submodule commits.\n\nRemove the class instead of tuning the predicate a fifth time:\n1. A redo never deletes the old tree. It sets the tree aside (a path the drive records, beside the task's tree path; mind that `git worktree move` refuses trees with submodules, so choose a mechanism that works for every tree) and cuts the new tree at the task's path. Everything after that is the existing recut. The set-aside tree is listed in the redo's did-line and in `status`.\n2. Exactly one function in drive-phase force-removes a task tree. It asks `tree_undescribed` together with \"is everything this tree holds integrated or carried\". On any doubt it KEEPS the tree, says so in a did-line naming why, and does not stop the drive. Route retire, the set-aside cleanup and any other remover through it, and list each path with its line. A remover in a file outside this task (`_worktrees.py`, `manage-worktrees.py`) is named in the outcome, not edited.\n3. With nothing destroyed on doubt, relax the over-fires to what could actually be lost:\n   - an unchanged, uninitialised gitlink holds nothing;\n   - a submodule's own dirt is not the task's work, and must not stop the filing's carry. Say in the did-line that it was left;\n   - an index state superseded by the disk, as after the integrator's `git add` then an edit, is not work.\n   Keep the strict reading only where a remove would follow.\n4. `tree_undescribed`'s docstring says ignored files are not part of what it describes.\n\nCases red on today's code for each item. Each keep-on-doubt gets an over-fire twin: a clean integrated tree is removed. Deliver a mutation probe. The review that motivated this is p142-40-adv/ (the orchestrator gives its full path). No F/P/BUG ids in comments.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: a redo keeps the old tree aside and recuts; retire keeps a tree holding a submodule commit, a nested repository or an ignore=all submodule; a dirty initialised submodule does not stop the filing's carry; an uninitialised submodule and the integrator's staged index do not stop a redo"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P142.40-6yq"
+      ],
       "attempts": 0,
       "maxAttempts": 3,
       "commit": null,

@@ -9160,15 +9160,19 @@ _AB_FIXED = '"%s" -c "import os, sys; sys.exit(0 if os.path.exists(\'fixed.txt\'
     'else 1)"' % (sys.executable,)
 
 
-def _ab_red_at_base(M, prefix, phase_edit=None, base=None, work=None, then=None):
+def _ab_red_at_base(M, prefix, phase_edit=None, base=None, work=None, then=None,
+                    prepare=None):
     """A two-member wave whose first member is red only on a check the base
     fails, with the phase tree then committing the fix - and `phase_edit`
     `(rel, text)` beside it when given. `base` is what `src/f1.txt` holds when
     the trees are cut, `work` what the first member writes there, and `then` what
     else it does in its tree before filing, each the fixture's default when
-    None. `(root, mpath, head, tree)` once the first member's gate-red decision
+    None; `prepare(root)` commits what else the base holds before the trees are
+    cut. `(root, mpath, head, tree)` once the first member's gate-red decision
     stands."""
     root, mpath = _wave_repo(prefix, 2)
+    if prepare is not None:
+        prepare(root)
     if base is not None:
         _write_lf(os.path.join(root, "src", "f1.txt"), base)
 
@@ -9361,13 +9365,15 @@ def _carry_at(root, task_id):
                     "refs/audit/carry/%s" % (task_id,)).strip()
 
 
-def _ar_at_decision(M, prefix, phase_edit=_AR_PHASE, work=_AR_WORK):
+def _ar_at_decision(M, prefix, phase_edit=_AR_PHASE, work=_AR_WORK, then=None,
+                    prepare=None):
     """The member's gate-red decision answered `rerun` after the phase moved a
-    file its work also edits. -> (root, mpath, head, tree, base, rows, code,
-    text): `rows` is the member's gate row count before the answer."""
+    file its work also edits; `then` and `prepare` are `_ab_red_at_base`'s.
+    -> (root, mpath, head, tree, base, rows, code, text): `rows` is the
+    member's gate row count before the answer."""
     root, mpath, head, tree = _ab_red_at_base(
         M, prefix, phase_edit, base=_AR_BASE if work == _AR_WORK else None,
-        work=work)
+        work=work, then=then, prepare=prepare)
     base = _git_out(tree, "rev-parse", "HEAD").strip() if tree else ""
     rows = len(_rows_of(root, mpath, "P1.1"))
     code, text = _next(M, root, mpath, "--answer", "rerun")
@@ -9491,6 +9497,7 @@ def _recut_refused_move_cases(check):
 
     _recut_crash_cases(check, M)
     _recut_precondition_cases(check, M)
+    _recut_describes_cases(check, M)
 
 
 _AR_ANSWERS = re.compile(r"--answer ([a-z|-]+)")
@@ -9529,6 +9536,14 @@ def _gone(root, tree):
     """The member's tree deleted and git told to forget it."""
     _harness.remove_tree(tree)
     _harness.git(root, "worktree", "prune")
+
+
+def _kept_named(root, said):
+    """Whether `said` names every patch a redo kept in `root`'s drive state,
+    and at least one is kept."""
+    drive = os.path.join(root, ".claude", "state", "drive")
+    kept = [os.path.join(drive, n) for n in os.listdir(drive) if n.endswith(".patch")]
+    return bool(kept) and all(k in said for k in kept)
 
 
 def _no_patch(root):
@@ -9637,6 +9652,158 @@ def _recut_precondition_cases(check, M):
           and _git_out(tree_s, "rev-parse", "HEAD").strip() == base_s
           and _carry_at(root_s, "P1.1") == carry_s and _no_patch(root_s))
 
+    # A file the agent staged with `add -f` over an ignore rule is work the
+    # tree's own index holds: a recut that reads the work any other way drops
+    # it and then removes the only tree that held it.
+    root_f, mpath_f, _hf, _tf, _bf, _rf, _c, text_f = _ar_at_decision(
+        M, "arecutf", then=_force_added)
+    code_f, said_f = _next(M, root_f, mpath_f, "--answer", "redo")
+    recut_f = _tree_of(root_f, "P1.1")
+    forced_f = os.path.join(recut_f or "", *_AR_FORCED.split("/"))
+    held_f = _read(forced_f) if recut_f and os.path.isfile(forced_f) else None
+    carried_f = _git_out(root_f, "show", "refs/audit/carry/P1.1:" + _AR_FORCED)
+    check("ar15 a file force-added over an ignore rule is carried by the redo: "
+          "the recut tree holds it as the old tree did, the did-line names it "
+          "among what was carried, and the carry ref moved to the recut tree "
+          "holds it: %r" % ((code_f, held_f, carried_f, said_f[-500:]),),
+          "redo" in _offers(text_f) and code_f == 0
+          and _AR_FORCED in said_f.split("its work carried over", 1)[-1]
+          and held_f == _AR_FORCED_TEXT.encode()
+          and carried_f == _AR_FORCED_TEXT)
+
+    # Whatever the read of the work misses, the commit it builds is checked
+    # against what git status lists in the tree: here the seed from the tree's
+    # own index reads nothing, as a read from HEAD would, and the redo is
+    # refused before anything comes down rather than dropping the file. The
+    # filed carry ref is taken away first - a filing made on another machine,
+    # or one that carried nothing - so the carry's own lost-path refusal
+    # (ar8) cannot be what stops it.
+    real_git = M.carry_git
+
+    def unseeded(where, argv, env=None, stdin=None):
+        if argv[:1] == ["ls-files"] and "-s" in argv:
+            return 0, b"", ""
+        return real_git(where, argv, env=env, stdin=stdin)
+    root_u, mpath_u, _hu, tree_u, base_u, _ru, _c, text_u = _ar_at_decision(
+        M, "arecutu", then=_force_added)
+    carry_u = _drop_carry(root_u, "P1.1")
+    made_u = _tree_rows(root_u)
+    M.carry_git = unseeded
+    try:
+        code_u, said_u = _next(M, root_u, mpath_u, "--answer", "redo")
+    finally:
+        M.carry_git = real_git
+    check("ar17 a read of the work that misses a path git status lists in the "
+          "tree refuses the redo by name before anything comes down: the old "
+          "tree, its forced file and the carry ref are as they were: %r"
+          % ((code_u, said_u[-500:]),),
+          "redo" in _offers(text_u) and code_u != 0
+          and _AR_FORCED in said_u and "nothing was recut" in said_u
+          and _tree_of(root_u, "P1.1") == tree_u and _tree_rows(root_u) == made_u
+          and _git_out(tree_u, "rev-parse", "HEAD").strip() == base_u
+          and _read(os.path.join(tree_u, *_AR_FORCED.split("/")))
+          == _AR_FORCED_TEXT.encode()
+          and carry_u and not _carry_at(root_u, "P1.1") and _no_patch(root_u))
+
+    # The other half of that check: a path the commit would hold with bytes
+    # other than the tree's file - here `add -A` takes nothing from the files,
+    # so the edited source stays at its base bytes in the commit.
+    def unadded(where, argv, env=None, stdin=None):
+        if argv == ["add", "-A"]:
+            return 0, b"", ""
+        return real_git(where, argv, env=env, stdin=stdin)
+    root_v, mpath_v, _hv, tree_v, base_v, _rv, _c, text_v = _ar_at_decision(
+        M, "arecutv")
+    carry_v = _drop_carry(root_v, "P1.1")
+    M.carry_git = unadded
+    try:
+        code_v, said_v = _next(M, root_v, mpath_v, "--answer", "redo")
+    finally:
+        M.carry_git = real_git
+    check("ar17b a read of the work holding a path with bytes other than the "
+          "tree's file refuses the redo by name before anything comes down: %r"
+          % ((code_v, said_v[-500:]),),
+          "redo" in _offers(text_v) and code_v != 0
+          and "src/f1.txt" in said_v and "nothing was recut" in said_v
+          and _tree_of(root_v, "P1.1") == tree_v
+          and _git_out(tree_v, "rev-parse", "HEAD").strip() == base_v
+          and _read(os.path.join(tree_v, "src", "f1.txt")) == _AR_WORK.encode()
+          and carry_v and _no_patch(root_v))
+
+    # A submodule the base holds, whose pointer the task moved: its commit
+    # lives in the tree's own modules directory, which removing the tree
+    # deletes, and the superproject's work names it without keeping it.
+    root_m, mpath_m, _hm, tree_m, base_m, _rm, _c, text_m = _ar_at_decision(
+        M, "arecutm", prepare=_with_submodule)
+    carry_m = _carry_at(root_m, "P1.1")
+    moved_m = _move_submodule(tree_m)
+    made_m = _tree_rows(root_m)
+    code_m, said_m = _next(M, root_m, mpath_m, "--answer", "redo")
+    mod_m = os.path.join(tree_m, *_AR_MODULE.split("/"))
+    check("ar16 a redo over a tree whose work moves a submodule pointer is "
+          "refused by name before anything comes down: the tree, its submodule "
+          "commit and the carry ref are as they were: %r"
+          % ((code_m, said_m[-400:]),),
+          "redo" in _offers(text_m) and moved_m
+          and code_m != 0 and "redo refused" in said_m and _AR_MODULE in said_m
+          and _tree_of(root_m, "P1.1") == tree_m and _tree_rows(root_m) == made_m
+          and _git_out(tree_m, "rev-parse", "HEAD").strip() == base_m
+          and _git_out(mod_m, "rev-parse", "HEAD").strip() == moved_m
+          and _carry_at(root_m, "P1.1") == carry_m and _no_patch(root_m))
+
+
+_AR_FORCED = "src/schema.gen"
+_AR_FORCED_TEXT = "generated, and wanted by P1.1\n"
+_AR_MODULE = "vendor/mod"
+# A submodule cloned from a local path: git refuses the file transport for
+# submodules unless asked, which is the only thing this switch changes.
+_FILE_PROTOCOL = ("-c", "protocol.file.allow=always")
+
+
+def _force_added(tree):
+    """Ignore `*.gen` for every tree of the repository, then stage
+    `_AR_FORCED` in `tree` over that rule, as an agent's `git add -f` does."""
+    common = _git_out(tree, "rev-parse", "--git-common-dir").strip()
+    info = os.path.join(tree, common, "info")
+    os.makedirs(info, exist_ok=True)
+    with open(os.path.join(info, "exclude"), "a", encoding="utf-8",
+              newline="\n") as fh:
+        fh.write("*.gen\n")
+    _write_lf(os.path.join(tree, *_AR_FORCED.split("/")), _AR_FORCED_TEXT)
+    _harness.git(tree, "add", "-f", _AR_FORCED)
+
+
+def _with_submodule(root):
+    """Commit a submodule at `_AR_MODULE` in `root`, cloned from a repository
+    of its own in a fixture directory."""
+    src = os.path.realpath(_harness.fixture_root("drive-modsrc-"))
+    _harness.git(src, "init", "-q")
+    _write_lf(os.path.join(src, "lib.txt"), "module v1\n")
+    _harness.git(src, "add", "-A")
+    _harness.git(src, "commit", "-qm", "module")
+    _harness.git(root, *(_FILE_PROTOCOL + ("submodule", "add", "-q", src,
+                                           _AR_MODULE)))
+    _harness.git(root, "commit", "-qm", "a submodule")
+
+
+def _move_submodule(tree):
+    """Check the submodule out in `tree` and commit in it, moving the pointer
+    the tree's work holds; the new submodule commit."""
+    _harness.git(tree, *(_FILE_PROTOCOL + ("submodule", "update", "--init", "-q")))
+    mod = os.path.join(tree, *_AR_MODULE.split("/"))
+    _write_lf(os.path.join(mod, "lib.txt"), "module moved by P1.1\n")
+    _harness.git(mod, "commit", "-qam", "the task moves the module")
+    return _git_out(mod, "rev-parse", "HEAD").strip()
+
+
+def _drop_carry(root, task_id):
+    """Take `task_id`'s carry ref away; the commit it named, or '' when there
+    was none."""
+    carry = _carry_at(root, task_id)
+    if carry:
+        _harness.git(root, "update-ref", "-d", "refs/audit/carry/%s" % (task_id,))
+    return carry
+
 
 def _carry_with(root, task_id, rel, text):
     """Point `task_id`'s carry ref at a commit holding `rel` beside what the
@@ -9662,6 +9829,298 @@ def _carry_with(root, task_id, rel, text):
     finally:
         _harness.remove_tree(scratch)
     return _carry_at(root, task_id) if sha else ""
+
+
+_AR_IDLE = "src/f3.txt"
+_AR_IDLE_BASE = "v0\n"
+
+
+def _redo_refused_intact(M, root, mpath, tree, base, name):
+    """Answer `redo`. -> (refused, code, said): `refused` when the drive stopped
+    naming `name` and saying nothing was recut, with the old tree where it was,
+    at its base, no tree cut and no patch kept."""
+    made = _tree_rows(root)
+    code, said = _next(M, root, mpath, "--answer", "redo")
+    refused = (code != 0 and name in said and "nothing was recut" in said
+               and _tree_of(root, "P1.1") == tree and os.path.isdir(tree)
+               and _tree_rows(root) == made
+               and _git_out(tree, "rev-parse", "HEAD").strip() == base
+               and _no_patch(root))
+    return refused, code, said
+
+
+def _carried_part(said):
+    """What the recut's did-line lists as carried, '' when it printed none."""
+    return said.split("its work carried over", 1)[-1].split("\n", 1)[0] \
+        if "its work carried over" in said else ""
+
+
+def _exclude(tree, pattern):
+    """Ignore `pattern` for every tree of `tree`'s repository."""
+    common = _git_out(tree, "rev-parse", "--git-common-dir").strip()
+    info = os.path.join(tree, common, "info")
+    os.makedirs(info, exist_ok=True)
+    with open(os.path.join(info, "exclude"), "a", encoding="utf-8",
+              newline="\n") as fh:
+        fh.write(pattern + "\n")
+
+
+def _submodule_ignoring(value):
+    """A `prepare` committing `_AR_MODULE` as a submodule whose `.gitmodules`
+    entry says `ignore = value`."""
+    def prepare(root):
+        _with_submodule(root)
+        _harness.git(root, "config", "-f", ".gitmodules",
+                     "submodule.%s.ignore" % (_AR_MODULE,), value)
+        _harness.git(root, "commit", "-qam", "the submodule is ignored: %s" % (value,))
+    return prepare
+
+
+def _dirty_submodule(tree):
+    """Check the submodule out in `tree` and edit its file without committing;
+    the file's path."""
+    _harness.git(tree, *(_FILE_PROTOCOL + ("submodule", "update", "--init", "-q")))
+    edited = os.path.join(tree, *(_AR_MODULE.split("/") + ["lib.txt"]))
+    _write_lf(edited, "edited by P1.1, never committed\n")
+    return edited
+
+
+def _with_tracked_log(root):
+    """Commit `build.log` in `root`, as a base that tracked a build product."""
+    _write_lf(os.path.join(root, "build.log"), "a log the base tracked\n")
+    _harness.git(root, "add", "build.log")
+    _harness.git(root, "commit", "-qm", "a tracked log")
+
+
+def _recut_describes_cases(check, M):
+    """The recut takes the old tree down only when the work it read, with what
+    the tree's own index records, describes that tree whole and nothing in it is
+    a repository a commit cannot carry. Each refusal stops before anything comes
+    down; each has a case beside it where the same check must stay quiet."""
+    # A submodule whose `.gitmodules` entry says ignore=all: git status, add -A
+    # and every diff that honours the setting are blind to the commit the task
+    # made in it, which lives in the tree's own modules directory.
+    root_a, mpath_a, _h, tree_a, base_a, _r, _c, text_a = _ar_at_decision(
+        M, "arecutia", prepare=_submodule_ignoring("all"))
+    moved_a = _move_submodule(tree_a)
+    refused_a, code_a, said_a = _redo_refused_intact(M, root_a, mpath_a, tree_a,
+                                                     base_a, _AR_MODULE)
+    mod_a = os.path.join(tree_a, *_AR_MODULE.split("/"))
+    check("ar18 a tree holding a submodule git is told to ignore entirely "
+          "refuses the redo by name before anything comes down, its commit in "
+          "the submodule kept: %r" % ((code_a, said_a[-400:]),),
+          "redo" in _offers(text_a) and refused_a
+          and _git_out(mod_a, "rev-parse", "HEAD").strip() == moved_a)
+
+    # ignore=dirty: the uncommitted edit inside the submodule is invisible the
+    # same way, and the tree's removal deletes it.
+    root_d, mpath_d, _h, tree_d, base_d, _r, _c, text_d = _ar_at_decision(
+        M, "arecutid", prepare=_submodule_ignoring("dirty"))
+    edited_d = _dirty_submodule(tree_d)
+    refused_d, code_d, said_d = _redo_refused_intact(M, root_d, mpath_d, tree_d,
+                                                     base_d, _AR_MODULE)
+    check("ar18b a tree holding a submodule whose dirt git is told to ignore "
+          "refuses the redo by name, the edit inside it kept: %r"
+          % ((code_d, said_d[-400:]),),
+          "redo" in _offers(text_d) and refused_d
+          and _read(edited_d) == b"edited by P1.1, never committed\n")
+
+    # The repository-wide setting hides every submodule from every diff.
+    root_g, mpath_g, _h, tree_g, base_g, _r, _c, text_g = _ar_at_decision(
+        M, "arecutig", prepare=_with_submodule)
+    _harness.git(tree_g, "config", "diff.ignoreSubmodules", "all")
+    moved_g = _move_submodule(tree_g)
+    refused_g, code_g, said_g = _redo_refused_intact(M, root_g, mpath_g, tree_g,
+                                                     base_g, _AR_MODULE)
+    mod_g = os.path.join(tree_g, *_AR_MODULE.split("/"))
+    check("ar18c a tree under diff.ignoreSubmodules=all whose work moves a "
+          "submodule refuses the redo by name, the submodule commit kept: %r"
+          % ((code_g, said_g[-400:]),),
+          "redo" in _offers(text_g) and refused_g
+          and _git_out(mod_g, "rev-parse", "HEAD").strip() == moved_g)
+
+    # A submodule the base holds and the tree never checked out: only the link
+    # entries name it - no `.git` stands below the tree for a walk to find -
+    # and the recut refuses any link, whatever it holds.
+    root_u, mpath_u, _h, tree_u, base_u, _r, _c, text_u = _ar_at_decision(
+        M, "arecutiu", prepare=_with_submodule)
+    bare_u = not os.path.lexists(os.path.join(tree_u, *(_AR_MODULE.split("/")
+                                                       + [".git"])))
+    refused_u, code_u, said_u = _redo_refused_intact(M, root_u, mpath_u, tree_u,
+                                                     base_u, _AR_MODULE)
+    check("ar18f a tree whose base holds a submodule it never checked out "
+          "refuses the redo by name, read off the link entries alone: %r"
+          % ((bare_u, code_u, said_u[-400:]),),
+          "redo" in _offers(text_u) and bare_u and refused_u)
+
+    # A repository inside an ignored directory: no git listing of the tree
+    # names it, and the tree's removal deletes its commits.
+    root_n, mpath_n, _h, tree_n, base_n, _r, _c, text_n = _ar_at_decision(M, "arecutin")
+    _exclude(tree_n, "out/")
+    nested_n = os.path.join(tree_n, "out", "cache")
+    os.makedirs(nested_n)
+    _harness.git(nested_n, "init", "-q")
+    _write_lf(os.path.join(nested_n, "lib.txt"), "nested work\n")
+    _harness.git(nested_n, "add", "-A")
+    _harness.git(nested_n, "commit", "-qm", "nested")
+    refused_n, code_n, said_n = _redo_refused_intact(M, root_n, mpath_n, tree_n,
+                                                     base_n, "out/cache")
+    check("ar18d a repository nested in an ignored directory of the tree refuses "
+          "the redo by name, its commit kept: %r" % ((code_n, said_n[-400:]),),
+          "redo" in _offers(text_n) and refused_n
+          and _git_out(nested_n, "log", "--format=%s", "-1").strip() == "nested")
+
+    # OVER-FIRE of ar18d: names that merely begin with `.git` are files, not
+    # repositories - a nested-repository check that matched a prefix, or any
+    # dot-name, would refuse this tree.
+    root_o, mpath_o, _h, tree_o, _b, _r, _c, _t = _ar_at_decision(M, "arecutio")
+    _write_lf(os.path.join(tree_o, "src", ".gitkeep"), "")
+    _write_lf(os.path.join(tree_o, "src", ".git-notes.txt"), "a note\n")
+    code_o, said_o = _next(M, root_o, mpath_o, "--answer", "redo")
+    recut_o = _tree_of(root_o, "P1.1")
+    check("ar18e a tree whose work adds files named like .gitkeep is recut, those "
+          "files carried: %r" % ((code_o, said_o[-500:]),),
+          code_o == 0 and recut_o
+          and "src/.gitkeep" in _carried_part(said_o)
+          and _read(os.path.join(recut_o, "src", ".git-notes.txt")) == b"a note\n")
+
+    # OVER-FIRE: an ignored file the task untracked (`git rm --cached`, the
+    # ordinary clean-up of a committed build product) is not work the carry
+    # lacks: the index and the carry both drop it, and git ignores the file.
+    root_l, mpath_l, _h, tree_l, _b, _r, _c, _t = _ar_at_decision(
+        M, "arecutil", prepare=_with_tracked_log)
+    _exclude(tree_l, "build.log")
+    _harness.git(tree_l, "rm", "-q", "--cached", "build.log")
+    code_l, said_l = _next(M, root_l, mpath_l, "--answer", "redo")
+    check("ar19 a tracked file the task untracked and git ignores is carried as "
+          "the deletion it is, and the redo recuts: %r" % ((code_l, said_l[-500:]),),
+          code_l == 0 and "could not be read" not in said_l
+          and "build.log" in _carried_part(said_l))
+
+    # A file the index marks assume-unchanged is one git status does not look
+    # at. The check looks at it anyway, so a read of the work that misses its
+    # bytes - here `add -A` is made to pass over it - is refused, not trusted.
+    real_git = M.carry_git
+
+    def passing_over(where, argv, env=None, stdin=None):
+        if argv == ["add", "-A"]:
+            argv = ["add", "-A", "--", ".", ":(exclude)" + _AR_IDLE]
+        return real_git(where, argv, env=env, stdin=stdin)
+    root_w, mpath_w, _h, tree_w, base_w, _r, _c, _t = _ar_at_decision(M, "arecutaw")
+    _drop_carry(root_w, "P1.1")
+    _harness.git(tree_w, "update-index", "--assume-unchanged", _AR_IDLE)
+    idle_w = os.path.join(tree_w, *_AR_IDLE.split("/"))
+    _write_lf(idle_w, "edited under assume-unchanged\n")
+    M.carry_git = passing_over
+    try:
+        refused_w, code_w, said_w = _redo_refused_intact(
+            M, root_w, mpath_w, tree_w, base_w, _AR_IDLE)
+    finally:
+        M.carry_git = real_git
+    check("ar17c a read of the work missing a file the index marks "
+          "assume-unchanged refuses the redo by name, the edit kept: %r"
+          % ((code_w, said_w[-400:]),),
+          refused_w and _read(idle_w) == b"edited under assume-unchanged\n")
+
+    # The index holds a deletion the files do not show: `git rm --cached` of a
+    # file nothing ignores. A commit of the tree's files cannot hold it.
+    root_c, mpath_c, _h, tree_c, base_c, _r, _c, _t = _ar_at_decision(M, "arecutrc")
+    _harness.git(tree_c, "rm", "-q", "--cached", _AR_IDLE)
+    refused_c, code_c, said_c = _redo_refused_intact(M, root_c, mpath_c, tree_c,
+                                                     base_c, _AR_IDLE)
+    check("ar20 a staged deletion of a file still on disk refuses the redo by "
+          "name, the tree's index as it was: %r" % ((code_c, said_c[-400:]),),
+          refused_c and _git_out(tree_c, "ls-files", "--", _AR_IDLE).strip() == ""
+          and _read(os.path.join(tree_c, *_AR_IDLE.split("/")))
+          == _AR_IDLE_BASE.encode())
+
+    # The index holds an edit the file no longer shows: staged, then the file
+    # put back. Its only copy is the index entry.
+    root_m, mpath_m, _h, tree_m, base_m, _r, _c, _t = _ar_at_decision(M, "arecutmm")
+    idle_m = os.path.join(tree_m, *_AR_IDLE.split("/"))
+    _write_lf(idle_m, "staged by P1.1\n")
+    _harness.git(tree_m, "add", _AR_IDLE)
+    _write_lf(idle_m, _AR_IDLE_BASE)
+    refused_m, code_m, said_m = _redo_refused_intact(M, root_m, mpath_m, tree_m,
+                                                     base_m, _AR_IDLE)
+    check("ar20b a staged edit whose file was put back refuses the redo by name, "
+          "the staged copy kept in the tree's index: %r" % ((code_m, said_m[-400:]),),
+          refused_m and _git_out(tree_m, "show", ":" + _AR_IDLE) == "staged by P1.1\n")
+
+    # OVER-FIRE of ar20/ar20b: a staged edit the file still shows is held by
+    # the carry as the index holds it - an index check that refused every
+    # staged path would refuse this tree.
+    root_s, mpath_s, _h, tree_s, _b, _r, _c, _t = _ar_at_decision(M, "arecutst")
+    _harness.git(tree_s, "add", "src/f1.txt")
+    code_s, said_s = _next(M, root_s, mpath_s, "--answer", "redo")
+    check("ar20c a staged edit the file still shows is carried and the redo "
+          "recuts: %r" % ((code_s, said_s[-500:]),),
+          code_s == 0 and "merged three-way (src/f1.txt)" in said_s
+          and tasks_of(mpath_s)["P1.1"].get("status") == "done"
+          and _read(os.path.join(root_s, "src", "f1.txt")) == _AR_MERGED)
+
+    # OVER-FIRE of ar20/ar20b: a record path staged in the tree's index is the
+    # phase's, refreshed into the new tree and never carried, so the carry
+    # lacking it is no staged state left behind.
+    root_p, mpath_p, _h, tree_p, _b, _r, _c, _t = _ar_at_decision(M, "arecutrp")
+    plan_p = os.path.relpath(mpath_p, root_p).replace(os.sep, "/")
+    with open(os.path.join(tree_p, *plan_p.split("/")), "a", encoding="utf-8",
+              newline="\n") as fh:
+        fh.write("\n")
+    _harness.git(tree_p, "add", plan_p)
+    staged_p = _git_out(tree_p, "diff", "--cached", "--name-only").split()
+    code_p, said_p = _next(M, root_p, mpath_p, "--answer", "redo")
+    check("ar20d a record path staged in the tree's index does not refuse the "
+          "redo, and is not carried: %r" % ((staged_p, code_p, said_p[-500:]),),
+          staged_p == [plan_p] and code_p == 0
+          and "merged three-way (src/f1.txt)" in said_p
+          and plan_p not in _carried_part(said_p))
+
+    # A skip-worktree entry absent from disk is a file the tree does not check
+    # out, not one the task deleted: the carry keeps it as the index does.
+    root_k, mpath_k, _h, tree_k, _b, _r, _c, _t = _ar_at_decision(M, "arecutsk")
+    _harness.git(tree_k, "update-index", "--skip-worktree", _AR_IDLE)
+    os.remove(os.path.join(tree_k, *_AR_IDLE.split("/")))
+    code_k, said_k = _next(M, root_k, mpath_k, "--answer", "redo")
+    check("ar21 a skip-worktree file absent from disk is not carried as a "
+          "deletion: the recut carries the work alone and the member closes with "
+          "the file as the base held it: %r" % ((code_k, said_k[-500:]),),
+          code_k == 0 and "merged three-way (src/f1.txt)" in said_k
+          and _AR_IDLE not in _carried_part(said_k)
+          and tasks_of(mpath_k)["P1.1"].get("status") == "done"
+          and _read(os.path.join(root_k, *_AR_IDLE.split("/")))
+          == _AR_IDLE_BASE.encode())
+
+    # A path git names in bytes that are not UTF-8 must reach git again as the
+    # same bytes: a pathspec decoded with replacement characters matches
+    # nothing, so the path reads as held. Asked of the functions directly, as
+    # some filesystems refuse such a name outright.
+    raw = b"caf\xe9.txt"
+    seen = []
+
+    def lister(where, argv, env=None, stdin=None):
+        seen.append(list(argv))
+        if "status" in argv:
+            return 0, b" M " + raw + b"\0", ""
+        if argv[:1] == ["diff"] and "--name-only" in argv and "--" not in argv:
+            return 0, raw + b"\0", ""
+        return 0, b"", ""
+    real_git = M.carry_git
+    M.carry_git = lister
+    try:
+        listed, _w = M.tree_changed("/nowhere")
+        between, _w = M._changed_between("/nowhere", "a", "b")
+        M._unheld("/nowhere", {}, listed or [])
+    finally:
+        M.carry_git = real_git
+    specs = [os.fsencode(a) for argv in seen for a in argv
+             if isinstance(a, str) and a.startswith(":(literal)")]
+    check("ar22 a path git lists in bytes that are not UTF-8 keeps its bytes: "
+          "the listings return it whole, and the pathspec handed back to git "
+          "names those bytes: %r" % ((listed, between, specs),),
+          [os.fsencode(p) for p in listed or []] == [raw]
+          and [os.fsencode(p) for p in between or []] == [raw]
+          and specs and all(s == b":(literal)" + raw for s in specs))
 
 
 def _recut_crash_cases(check, M):
@@ -9728,6 +10187,53 @@ def _recut_crash_cases(check, M):
           code_a2 != 0 and kept and kept[0] in said_a2
           and len(_rows_of(root_a, mpath_a, "P1.1")) == rows_a
           and tasks_of(mpath_a)["P1.1"].get("status") == "in_progress")
+    # The other direction of ar6d: a tree that lacks the work is still told to
+    # take the patch in, never that it holds it already.
+    check("ar6e ...and, its tree lacking that work, the stop prescribes the "
+          "three-way apply there: %r" % (said_a2[-400:],),
+          "git apply --3way" in said_a2 and "already holds" not in said_a2)
+
+    # Stopped with the patch kept while the old tree still stands - the tree
+    # holds the work, so an apply there would fail on every path it names.
+    def refusing_remove(ctx, script, args, stdin=None):
+        if script == "manage-worktrees.py" and args[:1] == ["task-remove"]:
+            return 1, "", "fixture: task-remove refused"
+        return real_verb(ctx, script, args, stdin=stdin)
+    root_d, mpath_d, _head_d, tree_d, base_d, _rows_d, _c, _t = \
+        _ar_at_decision(M, "arecutd")
+    M.run_verb = refusing_remove
+    try:
+        code_d, said_d = _next(M, root_d, mpath_d, "--answer", "redo")
+    finally:
+        M.run_verb = real_verb
+    code_d2, said_d2 = _next(M, root_d, mpath_d)
+    check("ar6d a redo stopped before its old tree came down leaves that tree "
+          "holding the work, and the stop says so instead of prescribing an "
+          "apply there: %r" % ((code_d, code_d2, said_d2[-500:]),),
+          code_d != 0 and code_d2 != 0 and not _no_patch(root_d)
+          and _tree_of(root_d, "P1.1") == tree_d
+          and _git_out(tree_d, "rev-parse", "HEAD").strip() == base_d
+          and _read(os.path.join(tree_d, "src", "f1.txt")) == _AR_WORK.encode()
+          and "already holds" in said_d2 and "git apply" not in said_d2
+          and _kept_named(root_d, said_d2))
+
+    # Where the tree could not be read at all, the stop gives no rule a recut
+    # tree would break: a path the head moved reads there as the three-way
+    # merge left it, never as the pinned work holds it, so "a diff against the
+    # pin printing nothing" would send a human to apply over work already in.
+    real_held = M.redo_held
+    M.redo_held = lambda ctx, state, task_id, tree: (
+        None, "fixture: the tree could not be read")
+    try:
+        code_f, said_f = _next(M, root_d, mpath_d)
+    finally:
+        M.redo_held = real_held
+    check("ar6f a stop that could not read its tree prescribes the apply only "
+          "where the tree lacks the work, and gives no diff-against-the-pin "
+          "rule a path the head moved would break: %r" % ((code_f, said_f[-500:]),),
+          code_f != 0 and "fixture: the tree could not be read" in said_f
+          and "only where" in said_f and "printing nothing" not in said_f
+          and "moved" in said_f and _kept_named(root_d, said_f))
 
     # A carried path the head never moved must read in the recut tree as the
     # work held it; one that does not stops the redo by name, the patch kept.

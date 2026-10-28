@@ -4491,8 +4491,20 @@ recorded base, one gone or without its marker, a nested repository - stops at `t
 which offers `block` alone and gates nothing either (`ar9`, `ar10b`, `ar12`, `ar13`). `redo`
 (`recut_tree`, the one recut for both) refuses before the old tree is touched unless the tree is
 there with its marker and its HEAD at the recorded base, so the work read is exactly that base to
-the working tree (`ar10`, `ar11`); the work is read the way the carry does, the record paths left
-out (`ar4`), and it refuses a link to a nested repository the base lacks (`ar14`), a carry ref
+the working tree (`ar10`, `ar11`); the work is read the way the carry does, from a scratch index
+seeded with the tree's own, so a file forced in with `git add -f` is carried (`ar15`) and a
+skip-worktree file absent from disk is not read as deleted (`ar21`), the record paths left out
+(`ar4`); that read refuses when a path `git status` lists, or one the index flags so status does
+not look, is not held by it as the tree's file holds it (`ar17`, `ar17b`), while an ignored file
+the task untracked is held (`ar19`), and paths keep their bytes when they are not UTF-8 (`ar22`).
+Then one question comes before anything is taken down, `tree_undescribed`: do the work commit
+and the tree's own index describe the tree whole, with nothing in it a repository of its own? A
+link to a nested repository in the index, at HEAD or in the work, and a `.git` anywhere below
+the tree's top, refuse the redo whatever `submodule.<name>.ignore`, `diff.ignoreSubmodules` or
+an ignore rule hides (`ar14`, `ar16`, `ar18`-`ar18d`; `ar18e` keeps a `.gitkeep` quiet), and so
+does a path staged as neither its base nor the work holds it - a staged deletion of a file still
+on disk, an edit whose file was put back (`ar20`, `ar20b`; `ar20c` carries a staged edit the file
+still shows). It also refuses a carry ref
 holding a path the work lacks (`ar8`), or a three-way apply at the head, tried in a scratch index,
 that conflicts - each by name, with the tree and the carry ref as they were (`ar3`, `ar5`). Past
 that it pins the work commit to `refs/audit/redo/<id>`, writes the patch whole and synced into the
@@ -4501,7 +4513,11 @@ three-way, checks every carried path the head did not move byte for byte, and cl
 mark so the gate is measured over the new tree - no executor is dispatched and no attempt is
 spent, because the work was not what failed (`wd1`-`wd4`, `ar2`). A step failing after the old
 tree came down stops the drive naming the kept patch, and nothing runs in that member's tree
-until a human has applied it or taken it away (`ar6`, `ar7`). Before a wave opens, `hooks_width` asks `_doctor_setup.hooks_task_binding` whether the hooks
+until a human has applied it or taken it away (`ar6`, `ar7`). The stop prescribes the apply only
+where the tree lacks the work (`redo_held`): a redo stopped before the old tree came down, or once
+the recut tree held the work, leaves a tree an apply would fail over, and the stop says it holds
+the work (`ar6d`, `ar6e`); where the tree could not be read, it says how a path the head moved
+reads once merged and prescribes the apply only where the tree lacks the work (`ar6f`). Before a wave opens, `hooks_width` asks `_doctor_setup.hooks_task_binding` whether the hooks
 Claude Code loads - the copy `installed_plugins.json` records and the live copies the hook run
 records name - define the task-tree binding the plan gate judges a wave's trees by: a copy that
 lacks it runs the phase at width 1 and the print says which copy and why, a copy that carries it

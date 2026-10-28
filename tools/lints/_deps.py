@@ -1941,6 +1941,30 @@ GIT_PATH_BASE_EXEMPT = (
      "journal files named inside their own directory, which git runs in"),
     ("commit-task-work.py", "_changed_shards", _RECORD_PATHS),
     ("drive-phase.py", "carry_commit", _SAME_CHECKOUT),
+    ("drive-phase.py", "_seed_from_index",
+     "copies one tree's index entries into a scratch index of that same tree; "
+     "the paths pass from git to git unread"),
+    ("drive-phase.py", "tree_changed",
+     "the paths git status lists in one tree, compared with the carry "
+     "commit's listing of that tree and with record_rels' git-root paths, and "
+     "handed back as literal pathspecs to git run in that tree; no plan entry "
+     "is read"),
+    ("drive-phase.py", "_unheld",
+     "asks git, in one tree, about paths that tree's own status listed or its "
+     "own index flagged, and quotes git's answer back in the redo's refusal; "
+     "no plan entry is read"),
+    ("drive-phase.py", "_index_flags",
+     "the flagged entries of one tree's own index, handed back to git in that "
+     "tree's scratch index and joined to that tree's top to ask whether the "
+     "file stands; no plan entry is read"),
+    ("drive-phase.py", "tree_undescribed",
+     "one tree's index entries, its HEAD's and its work commit's, each listed "
+     "from that tree's top and compared only with each other and with "
+     "record_rels' git-root paths, then quoted back in the redo's refusal; no "
+     "plan entry is read"),
+    ("drive-phase.py", "redo_held",
+     "the unmerged paths of one tree's index, compared with that repository's "
+     "own listing of a pinned work commit; no plan entry is read"),
     ("drive-phase.py", "_changed_between",
      "the redo's listings of what changed between two commits of one "
      "repository: compared with each other, with record_rels' git-root paths, "
