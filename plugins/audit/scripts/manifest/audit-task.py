@@ -5427,12 +5427,32 @@ def _held_reading(project, git_root, plan, node, mpath=None, config=None,
     return [h for h in held if h[0] not in vouched], released
 
 
+# The writer `hooks/journal-writes.py` stamps on every row it appends (its
+# `_actor`), and the action of its edit row - the one carrying its diff of a
+# plan file after a tool call (`_manifest_rows`); the rows that diff derives
+# (`task.blocked`, `task.complete`) are appended straight after it, under a
+# copy of its actor, to the same file.
+_HOOK_VIA = "hook"
+_HOOK_PRIMARY = "manifest.edit"
+
+
+def _row_origin(row):
+    """`(via, sessions, file, action)` - who wrote `row`, under which session
+    names, and the journal file it was read from: what `_status_chain` reads
+    to tell one change written twice from two changes the journal holds."""
+    actor = row.get("actor") if isinstance(row.get("actor"), dict) else {}
+    sessions = tuple(sorted(set(str(actor.get(key))
+                                for key in ("sessionId", "envSessionId")
+                                if actor.get(key))))
+    return (actor.get("via"), sessions, row.get("_file"), row.get("action"))
+
+
 def _status_events(rows, tid):
-    """`[(moment, row index, from, to)]` - every status change the journal
-    records for `tid`, in the journal's order: a `status` entry in a row's
-    `changes`, and the drive's `task.blocked` row. None when a row carrying
-    one names no readable moment - an order that cannot be read is no
-    evidence."""
+    """`[(moment, row index, from, to, origin)]` - every status change the
+    journal records for `tid`, in the journal's order: a `status` entry in a
+    row's `changes`, and the drive's `task.blocked` row; `origin` is
+    `_row_origin`'s. None when a row carrying one names no readable moment -
+    an order that cannot be read is no evidence."""
     out = []
     for index, row in enumerate(rows):
         details = row.get("details") if isinstance(row, dict) else None
@@ -5450,7 +5470,8 @@ def _status_events(rows, tid):
         moment = _journal_io.row_moment(row)
         if moment is None:
             return None
-        out += [(moment, index, was, now) for was, now in found]
+        origin = _row_origin(row)
+        out += [(moment, index, was, now, origin) for was, now in found]
     return out
 
 
@@ -5468,52 +5489,134 @@ def _start_keys(rows, tid):
     return keys
 
 
-def _status_chain(events):
-    """`events` with every repeat of the state already reached folded into the
-    row that reached it, or None when a link is missing.
+def _origin(event):
+    """An event's `_row_origin`; an event built without one names no writer,
+    and nothing about it can be proved an echo."""
+    return event[4] if len(event) > 4 else (None, (), None, None)
 
-    One change is recorded by more than one writer (the command's own row, the
-    hook's edit row, the drive's block row) and a closing row may name the end
-    state with no `from` at all, so a row whose `to` is the state reached is
-    the same change again - provided it does not say it came from some OTHER
-    state than the one it was reached from, which would be a change the
-    journal never saw. A row that moves on must start where the chain stands:
-    a `from` of None is accepted only for the repeat, since nothing says where
-    a change into a different state began."""
-    chain = []
+
+def _echoes(event, last):
+    """Whether `event` is provably the journal-writes hook's record of the
+    change the row before it (`last`) recorded: the same `from` and `to`,
+    written by the hook, and either
+
+      - after the row of the writer whose write the hook diffed: a named
+        writer other than the hook, under a session name the hook's row also
+        carries, since the hook records the tool calls of its own session.
+        Its edit row, or a row that edit row derived when the edit row's
+        list of changes was clipped before reaching this task; or
+      - a derived row straight after its own edit row, in the same journal
+        file under the same session names.
+
+    Time is not read: the hook writes when the tool call that ran the verb
+    ends, which may be seconds or minutes after the verb's own row. A second
+    edit row of the hook is never an echo - each records a write of its
+    own."""
+    via, sessions, name, action = _origin(event)
+    was_via, was_sessions, was_name, was_action = _origin(last)
+    if via != _HOOK_VIA or event[2] is None or event[2:4] != last[2:4]:
+        return False
+    if was_via not in (None, "unknown", _HOOK_VIA):
+        return bool(set(sessions) & set(was_sessions))
+    return (action != _HOOK_PRIMARY and was_via == _HOOK_VIA
+            and was_action == _HOOK_PRIMARY
+            and name is not None and name == was_name
+            and sessions == was_sessions)
+
+
+def _ordered_seconds(events):
+    """`events` with every second whose rows came from more than one journal
+    file put in the one order those rows can be read in, or None when they
+    have none.
+
+    `_journal_io.read_all` breaks a tie of moments by file NAME, and a name
+    says nothing about which writer wrote first (`_filed_while_running` meets
+    the same limit). Rows of one file keep that file's order, the order they
+    were appended in. Rows of several files in one second are readable only
+    when they all record the same change: any order is then the same chain,
+    and the other writers' rows go before the hook's, so an echo follows the
+    row it echoes. Two different changes in such a second answer nothing."""
+    out, start = [], 0
+    while start < len(events):
+        end = start
+        while end < len(events) and events[end][0] == events[start][0]:
+            end += 1
+        group = events[start:end]
+        if len(set(_origin(e)[2] for e in group)) > 1:
+            if len(set(e[2:4] for e in group)) > 1:
+                return None
+            group = sorted(group, key=lambda e: _origin(e)[0] == _HOOK_VIA)
+        out += group
+        start = end
+    return out
+
+
+def _status_chain(events):
+    """`(chain, unaccounted)` - `events` with every row that records no change
+    of its own folded away, and `[(start, end)]` for each span of moments the
+    journal cannot account for; None when a link is missing, or when a second
+    holds rows with no order to read (`_ordered_seconds`).
+
+    A row folds without a trace when it is provably no new change: a closing
+    row naming the state reached and no other (no `from`, or that state as its
+    `from`), or the journal-writes hook's echo of the row before it
+    (`_echoes`). A closing row between a verb's row and the hook's echo of it
+    is not a change, and does not stand between them.
+
+    Any other repeat of the change the chain stands on - the same `from` and
+    `to`, with no echo to prove it - is two readings at once: the change
+    written again, or a round trip back to `from` the journal never recorded.
+    The span from the row it repeats to itself is returned as unaccounted: the
+    chain holds outside it under both readings, inside it under neither. A row
+    that moves on must start where the chain stands; a `from` of None is
+    accepted only for the closing row, since nothing says where a change into
+    a different state began."""
+    events = _ordered_seconds(events)
+    if events is None:
+        return None
+    chain, unaccounted, last = [], [], None
     for event in events:
         if not chain:
             chain.append(event)
-        elif event[3] == chain[-1][3] and event[2] in (
-                None, chain[-1][2], chain[-1][3]):
+        elif event[3] == chain[-1][3] and event[2] in (None, chain[-1][3]):
             continue
+        elif event[2:4] == chain[-1][2:4]:
+            if not _echoes(event, last):
+                unaccounted.append((chain[-1][0], event[0]))
         elif event[2] != chain[-1][3]:
             return None
         else:
             chain.append(event)
-    return chain
+        last = event
+    return chain, unaccounted
 
 
 def _ran_within(events, current, since, until):
     """Whether a task with these `_status_events` was in_progress at any moment
     from `since` to `until` - True, False, or None when the journal cannot say:
-    no events at all, a chain with a link missing (`_status_chain`), or a last
-    change that does not end at the task's status now - each a change the
-    journal never saw. A second's resolution is all a row carries, so a change
-    in the boundary second counts as inside."""
+    no events at all, a chain with a link missing or a second it cannot order
+    (`_status_chain`), a last change that does not end at the task's status
+    now - each a change the journal never saw - or a window that touches a
+    span `_status_chain` could not account for, where a restart the journal
+    missed may lie, unless a recorded change inside the window already says
+    running. A second's resolution is all a row carries, so a change in the
+    boundary second counts as inside, and so does a span's boundary second."""
     if not events or events[-1][3] != current:
         return None
-    events = _status_chain(events)
-    if events is None:
+    folded = _status_chain(events)
+    if folded is None:
         return None
+    events, unaccounted = folded
     before = [e for e in events if e[0] < since]
     status = before[-1][3] if before else events[0][2]
     if status is None:
         return None
-    if status == "in_progress":
+    if any("in_progress" in (e[2], e[3])
+           for e in events if since <= e[0] <= until):
         return True
-    return any("in_progress" in (e[2], e[3])
-               for e in events if since <= e[0] <= until)
+    if any(start <= until and end >= since for start, end in unaccounted):
+        return None
+    return status == "in_progress"
 
 
 def _filed_while_running(rows, tid, filing):

@@ -16812,6 +16812,227 @@ def _held_work_cases(check, project, task, write, start, read, git):
           % (answers,),
           answers == [None, None, None, None])
 
+    # A second in_progress -> blocked row long after the first is no repeat: its
+    # `from` says the task was running again, so a restart the journal never
+    # recorded lies between them. Folding it reads "blocked throughout" and
+    # answers not-running, which lets a start release a held path - the guard's
+    # open direction. The window ending before the second row is the same
+    # chain, so it is the same can't-tell. The chain whose restart rows are
+    # present still answers running.
+    reblocked = chain(("2026-10-27T12:50:24Z", "in_progress", "blocked"),
+                      ("2026-10-27T13:40:00Z", "in_progress", "blocked"))
+    restarted = chain(("2026-10-27T12:50:24Z", "in_progress", "blocked"),
+                      ("2026-10-27T13:20:00Z", "blocked", "pending"),
+                      ("2026-10-27T13:21:00Z", "pending", "in_progress"),
+                      ("2026-10-27T13:40:00Z", "in_progress", "blocked"))
+    since = reblocked[1][0] + 600.0
+    repeat_at = reblocked[2][0]
+    gap = [M._ran_within(reblocked, "blocked", since, repeat_at + 600.0),
+           M._ran_within(reblocked, "blocked", since, repeat_at - 600.0),
+           M._ran_within([(100.0, 0, "in_progress", "blocked"),
+                          (300.0, 5, "in_progress", "blocked")],
+                         "blocked", 200.0, 400.0),
+           M._ran_within(restarted, "blocked", since, repeat_at + 600.0)]
+    check("hw15 two in_progress -> blocked rows far apart, the restart between "
+          "them unrecorded, answer can't-tell - over a window holding the "
+          "second, over one ending before it, and as bare events - never "
+          "not-running, while the same chain with its restart rows answers "
+          "running: %r" % ((reblocked, gap),),
+          gap == [None, None, None, True])
+
+    # The allow half, for a gap check that over-fires: a window wholly after
+    # the second row, or wholly before the row it repeats, is outside the span
+    # both readings disagree on, so it keeps answering not-running. Dropping
+    # either end of the overlap test turns one of these can't-tell.
+    unpended = [(0.0, 0, "pending", "in_progress"),
+                (10.0, 1, "in_progress", "blocked"),
+                (20.0, 2, "blocked", "pending"),
+                (100.0, 3, "blocked", "pending")]
+    clear = [M._ran_within(reblocked, "blocked", repeat_at + 60.0,
+                           repeat_at + 600.0),
+             M._ran_within(unpended, "pending", 12.0, 18.0),
+             M._ran_within(unpended, "pending", 110.0, 120.0)]
+    check("hw16 ALLOW: a window wholly after a far repeat, or wholly before "
+          "the row it repeats, still answers not-running: %r" % (clear,),
+          clear == [False, False, False])
+
+    # Rows carrying their writer, the way `_journal_io.read_all` hands them
+    # over: the actor the writer stamped, and the file the row was read from.
+    # A command's own row says `via: cli`; the journal-writes hook diffs the
+    # plan after the same tool call and writes `manifest.edit` with the same
+    # change, then the rows that diff derives (`task.blocked`,
+    # `task.complete`) straight after it, under the same actor.
+    def prow(action, ts, was, now, via="cli", sid="s-1", name="2026-10.s-1"):
+        if action == "task.blocked":
+            details = {"taskId": "P1.1", "from": was, "phaseId": "P1",
+                       "attempt": 1}
+        else:
+            details = {"changes": [{"field": "status", "from": was,
+                                    "id": "P1.1", "to": now}]}
+        return {"action": action, "ts": ts, "details": details,
+                "actor": {"via": via, "sessionId": sid},
+                "_file": name + ".jsonl"}
+
+    def ran(rows, now, since, until):
+        return M._ran_within(M._status_events(rows, "P1.1"), now,
+                             _journal_io.row_moment({"ts": since}),
+                             _journal_io.row_moment({"ts": until}))
+
+    # The shape this repository's journal holds for every block the drive
+    # writes: the verb's row, the wave's no-from close, then the hook's echo
+    # and its derived row seconds later. A start of another task lands in
+    # that gap, and the holder was blocked through it.
+    started = [prow("task.start", "2026-10-26T11:56:08Z", "pending",
+                    "in_progress"),
+               prow("manifest.edit", "2026-10-26T11:56:11Z", "pending",
+                    "in_progress", via="hook")]
+    echoed = started + [
+        prow("task.block", "2026-10-26T13:11:10Z", "in_progress", "blocked"),
+        prow("wave.done", "2026-10-26T13:11:10Z", None, "blocked"),
+        prow("manifest.edit", "2026-10-26T13:11:17Z", "in_progress",
+             "blocked", via="hook"),
+        prow("task.blocked", "2026-10-26T13:11:17Z", "in_progress", "blocked",
+             via="hook")]
+    # The hook's edit row clips its list of changes when one write moved many
+    # tasks, so the derived row can be the only one naming this task.
+    clipped = started + [
+        prow("task.block", "2026-10-26T13:11:10Z", "in_progress", "blocked"),
+        prow("task.blocked", "2026-10-26T13:11:17Z", "in_progress", "blocked",
+             via="hook")]
+    echo = [ran(echoed, "blocked", "2026-10-26T13:11:12Z",
+                "2026-10-26T13:11:14Z"),
+            ran(echoed, "blocked", "2026-10-26T13:11:12Z",
+                "2026-10-26T13:20:00Z"),
+            ran(echoed, "blocked", "2026-10-26T12:00:00Z",
+                "2026-10-26T12:30:00Z"),
+            ran(clipped, "blocked", "2026-10-26T13:11:12Z",
+                "2026-10-26T13:11:14Z")]
+    check("hw17 ALLOW: the hook's echo of a verb's row, and the row derived "
+          "beside it, fold into the change they record - a start inside the "
+          "seconds between the verb's row and its echo answers not-running, "
+          "as does one straddling the echo and one before a derived row "
+          "whose edit row was clipped, while a window the holder ran inside "
+          "answers running: %r" % (echo,),
+          echo == [False, False, True, False])
+
+    # Each the same change written twice with no provable source for the
+    # second row: another session's hook, a second edit row of the hook after
+    # its first, the verb written twice, a derived row in another file than
+    # the edit row before it, and the hook's second edit row after it already
+    # echoed the verb. Each leaves a restart the journal may have missed
+    # between its two rows; a window wholly after the second still answers
+    # not-running.
+    blocked = started + [prow("task.block", "2026-10-26T13:11:10Z",
+                              "in_progress", "blocked")]
+    late = "2026-10-26T14:00:00Z"
+    lagged = [
+        blocked + [prow("manifest.edit", late, "in_progress", "blocked",
+                        via="hook", sid="s-2", name="2026-10.s-2")],
+        [prow("manifest.edit", "2026-10-26T11:56:11Z", "pending",
+              "in_progress", via="hook"),
+         prow("manifest.edit", "2026-10-26T13:11:10Z", "in_progress",
+              "blocked", via="hook"),
+         prow("manifest.edit", late, "in_progress", "blocked", via="hook")],
+        blocked + [prow("task.block", late, "in_progress", "blocked")],
+        echoed[:-1] + [prow("task.blocked", late, "in_progress", "blocked",
+                            via="hook", name="2026-10.s-1.wt-9")],
+        echoed + [prow("manifest.edit", late, "in_progress", "blocked",
+                       via="hook")]]
+    inside = [ran(rows, "blocked", "2026-10-26T13:30:00Z",
+                  "2026-10-26T13:40:00Z") for rows in lagged]
+    past = [ran(rows, "blocked", "2026-10-26T14:10:00Z",
+                "2026-10-26T14:20:00Z") for rows in lagged]
+    check("hw18 a repeat of a change with no source it provably echoes - "
+          "another session's hook, the hook's own second write, the verb "
+          "written twice, a derived row from another file than the edit row "
+          "before it, and a second edit row after the hook already echoed "
+          "the verb - answers can't-tell inside the gap and not-running "
+          "wholly after it: %r" % ((inside, past),),
+          inside == [None] * 5 and past == [False] * 5)
+
+    # Two writers' files, two changes stamped in the same second: the journal
+    # sorts them by file name, which is not the order they happened in. Read
+    # in that order, session b's block lands after a's restart and the task
+    # reads blocked from then on; written the other way round, it ran until
+    # the later block. Neither order is evidenced, so the window answers
+    # can't-tell. Every other row is accounted for - the later block is
+    # session b's own hook echoing its verb.
+    crossed = [
+        prow("task.start", "2026-10-27T12:00:00Z", "pending", "in_progress",
+             sid="a", name="2026-10.a"),
+        prow("task.block", "2026-10-27T12:10:00Z", "in_progress", "blocked",
+             sid="a", name="2026-10.a"),
+        prow("task.start", "2026-10-27T12:20:00Z", "blocked", "in_progress",
+             sid="a", name="2026-10.a"),
+        prow("task.start", "2026-10-27T12:25:00Z", "blocked", "in_progress",
+             sid="a", name="2026-10.a"),
+        prow("task.block", "2026-10-27T12:25:00Z", "in_progress", "blocked",
+             sid="b", name="2026-10.b"),
+        prow("manifest.edit", "2026-10-27T13:00:00Z", "in_progress",
+             "blocked", via="hook", sid="b", name="2026-10.b")]
+    reversal = ran(crossed, "blocked", "2026-10-27T12:30:00Z",
+                   "2026-10-27T12:50:00Z")
+    # The allow half: one change written by a verb in a worktree's file and
+    # echoed by the hook in the session's main file in the same second, the
+    # hook's file sorting first. The two rows are one change whichever came
+    # first, and fold.
+    pair = started + [
+        prow("task.block", "2026-10-26T13:11:10Z", "in_progress", "blocked"),
+        prow("manifest.edit", "2026-10-26T13:20:00Z", "blocked", "pending",
+             via="hook"),
+        prow("task.unblock", "2026-10-26T13:20:00Z", "blocked", "pending",
+             name="2026-10.s-1.wt-0")]
+    folded = ran(pair, "pending", "2026-10-26T13:20:00Z",
+                 "2026-10-26T13:25:00Z")
+    check("hw19 two different changes in the same second from different "
+          "journal files are not ordered by the file name they sort by - the "
+          "window after them answers can't-tell - while the same change from "
+          "a verb in one file and the hook's echo in another, the hook's "
+          "sorting first, still folds and answers not-running: %r"
+          % ((reversal, folded),),
+          reversal is None and folded is False)
+
+    # The agreement with the writer, rather than a hand-built copy of its
+    # rows: the journal-writes hook's own `_entry` and `_manifest_rows` build
+    # the edit row and the row it derives for a block, `_journal_io` shapes
+    # them as `append` would, and the chain folds both into the verb's row.
+    # A hook that stopped saying `via: hook`, renamed its edit row, or wrote
+    # its derived row under another actor turns this red.
+    jw = _loader.load(os.path.join(_harness.HOOKS_DIR, "journal-writes.py"),
+                      modname="journal_writes_for_hw")
+
+    def plan_doc(status):
+        return {"meta": {"version": 2}, "phases": [
+            {"id": "P1", "title": "p", "status": "in_progress", "tasks": [
+                {"id": "P1.1", "title": "t", "status": status,
+                 "attempts": 1}]}]}
+
+    entry = jw._entry("manifest.edit", "docs/audit/audit-plan.json", "Bash",
+                      {}, {"session_id": "s-1"}, project, {})
+    primary, derived = jw._manifest_rows(entry, entry["target"],
+                                         plan_doc("in_progress"),
+                                         plan_doc("blocked"))
+    hooked = [dict(_journal_io._normalise(r, project),
+                   ts="2026-10-26T13:11:17Z", _file="2026-10.s-1.jsonl")
+              for r in [primary] + derived]
+    written = started + [
+        prow("task.block", "2026-10-26T13:11:10Z", "in_progress", "blocked"),
+        prow("wave.done", "2026-10-26T13:11:10Z", None, "blocked")] + hooked
+    written_events = M._status_events(written, "P1.1")
+    folded_by = M._status_chain(written_events)
+    from_hook = ran(written, "blocked", "2026-10-26T13:11:12Z",
+                    "2026-10-26T13:11:14Z")
+    check("hw20 ALLOW: the rows the journal-writes hook itself builds for a "
+          "block - its edit row and the row it derives - fold into the "
+          "verb's row with no span left, so a start between them answers "
+          "not-running: %r"
+          % (([(r["action"], r["actor"].get("via")) for r in hooked],
+              folded_by and folded_by[1], from_hook),),
+          [(r["action"], r["actor"].get("via")) for r in hooked]
+          == [("manifest.edit", "hook"), ("task.blocked", "hook")]
+          and folded_by is not None and folded_by[1] == []
+          and from_hook is False)
+
     # ---- the way past the refusal is one a guard lets through -------------------
     proj, mpath = holder_plan("hw-remedy")
     write(proj, "src/a.ts", "the blocked task's unfinished edit\n")
