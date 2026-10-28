@@ -253,6 +253,45 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P143.5-6yq",
+      "title": "The sweep finishes under four minutes: the drive's suite calls its verbs in-process where no case asserts the process boundary",
+      "status": "pending",
+      "description": "`time python3 tools/sweep-selftests.py` must finish in under 240 s wall on the owner's machine, twice, at least 20 minutes apart, on a quiet machine. P142 measured 385.3 s and 385.4 s. The lower bound under perfect packing was about 339 s: summed slot-seconds over the sweep's slots. tests/test_drive_phase.py alone is the largest share, because it starts one process per verb call. Re-derive both figures with the sweep's loud output before you start; do not trust these.\n\nCut test_drive_phase.py's cost by its structure. Call the drive's verbs in-process, through the module the suite already loads, wherever a case does not assert on process behaviour (exit codes, stdio encoding, signal handling, the subprocess boundary itself). Keep a subprocess case for each of those that does. Each converted case must still fail on the bug it guards. Pick a sample of converted cases, mutate the guarded code, show them red, and deliver scratchpad/probe/mutations.py (mutations3 engine).\n\nThen re-record the darwin figures you measured. Report the two timed runs with their start times. If 240 s is still out of reach, say what the remaining critical path is, with the numbers the sweep prints, and do not close the task as met.\n\nWho depends on this: tools/sweep-selftests.py reads the suite's STAGES table for its blocks and .github/sweep-costs.json for its timeouts. tests/_harness.py's staged_main runs the blocks. No F/P/BUG ids in comments.",
+      "files": [
+        "tests/test_drive_phase.py",
+        ".github/sweep-costs.json"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py .github/sweep-costs.json"
+        ],
+        "gateBasis": "files"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim",
+        "choosing-what-to-optimize"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ]
 }
