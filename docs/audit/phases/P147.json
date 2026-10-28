@@ -22,52 +22,81 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P147-R1",
         "severity": "med",
         "file": "CHANGELOG.md:145-153",
         "issue": "The ### Fixed entry reports a defect that no release ever had. It says the state commit 'asked the assembled plan whether it was sharded ... so it never took the lock'. But `commit-task-work.py --state` does not exist at 0dfae3e7 (v3.6.0): `git show 0dfae3e7:plugins/audit/scripts/governance/commit-task-work.py` has no \"--state\", and the retired `commit-manifest-index.py` did take the index lock. `index_is_sharded` first appears in 52c80676, inside this same unreleased window, as a fix to the P142.1 verb. A reader on 3.6.0 would conclude they ran a lockless state commit. That is a claim about released behaviour the code history does not support.",
-        "resolution": "Drop the ### Fixed section and fold its content into the existing 'One commit verb' / Removed entries as what the verb does: `--state` takes the index lock in a sharded plan (it asks the index file on disk, and a file it cannot read counts as sharded), commits the shard from the bytes its index part was derived from, makes a root commit on a branch with no commit yet, and under `--json` keeps stdout one object with the lock's lines on stderr and a refusal carrying its `lockCode`.",
-        "fixTask": "P147.2-bno"
+        "resolution": "fixed in P147.7-bno (9896ae96): Drop the ### Fixed section and fold its content into the existing 'One commit verb' / Removed entries as what the verb does: `--state` takes the index lock in a sharded plan (it asks the index file on disk, and a file it cannot read counts as sharded), commits the shard from the bytes its index part was derived from, makes a root commit on a branch with no commit yet, and under `--json` keeps stdout one object with the lock's lines on stderr and a refusal carrying its `lockCode`.",
+        "fixTask": "P147.7-bno",
+        "commit": "9896ae96",
+        "status": "fixed"
       },
       {
         "id": "P147-R2",
         "severity": "low",
         "file": "CHANGELOG.md:134-138",
         "issue": "The non-UTF-8 path entry sits under ### Changed and says the drive 'now' reads such paths and, 'on Windows', compares them itself. `_git_path` and `_literal_matches` do not exist at 0dfae3e7; they were added by 1d95127f and a5f42ae9 with the recut and carry machinery, and 3bcd5772 only reworked them. So there is no 3.6.0 behaviour to have changed. Also `_changed_between` and `_unheld` now call `_literal_matches` on every platform, not only Windows, so 'on Windows' under-describes where the comparison happens.",
-        "resolution": "Fold the sentence into the recut / kept-tree entries as a property of reading a tree's work, and say the paths are compared by the drive rather than handed to git as pathspecs, with Windows named as the reason rather than the scope.",
-        "fixTask": "P147.3-bno"
+        "resolution": "fixed in P147.7-bno (9896ae96): Fold the sentence into the recut / kept-tree entries as a property of reading a tree's work, and say the paths are compared by the drive rather than handed to git as pathspecs, with Windows named as the reason rather than the scope.",
+        "fixTask": "P147.7-bno",
+        "commit": "9896ae96",
+        "status": "fixed"
       },
       {
         "id": "P147-R3",
         "severity": "low",
         "file": "CHANGELOG.md:62-64",
         "issue": "'a plan that could not be read gets nothing forced' is true only for a key that is not a redo's aside key. `_kept_tree_remedy` tests `_is_aside_key` first, so an aside-key tree gets `git worktree remove --force` and the save-first commands even when `task_ids` is None. The sentence follows 'offered to that kind of tree alone', which makes the unreadable-plan case read as covering that kind too.",
-        "resolution": "Say that a key which is neither a redo's nor a task of the plan, and any key when the plan could not be read, gets nothing forced (an unreadable plan offers `task-remove` only, once it reads).",
-        "fixTask": "P147.4-bno"
+        "resolution": "fixed in P147.7-bno (9896ae96): Say that a key which is neither a redo's nor a task of the plan, and any key when the plan could not be read, gets nothing forced (an unreadable plan offers `task-remove` only, once it reads).",
+        "fixTask": "P147.7-bno",
+        "commit": "9896ae96",
+        "status": "fixed"
       },
       {
         "id": "P147-R4",
         "severity": "low",
         "file": "CHANGELOG.md:73-79",
         "issue": "'the fix run ... has the recorded cost of those suites held back from the runs before it' omits that `sweep_budget` caps the reserve at half the deadline (`min(recorded, timeout // 2)`). With a heavy suite the held-back share is not the recorded cost.",
-        "resolution": "Add 'up to half the deadline' (a word, no numeral) after 'held back'.",
-        "fixTask": "P147.5-bno"
+        "resolution": "fixed in P147.7-bno (9896ae96): Add 'up to half the deadline' (a word, no numeral) after 'held back'.",
+        "fixTask": "P147.7-bno",
+        "commit": "9896ae96",
+        "status": "fixed"
       },
       {
         "id": "P147-R5",
         "severity": "low",
         "file": "CHANGELOG.md:41-54",
         "issue": "'exit 1 with a `ROW NOT PROVEN:` line per row ... which stops the sign-off quoting each' - `lint_probe` quotes at most five (`rows[:5]`). Minor over-statement. Cosmetic: the start-charge entry has a short, awkwardly wrapped line ('running when. A repeated row for a state already reached folds').",
-        "resolution": "Say 'quoting the rows' and rewrap the start-charge entry.",
-        "fixTask": "P147.6-bno"
+        "resolution": "fixed in P147.7-bno (9896ae96): Say 'quoting the rows' and rewrap the start-charge entry.",
+        "fixTask": "P147.7-bno",
+        "commit": "9896ae96",
+        "status": "fixed"
+      },
+      {
+        "id": "P147-R6",
+        "severity": "low",
+        "file": "CHANGELOG.md",
+        "issue": "The half-deadline clause was appended to an existing line in the Unreleased section, leaving one line past the file's usual wrap width.",
+        "resolution": "Rewrap so the sentence about the basis naming the deadline starts a new line.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
+      },
+      {
+        "id": "P147-R7",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "Cancelling a fix task leaves each finding it fixes bound to it (fixTask still set), so the triage keeps offering fix while add --fixes and the drive's --answer fix both refuse those findings as already naming a fix task; the only way out is a plain task plus resolve-finding.",
+        "resolution": "Cancel of a fix task releases its findings' fixTask (journalled), or cancel refuses a fix task and names the route; a case pins that a cancelled fix task's finding can be handed to a new add --fixes.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       }
     ],
-    "outcome": "[findings: 5 - 0 high, 1 med, 4 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 7 - 0 high, 1 med, 6 low; 5 with a recorded fix commit]",
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "CHANGELOG Unreleased describes every user-visible plugin change since 3.6.0, each sentence checked against the code by two reviews; five findings fixed in P147.7, two lows carried to the 3.8.0 batch Gate banner accepted: The phase changed only CHANGELOG.md; no suite is named after it, and the prose-number suites that read it (test__deps, test__output_lints) ran green in the phase's full sweep",
   "tasks": [
     {
       "id": "P147.1",
@@ -413,7 +442,7 @@
     {
       "id": "P147.7-bno",
       "title": "The 3.7.0 changelog states only what the code since 3.6.0 does: no fixed defect no release had, new behaviour under Added, each caveat the code carries",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix every review finding on CHANGELOG.md's [Unreleased] section; each line must state what the plugin code since v3.6.0 (0dfae3e7) does - verify against the code, not this text. No number in prose, no F/P/BUG ids.\n- P147-R1 (med) CHANGELOG.md:145-153: The ### Fixed entry reports a defect that no release ever had. It says the state commit 'asked the assembled plan whether it was sharded ... so it never took the lock'. But `commit-task-work.py --state` does not exist at 0dfae3e7 (v3.6.0): `git show 0dfae3e7:plugins/audit/scripts/governance/commit-task-work.py` has no \"--state\", and the retired `commit-manifest-index.py` did take the index lock. `index_is_sharded` first appears in 52c80676, inside this same unreleased window, as a fix to the P142.1 verb. A reader on 3.6.0 would conclude they ran a lockless state commit. That is a claim about released behaviour the code history does not support. Resolution: Drop the ### Fixed section and fold its content into the existing 'One commit verb' / Removed entries as what the verb does: `--state` takes the index lock in a sharded plan (it asks the index file on disk, and a file it cannot read counts as sharded), commits the shard from the bytes its index part was derived from, makes a root commit on a branch with no commit yet, and under `--json` keeps stdout one object with the lock's lines on stderr and a refusal carrying its `lockCode`.\n- P147-R2 (low) CHANGELOG.md:134-138: The non-UTF-8 path entry sits under ### Changed and says the drive 'now' reads such paths and, 'on Windows', compares them itself. `_git_path` and `_literal_matches` do not exist at 0dfae3e7; they were added by 1d95127f and a5f42ae9 with the recut and carry machinery, and 3bcd5772 only reworked them. So there is no 3.6.0 behaviour to have changed. Also `_changed_between` and `_unheld` now call `_literal_matches` on every platform, not only Windows, so 'on Windows' under-describes where the comparison happens. Resolution: Fold the sentence into the recut / kept-tree entries as a property of reading a tree's work, and say the paths are compared by the drive rather than handed to git as pathspecs, with Windows named as the reason rather than the scope.\n- P147-R3 (low) CHANGELOG.md:62-64: 'a plan that could not be read gets nothing forced' is true only for a key that is not a redo's aside key. `_kept_tree_remedy` tests `_is_aside_key` first, so an aside-key tree gets `git worktree remove --force` and the save-first commands even when `task_ids` is None. The sentence follows 'offered to that kind of tree alone', which makes the unreadable-plan case read as covering that kind too. Resolution: Say that a key which is neither a redo's nor a task of the plan, and any key when the plan could not be read, gets nothing forced (an unreadable plan offers `task-remove` only, once it reads).\n- P147-R4 (low) CHANGELOG.md:73-79: 'the fix run ... has the recorded cost of those suites held back from the runs before it' omits that `sweep_budget` caps the reserve at half the deadline (`min(recorded, timeout // 2)`). With a heavy suite the held-back share is not the recorded cost. Resolution: Add 'up to half the deadline' (a word, no numeral) after 'held back'.\n- P147-R5 (low) CHANGELOG.md:41-54: 'exit 1 with a `ROW NOT PROVEN:` line per row ... which stops the sign-off quoting each' - `lint_probe` quotes at most five (`rows[:5]`). Minor over-statement. Cosmetic: the start-charge entry has a short, awkwardly wrapped line ('running when. A repeated row for a state already reached folds'). Resolution: Say 'quoting the rows' and rewrap the start-charge entry.",
       "files": [
         "CHANGELOG.md"
@@ -434,27 +463,36 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9896ae96",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Dropped the Fixed entry for a defect no release had and folded the state commit's lock, unborn-branch and JSON-stdout properties into the one-commit-verb entry; non-UTF-8 path matching described as new and platform-wide; kept-tree remedy wording true for aside keys; held-back fix-run share capped at half the deadline; probe quoting wording",
+        "descriptive": "The 3.7.0 changelog states only what the code since 3.6.0 does"
       },
       "startedAt": "2026-10-28T22:20:41Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-28T22:27:57Z",
+      "verifiedBy": [
+        "task gate green (prose-number suites)",
+        "reviewer return filed"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-28T22:26:36Z.e7a982",
         "status": "passed",
         "at": "2026-10-28T22:26:36Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "9896ae96",
+        "at": "2026-10-28T22:27:57Z",
+        "return": "docs/audit/evidence/returns/P147.7-bno/20261028T222041Z.reviewer.json"
       }
     }
   ],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "482d7bf5-025e-4eb9-acc8-1383e2a9aaa8",
-    "branch": "audit/p147-the-3-7-0-changelog",
-    "at": "2026-10-28T22:10:23Z"
-  },
-  "startedAt": "2026-10-28T22:10:23Z"
+  "startedAt": "2026-10-28T22:10:23Z",
+  "testEvidence": {
+    "runId": "2026-10-28T22:40:05Z.8662fb",
+    "status": "passed",
+    "at": "2026-10-28T22:40:05Z"
+  }
 }

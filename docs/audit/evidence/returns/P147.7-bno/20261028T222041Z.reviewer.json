@@ -1,0 +1,19 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "CHANGELOG.md:46-48",
+   "issue": "The edit for the sweep-budget clause was appended to an existing line, leaving a line of 121 characters ('suites held back from the runs before it, up to half the deadline. The basis names the deadline and where it came from,') in a file wrapped at about 100. Cosmetic, the same wrap defect the task fixed elsewhere (the start-charge entry).",
+   "resolution": "Rewrap the entry so 'The basis names the deadline ...' starts a new line."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "All five findings are resolved and every rewritten sentence is true at HEAD. R1: the Fixed section is gone and its content is folded into the One-commit-verb entry as what --state does. commit-task-work.py index_is_sharded:1692-1702 reads the index file on disk, answers yes on OSError/ValueError, and main_state:1731-1766 takes the index lock only when sharded. The lock lines go to stderr under --json (said = stderr_line), a refusal answer carries lockCode, and _scoped_commit.py:538-546 makes a root commit on an unborn branch. R2: the non-UTF-8 sentence moved from Changed into the recut entry, framed as a property of reading a tree's work. It says paths are matched by the drive instead of being handed to git as pathspecs, and Windows is now the reason (drive-phase.py _git_path:5004, _literal_matches:5025, called from _changed_between and the carry listing). R3: audit-status.py _kept_tree_remedy:2116-2143 matches the new wording (aside key forced; plan key task-remove; unreadable plan gives task-remove with nothing forced; other key gets the unforced remover). R4: stamp-verification.py sweep_budget:3932 caps the reserve with min(recorded, timeout // 2), so 'up to half the deadline' is true. R5: 'quoting the rows' no longer claims each row (lint_probe quotes rows[:5]), and the start-charge entry is rewrapped. No new over-claim is introduced. The Unreleased section has no numeral beyond the pre-existing exit 0 and exit 1 protocol codes, and no F/P/BUG ids (grep of lines 1-133). The only residue is a cosmetic over-long line.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Documentation-only edit to CHANGELOG.md with no tests added; no red was owed and nothing handed shows one.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "I was not handed tests.gate in the brief for this review. The prose-number scans over CHANGELOG.md (doc_prose_numbers, prose_number_claims) hold the no-numbers rule only; they cannot check that a sentence is true of the code, which this review did by reading the code."
+ },
+ "verdict": "findings",
+ "tasks": []
+}
