@@ -923,8 +923,8 @@ TABLE = (
  # one, every slice still named by a job. `sv7` reads the real workflow against
  # the real runner's list.
  ("shard_matrix_drift", ".github/workflows/ci.yml", "replace",
+  "        shard: [1, 2, 3, 4]",
   "        shard: [1, 2, 3]",
-  "        shard: [1, 2]",
   "tools/gate-parity.py", "sv7"),
  # A PER-RUN SLICE NO JOB RUNS ANY MORE. The runner still lists it and every other
  # cell still runs, so nothing else notices that the Windows code-page leg is gone

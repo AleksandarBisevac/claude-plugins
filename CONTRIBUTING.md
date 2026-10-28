@@ -315,18 +315,24 @@ whoever adds it, and the surface has grown more than once and left each document
 a different amount - print the runner's constants rather than trusting this passage.
 
 CI RUNS EACH SWEEP SLICE AS SHARDS, not as one job: every slice is a matrix cell per part,
-`--shard I/N`, on every core of the runner (the sweep reads `CI=true`). The parts are
-balanced by the per-file costs in `.github/sweep-costs.json`, which `--record-costs
-.github/sweep-costs.json` rewrites from a real run. THE TABLE DECIDES TWO THINGS: the
-split, and each file's timeout (below). A stale table can therefore cost balance, and it
-can cost a timeout too tight for a file that has grown past several times its entry. It
-cannot cost coverage, because the union of the parts is the whole tree (the runner's own
-sh0 case) and `gate-parity.py`'s `shard_matrix_drift()` fails a matrix that skips a part.
-And staleness by OMISSION tightens nothing: an entry naming a file no longer swept is
-printed as a `note:` and ignored by the split, a swept file with no entry is estimated for
-the split, and for its timeout an untimed staged suite gets the largest any entry - that
-ghost included - would get, an untimed ordinary file the floor (cases tt0, tt1). Here a
-slice runs whole, which is the same leg.
+`--shard I/N`, on every core of the runner (the sweep reads `CI=true`). What the parts
+deal is units, not files: an ordinary file whole, and a staged suite block by block, each
+part replaying the suite over the blocks it was dealt and naming the rest as run
+elsewhere. The parts are balanced by the per-file and per-block costs in
+`.github/sweep-costs.json`, which `--record-costs .github/sweep-costs.json` rewrites from a
+real run. THE TABLE DECIDES TWO THINGS: the split, and each unit's timeout (below). A
+stale table can therefore cost balance, and it can cost a timeout too tight for a file or
+a block that has grown past several times its entry. It cannot cost coverage, because the
+union of the parts is the whole tree, block by block (the runner's own sh0 and sd2 cases),
+and `gate-parity.py`'s `shard_matrix_drift()` fails a matrix that skips a part. And
+staleness by OMISSION tightens nothing: an entry naming a file no longer swept is printed
+as a `note:` and ignored by the split; a swept file with no entry is estimated at the live
+files' median for the split, and a block with no entry of its own at its suite's figure
+over its blocks; and for the timeout an untimed staged suite - each of its blocks, or the
+whole suite where it runs whole - gets the largest any entry - that ghost included - would
+get, an untimed ordinary file the floor (cases tt0, tt1, bt2). The `shards` comment above
+`parse_shard()` in `tools/sweep-selftests.py` is the statement of the split. Here a slice
+runs whole, which is the same leg.
 
 THE WORKERS ARE ONE BUDGET OF SLOTS, here and in CI, and what it schedules is a block,
 not a suite. A staged suite (its `__main__` is `_harness.staged_main`) has each block of
@@ -335,9 +341,12 @@ prints the suite's whole run, so the sweep's workers and the suite's blocks neve
 past the machine. The model - the order jobs are submitted in, the timeout a block is
 given, and what happens to a suite whose table the sweep cannot read - is stated once, in
 the `blocks, not suites` comment above `work_items()` in `tools/sweep-selftests.py`. Each
-file's timeout is the floor (`--timeout`) or a multiple of its recorded seconds, whichever
-is longer - a hang detector calibrated per file and handed down as `SWEEP_FILE_TIMEOUT`;
-a block is given its file's figure at the slots a grant would hold (cases bt1-bt3). On a
+job's timeout is the floor (`--timeout`) or a multiple of its recorded slot-seconds,
+whichever is longer - a hang detector handed down as `SWEEP_FILE_TIMEOUT`: a file's from
+its own figure, a block's from its own figure at the one slot it holds, or from its
+suite's figure over its blocks where the table has none for that block (cases bt1-bt3);
+only a suite run whole, the fallback for a table the sweep cannot read, is calibrated at
+the slots it was admitted with. On a
 CI runner every timeout is also cut to what is left of the
 sweep's deadline (`SWEEP_DEADLINE`), so a hung file is named before the job's own
 `timeout-minutes` cancels the job with no file named; case tt5 reads that bound out of

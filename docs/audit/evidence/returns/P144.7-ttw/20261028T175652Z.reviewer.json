@@ -1,0 +1,15 @@
+{
+ "findings": [],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Clause (1): prove-gates.py:926-927 now anchors on '        shard: [1, 2, 3, 4]' (occurs once, ci.yml:173) and replaces with '        shard: [1, 2, 3]', still dropping a part so gate-parity sv7 is the red. I ran `python3 tools/prove-gates.py --only shard_matrix_drift` once: exit 0, 'shard_matrix_drift RED sv7' and the over-fire direction red on sv0, sv11, sv7. `prove-gates.py --selftest` 61/61 (c2 green). Clause (2): CONTRIBUTING.md and CLAUDE.md now say a part deals an ordinary file whole and a staged suite block by block, balanced and timed by per-file and per-block figures, with the fallbacks the code states: block_figure (own figure, else suite figure over its blocks, else untimed), block_timeout at one slot, untimed staged suite gets the largest entry, whole-suite fallback calibrated at admitted slots (sweep-selftests.py:1632-1676, 2105-2114). Cited case ids sh0, sd2, tt0, tt1, bt1-bt3 exist in tools/sweep-selftests.py. No counts written; doc_prose_numbers() and prose_number_claims() report nothing. Clause (3): the tree_changed, _changed_between and _unheld reasons in _deps.py GIT_PATH_BASE_EXEMPT now say the listings are narrowed in Python by _literal_matches and not handed to git as pathspecs. Checked against drive-phase.py:5025-5047 and :5198-5245; the only ':(literal)' in the file is the _literal_matches docstring. `tests/test__deps.py --selftest` 254/254. The _unheld reword is outside the task's two named rows but is the same stale class, and the executor says so. The executor's outcome describes the diff, and its dependants answers hold: no name or path changed, and only one row's strings and doc and reason text changed. Minor, not filed: the docs say the 'shards' comment sits 'above parse_shard()', and it is the section header at sweep-selftests.py:1498, about 260 lines above it, which is accurate enough to find.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Executor filed not-attempted: a regression task whose bound case (prove-gates c2) already exists, and whose red is HEAD itself, where the old anchor occurs 0 times in ci.yml. The basis holds for the mode, and I echo the word. The c2 check (tools/prove-gates.py:3219-3227) counts rows whose mutation() anchor is not found exactly once, so it fails on the unfixed row. I did not run the unfixed tree.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "The gate is `python3 tools/sweep-selftests.py tools/prove-gates.py`, which selects prove-gates' own suite (61 cases, run by `--selftest`). I read c2 and c2b (tools/prove-gates.py:3219-3250). Both iterate the real TABLE and assert on the resolved anchors, so deleting the shard_matrix_drift row's anchor reaches them. I read no other case in detail. The docs and _deps reason strings are pinned by no case in this gate."
+ },
+ "verdict": "clean",
+ "tasks": []
+}

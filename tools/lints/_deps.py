@@ -1945,14 +1945,16 @@ GIT_PATH_BASE_EXEMPT = (
      "copies one tree's index entries into a scratch index of that same tree; "
      "the paths pass from git to git unread"),
     ("drive-phase.py", "tree_changed",
-     "the paths git status lists in one tree, compared with the carry "
-     "commit's listing of that tree and with record_rels' git-root paths, and "
-     "handed back as literal pathspecs to git run in that tree; no plan entry "
+     "the paths git status lists in one tree, compared in Python with that "
+     "tree's own index flags, with record_rels' git-root paths and, through "
+     "_literal_matches, with that tree's own whole-tree listings against its "
+     "scratch index; never handed back to git as an argument; no plan entry "
      "is read"),
     ("drive-phase.py", "_unheld",
-     "asks git, in one tree, about paths that tree's own status listed or its "
-     "own index flagged, and quotes git's answer back in the redo's refusal; "
-     "no plan entry is read"),
+     "lists one tree's whole changes against a scratch index of that tree and "
+     "narrows them in Python, by _literal_matches, to the paths that tree's own "
+     "status listed or its own index flagged, then quotes them back in "
+     "carry_commit's refusal; no plan entry is read"),
     ("drive-phase.py", "_index_flags",
      "the flagged entries of one tree's own index, handed back to git in that "
      "tree's scratch index and joined to that tree's top to ask whether the "
@@ -1967,9 +1969,10 @@ GIT_PATH_BASE_EXEMPT = (
      "own listing of a pinned work commit; no plan entry is read"),
     ("drive-phase.py", "_changed_between",
      "the redo's listings of what changed between two commits of one "
-     "repository: compared with each other, with record_rels' git-root paths, "
-     "and handed back as literal pathspecs to git run at that checkout's top; "
-     "no plan entry is read"),
+     "repository, each of the whole diff: compared with each other and with "
+     "record_rels' git-root paths, and narrowed to a caller's paths in Python "
+     "by _literal_matches rather than handed back to git as pathspecs; no plan "
+     "entry is read"),
     ("drive-phase.py", "recut_conflicts",
      "the unmerged paths a scratch-index three-way apply leaves, listed from "
      "the git root it ran at and quoted back in the redo's refusal; no plan "
