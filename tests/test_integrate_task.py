@@ -351,14 +351,54 @@ def _nested_cases(check):
 GUIDE = "PLUGIN-BUILD-GUIDE.md"
 
 
-def _seed_map_owner(proj):
-    """The plugin's real scripts and its guide with a map from before the change,
-    so the owner's recipe really runs and really renders."""
-    shutil.copytree(M._output.SCRIPTS_DIR,
-                    os.path.join(proj, "plugins", "audit", "scripts"),
-                    ignore=shutil.ignore_patterns("__pycache__"))
-    shutil.copytree(M._output.LINTS_DIR, os.path.join(proj, "tools", "lints"),
-                    ignore=shutil.ignore_patterns("__pycache__"))
+# Run in a fresh interpreter, because this one has loaded far more than the
+# recipe does: `_deps` imported the way `_deps.py --write-map` starts, with its
+# own directory first on the path, and every module file that import loaded.
+_CLOSURE_PROBE = ("import json, sys\n"
+                  "sys.path.insert(0, sys.argv[1])\n"
+                  "import _deps\n"
+                  "print(json.dumps(sorted(set(getattr(m, '__file__', None) or ''\n"
+                  "                            for m in list(sys.modules.values())))))\n")
+
+
+def _recipe_closure():
+    """The repository files the module-map recipe loads, relative to the repo
+    root - read off the recipe's own import rather than listed here, so a
+    module it starts to import is copied without anyone editing this.
+
+    WHY NOT THE WHOLE PLUGIN. The fixture's base commit is one `git add -A`
+    under the harness's hang bound, and on a loaded windows runner an add of
+    every script and asset outran it. The recipe's render maps the `.py`
+    files it finds under `scripts/`, so over this closure it still really
+    runs and really writes a map - what the cases judge is whether the task's
+    bytes are the bytes the recipe writes, not what the map lists. A module
+    the render loads lazily is not in the closure, and the recipe then fails
+    loudly in `_write_map` rather than passing over a partial copy."""
+    done = subprocess.run([sys.executable, "-c", _CLOSURE_PROBE,
+                           M._output.LINTS_DIR],
+                          check=True, capture_output=True, timeout=60)
+    repo = os.path.realpath(M._output.REPO_ROOT)
+    roots = [os.path.normcase(os.path.realpath(d)) + os.sep
+             for d in (M._output.SCRIPTS_DIR, M._output.LINTS_DIR)]
+    picked = sorted(os.path.relpath(os.path.realpath(path), repo)
+                    for path in json.loads(done.stdout.decode("ascii"))
+                    if path and any(os.path.normcase(os.path.realpath(path))
+                                    .startswith(r) for r in roots))
+    wanted = [os.path.join("tools", "lints", "_deps.py"),
+              os.path.join("plugins", "audit", "scripts", "_output.py")]
+    if [w for w in wanted if w not in picked]:
+        raise RuntimeError("the recipe's import closure %r lacks %r: the probe "
+                           "did not load the recipe" % (picked, wanted))
+    return picked
+
+
+def _seed_map_owner(proj, closure):
+    """The files the map owner's recipe loads and the guide with a map from
+    before the change, so the owner's recipe really runs and really renders."""
+    for rel in closure:
+        os.makedirs(os.path.dirname(os.path.join(proj, rel)), exist_ok=True)
+        shutil.copyfile(os.path.join(M._output.REPO_ROOT, rel),
+                        os.path.join(proj, rel))
     with open(os.path.join(M._output.REPO_ROOT, GUIDE), encoding="utf-8") as fh:
         text = fh.read()
     block = _deps._fenced_block_after(text, _deps._GUIDE_HEADING)
@@ -373,8 +413,9 @@ def _write_map(tree):
 
 
 def _follower_cases(check):
+    closure = _recipe_closure()
     world = _world("itf", {"P1.1": ["a.txt"]}, {"a.txt": "a\n"},
-                   seed=_seed_map_owner)
+                   seed=lambda proj: _seed_map_owner(proj, closure))
     tree = world["trees"]["P1.1"]
     _write(tree, "a.txt", "a1\n")
     _write_map(tree)
@@ -395,7 +436,7 @@ def _follower_cases(check):
     # The over-fire direction: a guard that kept every claimed path a decision
     # passes the case above and fails this one.
     world = _world("itg", {"P1.1": ["a.txt"]}, {"a.txt": "a\n"},
-                   seed=_seed_map_owner)
+                   seed=lambda proj: _seed_map_owner(proj, closure))
     tree = world["trees"]["P1.1"]
     _write(tree, "a.txt", "a1\n")
     _write_map(tree)

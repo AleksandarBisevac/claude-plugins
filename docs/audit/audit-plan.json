@@ -940,6 +940,12 @@
       "title": "The release-tier CI is green on Windows: prove-gates' pool lifecycle and the sweep's deadline replay",
       "status": "in_progress",
       "shard": "phases/P145.json"
+    },
+    {
+      "id": "P146",
+      "title": "The integrate suite's map-owner fixture commits in bounded time on a loaded windows runner",
+      "status": "in_progress",
+      "shard": "phases/P146.json"
     }
   ],
   "fileIndex": {
@@ -11741,7 +11747,8 @@
       "P134.1"
     ],
     "tests/test_integrate_task.py": [
-      "P131.1"
+      "P131.1",
+      "P146.1"
     ],
     "tests/test_journal_writes.py": [
       "P131.1",
