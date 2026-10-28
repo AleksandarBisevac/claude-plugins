@@ -2898,10 +2898,39 @@ def close_workers(repo, pool):
     return problems
 
 
-def _under(path, root):
-    """True when `path` is `root` or below it, both resolved."""
-    path, root = os.path.realpath(path), os.path.realpath(root)
-    return path == root or path.startswith(root.rstrip(os.sep) + os.sep)
+# ONE DIRECTORY, ONE SPELLING. The paths the pool compares come from three
+# writers: `open_workers` (resolved, native separators), `git worktree list` and
+# an admin directory's `gitdir` (git's record - forward slashes on Windows, and
+# whatever spelling the tree was registered under). Windows adds an 8.3 short
+# name for the temp root beside its long one, and folds case. So no comparison
+# here is made on a raw string: each side goes through `_canonical_path`, and a
+# root the reaper REPORTS is spelled the way `open_workers` spelled it.
+def _canonical_path(path, flavour=None):
+    """`path` resolved - which on Windows also gives the long name for an 8.3
+    short one and native separators - then case-folded where the platform folds
+    case. `flavour` is the path module (`ntpath` lets a case drive Windows'
+    folding on any platform)."""
+    flavour = os.path if flavour is None else flavour
+    return flavour.normcase(flavour.realpath(path))
+
+
+def _under(path, root, resolve=None):
+    """True when `path` is `root` or below it, on the separator boundary, both
+    spelled canonically (`resolve`, injectable, defaults to `_canonical_path`)."""
+    import _worktrees    # on sys.path through `install_path()` above
+    return _worktrees.within_tree(root, path, resolve or _canonical_path)
+
+
+def _admin_of(gitdirs, tree, resolve=None):
+    """The name of the admin directory whose `gitdir` record names `tree`, or
+    None. `gitdirs` is `[(name, recorded gitdir)]`; the record is the tree's
+    `.git` file, so its directory is the tree, compared canonically."""
+    import _worktrees    # on sys.path through `install_path()` above
+    fn = resolve or _canonical_path
+    for name, said in gitdirs:
+        if _worktrees.same_tree(os.path.dirname(said), tree, fn):
+            return name
+    return None
 
 
 def _drop_registration(repo, tree, root):
@@ -2918,20 +2947,22 @@ def _drop_registration(repo, tree, root):
     common = out.decode("utf-8", "surrogateescape").strip()
     # Relative to `repo` when git prints it relative; join keeps an absolute one.
     admin_root = os.path.join(repo, common, "worktrees")
-    want = os.path.realpath(tree)
     names = sorted(os.listdir(admin_root)) if os.path.isdir(admin_root) else []
+    gitdirs = []
     for name in names:
-        admin = os.path.join(admin_root, name)
         try:
-            with io.open(os.path.join(admin, "gitdir"), encoding="utf-8") as fh:
-                said = fh.read().strip()
+            with io.open(os.path.join(admin_root, name, "gitdir"),
+                         encoding="utf-8") as fh:
+                gitdirs.append((name, fh.read().strip()))
         except OSError:
             continue
-        if os.path.realpath(os.path.dirname(said)) == want:
-            if _output.remove_tree(admin):
-                return None
-            return "could not delete %s, the registration of %s" % (admin, tree)
-    return "no admin directory of %s names %s" % (repo, tree)
+    name = _admin_of(gitdirs, tree)
+    if name is None:
+        return "no admin directory of %s names %s" % (repo, tree)
+    admin = os.path.join(admin_root, name)
+    if _output.remove_tree(admin):
+        return None
+    return "could not delete %s, the registration of %s" % (admin, tree)
 
 
 def _owner_pid(root):
@@ -2964,10 +2995,11 @@ def _pool_tree(tree):
 
 def reap_stale(repo, alive=None):
     """Take down every pool a killed run left registered with `repo` and return
-    their roots, sorted. A pool is stale when its owner file names a pid that is
-    known to be gone - `alive(pid)` is False, not merely falsy - or when its
-    root is gone altogether, owner file included, so no run can be using it. A
-    tree that is not a pool tree is somebody else's, and never touched. Raises
+    their roots, sorted, each spelled as `open_workers` spells a root (resolved)
+    rather than as git lists it. A pool is stale when its owner file names a pid
+    that is known to be gone - `alive(pid)` is False, not merely falsy - or when
+    its root is gone altogether, owner file included, so no run can be using it.
+    A tree that is not a pool tree is somebody else's, and never touched. Raises
     RuntimeError when git cannot list the worktrees: a run that cannot tell its
     own stale trees from another's does not start."""
     alive = _pid_state if alive is None else alive
@@ -2977,17 +3009,19 @@ def reap_stale(repo, alive=None):
     trees = [ln[len("worktree "):] for ln in
              out.decode("utf-8", "surrogateescape").splitlines()
              if ln.startswith("worktree ")]
-    stale = {}
+    stale, spelled = {}, {}
     for tree in [t for t in trees if _pool_tree(t)]:
         root = os.path.dirname(tree)
         if os.path.isdir(root):
             pid = _owner_pid(root)
             if pid is None or alive(pid) is not False:
                 continue
-        stale.setdefault(root, []).append(tree)
-    for root in sorted(stale):
-        close_workers(repo, {"root": root, "trees": stale[root]})
-    return sorted(stale)
+        key = _canonical_path(root)
+        spelled.setdefault(key, (os.path.realpath(root), root))
+        stale.setdefault(key, []).append(tree)
+    for key in sorted(stale):
+        close_workers(repo, {"root": spelled[key][1], "trees": stale[key]})
+    return sorted(spelled[key][0] for key in stale)
 
 
 def _proved(rows, trees=None):
@@ -3896,7 +3930,7 @@ def _worker_cases(check):
     opener, closer = globals().get("open_workers"), globals().get("close_workers")
     reaper = globals().get("reap_stale")
     repo = _fixture_repo()
-    pool, killed = None, None
+    pool, killed, alias = None, None, None
     try:
         _c, before = _fixture_git(repo, "status", "--porcelain")
         pool = opener(repo, 2) if opener else None
@@ -3935,18 +3969,29 @@ def _worker_cases(check):
         # A run that is killed never reaches its `finally`. The pool it leaves is
         # found by its owner marker and taken down by the next run - and only when
         # its owner is gone, which is the half that keeps a CONCURRENT run's pool.
+        # Its registration is respelled first: git lists a tree as its record
+        # spells it, which on Windows is never the spelling `open_workers` holds
+        # (forward slashes, a long name for the temp root's short one), so the
+        # roots the reaper reports are judged against the run's own spelling.
         killed = opener(repo, 1) if opener else None
+        alias = tempfile.mkdtemp(prefix="prove-gates-alias-")
+        respelled = _respell_registration(killed["trees"][0], alias) \
+            if killed else None
         spared = reaper(repo, alive=lambda pid: True) if reaper else None
         still = _registered(repo)
         reaped = reaper(repo, alive=lambda pid: False) if reaper else None
         after_reap = _registered(repo)
         check("pw5 a killed run's pool is reaped by the next run - registration "
               "and scratch both - only when its owner process is gone; a live "
-              "owner's pool is left alone: spared %r (%d registered), reaped %r "
-              "(%r registered, root gone %r)"
-              % (spared, len(still), reaped, after_reap,
+              "owner's pool is left alone; and the root it reports is the one "
+              "the run opened, however git spells the registration: listed as "
+              "%r, spared %r (%d registered), reaped %r against %r (%r "
+              "registered, root gone %r)"
+              % (respelled, spared, len(still), reaped,
+                 killed["root"] if killed else None, after_reap,
                  bool(killed) and not os.path.exists(killed["root"])),
               killed is not None and spared == [] and len(still) == 1
+              and (still == [respelled] or (respelled is None and os.name == "nt"))
               and reaped == [killed["root"]] and after_reap == []
               and not os.path.exists(killed["root"]))
     finally:
@@ -3954,8 +3999,120 @@ def _worker_cases(check):
             _fixture_git(repo, "worktree", "remove", "--force", wt)
         for p in [x["root"] for x in (pool, killed) if x]:
             _output.remove_tree(p)
+        if alias:
+            _output.remove_tree(alias)
         _output.remove_tree(repo)
     _foreign_cases(check, opener, closer, reaper)
+    _spelling_cases(check)
+    _owner_probe_cases(check)
+
+
+def _respell_registration(tree, scratch):
+    """Rewrite git's record of the worker tree `tree` so `git worktree list`
+    prints it through a link in `scratch` to its pool's parent: one directory
+    under a second spelling, which is what git's forward slashes and an 8.3
+    short name are on Windows. Returns the spelling git now prints, or None when
+    this platform will not make the link (Windows without the privilege), where
+    git's own forward slashes are already a second spelling."""
+    link = os.path.join(scratch, "via")
+    try:
+        os.symlink(os.path.dirname(os.path.dirname(tree)), link)
+    except (OSError, NotImplementedError, AttributeError):
+        return None
+    code, admin = _fixture_git(tree, "rev-parse", "--absolute-git-dir")
+    if code != 0:
+        raise RuntimeError("fixture rev-parse in %s: %s" % (tree, admin))
+    respelled = os.path.join(link, os.path.basename(os.path.dirname(tree)),
+                             os.path.basename(tree)).replace("\\", "/")
+    with io.open(os.path.join(admin.strip(), "gitdir"), "w",
+                 encoding="utf-8") as fh:
+        fh.write(u"%s/.git\n" % (respelled,))
+    return respelled
+
+
+def _spelling_cases(check):
+    """Windows spells one directory several ways - git's forward slashes, the
+    native backslashes, an 8.3 short name beside the long one, either case - and
+    every comparison the pool makes of a tree, a pool root and an admin gitdir
+    must read them as one. Driven on every platform: `ntpath` stands in for the
+    Windows path module, and the injected resolver models what Windows'
+    `realpath` adds to it, the long name for a short one."""
+    import ntpath
+    canon = globals().get("_canonical_path")
+    under = globals().get("_under")
+    admin_of = globals().get("_admin_of")
+    temp = "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sw-q"
+    short = "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\sw-q"
+    root = temp + "\\prove-gates-pool-ab"
+    git_tree = (temp + "\\prove-gates-pool-ab\\w0").replace("\\", "/")
+    short_tree = short + "\\prove-gates-pool-ab\\w0"
+    sibling = temp + "\\prove-gates-pool-ab-other\\w0"
+    foreign = short + "\\prove-gates-foreign-q\\foreign"
+
+    def as_windows(path):
+        return ntpath.normcase(ntpath.normpath(path)).replace("runner~1",
+                                                              "runneradmin")
+    try:
+        folded = (canon(git_tree, ntpath), canon(root.upper() + "\\w0", ntpath))
+        inside = [under(t, r, as_windows) for t, r in (
+            (git_tree, root), (short_tree, root), (short_tree, root.upper()),
+            (git_tree, short + "\\prove-gates-pool-ab"))]
+        outside = [under(t, root, as_windows) for t in (sibling, foreign)]
+        gitdirs = [("foreign", foreign.replace("\\", "/") + "/.git"),
+                   ("w0", short_tree.replace("\\", "/") + "/.git")]
+        named = (admin_of(gitdirs, git_tree, as_windows),
+                 admin_of(gitdirs, root.upper() + "\\W0", as_windows),
+                 admin_of(gitdirs, sibling, as_windows))
+    except TypeError as exc:
+        folded = inside = outside = named = "not injectable: %s" % (exc,)
+    check("pw14 one Windows directory under every spelling it is given - git's "
+          "forward slashes, native backslashes, the 8.3 short name, either case "
+          "- is one directory to the pool: the canonical spelling folds slash "
+          "and case %r, each spelling of a pool tree is under each spelling of "
+          "its root %r, a sibling sharing the root's prefix and a foreign tree "
+          "are not %r, and the admin directory found for a tree is the one "
+          "whose gitdir names it under any spelling, none for a sibling %r"
+          % (folded, inside, outside, named),
+          canon is not None and under is not None and admin_of is not None
+          and isinstance(folded, tuple) and folded[0] == folded[1]
+          and folded[0] == root.lower() + "\\w0"
+          and inside == [True] * 4 and outside == [False, False]
+          and named == ("w0", "w0", None))
+
+
+def _owner_probe_cases(check):
+    """The reaper's own liveness probe, not an injected one: a pool owned by this
+    process - alive by construction - stands, and one whose owner file names a
+    process that has exited is reaped. On Windows this is the OpenProcess probe
+    answering about a real pid; an injected `alive` cannot test that."""
+    repo = _fixture_repo()
+    pools = []
+    try:
+        live = open_workers(repo, 1)
+        pools.append(live)
+        dead = open_workers(repo, 1)
+        pools.append(dead)
+        child = subprocess.run([sys.executable, "-c",
+                                "import os; print(os.getpid())"],
+                               stdout=subprocess.PIPE)
+        gone = int(child.stdout.decode("ascii").strip())
+        import json
+        with io.open(os.path.join(dead["root"], POOL_OWNER), "w",
+                     encoding="utf-8") as fh:
+            fh.write(u"%s\n" % json.dumps({"pid": gone, "repo": repo}))
+        reaped = reap_stale(repo)
+        standing = os.path.isdir(live["root"]) and os.path.isdir(live["trees"][0])
+        check("pw15 with the platform's own probe a pool owned by a live process "
+              "stands and one whose owner exited is reaped, reported as the root "
+              "the run opened: reaped %r, want %r, live pool standing %r"
+              % (reaped, [dead["root"]], standing),
+              reaped == [dead["root"]] and standing)
+    finally:
+        for wt in _registered(repo):
+            _fixture_git(repo, "worktree", "remove", "--force", wt)
+        for p in [x["root"] for x in pools if x]:
+            _output.remove_tree(p)
+        _output.remove_tree(repo)
 
 
 def _foreign_worktree(repo):
