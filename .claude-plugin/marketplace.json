@@ -22,6 +22,26 @@
         "cost-tracking"
       ],
       "strict": true
+    },
+    {
+      "name": "archmap",
+      "source": {
+        "source": "github",
+        "repo": "AleksandarBisevac/claude-archmap"
+      },
+      "description": "Evidence-backed architecture maps for any repo: C4-style application graph, ER diagram, sequence diagrams, CRUD matrix and data lineage in one offline HTML viewer, updated incrementally from git diffs with a stable layout and an optional issues overlay. Pre-release (0.x).",
+      "category": "documentation",
+      "tags": [
+        "architecture",
+        "diagrams",
+        "c4",
+        "er-diagram",
+        "sequence-diagrams",
+        "documentation",
+        "data-lineage"
+      ],
+      "homepage": "https://github.com/AleksandarBisevac/claude-archmap",
+      "strict": true
     }
   ]
 }
