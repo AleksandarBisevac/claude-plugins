@@ -22,28 +22,34 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P144-R1",
         "severity": "low",
         "file": "tests/test_audit_status.py:4355-4392",
         "issue": "No case pins the quoting on a plain run. kt5/kt7/kt9/kt9b/kt6b/kt8 only see a path that needs quoting when the sweep's TMPDIR holds a space (--spaced leg) or on Windows; on a plain POSIX run every fixture path is shell-safe, so `_shell_word` returning `text` unquoted would leave the task's own gate command (`sweep-selftests.py tests/test_audit_status.py`, 407 cases, run by me: exit 0) green. The executor's own mutation proof is red only under --spaced.",
-        "resolution": "Add one deterministic case that does not depend on the temp root: call `M._kept_tree_remedy('P2.1 set aside 1', <path with a space, a single quote and a backslash>, None)` and assert `_posix_words(remedy)` equals ['git','worktree','remove','--force', path] and that the saveFirst entries read back to the same one-word path through `_posix_words`. Then the fix is red on any leg, not only the spaced one."
+        "resolution": "Add one deterministic case that does not depend on the temp root: call `M._kept_tree_remedy('P2.1 set aside 1', <path with a space, a single quote and a backslash>, None)` and assert `_posix_words(remedy)` equals ['git','worktree','remove','--force', path] and that the saveFirst entries read back to the same one-word path through `_posix_words`. Then the fix is red on any leg, not only the spaced one.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P144-R2",
         "severity": "low",
         "file": "tools/lints/_deps.py:1950-1953,1968-1972",
         "issue": "GIT_PATH_BASE_EXEMPT reason rows for drive-phase.py tree_changed and _changed_between still say the paths are 'handed back as literal pathspecs to git'. This diff removes exactly that for _changed_between (and _unheld) and tree_changed never did it, so the table now states the opposite of the code. The lint passes (it reads the rows' presence, not their prose), so nothing will catch it. The executor reported it as LEFT (b), the file being outside the task's files.",
-        "resolution": "Reword both rows to say the listings are narrowed in Python by _literal_matches, in a follow-up task that owns tools/lints/_deps.py."
+        "resolution": "Reword both rows to say the listings are narrowed in Python by _literal_matches, in a follow-up task that owns tools/lints/_deps.py.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P144-R3",
         "severity": "low",
         "file": "tests/test_drive_phase.py:10157-10177",
         "issue": "ar22's pathspec-matching branch in _command_line_git (the specs / startswith(tag) handling) is never reached by the fixed product, since _changed_between and _unheld now pass no pathspec. It only bites if someone reintroduces :(literal) arguments. That is the intended guard, but a reader cannot tell from the case that the branch is dormant, and nothing asserts that no argv in `seen` carries a pathspec. `len(seen)` is recorded in `answered` but never compared.",
-        "resolution": "Either assert that no recorded argv holds a ':(literal)' element (turning the dormant branch into a live pin that a reintroduction trips under the posix leg as well), or drop the unused `seen` count from `answered`."
+        "resolution": "Either assert that no recorded argv holds a ':(literal)' element (turning the dormant branch into a live pin that a reintroduction trips under the posix leg as well), or drop the unused `seen` count from `answered`.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P144-R4",
@@ -60,21 +66,53 @@
         "severity": "med",
         "file": "tools/sweep-selftests.py (block_figure/block_timeout, about 214-257)",
         "issue": "A block missing from a timed suite's per-block figures falls back to costs[path]/len(labels), where costs[path] is the sum of the OTHER blocks, so a renamed or added block gets the 300 s floor - reproduced: renaming test_drive_phase.py's ar-block gives (300, 'suite') while ar-block gets 1789 and a wholly untimed suite 1789. On windows a ~596 s block is killed at 300 s and stays red until the table is re-recorded from that red log; this breaks the code's own rule that staleness by omission never tightens a timeout.",
-        "resolution": "A block with no figure takes at least the largest recorded block figure of its suite (the untimed rule), so omission never tightens; pin it with a case that renames a heavy block.",
-        "fixTask": "P144.8-ttw"
+        "resolution": "fixed in P144.8-ttw (afda4891d250): A block with no figure takes at least the largest recorded block figure of its suite (the untimed rule), so omission never tightens; pin it with a case that renames a heavy block.",
+        "fixTask": "P144.8-ttw",
+        "commit": "afda4891d250",
+        "status": "fixed"
       },
       {
         "id": "P144-R6",
         "severity": "med",
         "file": "tests/_harness.py (replay_results/label_faults); tools/sweep-selftests.py about 127-136",
         "issue": "Duplicate case ids across a staged suite's blocks are no longer checked by any per-PR CI job: each part's replay builds its label sites only from the blocks it ran, every staged suite is split across all four parts, and the only unsharded CI sweep (release-only resample) covers one suite. Before ee9ce74e CI's replay checked each suite whole; the gate was lost by design and neither the commit nor ci.yml says so.",
-        "resolution": "Restore the check on every CI run: e.g. each part prints its block label-site map and one step reads all parts, or a single cell runs the label check over each whole suite statically; choose the structurally correct one and pin it red-first.",
-        "fixTask": "P144.8-ttw"
+        "resolution": "fixed in P144.8-ttw (afda4891d250): Restore the check on every CI run: e.g. each part prints its block label-site map and one step reads all parts, or a single cell runs the label check over each whole suite statically; choose the structurally correct one and pin it red-first.",
+        "fixTask": "P144.8-ttw",
+        "commit": "afda4891d250",
+        "status": "fixed"
+      },
+      {
+        "id": "P144-R7",
+        "severity": "low",
+        "file": "tests/_harness.py (_written_id, about 996-1100)",
+        "issue": "The static cross-block id check reads only a literal or a %-BinOp whose leftmost operand is a literal; check('k1 {}'.format(1)), check(label='k1 ...') and ids fed through a loop variable are not read, and the docstring does not name .format or label= among the runtime-built ids left to the run.",
+        "resolution": "Read .format on a literal receiver and the label= keyword, or name both in the docstring's limit.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
+      },
+      {
+        "id": "P144-R8",
+        "severity": "low",
+        "file": "tests/_harness.py (cross_block_ids)",
+        "issue": "A helper reached by two blocks that writes one id on two lines (an if/else: check('k1 posix') / check('k1 win')) is reported as a duplicate across blocks, though at runtime each block calls one line.",
+        "resolution": "Treat lines of one function as one site for the cross-block question, or say the limit in the docstring.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
+      },
+      {
+        "id": "P144-R9",
+        "severity": "low",
+        "file": "tests/_harness.py (named / reach)",
+        "issue": "Reach follows every ast.Name equal to a top-level def name, so a parameter or local shadowing a case function, or a name used only as data, pulls that function's ids into a block's reach (reproduced with a parameter named _a_cases).",
+        "resolution": "Follow only names in call position or passed as a call argument, and skip names bound locally.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       }
     ],
-    "outcome": "[findings: 6 - 0 high, 3 med, 3 low; 1 with a recorded fix commit]"
+    "outcome": "[findings: 9 - 0 high, 3 med, 6 low; 3 with a recorded fix commit]",
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "P144 makes P142's suites pass on every CI runner. prove-gates' selftest no longer relpaths across Windows drives. Status's kept-tree rows are asserted by the words a POSIX shell reads, so a spaced or linked temp root and Windows paths hold. The drive's recut no longer hands git-printed paths back as pathspecs, which lost non-UTF-8 names on Windows. The sweep shards and times a staged suite by its blocks, on a re-recorded windows table across four shards; a block with no figure is never timed tighter than its suite's heaviest block, and duplicate case ids across blocks are read from the source on every shard. Every med finding is fixed; lows are carried to BUG-29-dau.",
   "tasks": [
     {
       "id": "P144.1-6yq",
@@ -483,7 +521,7 @@
     {
       "id": "P144.8-ttw",
       "title": "A staged block with no recorded figure is never timed tighter than its suite's heaviest block, and duplicate case ids across blocks are checked on every CI run",
-      "status": "in_progress",
+      "status": "done",
       "description": "Review of ee9ce74e (block-sharded sweep) found two meds, recorded as P144-R5 and P144-R6 with their scenarios and resolutions - read them. R5: block_figure/block_timeout give a block missing from a timed suite's figures the 300 s floor (reproduced by renaming test_drive_phase.py's ar-block). R6: duplicate case ids across a staged suite's blocks are checked by no per-PR CI job since each shard replays only its own blocks. Fix both structurally; red-first a case for each; keep the union-of-parts pin (sd2), tt5, gate-parity and the ci.yml matrix consistent. If R6's fix needs a new CI step or job, give it a time bound backed by a measured or stated-estimate longest line as gate-parity requires. Lows from the same review (seeded windows block figures are darwin-shaped; merge_costs relabels platform after a partial re-record; replay count per leg) go to the batch - do not fix them here.",
       "files": [
         "tools/sweep-selftests.py",
@@ -511,14 +549,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "afda4891d250",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "R5 (tools/sweep-selftests.py): block_figure now gives a block with no figure in a suite that has block figures the larger of the even share (`suite`) and the suite's largest recorded block, ghost labels included (new basis `largest`). block_timeout, unit_costs, work_items and shard_units all read it. budget_line counts `largest` blocks by name, and shard_line counts every basis. Docstrings and the shards/blocks model comments were updated. bk1's z-block expectation moved from (900, suite) to (1200, largest), because the old expectation encoded the bug. New bk5: a fixture rename gives (1800, 'largest'), and on the live table, renaming test_drive_phase.py's heaviest block (ar-block) keeps its timeout (1789, now 'largest'). bk5 also checks that the budget line counts it. bk2's y (share 500 > largest 400 -> 1500, suite) is the second direction. R6 (tests/_harness.py), design: the check reads the source rather than the runs. New _written_id / block_written_ids / cross_block_ids read, off the AST, every check() call whose first argument spells a literal id. They follow each STAGES row through every top-level function it names, called or passed on. An id written on two lines that two different blocks reach is a failing case naming each line and block. stage_faults returns these, so every full staged run and every --replay reads them, whichever blocks a part was dealt. New sr3c (static reading: k1 and k5 caught through a helper of one block; a shared line, two lines of one block and a runtime-built id are not flagged). New sr21 (a real fixture suite: a part that ran only d-block, with e-block elsewhere, still fails DUPLICATE CASE ID `z1` ACROSS BLOCKS). Why this over the alternative (each part prints its call-site map and a later job joins the parts): the fault is a property of the authored source, and the source is identical in every part. The join would need a new CI job plus artifacts and a verify.sh slice (verify.sh is not in this task's files), and it would only see sites from parts that finished. Measured on all live staged suites: cross_block_ids finds nothing on HEAD. Limit, stated in the code: an id built at runtime is read only where both blocks share a run. The runtime call-site check stays. ci.yml: only a comment naming where the check lives. No new step or job, so no new `longest` line; the 4-shard matrix line and timeout-minutes are untouched. gate-parity.py was not edited. Dependants: ci.yml selftests matrix and bounds unchanged, and gate-parity is green. prove-gates' shard_matrix_drift anchor line is unchanged, and prove-gates --selftest is 61/61. stamp-verification.py reads only the file-level `costs` and TIMEOUT_PER_COST, both unchanged, so it is still correct. tt5 is green: a missing block's bound is at most its suite's largest block, which is at most the untimed bound. sd2 is green: block_figure changes weights, not membership. test_drive_phase's _harness._load_sweep is unchanged. The full local sweep is 193/193 files ok with exit 0. Its budget line shows 316 blocks from their own figure and 0 on any fallback. Left for another task (not my files): CLAUDE.md:238 and :251 and CONTRIBUTING.md:331 and :347 still describe a missing block's fallback as only its suite's figure over its blocks. They now owe 'or its suite's largest recorded block when that is more'.",
+        "descriptive": "A renamed or added block is never timed tighter than its suite's heaviest recorded block. Duplicate case ids across a staged suite's blocks are read off the source by every replay, so every CI part checks them."
       },
       "startedAt": "2026-10-28T18:13:27Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-28T18:42:41Z",
+      "verifiedBy": [
+        "bk5 (tools/sweep-selftests.py): a block missing from a suite the table times block by block is timed no tighter than the suite's largest recorded block, in a fixture and on the live table with test_drive_phase.py's heaviest block renamed; the budget line counts it",
+        "sr3c (tests/_harness.py): stage_faults reads a case id two blocks write off the source, through helpers, and does not flag a shared line, two lines of one block, or a runtime-built id",
+        "sr21 (tests/_harness.py): a sharded part that replayed only one of two blocks claiming z1 still fails DUPLICATE CASE ID `z1` ACROSS BLOCKS"
+      ],
       "notes": [
         {
           "at": "2026-10-28T18:02:16Z",
@@ -542,14 +584,26 @@
         "runId": "2026-10-28T18:42:38Z.bc1605",
         "status": "passed",
         "at": "2026-10-28T18:42:38Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "afda4891d250",
+        "at": "2026-10-28T18:42:41Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-28T18:34:41Z",
+        "basis": "`python3 tools/sweep-selftests.py tools/sweep-selftests.py` in a throwaway tree at HEAD exited 1 with 2 of 153 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code, the task's run with its inline suite tools/sweep-selftests.py laid over as HEAD's copy plus its 4 test hunk(s), 13 other hunk(s) held at HEAD), each passing with the working tree's implementation - bk5 (house FAIL): SELFTEST FAILED: 151/153 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - 3 times the recorded 37s of tools/sweep-selftests.py in .github/sweep-costs.json is only 109s; fix run: held back 37s of the deadline, the recorded slot-seconds of tools/sweep-selftests.py in .github/sweep-costs.json",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     }
   ],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "482d7bf5-025e-4eb9-acc8-1383e2a9aaa8",
-    "branch": "audit/p144-p142-s-suites-pass-on-every-ci",
-    "at": "2026-10-28T15:50:25Z"
-  },
-  "startedAt": "2026-10-28T15:50:25Z"
+  "startedAt": "2026-10-28T15:50:25Z",
+  "testEvidence": {
+    "runId": "2026-10-28T18:57:48Z.f30107",
+    "status": "passed",
+    "at": "2026-10-28T18:57:48Z"
+  }
 }
