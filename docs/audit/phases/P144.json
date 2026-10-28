@@ -1,7 +1,7 @@
 {
   "id": "P144",
   "title": "P142's suites pass on every CI runner: Windows paths across drives, spaced and linked temp roots",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "The release-tier CI run (ci.yml -f tier=release) is green on the commit that carries P142 and these fixes, every selftests leg included (linux stress, windows plain and cp1252)",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "f06f113f73922e38d671a96547d8b51874a9b622",
   "branch": "audit/p144-p142-s-suites-pass-on-every-ci",
-  "mergedAt": null,
+  "mergedAt": "2026-10-28T19:08:01Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -605,5 +605,6 @@
     "runId": "2026-10-28T18:57:48Z.f30107",
     "status": "passed",
     "at": "2026-10-28T18:57:48Z"
-  }
+  },
+  "mergedHead": "f10ed7500bec4bd5f36315de0552416813e705c1"
 }
