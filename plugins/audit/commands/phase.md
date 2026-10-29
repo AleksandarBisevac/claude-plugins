@@ -50,7 +50,7 @@ Omit `id`: over `P0`, `P1`, `P3` the next is `P4`, never `P2`.
 phase branch ask first: phase work is `/audit:task add --phase <id>`; new work is
 `add-phase ... --park`. **`/audit:phase add --risk` is refused** - phases carry no risk.
 No plan yet: created, no placeholder.
-Exit 3 (lock held): stop; 4 (looks abandoned): ask the human before `--takeover`.
+Exit 3 (index lock held): stop; 4 (looks abandoned): ask the human before `--takeover`.
 
 ## Subcommand: `retarget <phaseId>`
 

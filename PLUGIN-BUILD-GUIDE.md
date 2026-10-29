@@ -3293,10 +3293,12 @@ never passes through the main loop. The executor's carries the resolved skills (
 the description verbatim, the files with their last declarer, the docs, the desired outcome,
 the gate resolved through `meta.buildCommands`, the `executor.runsGate` reading with its
 command, the filing command — one `drive-phase.py submit`, resolved against this plugin copy,
-carrying on a `tdd` task the gate command that names its `tests.add` file after `--`
+carrying, on a task that owes a red-first proof (`_filed_returns.owes_red_first`: `tdd`, with
+`tests.expectRedFirst` not false), the gate command that names its `tests.add` file after `--`
 (`red_command`), since `submit` takes the stamp and runs the red-first helper itself — and,
 only when `attempts > 1`, what the last attempt left on the record. Both reviewer briefs file
-through `submit` too, the phase review's with `--head`. The
+through `submit` too, the phase review's with `--head` - but a per-task reviewer run as a
+session under `executor.writerModel` is told not to, and the drive files its return. The
 reviewer's carries the executor's return as filed for the task's current start
 (byte-identical), the diff, the recorded run and the gate commands, and is refused with exit 4
 (`E_REFUSED`), writing nothing, until that return is filed. The phase reviewer's carries the
@@ -4354,7 +4356,13 @@ instruction: `dispatch` (an agent type, the task, its model and the brief file `
 brief` wrote), `decide` (a named decision with its options), or `done`. The command body is the
 loop — run `next`, do what it prints, run `next` again — so a task costs the main loop four
 requests: dispatch the executor, `next`, dispatch the reviewer, `next`. `dp2` in
-`tests/test_drive_phase.py` counts them over a drive of a fixture plan.
+`tests/test_drive_phase.py` counts them over a drive of a fixture plan. Under
+`executor.writerModel` both dispatches are `run-agent-session.py` sessions rather than Agents -
+the dispatch carries the session's command as its `run:` line, which the main loop starts in the
+background - and the reviewer's session files nothing: its prompt ends with
+`REVIEWER_SESSION_RULE`, which tells it not to run its brief's `submit`, and the drive files the
+JSON object its last message ends with through `submit` itself (`reviewer_session_step`), once
+the saved stream shows the session opened something.
 
 **Every step is an existing verb, run as a subprocess.** An entry point may not import another,
 so each verb is resolved by basename through `_loader.script_path` and run: `audit-lock.py
@@ -4600,7 +4608,8 @@ to explain step by step: the shape check (`submitted_shape`, with the fields `su
 aside, so a malformed return costs no red run and writes nothing); for an executor whose return
 is already filed for this start, a refusal before anything runs (`already_filed`); with a test
 command, `stamp-verification.py red --json`, whose `redFirst` block replaces the agent's - owed
-on a `tdd` task, which is refused without one, and a test that passes without the fix gets no
+on a task that owes a red-first proof, which is refused without one, while a `tdd` task whose
+`expectRedFirst` is false, given no command, has its `not-attempted` block filed by `submit`, and a test that passes without the fix gets no
 block and no filing (`red_block`); then `stamp-verification.py take --json`, after the red run
 because the stamp is taken after the last claim, refused as a missing stamp when it prints no
 `audit-stamp:` line or git put no HEAD in it (`take_stamp`); and last `audit-task.py
@@ -4732,7 +4741,10 @@ whether each clause was answered and whether the cited path changed - never whet
 delivers the clause, which the recorded gate and the reviewer judge. `delivered: false` with a reason
 is an answer, listed as `declined`. A gap at a green gate is the drive's `clauses-uncovered-writer`
 decision, whose `resume` sends `resume_text` to the session and counts as a resume round; once the
-rounds are spent it is the plain `clauses-uncovered`. Its cases are `tests/test__clause_coverage.py`.
+rounds are spent, or with `executor.writerModel` no longer set or no longer valid
+(`drive-phase.py`'s `writer_path_on`), it is the plain `clauses-uncovered` - as a red the helper
+will not grade is `red-refused` rather than `red-refused-writer` then. Its cases are
+`tests/test__clause_coverage.py`.
 
 ### `plugins/audit/scripts/governance/_tree_stamp.py`
 Which tree was this, and is it still that one.
@@ -5123,7 +5135,14 @@ with a TMPDIR of its own under the parent's temp directory (`tempfile.gettempdir
 TMPDIR is honoured) and not under the task's scratch, which the drive keeps inside the project — a
 TMPDIR below it put every fixture a session's suites build inside the real checkout. A parent temp
 directory with a `.git` above it (`_manifest_io.checkout_of`) is refused as `io-error:` naming it
-(exit `5`), and nothing else is tried; the scratch keeps `<TMPDIR name>.tmpdir`, holding the path.
+and telling the caller to point TMPDIR at a directory with no `.git` above it (exit `5`), and
+nothing else is tried. The scratch keeps `<TMPDIR name>.tmpdir`, holding the path, which nothing in
+the drive reads back: it is for a reader looking for a directory the removal did not reach. The
+TMPDIR itself is removed when the run ends (`_run`'s `finally`, through `drop_session_tmp`) - on
+success, on a failing or missing result, on a budget stop and on SIGINT or SIGTERM, which are armed
+from before the directory is made. Nothing a caller is told to read lives in it, so nothing is
+copied out first; a removal that fails is named on stderr and leaves the exit code as the session
+made it, and a SIGKILL still leaves it.
 The child also runs without the parent's Claude session
 variables, so it starts as a top-level session does and not as a child of the orchestrator's: the
 names outside `CLAUDE_CODE_` that mark a parent (`PARENT_SESSION_VARS`: the `CLAUDECODE` marker,

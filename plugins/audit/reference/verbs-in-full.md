@@ -959,8 +959,9 @@ directions.
 #### `file-return <taskId> --role executor|reviewer` — the one write a returning agent makes
 
 Not typed by a person, and not by an agent either any more: an agent's last act is
-`drive-phase.py submit`, which takes the stamp, runs the red-first helper on a `tdd` task and then
-runs this verb once with the return on stdin. The agent hands back the one line `submit`
+`drive-phase.py submit`, which takes the stamp, runs the red-first helper on the test command
+after `--` - one a task that owes a red-first proof (`tdd`, `tests.expectRedFirst` not false)
+must give - and then runs this verb once with the return on stdin. The agent hands back the one line `submit`
 printed.
 
 ```

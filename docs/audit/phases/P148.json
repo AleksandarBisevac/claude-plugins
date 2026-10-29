@@ -73,9 +73,30 @@
         "file": "CONTRIBUTING.md:534",
         "issue": "The sentence 'A mutation that turns nothing red is printed as `inert`' is now a subset of the behaviour. inert also covers a mutation whose only reds were already red unmutated or green when swept again, and the CI tail now prints WINDOW TRUNCATED. The executor reported this and left it, since the file is outside the task. The doc and the tool now disagree, but only by understatement, and no other document pins the old wording.",
         "resolution": "In a follow-up that owns CONTRIBUTING.md, reword to 'a mutation that changes no suite's verdict' and add the truncation line."
+      },
+      {
+        "id": "P148-R8",
+        "severity": "low",
+        "file": "CHANGELOG.md:52",
+        "issue": "The new Unreleased/Added entry about the task gate and open high bugs has a line 142 characters wide (the sentence beginning '3.6.0 with no line here, so it is recorded now. `audit-status.py --gate --task <id>` sets aside...'), against a file wrap of about 95. This is the class P147-R6 asked to fix, re-introduced by the same diff that fixes that one.",
+        "resolution": "Rewrap that entry so no line passes the file's usual width."
+      },
+      {
+        "id": "P148-R9",
+        "severity": "low",
+        "file": "plugins/audit/scripts/status/_doctor_hygiene.py:374; plugins/audit/scripts/status/audit-status.py:1136; plugins/audit/scripts/governance/propose-gates.py:31",
+        "issue": "P131-R5 is only partly answered. Its resolution had three parts: delete the `--selftest` usage lines, reword phase-signoff.md, and reword the three comments that name `_output.prose_number_claims()`, which now lives in tools/lints. The first two are done for the declared files. The three comments are still at those lines (grep at the task tree) and still name a function that is not in _output. The executor reported this as not made because the files are outside the task's declared files, which is the correct handling, but the finding stays open.",
+        "resolution": "File a follow-up task owning those three scripts that rewords each comment to name the source-repository lint (tools/lints/_output_lints.py). The executor also lists audit-task.py:123, audit-status.py:14 and _proposals.py:40 as further `--selftest` mentions of the same class; confirm each in that task."
+      },
+      {
+        "id": "P148-R10",
+        "severity": "low",
+        "file": "tests/test__worktrees.py:1001",
+        "issue": "P142-R44 is fixed in _worktrees.sweep_plan, but the title of case ts2 still says removing a clean task tree is `task-remove`'s job, the claim the reason string no longer makes. The case asserts nothing on the reason text, so it is wording only. The executor left it because the file is outside the task's files.",
+        "resolution": "Reword the ts2 title to the step driver's removal in a task that owns tests/test__worktrees.py."
       }
     ],
-    "outcome": "[findings: 7 - 0 high, 1 med, 6 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 10 - 0 high, 1 med, 9 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -270,7 +291,7 @@
     {
       "id": "P148.4",
       "title": "The maintainer tools' carried lows: prove-gates reaping report and SIGTERM wait, example-pin and affected-miss measurement edges, command-file scan, timing-bound and probe-stderr cases",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix the low review findings P131-R7, P131-R26, P131-R27, P131-R32, P142-R50, P142-R51, P145-R1, P146-R1, P146-R2, carried to BUG-29-dau. Each finding's file, issue and resolution is in its phase shard (docs/audit/phases/<phase>.json, review.findings, by id). Read each against the code at HEAD first: lines have moved since it was filed. For each finding either fix it - with a case proven red first where the finding is about behaviour or a missing case - or, where HEAD no longer has the defect or the finding records a past return or plan record that nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id, one line each: fixed (what changed, which case) or no-change (why, with the line read). Edit only the declared files; a fix that needs another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
       "files": [
         "tools/prove-gates.py",
@@ -296,19 +317,39 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6bb76efba90b",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Findings, one line each. P131-R7 fixed: x2 now asserts that docs/examples/azure-pipelines.yml is in the live set, beside the old equality, and reads the files through _read_text, a with block. x4 reads through a with block with newline translation kept, so Windows CRLF still compares equal. rl16 is in tools/release.py, outside this task's files, so it is left as it is. P131-R26 fixed: new window_truncated(listed, limit, since) returns True when gh returned as many runs as the limit allows and none is older than the window start. ci_half carries it as truncated, and render's CI tail says WINDOW TRUNCATED at the run limit. Case m20 covers it with the stub gh and ci_limit=5: since 1990 is truncated; since 2020, which reaches the window start, is not; and m11's short list is not. P131-R27 fixed: inert now means the mutation changed no verdict. New _changed_verdict(opts, tree, first, rec) stops at the first proof: a miss, or a red not yet settled that is green when swept alone unmutated. An unattributed red is compared against one unmutated whole sweep. describe() words an inert run that had reds as such. Case m9b: the style mutation over the broken fixture is inert with baseline_red test_d, while raise is not inert. P131-R32 no-change: HEAD already guards the scan. tests/test__output.py:130-149 _shipped_literals catches OSError, ValueError and SyntaxError per file and names the file in unreadable, and case mv11 (around line 341) asserts that an untracked broken .py and .json are named while the scan carries on. It passed in this gate. P142-R50 fixed: reap_stale returns (taken, left). A pool whose close_workers reported problems is in left with its problem and not in taken. main writes each left pool to stderr and exits 2 before opening a pool. New case pw16 makes close_workers fail through a fake, then checks a fake reap's left in main: exit 2, the root named, no pool opened. pw5, pw6, pw13, pw15 and the main-run fake now expect the tuple with an empty left. P142-R51 fixed: each row's child runs through _row_runner as its own process group (_proc_group.group_kwargs) and is recorded in per-run state from _row_children. run_ordered takes on_abort, called on any BaseException before pool.shutdown(wait=True). _proved passes on_abort as _stop_rows, which sets stopping under the start lock and runs _proc_group.tear_down on each live child, so shutdown waits for rows unwinding rather than running. The trade, that a group signal or SIGKILL to the run no longer reaches the rows directly, is stated in the pool comment block together with the grace relation to the drive's teardown, which is the same _proc_group.GRACE_SECONDS. The module docstring now says a SIGTERM stops running rows first. New case pw17 drives _proved with a fake prove that starts a real sleeping child through the handed runner, then raises SystemExit(143) once the child's marker exists. The verdict is how the child ended (non-zero), never elapsed time, and a runner already stopping refuses to start a child. P145-R1 fixed: pw5's label now prints which spelling was exercised, a second spelling through a link or git's own record only, with the second spelling NOT exercised when the platform will not make the link, so the narrowing is visible in every log. Confirming on windows-latest that the symlink branch is taken was not possible from this macOS host, and the next windows CI log answers it from that line. P146-R1 fixed: lf4 swaps the module's time for a frozen clock whose sleep is counted and pushes the clock past the deadline. It asserts attempts == 1 and sleeps == 0 instead of elapsed seconds, so runner speed cannot pass or fail it. lf5 is unchanged. P146-R2 fixed: new _child(what, argv, **kwargs) runs without check=True and raises RuntimeError carrying the exit code and stderr, with TimeoutExpired reported including its stderr. _recipe_closure(probe=None) and _write_map use it. New case i9p, first in block itf, feeds a probe that writes a marker to stderr and exits 7. Class sweep: grep check=True over tests/*.py found the same captured-and-dropped shape outside this task's files at tests/test_drive_phase.py:8472-8474 and tests/test_guard_bash_writes.py:2627 and :2654, which are reported and not changed. Gate: python3 tools/sweep-selftests.py with the six files exited 0, reading 6/6 files ok and 367 cases. prove-gates 65, measure-affected-miss 25, check-example-pins 24, test__output 91, test_usage_ledger 127 and test_integrate_task 35 cases. ruff check exited 0 on the six files and vermin -t=3.8- exited 0. prose_number_claims and house_style_violations report nothing for these files. tools/prove-gates.py was not run in full. Dependants, each still correct. .github/sweep-costs.json: the new cases change suite costs only slightly, and pw17 adds a child that is stopped at once. tests/_harness.py, tests/test__deps.py, test__gate_feed.py, test_guard_bash_writes.py, hooks/guard-bash-writes.py and tools/affected.py name prove-gates by path or use _call_name and _under, which are unchanged. tests/test_drive_phase.py and drive-phase's lint probe see the same protocol: --changed, ROW NOT PROVEN, and exit 2 as a refusal. The new exit-2 path is one more refusal of the kind main already had. Under drive teardown, rows are now stopped by prove-gates' own SIGTERM handler rather than by the group signal, as documented. check-example-pins dependants (release.py, check-release-published.py, verify.sh, docs, CONTRIBUTING, CLAUDE.md, test_stamp_verification.py, azure-pipelines.yml) use unchanged names and the CLI, and only cases changed. measure-affected-miss dependants (tests/test__output_lints.py, tools/affected.py, _output_lints.py) use _t, _cases, _selftest and mutate, which are unchanged. CONTRIBUTING.md:534 says a mutation that turns nothing red is printed as inert. That is still true but now a subset, because inert also covers reds that were all already red, so a doc follow-up outside this task's files is suggested. tests/test__output.py was not edited. tests/test_usage_ledger.py dependants (usage_ledger.py, test_audit_task.py, the guide) are unaffected, since only the case changed. tests/test_integrate_task.py dependants: test_commit_task_work.py imports _index_cases, and test_drive_phase.py uses _follower_cases and _resume_cases. Those signatures are unchanged, though _follower_cases now runs i9p first. integrate-task.py is untouched.",
+        "descriptive": "Nine carried low findings are answered. Eight are fixed with cases, each proven red by mutation: inert means no verdict changed, the CI window flags truncation, prove-gates reports stuck pools and stops running rows on exit, pw5 names the spelling it exercised, lf4 counts waits instead of timing them, and probe failures carry stderr. One finding is no-change because HEAD already guards it."
       },
       "startedAt": "2026-10-29T00:01:13Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-29T00:53:16Z",
+      "verifiedBy": [
+        "m9b (tools/measure-affected-miss.py): a mutation whose only red was already red unmutated is inert, while the raise on the same commit is not",
+        "m20 (tools/measure-affected-miss.py): a run list as long as --ci-limit with its oldest run inside the window is flagged truncated and rendered so, while a window-reaching list or a short list is not",
+        "pw16 (tools/prove-gates.py): a stale pool the reaper could not take down is reported as left, not taken down, and main refuses with exit 2",
+        "pw17 (tools/prove-gates.py): an exit reaching _proved stops the running row's child, judged by how it ended, and no child starts once a run is stopping",
+        "i9p (tests/test_integrate_task.py): a failing closure probe raises with its exit code and stderr",
+        "lf4 rewritten (tests/test_usage_ledger.py): judged by counted lock attempts and sleeps under a frozen clock, not seconds",
+        "x2 strengthened (tools/check-example-pins.py): the live set holds docs/examples/azure-pipelines.yml by name",
+        "pw5 relabelled (tools/prove-gates.py): prints which spelling was exercised"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-29T00:35:53Z.87f128",
         "status": "passed",
         "at": "2026-10-29T00:35:53Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "6bb76efba90b",
+        "at": "2026-10-29T00:53:16Z",
+        "return": "docs/audit/evidence/returns/P148.4/20261029T000113Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "Regression task with tests.add empty and expectRedFirst false, so no helper red was owed. For tools/*.py the new cases sit in the same file as the fix, so the helper's HEAD-code-plus-test-files run cannot separate them. Instead each new or strengthened case was proven red by mutating the fix in the task tree, running the suite, and restoring in the same command, with __pycache__ purged between runs (scratchpad probe/mutate.py). Results: m9b red when inert is forced False (24/25), and m8 plus m9b red when it is forced True (23/25). m20 red when window_truncated always returns False and also when it always returns True (24/25 each). pw16 red when reap_stale counts every pool as taken down, and also when main's left-refusal is removed (64/65 each). pw5, pw6, pw13 and pw15 red when reap_stale reports every pool as left (61/65). pw17 red when on_abort=None and also when the runner ignores stopping (64/65 each). lf4 red when lock_month waits on ENOTSUP: attempts=2 sleeps=1, 125/127. i9p red when check=True is restored, which raises CalledProcessError without the stderr marker (34/35). x2 red when read_pins drops the --branch pattern (7/24). Every restore was confirmed byte-identical.",
+        "at": "n/a - no helper run; the mutation runs were made in the task tree on 2026-10-29"
       }
     },
     {

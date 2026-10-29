@@ -39,7 +39,6 @@ Usage:
   merge-manifest.py uninstall <manifestPath> [--dry-run]
   merge-manifest.py status    <manifestPath>
   merge-manifest.py resolve   <conflicted manifest file> --renumber ours|theirs
-  merge-manifest.py --selftest
 
 Exit codes: driver - 0 merged cleanly, 1 conflicted (markers written). install /
 uninstall - 0 done, 1 refused, 2 usage. status - 0 installed and current, 1 not

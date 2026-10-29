@@ -44,9 +44,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   naming suites that `.github/sweep-costs.json` times gets the allowance the sweep itself gives
   those suites before it calls them hung, when that is longer than the default and never longer
   than the host's Bash limit; the fix run, the last of the runs, has the recorded cost of those
-  suites held back from the runs before it, up to half the deadline. The basis names the deadline and where it came from,
-  what was held back, and any suite the table has no cost for - there is no stand-in figure for
-  a measurement nobody made. `--timeout`, when given, is used as given.
+  suites held back from the runs before it, up to half the deadline.
+  The basis names the deadline and where it came from, what was held back, and any suite the
+  table has no cost for - there is no stand-in figure for a measurement nobody made.
+  `--timeout`, when given, is used as given.
+- **A task's gate does not count the high bugs its own phase is open to fix** - shipped in
+  3.6.0 with no line here, so it is recorded now. `audit-status.py --gate --task <id>` sets aside, under `open-high-bugs` alone, the open high
+  bugs linked to that task or to a not-yet-finished task of its phase, and names each with the
+  reason in a `GATE TASK` line (`gate.exempted` under `--json`); `run-test-gate.py --task` adds
+  the flag to a gate step that is one `audit-status.py --gate` invocation. Only the flag sets
+  it, never the environment, so sign-off, CI and every other `--gate` run count every open
+  high bug as before.
 
 ### Changed
 - **One commit verb writes the index and the shard together.** A commit carrying a phase's shard

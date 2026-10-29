@@ -129,8 +129,9 @@ def parse_answer(message):
 def _slashed(path, root):
     """`path` in the plan's spelling - forward slashes, no `./`, a path under
     `root` made relative to it - or None for a value that is not a path. An
-    absolute path outside `root` stays absolute, so it matches nothing the diff
-    names, whatever its tail."""
+    absolute path outside `root` becomes a `../` path (or stays absolute when
+    it sits on another drive than `root`, which `relpath` cannot bridge), so it
+    matches nothing the diff names, whatever its tail."""
     if not isinstance(path, str) or not path.strip():
         return None
     text = path.strip()

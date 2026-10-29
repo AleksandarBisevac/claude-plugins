@@ -30,7 +30,6 @@ it.
 Usage:
   migrate-manifest.py <manifest> [--to=sharded|single-file]
                                  [--dry-run] [--force] [--renumber] [--out=<path>]
-  migrate-manifest.py --selftest
 
 Safe by default:
   - ALREADY in the requested layout -> nothing to do (exit 0)

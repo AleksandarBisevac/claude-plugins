@@ -19,7 +19,6 @@ Usage:
   set-priority.py <manifestPath> <phaseId> <tier> [--force]
   set-priority.py <manifestPath> <phaseId> --clear
                   [--project-dir DIR] [--takeover] [--json]
-  set-priority.py --selftest
 
 Exit codes:
   0  written (or already the value asked for -- nothing written, and it says so)

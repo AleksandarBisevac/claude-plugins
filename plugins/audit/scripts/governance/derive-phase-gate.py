@@ -72,7 +72,6 @@ importers, changed or last-failed ever run -- never an empty result read as
 Usage:
   derive-phase-gate.py <manifestPath> <phaseId> [--dry-run] [--brief] [--json]
                        [--project-dir DIR] [--takeover]
-  derive-phase-gate.py --selftest
 
 Exit codes:
   0  computed (and written, unless --dry-run) -- or nothing to derive, said why

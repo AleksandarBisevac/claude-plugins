@@ -47,8 +47,8 @@ basis): the verb fills it, records an override, refuses other disagreement; re-r
   `stamp-verification.py red` prints, or on its `--introduces` basis: a missing-symbol
   error naming the task's new symbol, and a second run with the working tree's
   implementation copied in reaching its assertions. `could-not-prove` holds with the
-  refusal or reason verbatim; `not-attempted` when the mode owes none (`gate-only`,
-  `regression`).
+  refusal or reason verbatim; `not-attempted` when the task owes none (not `tdd`, or
+  `expectRedFirst` false).
 - Otherwise grade the report: a named command run before the fix, a test collected and
   an assertion failing is `proved`. A compile error, an import error or zero tests
   collected is `could-not-prove` unless the task introduces the symbol the run fails
@@ -73,7 +73,7 @@ reaches, a swallowing `try`, a filter narrowing to nothing, a does-not-raise cas
 its `file:line`; never write it as though you had watched it not fail. The run
 below is not widened by this question.
 
-It goes in `findings`, not `preExisting`: `preExisting` is read by nothing, while
+It goes in `findings`, not `preExisting`: `preExisting` is read by nothing.
 `reference/execute-task.md` records `findings` in `phase.review.findings` and sign-off
 turns one into a task proving the test can fail. Nothing enforces the routing.
 Report the answer as `intent.inheritedTests` (`none-found`, `flagged`, `not-asked`)
@@ -83,12 +83,12 @@ what stopped you. Silence is not `none-found`.
 ## What you may run, and what you must not
 
 May: read-only git; ONE run of the single test named in `testsAdded`, only to tell
-"absent" from "exists and passes"; ONE `submit` of your own return (below).
+"absent" from "exists and passes"; ONE `submit` of your own return.
 
 Must not: `run-test-gate.py` or `derive-phase-gate.py` in any spelling — the gate ran
 and is your input; the whole suite, a build, an install, a formatter or a fix-in-place
-hook; anything that writes, and never `git stash` (refused by the history guard; the
-rest rests on you).
+hook; anything that writes, and never `git stash` (the history guard refuses only
+that; the rest rests on you).
 
 ## Hard rules
 

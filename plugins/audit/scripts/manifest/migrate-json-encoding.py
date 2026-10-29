@@ -42,7 +42,6 @@ them apart.
 Usage:
   migrate-json-encoding.py <manifestPath> [--dry-run] [--project-dir DIR]
                                           [--takeover] [--json]
-  migrate-json-encoding.py --selftest
 
 Exit codes:
   0  every owned file is in the encoding (rewritten, or already there)

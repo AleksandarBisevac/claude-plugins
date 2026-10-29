@@ -58,7 +58,7 @@ grep -rn '^class \|^ *global ' plugins/audit/scripts plugins/audit/hooks --inclu
   two files sharing one would be a single node in the layer graph wearing both files' edges.
   `layer_violations()` fails the build by name on it. Directories are labels, not namespaces.
 - **Never derive a directory from your own `__file__`.** `_output.py` is the anchor:
-  `SCRIPTS_DIR`, `PLUGIN_ROOT`, `HOOKS_DIR`, `TESTS_DIR`, `REPO_ROOT`. The pinned
+  `SCRIPTS_DIR`, `PLUGIN_ROOT`, `HOOKS_DIR`, `TESTS_DIR`, `LINTS_DIR`, `REPO_ROOT`. The pinned
   `PATH_PREAMBLE` is the only place under `scripts/` allowed to touch `__file__` at all, and
   `depth_sensitive_paths()` enforces it — the rule is "none", not "not a parent", because the
   sites it replaced were written as a two-step that any nesting-only lint waves through.

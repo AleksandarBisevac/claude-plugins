@@ -199,6 +199,15 @@ meanings, rendered from the same tuple the gate evaluates:
   not establish ancestry, or the evidence ledger could not be read or located —
   and the gate line names each phase with the basis saying which — see below
 
+`--task <id>`, with `--gate`, grades **one task's gate**. `open-high-bugs` then sets aside
+the open high bugs linked to that task or to a not-yet-finished task of its phase — the
+bugs that phase is open to fix — and a `GATE TASK <id> (--task)` line names each one with
+the reason, or says none was set aside and why; `--json` carries them as `gate.exempted`.
+Every other condition counts as it does without the flag. The flag is the only way in:
+no environment variable sets it, since one would be inherited by every other `--gate`
+run in the same shell or CI job, sign-off included. `run-test-gate.py --task` adds it
+for you to a gate step that is one `audit-status.py --gate` invocation.
+
 Neither budget condition is in the default, deliberately: spend is a signal, not a
 defect, and a phase at 105% may be entirely justified. Opt in when a budget is a
 commitment rather than an estimate.

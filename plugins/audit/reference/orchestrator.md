@@ -12,8 +12,9 @@ resolution, preflight, guardrails, readiness, the lock, branch-per-phase, resume
 agent, for a reader who asks, and for the commands outside the pipeline (`/audit:report`,
 `/audit:worktree`, `/audit:layout`) that still read it first. **Execute the task** and **Phase
 sign-off** are in `reference/execute-task.md` and `reference/phase-signoff.md`.
-A headless role run: `run-agent-session.py`; under `executor.writerModel` each writer runs
-through it, and a red task gate resumes that session for at most two rounds.
+A headless role run: `run-agent-session.py`; under `executor.writerModel` each writer and
+per-task reviewer runs through it (the drive, not the session, files the reviewer's return), and
+a red task gate resumes the writer's session up to `drive-phase.py`'s `MAX_RESUME_ROUNDS` times.
 
 ## At a glance
 
@@ -39,7 +40,7 @@ through it, and a red task gate resumes that session for at most two rounds.
 → `manifestPath` (default `docs/audit/audit-plan.json`). Read it FIRST on every invocation.
 
 **Manifest layout (single-file vs sharded) — where writes go.** The manifest reads the same in
-either layout (the scripts and hooks assemble transparently), but WRITES must target the right file:
+either layout, but WRITES must target the right file:
 
 - **Sharded layout** (`manifestPath` is an *index* whose phases are `{id, title, shard}` stubs
   pointing at `phases/<phaseId>.json` — the **stubs** are what decides the layout, and

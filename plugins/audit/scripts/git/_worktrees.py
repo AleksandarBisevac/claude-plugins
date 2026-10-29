@@ -1288,17 +1288,21 @@ def sweep_plan(trees, wanted_branches, parent_of, contained_by_branch,
     split = phase_trees(trees, wanted_branches, resolve=resolve)
     actions, kept = [], []
     # TASK TREES ARE KEPT, ALWAYS. They are the plugin's own and they are short-lived:
-    # the wave driver takes one down with `task-remove` once its work is integrated,
-    # so a sweep that reaped a clean one would race a wave that has not integrated it
-    # yet. What the sweep owes is the name of the task and of any dirty path.
+    # the step driver takes one down itself once nothing in it would be lost, so a
+    # sweep that reaped a clean one would race a wave that has not integrated it yet.
+    # The marker's key may be a task id or the key a redo sets an old tree aside
+    # under, which `task-remove` refuses, so the reason names the driver's removal
+    # and no verb. What the sweep owes is the name of the key and of any dirty path.
     tasked = [r for r in split["strangers"] if r.get("path") in (task_by_path or {})]
     split = dict(split, strangers=[r for r in split["strangers"] if r not in tasked])
     for rec in tasked:
         mark = task_by_path[rec.get("path")]
         dirt = (dirty_by_path or {}).get(rec.get("path")) or {}
-        why = "task tree for %s (phase %s): the wave driver removes it with " \
-              "`task-remove` after integration, so the sweep never does" \
-              % (mark.get("taskId"), mark.get("phaseId"))
+        why = "task tree for %s (phase %s): the step driver takes it down itself " \
+              "once nothing in it would be lost - a task's tree once the task " \
+              "is closed, a tree a redo set aside once the recut holds its work " \
+              "or the task is closed - and keeps it on any doubt, saying why, so " \
+              "the sweep never does" % (mark.get("taskId"), mark.get("phaseId"))
         reasons = [{"why": why}]
         if dirt.get("dirty"):
             reasons.append({"why": "task %s has uncommitted work: %s"

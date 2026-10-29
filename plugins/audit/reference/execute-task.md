@@ -234,7 +234,7 @@ verb writes and refuses, and what the run commands leave behind, is
      `return_shape_drift()` in `tools/lints/_refs.py` (in the source repository) fails the build when this list
      falls behind the brief's. **The executor files that object through `drive-phase.py
      submit <taskId> --role executor`** (the object on stdin, the test command after `--` on a
-     `tdd` task): `submit` checks the shape and writes nothing when a field is missing, runs
+     task that owes a red-first proof): `submit` checks the shape and writes nothing when a field is missing, runs
      the red-first helper, takes the stamp after it, and hands the object to `audit-task.py
      file-return`. `file-return` checks the shape again - it exits 2 naming a missing field and
      writes nothing - and writes a well-formed return once, to a path it derives from the task
@@ -250,8 +250,11 @@ verb writes and refuses, and what the run commands leave behind, is
         takes it out of history, keeping its changes, and `recheck` goes on. Any other move
         is `head-moved`, and a HEAD git cannot name is `head-unknown`; `file` reads HEAD
         again and goes on.
-     2. **Red-first, through git, held.** Only a `tdd` task owes it; any other mode is
-        `not-attempted` with the mode as its basis. `stamp-verification.py red` runs with
+     2. **Red-first, through git, held.** Only a task that owes a red-first proof owes it -
+        `tdd`, with `tests.expectRedFirst` not false (`_filed_returns.owes_red_first`). Any
+        other mode is `not-attempted` with the mode as its basis, and a `tdd` task whose
+        `expectRedFirst` is false is `not-attempted` with that field as its basis.
+        `stamp-verification.py red` runs with
         the arguments `submit` builds (`red_args`) over the gate command naming a
         `tests.add` file as a path (`_filed_returns.red_command`, the reader the brief's
         `--` command comes from) in a throwaway at HEAD with only the task's test files
