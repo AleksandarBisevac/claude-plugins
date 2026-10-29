@@ -4413,7 +4413,8 @@
       "P142.23-6yq",
       "P142.34-6yq",
       "P148.12-xpz",
-      "P149.2"
+      "P149.2",
+      "P149.3-hwg"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -4591,7 +4592,8 @@
       "P142.24-6yq",
       "P148.18-xpz",
       "P148.21-xpz",
-      "P148.23-xpz"
+      "P148.23-xpz",
+      "P149.4-hwg"
     ],
     "plugins/audit/scripts/manifest/_manifest_rules.py": [
       "P18.2",
@@ -8424,7 +8426,8 @@
       "P143.1-6yq",
       "P148.18-xpz",
       "P148.21-xpz",
-      "P148.23-xpz"
+      "P148.23-xpz",
+      "P149.4-hwg"
     ],
     "plugins/audit/tests/test__gate_derive.py": [
       "P79.2",
@@ -8680,7 +8683,8 @@
       "P125.117-0h5",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P149.3-hwg"
     ],
     "plugins/audit/tests/test__proc_group.py": [
       "P77.3-6u9",
@@ -11432,7 +11436,8 @@
       "P143.1-6yq",
       "P148.18-xpz",
       "P148.21-xpz",
-      "P148.23-xpz"
+      "P148.23-xpz",
+      "P149.4-hwg"
     ],
     "tests/test__gate_feed.py": [
       "P131.1"
@@ -11575,7 +11580,8 @@
       "P131.1"
     ],
     "tests/test__proc_group.py": [
-      "P131.1"
+      "P131.1",
+      "P149.3-hwg"
     ],
     "tests/test__proposals.py": [
       "P131.1",
@@ -11767,7 +11773,8 @@
       "P148.14-xpz",
       "P148.18-xpz",
       "P148.21-xpz",
-      "P148.23-xpz"
+      "P148.23-xpz",
+      "P149.4-hwg"
     ],
     "tests/test_audit_usage.py": [
       "P131.1"
@@ -12014,7 +12021,8 @@
       "P148.12-xpz",
       "P148.17-xpz",
       "P148.24-xpz",
-      "P149.2"
+      "P149.2",
+      "P149.3-hwg"
     ],
     "tests/test_usage_ledger.py": [
       "P131.1",

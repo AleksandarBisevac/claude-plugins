@@ -1033,12 +1033,26 @@ def _red_cases(check):
           and (got_h.get("redFirst") or {}).get("status") == "could-not-prove"
           and "src/mine.py" in (got_h.get("redFirst") or {}).get("basis", ""))
 
-    code_t, got_t = _red(root, man, [py, "-c", "import time; time.sleep(30)"],
-                         "--timeout", "1")
+    # The sleeping run alone is given a short timeout; the build and the
+    # resets keep the helper's own deadline, so the run is started on every
+    # runner and it is the run that times out, in `_run_in`'s own teardown.
+    sleeper = [py, "-c", "import time; time.sleep(30)"]
+    real_run_in = M._run_in
+
+    def run_on_its_floor(path, cmd, timeout, env):
+        if cmd != sleeper:
+            return real_run_in(path, cmd, timeout, env)
+        return real_run_in(path, cmd, timeout=1, env=env)
+    M._run_in = run_on_its_floor
+    try:
+        code_t, got_t = _red(root, man, sleeper)
+    finally:
+        M._run_in = real_run_in
     code_n, got_n = _red(root, man, ["no-such-binary-for-a-red-run"])
-    check("sr9 a run that times out, and a command that cannot start, are "
-          "`could-not-prove` with the reason as basis - and the throwaway is "
-          "removed on both paths, because the removal sits in a `finally`: %r"
+    check("sr9 a run that outlives its own timeout, and a command that cannot "
+          "start, are `could-not-prove` with the reason as basis - and the "
+          "throwaway is removed on both paths, because the removal sits in a "
+          "`finally`: %r"
           % ([(c, (g.get("redFirst") or {}).get("status"),
                (g.get("throwaway") or {}).get("removed"))
               for c, g in ((code_t, got_t), (code_n, got_n))],),
@@ -1047,7 +1061,15 @@ def _red_cases(check):
               and (g.get("throwaway") or {}).get("removed") is True
               and not os.path.exists((g.get("throwaway") or {}).get("path") or "")
               for c, g in ((code_t, got_t), (code_n, got_n)))
-          and "timed out" in got_t["redFirst"]["basis"])
+          and "timed out" in (got_t.get("redFirst") or {}).get("basis", ""))
+    basis_t = (got_t.get("redFirst") or {}).get("basis", "")
+    check("sr222 ...and that timed-out run's basis is `_run_in`'s own: the run "
+          "started, outlived its timeout, and its process group was torn down "
+          "and confirmed - not a deadline spent before the run began: %r"
+          % (basis_t[:240],),
+          "the run timed out after 1 s and its process group was torn down;"
+          in basis_t
+          and "(not confirmed)" not in basis_t)
 
     held = _worktrees(root)
     code_s, _t = _run(["red", "--project", root, "--manifest", man, "--task",
@@ -2041,12 +2063,25 @@ _CLOCK_LITERALS_JUDGED = {
     ("<module>", "_SHORT_DEFAULT = 3"):
         "the default swd2 needs the slow run to outlast: a slower runner "
         "reaches it sooner, never later",
-    ("_red_cases", "--timeout 1"):
-        "sr9's run sleeps far past it: a slower runner reaches the deadline "
-        "sooner, and every path past the deadline says it timed out",
-    ("_killed_build_cases", "--timeout 1"):
-        "skb1's build blocks in a filter that sleeps far past it, so the build "
-        "is what times out on every runner, a slower one only sooner",
+    ("run_on_its_floor", "timeout=1"):
+        "sr9's sleeping run alone is given it, while the build and the resets "
+        "before it keep the helper's own deadline: the run sleeps far past it, "
+        "so the run is started and is what times out on any runner, a slower "
+        "one only sooner",
+    ("build_on_its_floor", "timeout=1"):
+        "skb1's build alone is given it, while every git read before the build "
+        "keeps the helper's own deadline: the build blocks in a filter that "
+        "sleeps far past it, so the build is reached and is what times out on "
+        "any runner, a slower one only sooner",
+    ("reset_on_its_floor", "timeout=1"):
+        "skb3's one armed reset alone is given it, and it disarms the filter "
+        "when it returns: the reset blocks in a filter that sleeps far past "
+        "it, so that reset is what times out on any runner, a slower one only "
+        "sooner, and no other call is given less than the helper's own deadline",
+    ("_timed_out_problem", "timeout=1"):
+        "srn1-srn3's run sleeps far past it and the swapped teardown and drain "
+        "decide the confirmation: a slower runner only reaches the timeout "
+        "sooner",
     ("_located_cases", "time.time() + 0.5"):
         "sr155 needs under a second left: a slower runner only leaves less",
     ("_scan_cases", "time.time() - 1"):
@@ -4194,29 +4229,33 @@ def _remove_retry_cases(check):
           removed_mut is False and len(seen_mut) == 0)
 
 
-def _killed_build_cases(check):
-    """`skb1`: a build of the throwaway that times out is torn down whole and
-    waited for, and only then removed; `skb2`: the removal gets past the lock
-    `git worktree add` holds on a tree it never finished.
-
-    The build is made to time out whatever the runner's speed: HEAD carries a
-    file under a smudge filter that never returns, so the checkout
-    `git worktree add` starts in a git process of its own blocks inside it
-    until it is killed. Before the fix that process and the filter outlived
-    the killed `git worktree add`, still inside the throwaway while it was
-    removed, and the lock it left refused a single `--force`: exit 4 with the
-    tree still listed."""
+def _hanging_file(root, armed):
+    """Commit `hang.txt` under a smudge filter that sleeps far past any
+    timeout a case gives while the file `armed` exists, and passes the
+    content through when it does not."""
     py = sys.executable.replace("\\", "/")
-    root, man = _red_repo("stamp-killed-build-",
-                          _red_test("import mine", "mine.v == 2"))
+    script = os.path.join(_harness.fixture_root("stamp-hang-filter-"), "hang.py")
+    _write(script, "\n".join([
+        "import os, shutil, sys, time",
+        "if os.path.exists(%r):" % (armed,),
+        "    time.sleep(120)",
+        "shutil.copyfileobj(sys.stdin.buffer, sys.stdout.buffer)",
+        ""]))
     _write(os.path.join(root, ".gitattributes"), "hang.txt filter=hang\n")
     _write(os.path.join(root, "hang.txt"), "held by the filter\n")
     _git(root, "add", ".gitattributes", "hang.txt")
-    _git(root, "commit", "-q", "-m", "a file whose checkout never ends")
+    _git(root, "commit", "-q", "-m", "a file whose checkout can be made to hang")
     _git(root, "config", "filter.hang.smudge",
-         '"%s" -c "import time; time.sleep(120)"' % (py,))
+         '"%s" "%s"' % (py, script.replace("\\", "/")))
+
+
+def _teardown_events(call):
+    """`(events, result)` - `call()` made with the teardown, the drain and the
+    removal each recording its name as it is reached, in order. The drain
+    recorded is `drain_to_eof`, the one `_run_in` asks."""
     events = []
-    real = (M._proc_group.tear_down, M._proc_group.drain, M._remove_throwaway)
+    real = (M._proc_group.tear_down, M._proc_group.drain_to_eof,
+            M._remove_throwaway)
 
     def tear(proc):
         events.append("kill")
@@ -4229,12 +4268,48 @@ def _killed_build_cases(check):
     def remove(*args, **kwargs):
         events.append("remove")
         return real[2](*args, **kwargs)
-    M._proc_group.tear_down, M._proc_group.drain = tear, drain
+    M._proc_group.tear_down, M._proc_group.drain_to_eof = tear, drain
     M._remove_throwaway = remove
     try:
-        code, got = _red(root, man, [py, "tests/test_mine.py"], "--timeout", "1")
+        return events, call()
     finally:
-        M._proc_group.tear_down, M._proc_group.drain, M._remove_throwaway = real
+        (M._proc_group.tear_down, M._proc_group.drain_to_eof,
+         M._remove_throwaway) = real
+
+
+def _killed_build_cases(check):
+    """`skb1`: a build of the throwaway that times out is torn down whole and
+    waited for, and only then removed; `skb2`: the removal gets past the lock
+    `git worktree add` holds on a tree it never finished.
+
+    The build is made to time out whatever the runner's speed: HEAD carries a
+    file under a smudge filter that sleeps far past the build's own timeout,
+    so the checkout `git worktree add` starts in a git process of its own
+    blocks inside it until it is killed. Only the build is given that short
+    timeout; every git read before it keeps the helper's own deadline, so a
+    loaded runner cannot spend the proof's time before the build starts.
+    Before the fix that process and the filter outlived the killed
+    `git worktree add`, still inside the throwaway while it was removed, and
+    the lock it left refused a single `--force`: exit 4 with the tree still
+    listed."""
+    py = sys.executable.replace("\\", "/")
+    root, man = _red_repo("stamp-killed-build-",
+                          _red_test("import mine", "mine.v == 2"))
+    armed = os.path.join(_harness.fixture_root("stamp-killed-build-arm-"), "armed")
+    _write(armed, "")
+    _hanging_file(root, armed)
+    real_build = M._build_throwaway
+    built = []
+
+    def build_on_its_floor(where, path, tests, timeout=None):
+        built.append(timeout)
+        return real_build(where, path, tests, timeout=1)
+    M._build_throwaway = build_on_its_floor
+    try:
+        events, (code, got) = _teardown_events(
+            lambda: _red(root, man, [py, "tests/test_mine.py"]))
+    finally:
+        M._build_throwaway = real_build
     block = got.get("redFirst") or {}
     tw = got.get("throwaway") or {}
     # Counted as records, never searched as text: under a red-first proof
@@ -4244,13 +4319,16 @@ def _killed_build_cases(check):
           "saying so, its process group is killed and drained BEFORE the "
           "removal - nothing it started is left writing into the tree - and "
           "the tree its lock was left on is removed from disk and from git's "
-          "list: exit=%r events=%r status=%r removed=%r worktrees=%r basis=%r"
-          % (code, events, block.get("status"), tw.get("removed"),
+          "list: exit=%r events=%r builds=%r status=%r removed=%r worktrees=%r "
+          "basis=%r"
+          % (code, events, built, block.get("status"), tw.get("removed"),
              listed, block.get("basis", "")[:200]),
           code == M.E_CANNOT_PROVE
+          and len(built) == 1
           and events == ["kill", "drain", "remove"]
           and block.get("status") == M.RED_CANNOT
-          and "timed out" in block.get("basis", "")
+          and "could not build the throwaway tree: the run timed out"
+          in block.get("basis", "")
           and tw.get("removed") is True
           and not os.path.exists(tw.get("path") or "")
           and listed == 1)
@@ -4271,6 +4349,138 @@ def _killed_build_cases(check):
           % (removed, locked_listed),
           removed is True and not os.path.exists(holder)
           and locked_listed == 1)
+
+
+def _killed_reset_cases(check):
+    """`skb3`: a reset of the throwaway that hangs AFTER a build that
+    succeeded is torn down whole and drained, and only then removed; `skb4`:
+    each of the reset's git calls is made as a process group.
+
+    The build passes the file through, and only then is the filter armed and
+    the file deleted from the throwaway - a reset rewrites no file it finds
+    unchanged, so without the deletion it would never call the filter. The one
+    reset made while armed gets a short timeout of its own and disarms the
+    filter when it returns, so exactly one reset hangs whatever the runner's
+    speed; every other git call keeps the helper's own deadline. Made with
+    the reset ungrouped, the timeout kills the reset's own git alone, no
+    teardown is reached, and the filter is left sleeping in a tree being
+    removed."""
+    py = sys.executable.replace("\\", "/")
+    root, man = _red_repo("stamp-killed-reset-",
+                          _red_test("import mine", "mine.v == 2"))
+    armed = os.path.join(_harness.fixture_root("stamp-killed-reset-arm-"), "armed")
+    _hanging_file(root, armed)
+    real_build, real_git = M._build_throwaway, M._git
+    resets = []
+
+    def build_then_arm(*args, **kwargs):
+        made = real_build(*args, **kwargs)
+        if made[1] is None:
+            os.remove(os.path.join(args[1], "hang.txt"))
+            _write(armed, "")
+        return made
+
+    def reset_on_its_floor(where, args, **kwargs):
+        if not (args and args[0] == "checkout" and os.path.exists(armed)):
+            return real_git(where, args, **kwargs)
+        resets.append(kwargs.get("group", False))
+        try:
+            return real_git(where, args, **dict(kwargs, timeout=1))
+        finally:
+            os.remove(armed)
+    M._build_throwaway, M._git = build_then_arm, reset_on_its_floor
+    try:
+        events, (code, got) = _teardown_events(
+            lambda: _red(root, man, [py, "tests/test_mine.py"]))
+    finally:
+        M._build_throwaway, M._git = real_build, real_git
+    block = got.get("redFirst") or {}
+    tw = got.get("throwaway") or {}
+    listed = len(_wt.parse_list(_worktrees(root)))
+    check("skb3 a reset of the throwaway that hangs in a filter after the "
+          "build succeeded is `could-not-prove`, its process group is killed "
+          "and drained BEFORE the removal, and the throwaway is removed from "
+          "disk and from git's list: exit=%r events=%r armed resets=%r "
+          "status=%r removed=%r worktrees=%r basis=%r"
+          % (code, events, resets, block.get("status"), tw.get("removed"),
+             listed, block.get("basis", "")[:240]),
+          code == M.E_CANNOT_PROVE
+          and resets == [True]
+          and events == ["kill", "drain", "remove"]
+          and block.get("status") == M.RED_CANNOT
+          and tw.get("removed") is True
+          and not os.path.exists(tw.get("path") or "")
+          and listed == 1)
+
+    seeded = _seeded_repo("stamp-reset-grouped-")
+    calls = []
+
+    def recording(where, args, **kwargs):
+        calls.append((args[0], kwargs.get("group", False)))
+        return real_git(where, args, **kwargs)
+    M._git = recording
+    try:
+        problem = M._isolate(seeded, time.time() + _AMPLE_DEADLINE)
+    finally:
+        M._git = real_git
+    check("skb4 the reset's git calls - `checkout -f` and `clean` - are "
+          "each made as a process group, so a timeout tears down whatever "
+          "either one started: problem=%r calls=%r" % (problem, calls),
+          problem is None
+          and calls == [("checkout", True), ("clean", True)])
+
+
+def _timed_out_problem(where, reached_eof, root_stopped):
+    """The problem `_run_in` reports for a run that outlives its timeout, with
+    the teardown swapped for one that confirms without killing and the drain
+    for one that answers `reached_eof` - stopping the root first when
+    `root_stopped` - so each thing a confirmation needs can be withheld
+    alone. The root is stopped in a `finally` either way."""
+    sleeper = [sys.executable, "-c", "import time; time.sleep(30)"]
+    real = (M._proc_group.tear_down, M._proc_group.drain_to_eof)
+    started = []
+
+    def confirms(proc):
+        started.append(proc)
+        return True
+
+    def answers(proc):
+        if root_stopped:
+            proc.kill()
+            proc.communicate()
+        return "", reached_eof
+    M._proc_group.tear_down, M._proc_group.drain_to_eof = confirms, answers
+    try:
+        return M._run_in(where, sleeper, timeout=1, env=dict(os.environ))[2]
+    finally:
+        M._proc_group.tear_down, M._proc_group.drain_to_eof = real
+        for proc in started:
+            if proc.poll() is None:
+                proc.kill()
+                proc.communicate()
+
+
+def _run_confirmation_cases(check):
+    """`srn1`-`srn3`: a run torn down on its timeout is said confirmed only
+    when the teardown confirmed it, the drain reached the end of the pipe, and
+    the root has exited - the drain withheld, then the root, then neither."""
+    where = _harness.fixture_root("stamp-run-confirm-")
+    unconfirmed = "was torn down (not confirmed)"
+    no_eof = _timed_out_problem(where, reached_eof=False, root_stopped=True)
+    check("srn1 a drain that never reached the end of the pipe - something "
+          "outside the killed tree still holds it - leaves the teardown "
+          "unconfirmed even with the root gone: %r" % (no_eof,),
+          (no_eof or "").endswith(unconfirmed))
+    alive = _timed_out_problem(where, reached_eof=True, root_stopped=False)
+    check("srn2 a root still running after a drain that answered complete "
+          "leaves the teardown unconfirmed, said as such: %r" % (alive,),
+          (alive or "").endswith(unconfirmed))
+    # The allow case: it fails only when the confirmation is withheld always.
+    whole = _timed_out_problem(where, reached_eof=True, root_stopped=True)
+    check("srn3 THE ALLOW CASE: with the teardown confirmed, the pipe drained "
+          "and the root gone, the teardown is said confirmed: %r" % (whole,),
+          (whole or "").startswith("the run timed out after")
+          and whole.endswith("its process group was torn down"))
 
 
 def _holder_cases(check):
@@ -6367,6 +6577,8 @@ STAGES = (
     ("sr-leftover", "_leftover_cases"),
     ("sr-remove-retry", "_remove_retry_cases"),
     ("sr-killed-build", "_killed_build_cases"),
+    ("sr-killed-reset", "_killed_reset_cases"),
+    ("sr-run-confirm", "_run_confirmation_cases"),
     ("sr-holder", "_holder_cases"),
     ("sv-take", "_take_cases"),
     ("sv-compare", "_compare_cases"),

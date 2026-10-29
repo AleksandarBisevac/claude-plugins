@@ -113,7 +113,11 @@ def _kill(proc):
     A PermissionError from `killpg` is a failed kill, not a crash: macOS answers
     EPERM for a group whose only members are zombies, so a stop that is already
     complete can raise it. False hands the judgement to `_gone` and the group
-    check in `tear_down`; the error alone is never read as a clean stop."""
+    check in `tear_down`; the error alone is never read as a clean stop.
+
+    `taskkill` gets `GRACE_SECONDS` too, and one that overruns it is a failed
+    kill: unbounded, a kill command that hung would hold the caller past the
+    budget this teardown exists to enforce."""
     if hasattr(os, "killpg"):
         gid = os.getpgid(proc.pid)
         try:
@@ -126,9 +130,13 @@ def _kill(proc):
         except PermissionError:
             return False
         return True
-    completed = subprocess.run(
-        ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        completed = subprocess.run(
+            ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            timeout=GRACE_SECONDS)
+    except subprocess.TimeoutExpired:
+        return False
     return completed.returncode == 0
 
 
@@ -235,12 +243,26 @@ def drain(proc):
 
     Called AFTER the kill and never instead of it: a timed-out child is often
     blocked on a full pipe, so reading first would wait on a process nothing is
-    going to stop. Failure here costs a diagnostic, never the teardown."""
+    going to stop. Failure here costs a diagnostic, never the teardown. A
+    caller that must also know whether the wait ended asks `drain_to_eof`."""
+    return drain_to_eof(proc)[0]
+
+
+def drain_to_eof(proc):
+    """`(text, complete)` - `drain`'s text, and whether the read reached the
+    end of the output pipe within `GRACE_SECONDS`.
+
+    `complete` is True only when `communicate` returned: the pipe reached EOF,
+    so nothing still holds it, and the root was waited for. A process the kill
+    did not reach - one `taskkill /T` cannot see, its parent gone before the
+    kill - keeps the pipe open past the bound, and that is False rather than
+    an empty answer read as a finished one. Any other failure is False too: an
+    unanswered question is not a confirmed stop."""
     try:
         out, _err = proc.communicate(timeout=GRACE_SECONDS)
-        return (out or b"").decode("utf-8", "replace")
     except Exception:
-        return ""
+        return "", False
+    return (out or b"").decode("utf-8", "replace"), True
 
 
 # --- one POSIX shell, on every platform ---------------------------------------

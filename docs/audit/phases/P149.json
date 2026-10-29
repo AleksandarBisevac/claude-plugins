@@ -29,28 +29,32 @@
         "severity": "low",
         "file": "plugins/audit/scripts/governance/stamp-verification.py:3344-3356",
         "issue": "On Windows, `confirmed` in _run_in now depends only on whether the root process has exited (`confirmed and proc.poll() is not None`). `_proc_group.drain` swallows its own TimeoutExpired and returns \"\". So a process outside the `taskkill /T` tree that still holds the output pipe (an orphan whose parent exited before the kill) survives the bounded drain, and the result still says 'was torn down' with no '(not confirmed)'. The docstring says the drain waits 'for every process holding its output pipe to let go', but whether that wait succeeded never reaches the confirmation. Nothing is misreported as removed: `_remove_throwaway`'s disk-and-list check is still the backstop that yields E_LEFT_BEHIND.",
-        "resolution": "Have `_proc_group.drain` say whether it reached EOF (for example, return `(text, complete)`), and AND that result into `confirmed` in _run_in. `_proc_group.py` is not one of this task's declared files, so this needs a follow-up task. Until then, narrow the docstring to say the confirmation covers the root only."
+        "resolution": "Have `_proc_group.drain` say whether it reached EOF (for example, return `(text, complete)`), and AND that result into `confirmed` in _run_in. `_proc_group.py` is not one of this task's declared files, so this needs a follow-up task. Until then, narrow the docstring to say the confirmation covers the root only.",
+        "fixTask": "P149.3-hwg"
       },
       {
         "id": "P149-R2",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/stamp-verification.py:3637, 3353",
         "issue": "No case covers `group=True` on _isolate's reset calls (`checkout -f`, `clean -ffdxq`), and none covers the new '(not confirmed)' wording when the root is still alive after the drain. Removing either change leaves the whole suite green. The executor's own outcome says so: 'Not covered by a case: the group=True on _isolate's reset calls, and the `(not confirmed)` wording.'",
-        "resolution": "Add a case where the build succeeds and the reset's `checkout -f` hangs in a smudge filter. Gate the filter on a marker file that the fixture creates after the build, so only the reset triggers it. Assert events == ['kill', 'drain', 'remove'] and could-not-prove. Add a second case that swaps tear_down to return True and drain to return \"\" with a root still alive, and assert the problem ends in '(not confirmed)'."
+        "resolution": "Add a case where the build succeeds and the reset's `checkout -f` hangs in a smudge filter. Gate the filter on a marker file that the fixture creates after the build, so only the reset triggers it. Assert events == ['kill', 'drain', 'remove'] and could-not-prove. Add a second case that swaps tear_down to return True and drain to return \"\" with a root still alive, and assert the problem ends in '(not confirmed)'.",
+        "fixTask": "P149.3-hwg"
       },
       {
         "id": "P149-R3",
         "severity": "low",
         "file": "tests/test_stamp_verification.py:2047-2049, 4232",
         "issue": "The _CLOCK_LITERALS_JUDGED entry says skb1's build 'is what times out on every runner, a slower one only sooner'. That does not hold. Under `--timeout 1`, several ungrouped git calls run before the build, each on the same one-second floor: leftover_throwaways, `rev-parse`, _at_head (stamp-verification.py:3619), head_tree and _cat_blobs. On a runner slow enough for one of them to overrun, red stops before the build and skb1 reads events == ['remove']. That is a red caused by load, not by the code: the same 'under resample load' exposure the task asked a fix not to depend on.",
-        "resolution": "Give skb1 a deadline the pre-build reads can meet: the filter sleeps far past any small `--timeout`, so the build is still what times out. Alternatively, swap the pre-build reads for fixed answers in skb1. Then reword the judged reason to what holds."
+        "resolution": "Give skb1 a deadline the pre-build reads can meet: the filter sleeps far past any small `--timeout`, so the build is still what times out. Alternatively, swap the pre-build reads for fixed answers in skb1. Then reword the judged reason to what holds.",
+        "fixTask": "P149.3-hwg"
       },
       {
         "id": "P149-R4",
         "severity": "low",
         "file": "tests/test_stamp_verification.py:1036-1050",
         "issue": "Inherited test, read and not run. sr9 claims 'a run that times out ... is could-not-prove', but its timeout half never starts that run. The whole deadline is `--timeout 1`. The build is given `max(1, _left(deadline))` (stamp-verification.py:4131-4132). After the build, red sets 'building the throwaway spent the N-second deadline' whenever `_left(deadline) < 1` (:4133-4135), which always holds by then, and _isolated_run would refuse anyway (:3684). So `time.sleep(30)` is never spawned, and the 'timed out' sr9 asserts comes from the build or the spent deadline, never from _run_in's timeout teardown. sr9 would still pass if _run_in's TimeoutExpired arm were deleted. The ladder cases (_one_deadline_tries, _build_counted) are what reach that arm. This shape is also what made the task description read sr9 as a timed-out run.",
-        "resolution": "Either retitle sr9's timeout half to what it reaches (a deadline spent before the run starts), or give it a deadline the build fits inside and assert the run's own basis, 'the run timed out after ... process group was torn down'. Add a red-first mutation to prove the case: remove the tear_down call in _run_in."
+        "resolution": "Either retitle sr9's timeout half to what it reaches (a deadline spent before the run starts), or give it a deadline the build fits inside and assert the run's own basis, 'the run timed out after ... process group was torn down'. Add a red-first mutation to prove the case: remove the tear_down call in _run_in.",
+        "fixTask": "P149.3-hwg"
       }
     ],
     "outcome": "[findings: 4 - 0 high, 0 med, 4 low; 0 with a recorded fix commit]"
@@ -112,7 +116,7 @@
     {
       "id": "P149.2",
       "title": "A red-first run that times out on Windows removes its throwaway instead of reporting it left behind",
-      "status": "in_progress",
+      "status": "done",
       "description": "Release CI (run 40877191420, job 'resample (windows)') fails tests/test_stamp_verification.py case sr9: the timeout half returned exit 4 (E_LEFT_BEHIND, stamp-verification.py) with no redFirst block, where could-not-prove (3) with the throwaway removed is required; the cannot-start half passed. The test runs `python -c 'import time; time.sleep(30)'` under --timeout 1 in a throwaway tree. On Windows a killed child (or its grandchild, if the command runs through a shell or launcher) can still hold the throwaway directory or a file in it open when removal runs, so the removal fails. Find the code path in plugins/audit/scripts/governance/stamp-verification.py that kills a timed-out red run and removes the throwaway: make the kill reach the whole process tree on Windows and wait for it to exit (bounded) before removal, and/or retry removal on Windows sharing errors within a bound; keep E_LEFT_BEHIND for a removal that really cannot be done. Under resample load this is intermittent, so the fix must not depend on timing luck; a case that pins the ordering (kill, wait, then remove) on any platform is preferred over a sleep. You cannot run Windows here: reason from the code, state the cause with the line you read. Edit only the declared files; a fix that needs another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -134,20 +138,141 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6c0e86860d44",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "CAUSE (read from HEAD's code, reproduced on macOS): sr9 runs with --timeout 1, and red's build of the throwaway gets `max(1, _left(deadline))` (run_red -> _build_throwaway). On a loaded runner it is that `git worktree add` which times out, not the sleeping run. HEAD's _git (stamp-verification.py, `subprocess.run(..., timeout=timeout)`) kills only the direct git child; the git process `worktree add` starts to check the tree out (and any filter it starts) keeps running inside the throwaway, and on Windows `subprocess.run` then communicate()s with no bound. The killed add also leaves its 'initializing' lock, and HEAD's _remove_throwaway asked `git worktree remove --force` once, which git refuses for a locked tree, so the tree stayed listed: exit 4 (E_LEFT_BEHIND), with the ERROR line on stderr appended to the JSON so the suite's _red parsed nothing - exactly sr9's Windows tuple (4, None, None). Reproduced here: a probe killing `git worktree add` part way then calling HEAD's _remove_throwaway left 27 of 30 throwaways behind (`git worktree remove --force` -> exit 128 'cannot remove a locked working tree, lock reason: initializing'); the HEAD-code run of skb1 printed exit=4 events=['remove'] listed=True, and the survivor found afterwards (pid 31070, `python -c import time; time.sleep(120)`) had its cwd inside /var/folders/.../audit-red-jd1_y92z/tree; I stopped it. The timed-out RUN path (_run_in) already tore down its process group and drained it, so it is not where sr9 failed. Windows not run: the cause on Windows is inferred from the same code path plus the matching exit/shape, not observed.\nCHANGES, plugins/audit/scripts/governance/stamp-verification.py: (1) _git(..., group=False) gains `group=True`, which runs the call through _run_in - a process group (_proc_group.group_kwargs), torn down whole on a timeout (_proc_group.tear_down: killpg on POSIX, `taskkill /T /F` on Windows) and drained (_proc_group.drain, bounded by GRACE_SECONDS) before returning; used by the calls that WRITE the throwaway: _build_throwaway's `worktree add` and _isolate's `checkout -f` / `clean`. (2) _remove_throwaway asks `git worktree remove --force --force` (one --force does not remove a locked worktree; the path is the run's own throwaway). Removal still runs once, in red's finally, after _run_in returned - so the order is kill, drain/wait, then remove. (3) _run_in: after tear_down and drain, `confirmed = confirmed and proc.poll() is not None`, so on Windows (where taskkill returning 0 only means the kill was asked for) a root still running after the bounded drain is said as `(not confirmed)`; docstring states the ordering. (4) The deadline-budget comment above REMOVE_GIT_TIMEOUT now says the one teardown it budgets may be a build/reset git call's; TEARDOWN_MARGIN and the removal's two git calls are unchanged. Left on purpose: a registration whose directory exists without its `.git` file (add killed between those two writes) is still refused by git and reported left behind (docstring says so); no ENOTEMPTY retry was added to the shared while_shared (that is _output.py, not declared).\ntests/test_stamp_verification.py: new block `sr-killed-build` (_killed_build_cases) in STAGES: skb1 drives red with --timeout 1 on a fixture whose HEAD carries a file under a smudge filter that sleeps, so the build is what times out on any runner; tear_down/drain/_remove_throwaway are swapped for recorders that call through, and the case asserts exit 3, status could-not-prove, 'timed out' in the basis, events == ['kill', 'drain', 'remove'] exactly, removed True, path gone, and no throwaway in `git worktree list`. skb2 locks a throwaway with reason 'initializing' and asserts _remove_throwaway removes it from disk and list. `--timeout 1` judged in _CLOCK_LITERALS_JUDGED for _killed_build_cases (sk1 green); sr162's _git fake widened to accept `group`.\nRUNS (development checks, not gates; the brief names nothing of the task's own to run): `python3 tests/test_stamp_verification.py --selftest --stage sr-killed-build` -> ALL PASS 2/2, exit 0, run four times with 5 s gaps; blocks sr-located 14/14, sr-red 15/15 (sr9 included), sr-remove-retry 7/7, sr-listing 3/3, sr-crlf 1/1, sr-every-run-isolated 9/9, sr-budget 9/9 (sk1, sk2, sr42), all exit 0; ruff check on both files: All checks passed; vermin -t=3.8-: no violations; _output_lints.prose_number_claims('.') and house_style_violations(): no hit in either file. Mutations, each in a scratch worktree at HEAD with my two files copied in (never in my tree): build call without group=True -> skb1 FAIL (0/1 at the time); single --force -> skb2 FAIL, skb1 PASS (POSIX kill is SIGTERM, which git answers by removing the tree it was building, lock included - so skb1 meets the lock only on Windows, which is why skb2 exists); restored copy -> 2/2. Not covered by a case: the group=True on _isolate's reset calls, and the `(not confirmed)` wording.\nDEPENDANTS: tools/affected.py - names the file by path; still correct, no path moved. PLUGIN-BUILD-GUIDE.md - says TEARDOWN_MARGIN is one teardown plus the removal's two git calls; still true (the removal still makes two git calls; the teardown may now be a build git call's). audit-plan.schema.json - redFirst enum untouched. _output.py - while_shared/SHARING_WAIT_SECONDS used as before. _proc_group.py - group_kwargs/tear_down/drain used unchanged, now also for two git calls. _runner_output.py - untouched. drive-phase.py - calls red as a command; exit codes and payload keys unchanged. run-test-gate.py - basename mention only; unaffected. tests/test__filed_returns.py (_crlf_cases) and tools/affected.py (_scan) - untouched. .github/sweep-costs.json - no figure for the new block sr-killed-build; the sweep weighs it by the suite's figure over its blocks; re-recording costs is the orchestrator's call. tools/sweep-selftests.py, tools/verify.sh - name the file only; unchanged.",
+        "descriptive": "A red-first build of the throwaway that times out now has its whole git process tree killed and drained before removal, and the removal gets past the lock a killed `git worktree add` leaves, so it is could-not-prove with the throwaway removed rather than exit 4"
       },
       "startedAt": "2026-10-29T13:16:50Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-29T13:54:11Z",
+      "verifiedBy": [
+        "skb1: a red whose throwaway build times out (smudge filter that never returns, --timeout 1) is could-not-prove saying 'timed out', with kill then drain then remove in that exact order, and the throwaway gone from disk and from git's worktree list",
+        "skb2: a throwaway left locked 'initializing' the way a killed `git worktree add` leaves it is removed by _remove_throwaway from disk and from git's list"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-29T13:45:35Z.8976f3",
         "status": "passed",
         "at": "2026-10-29T13:45:35Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "6c0e86860d44",
+        "at": "2026-10-29T13:54:11Z",
+        "return": "docs/audit/evidence/returns/P149.2/20261029T131650Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-29T13:30:59Z",
+        "basis": "`python3 tests/test_stamp_verification.py --selftest --stage sr-killed-build` in a throwaway tree at HEAD exited 1 with failing cases skb1 (house FAIL), skb2 (house FAIL), but with the working tree's implementation the task's tests do not all pass (SELFTEST FAILED: 0/2 cases passed), so the red is not one the fix turns green - SELFTEST FAILED: 0/2 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
+    },
+    {
+      "id": "P149.3-hwg",
+      "title": "A red-first teardown is confirmed only when it is, and no stamp case rests on a one-second deadline surviving a loaded runner",
+      "status": "in_progress",
+      "description": "Fix the review findings P149-R1, P149-R2, P149-R3, P149-R4 on P149.2's change (each finding's file, issue and resolution is in docs/audit/phases/P149.json review.findings, by id). Priority is R3 and R4: no case in tests/test_stamp_verification.py may depend on a one-second deadline surviving the git reads that precede the build on a loaded Windows runner - the release tier's resample leg reruns this suite under load, and a case that fails from load rather than from code reddens the release. skb1 must make the BUILD time out by construction (its never-returning smudge filter) with a deadline the pre-build reads cannot exhaust, or measure where the deadline went and assert on that; sr9's timeout half must either really reach the run-timeout teardown it names (a deadline long enough to build, a run that outlives it) or be reworded and split so each half claims only what it exercises - and its own literal must be judged in _CLOCK_LITERALS_JUDGED truthfully. R1: on Windows a teardown is reported confirmed only when the root has exited AND the drain did not time out; the drain timeout and the taskkill call get a bound in plugins/audit/scripts/governance/_proc_group.py (taskkill currently has no timeout). R2: a case pins group=True on _isolate's reset calls (checkout -f and clean) and the '(not confirmed)' wording, each proven red by mutating the code it guards. Edit only the declared files; a fix that needs another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/scripts/governance/_proc_group.py",
+        "tests/test_stamp_verification.py",
+        "tests/test__proc_group.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test_stamp_verification.py: Have `_proc_group.drain` say whether it reached EOF (for example, return `(text, complete)`), and AND that result into `confirmed` in _run_in",
+          "tests/test_stamp_verification.py: Add a case where the build succeeds and the reset's `checkout -f` hangs in a smudge filter",
+          "tests/test_stamp_verification.py: Give skb1 a deadline the pre-build reads can meet: the filter sleeps far past any small `--timeout`, so the build is still what times out",
+          "tests/test_stamp_verification.py: Either retitle sr9's timeout half to what it reaches (a deadline spent before the run starts), or give it a deadline the build fits inside and assert the run's ..."
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_stamp_verification.py tests/test__proc_group.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-29T13:55:32Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-29T13:54:56Z",
+          "text": "scope: plugins/audit/scripts/governance/stamp-verification.py, tests/test_stamp_verification.py, every path the finding(s) P149-R1, P149-R2, P149-R3, P149-R4 name"
+        },
+        {
+          "at": "2026-10-29T13:54:56Z",
+          "text": "scope: tests/test_stamp_verification.py, the suite that tests plugins/audit/scripts/governance/stamp-verification.py (python: its import closure reaches plugins/audit/scripts/governance/stamp-verification.py)"
+        },
+        {
+          "at": "2026-10-29T13:54:56Z",
+          "text": "no test runner in this task's gate for the test P149-R1, P149-R2, P149-R3, P149-R4 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test_stamp_verification.py tests/test__proc_group.py'], derived as from --gate; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P149-R1",
+        "P149-R2",
+        "P149-R3",
+        "P149-R4"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-29T14:17:56Z.4eb249",
+        "status": "passed",
+        "at": "2026-10-29T14:17:56Z"
+      }
+    },
+    {
+      "id": "P149.4-hwg",
+      "title": "A derived task gate names each suite once and every declared suite, so add never refuses the gate it derived itself",
+      "status": "in_progress",
+      "description": "A task added without --gate, whose declared files are plugins/audit/scripts/governance/stamp-verification.py, plugins/audit/scripts/governance/_proc_group.py, tests/test_stamp_verification.py and tests/test__proc_group.py, is refused by its own derived gate: `audit-task.py add` derives the entry 'python3 tools/sweep-selftests.py tests/test_stamp_verification.py tests/test_stamp_verification.py tests/test_stamp_verification.py tests/test_stamp_verification.py' and then refuses it as naming one suite more than once (the duplicate check in plugins/audit/scripts/manifest/_manifest_phases.py). The derivation emits one slot path per declared file instead of the de-duplicated set of suites those files select, and here it also leaves tests/test__proc_group.py out although that suite is a declared file. Reproduce it first in a scratch plan with exactly those four files (no --gate). Fix the derivation in plugins/audit/scripts/governance/_gate_derive.py (and the per-command slot fill in _manifest_phases.py if that is where the paths are joined) so a derived entry names each suite once, in a stable order, and names every declared suite file; the duplicate refusal stays for a hand-written --gate. Add cases (tests/test__gate_derive.py and/or tests/test_audit_task.py) proven red first: several sources selecting one suite derive it once; a declared suite file is always in the derived entry. Read the other spelling shapes the slot model supports (one command per suite, {paths} not a standalone word) and make each de-duplicate, since the same defect is a class across them. Edit only the declared files; a fix that needs another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
+      "files": [
+        "plugins/audit/scripts/governance/_gate_derive.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "tests/test__gate_derive.py",
+        "tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__gate_derive.py tests/test_audit_task.py tests/test__manifest_phases.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-29T13:55:35Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     }
   ],
   "request": "release CI on ci/P148 is red on Windows only; fix both reds before 3.7.0",

@@ -17,8 +17,9 @@ import signal
 import subprocess
 import sys
 import time
+import types
 
-import _harness                                    # sets sys.path for scripts/ + hooks/
+import _harness                                   # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _proc_group as M                            # noqa: E402
 import _loader                                     # noqa: E402
@@ -448,7 +449,74 @@ def _reaped_cases(check):
           stuck_confirmed is False)
 
 
+def _drain_cases(check):
+    """`pgd1`-`pgd3`: the drain says whether it reached the end of the pipe,
+    and `drain` keeps answering the text alone for the callers that read only
+    that."""
+    proc = subprocess.Popen([sys.executable, "-c", "print('written')"],
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    text, complete = M.drain_to_eof(proc)
+    check("pgd1 a child that ended is drained to the end of its pipe: its text "
+          "and complete: %r" % ((text, complete),),
+          text.strip() == "written" and complete is True)
+
+    def held(timeout=None):
+        raise subprocess.TimeoutExpired("held", timeout)
+    stuck = types.SimpleNamespace(communicate=held)
+    answer = M.drain_to_eof(stuck)
+    check("pgd2 a pipe still held when the bound runs out is NOT complete - an "
+          "empty text from a wait that never ended is not read as a finished "
+          "one: %r" % (answer,), answer == ("", False))
+    check("pgd3 `drain` still answers the text alone, for the callers that "
+          "read only that: %r" % (M.drain(stuck),), M.drain(stuck) == "")
+
+
+def _taskkill_cases(check):
+    """`pgk1`/`pgk2`: the Windows kill command runs under `GRACE_SECONDS`, and
+    one that overruns it is a failed kill rather than an exception or a wait
+    with no end. Reached on every host: the POSIX branch is taken off `os` for
+    the call and `subprocess.run` recorded, both put back in a `finally`."""
+    seen = []
+
+    def overran(argv, **kwargs):
+        seen.append((argv[0], kwargs.get("timeout")))
+        raise subprocess.TimeoutExpired(argv, kwargs.get("timeout"))
+
+    def answered(argv, **kwargs):
+        seen.append((argv[0], kwargs.get("timeout")))
+        return subprocess.CompletedProcess(argv, 0)
+    target = types.SimpleNamespace(pid=os.getpid())
+    held_killpg = getattr(os, "killpg", None)
+    real_run = subprocess.run
+    results = []
+    try:
+        if held_killpg is not None:
+            del os.killpg
+        for fake in (overran, answered):
+            subprocess.run = fake
+            try:
+                results.append(M._kill(target))
+            except Exception as exc:
+                results.append(exc)
+    finally:
+        subprocess.run = real_run
+        if held_killpg is not None:
+            os.killpg = held_killpg
+    check("pgk1 the kill command is given the grace bound, and one that "
+          "overruns it is a failed kill, returned as False: results=%r asked=%r"
+          % (results, seen),
+          results[:1] == [False]
+          and seen[:1] == [("taskkill", M.GRACE_SECONDS)])
+    # The allow case: it fails only when every bounded kill reads as failed.
+    check("pgk2 THE ALLOW CASE: a kill command that exits 0 inside the bound "
+          "is a kill that succeeded: results=%r asked=%r" % (results, seen),
+          results[1:] == [True]
+          and seen[1:] == [("taskkill", M.GRACE_SECONDS)])
+
+
 def _cases(check):
+    _drain_cases(check)
+    _taskkill_cases(check)
     if hasattr(os, "killpg"):
         _reaped_cases(check)
         _eperm_cases(check)
