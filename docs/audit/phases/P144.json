@@ -29,27 +29,33 @@
         "severity": "low",
         "file": "tests/test_audit_status.py:4355-4392",
         "issue": "No case pins the quoting on a plain run. kt5/kt7/kt9/kt9b/kt6b/kt8 only see a path that needs quoting when the sweep's TMPDIR holds a space (--spaced leg) or on Windows; on a plain POSIX run every fixture path is shell-safe, so `_shell_word` returning `text` unquoted would leave the task's own gate command (`sweep-selftests.py tests/test_audit_status.py`, 407 cases, run by me: exit 0) green. The executor's own mutation proof is red only under --spaced.",
-        "resolution": "Add one deterministic case that does not depend on the temp root: call `M._kept_tree_remedy('P2.1 set aside 1', <path with a space, a single quote and a backslash>, None)` and assert `_posix_words(remedy)` equals ['git','worktree','remove','--force', path] and that the saveFirst entries read back to the same one-word path through `_posix_words`. Then the fix is red on any leg, not only the spaced one.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.7 (04261ee5efac): Add one deterministic case that does not depend on the temp root: call `M._kept_tree_remedy('P2.1 set aside 1', <path with a space, a single quote and a backslash>, None)` and assert `_posix_words(remedy)` equals ['git','worktree','remove','--force', path] and that the saveFirst entries read back to the same one-word path through `_posix_words`. Then the fix is red on any leg, not only the spaced one.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.7",
+        "commit": "04261ee5efac"
       },
       {
         "id": "P144-R2",
         "severity": "low",
         "file": "tools/lints/_deps.py:1950-1953,1968-1972",
         "issue": "GIT_PATH_BASE_EXEMPT reason rows for drive-phase.py tree_changed and _changed_between still say the paths are 'handed back as literal pathspecs to git'. This diff removes exactly that for _changed_between (and _unheld) and tree_changed never did it, so the table now states the opposite of the code. The lint passes (it reads the rows' presence, not their prose), so nothing will catch it. The executor reported it as LEFT (b), the file being outside the task's files.",
-        "resolution": "Reword both rows to say the listings are narrowed in Python by _literal_matches, in a follow-up task that owns tools/lints/_deps.py.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.5 (8e46457ccc23): Reword both rows to say the listings are narrowed in Python by _literal_matches, in a follow-up task that owns tools/lints/_deps.py.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.5",
+        "commit": "8e46457ccc23"
       },
       {
         "id": "P144-R3",
         "severity": "low",
         "file": "tests/test_drive_phase.py:10157-10177",
         "issue": "ar22's pathspec-matching branch in _command_line_git (the specs / startswith(tag) handling) is never reached by the fixed product, since _changed_between and _unheld now pass no pathspec. It only bites if someone reintroduces :(literal) arguments. That is the intended guard, but a reader cannot tell from the case that the branch is dormant, and nothing asserts that no argv in `seen` carries a pathspec. `len(seen)` is recorded in `answered` but never compared.",
-        "resolution": "Either assert that no recorded argv holds a ':(literal)' element (turning the dormant branch into a live pin that a reintroduction trips under the posix leg as well), or drop the unused `seen` count from `answered`.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.1 (d83aeee96039): Either assert that no recorded argv holds a ':(literal)' element (turning the dormant branch into a live pin that a reintroduction trips under the posix leg as well), or drop the unused `seen` count from `answered`.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.1",
+        "commit": "d83aeee96039"
       },
       {
         "id": "P144-R4",
@@ -86,30 +92,36 @@
         "severity": "low",
         "file": "tests/_harness.py (_written_id, about 996-1100)",
         "issue": "The static cross-block id check reads only a literal or a %-BinOp whose leftmost operand is a literal; check('k1 {}'.format(1)), check(label='k1 ...') and ids fed through a loop variable are not read, and the docstring does not name .format or label= among the runtime-built ids left to the run.",
-        "resolution": "Read .format on a literal receiver and the label= keyword, or name both in the docstring's limit.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.3 (b8c642ec2e6e): Read .format on a literal receiver and the label= keyword, or name both in the docstring's limit.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.3",
+        "commit": "b8c642ec2e6e"
       },
       {
         "id": "P144-R8",
         "severity": "low",
         "file": "tests/_harness.py (cross_block_ids)",
         "issue": "A helper reached by two blocks that writes one id on two lines (an if/else: check('k1 posix') / check('k1 win')) is reported as a duplicate across blocks, though at runtime each block calls one line.",
-        "resolution": "Treat lines of one function as one site for the cross-block question, or say the limit in the docstring.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.3 (b8c642ec2e6e): Treat lines of one function as one site for the cross-block question, or say the limit in the docstring.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.3",
+        "commit": "b8c642ec2e6e"
       },
       {
         "id": "P144-R9",
         "severity": "low",
         "file": "tests/_harness.py (named / reach)",
         "issue": "Reach follows every ast.Name equal to a top-level def name, so a parameter or local shadowing a case function, or a name used only as data, pulls that function's ids into a block's reach (reproduced with a parameter named _a_cases).",
-        "resolution": "Follow only names in call position or passed as a call argument, and skip names bound locally.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.3 (b8c642ec2e6e): Follow only names in call position or passed as a call argument, and skip names bound locally.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.3",
+        "commit": "b8c642ec2e6e"
       }
     ],
-    "outcome": "[findings: 9 - 0 high, 3 med, 6 low; 3 with a recorded fix commit]",
+    "outcome": "[findings: 9 - 0 high, 3 med, 6 low; 9 with a recorded fix commit]",
     "readReturns": []
   },
   "summary": "P144 makes P142's suites pass on every CI runner. prove-gates' selftest no longer relpaths across Windows drives. Status's kept-tree rows are asserted by the words a POSIX shell reads, so a spaced or linked temp root and Windows paths hold. The drive's recut no longer hands git-printed paths back as pathspecs, which lost non-UTF-8 names on Windows. The sweep shards and times a staged suite by its blocks, on a re-recorded windows table across four shards; a block with no figure is never timed tighter than its suite's heaviest block, and duplicate case ids across blocks are read from the source on every shard. Every med finding is fixed; lows are carried to BUG-29-dau.",
