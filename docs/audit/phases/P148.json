@@ -405,8 +405,10 @@
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/_manifest_io.py:1386 (tracked .claude/.gitignore line comparison)",
         "issue": "Lines are compared after strip(), so a task's whitespace-only edit (CRLF conversion, reorder, an escaped trailing space) reads as PLUGIN_LINES_ONLY and is silently left out of the commit.",
-        "resolution": "Compare lines removing only a trailing CR; a case for each whitespace edit.",
-        "fixTask": "P148.20-xpz"
+        "resolution": "fixed in P148.20-xpz (bbbe9f272366): Compare lines removing only a trailing CR; a case for each whitespace edit.",
+        "fixTask": "P148.20-xpz",
+        "commit": "bbbe9f272366",
+        "status": "fixed"
       },
       {
         "id": "P148-R41",
@@ -422,9 +424,16 @@
         "file": "tests/test_stamp_verification.py:2022-2029",
         "issue": "The rewritten _BUILD_DELAY row says a helper granting a fresh timeout at the spawn 'stays half the delay less one beat interval over sr42's bound however slow the runner'. That holds for the interpreter start, which is the thing this task removes, but not for every slowness: the mutant is caught only because its run keeps beating to within one beat of the cut, and a child starved of CPU for about the whole 'half the delay less one beat' before the cut (a stall of nearly a second inside time.sleep of the beat) leaves its last beat under the bound, so the mutant passes. The row two entries up for _BEAT already says a slower beat 'can let a mutated helper pass', so the file now makes two incompatible statements. This only ever lets the mutant through, never fails a correct helper, and needs a stall near one second at the end of the run, so it is a wording overclaim and not a speed dependence of the kind the task named.",
         "resolution": "Reword the row to say what is true: the interpreter start enters neither side, and the margin over the bound is half the delay less one beat interval, which only a stall of the child's own beats of about that length can consume (and then only toward passing the mutant). Drop 'however slow the runner'."
+      },
+      {
+        "id": "P148-R43",
+        "severity": "med",
+        "file": "tests/test__evidence_io.py:4151-4190",
+        "issue": "The new tk2o/tk2t cases go red for a write that is not _evidence_io.tree_key only where the fixture tree's abspath differs from its realpath. Both trees come from _harness.fixture_root (a plain temp dir) and nothing symlinks them, so the realpath-to-abspath drift that the enclosing docstring names (_tree_key_cases: 'a realpath policy changed in one') is red on macOS, where /var is a symlink to /private/var, and green on a Linux runner whose temp dir has no symlink. The executor's red (written 205b8cd9dd69 vs tree_key 8f9d4709f093) was a macOS measurement of a local sha1 over os.path.abspath; the claim 'now pinned at the write' is true there and unproved on CI's platform. Other mutations (constant, wrong tree such as project, different slice length, basename) do go red by reading: tk2 equality or tk3 inequality fails.",
+        "resolution": "Make one of the two trees a symlink to a real directory (os.symlink in a fixture dir, passed as --tree), so realpath(tree) != abspath(tree) on every platform with symlinks. Skip that tree with a stated reason on a platform that cannot symlink. Then a writer using abspath or no realpath fails tk2 everywhere."
       }
     ],
-    "outcome": "[findings: 42 - 0 high, 9 med, 33 low; 33 with a recorded fix commit]"
+    "outcome": "[findings: 43 - 0 high, 10 med, 33 low; 34 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1940,7 +1949,7 @@
     {
       "id": "P148.20-xpz",
       "title": "A tracked .claude/.gitignore edit that only changes whitespace is a task's edit, not the plugin's",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix P148-R40 (docs/audit/phases/P148.json review.findings): the tracked .claude/.gitignore comparison strips each line, so a whitespace-only edit (CRLF conversion, reorder, escaped trailing space) reads as plugin lines only and is left out of the commit. Compare removing only a trailing CR; the plugin's own lines (with or without a final newline) must still count as the plugin's. Cases for each whitespace edit and the allow case, red first. Edit only declared files. No F/P/BUG ids in code.",
       "files": [
         "plugins/audit/scripts/manifest/_manifest_io.py",
@@ -1968,14 +1977,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "bbbe9f272366",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_manifest_io.py: adds_only_plugin_ignore_lines now compares lines via _ignore_lines (split on LF, drop the empty piece after a final newline, remove only a trailing CR - no strip) and requires the old lines to be a subsequence of the new (_is_subsequence), with the added lines (multiset difference) all in CLAUDE_IGNORE_LINES; plugin set no longer strips. tests/test__manifest_io.py: new case cil4 with 13 shapes (8 deny: trailing space, escaped trailing space, tab indent, reorder, spaced plugin pattern, indented note, whitespace-only line, lone CR; 5 allow: CRLF-appended plugin lines onto LF file, LF plugin lines onto CRLF file, no final newline in after, no final newline in before under CRLF, whole-file CRLF conversion with nothing added). Mutations (pycache purged each): keep CR -> cil2+cil4 red; drop order check -> cil2+cil4 red; strip() instead of CR removal -> cil4 red; restored, 193/193. Gate python3 tools/sweep-selftests.py tests/test__manifest_io.py tests/test__scoped_commit.py exit 0 (193 + 66 cases). A pure whole-file CRLF conversion with nothing else added is still read as the plugin's (indistinguishable from an autocrlf checkout, and git sees no change either) - pinned as an allow shape; the finding's 'CRLF conversion' is only caught when it comes with an edit. Dependants: tests/test__scoped_commit.py sc-ua21/22/23 and tests/test_panel_server.py call the same predicate and still pass (scoped_commit suite green); _scoped_commit._ignore_edit unchanged, same signature; .claude/.gitignore unchanged (real plugin appends pass); _line_counts had no other caller (grep).",
+        "descriptive": "A tracked .claude/.gitignore edit that only changes spacing or order is now a task's edit instead of being left out of the commit as the plugin's."
       },
       "startedAt": "2026-10-29T09:37:43Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-29T09:50:37Z",
+      "verifiedBy": [
+        "cil4: ignore-file line comparison removes only a trailing CR and keeps order; whitespace deny shapes and CRLF/no-final-newline allow shapes"
+      ],
       "notes": [
         {
           "at": "2026-10-29T09:37:31Z",
@@ -1998,6 +2009,18 @@
         "runId": "2026-10-29T09:50:34Z.85a0a4",
         "status": "passed",
         "at": "2026-10-29T09:50:34Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "bbbe9f272366",
+        "at": "2026-10-29T09:50:37Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-29T09:41:42Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__manifest_io.py` in a throwaway tree at HEAD exited 1 with 1 of 193 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cil4 (house FAIL): SELFTEST FAILED: 192/193 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - 3 times the recorded 130s of tests/test__manifest_io.py in .github/sweep-costs.json is only 390s; fix run: held back 130s of the deadline, the recorded slot-seconds of tests/test__manifest_io.py in .github/sweep-costs.json",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {

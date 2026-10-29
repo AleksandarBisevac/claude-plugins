@@ -4148,6 +4148,44 @@ def _tree_key_cases(check):
           % ((getattr(rtg, "tree_key", None), M.tree_key),),
           getattr(rtg, "tree_key", None) is M.tree_key)
 
+    # The alias above holds one name for one function; this holds the WRITE. A
+    # run-test-gate that hashed locally at the write site while keeping the
+    # alias would pass tk1 and disagree with every reader, so the key is read
+    # back off a row a real `--record --tree` run wrote and compared with the
+    # reader's own function over the same directory. A second tree is measured
+    # too, each in a project of its own so the second run is measured and not
+    # a repeat of the first's verdict.
+    keys = []
+    shown = []
+    for name in ("one", "two"):
+        project = _harness.fixture_root("ev-tk-project-%s-" % (name,))
+        tree = _harness.fixture_root("ev-tk-tree-%s-" % (name,))
+        _harness.git(None, "init", "-q", project)
+        _harness.git(None, "init", "-q", tree)
+        mpath = os.path.join(project, "audit-plan.json")
+        with open(mpath, "w", encoding="utf-8") as fh:
+            json.dump({"meta": {"version": 2,
+                                "buildCommands": {"chk": "true"}},
+                       "phases": [{"id": "P1", "title": "p",
+                                   "status": "in_progress",
+                                   "testGate": ["chk"], "tasks": []}]}, fh)
+        lines = []
+        code = rtg.main([mpath, "P1", "--project-dir", project, "--record",
+                         "--tree", tree], out=lines.append)
+        rows = M.read_rows(project)["rows"]
+        written = ((rows[-1].get("testedState") or {}).get("tree") or {}
+                   ).get("key") if rows else None
+        keys.append(written)
+        shown.append((name, code, len(rows), written, M.tree_key(tree)))
+        check("tk2%s RED-FIRST: the key `run-test-gate --record --tree` wrote "
+              "into testedState.tree.key is _evidence_io.tree_key of that "
+              "same tree: %r" % (name[0], shown[-1]),
+              code == rtg.E_OK and len(rows) == 1
+              and bool(written) and written == M.tree_key(tree))
+    check("tk3 ALLOW: two different trees were recorded under two different "
+          "keys, so the key names the tree and not the run: %r" % (keys,),
+          len(keys) == 2 and keys[0] and keys[1] and keys[0] != keys[1])
+
 
 def _selftest():
     def body(check):
