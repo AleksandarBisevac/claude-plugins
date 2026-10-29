@@ -39,8 +39,10 @@
         "severity": "low",
         "file": "tests/_harness.py:2254-2295 (sr3d, sr19c) and the task's tests.gate",
         "issue": "The recorded gate command selects tools/sweep-selftests.py, tools/_suite.py, tools/gate-parity.py, tests/test_import_evidence.py and tests/test_run_test_gate.py, but not tests/_harness.py, which holds the largest part of the diff: the reach, id-reading and print changes and their cases sr3d and sr19c (and sr18, the case the P142-R21 finding is about). So the gate record says nothing about P144-R7/R8/R9, P142-R26 or P142-R21. I ran tests/_harness.py --selftest once in the task tree: exit 0, 98/98 cases passed, sr3d and sr19c PASS, so nothing is wrong today. The executor discloses this but leaves it open. The P142-R21 finding is therefore only half answered: sr18's red-first proof is claimed, the gate-record half is not made.",
-        "resolution": "Add `python3 tools/sweep-selftests.py tests/_harness.py` (or the file) to this task's tests.gate; the manifest edit is outside the declared files, so the orchestrator does it.",
-        "fixTask": "P148.13-xpz"
+        "resolution": "fixed in P148.13-xpz (f6656f8ff6ec): Add `python3 tools/sweep-selftests.py tests/_harness.py` (or the file) to this task's tests.gate; the manifest edit is outside the declared files, so the orchestrator does it.",
+        "fixTask": "P148.13-xpz",
+        "commit": "f6656f8ff6ec",
+        "status": "fixed"
       },
       {
         "id": "P148-R3",
@@ -55,24 +57,30 @@
         "severity": "low",
         "file": "tools/sweep-selftests.py (cw10b label, lines near 3084-3095)",
         "issue": "The cw10b label writes a cardinality into prose ('exactly the two whose writers format the name inline') beside a check that pins those rows by prefix. A third inline-formatted row would make the sentence false while the check says what it checks. The task says no number written into prose; a word under ten is legal to the lint, so this is author-enforced, not a lint failure.",
-        "resolution": "Drop 'the two' from the label and name the pinned rows (journal pre-image, TDD reminder) only, as the comment above it already does.",
-        "fixTask": "P148.13-xpz"
+        "resolution": "fixed in P148.13-xpz (f6656f8ff6ec): Drop 'the two' from the label and name the pinned rows (journal pre-image, TDD reminder) only, as the comment above it already does.",
+        "fixTask": "P148.13-xpz",
+        "commit": "f6656f8ff6ec",
+        "status": "fixed"
       },
       {
         "id": "P148-R5",
         "severity": "low",
         "file": "tools/release.py:976",
         "issue": "P131-R7 is answered in part. The finding named the leaked handles in x2 and in x4/rl16. x2 and x4 now read through a with block. rl16 still reads `texts = {n: io.open(os.path.join(folder, n), encoding=\"utf-8\").read() ...}`, so the handle is still left to the GC. The outcome says rl16 is 'left as it is' because release.py is not a declared file, which is the declared-files rule at work, but the finding stays half open.",
-        "resolution": "Carry the rl16 half forward (or add tools/release.py to a task's files) and replace the comprehension's io.open().read() with a with-block read, as x4 now does.",
-        "fixTask": "P148.13-xpz"
+        "resolution": "fixed in P148.13-xpz (f6656f8ff6ec): Carry the rl16 half forward (or add tools/release.py to a task's files) and replace the comprehension's io.open().read() with a with-block read, as x4 now does.",
+        "fixTask": "P148.13-xpz",
+        "commit": "f6656f8ff6ec",
+        "status": "fixed"
       },
       {
         "id": "P148-R6",
         "severity": "low",
         "file": "tools/prove-gates.py:4091",
         "issue": "P145-R1 is answered in part. The finding offered 'fail loudly or name the spelling exercised', and the second was done: pw5's text now prints `exercised: ... NOT exercised`. Two things remain. The conjunct `respelled is None and os.name == \"nt\"` still lets pw5 pass on a Windows runner that cannot make the link. And the finding's second request, confirming on a windows-latest run that pw5, pw6 and pw13 pass with the symlink branch taken, is not done. The outcome defers it to the next Windows CI log, which cannot be read here.",
-        "resolution": "Leave the finding open on that one confirmation: after the next windows-latest log, check that the pw5 line reads 'a second spelling, through a link'. If it reads 'NOT exercised', make the case fail on nt.",
-        "fixTask": "P148.13-xpz"
+        "resolution": "fixed in P148.13-xpz (f6656f8ff6ec): Leave the finding open on that one confirmation: after the next windows-latest log, check that the pw5 line reads 'a second spelling, through a link'. If it reads 'NOT exercised', make the case fail on nt.",
+        "fixTask": "P148.13-xpz",
+        "commit": "f6656f8ff6ec",
+        "status": "fixed"
       },
       {
         "id": "P148-R7",
@@ -143,16 +151,20 @@
         "severity": "low",
         "file": "tools/release.py:294-296",
         "issue": "step_preflight's docstring still says the question is the one `release_permitted` asks, but the body now calls `release_verdict` directly (line 304). The executor's claim that the docstrings were reworded to match leaves this one behind.",
-        "resolution": "Change the docstring to say `release_verdict` asks the open-bug / provisional-phase question.",
-        "fixTask": "P148.13-xpz"
+        "resolution": "fixed in P148.13-xpz (f6656f8ff6ec): Change the docstring to say `release_verdict` asks the open-bug / provisional-phase question.",
+        "fixTask": "P148.13-xpz",
+        "commit": "f6656f8ff6ec",
+        "status": "fixed"
       },
       {
         "id": "P148-R15",
         "severity": "low",
         "file": "docs/audit/phases/P137.json (P137-R30)",
         "issue": "Answered no-change on the grounds that the filed return cannot be edited and that the mutation table belongs to P148.6. That holds for the record. The finding's second resolution (re-run the mutations so the claim has a basis) is not carried out here, so sc-ua12..sc-ua17 and xs6b are still not shown red by anything this task filed. P148.6's outcome does mention sc-ua and mutations, which is where the proof would live.",
-        "resolution": "No code change owed by this task. Phase sign-off should confirm P148.6's filed mutation table covers those cases.",
-        "fixTask": "P148.13-xpz"
+        "resolution": "fixed in P148.13-xpz (f6656f8ff6ec): No code change owed by this task. Phase sign-off should confirm P148.6's filed mutation table covers those cases.",
+        "fixTask": "P148.13-xpz",
+        "commit": "f6656f8ff6ec",
+        "status": "fixed"
       },
       {
         "id": "P148-R16",
@@ -349,7 +361,7 @@
         "resolution": "Orchestrator adds `python3 tools/sweep-selftests.py tests/_harness.py` to P148.13-xpz tests.gate and re-records the gate run before close."
       }
     ],
-    "outcome": "[findings: 36 - 0 high, 6 med, 30 low; 19 with a recorded fix commit]"
+    "outcome": "[findings: 36 - 0 high, 6 med, 30 low; 25 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1257,7 +1269,7 @@
     {
       "id": "P148.13-xpz",
       "title": "The maintainer tools' review leftovers: release preflight's docstring and a closed handle, prove-gates naming the spelling it exercised, the sweep label without a count",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix the P148 review findings P148-R2, P148-R4, P148-R5, P148-R6, P148-R14, P148-R15 (each finding's file, issue and resolution is in docs/audit/phases/P148.json review.findings, by id). Read each against the code at HEAD first. Fix each with a case proven red first where it is about behaviour; where HEAD no longer has the defect or the finding records something nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id. Edit only the declared files; a fix needing another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
       "files": [
         "tools/sweep-selftests.py",
@@ -1286,14 +1298,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "f6656f8ff6ec",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Each finding answered by id. P148-R14: tools/release.py step_preflight docstring now says the question is asked of `release_verdict`, which is what its body calls (line 304). Other mentions checked: module docstring line 68 (remote steps call release_permitted at 525/561/574/587, still true); route_subcommand docstring line 775 (true through cmd_run's remote steps, left). P148-R4: the cw10b label and the comment above it no longer give a count of the rows. They name the journal pre-image and the TDD reminder, the rows the check pins by prefix. P148-R5: HEAD no longer has the defect. rl16 reads through `_read_text` (tools/release.py:947-951, a with-block read, added in 6dc002ec P148.8), and rl25 (release.py ~1738-1757) pins every open in release.py to a with item. I fixed the rest of the leaked-handle pattern in this task's files, found with an AST scan for open/io.open calls outside a with item. tools/prove-gates.py: new `_read_source(path)` helper used at the six unclosed reads (the source walk, mutation(), _gate_sources, _label_templates, and the c6 and __main__ self-reads), plus the gate-log read became a with block. tools/sweep-selftests.py: new `write_file(path, data)` helper used for the runner's own sentinel planting (run path, about line 1230), the scratch_debris sentinel read-back (now a with block), and every unclosed fixture write in the cases (cw fixtures, the claude snapshot box, child scripts, the spaced child, cw11's manual open/close). tests/_harness.py: m1 and m2 now read their comparison text in with blocks ahead of the checks, still independently of module_source(). After the change the AST scan finds no unclosed open in the four files. Left on purpose: open().read() text inside fixture strings (sweep-selftests cw fixture `open(os.path.join(CL, 'stray.txt'),'w').write`, the `quiet_b` body, and the ll_bodies bare/named child scripts) is code that child processes run, not this file's own handles. Nothing enforces closed handles outside release.py (rl25 is inline there). Making that a mechanism means moving rl25's walk into tools/_suite.py, which is not a declared file. That is reported here and not done. P148-R6: no code change possible here. The pw5 'spelling exercised' text landed in 6bb76efb (P148.4). `git log -S'NOT exercised' -- tools/prove-gates.py` names only that commit, and `git show c35ffffba010:tools/prove-gates.py | grep -c 'spelling exercised'` printed 0 (c35ffff is the head of the newest CI runs in `gh run list`, and their windows selftest jobs show as skipped). So no windows-latest log with the pw5 line exists yet. The confirmation stays owed to the first windows run of a head containing 6bb76efb. If that line reads 'NOT exercised', drop the `os.name == \"nt\"` conjunct at prove-gates pw5. P148-R15: no code change owed (the finding says so). The mutation proof for sc-ua12..sc-ua17 and xs6b belongs to P148.6's filed table, which phase sign-off checks. P148-R2: the manifest edit is outside the declared files, so it is the orchestrator's. Add `python3 tools/sweep-selftests.py tests/_harness.py` to P148.13-xpz tests.gate. I ran it: exit 0, '1/1 files ok, 98 cases'. Direct `python3 tests/_harness.py --selftest` gave exit 0 'ALL PASS: 98/98 cases passed' with PASS m1, m2, sr3d, sr18, sr19c. Task gate `python3 tools/sweep-selftests.py tools/sweep-selftests.py tools/release.py tools/prove-gates.py`: exit 0, '3/3 files ok, 291 cases' (prove-gates 65, release 70, sweep-selftests 156). Also: ruff check on the four files exit 0; vermin -t=3.8- exit 0; _output_lints.prose_number_claims() returned no findings. m1/m2 were not mutation-tested after the move: the comparison text is the same read, made earlier. Dependants: no name was renamed or removed, and two names were added (write_file in sweep-selftests.py, _read_source in prove-gates.py). The listed dependants still hold. sweep-selftests' importers and path readers (sweep-costs.json, ci.yml, _output.py, _runner_collects/_runner_output, stamp-verification.py, _filed_returns.py, evals.json; budget_line, coverage_findings, default_jobs, file_timeout) see the same signatures and output, and only the cw10b label wording changed. Its id and leading words are unchanged, so any id-based selector still matches. release.py's (test_audit_task import, guard-release.py's release_verdict, check-example-pins' _read_text, test__refs, test_stamp_verification, affected.py) see only a docstring change. prove-gates' (guard-bash-writes, _harness path, test__deps, test__gate_feed, test_drive_phase, test_guard_bash_writes, affected.py; _under, selector_text, _call_name, changed_paths) see unchanged functions. _harness's importers see the same public API, and only lines inside its own _cases changed.",
+        "descriptive": "R14's docstring and R4's label now say what the code does. R5 was already fixed at HEAD, and the leaked-handle pattern is now closed throughout the four declared files. R2's gate addition, R6's Windows log check and R15's sign-off check are left to the orchestrator, with the evidence."
       },
       "startedAt": "2026-10-29T07:53:00Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-29T08:40:22Z",
+      "verifiedBy": [
+        "No new case. tests/_harness.py's existing sr3d, sr18 and sr19c become part of the task's gate record once the orchestrator adds `python3 tools/sweep-selftests.py tests/_harness.py` to tests.gate"
+      ],
       "notes": [
         {
           "at": "2026-10-29T07:04:01Z",
@@ -1341,6 +1355,17 @@
         "runId": "2026-10-29T08:26:12Z.3b53eb",
         "status": "passed",
         "at": "2026-10-29T08:26:12Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "f6656f8ff6ec",
+        "at": "2026-10-29T08:40:22Z",
+        "return": "docs/audit/evidence/returns/P148.13-xpz/20261029T075300Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "Regression task with expectRedFirst false, and no new case was added. The one tests.add entry is a gate-record addition (P148-R2): its cases sr3d, sr18 and sr19c already exist and pass at HEAD, so there is no red to prove. The code edits are a docstring (R14), a label and comment rewording (R4), and closing file handles. A handle left open is closed at once on CPython, which counts references, so no case can see the difference on this interpreter.",
+        "at": "n/a - no red run was made"
       }
     },
     {

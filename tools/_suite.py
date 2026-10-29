@@ -23,9 +23,9 @@ answer `tests/` already has rather than a local `try` written a tenth way.
 Git writes its loose objects READ-ONLY. On POSIX that is invisible, because
 unlinking a file needs a writable DIRECTORY and not a writable file; on windows the
 attribute is read off the file itself, `os.unlink` raises, and `shutil.rmtree` leaves
-`.git/objects/**` behind - SILENTLY, because every caller in this tree spells the call
-`ignore_errors=True`. `_output.remove_tree()` in the scripts anchor is the answer and
-its one home; `_harness.remove_tree` and the sweep runner's name are bound to it, and a
+`.git/objects/**` behind - SILENTLY when the call is spelled `ignore_errors=True`, and
+by raising when it is not. `_output.remove_tree()` in the scripts anchor is the answer
+and its one home; `_harness.remove_tree` and the sweep runner's name are bound to it, and a
 tool that needs the same answer gets it from here rather than becoming another copy.
 
 WHY THE IMPORT IS DEFERRED, WHICH IS THE OBJECTION THIS FILE ANSWERS. `tools/` is
@@ -49,8 +49,8 @@ AND THE RULES, BECAUSE AN EXEMPTION THAT EXISTS ONLY AS THE ABSENCE OF AN IMPORT
 EASY TO LOSE TRACK OF. `hand_rolled_runners()` reads every tool's `_selftest` and reports one
 that tallies its own cases instead of delegating here. `unsafe_removal_violations()`
 reads every tool's removals - and, handed `tests/`, every suite's - and reports a bare
-`shutil.rmtree(..., ignore_errors=True)` over a directory git wrote objects into: one
-function and one reading, `removal_problem()`, for both trees. Both are derived from the tree, so the NEXT tool is
+`shutil.rmtree(...)`, with `ignore_errors=True` or without, over a directory git wrote
+objects into: one function and one reading, `removal_problem()`, for both trees. Both are derived from the tree, so the NEXT tool is
 covered the day it is written rather than the day somebody remembers - which is the
 same answer for the removal helper, whose call sites used to be enumerated by hand and
 whose next one would not have been.
@@ -532,16 +532,16 @@ def _writes_objects(call, scope, family, start, defs, nested, assigns):
     return False
 
 
-def _ignores_errors(call):
-    """True when the removal is spelled `ignore_errors=True`."""
-    return any(kw.arg == "ignore_errors" and isinstance(kw.value, ast.Constant)
-               and kw.value.value is True for kw in call.keywords)
-
-
 def _written_removal_lines(tree, helper):
     """Lines of the bare removals that ran over a directory git wrote objects into,
     plus those whose directory has no traceable history (a parameter, a global): a
-    module that writes objects cannot show the unseen caller did not."""
+    module that writes objects cannot show the unseen caller did not.
+
+    BOTH SPELLINGS. A removal with `ignore_errors=True` leaves the read-only
+    objects behind and says nothing; one without it raises on windows, which is
+    loud but still leaves them behind, and a suite whose case removes a tree in
+    order to grade its absence then grades a tree that is still there. Neither
+    answers whether the tree went, which is what `remove_tree` returns."""
     ignore = _non_variable_names(tree)
     defs = {}
     for node in ast.walk(tree):
@@ -549,8 +549,6 @@ def _written_removal_lines(tree, helper):
             defs[node.name] = node
     lines = []
     for call in _bare_removal_calls(tree, _helper_body_ids(tree, helper)):
-        if not _ignores_errors(call):
-            continue        # a removal that raises is loud; only the silent one is the defect
         scope = _outermost_function(tree, call.lineno)
         # A suite defines `run_git` many times over; the one that counts is the one
         # nested in the function holding this removal.
@@ -609,9 +607,10 @@ def removal_problem(source):
         return None
     return ("it builds a git repository and writes to it, then removes a tree with "
             "`shutil.rmtree` at line(s) %s. Git's loose objects are read-only, "
-            "windows refuses to unlink a read-only file, and `ignore_errors=True` "
-            "turns that refusal into silence - so the removal has never worked "
-            "there and nothing said so. `from _suite import %s`, which is "
+            "windows refuses to unlink a read-only file, and the removal leaves "
+            "them behind - silently with `ignore_errors=True`, and with an "
+            "exception without it, neither saying whether the tree went. "
+            "`from _suite import %s`, which is "
             "`_harness.%s` and retries behind a chmod pass"
             % (", ".join(str(line) for line in lines), remove_tree.__name__,
                remove_tree.__name__))
@@ -1124,11 +1123,22 @@ def _cases(check):
           "line(s) 16. " in (removal_problem(_built) or "")
           and "line(s) 11. " in (removal_problem(_looped) or "")
           and "for argv" in _looped)
-    check("s21 a removal that does not pass `ignore_errors=True` raises on windows "
-          "instead of staying silent, so it is not this rule's finding even over "
-          "a staged directory: a rule that demanded the helper there would be "
-          "convicting a loud failure",
-          removal_problem(_written.replace(", ignore_errors=True", "")) is None)
+    # BOTH DIRECTIONS IN ONE CASE. The plain spelling over the STAGED fixture is
+    # the half that goes red when the rule reads only `ignore_errors=True`. The
+    # plain spelling of the MIXED fixture - the staged one beside an init-only one
+    # that reuses its name and a directory git never touched, in a module that
+    # does write objects - is the half that goes red when the rule convicts every
+    # plain removal in such a module whatever git wrote under it.
+    _plain = _written.replace(", ignore_errors=True", "")
+    _plain_mixed = _mixed.replace(", ignore_errors=True", "")
+    check("s21 a removal WITHOUT `ignore_errors=True` over a staged directory is "
+          "reported as well - on windows it raises and still leaves the read-only "
+          "objects behind - while the same plain removal over a directory git only "
+          "initialised, or never touched, is not: %r / %r"
+          % (removal_problem(_plain), removal_problem(_plain_mixed)),
+          "ignore_errors" not in _plain + _plain_mixed
+          and "line(s) 11. " in (removal_problem(_plain) or "")
+          and "line(s) 11. " in (removal_problem(_plain_mixed) or ""))
 
     _scratch = _harness.fixture_root("suite-removal-")
     try:

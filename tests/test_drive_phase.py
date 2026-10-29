@@ -3665,16 +3665,43 @@ def _sv_measured_again(said, second_runs, tasks):
 
 def _sv_pure_cases(check, M):
     """The comparison a stored verdict passes, asked of rows built here, and
-    the tree name it compares held to the one the gate runner records."""
-    rtg = _loader.load_script("run-test-gate.py", "rtg_tree_key", cache=False)
+    the drive's own reading of the tree it compares on."""
+    # THE DRIVE'S HALF OF THE TREE NAME. That run-test-gate writes
+    # `testedState.tree.key` through `_evidence_io.tree_key` is pinned beside
+    # that function; what is left to ask here is whether `verdict_basis` reads
+    # the tree a held run names through the same function. A row recorded in
+    # tree A must hold when the drive asks about A - which goes red on a drive
+    # that names the tree any other way - and must be moved when it asks about
+    # another tree or the project, which goes red on a drive that stops
+    # comparing the tree at all.
+    rtg = _loader.load_script("run-test-gate.py", "rtg_sv_cases", cache=False)
+    proj = os.path.realpath(_harness.fixture_root("drive-treekey-proj-"))
     where = os.path.realpath(_harness.fixture_root("drive-treekey-"))
+    other = os.path.realpath(_harness.fixture_root("drive-treekey-other-"))
     try:
-        keys = (_evio.tree_key(where), rtg.tree_key(where))
+        manifest = {"meta": {}, "phases": [{"id": "P1", "testGate": ["true"],
+                                            "tasks": [{"id": "P1.1"}]}]}
+        phase = manifest["phases"][0]
+        entries, _source = _mio.gate_entries(phase, phase["tasks"][0])
+        _evio.append_row(proj, {
+            "runId": "r1", "ts": "2026-10-21T10:00:00Z",
+            "gateDigest": _evio.gate_digest(entries, None),
+            "testedState": {"tree": {"key": _evio.tree_key(where)}},
+            "steps": [{"name": "unit", "exit": 0}]}, writer="sv7", config={})
+        ctx = {"project": proj, "config": {}, "gitRoot": proj}
+        basis = dict((label, M.verdict_basis(ctx, manifest, "P1.1",
+                                             {"runId": "r1", "tree": tree})[0])
+                     for label, tree in (("same", where), ("other", other),
+                                         ("project", None)))
     finally:
-        _harness.remove_tree(where)
-    check("sv7 the tree name a stored verdict is compared on is the one "
-          "run-test-gate records as testedState.tree.key: %r" % (keys,),
-          keys[0] == keys[1] and len(keys[0]) == 12)
+        for gone in (proj, where, other):
+            _harness.remove_tree(gone)
+    check("sv7 a verdict recorded in a tree holds when the drive asks about "
+          "that tree and is moved when it asks about another tree or the "
+          "project - the drive names the tree a held run points at the way the "
+          "row was keyed: %r" % (basis,),
+          basis == {"same": _evio.STORED_HOLDS, "other": _evio.STORED_MOVED,
+                    "project": _evio.STORED_MOVED})
     row = {"runId": "r1", "ts": "2026-10-21T10:00:00Z", "gateDigest": "sha256:a",
            "testedState": {"scopeDigest": "s1", "tree": {"key": "k1"}},
            "steps": [{"name": "unit", "exit": 1}]}
@@ -10884,14 +10911,18 @@ def _kept_tree_cases(M, check):
     gone = cut_at({}, {"from": first, "n": 3})
     os.makedirs(first + ".redo-4")
     _harness.git(root_p, "worktree", "add", "-q", "--detach", first + ".redo-5")
-    shutil.rmtree(first + ".redo-5")
+    # The careful removal, and its answer read: a tree that survived its
+    # removal is a directory on disk, and the case would no longer grade a
+    # record whose directory is gone.
+    redo5_gone = _harness.remove_tree(first + ".redo-5")
     taken = cut_at({}, {"from": first, "n": 3})
     check("ta20b no path the state records or the disk holds is cut at again: "
           "with every kept tree "
           "removed the next cut goes past the highest recorded, and past a "
           "directory and a record git keeps for a tree whose directory is gone: "
-          "%r" % ((gone, taken),),
-          gone == (first + ".redo-4", {"from": first, "n": 4})
+          "removed=%r %r" % (redo5_gone, (gone, taken)),
+          redo5_gone
+          and gone == (first + ".redo-4", {"from": first, "n": 4})
           and taken == (first + ".redo-6", {"from": first, "n": 6}))
     # OVER-FIRE: a task no redo has kept a tree for is cut where `tree_path` or
     # `task-add` puts it - a chooser that always answered a redo path would

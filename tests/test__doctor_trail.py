@@ -492,16 +492,20 @@ def _cases(check):
         else:
             wiped = os.path.join(tmp, "wiped")
             wfile = _committed_journal(wiped)
-            shutil.rmtree(_journal_io.journal_dir(wiped))
+            # The careful removal, and its answer read: a directory that
+            # survived its removal would make this case grade a journal that
+            # is still there.
+            wiped_gone = _harness.remove_tree(_journal_io.journal_dir(wiped))
             rep = base.Report()
             M.check_journal(rep, wiped, {}, cfgmod, wiped)
             check("dt50 a committed journal directory REMOVED WHOLE is a FINDING "
                   "naming the file git still tracks, not the ok line a project "
                   "that has never recorded anything gets - the chain grades rows "
                   "inside a file and the anchor grades one file, so a file that "
-                  "is gone was in neither question: %r / %r"
-                  % (_detail(rep, "journal"), _fix(rep, "journal")),
-                  _levels(rep, "journal") == ["FINDING"]
+                  "is gone was in neither question: removed=%r %r / %r"
+                  % (wiped_gone, _detail(rep, "journal"), _fix(rep, "journal")),
+                  wiped_gone
+                  and _levels(rep, "journal") == ["FINDING"]
                   and os.path.basename(wfile) in _detail(rep, "journal")
                   and "still tracks" in _detail(rep, "journal")
                   and "git checkout --" in _fix(rep, "journal"))

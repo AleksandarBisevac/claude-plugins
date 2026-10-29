@@ -998,10 +998,15 @@ def _cases(check):
     _tclean = M.sweep_plan(
         _ttrees, {}, {}, {}, {"/wt-t1": {"dirty": False, "lines": []}},
         cwd_tree=M.CWD_OUTSIDE, verbs=("removeWorktrees",), task_by_path=_tmark)
-    check("ts2 ...a CLEAN task tree is kept as well: removing one is `task-remove`'s "
-          "job, after integration, and a sweep that reaped it would race the wave",
+    _tclean_why = " ".join(r.get("why") or "" for k in _tclean["kept"]
+                           for r in k.get("reasons") or [])
+    check("ts2 ...a CLEAN task tree is kept as well: the step driver takes it down "
+          "itself once nothing in it would be lost, and a sweep that reaped it "
+          "would race the wave - the reason says so, and names no verb a set-aside "
+          "tree's key would be refused by",
           not _tclean["actions"]
-          and [k["path"] for k in _tclean["kept"]] == ["/wt-t1"],
+          and [k["path"] for k in _tclean["kept"]] == ["/wt-t1"]
+          and "step driver" in _tclean_why and "task-remove" not in _tclean_why,
           repr(_tclean["kept"]))
     check("ts3 ...and a detached tree with NO task marker is still a stranger, "
           "counted in `examined` beside the task tree",

@@ -14946,12 +14946,15 @@ def _held_cases(check):
 
         # A prunable worktree still holds the branch; `worktree add` is refused.
         proj, mpath, wt, _rel = outside_worktree("signoff-prunable-remedy")
-        shutil.rmtree(wt)
+        # The careful removal, and its answer read: a worktree that survived
+        # its removal is not prunable, and the case would grade the wrong one.
+        wt_gone = _harness.remove_tree(wt)
         prun = signoff(proj, "P1", "skipped")
         check("hs5e a prunable worktree holding the branch: the remedy names "
-              "`git worktree prune` before the add: %r"
-              % ((prun[0], prun[1][-700:]),),
-              prun[0] == M.E_USAGE and "git worktree prune" in prun[1]
+              "`git worktree prune` before the add: removed=%r %r"
+              % (wt_gone, (prun[0], prun[1][-700:])),
+              wt_gone
+              and prun[0] == M.E_USAGE and "git worktree prune" in prun[1]
               and "no worktree holds" not in prun[1]
               and prun[1].index("git worktree prune")
               < prun[1].index("git worktree add"))
