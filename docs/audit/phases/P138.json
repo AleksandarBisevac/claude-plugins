@@ -109,27 +109,33 @@
         "severity": "low",
         "file": "plugins/audit/scripts/status/audit-lookup.py:656; plugins/audit/scripts/manifest/_manifest_typos.py:244-260",
         "issue": "P138-R7 is fixed for one of its three statements only. Its resolution reads 'say \"no plan default, no area default and no task skill\" in the brief; add \"set meta.defaultSkills with audit-task.py default-skills\" to the warning's exits'. The diff changes the conventions bullet and a comment at audit-lookup.py:139, but the brief line still reads 'No skill resolves for this task: no area default and no task skill.' and the unresolved-skills warning still offers only 'set task.skills, register default skills on an area in meta.areas, or write \"skills\": null'. The outcome says '_manifest_typos.py ... untouched and still correct', but the warning's exit list omits the plan-level exit the phase introduced. _skills_in_use (_manifest_typos.py:178-195) also does not count meta.defaultSkills as use.",
-        "resolution": "Reword the brief line to name the plan default, add the meta.defaultSkills exit to the warning (and its test__manifest_typos case), or record in the outcome that those two are deliberately left and why.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.7 (04261ee5efac): Reword the brief line to name the plan default, add the meta.defaultSkills exit to the warning (and its test__manifest_typos case), or record in the outcome that those two are deliberately left and why.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.7",
+        "commit": "04261ee5efac"
       },
       {
         "id": "P138-R10",
         "severity": "low",
         "file": "tests/test_audit_task.py:19117-19150 (dsv3)",
         "issue": "P138-R5's resolution asks for a case that 'asserts the named plan changed and a nonexistent path is refused by name'. dsv3 covers the first half and the call order, not the nonexistent-path half. I ran `default-skills --remove /nonexistent/zzz.json` outside any plan with the fixed code: exit 2, '[audit-task] not a directory: /nonexistent', so the behaviour holds, but nothing pins it. The refusal names the root, not the manifest path.",
-        "resolution": "Add a dsv case that passes a nonexistent manifest positional and asserts a non-zero exit with the path or its root in the message and the cwd project unchanged.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.7 (04261ee5efac): Add a dsv case that passes a nonexistent manifest positional and asserts a non-zero exit with the path or its root in the message and the cwd project unchanged.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.7",
+        "commit": "04261ee5efac"
       },
       {
         "id": "P138-R11",
         "severity": "low",
         "file": "tests/test_audit_lookup.py:2574-2603 (co1) vs tests.gate",
         "issue": "co1, the case that pins the R7 conventions bullet, lives in tests/test_audit_lookup.py, but the task's tests.gate is only `python3 tools/sweep-selftests.py tests/test_audit_task.py`. The recorded gate run (passed) therefore never ran co1. The executor ran test_audit_lookup.py by hand (143/143) but no recorded gate did.",
-        "resolution": "Add tests/test_audit_lookup.py to the task's gate set (retarget --gate-set) so the run that records the evidence also runs co1.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.7 (04261ee5efac): Add tests/test_audit_lookup.py to the task's gate set (retarget --gate-set) so the run that records the evidence also runs co1.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.7",
+        "commit": "04261ee5efac"
       },
       {
         "id": "P138-R12",
@@ -156,39 +162,47 @@
         "severity": "low",
         "file": "plugins/audit/scripts/governance/run-agent-session.py:217; tests/test_run_agent_session.py:ras50",
         "issue": "The note that `claude --help` does not list `--append-system-prompt-file`, with the probe's build and date, sits in the module docstring (line 35). The only place the flag is written in code (`session_argv`, line 217) carries no comment, and ras50 reads 700 characters around the FIRST occurrence of the string only, which is the docstring. The task asked for it 'beside the flag'.",
-        "resolution": "Add a one-line comment above `argv += [\"--append-system-prompt-file\", skills_file]` pointing at the docstring probe (claude 2.1.307, 2026-10-23), and have ras50 check the last occurrence as well.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.2 (d5cce403c68f): Add a one-line comment above `argv += [\"--append-system-prompt-file\", skills_file]` pointing at the docstring probe (claude 2.1.307, 2026-10-23), and have ras50 check the last occurrence as well.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.2",
+        "commit": "d5cce403c68f"
       },
       {
         "id": "P138-R15",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/run-agent-session.py:249; tests/test__doctor_policy.py:456-458; tests/test__skill_places.py:92",
         "issue": "Three comments still describe the removed mode. run-agent-session.py:249 says 'and no inventory is passed, so only a SKILL.md this launcher can read counts' (the parameter no longer exists); test__doctor_policy.py:458 says 'The scan inventory stays the WIDER mode: a name only the scan lists still resolves here' directly above dp50, which now asserts the opposite; test__skill_places.py:92 is headed 'the scan inventory is the wider mode' over cases that assert there is none. A sentence claiming what the code does not do.",
-        "resolution": "Reword the three: the launcher and doctor ask the same resolver and there is no inventory argument; drop 'WIDER' from the dp comment and retitle the sp section 'no second mode'.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.2 (d5cce403c68f): Reword the three: the launcher and doctor ask the same resolver and there is no inventory argument; drop 'WIDER' from the dp comment and retitle the sp section 'no second mode'.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.2",
+        "commit": "d5cce403c68f"
       },
       {
         "id": "P138-R16",
         "severity": "low",
         "file": "plugins/audit/scripts/status/_doctor_policy.py:109-117",
         "issue": "_scan_sighting words every scan-listed refusal as 'which a session does not load by that bare name'. The scan keys a skill by its front-matter name (_panel_discovery.py:137 `fm.get('name') or name`) while the resolver looks for a directory of that name. So a skill under <home>/skills/<dir>/SKILL.md with `name: other` is listed as 'other' at a path in a directory the launcher DOES read, and the row says a session does not load it, with no hint that the cause is the directory/name mismatch. The docstring's two causes ('another plugin's skill, or a copy in a place no session reads') omit this third one. The refusal itself is consistent with the launcher; the explanation can mislead.",
-        "resolution": "When the sighting path sits under one of resolved[name]['places']' skills directories, say the directory name differs from the skill's front-matter name (the launcher looks up the directory name); add the case next to dp53.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.7 (04261ee5efac): When the sighting path sits under one of resolved[name]['places']' skills directories, say the directory name differs from the skill's front-matter name (the launcher looks up the directory name); add the case next to dp53.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.7",
+        "commit": "04261ee5efac"
       },
       {
         "id": "P138-R17",
         "severity": "low",
         "file": "plugins/audit/scripts/panel/_panel_write.py:2130; plugins/audit/scripts/status/audit-status.py:279",
         "issue": "R13 is closed in doctor only. The executor's descriptive outcome says 'a portability grade only counts when it describes the file a session loads', but _panel_write.py:2130 (the strict-tier refusal of a patched skill name) still reads `have.get(name).get('travels')` from the scan entry, which for a name in both tiers is the project copy while the launcher loads the personal one. audit-status.py:279 has the same shape but asks the repo-scope clone question, where the project copy is arguably the right one. The R13 finding named only _plan_skills_travel, so this is outside what was asked; it is the same class and the claim overreaches.",
-        "resolution": "Narrow the descriptive outcome to doctor, and file the strict-tier refusal in _panel_write.py as a follow-up (compare the entry path with the resolved path there too, or resolve through _skill_places).",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.7 (04261ee5efac): Narrow the descriptive outcome to doctor, and file the strict-tier refusal in _panel_write.py as a follow-up (compare the entry path with the resolved path there too, or resolve through _skill_places).",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.7",
+        "commit": "04261ee5efac"
       }
     ],
-    "outcome": "[findings: 17 - 0 high, 6 med, 11 low; 10 with a recorded fix commit]",
+    "outcome": "[findings: 17 - 0 high, 6 med, 11 low; 17 with a recorded fix commit]",
     "readReturns": []
   },
   "summary": "P138: every writer and reviewer session the drive starts has the full text of each skill the task resolves to in its system prompt from the first turn (--append-system-prompt-file, probed on claude 2.1.307), recorded by name, path and sha256; a missing skill stops the launch by name; skills resolve in Claude Code's documented order through one resolver shared with audit:doctor; a plan names house skills once (meta.defaultSkills, default-skills verb) and this plan declares writing-python, before-you-claim, no-silent-pass; a filed return never carries a machine path. Lows carried to BUG-29-dau. Per-task reviewer answers continued over: P138.2 intent diverges: owner, standing for this run: 'Radis autonomno ... ne izbacujes mi prompt-ove da ti ja nesto potvrdim'; the house skills are declared by the orchestrator through the new verb now, and the manifest positional is a fix task; P138.3-myr intent diverges: owner, standing for this run: 'Radis autonomno ... ne izbacujes mi prompt-ove da ti ja nesto potvrdim'; the findings are lows carried and doctor-side meds fixed by a follow-up task in this phase; P138.5-myr intent cannot-tell: owner, standing for this run: 'Radis autonomno ... ne izbacujes mi prompt-ove da ti ja nesto potvrdim'; remaining findings are low and carried",
