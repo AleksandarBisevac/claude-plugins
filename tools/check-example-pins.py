@@ -483,13 +483,18 @@ def _cases(check_case):
         live_pinned = pinned_examples()
         live_seen = [os.path.join(EXAMPLES_DIR, n).replace(os.sep, "/")
                      for n in (os.path.basename(f) for f in example_files(None))
-                     if read_pins(io.open(os.path.join(REPO, EXAMPLES_DIR, n),
-                                          encoding="utf-8").read())]
+                     if read_pins(_read_text(os.path.join(REPO, EXAMPLES_DIR, n)))]
+        # The two sides above share their ingredients (the same files, the same
+        # filter), so they agree however the filter reads. The named example is
+        # the side that does not: it clones the plugin at a tag on a code line,
+        # so a filter that stopped reading that pin drops it from both sides.
         check_case("x2 THE LIVE SET: this repository's own pinned examples, as "
                    "the function release.py reads returns them, are the ones "
-                   "the checker's own listing finds, and it finds at least one: "
-                   "%r vs %r" % (live_pinned, live_seen),
-                   live_pinned == sorted(live_seen) and bool(live_pinned))
+                   "the checker's own listing finds, and they hold the Azure "
+                   "Pipelines example by name: %r vs %r"
+                   % (live_pinned, live_seen),
+                   live_pinned == sorted(live_seen)
+                   and "docs/examples/azure-pipelines.yml" in live_pinned)
         listed = io.StringIO()
         held, sys.stdout = sys.stdout, listed
         try:
@@ -518,8 +523,12 @@ def _cases(check_case):
                    and read_pins(repin_text(bodies["b-url.yaml"], "v4.0.0"))
                    == ["v4.0.0"])
         changed = repin_examples(pin_root, "v4.0.0")
-        after = {n: io.open(os.path.join(folder, n), encoding="utf-8").read()
-                 for n in bodies}
+        after = {}
+        for name in bodies:
+            # Newlines translated, as `bodies` were written: on Windows the
+            # write above put CRLF on disk, and the comparison is of the text.
+            with io.open(os.path.join(folder, name), encoding="utf-8") as h:
+                after[name] = h.read()
         check_case("x4 repin_examples rewrites the pinned examples on disk, "
                    "returns exactly those paths, and leaves every other file "
                    "byte for byte as it was: %r" % (changed,),

@@ -1,0 +1,29 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "CHANGELOG.md:52",
+   "issue": "The new Unreleased/Added entry about the task gate and open high bugs has a line 142 characters wide (the sentence beginning '3.6.0 with no line here, so it is recorded now. `audit-status.py --gate --task <id>` sets aside...'), against a file wrap of about 95. This is the class P147-R6 asked to fix, re-introduced by the same diff that fixes that one.",
+   "resolution": "Rewrap that entry so no line passes the file's usual width."},
+  {"id": 2, "severity": "low", "file": "plugins/audit/scripts/status/_doctor_hygiene.py:374; plugins/audit/scripts/status/audit-status.py:1136; plugins/audit/scripts/governance/propose-gates.py:31",
+   "issue": "P131-R5 is only partly answered. Its resolution had three parts: delete the `--selftest` usage lines, reword phase-signoff.md, and reword the three comments that name `_output.prose_number_claims()`, which now lives in tools/lints. The first two are done for the declared files. The three comments are still at those lines (grep at the task tree) and still name a function that is not in _output. The executor reported this as not made because the files are outside the task's declared files, which is the correct handling, but the finding stays open.",
+   "resolution": "File a follow-up task owning those three scripts that rewords each comment to name the source-repository lint (tools/lints/_output_lints.py). The executor also lists audit-task.py:123, audit-status.py:14 and _proposals.py:40 as further `--selftest` mentions of the same class; confirm each in that task."},
+  {"id": 3, "severity": "low", "file": "tests/test__worktrees.py:1001",
+   "issue": "P142-R44 is fixed in _worktrees.sweep_plan, but the title of case ts2 still says removing a clean task tree is `task-remove`'s job, the claim the reason string no longer makes. The case asserts nothing on the reason text, so it is wording only. The executor left it because the file is outside the task's files.",
+   "resolution": "Reword the ts2 title to the step driver's removal in a task that owns tests/test__worktrees.py."}
+ ],
+ "preExisting": [
+  {"id": 1, "severity": "low", "file": "plugins/audit/commands/status.md:464-466",
+   "issue": "'Three things to get right' says `--gate --json` prints the GATE line on the same stream as the JSON, so it is not parseable JSON. The same document's new paragraph and audit-status.py (GATE lines go to stderr under --json) say otherwise. This is not in the diff; the executor reported it.",
+   "resolution": "Check the stream with a run, then correct or delete the bullet in a later task."}
+ ],
+ "intent": {
+  "answer": "matches",
+  "note": "Description: 'Fix the low review findings ... For each finding either fix it ... or ... say so with the evidence ... The outcome answers every listed finding by id, one line each ... Edit only the declared files; a fix that needs another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.' The outcome answers all twelve ids, one line each, as fixed or no-change. I read each rewritten sentence against the tree and each holds. LINTS_DIR is at _output.py:102. The --task text matches audit-status.py:1984-1995, _status_facts.gate_exemptions (the task plus its non-terminal phase siblings, high bugs only, env var absent) and run-test-gate.with_gate_task. v3.6.0 holds the --task flag and the GATE TASK lines but no changelog line for them. The _slashed docstring matches the relpath/ValueError code. The orchestrator.md and guide reviewer-session text matches reviewer_dispatch, REVIEWER_SESSION_RULE, reviewer_session_step, writer_said (the run: line) and MAX_RESUME_ROUNDS. The clauses-uncovered and red-refused text matches writer_path_on in red_refused and clauses_uncovered. The red-first obligation text matches _filed_returns.owes_red_first and drive-phase submit (the not-attempted block for a tdd task with expectRedFirst false). The _worktrees reason matches remove_task_tree and its three callers: retire_member, retire_asides and the recut. The run-agent-session guide paragraph matches the module docstring and _parent_tmp, drop_session_tmp and _run's finally. No-change claims hold: CLAUDE.md names plugins/audit/tests/ once, at line 333, as the retired directory, and has LINTS_DIR at line 42; tools/lints/_deps.py rows for tree_changed and _changed_between already say the paths are narrowed in Python and never handed back to git; commands/phase.md step 3 already says a run: line. The five usage lines and the phase-signoff clause are gone, and the changes carry no finding ids or new counts. No sentence is false. Three findings stay partly open, all named by the executor as outside the declared files: P131-R5 (three comments), P142-R44 (ts2 title), plus the new over-wide CHANGELOG line. The filed outcome describes the diff. One thing its gate line leaves out: the five-suite gate does not exercise the agent and command documents beyond ih5 and the byte ceiling, which measure-context covers.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Filed not-attempted: mode regression, expectRedFirst false, no tests.add entry. Every change is documentation, a docstring, a comment or a reason string, so no case was owed. The brief lists tests.add as none, which agrees.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "The gate (python3 tools/sweep-selftests.py over tests/test__deps.py, test__output_lints.py, test__refs.py, test__worktrees.py and test__clause_coverage.py) resolves to a command, but this task changed no behaviour for a deleted-behaviour question to reach: the only code edits are docstrings, comments and one reason string in _worktrees.sweep_plan, which ts1 reads for the task id and dirty path only. I did not read the suites for vacuity."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

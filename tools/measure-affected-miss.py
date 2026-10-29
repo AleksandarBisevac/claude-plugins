@@ -48,8 +48,14 @@ WHAT IT DOES NOT SAY.
     is written over the scratch tree's `tools/affected.py` for the selection only
     and the commit's own copy is put back before anything is mutated or swept, so
     the selector reads that commit's tree and the sweep runs that commit's suites.
-  - A mutation that turns nothing red is reported as `inert`. Zero misses over an
-    inert mutation is zero evidence, and the output says so instead of counting it.
+  - A mutation that changes no suite's verdict is reported as `inert`: nothing went
+    red, or everything that went red was red on the commit unmutated too (or green
+    when swept again). Zero misses over an inert mutation is zero evidence, and the
+    output says so instead of counting it.
+  - The CI half asks `gh` for at most `--ci-limit` failed runs. When the list comes
+    back full and its oldest run is still inside the window, the older runs were
+    never listed, and the CI tail says the window was truncated rather than reading
+    as the whole of it.
   - A commit that changed no Python has nothing to mutate; it is named and left out
     of the commits count. A commit whose selection was the full set cannot have a
     miss by construction; it is counted, and named as full.
@@ -385,7 +391,11 @@ def run_mutation(opts, tree, kind, originals, sel):
     """One mutation, one full sweep, and the reds the selection did not name.
 
     The tree is restored from the bytes read before any mutation - in `finally`,
-    and before the baseline check, which must see the commit as it was."""
+    and before the baseline checks, which must see the commit as it was. `inert`
+    is whether the mutation changed any suite's verdict (`_changed_verdict`), not
+    whether the mutated sweep was green: on a commit already holding a red suite
+    the two differ, and the green-sweep reading called a mutation that did
+    nothing a measurement."""
     rec = {"kind": kind, "status": "ran", "why": "", "red": 0, "unselected": 0,
            "inert": False, "missed": [], "baseline_red": [], "flaky": [],
            "other": []}
@@ -398,28 +408,63 @@ def run_mutation(opts, tree, kind, originals, sel):
             rec.update(status="sweep-unreadable", why=first["why"])
             return rec
         rec["red"], rec["other"] = len(first["red"]), first["other"]
-        rec["inert"] = not first["red"] and not first["other"]
+        if not first["red"] and not first["other"]:
+            rec["inert"] = True
+            return rec
         unselected = [p for p in first["red"] if not is_selected(sel, p)]
         rec["unselected"] = len(unselected)
-        if not unselected:
-            return rec
-        again = _sweep(opts, tree, unselected)
-        if not again["complete"]:
-            rec.update(status="sweep-unreadable", why=again["why"])
-            return rec
-        still = [p for p in unselected if p in again["red"]]
-        rec["flaky"] = [p for p in unselected if p not in still]
-        _restore(tree, originals)
-        if still:
-            base = _sweep(opts, tree, still)
-            if not base["complete"]:
-                rec.update(status="sweep-unreadable", why=base["why"])
+        if unselected:
+            again = _sweep(opts, tree, unselected)
+            if not again["complete"]:
+                rec.update(status="sweep-unreadable", why=again["why"])
                 return rec
-            rec["baseline_red"] = [p for p in still if p in base["red"]]
-            rec["missed"] = [p for p in still if p not in base["red"]]
+            still = [p for p in unselected if p in again["red"]]
+            rec["flaky"] = [p for p in unselected if p not in still]
+            _restore(tree, originals)
+            if still:
+                base = _sweep(opts, tree, still)
+                if not base["complete"]:
+                    rec.update(status="sweep-unreadable", why=base["why"])
+                    return rec
+                rec["baseline_red"] = [p for p in still if p in base["red"]]
+                rec["missed"] = [p for p in still if p not in base["red"]]
+        _restore(tree, originals)
+        changed, why = _changed_verdict(opts, tree, first, rec)
+        if changed is None:
+            rec.update(status="sweep-unreadable", why=why)
+            return rec
+        rec["inert"] = not changed
         return rec
     finally:
         _restore(tree, originals)
+
+
+def _changed_verdict(opts, tree, first, rec):
+    """`(True, "")` when the mutation turned some suite red that is green on the
+    commit unmutated, `(False, "")` when it did not, `(None, why)` when a sweep
+    could not be read. `tree` holds the commit as it was.
+
+    It stops at the first proof. A miss is one already. Otherwise each red not yet
+    swept unmutated - the selected ones; a baseline red and a second-run green are
+    settled - is swept alone, so a green tree costs one suite. A red the sweep
+    attributed to no file cannot be swept alone, so it is compared against an
+    unmutated whole sweep, and only when no attributed red answered first."""
+    if rec["missed"]:
+        return True, ""
+    settled = set(rec["baseline_red"]) | set(rec["flaky"])
+    for path in sorted(p for p in first["red"] if p not in settled):
+        got = _sweep(opts, tree, [path])
+        if not got["complete"]:
+            return None, got["why"]
+        if path not in got["red"]:
+            return True, ""
+    if first["other"]:
+        whole = _sweep(opts, tree, [])
+        if not whole["complete"]:
+            return None, whole["why"]
+        if [what for what in first["other"] if what not in whole["other"]]:
+            return True, ""
+    return False, ""
 
 
 def select_in_tree(opts, tree, parent):
@@ -565,6 +610,19 @@ def window_start(opts, shas):
     return min(times) if times else None
 
 
+def window_truncated(listed, limit, since):
+    """True when `gh run list` may have stopped short of the window: it returned
+    as many runs as it was allowed, and none of them is older than the window
+    start - so the run after the last one listed may still be inside it. A run
+    whose time cannot be read cannot show that the window was reached, so a full
+    list of those is truncated too."""
+    if len(listed) < limit:
+        return False
+    made = [_epoch(item.get("createdAt") or "") for item in listed
+            if isinstance(item, dict)]
+    return not any(t is not None and t < since for t in made)
+
+
 def ci_half(opts, shas):
     """`{"asked": False, "why"}` when gh could not be asked, else the runs read.
 
@@ -588,6 +646,7 @@ def ci_half(opts, shas):
     if not isinstance(listed, list):
         return {"asked": False, "why": "gh run list: " + tail(text)}
     runs, cache = [], {}
+    truncated = window_truncated(listed, opts["ci_limit"], since)
     for item in listed:
         made = _epoch(item.get("createdAt") or "")
         if made is not None and made < since:
@@ -612,7 +671,7 @@ def ci_half(opts, shas):
                                      if not is_selected(sel, p)]
                     rec["status"] = "read"
         runs.append(rec)
-    return {"asked": True, "why": "", "runs": runs}
+    return {"asked": True, "why": "", "runs": runs, "truncated": truncated}
 
 
 # --- the whole measurement -----------------------------------------------------------
@@ -627,7 +686,11 @@ def describe(rec):
         return "%s: the selection was the full set, so no suite can be missed" % (head,)
     parts = []
     for m in rec["mutations"]:
-        if m["inert"]:
+        if m["inert"] and (m["red"] or m["other"]):
+            parts.append("%s: inert, red %d but no verdict changed - each was "
+                         "red unmutated too, or green when swept again"
+                         % (m["kind"], m["red"]))
+        elif m["inert"]:
             parts.append("%s: inert, nothing went red" % m["kind"])
         else:
             parts.append("%s: red %d, unselected %d, missed %d"
@@ -725,7 +788,12 @@ def render(result):
         read = [r for r in ci["runs"] if r["status"] == "read"]
         tail_text = "%d of %d runs (CI)" % (
             sum(1 for r in read if r["missed"]), len(read))
-        if not ci["runs"]:
+        if ci.get("truncated"):
+            tail_text += (" - WINDOW TRUNCATED at the run limit (--ci-limit): gh "
+                          "listed as many failed runs as it was allowed and the "
+                          "oldest is still inside the window, so older ones were "
+                          "not read")
+        elif not ci["runs"]:
             tail_text += " - gh answered, and no failed run falls in the window"
         apart = [r for r in ci["runs"] if r["status"] != "read"]
         if apart:
@@ -1126,6 +1194,21 @@ def _cases(check):
               and base_raise["baseline_red"] == [_t("test_d")]
               and "already red unmutated" in "\n".join(render(baseline)))
 
+        # The style mutation changes nothing here (the fixture's sweep reads no
+        # lint), but the commit carries a suite red before any mutation: the
+        # mutated sweep is red, and that red is not the mutation's doing.
+        base_style = mutations_of(baseline, "style")[0]
+        check("m9b a mutation whose only red was already red on the commit "
+              "unmutated is INERT - it changed no verdict - and says so with "
+              "the red it saw, while the raise on the same commit, which did "
+              "turn a green suite red, is not: style %r, raise inert %r"
+              % (base_style, base_raise["inert"]),
+              base_style["red"] == 1 and base_style["inert"]
+              and base_style["baseline_red"] == [_t("test_d")]
+              and base_style["missed"] == [] and not base_raise["inert"]
+              and "style: inert, red 1 but no verdict changed"
+              in "\n".join(render(baseline)))
+
         # a red that is gone on the second run is not a miss
         unsteady = measure(_fixture_opts(fixture([_py("test_a")], flaky=True)))
         steady_raise = mutations_of(unsteady, "raise")[0]
@@ -1194,6 +1277,7 @@ def _cases(check):
                "selftests\tverify\t2026 FAIL  %s: exited 1\n" % _t("test_a")
                + "selftests\tverify\t2026 1/2 files ok, 3 cases\n== selftests: FAILED\n")
         _write(os.path.join(stub_dir, "log-4.txt"), "Error: the lint job failed\n")
+        _write(os.path.join(stub_dir, "log-5.txt"), "Error: the lint job failed\n")
         _write(os.path.join(stub_dir, _py("gh_stub")),
                "import os, sys\n"
                "d = os.path.dirname(os.path.abspath(__file__))\n"
@@ -1224,6 +1308,32 @@ def _cases(check):
               and by_id[4]["status"] == "no-suite"
               and "1 of 2 runs (CI)" in shown_ci
               and "MISS  CI run 1" in shown_ci and "CI unread  CI run 3" in shown_ci)
+
+        # A list as long as the limit whose oldest run is still in the window
+        # may have stopped short of it; the same list over a window its oldest
+        # run lies outside of reached the window's start. The stub ignores the
+        # limit, so the limit is set to the length of what it returns.
+        stub_cmd = [sys.executable, os.path.join(stub_dir, _py("gh_stub"))]
+        cut = ci_half(_fixture_opts(fx, ci=True, ci_since="1990-01-01",
+                                    ci_limit=5, gh_cmd=stub_cmd), [])
+        reached = ci_half(_fixture_opts(fx, ci=True, ci_since="2020-01-01",
+                                        ci_limit=5, gh_cmd=stub_cmd), [])
+        cut_text = "\n".join(render({
+            "problem": "", "commits": result["commits"], "measured": 1,
+            "stopped": None, "ci": cut, "range": result["range"]}))
+        check("m20 a run list as long as --ci-limit whose oldest run is still "
+              "inside the window is flagged TRUNCATED and the CI tail says so; "
+              "the same full list over a window its oldest run is outside of is "
+              "not, and neither is a list shorter than the limit: cut %r, "
+              "reached %r, short %r"
+              % (cut.get("truncated"), reached.get("truncated"),
+                 asked.get("truncated")),
+              cut["asked"] and cut.get("truncated") is True
+              and len(cut["runs"]) == 5
+              and "WINDOW TRUNCATED" in cut_text
+              and reached.get("truncated") is False
+              and asked.get("truncated") is False
+              and "WINDOW TRUNCATED" not in shown_ci)
 
         only = measure(_fixture_opts(
             fx, mutation=False, ci=True, ci_since="2020-01-01",

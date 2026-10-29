@@ -52,9 +52,30 @@
         "file": "tools/sweep-selftests.py (cw10b label, lines near 3084-3095)",
         "issue": "The cw10b label writes a cardinality into prose ('exactly the two whose writers format the name inline') beside a check that pins those rows by prefix. A third inline-formatted row would make the sentence false while the check says what it checks. The task says no number written into prose; a word under ten is legal to the lint, so this is author-enforced, not a lint failure.",
         "resolution": "Drop 'the two' from the label and name the pinned rows (journal pre-image, TDD reminder) only, as the comment above it already does."
+      },
+      {
+        "id": "P148-R5",
+        "severity": "low",
+        "file": "tools/release.py:976",
+        "issue": "P131-R7 is answered in part. The finding named the leaked handles in x2 and in x4/rl16. x2 and x4 now read through a with block. rl16 still reads `texts = {n: io.open(os.path.join(folder, n), encoding=\"utf-8\").read() ...}`, so the handle is still left to the GC. The outcome says rl16 is 'left as it is' because release.py is not a declared file, which is the declared-files rule at work, but the finding stays half open.",
+        "resolution": "Carry the rl16 half forward (or add tools/release.py to a task's files) and replace the comprehension's io.open().read() with a with-block read, as x4 now does."
+      },
+      {
+        "id": "P148-R6",
+        "severity": "low",
+        "file": "tools/prove-gates.py:4091",
+        "issue": "P145-R1 is answered in part. The finding offered 'fail loudly or name the spelling exercised', and the second was done: pw5's text now prints `exercised: ... NOT exercised`. Two things remain. The conjunct `respelled is None and os.name == \"nt\"` still lets pw5 pass on a Windows runner that cannot make the link. And the finding's second request, confirming on a windows-latest run that pw5, pw6 and pw13 pass with the symlink branch taken, is not done. The outcome defers it to the next Windows CI log, which cannot be read here.",
+        "resolution": "Leave the finding open on that one confirmation: after the next windows-latest log, check that the pw5 line reads 'a second spelling, through a link'. If it reads 'NOT exercised', make the case fail on nt."
+      },
+      {
+        "id": "P148-R7",
+        "severity": "low",
+        "file": "CONTRIBUTING.md:534",
+        "issue": "The sentence 'A mutation that turns nothing red is printed as `inert`' is now a subset of the behaviour. inert also covers a mutation whose only reds were already red unmutated or green when swept again, and the CI tail now prints WINDOW TRUNCATED. The executor reported this and left it, since the file is outside the task. The doc and the tool now disagree, but only by understatement, and no other document pins the old wording.",
+        "resolution": "In a follow-up that owns CONTRIBUTING.md, reword to 'a mutation that changes no suite's verdict' and add the truncation line."
       }
     ],
-    "outcome": "[findings: 4 - 0 high, 1 med, 3 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 7 - 0 high, 1 med, 6 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -185,7 +206,7 @@
     {
       "id": "P148.3",
       "title": "The sweep runner's and harness's carried lows: slot grants, replay labels and encoding, cost-table text, live-write exemptions, scratch classification, cross-block id reach",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix the low review findings P132-R6, P134-R1, P134-R2, P137-R24, P137-R25, P142-R12, P142-R15, P142-R16, P142-R17, P142-R19, P142-R20, P142-R21, P142-R25, P142-R26, P144-R7, P144-R8, P144-R9, carried to BUG-29-dau. Each finding's file, issue and resolution is in its phase shard (docs/audit/phases/<phase>.json, review.findings, by id). Read each against the code at HEAD first: lines have moved since it was filed. For each finding either fix it - with a case proven red first where the finding is about behaviour or a missing case - or, where HEAD no longer has the defect or the finding records a past return or plan record that nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id, one line each: fixed (what changed, which case) or no-change (why, with the line read). Edit only the declared files; a fix that needs another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
       "files": [
         "tools/sweep-selftests.py",
@@ -212,25 +233,44 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b8c642ec2e6e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Per finding. P132-R6 NOT MADE, needs files outside scope: measured by monkeypatching _suite._ignores_errors to always-true, the rule then convicts tests/test__doctor_trail.py:495 (shutil.rmtree(_journal_io.journal_dir(wiped))), tests/test_audit_task.py:14728 (shutil.rmtree(wt), a linked worktree) and tests/test_drive_phase.py:10696 (shutil.rmtree(first + '.redo-5'), a linked worktree); tools/ stays clean. s23 would go red. None of those directories holds a git object (a linked worktree's .git is a file, the journal dir holds plain files), so the honest repair is _harness.remove_tree at those three sites first (files this task does not hold), then dropping the early-continue and turning s21 into the init-only allow case. File-wide REMOVAL_EXEMPT rows would stop checking the ignore_errors spelling in those three suites too, a bigger coverage loss than the one the finding names, so I did not add them. P134-R1 fixed: i31 now chdirs into dirname(mp10) (try/finally) and passes basename, and it asserts not isabs(rel). This holds on every drive layout, and the rel_or_abs call is gone. Red: canonical_manifest bypassed -> i31 FAIL. P134-R2 fixed: tools/_suite.py adds CHECKOUT_CALLS=('getcwd',) and reads it as checkout-kind in _path_kinds. New case s30b: relpath(join(mkdtemp(),..), os.getcwd()) is named; relpath(SCRIPTS_DIR, os.getcwd()) is not. Live s33/s34 stay []. P137-R24 fixed: new CLAUDE_LIVE_WRITES row ^state/bash-writes-plugin-(?:<uuid>|cli|panel)\\.json$, citing record_plugin_write, CLI_JOURNAL_WRITER, PANEL_JOURNAL_WRITER and PLUGIN_WRITE_SIDECAR. cw5 moves the sid/cli/panel sidecars to live and keeps a non-writer key (bash-writes-plugin-suite.json) in theirs. The table comment no longer treats absence from a time-windowed ls as evidence. New case cw10b formats each writer's own constant, read by AST off hooks/_config.py, guard-bash-writes.py, _journal_io.py, _panel_write.py, _scoped_commit.py and _filed_returns.py, and asserts the table skips it. The rows no constant derives are pinned to journal-preimage and tdd-reminder (both writers format inline). P137-R25 fixed: cw10 adds a tail mutation (example+'x'; for a directory row a character on the directory name, e.g. state/briefsx/...). The cw10 label, the table comment and the gate-parity AUDITED_EXEMPTIONS comment now say what is reached (head and tail) and what is not (a middle loosening). P142-R12 fixed for what HEAD still has: every staged suite the live sweep reads runs block by block (staged_blocks(sweep_files()) has no whole-run entry), so the fixed-grant defect only remains for a suite whose STAGES the sweep cannot read. New case tt5b bounds every such suite at ONE slot, which covers every admission order and the serial cost, and prints 'none' live. A planted heavy/light/split trio makes it go red when bounded at the grant. P142-R15 no-change: HEAD sh6 (tools/sweep-selftests.py, 'sh6 `sweep()` starts its jobs in `work_items` order') already runs a jobs=1 sweep and reads the start order off a log each job appends; run_order no longer exists (grep: no hits). P142-R16 no-change: HEAD replayed() returns twice and replay_selftest fails '<label> RAN n TIMES' (tests/_harness.py replayed/replay_selftest, case sr18). P142-R17 no-change: HEAD bb1 reads concurrency off each process's own window (row 'windows', comment 'read off the window each block's PROCESS ran in'), not off in-sleep spans. P142-R19 fixed: house_red is one literal block. The '2/3 cases' + 'passed' split is gone. The last line is the sweep's own summary format string '%d/%d files ok, %d cases' % (1, 2, 5), because a bare '5 cases' literal is convicted by prose_number_claims (measured: [('tests/test_run_test_gate.py', 6077, '5 cases')]). P142-R20 and P142-R25 no-change for the bytes: the committed .github/sweep-costs.json about text already equals the record_costs string byte for byte (AST compare: True; re-recorded in ee9ce74e). R25's 'no case compares the two' is fixed by new case sh7b, which writes record_costs into a scratch file and compares its about with the committed table's. .github/sweep-costs.json is untouched. P142-R21: sr18 proved red (twice={} -> FAIL sr18, exit 1). tests/_harness.py is still not in this task's tests.gate either; I ran it through the sweep (python3 tools/sweep-selftests.py tests/test__refs.py tests/_harness.py, exit 0). Adding it to the gate is a manifest edit outside my files. P142-R26 fixed: run() prints encodable(text, sys.stdout). New case sr19c: a replayed FAILING case whose detail cp1252 cannot spell prints its escaped FAIL line and 'SELFTEST FAILED: 2/3' under PYTHONIOENCODING=cp1252. P144-R7 fixed: _written_id reads .format on a literal receiver, and _label_arg reads the label= keyword. The docstring names what is left to the run. P144-R8 fixed: cross_block_ids groups the lines of one top-level function into one site, and the docstring names the limit (a branch that really differs per block is left to a run holding both blocks). P144-R9 fixed: reach follows only names in call position or passed to a call (_handed_names), minus names the function binds itself (_bound_locally). Case sr3d covers R7, R8 and R9 in both directions; k10 checks that a helper handed as an argument is still reached. Live staged suites: stage_faults stays empty for all of them. Commands: own gate exit 0 (5/5 files ok); the gate plus tools/prove-gates.py exit 0 (6/6 files ok); tests/_harness.py, test__deps, test__output_lints and test_stamp_verification through the sweep all ok; test__refs went red on fixture basenames I wrote (test_heavy.py etc. in tt5b), which I renamed to t/heavy-whole etc., then re-run exit 0; ruff exit 0; vermin -t=3.8- exit 0; prose_number_claims [] ; house_style_violations [] for the touched files. Dependants: tools/sweep-selftests.py - evals.json, sweep-costs.json, ci.yml, _output.py, _runner_collects.py, _runner_output.py, stamp-verification.py, _filed_returns.py all still correct: no function signature or CLI changed, only a table row and cases added; budget_line/coverage_findings/default_jobs/file_timeout unchanged. tests/_harness.py - every importing suite still correct: run() prints the same bytes on a UTF-8 stdout and escapes instead of raising on a narrower one; block_written_ids changed its value shape to {line: (function, labels)} and has no caller outside _harness (grep); _group_present/_labels/_load_sweep/_pid_present unchanged. tools/_suite.py - importers (affected.py, bench-hooks.py, check-*.py, prove-gates.py, orchestrator-state.py, sweep-selftests.py) still correct: hand_rolled_runners/removal_problem/unsafe_relpath_violations/git_dir_of keep their signatures, and the relpath rule only gains getcwd, with live tools/ and tests/ clean. tests/test_import_evidence.py - sweep-costs.json and import-evidence.py unaffected (same path, no script change). tests/test_run_test_gate.py - test_commit_task_work's _cli and the others unchanged. .github/sweep-costs.json - not edited. tools/gate-parity.py - comment only; its AUDITED_EXEMPTIONS row for CLAUDE_LIVE_WRITES still names cw10, which still exists.",
+        "descriptive": "Fifteen of the seventeen carried lows are answered in code or with HEAD evidence. P132-R6 needs three suites outside scope repaired first, and P142-R21's gate-record half needs a manifest edit."
       },
       "startedAt": "2026-10-28T23:05:16Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-29T00:01:10Z",
+      "verifiedBy": [
+        "sr3d (tests/_harness.py): .format and label= ids are read, if/else in one helper is one site, shadowed or data-only names do not reach, a helper handed as an argument does",
+        "sr19c (tests/_harness.py): failing replayed case with a non-cp1252 detail still prints its FAIL line and the exact tally under strict cp1252",
+        "s30b (tools/_suite.py): relpath(scratch, os.getcwd()) named; relpath(checkout, os.getcwd()) not",
+        "cw10b (tools/sweep-selftests.py): every writer constant's formatted slot name is skipped by CLAUDE_LIVE_WRITES; the underived rows are pinned",
+        "sh7b (tools/sweep-selftests.py): committed cost-table about text equals what record_costs writes",
+        "tt5b (tools/sweep-selftests.py): a staged suite run whole stays inside the deadline at one slot; planted heavy case reported",
+        "cw10 widened (tail mutation), cw5 updated (plugin sidecars are live), i31 rewritten (relative on every drive layout)"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-28T23:56:49Z.544436",
         "status": "passed",
         "at": "2026-10-28T23:56:49Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "b8c642ec2e6e",
+        "at": "2026-10-29T00:01:10Z",
+        "return": "docs/audit/evidence/returns/P148.3/20261028T230516Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "mode regression, expectRedFirst false, tests.add none - no helper proof is owed. Each new or changed case was instead watched red by mutating its fix in this task's own worktree and restoring in the same run (<scratchpad>/probe.py; anchor asserted to match once, __pycache__ purged before and after, file byte-compared after restore = True each time): sr19c (strict print), sr3d (x6: .format dropped, label= dropped, per-line sites, every-Name reach, call-position-only reach, local bindings followed), sr18 (twice silenced), i31 (manifest printed as given), s30b (getcwd unread; getcwd read as scratch), cw5/cw10/cw10b (plugin row removed; panel key dropped), cw10 (file row tail loosened; directory row loosened), tt5b (bound at the full grant), sh7b (generator about text changed). Every mutation exited 1 with the named case FAIL.",
+        "at": "2026-10-29, in the task's worktree claude-plugins-P148.3, before submit"
       }
     },
     {
       "id": "P148.4",
       "title": "The maintainer tools' carried lows: prove-gates reaping report and SIGTERM wait, example-pin and affected-miss measurement edges, command-file scan, timing-bound and probe-stderr cases",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fix the low review findings P131-R7, P131-R26, P131-R27, P131-R32, P142-R50, P142-R51, P145-R1, P146-R1, P146-R2, carried to BUG-29-dau. Each finding's file, issue and resolution is in its phase shard (docs/audit/phases/<phase>.json, review.findings, by id). Read each against the code at HEAD first: lines have moved since it was filed. For each finding either fix it - with a case proven red first where the finding is about behaviour or a missing case - or, where HEAD no longer has the defect or the finding records a past return or plan record that nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id, one line each: fixed (what changed, which case) or no-change (why, with the line read). Edit only the declared files; a fix that needs another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
       "files": [
         "tools/prove-gates.py",
@@ -254,21 +294,27 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-29T00:01:13Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-29T00:35:53Z.87f128",
+        "status": "passed",
+        "at": "2026-10-29T00:35:53Z"
+      }
     },
     {
       "id": "P148.5",
       "title": "The documents' carried lows: retired --selftest mentions, agent and reference texts that state an obligation or a tree's fate wrongly, and the changelog wrap",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fix the low review findings P131-R2, P131-R5, P131-R10, P131-R24, P131-R44, P131-R45, P132-R3, P132-R8, P139-R5, P142-R44, P144-R2, P147-R6, carried to BUG-29-dau. Each finding's file, issue and resolution is in its phase shard (docs/audit/phases/<phase>.json, review.findings, by id). Read each against the code at HEAD first: lines have moved since it was filed. For each finding either fix it - with a case proven red first where the finding is about behaviour or a missing case - or, where HEAD no longer has the defect or the finding records a past return or plan record that nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id, one line each: fixed (what changed, which case) or no-change (why, with the line read). Edit only the declared files; a fix that needs another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
       "files": [
         "CLAUDE.md",
@@ -306,21 +352,27 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-29T00:01:16Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-29T00:42:13Z.7f6f6f",
+        "status": "passed",
+        "at": "2026-10-29T00:42:13Z"
+      }
     },
     {
       "id": "P148.6",
       "title": "The commit and evidence layer's carried lows: one spelling of the tree key, the tracked-file table, the scoped-commit scan and tracking direction, the runner line-end class, the impact rule for private names",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fix the low review findings P131-R30, P131-R39, P135-R1, P135-R2, P137-R26, P137-R29, P142-R18, carried to BUG-29-dau. Each finding's file, issue and resolution is in its phase shard (docs/audit/phases/<phase>.json, review.findings, by id). Read each against the code at HEAD first: lines have moved since it was filed. For each finding either fix it - with a case proven red first where the finding is about behaviour or a missing case - or, where HEAD no longer has the defect or the finding records a past return or plan record that nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id, one line each: fixed (what changed, which case) or no-change (why, with the line read). Edit only the declared files; a fix that needs another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
       "files": [
         "plugins/audit/scripts/status/_impact.py",
@@ -349,16 +401,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-29T00:01:19Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-29T00:48:33Z.1df20d",
+        "status": "passed",
+        "at": "2026-10-29T00:48:33Z"
+      }
     },
     {
       "id": "P148.7",

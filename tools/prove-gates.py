@@ -40,7 +40,8 @@ a scratch directory outside every checkout - on all cores but two (every core un
 CI=true), and the report is rendered in the table's order whatever order they
 finish in. A row mutates its worker tree and restores it under redfirst's trap; the
 checkout itself is never written, and the trees are removed when the run ends - a
-SIGTERM included - or by the next run when this one was killed outright. Only the
+SIGTERM included, which first stops the rows still running rather than waiting
+them out - or by the next run when this one was killed outright. Only the
 pool's own worktree registrations are ever removed. It is not a per-commit gate;
 run it before a release, or when a lint changes.
 
@@ -2620,7 +2621,7 @@ def main(argv):
     # A pool that cannot be reaped or opened is a refusal (exit 2), never a row
     # not proven: the drive reads exit 1 as a verdict on the lints.
     try:
-        removed = reap_stale(REPO)
+        removed, left = reap_stale(REPO)
     except (RuntimeError, OSError) as exc:
         sys.stderr.write("prove-gates: could not look for a killed run's worker "
                          "trees, so no row ran: %s\n" % (exc,))
@@ -2628,6 +2629,15 @@ def main(argv):
     for root in removed:
         sys.stderr.write("prove-gates: took down %s, a pool its killed run left "
                          "registered\n" % (root,))
+    # A stale pool that could not be taken down is the same refusal: exit 0
+    # would read as a clean run over a checkout still carrying a killed run's
+    # registrations, and exit 1 is a verdict on the lints.
+    for root, problem in left:
+        sys.stderr.write("prove-gates: could not take down %s, a pool its killed "
+                         "run left registered, so no row ran: %s\n"
+                         % (root, problem))
+    if left:
+        return 2
     pool = None
     try:
         if rows:
@@ -2717,6 +2727,20 @@ def changed_rows(rows, paths, homes=None):
 # left alone. A SIGTERM is turned into an exit (`__main__` below), so the drive's
 # timeout teardown still reaches the `finally` that closes the pool.
 #
+# AND THAT `finally` DOES NOT WAIT OUT A RUNNING ROW. The exit lands in the main
+# thread while rows are mid-suite on the pool's threads, and the thread pool's
+# shutdown waits for them; a row is minutes long. So each row's child runs as a
+# process group of its own (`_proc_group.group_kwargs`), and an exit or an
+# interrupt stops every running group (`_stop_rows`) before that wait - which
+# then waits for rows unwinding, not rows running. The cost is the one
+# `_proc_group` names: a signal sent to THIS run's group no longer reaches the
+# rows by itself, and a SIGKILL (no handler, no `finally`) leaves them running
+# for their own length, and the pool for the next run to reap. A row whose child
+# ignores SIGTERM is given `_proc_group.GRACE_SECONDS` before its SIGKILL, one
+# such row after another - the same grace the drive's teardown gives this whole
+# probe before its own SIGKILL, so a row that ignores SIGTERM can still cost the
+# pool its cleanup, and the next run reaps it.
+#
 # ONLY THE POOL'S OWN REGISTRATIONS ARE EVER REMOVED. A bare `git worktree prune`
 # would also unregister every other worktree of the checkout whose directory is
 # missing - a kept audit tree with its provenance file among them - and the plugin
@@ -2741,13 +2765,14 @@ def pool_size(rows, cpus=None, environ=None):
     return max(0, min(rows, jobs(cpus, environ)))
 
 
-def run_ordered(items, work, jobs):
+def run_ordered(items, work, jobs, on_abort=None):
     """`[work(item) for item in items]`, run on `jobs` threads, returned in the
     order of `items` whatever order they finish in - so a report rendered from it
     is byte-stable under any scheduling. An exception - one item's, or an
-    interrupt reaching the caller - cancels every item not yet started and is
-    raised here once the running ones have finished, so a Ctrl-C does not wait
-    out the whole queue."""
+    interrupt or exit reaching the caller - cancels every item not yet started,
+    calls `on_abort()` to stop the running ones, and is raised here once they
+    have returned, so neither a Ctrl-C nor a SIGTERM waits out the queue or a
+    running item."""
     from concurrent import futures
     if not items:
         return []
@@ -2756,10 +2781,66 @@ def run_ordered(items, work, jobs):
     try:
         pending = [pool.submit(work, item) for item in items]
         return [f.result() for f in pending]
+    except BaseException:
+        for f in pending:
+            f.cancel()
+        if on_abort is not None:
+            on_abort()
+        raise
     finally:
         for f in pending:
             f.cancel()
         pool.shutdown(wait=True)
+
+
+def _row_children():
+    """The state `_row_runner` and `_stop_rows` share for one run: the children
+    running now, and whether the run is stopping. Built per run, never held at
+    module level, so two runs in one process cannot stop each other's rows."""
+    import threading
+    return {"live": set(), "stopping": False, "lock": threading.Lock()}
+
+
+def _row_runner(children):
+    """A `subprocess.run` for `prove()` whose child is a process group of its
+    own, recorded in `children` while it runs. Once the run is stopping it starts
+    nothing: the check and the start share the lock `_stop_rows` takes, so a row
+    cannot start its child between the stop's snapshot and its end."""
+    import _proc_group   # on sys.path through `install_path()` above
+
+    def run(argv, **kwargs):
+        kwargs = dict(kwargs, **_proc_group.group_kwargs())
+        with children["lock"]:
+            if children["stopping"]:
+                raise RuntimeError("the run is stopping, so this row's child was "
+                                   "not started")
+            proc = subprocess.Popen(argv, **kwargs)
+            children["live"].add(proc)
+        try:
+            out, err = proc.communicate()
+        finally:
+            with children["lock"]:
+                children["live"].discard(proc)
+        return subprocess.CompletedProcess(argv, proc.returncode, out, err)
+    return run
+
+
+def _stop_rows(children, stream=None):
+    """Stop every row child running now, each as a whole group
+    (`_proc_group.tear_down`), and start no more. Says on `stream` (stderr by
+    default) each one whose stop could not be confirmed; returns how many."""
+    import _proc_group   # on sys.path through `install_path()` above
+    out = sys.stderr if stream is None else stream
+    with children["lock"]:
+        children["stopping"] = True
+        running = list(children["live"])
+    unconfirmed = 0
+    for proc in running:
+        if not _proc_group.tear_down(proc):
+            unconfirmed += 1
+            out.write("prove-gates: a row's child (pid %s) could not be confirmed "
+                      "stopped\n" % (proc.pid,))
+    return unconfirmed
 
 
 def _git_env(base=None):
@@ -2994,9 +3075,13 @@ def _pool_tree(tree):
 
 
 def reap_stale(repo, alive=None):
-    """Take down every pool a killed run left registered with `repo` and return
-    their roots, sorted, each spelled as `open_workers` spells a root (resolved)
-    rather than as git lists it. A pool is stale when its owner file names a pid
+    """Take down every pool a killed run left registered with `repo`. Returns
+    `(taken, left)`: `taken` the roots taken down whole, sorted, each spelled as
+    `open_workers` spells a root (resolved) rather than as git lists it; `left`
+    the `(root, problem)` of each stale pool `close_workers` could not finish,
+    which is NOT in `taken` - a registration or a directory it left behind is a
+    pool still there, and reporting it as taken down would be a claim with
+    nothing behind it. A pool is stale when its owner file names a pid
     that is known to be gone - `alive(pid)` is False, not merely falsy - or when
     its root is gone altogether, owner file included, so no run can be using it.
     A tree that is not a pool tree is somebody else's, and never touched. Raises
@@ -3019,15 +3104,23 @@ def reap_stale(repo, alive=None):
         key = _canonical_path(root)
         spelled.setdefault(key, (os.path.realpath(root), root))
         stale.setdefault(key, []).append(tree)
+    taken, left = [], []
     for key in sorted(stale):
-        close_workers(repo, {"root": spelled[key][1], "trees": stale[key]})
-    return sorted(spelled[key][0] for key in stale)
+        problems = close_workers(repo, {"root": spelled[key][1],
+                                        "trees": stale[key]})
+        if problems:
+            left.extend((spelled[key][0], p) for p in problems)
+        else:
+            taken.append(spelled[key][0])
+    return sorted(taken), left
 
 
 def _proved(rows, trees=None):
     """`prove()` over `rows`, each in a worker tree of its own and each result
     carrying the file its row mutates, so a row that is not proven can be named
-    with it. Results come back in the order of `rows`."""
+    with it. Results come back in the order of `rows`. Each row's child is
+    started through `_row_runner`, so an exit or an interrupt stops the running
+    rows (`_stop_rows`) rather than waiting them out."""
     import queue
     if not rows:
         return []
@@ -3040,13 +3133,17 @@ def _proved(rows, trees=None):
     for tree in trees:
         free.put(tree)
 
+    children = _row_children()
+    runner = _row_runner(children)
+
     def one(row):
         tree = free.get()
         try:
-            return dict(prove(row, tree), file=row[1])
+            return dict(prove(row, tree, run=runner), file=row[1])
         finally:
             free.put(tree)
-    return run_ordered(list(rows), one, len(trees))
+    return run_ordered(list(rows), one, len(trees),
+                       on_abort=lambda: _stop_rows(children))
 
 
 def _prove(want_red, want_allow, table, allow, whole, trees=None):
@@ -3659,7 +3756,7 @@ def _changed_run(argv, survives=()):
     proved, holds, marked = [], [], []
     lock = threading.Lock()
 
-    def fake_prove(row, repo=None):
+    def fake_prove(row, repo=None, run=None):
         with lock:
             proved.append(row)
         if row[0] in survives:
@@ -3673,7 +3770,7 @@ def _changed_run(argv, survives=()):
                                         for i in range(max(1, count))]}
     fakes = {"prove": fake_prove, "open_workers": fake_open,
              "close_workers": lambda repo, pool: [],
-             "reap_stale": lambda repo, alive=None: []}
+             "reap_stale": lambda repo, alive=None: ([], [])}
     real = dict((n, globals()[n]) for n in fakes)
     real_hold, real_out = _suite.hold, sys.stdout
     globals().update(fakes)
@@ -3981,18 +4078,26 @@ def _worker_cases(check):
         still = _registered(repo)
         reaped = reaper(repo, alive=lambda pid: False) if reaper else None
         after_reap = _registered(repo)
+        # Where the platform will not make the link, the registration keeps
+        # git's own record and the second spelling goes unexercised here. That
+        # narrowing is printed in the case's own line, so a log shows which
+        # spelling a pass covered rather than reading the same either way.
+        exercised = ("a second spelling, through a link" if respelled else
+                     "git's own record only - this platform would not make the "
+                     "link, so the second spelling was NOT exercised")
         check("pw5 a killed run's pool is reaped by the next run - registration "
               "and scratch both - only when its owner process is gone; a live "
               "owner's pool is left alone; and the root it reports is the one "
-              "the run opened, however git spells the registration: listed as "
+              "the run opened, however git spells the registration (spelling "
+              "exercised: %s): listed as "
               "%r, spared %r (%d registered), reaped %r against %r (%r "
               "registered, root gone %r)"
-              % (respelled, spared, len(still), reaped,
+              % (exercised, respelled, spared, len(still), reaped,
                  killed["root"] if killed else None, after_reap,
                  bool(killed) and not os.path.exists(killed["root"])),
-              killed is not None and spared == [] and len(still) == 1
+              killed is not None and spared == ([], []) and len(still) == 1
               and (still == [respelled] or (respelled is None and os.name == "nt"))
-              and reaped == [killed["root"]] and after_reap == []
+              and reaped == ([killed["root"]], []) and after_reap == []
               and not os.path.exists(killed["root"]))
     finally:
         for wt in _registered(repo):
@@ -4105,8 +4210,8 @@ def _owner_probe_cases(check):
         check("pw15 with the platform's own probe a pool owned by a live process "
               "stands and one whose owner exited is reaped, reported as the root "
               "the run opened: reaped %r, want %r, live pool standing %r"
-              % (reaped, [dead["root"]], standing),
-              reaped == [dead["root"]] and standing)
+              % (reaped, ([dead["root"]], []), standing),
+              reaped == ([dead["root"]], []) and standing)
     finally:
         for wt in _registered(repo):
             _fixture_git(repo, "worktree", "remove", "--force", wt)
@@ -4159,7 +4264,7 @@ def _foreign_cases(check, opener, closer, reaper):
               "after close %r, provenance kept %r, pool registrations left %r"
               % (reaped, after_reap, problems, after_close, kept,
                  [p for p in _registered(repo) if os.path.realpath(p) != mine]),
-              bool(killed) and reaped == [killed["root"]] and len(after_reap) == 1
+              bool(killed) and reaped == ([killed["root"]], []) and len(after_reap) == 1
               and problems == [] and len(after_close) == 1 and kept
               and [p for p in _registered(repo) if os.path.realpath(p) != mine] == [])
 
@@ -4172,7 +4277,7 @@ def _foreign_cases(check, opener, closer, reaper):
         check("pw7 an owner pid whose liveness is unknown keeps its pool - only an "
               "explicit not-alive reaps: reaped %r, root standing %r"
               % (spared, standing),
-              unknown is not None and spared == [] and standing)
+              unknown is not None and spared == ([], []) and standing)
         close_workers(repo, unknown)
 
         # A pool whose whole root was deleted (a temp cleaner) has no owner file
@@ -4199,7 +4304,7 @@ def _foreign_cases(check, opener, closer, reaper):
               "refusing a path outside the pool - the foreign tree stays: reaped "
               "%r, refused %r, dropped %r, registered %r"
               % (reaped_gone, refused, dropped, left),
-              bool(gone) and reaped_gone == [gone["root"]]
+              bool(gone) and reaped_gone == ([gone["root"]], [])
               and bool(refused) and "not under the pool root" in refused
               and dropped is None and left == [mine]
               and os.path.isfile(os.path.join(admin, "audit-worktree.json")))
@@ -4365,6 +4470,124 @@ def _teardown_cases(check):
           % (got, code, opened, buf.getvalue().strip()[:80]),
           got[0] == "raised" and code == 2 and opened == []
           and "no row ran" in buf.getvalue())
+
+    # A stale pool whose take-down fails is still there, so it is not reported
+    # as taken down: the reaper names it beside its problem, and a run whose
+    # reap left one refuses before it opens a pool of its own. The real pools
+    # reaped in pw5, pw6, pw13 and pw15 are the other direction - each asserts
+    # an empty `left`, which a reaper reporting every pool as stuck turns red.
+    repo = _fixture_repo()
+    stuck, stuck_got, stuck_standing = None, None, None
+    real_close = close_workers
+    try:
+        stuck = open_workers(repo, 1)
+        globals()["close_workers"] = lambda r, pool: [
+            "fixture: could not delete %s" % (pool["root"],)]
+        try:
+            stuck_got = reap_stale(repo, alive=lambda pid: False)
+        finally:
+            globals()["close_workers"] = real_close
+        stuck_standing = os.path.isdir(stuck["root"])
+    finally:
+        if stuck:
+            close_workers(repo, stuck)
+        _output.remove_tree(repo)
+    stuck_opened = []
+    stuck_fakes = {
+        "reap_stale": lambda repo, alive=None: (
+            [], [("/scratch/prove-gates-pool-stuck", "fixture: could not delete")]),
+        "open_workers": lambda repo, count: stuck_opened.append(count)}
+    real = dict((n, globals()[n]) for n in stuck_fakes)
+    buf = io.StringIO()
+    globals().update(stuck_fakes)
+    sys.stderr = buf
+    try:
+        stuck_code = main(["--only", "house_style_violations", "--red"])
+    except Exception as exc:          # a traceback is exit 1: not a refusal
+        stuck_code = "raised %s" % (type(exc).__name__,)
+    finally:
+        sys.stderr = real_err
+        globals().update(real)
+    stuck_said = buf.getvalue()
+    check("pw16 a stale pool the reaper could not take down is reported as left "
+          "beside its problem and never as taken down, and a run whose reap "
+          "left one refuses with exit 2, naming it, and opens no pool: reaped "
+          "%r (pool standing %r), main %r, opened %r, said %r"
+          % (stuck_got, stuck_standing, stuck_code, stuck_opened,
+             stuck_said.strip()[:120]),
+          bool(stuck) and stuck_got is not None and stuck_got[0] == []
+          and [r for r, _p in stuck_got[1]] == [stuck["root"]]
+          and "fixture: could not delete" in stuck_got[1][0][1]
+          and stuck_standing is True
+          and stuck_code == 2 and stuck_opened == []
+          and "could not take down /scratch/prove-gates-pool-stuck" in stuck_said
+          and "took down" not in stuck_said)
+    _stop_cases(check)
+
+
+# How long the slow row's child would sleep if nothing stopped it. Not a bound
+# the case reads: the verdict is HOW the child ended (a signal or a kill, not its
+# own exit 0), so a slow runner cannot pass or fail it. The figure only sets what
+# a run that does not stop its rows costs before it goes red.
+_SLOW_ROW_SECONDS = 30
+
+
+def _stop_cases(check):
+    """An exit reaching `_proved` stops the rows running at that moment instead
+    of waiting them out, and starts no row's child after it. Driven through
+    `_proved` itself, with `prove` swapped for one that starts a real child
+    through the runner it is handed, so the wiring is what is judged."""
+    import threading
+    scratch = tempfile.mkdtemp(prefix="prove-gates-stop-")
+    marker = os.path.join(scratch, "slow-started")
+    ended, raised = {}, None
+
+    def fake_prove(row, repo=None, run=None):
+        if row[0] == "slow":
+            proc = run([sys.executable, "-c",
+                        "import sys, time\n"
+                        "open(sys.argv[1], 'w').close()\n"
+                        "time.sleep(float(sys.argv[2]))\n",
+                        marker, str(_SLOW_ROW_SECONDS)],
+                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            ended["slow"] = proc.returncode
+            return {"lint": "slow", "verdict": "PROVEN", "detail": ""}
+        # The exit arrives while the slow row's child is known to be running:
+        # its marker is on disk. The wait is a precondition, not a measurement;
+        # its cap only keeps a child that never starts from hanging the suite.
+        waited = threading.Event()
+        for _ in range(6000):
+            if os.path.exists(marker):
+                break
+            waited.wait(0.01)
+        ended["ready"] = os.path.exists(marker)
+        raise SystemExit(143)
+    real_prove = prove
+    globals()["prove"] = fake_prove
+    try:
+        try:
+            _proved([("boom", "b.txt"), ("slow", "s.txt")], trees=["t0", "t1"])
+        except SystemExit as exc:
+            raised = exc.code
+    finally:
+        globals()["prove"] = real_prove
+        _output.remove_tree(scratch)
+    stopping = _row_children()
+    _stop_rows(stopping, stream=io.StringIO())
+    try:
+        _row_runner(stopping)([sys.executable, "-c", "pass"])
+        after = "started"
+    except RuntimeError as exc:
+        after = "refused: %s" % (exc,)
+    check("pw17 an exit reaching the rows stops the row still running - its "
+          "child ends by a signal or a kill, not by its own exit 0 after "
+          "sleeping out its length - and once a run is stopping no row starts a "
+          "child: raised %r, slow child started %r, slow child ended %r, a row "
+          "after the stop %r"
+          % (raised, ended.get("ready"), ended.get("slow"), after),
+          raised == 143 and ended.get("ready") is True
+          and ended.get("slow") not in (None, 0)
+          and after.startswith("refused"))
 
     tree = ast.parse(io.open(__file__, encoding="utf-8").read())
     mains = [n for n in tree.body if isinstance(n, ast.If)

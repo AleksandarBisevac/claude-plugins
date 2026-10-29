@@ -361,7 +361,28 @@ _CLOSURE_PROBE = ("import json, sys\n"
                   "                            for m in list(sys.modules.values())))))\n")
 
 
-def _recipe_closure():
+def _child(what, argv, **kwargs):
+    """`argv`'s completed process; a RuntimeError carrying its exit code and its
+    stderr when it exits non-zero or outruns `timeout`.
+
+    Not `check=True`: with the output captured, the error that raises names the
+    exit status and drops stderr, which is the one thing that says why - and
+    these children fail for real only on a remote runner, where that line is
+    all there is to read."""
+    try:
+        done = subprocess.run(argv, capture_output=True, **kwargs)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("%s outran its %ss timeout; stderr so far: %s"
+                           % (what, exc.timeout, (exc.stderr or b"").decode(
+                               "utf-8", "replace").strip() or "(none)"))
+    if done.returncode != 0:
+        raise RuntimeError("%s exited %d; stderr: %s"
+                           % (what, done.returncode, done.stderr.decode(
+                               "utf-8", "replace").strip() or "(none)"))
+    return done
+
+
+def _recipe_closure(probe=None):
     """The repository files the module-map recipe loads, relative to the repo
     root - read off the recipe's own import rather than listed here, so a
     module it starts to import is copied without anyone editing this.
@@ -373,10 +394,12 @@ def _recipe_closure():
     runs and really writes a map - what the cases judge is whether the task's
     bytes are the bytes the recipe writes, not what the map lists. A module
     the render loads lazily is not in the closure, and the recipe then fails
-    loudly in `_write_map` rather than passing over a partial copy."""
-    done = subprocess.run([sys.executable, "-c", _CLOSURE_PROBE,
-                           M._output.LINTS_DIR],
-                          check=True, capture_output=True, timeout=60)
+    loudly in `_write_map` rather than passing over a partial copy.
+
+    `probe` replaces the probe's source, for the case that makes it fail."""
+    done = _child("the recipe's closure probe",
+                  [sys.executable, "-c", probe or _CLOSURE_PROBE,
+                   M._output.LINTS_DIR], timeout=60)
     repo = os.path.realpath(M._output.REPO_ROOT)
     roots = [os.path.normcase(os.path.realpath(d)) + os.sep
              for d in (M._output.SCRIPTS_DIR, M._output.LINTS_DIR)]
@@ -407,12 +430,27 @@ def _seed_map_owner(proj, closure):
 
 
 def _write_map(tree):
-    subprocess.run([sys.executable, os.path.join(tree, "tools", "lints",
-                                                 "_deps.py"), "--write-map"],
-                   cwd=tree, check=True, capture_output=True, timeout=120)
+    _child("the module-map recipe",
+           [sys.executable, os.path.join(tree, "tools", "lints", "_deps.py"),
+            "--write-map"], cwd=tree, timeout=120)
 
 
 def _follower_cases(check):
+    # The probe failing is the one diagnosis this block can owe a remote
+    # runner, so its failure is driven first: a probe that writes a line to
+    # stderr and exits non-zero must raise with that line and that exit code.
+    try:
+        _recipe_closure("import sys\n"
+                        "sys.stderr.write('closure-probe-said-why\\n')\n"
+                        "sys.exit(7)\n")
+        failed = "returned"
+    except RuntimeError as exc:
+        failed = str(exc)
+    except Exception as exc:
+        failed = "%s: %s" % (type(exc).__name__, exc)
+    check("i9p a closure probe that fails raises with its exit code and its "
+          "stderr, not only its status: %r" % (failed,),
+          "closure-probe-said-why" in failed and "exited 7" in failed)
     closure = _recipe_closure()
     world = _world("itf", {"P1.1": ["a.txt"]}, {"a.txt": "a\n"},
                    seed=lambda proj: _seed_map_owner(proj, closure))

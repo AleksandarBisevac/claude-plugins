@@ -1231,24 +1231,50 @@ def _cases(check):
 
         # A filesystem that refuses the lock outright: waiting cannot change
         # that, and the wait is the metering hook's whole budget.
+        #
+        # Judged by what lock_month DID, never by the seconds it took, which a
+        # loaded runner stretches: the module's clock is swapped for one that
+        # stands still, so a lock_month that waits on the refusal has to sleep,
+        # and every sleep and every attempt is counted. A sleep moves that clock
+        # past the wait's deadline, so a waiting version ends after one round
+        # instead of spinning on a clock that never moves.
+        import types
+        _lf_seen = {"now": 0.0, "slept": 0, "tries": 0}
+
         def _lf_refuse(_fd):
+            _lf_seen["tries"] += 1
             raise OSError(errno.ENOTSUP, "Operation not supported (emulated)")
+
+        def _lf_nap(_seconds):
+            _lf_seen["slept"] += 1
+            _lf_seen["now"] += M.MONTH_LOCK_WAIT_S + 1
+
+        _lf_clock = types.ModuleType("time")
+        _lf_clock.__dict__.update(vars(_time))
+        _lf_clock.monotonic = lambda: _lf_seen["now"]
+        _lf_clock.sleep = _lf_nap
+        _lf_real_time = M.time
+        M._try_lock = _lf_refuse
+        M.time = _lf_clock
+        try:
+            _lf_n = M.append_rows(_lf_tmp, [dict(_lf_row, probeId="lf-notsup")])
+            _lf_did = dict(_lf_seen)
+        finally:
+            M.time = _lf_real_time
+            _lf_restore()
         M._try_lock = _lf_refuse
         try:
-            _lf_t0 = _time.monotonic()
-            _lf_n = M.append_rows(_lf_tmp, [dict(_lf_row, probeId="lf-notsup")])
-            _lf_spent = _time.monotonic() - _lf_t0
             _lf_given = M.lock_month(_lf_path, wait_s=0)
             _lf_rew = M.rewrite_month(_lf_tmp, "2026-08",
                                       [{"ts": "2026-08-01T09", "out": 2}])
         finally:
             _lf_restore()
         check("lf4 a lock the filesystem refuses (ENOTSUP) is not waited for: "
-              "append_rows writes its row at once - written=%r spent=%.2fs of "
-              "a %.1fs wait, on disk=%d"
-              % (_lf_n, _lf_spent, M.MONTH_LOCK_WAIT_S,
+              "append_rows asks for the lock once, never sleeps on it, and "
+              "writes its row - written=%r attempts=%d sleeps=%d, on disk=%d"
+              % (_lf_n, _lf_did["tries"], _lf_did["slept"],
                  _lf_rows(_lf_path, "lf-notsup")),
-              _lf_n == 1 and _lf_spent < M.MONTH_LOCK_WAIT_S / 4
+              _lf_n == 1 and _lf_did["tries"] == 1 and _lf_did["slept"] == 0
               and _lf_rows(_lf_path, "lf-notsup") == 1)
         check("lf5 ...lock_month names it unavailable rather than contended, "
               "and a rewrite goes on lock-free there: lock=%r rewrite=%r"
