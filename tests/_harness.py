@@ -1868,15 +1868,20 @@ def _cases(check):
     # is the same self-matching bug that made a panel route check find its
     # own assertion line.
     _ms_needle = "def " + "write_lf_lines("
+    # Read here, independently of module_source(), so m2 compares two reads
+    # rather than one read with itself; each handle is closed by its `with`.
+    with open(__file__, encoding="utf-8") as _ms_fh:
+        _ms_own = _ms_fh.read()
+    with open(_ms_probe.__file__, encoding="utf-8") as _ms_fh:
+        _ms_disk = _ms_fh.read()
     check("m1 module_source() reads the module it is HANDED, and this is the "
           "whole reason it exists: a source-slice case moved to tests/ that kept "
           "reading `__file__` would be asking about this file instead",
           _ms_needle in module_source(_ms_probe)
-          and _ms_needle not in open(__file__, encoding="utf-8").read())
+          and _ms_needle not in _ms_own)
     check("m2 ...and it is the file on disk, byte for byte - not a re-render, so "
           "an assertion about whitespace or comment text still means something",
-          module_source(_ms_probe)
-          == open(_ms_probe.__file__, encoding="utf-8").read())
+          module_source(_ms_probe) == _ms_disk)
 
     # -- between(): both markers are load-bearing ------------------------------
     _bt = "aaa START middle END zzz"

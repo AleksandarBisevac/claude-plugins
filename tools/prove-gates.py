@@ -318,6 +318,15 @@ def substr(text):
     return ("substr", text)
 
 
+def _read_source(path):
+    """A whole-file UTF-8 read, closed by a `with` rather than left to the
+    collector, which closes it at once only on an interpreter that counts
+    references. Raises as `io.open` does, so each caller keeps its own
+    `except`."""
+    with io.open(path, encoding="utf-8") as fh:
+        return fh.read()
+
+
 # MOVED UP FROM BESIDE `mutation()`, which is its other caller: `_nav_min_target`
 # below needs it while TABLE is still being built, and a name used before its own
 # definition is a `NameError` rather than a subtle bug - so it has to sit here,
@@ -357,7 +366,7 @@ def _nav_min_target(script_dir=None, hooks_dir=None, repo=None):
     repo = repo or REPO
     for _rel, _kind, path in _deps._real_source_files(script_dir, hooks_dir):
         try:
-            text = io.open(path, encoding="utf-8").read()
+            text = _read_source(path)
         except (OSError, UnicodeDecodeError):
             continue
         if len(text.splitlines()) < _deps._NAV_MIN_LINES:
@@ -1831,7 +1840,7 @@ def mutation(row, repo=None):
     _lint, rel, kind, anchor, payload, _suite, _label = row
     path = os.path.join(repo or REPO, rel)
     try:
-        text = io.open(path, encoding="utf-8").read()
+        text = _read_source(path)
     except OSError as exc:
         return None, "unreadable: %s" % (exc,)
 
@@ -2002,7 +2011,7 @@ def _gate_sources(script_dir=None, repo=None):
                 rel = prefix + os.path.relpath(path, root).replace(os.sep, "/")
                 try:
                     out.append((rel, path,
-                                ast.parse(io.open(path, encoding="utf-8").read())))
+                                ast.parse(_read_source(path))))
                 except (OSError, SyntaxError):
                     continue
     return out
@@ -2188,7 +2197,7 @@ def _label_templates(path):
     """Every `check(...)` label in a suite's source as a template; None when the
     file cannot be read or parsed, which the caller must not read as "no labels"."""
     try:
-        tree = ast.parse(io.open(path, encoding="utf-8").read())
+        tree = ast.parse(_read_source(path))
     except (OSError, SyntaxError, ValueError):
         return None
     return [_label_template(n.args[0]) for n in ast.walk(tree)
@@ -2462,8 +2471,9 @@ def prove(row, repo, run=None, base=None):
                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         text = proc.stdout.decode("utf-8", "replace")
         try:
-            gate = io.open(gate_log_path(scratch), encoding="utf-8",
-                           errors="replace").read()
+            with io.open(gate_log_path(scratch), encoding="utf-8",
+                         errors="replace") as fh:
+                gate = fh.read()
         except OSError:
             gate = ""
     finally:
@@ -3724,7 +3734,7 @@ def _cases(check):
     # (it shells out to redfirst.sh), so the checkable statement is that `_cases`
     # never calls it. The one case that does, `pw8`, hands it a recording runner
     # and a scratch tree, so no child starts and nothing outside the scratch moves.
-    _c6_tree = ast.parse(io.open(__file__, encoding="utf-8").read())
+    _c6_tree = ast.parse(_read_source(__file__))
     _c6_fns = [_n for _n in _c6_tree.body
                if isinstance(_n, ast.FunctionDef) and _n.name == "_cases"]
     _c6_calls = sorted(set(
@@ -4589,7 +4599,7 @@ def _stop_cases(check):
           and ended.get("slow") not in (None, 0)
           and after.startswith("refused"))
 
-    tree = ast.parse(io.open(__file__, encoding="utf-8").read())
+    tree = ast.parse(_read_source(__file__))
     mains = [n for n in tree.body if isinstance(n, ast.If)
              and "__main__" in ast.dump(n.test)]
     order = [c.func.attr if isinstance(c.func, ast.Attribute) else

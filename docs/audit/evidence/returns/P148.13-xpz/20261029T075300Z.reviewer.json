@@ -1,0 +1,21 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "tools/prove-gates.py:4109",
+   "issue": "P148-R6 stays open: the conjunct `respelled is None and os.name == \"nt\"` still lets pw5 pass on a Windows runner that cannot make the link, and the windows-latest confirmation that the pw5 line reads 'a second spelling, through a link' has not been made. The executor's evidence for why nothing can be done here holds (the 'NOT exercised' text sits only in 6bb76efb, and no Windows log of a head containing it exists), so this is a correct deferral, not a miss, but the finding is not closed by this diff.",
+   "resolution": "Carry P148-R6 to the first windows-latest run of a head containing 6bb76efb. If the pw5 line reads 'NOT exercised', drop the `os.name == \"nt\"` conjunct."},
+  {"id": 2, "severity": "low", "file": "tests/_harness.py:1868-1884 and the task's tests.gate",
+   "issue": "P148-R2 is not made in the diff, as the executor says: the manifest edit is the orchestrator's. The recorded gate (run 2026-10-29T08:26:12Z) selects tools/sweep-selftests.py, tools/release.py and tools/prove-gates.py only, so the m1/m2 edit in tests/_harness.py in this diff is outside the recorded gate until `python3 tools/sweep-selftests.py tests/_harness.py` is added. I ran that command once in the task tree and it printed '1/1 files ok, 98 cases' (exit not read through a pipe, tail output only).",
+   "resolution": "Orchestrator adds `python3 tools/sweep-selftests.py tests/_harness.py` to P148.13-xpz tests.gate and re-records the gate run before close."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Clause 'Read each against the code at HEAD first ... say so with the evidence where HEAD no longer has the defect'. R14: step_preflight docstring (tools/release.py:294-296) now says `release_verdict`, which the body calls at line 305; verified. R4: cw10b label and the comment above it drop the cardinality and name the journal pre-image and the TDD reminder, which the check pins by the ^state/journal-preimage- and ^state/tdd-reminder- prefixes; verified. R5: rl16 at HEAD reads through `_read_text` (release.py:948-953, a with-block) and my AST scan finds no open/io.open call outside a with item in release.py, prove-gates.py, sweep-selftests.py or tests/_harness.py, so the executor's 'already fixed, and the rest of the pattern closed' holds. The extra work (`_read_source`, `write_file`, m1/m2 with-reads) is within the declared files, changes no verdict, adds no ids or numbers in comments, and names only new helpers, with no collision elsewhere in tools, tests or plugins. R6: no code change, evidence holds (see finding 1). R15: no code change owed, deferred to phase sign-off as the finding says. R2: gate addition handed to the orchestrator (finding 2). Claim vs diff: the filed outcome describes the diff, including the six `_read_source` sites plus the gate-log with-block in prove-gates.py, the sentinel/fixture writes in sweep-selftests.py, and m1/m2 reading ahead of the checks. The claim that closure is invisible on CPython and that no case could go red is credible.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Executor: 'Regression task with expectRedFirst false, and no new case was added'; the edits are a docstring, a label and comment rewording, and closing file handles, which a reference-counting interpreter cannot show as different. No new test was added, so no red is owed.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "tests.gate is `python3 tools/sweep-selftests.py tools/sweep-selftests.py tools/release.py tools/prove-gates.py`, which runs three whole suites rather than a named case. I did not read them case by case for does-not-raise or swallowing shapes, so I make no claim either way."
+ },
+ "verdict": "findings"
+}

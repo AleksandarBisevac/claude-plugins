@@ -394,6 +394,19 @@ HOME_VARS = ("HOME", "USERPROFILE", "XDG_CONFIG_HOME", "XDG_DATA_HOME",
              "XDG_CACHE_HOME", "XDG_STATE_HOME", "APPDATA", "LOCALAPPDATA")
 
 
+def write_file(path, data):
+    """Write `data` - bytes as they are, text as UTF-8 - and close the handle
+    before returning. An unclosed handle is closed at once only on an
+    interpreter that counts references; elsewhere a planted file read back
+    before the collector runs would be judged on bytes not yet flushed."""
+    if isinstance(data, bytes):
+        with io.open(path, "wb") as fh:
+            fh.write(data)
+        return
+    with io.open(path, "w", encoding="utf-8") as fh:
+        fh.write(data)
+
+
 def home_env(home):
     """`home` under every name a home-directory lookup reads.
 
@@ -589,7 +602,8 @@ def scratch_debris(root, sentinel=SENTINEL, expected=SENTINEL_BYTES):
     else:
         body, why = None, None
         try:
-            body = io.open(os.path.join(root, sentinel), "rb").read()
+            with io.open(os.path.join(root, sentinel), "rb") as fh:
+                body = fh.read()
         except OSError as exc:
             why = "made %s unreadable: %s" % (sentinel, exc)
         if why is not None:
@@ -1213,7 +1227,7 @@ def run_one(rel_path, repo=None, encoding=None, timeout=DEFAULT_TIMEOUT,
     owned.append(gitconf)
     env.update(git_global_env(gitconf))
     for root in (scratch, home):
-        io.open(os.path.join(root, SENTINEL), "wb").write(SENTINEL_BYTES)
+        write_file(os.path.join(root, SENTINEL), SENTINEL_BYTES)
     argv = [interpreter, os.path.join(repo, rel_path), "--selftest"] + list(extra)
     began = time.monotonic()
     # THE WALL-CLOCK WINDOW this child ran in, for `claude_verdicts`: the monotonic
@@ -2781,12 +2795,12 @@ def _claude_watch_cases(check):
         repo = os.path.join(box, name)
         os.makedirs(os.path.join(repo, "tests"))
         os.makedirs(os.path.join(repo, ".claude"))
-        io.open(os.path.join(repo, ".claude", "keep"), "w").write("original\n")
-        io.open(os.path.join(repo, ".claude", "keep2"), "w").write("original\n")
+        write_file(os.path.join(repo, ".claude", "keep"), "original\n")
+        write_file(os.path.join(repo, ".claude", "keep2"), "original\n")
         return repo
 
     def _suite(repo, name, body):
-        io.open(os.path.join(repo, "tests", name), "w", encoding="utf-8").write(
+        write_file(os.path.join(repo, "tests", name),
             root + body + contract)
         return "tests/" + name
 
@@ -2922,11 +2936,9 @@ def _claude_watch_cases(check):
 
         # -- cw11: THE FINDING IS NOT HIDDEN BY A NON-ZERO EXIT ------------------
         repo = _fresh("fails-and-writes")
-        f_ = io.open(os.path.join(repo, "tests", "fails_and_writes"), "w",
-                     encoding="utf-8")
-        f_.write(root + "open(os.path.join(CL, 'stray.txt'), 'w').write('x')\n"
-                 "time.sleep(0.4)\nsys.exit(3)\n")
-        f_.close()
+        write_file(os.path.join(repo, "tests", "fails_and_writes"),
+                   root + "open(os.path.join(CL, 'stray.txt'), 'w').write('x')\n"
+                   "time.sleep(0.4)\nsys.exit(3)\n")
         rows = sweep(["tests/fails_and_writes"], jobs=1, repo=repo, timeout=30)
         check("cw11 a suite that exits non-zero AND wrote into the checkout's "
               ".claude/ is red for both, in one line: the exit code is named and "
@@ -2981,9 +2993,9 @@ def _claude_watch_cases(check):
                 "audit-backups/p.bak", "hooks/h", ".gitignore"]:
             target = os.path.join(snap_box, ".claude", *rel.split("/"))
             os.makedirs(os.path.dirname(target), exist_ok=True)
-            io.open(target, "w").write("x")
+            write_file(target, "x")
         for rel in ("settings.local.json", "audit-panel.json", "settings.json"):
-            io.open(os.path.join(snap_box, ".claude", rel), "w").write("{}")
+            write_file(os.path.join(snap_box, ".claude", rel), "{}")
         snap = claude_snapshot(snap_box)
         check("cw5 the snapshot of a checkout with no .claude/ is EMPTY, and of "
               "one with a live session's directories in it holds exactly the "
@@ -3043,7 +3055,8 @@ def _claude_watch_cases(check):
         # the writer's source, never typed here: a writer that renames its slot
         # reddens this case before a live sweep goes red on a session's file. A
         # row no constant derives is listed by its example, and the list is
-        # pinned - both writers below format the name inline - so a row added
+        # pinned by row prefix to the writers that format the name inline (the
+        # journal pre-image, the TDD reminder), so a row added
         # with no constant behind it is reported rather than taken on trust.
         def constant(rel, name):
             with io.open(os.path.join(REPO, *rel.split("/")),
@@ -3088,9 +3101,9 @@ def _claude_watch_cases(check):
                      if not any(rx.match(x) for x in derived)]
         check("cw10b every slot name a writer's own constant spells, formatted the "
               "way the writer formats it, is skipped by the live-session table, "
-              "and the rows no constant derives are exactly the two whose "
-              "writers format the name inline (the journal pre-image, the TDD "
-              "reminder): unread %r, not skipped %r, underived %r"
+              "and the rows no constant derives are exactly the journal "
+              "pre-image and the TDD reminder, whose writers format the name "
+              "inline: unread %r, not skipped %r, underived %r"
               % (unread, not_skipped, underived),
               sidecar is not None and unread == [] and len(derived) > 0
               and not_skipped == []
@@ -4032,7 +4045,7 @@ def _cases(check):
     def _fixture(name, body):
         """One child script, written and handed back by absolute path."""
         path = os.path.join(work, name)
-        io.open(path, "w", encoding="utf-8").write(body)
+        write_file(path, body)
         return path
 
     _CONTRACT_LINE = "sys.stdout.write('fixture: 1/1 cases passed\\n')\n"
@@ -4047,7 +4060,7 @@ def _cases(check):
               "(exit %r, read %r)" % (ran["code"], cases_in(ran["output"])),
               ran["code"] == 0 and cases_in(ran["output"]) == 4)
 
-        io.open(child, "w", encoding="utf-8").write("import sys; sys.exit(3)\n")
+        write_file(child, "import sys; sys.exit(3)\n")
         ran = run_one(child, timeout=30)
         check("x0b ...and the child's exit code is carried through unchanged "
               "rather than collapsed to 0/1, which is what makes g4's message "
@@ -4415,7 +4428,7 @@ def _cases(check):
               and sp_ran.stdout.strip() == b"42")
 
         sp_child = os.path.join(sp_work, "spaced_child")
-        io.open(sp_child, "w", encoding="utf-8").write(
+        write_file(sp_child,
             "import os, subprocess, sys\n"
             "tmp = os.environ['TMPDIR']\n"
             "bare = subprocess.run('test -d ' + tmp, shell=True).returncode\n"
@@ -4499,7 +4512,7 @@ def _cases(check):
             path = os.path.join(en_work, *rel.split("/"))
             if not os.path.isdir(os.path.dirname(path)):
                 os.makedirs(os.path.dirname(path))
-            io.open(path, "w", encoding="utf-8").write(body)
+            write_file(path, body)
             return rel
 
         _says = ("import os, sys\n"

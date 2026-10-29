@@ -4323,7 +4323,8 @@
       "P143.1-6yq",
       "P142.1",
       "P142.13-6yq",
-      "P148.6"
+      "P148.6",
+      "P148.19-xpz"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -11382,7 +11383,8 @@
     "tests/test__evidence_io.py": [
       "P131.1",
       "P148.6",
-      "P148.14-xpz"
+      "P148.14-xpz",
+      "P148.19-xpz"
     ],
     "tests/test__evidence_view.py": [
       "P131.1"
@@ -11951,7 +11953,8 @@
       "P143.1-6yq",
       "P142.1",
       "P142.13-6yq",
-      "P148.3"
+      "P148.3",
+      "P148.19-xpz"
     ],
     "tests/test_set_priority.py": [
       "P131.1"

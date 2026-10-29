@@ -293,7 +293,8 @@ class Context(object):
 # --- the steps ------------------------------------------------------------------
 def step_preflight(ctx):
     """Refuses before a single file is written: the open-bug / provisional-
-    phase question `release_permitted` asks, and that the tag is free.
+    phase question, asked of `release_verdict` so its sentence comes back with
+    the answer, and that the tag is free.
     Captures the PRE-BUMP version into the state, because `followers` needs
     it after `bump-version` has already overwritten `plugin.json` on a later
     run.
