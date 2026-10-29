@@ -22,7 +22,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P148-R1",
@@ -379,7 +379,9 @@
         "severity": "low",
         "file": "tests/_harness.py:1868-1884 and the task's tests.gate",
         "issue": "P148-R2 is not made in the diff, as the executor says: the manifest edit is the orchestrator's. The recorded gate (run 2026-10-29T08:26:12Z) selects tools/sweep-selftests.py, tools/release.py and tools/prove-gates.py only, so the m1/m2 edit in tests/_harness.py in this diff is outside the recorded gate until `python3 tools/sweep-selftests.py tests/_harness.py` is added. I ran that command once in the task tree and it printed '1/1 files ok, 98 cases' (exit not read through a pipe, tail output only).",
-        "resolution": "Orchestrator adds `python3 tools/sweep-selftests.py tests/_harness.py` to P148.13-xpz tests.gate and re-records the gate run before close."
+        "resolution": "Orchestrator adds `python3 tools/sweep-selftests.py tests/_harness.py` to P148.13-xpz tests.gate and re-records the gate run before close.",
+        "status": "accepted-open",
+        "acceptedReason": "Every low finding carried to BUG-29-dau is answered by P148.1-.9, grouped by area; the review and independent-review findings on that work are fixed by P148.10-.25. P148-R36 is left as recorded: it asks to change a past task's recorded gate, which is the record of what was run, not a defect in shipped code."
       },
       {
         "id": "P148-R37",
@@ -502,9 +504,10 @@
         "status": "fixed"
       }
     ],
-    "outcome": "[findings: 48 - 0 high, 12 med, 36 low; 47 with a recorded fix commit]"
+    "outcome": "[findings: 48 - 0 high, 12 med, 36 low; 47 with a recorded fix commit]",
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "Every low finding carried to BUG-29-dau is answered by P148.1-.9, grouped by area; the review and independent-review findings on that work are fixed by P148.10-.25. P148-R36 is left as recorded: it asks to change a past task's recorded gate, which is the record of what was run, not a defect in shipped code.",
   "tasks": [
     {
       "id": "P148.1",
@@ -2500,7 +2503,7 @@
     {
       "id": "P148.25-xpz",
       "title": "gate-parity classifies the plugin's ignore-line table where the panel's old table stood",
-      "status": "in_progress",
+      "status": "done",
       "description": "The phase's full sweep is red on tools/gate-parity.py ea1/ea4-ea7: the reason-carrying table classifier still names _PANEL_PRIVATE_FILES (panel-server.py), which P148.16 replaced with _manifest_io.CLAUDE_IGNORE_LINES, and does not classify the new table. Classify CLAUDE_IGNORE_LINES the way the old row classified the panel's table (read the old row and the table's own comment to decide between AUDITED_EXEMPTIONS naming its instrument and NOT_AN_EXEMPTION with a reason), and drop the row for the table that no longer exists. python3 tools/gate-parity.py --selftest must pass. Edit only tools/gate-parity.py. No F/P/BUG ids in code.",
       "files": [
         "tools/gate-parity.py"
@@ -2521,32 +2524,38 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "cb03c0e0034d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "In tools/gate-parity.py NOT_AN_EXEMPTION, replaced the _PANEL_PRIVATE_FILES row with a CLAUDE_IGNORE_LINES row carrying a reason sentence. Selftest exits 0 with 93/93 cases (ea1-ea7 PASS); sweep-selftests.py tools/gate-parity.py exits 0. Dependants (sweep-costs.json, ci.yml, _areas.py, test_audit_task.py, affected.py, bench-hooks.py, _output_lints.py, measure-affected-miss.py) only use the file by path or name; only a data table row changed, so all remain correct.",
+        "descriptive": "gate-parity classifies the plugin's ignore-line table where the panel's old table stood, and its selftest is green again"
       },
       "startedAt": "2026-10-29T11:30:28Z",
-      "completedAt": null,
+      "completedAt": "2026-10-29T11:37:01Z",
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-29T11:34:59Z.f6f7dd",
         "status": "passed",
         "at": "2026-10-29T11:34:59Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "cb03c0e0034d",
+        "at": "2026-10-29T11:37:01Z",
+        "return": "docs/audit/evidence/returns/P148.25-xpz/20261029T113028Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task with expectRedFirst false and no tests.add; the red (ea1, ea4-ea7 failing on the stale _PANEL_PRIVATE_FILES row) was seen before the fix",
+        "at": "n/a"
       }
     }
   ],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "482d7bf5-025e-4eb9-acc8-1383e2a9aaa8",
-    "branch": "audit/p148-the-carried-low-batch",
-    "at": "2026-10-28T23:05:10Z"
-  },
   "startedAt": "2026-10-28T23:05:10Z",
   "testEvidence": {
-    "runId": "2026-10-29T11:28:43Z.5a7a53",
-    "status": "failed",
-    "at": "2026-10-29T11:28:43Z"
+    "runId": "2026-10-29T11:49:22Z.02d0c3",
+    "status": "passed",
+    "at": "2026-10-29T11:49:22Z"
   }
 }
