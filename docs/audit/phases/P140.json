@@ -68,21 +68,25 @@
         "severity": "low",
         "file": "tools/release.py:428-431 (step_verify_release)",
         "issue": "P140-R1 also named release.py's verify-release step (\"keeps only 'tools/verify.sh --release is green'\"). The diff does not touch it: under `release.py run`, `ctx.run` captures verify.sh's output and a passing step returns the fixed string, so the new indented release-over lines from `run_noted` are discarded on exactly the armed-green path. Only a direct `verify.sh --release` (or CI/LOUD) shows them.",
-        "resolution": "Either append the verify output's release-over lines to the step's note on a pass, or record in the finding/outcome that the pipeline surface is deliberately left and why; do not leave it implied as fixed.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.8 (6dc002ec5723): Either append the verify output's release-over lines to the step's note on a pass, or record in the finding/outcome that the pipeline surface is deliberately left and why; do not leave it implied as fixed.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.8",
+        "commit": "6dc002ec5723"
       },
       {
         "id": "P140-R6",
         "severity": "low",
         "file": "executor outcome (filed return), claim about gr18/gr14",
         "issue": "The outcome says an unreadable plan with an armed slot is released over \"as the guard's gr18 and gr14 already did\". gr14 arms over a READABLE bug plan, and gr18 asserts the refusal only with no slot, so no pre-existing guard case covered unreadable plus armed; the behaviour was in `decide`'s code (`if not (...): continue; if bypass_armed: return None`), not in a case. The new gr72e is the first case to pin it. The claim describes the code truthfully but its cited evidence does not show it.",
-        "resolution": "Correct the wording to say the behaviour was in decide() and is first pinned by gr72e.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.8 (6dc002ec5723): Correct the wording to say the behaviour was in decide() and is first pinned by gr72e.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.8",
+        "commit": "6dc002ec5723"
       }
     ],
-    "outcome": "[findings: 6 - 0 high, 3 med, 3 low; 3 with a recorded fix commit]",
+    "outcome": "[findings: 6 - 0 high, 3 med, 3 low; 5 with a recorded fix commit]",
     "readReturns": []
   },
   "summary": "P140: tools/verify.sh --release, tools/release.py and .claude/hooks/guard-release.py answer whether a release may go out over the plan through one decision function in the guard (tree_verdict), so a release the owner armed with #release-with-bugs passes every step that asks; the verify step prints what it releases over in quiet mode; an unreadable plan refuses without a slot. P140-R4 (the verify-run surface not pinned end to end) is left as recorded: the arming hook and release.py's preflight already print the list the owner releases over. Lows carried to BUG-29-dau. Per-task reviewer answers continued over: P140.1 intent diverges: owner, standing for this run: 'Radis autonomno ... ne izbacujes mi prompt-ove da ti ja nesto potvrdim'; both med findings get a follow-up task in this phase before sign-off; P140.2-ohy intent cannot-tell: owner, standing for this run: 'Radis autonomno ... ne izbacujes mi prompt-ove da ti ja nesto potvrdim'; remaining findings triaged",
