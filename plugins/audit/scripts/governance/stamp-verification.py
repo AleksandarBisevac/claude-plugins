@@ -3331,10 +3331,9 @@ def _run_in(path, cmd, timeout, env):
     `taskkill /T` returns once the kill is asked for, not once the processes
     are gone, and the drain is what waits - for the root to exit and for every
     process holding its output pipe to let go - bounded by
-    `_proc_group.GRACE_SECONDS`. The teardown is said confirmed only when
-    `tear_down` confirmed it, the drain reached the end of the pipe within
-    that bound, AND the root has exited; any of them missing is said as a
-    teardown not confirmed."""
+    `_proc_group.GRACE_SECONDS`. Whether the teardown is confirmed is
+    `_proc_group.stop_and_drain`'s answer; one it does not confirm is said
+    as a teardown not confirmed."""
     try:
         proc = subprocess.Popen(cmd, cwd=path, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, env=env,
@@ -3344,15 +3343,12 @@ def _run_in(path, cmd, timeout, env):
     try:
         out, _err = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
-        confirmed = _proc_group.tear_down(proc)
-        text, complete = _proc_group.drain_to_eof(proc)
-        confirmed = confirmed and complete and proc.poll() is not None
+        text, confirmed = _proc_group.stop_and_drain(proc)
         return None, text, ("the run timed out after %s s and its process group "
                             "was torn down%s" % (timeout, "" if confirmed else
                                                  " (not confirmed)"))
     except BaseException:
-        _proc_group.tear_down(proc)
-        _proc_group.drain_to_eof(proc)
+        _proc_group.stop_and_drain(proc)
         raise
     return proc.returncode, (out or b"").decode("utf-8", "replace"), None
 

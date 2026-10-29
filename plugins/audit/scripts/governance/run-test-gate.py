@@ -3127,12 +3127,10 @@ def _shell(project, command, timeout=None):
     the teardown could be confirmed. `{}` for a step that simply ran and finished,
     which is the overwhelming majority and pays nothing for the rest.
 
-    A timed-out step's teardown is confirmed only when `_tear_down` confirmed
-    it, the drain reached the end of the pipe (`_drain_to_eof`), AND the root
-    has exited - the reading `stamp-verification.py red` takes. On Windows a
-    `taskkill` that succeeded only asked for the kill, so the kill's answer
-    alone confirms nothing; a drain that ran out of time means a process still
-    holds the pipe, and that is `unconfirmed`.
+    Whether a timed-out step's teardown is confirmed is
+    `_proc_group.stop_and_drain`'s answer, given this module's `_tear_down`
+    and `_drain_to_eof` so a case swapping those names reaches it; one it does
+    not confirm is recorded as `teardown: unconfirmed`.
     """
     timeout = DEFAULT_TIMEOUT_SECONDS if timeout is None else timeout
     argv, env, refusal = _proc_group.shell_invocation(command)
@@ -3146,9 +3144,8 @@ def _shell(project, command, timeout=None):
         out, _err = proc.communicate(timeout=timeout)
         return proc.returncode, (out or b"").decode("utf-8", "replace"), {}
     except subprocess.TimeoutExpired:
-        confirmed = _tear_down(proc)
-        text, complete = _drain_to_eof(proc)
-        confirmed = confirmed and complete and proc.poll() is not None
+        text, confirmed = _proc_group.stop_and_drain(proc, _tear_down,
+                                                     _drain_to_eof)
         facts = {"outcome": TIMED_OUT, "timeoutSeconds": timeout}
         if not confirmed:
             facts["teardown"] = "unconfirmed"
@@ -3158,8 +3155,7 @@ def _shell(project, command, timeout=None):
         # SIGINT and SIGTERM land here too, and the group has to go before this
         # leaves: an interrupted run that left its children running is the one
         # state in which every later answer this script gives is a guess.
-        _tear_down(proc)
-        _drain(proc)
+        _proc_group.stop_and_drain(proc, _tear_down, _drain_to_eof)
         raise
 
 

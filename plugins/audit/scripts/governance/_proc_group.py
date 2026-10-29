@@ -265,6 +265,30 @@ def drain_to_eof(proc):
     return (out or b"").decode("utf-8", "replace"), True
 
 
+def stop_and_drain(proc, tear=None, drain_eof=None):
+    """`(text, confirmed)` for a child stopped mid-run: its group torn down,
+    then its output drained - in that order, for `drain`'s reason - and
+    whether the teardown is CONFIRMED.
+
+    CONFIRMED NEEDS ALL THREE, and none stands in for another: the kill
+    confirmed (`tear_down`), the drain reached the end of the pipe
+    (`drain_to_eof`) so nothing outside the killed tree still holds it, and
+    the root has exited. On Windows a `taskkill` that returned has only asked
+    for the kill, so the kill's own answer confirms nothing alone. This is the
+    rule's one home: every reader that stops a timed-out child calls it and
+    words the answer its own way, so the readers cannot come to disagree.
+
+    `tear` and `drain_eof` are seams. Left None they are this module's
+    `tear_down` and `drain_to_eof`, looked up at CALL time, so a case that
+    swaps either name here reaches every reader; a reader that keeps its own
+    aliases of them passes those."""
+    tear = tear_down if tear is None else tear
+    drain_eof = drain_to_eof if drain_eof is None else drain_eof
+    killed = tear(proc)
+    text, complete = drain_eof(proc)
+    return text, bool(killed and complete and proc.poll() is not None)
+
+
 # --- one POSIX shell, on every platform ---------------------------------------
 # A plan's commands are written in POSIX shell - `export`, single quotes,
 # `${VAR}`, `&&` chains a `meta.nodePreamble` builds - so they are run by ONE

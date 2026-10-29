@@ -1,0 +1,42 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__proc_group.py tests/test_stamp_verification.py tests/test_run_test_gate.py tests/test_drive_phase.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-29T15:36:31Z",
+    "basis": "`python3 tests/test__proc_group.py --selftest` in a throwaway tree at HEAD exited 1 on \"AttributeError: module '_proc_group' has no attribute 'stop_and_drain'\" (read as python), and the task introduces 'stop_and_drain': absent from HEAD's module-level bindings of plugins/audit/scripts/governance/_proc_group.py and bound in the working tree's; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Added _proc_group.stop_and_drain(proc, tear=None, drain_eof=None) -> (text, confirmed): tear_down, then drain_to_eof, confirmed = bool(killed and complete and proc.poll() is not None). The seams default to the module's tear_down/drain_to_eof looked up at CALL time, so the drive-phase and stamp cases that swap _proc_group's attributes still reach it. stamp-verification._run_in and drive-phase.run_lint_probe call stop_and_drain(proc); run-test-gate._shell calls stop_and_drain(proc, _tear_down, _drain_to_eof) so lc10e/lc10f's swap of its own aliases still lands. Each reader's interrupt (BaseException) branch calls the same helper too, so the kill-then-drain order also lives in one place. Evidence fields and wording are unchanged: '(not confirmed)' in stamp/drive, facts teardown=unconfirmed in rtg. The three reader docstrings that restated the rule now name the helper, and drive-phase's import comment names stop_and_drain. run-test-gate keeps its _drain alias, which _shell no longer calls but pg1 pins; I left it alone. Cases pgc1-pgc6 added to tests/test__proc_group.py (39/39). Mutations were run on a scratch copy (scratchpad/mut-p1499, __pycache__ purged each cycle), never the shared tree: drop kill -> pgc1 red; drop drain -> pgc2; drop exit -> pgc3; poll() truthiness -> pgc4, pgc5; always False -> pgc4, pgc5; drain before kill -> pgc1-pgc5; defaults bound at import -> pgc5; old three-line block back in _run_in -> pgc6; restored 39/39 exit 0. Gate: python3 tools/sweep-selftests.py over the four suites -> '4/4 files ok, 1631 cases', exit 0. Direct runs: test_run_test_gate 573/573, test_drive_phase 673/673, test_stamp_verification 346/346, each exit 0, with PASS lines for lc10e, lc10f, lp9b, lp9c, skb1-skb4 and srn1-srn3 seen. Those three suites were not edited (git diff --stat shows only the five changed files). ruff check on the touched files exit 0; vermin -t=3.8- on the new code exit 0. Dependants: derive-phase-gate, run-agent-session, audit-task and test_audit_status import _proc_group and use none of what changed (a function was added, nothing renamed), so they are still correct. tools/prove-gates.py (_gone) and test__proc_group (_in_system_dir, _reaped_group_empty, _kill) are untouched. run-test-gate's _kill use in test_run_test_gate is unchanged. stamp-verification's dependants (tests' _binds, _build_throwaway, ...) are unaffected because only _run_in's body changed, keeping its signature and return. Sibling P149.10-hwg (pending) also declares stamp-verification.py; my edit there is confined to _run_in. run-test-gate's _shell and drive-phase's run_lint_probe keep their signature and return, so close-phase's _git_text and the drive tests are unaffected. .github/sweep-costs.json: test__proc_group gains only stand-in cases (no process started), so its recorded cost is not re-recorded here. PLUGIN-BUILD-GUIDE.md's _proc_group section names tear_down and drain and does not name stop_and_drain (it already omitted drain_to_eof). It is outside this task's files, so it is reported, not edited.",
+    "descriptive": "The rule that a timed-out run's teardown is confirmed (kill confirmed, pipe drained to EOF, root exited) now lives once in _proc_group.stop_and_drain and all three readers call it."
+  },
+  "testsAdded": [
+    "pgc1-pgc3: each of the three conditions withheld alone (kill unconfirmed, drain short of EOF, root still running) leaves the teardown unconfirmed",
+    "pgc4: the allow case - all three hold with exit code 0 -> confirmed, text returned, kill before drain",
+    "pgc5: with no seams passed the helper reaches the module's tear_down/drain_to_eof as they stand at call time",
+    "pgc6: AST read of _run_in, _shell and run_lint_probe - each calls stop_and_drain and none calls tear_down/drain_to_eof/drain/poll itself"
+  ],
+  "casesAdded": [
+    [
+      "pgc1",
+      "pgc2",
+      "pgc3",
+      "pgc4",
+      "pgc5",
+      "pgc6"
+    ]
+  ],
+  "claims": "claims:\n1 _proc_group.py stop_and_drain's last line is the three-condition conjunction the docstring states; the readers' docstrings now only name the helper (stamp-verification._run_in, run-test-gate._shell, drive-phase.run_lint_probe)\n2 scratch-copy mutations: drop kill -> pgc1 red, drop drain -> pgc2, drop exit -> pgc3, poll truthiness -> pgc4/pgc5, always-False (over-fire) -> pgc4/pgc5, order swap -> pgc1-5, import-time binding -> pgc5, private copy restored in _run_in -> pgc6; restored 39/39 exit 0\n3 grep -n 'tear_down|drain_to_eof|poll() is not None' over the three readers: before, three timeout blocks plus three interrupt blocks; after, only run-test-gate's module aliases (_tear_down, _drain_to_eof, kept as the seams lc10e/lc10f swap) and the docstring/argument that names them - every private copy replaced, and pgc6 holds it\n4 n/a - no rule addressed to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:f709eb5bfc0c2b08220aece6caebb207e51fb3ab2bb4475e5115bef61f53d8f2\",\"dirtyDigest\":\"sha256:c4d43376f4d4413f018e52d0e3a814262e85abb3c0c55fc0615dd38fe35f9c50\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/_proc_group.py\":\"04c368f241a3e255\",\"plugins/audit/scripts/governance/drive-phase.py\":\"b6e168980b1ba4ce\",\"plugins/audit/scripts/governance/run-test-gate.py\":\"3b2e2353d2294c19\",\"plugins/audit/scripts/governance/stamp-verification.py\":\"09fd68761a6f029e\",\"tests/test__proc_group.py\":\"f744f2d5f6c67a86\"},\"head\":\"fdb54605\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/_proc_group.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/governance/run-test-gate.py\",\"plugins/audit/scripts/governance/stamp-verification.py\",\"tests/test__proc_group.py\",\"tests/test_drive_phase.py\",\"tests/test_run_test_gate.py\",\"tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:ee8c8653811520a372dcf9c6e31fb2bb30fbcbaca2dd9b8c8d57f1e92d55c4e7\",\"v\":2}",
+  "testsAddGaps": [
+    "tests/test__proc_group.py: Add one helper to _proc_group.py, e.g - bound to `pgc1`, which the suite did not print",
+    "tests/test__proc_group.py: Add one helper to _proc_group.py, e.g - bound to `pgc2`, which the suite did not print",
+    "tests/test__proc_group.py: Add one helper to _proc_group.py, e.g - bound to `pgc3`, which the suite did not print",
+    "tests/test__proc_group.py: Add one helper to _proc_group.py, e.g - bound to `pgc4`, which the suite did not print",
+    "tests/test__proc_group.py: Add one helper to _proc_group.py, e.g - bound to `pgc5`, which the suite did not print",
+    "tests/test__proc_group.py: Add one helper to _proc_group.py, e.g - bound to `pgc6`, which the suite did not print"
+  ],
+  "testsAddUnchecked": []
+}

@@ -10,6 +10,7 @@ there is one teardown and not two that can come to disagree.
 
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
+import ast
 import json
 import ntpath
 import os
@@ -471,6 +472,111 @@ def _drain_cases(check):
           "read only that: %r" % (M.drain(stuck),), M.drain(stuck) == "")
 
 
+def _stop_and_drain(killed, complete, exit_code):
+    """`(answer, order)` of `stop_and_drain` over a stand-in child whose
+    `poll()` answers `exit_code`, with a kill answering `killed` and a drain
+    answering `complete` - no process is started, so each condition can be
+    withheld alone. `order` is the names of the seams in the order reached."""
+    order = []
+    proc = types.SimpleNamespace(poll=lambda: exit_code)
+
+    def tear(_proc):
+        order.append("kill")
+        return killed
+
+    def drain_eof(_proc):
+        order.append("drain")
+        return "written", complete
+    return M.stop_and_drain(proc, tear, drain_eof), order
+
+
+# The readers that stop a timed-out child, by basename and function. None of
+# them may ask the kill, the drain or the root's exit itself.
+_TEARDOWN_READERS = (("stamp-verification.py", "_run_in"),
+                     ("run-test-gate.py", "_shell"),
+                     ("drive-phase.py", "run_lint_probe"))
+_PRIVATE_TEARDOWN = ("tear_down", "_tear_down", "drain_to_eof", "_drain_to_eof",
+                     "drain", "_drain", "poll")
+
+
+def _called_names(basename, function):
+    """The names `function` in `basename` calls, read from its source - None
+    when the file or the function cannot be found, which is not a clean
+    answer."""
+    path = _loader.script_path(basename)
+    if not path or not os.path.isfile(path):
+        return None
+    with open(path, encoding="utf-8") as handle:
+        tree = ast.parse(handle.read())
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name == function:
+            calls = [n.func for n in ast.walk(node) if isinstance(n, ast.Call)]
+            return sorted(set(
+                f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", "")
+                for f in calls))
+    return None
+
+
+def _confirmation_cases(check):
+    """`pgc1`-`pgc6`: a stopped child's teardown is confirmed only when the
+    kill confirmed it, the drain reached the end of the pipe AND the root has
+    exited - each withheld alone - and every reader takes that answer from
+    `stop_and_drain` instead of keeping a copy of the rule."""
+    no_kill = _stop_and_drain(False, True, 0)
+    check("pgc1 a kill that did not confirm leaves the teardown unconfirmed "
+          "with the pipe drained and the root gone (mutation: the kill's "
+          "answer dropped -> red): %r" % (no_kill,),
+          no_kill == (("written", False), ["kill", "drain"]))
+    no_eof = _stop_and_drain(True, False, 0)
+    check("pgc2 a drain that never reached the end of the pipe leaves the "
+          "teardown unconfirmed with the kill confirmed and the root gone "
+          "(mutation: the drain's answer dropped -> red): %r" % (no_eof,),
+          no_eof == (("written", False), ["kill", "drain"]))
+    alive = _stop_and_drain(True, True, None)
+    check("pgc3 a root still running leaves the teardown unconfirmed with the "
+          "kill confirmed and the pipe drained (mutation: the exit check "
+          "dropped -> red): %r" % (alive,),
+          alive == (("written", False), ["kill", "drain"]))
+    # The allow case, with an exit code of 0 so a check reading the code's
+    # truth instead of its presence goes red here: it fails too when the
+    # confirmation is withheld always.
+    whole = _stop_and_drain(True, True, 0)
+    check("pgc4 THE ALLOW CASE: kill confirmed, pipe drained, root exited with "
+          "code 0 - confirmed, the drained text handed back, the kill before "
+          "the drain: %r" % (whole,),
+          whole == (("written", True), ["kill", "drain"]))
+
+    real = (M.tear_down, M.drain_to_eof)
+    reached = []
+    M.tear_down = lambda proc: reached.append("tear_down") or True
+    M.drain_to_eof = lambda proc: (reached.append("drain_to_eof") or "", True)
+    try:
+        # The stand-in has no pid, so a real teardown reached past the swap
+        # raises here and is reported as this case's answer, not a crash.
+        default = M.stop_and_drain(types.SimpleNamespace(poll=lambda: 0))
+    except Exception as exc:
+        default = ("raised", repr(exc))
+    finally:
+        M.tear_down, M.drain_to_eof = real
+    check("pgc5 with no seams passed it reaches this module's `tear_down` and "
+          "`drain_to_eof` as they stand at CALL time, which is what lets a "
+          "case swapping them here reach every reader: %r" % ((default, reached),),
+          default == ("", True) and reached == ["tear_down", "drain_to_eof"])
+
+    seen = [(basename, function, _called_names(basename, function))
+            for basename, function in _TEARDOWN_READERS]
+    check("pgc6 every reader that stops a timed-out child calls `stop_and_drain` "
+          "and asks none of the kill, the drain or the root's exit itself - "
+          "no private copy of the rule (mutation: the three-line block put "
+          "back in one reader -> red): %r"
+          % ([(b, f, None if n is None else
+               [x for x in n if x in _PRIVATE_TEARDOWN + ("stop_and_drain",)])
+              for b, f, n in seen],),
+          all(names is not None and "stop_and_drain" in names
+              and not set(names) & set(_PRIVATE_TEARDOWN)
+              for _b, _f, names in seen))
+
+
 def _taskkill_cases(check):
     """`pgk1`/`pgk2`: the Windows kill command runs under `GRACE_SECONDS`, and
     one that overruns it is a failed kill rather than an exception or a wait
@@ -516,6 +622,7 @@ def _taskkill_cases(check):
 
 def _cases(check):
     _drain_cases(check)
+    _confirmation_cases(check)
     _taskkill_cases(check)
     if hasattr(os, "killpg"):
         _reaped_cases(check)

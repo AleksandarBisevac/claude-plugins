@@ -367,7 +367,7 @@ import _clause_coverage as _cc  # noqa: E402  (check: whether the writer answere
 import _scope_companions  # noqa: E402  (derive: the runner config a widen declares)
 import _worktrees  # noqa: E402  (read_provenance: whether a kept tree's marker names its task; advance_task_tree: a member's tree brought to the phase head)
 import _scoped_commit  # noqa: E402  (plugin_owned_rels: the one table of what the plugin owns under .claude/)
-import _proc_group  # noqa: E402  (shell_invocation, tear_down: the lint probe run as one stoppable tree)
+import _proc_group  # noqa: E402  (shell_invocation, stop_and_drain: the lint probe run as one stoppable tree)
 
 E_OK, E_STOPPED, E_USAGE = 0, 1, 2
 PREFIX = "[drive-phase]"
@@ -8227,10 +8227,9 @@ def run_lint_probe(project, command, timeout):
     exit `run-test-gate.py` records for the same two (the killed tree's own,
     else 124; 127) - a code for the `--verbose` log, never a verdict.
 
-    A timed-out probe's teardown is said confirmed only when `tear_down`
-    confirmed it, the drain reached the end of the pipe (`drain_to_eof`), AND
-    the root has exited - the reading `stamp-verification.py red` takes, and
-    its wording when one is missing."""
+    Whether a timed-out probe's teardown is confirmed is
+    `_proc_group.stop_and_drain`'s answer, and one it does not confirm takes
+    the wording `stamp-verification.py red` gives it."""
     argv, env, refusal = _proc_group.shell_invocation(command)
     if argv is None:
         return 127, "", "could not be started: %s" % (refusal,)
@@ -8243,9 +8242,7 @@ def run_lint_probe(project, command, timeout):
     try:
         out, _err = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
-        confirmed = _proc_group.tear_down(proc)
-        drained, complete = _proc_group.drain_to_eof(proc)
-        confirmed = confirmed and complete and proc.poll() is not None
+        drained, confirmed = _proc_group.stop_and_drain(proc)
         text = _verb_text(drained.encode("utf-8"))
         code = proc.returncode if proc.returncode is not None else 124
         return code, text, (
@@ -8253,8 +8250,7 @@ def run_lint_probe(project, command, timeout):
             "step) and its process group was torn down%s" % (
                 timeout, "" if confirmed else " (not confirmed)"))
     except BaseException:
-        _proc_group.tear_down(proc)
-        _proc_group.drain_to_eof(proc)
+        _proc_group.stop_and_drain(proc)
         raise
     return proc.returncode, _verb_text(out), None
 
