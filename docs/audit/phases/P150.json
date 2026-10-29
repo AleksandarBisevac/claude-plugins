@@ -1,7 +1,7 @@
 {
   "id": "P150",
   "title": "The 3.7.0 changelog covers the Windows fixes",
-  "status": "in_progress",
+  "status": "done",
   "description": "P149 changed red-first deadline sizing and teardown reporting after P148.15 wrote the changelog lines; the unreleased section must be true of HEAD before 3.7.0 is cut.",
   "desiredOutcome": "CHANGELOG.md's unreleased section is true of every user-visible change landed through P149",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "e6f4c0c0c265e9a26ba0082b9786b77061baf7ef",
   "branch": "audit/p150-the-3-7-0-changelog-covers-the",
-  "mergedAt": null,
+  "mergedAt": "2026-10-29T19:26:50Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -174,5 +174,6 @@
     "runId": "2026-10-29T17:53:10Z.b92944",
     "status": "passed",
     "at": "2026-10-29T17:53:10Z"
-  }
+  },
+  "mergedHead": "c7cb2755957ccbd763c4801a7af49d6c1fbfa48b"
 }

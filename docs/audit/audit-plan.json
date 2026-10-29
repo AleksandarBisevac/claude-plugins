@@ -968,7 +968,7 @@
     {
       "id": "P150",
       "title": "The 3.7.0 changelog covers the Windows fixes",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P150.json"
     }
   ],
