@@ -1,0 +1,121 @@
+{
+  "id": "P149",
+  "title": "The Windows reds release CI found on the carried low batch",
+  "status": "in_progress",
+  "description": "Release-tier CI run 40877191420 on the head that landed P148 failed on Windows only: case ww2 in tests/test_drive_phase.py on both Windows selftest legs (a case P148.1 added, never before run on Windows), and case sr9 in tests/test_stamp_verification.py on the Windows resample leg. Each task finds the cause on Windows rather than relaxing the case.",
+  "desiredOutcome": "The release tier is green on every runner, Windows included, at the head 3.7.0 is cut from",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [],
+  "baseRef": "4e73a02fc87eb5cdce1d3373313c0fa261387127",
+  "branch": "audit/p149-the-windows-reds-release-ci-fo",
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P149.1",
+      "title": "A wave writer session's edit on Windows is filed from its member tree and leaves the project tree's file as the base held it",
+      "status": "in_progress",
+      "description": "Release CI (run 40877191420, jobs 'selftests (windows, plain 4)' and 'selftests (windows, cp1252 4)') fails tests/test_drive_phase.py case ww2 deterministically on Windows; it passes on Linux and macOS. The case's own repr on Windows shows the filing succeeded (gate P1.2 green, work carried in refs/audit/carry/P1.2) and the carried blob is 'changed by P1.2\\n'; the conjunct that fails is therefore one of: _filed_body(mpath, filer) is None, or the project tree's src/f2.txt is not b'v0\\n' (on Windows it may hold the member's edit, or CRLF bytes from a checkout under core.autocrlf - read which). Find which conjunct fails and why on Windows - the case was added by P148.1 (d83aeee9) in _wave_writer_cases; the code paths are the drive's writer filing from a member tree in plugins/audit/scripts/governance/drive-phase.py and the tree helpers in plugins/audit/scripts/git/_worktrees.py, and the test's helpers _play_session, _read, _filed_body. If the product writes or restores the project tree's file on Windows, fix the product; if the case reads bytes a Windows checkout legitimately rewrites (line endings), make the fixture deterministic (e.g. the fixture repo's own .gitattributes or core.autocrlf=false in _wave_repo) rather than loosening the assertion. You cannot run Windows here: reason from the code and the CI repr, state the cause with the line you read, and add or keep a case that would go red on Linux/macOS for the same defect where one can exist. Edit only the declared files; a fix that needs another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
+      "files": [
+        "tests/test_drive_phase.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/git/_worktrees.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "files"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-29T13:16:46Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-29T13:39:17Z.a39502",
+        "status": "passed",
+        "at": "2026-10-29T13:39:17Z"
+      }
+    },
+    {
+      "id": "P149.2",
+      "title": "A red-first run that times out on Windows removes its throwaway instead of reporting it left behind",
+      "status": "in_progress",
+      "description": "Release CI (run 40877191420, job 'resample (windows)') fails tests/test_stamp_verification.py case sr9: the timeout half returned exit 4 (E_LEFT_BEHIND, stamp-verification.py) with no redFirst block, where could-not-prove (3) with the throwaway removed is required; the cannot-start half passed. The test runs `python -c 'import time; time.sleep(30)'` under --timeout 1 in a throwaway tree. On Windows a killed child (or its grandchild, if the command runs through a shell or launcher) can still hold the throwaway directory or a file in it open when removal runs, so the removal fails. Find the code path in plugins/audit/scripts/governance/stamp-verification.py that kills a timed-out red run and removes the throwaway: make the kill reach the whole process tree on Windows and wait for it to exit (bounded) before removal, and/or retry removal on Windows sharing errors within a bound; keep E_LEFT_BEHIND for a removal that really cannot be done. Under resample load this is intermittent, so the fix must not depend on timing luck; a case that pins the ordering (kill, wait, then remove) on any platform is preferred over a sleep. You cannot run Windows here: reason from the code, state the cause with the line you read. Edit only the declared files; a fix that needs another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_stamp_verification.py"
+        ],
+        "gateBasis": "files"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-29T13:16:50Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-29T13:45:35Z.8976f3",
+        "status": "passed",
+        "at": "2026-10-29T13:45:35Z"
+      }
+    }
+  ],
+  "request": "release CI on ci/P148 is red on Windows only; fix both reds before 3.7.0",
+  "openChoices": [],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "482d7bf5-025e-4eb9-acc8-1383e2a9aaa8",
+    "branch": "audit/p149-the-windows-reds-release-ci-fo",
+    "at": "2026-10-29T13:16:46Z"
+  },
+  "startedAt": "2026-10-29T13:16:46Z"
+}

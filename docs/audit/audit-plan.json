@@ -958,6 +958,12 @@
       "title": "The carried low batch",
       "status": "done",
       "shard": "phases/P148.json"
+    },
+    {
+      "id": "P149",
+      "title": "The Windows reds release CI found on the carried low batch",
+      "status": "in_progress",
+      "shard": "phases/P149.json"
     }
   ],
   "fileIndex": {
@@ -3727,7 +3733,8 @@
       "P142.1",
       "P142.18-6yq",
       "P142.20-6yq",
-      "P148.5"
+      "P148.5",
+      "P149.1"
     ],
     "plugins/audit/scripts/git/close-phase.py": [
       "P18.3",
@@ -4405,7 +4412,8 @@
       "P142.2",
       "P142.23-6yq",
       "P142.34-6yq",
-      "P148.12-xpz"
+      "P148.12-xpz",
+      "P149.2"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -10238,7 +10246,8 @@
       "P142.49-6yq",
       "P142.51-6yq",
       "P144.3-6yq",
-      "P148.1"
+      "P148.1",
+      "P149.1"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -11850,7 +11859,8 @@
       "P142.51-6yq",
       "P144.3-6yq",
       "P148.1",
-      "P148.14-xpz"
+      "P148.14-xpz",
+      "P149.1"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -12003,7 +12013,8 @@
       "P148.9-xpz",
       "P148.12-xpz",
       "P148.17-xpz",
-      "P148.24-xpz"
+      "P148.24-xpz",
+      "P149.2"
     ],
     "tests/test_usage_ledger.py": [
       "P131.1",

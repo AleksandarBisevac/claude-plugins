@@ -144,10 +144,11 @@ def _repo(prefix, task_ids=TASKS, gate=("true",), per_task="always",
         fh.write(".claude/state/\n")
     # At least three sources: the findings these cases hand in name `src/f1.txt`
     # to `src/f3.txt`, and a fix task is scoped only onto a path that exists.
+    # Written as the bytes they name: a case asserts the project tree still
+    # holds the base's exact bytes, and text mode would have written CRLF on
+    # Windows, failing that assertion with the product never touching the file.
     for n in range(1, max(len(task_ids), 3) + 1):
-        with open(os.path.join(root, "src", "f%d.txt" % (n,)), "w",
-                  encoding="utf-8") as fh:
-            fh.write("v0\n")
+        _write_lf(os.path.join(root, "src", "f%d.txt" % (n,)), "v0\n")
     mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
     with open(mpath, "w", encoding="utf-8") as fh:
         json.dump(_plan(task_ids, gate, phase_gate), fh, indent=2)
@@ -12833,14 +12834,17 @@ def _wave_writer_cases(check, M, bindir, log):
           and _head_of(root) == project_head)
     _c, filed_said = _explain_of(M, root, mpath, filer)
     carried = _git_out(root, "show", "refs/audit/carry/%s:src/f2.txt" % (filer,))
+    # Every conjunct's own value is in the repr, so a red names which one failed.
+    filed = _filed_body(mpath, filer) is not None
+    in_project = _read(os.path.join(root, "src", "f2.txt"))
     check("ww2 a writer session that edited its member tree is filed from that "
           "tree: its gate ran green there, its work is carried from it, and the "
           "project tree's file is as the base held it: %r"
-          % ((filed_said[:400], carried),),
-          _filed_body(mpath, filer) is not None
+          % ((filed, filed_said[:400], carried, in_project),),
+          filed
           and "gate %s green" % (filer,) in filed_said
           and carried == "changed by %s\n" % (filer,)
-          and _read(os.path.join(root, "src", "f2.txt")) == b"v0\n")
+          and in_project == b"v0\n")
     # THE LOCK READS THE MEMBER TREE: a digest locked over the tree's file is
     # unmoved there and moved against the project's copy, so a lock read from
     # the project would call every member's test file changed.

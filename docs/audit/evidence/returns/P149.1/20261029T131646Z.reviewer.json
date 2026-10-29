@@ -1,0 +1,17 @@
+{
+ "findings": [],
+ "preExisting": [
+  {"id": 1, "severity": "low", "file": "tests/test_drive_phase.py:7487-7488", "issue": "_wave_repo's spare f3 source is still written in text mode (CRLF on Windows). No case compares its bytes today, so it is latent only; the same applies to the extra_files writer near line 6098 and the notes.txt fixtures.", "resolution": "If a later case compares those bytes against a literal, route them through _write_lf as _repo now does."}
+ ],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clause: 'if the case reads bytes a Windows checkout legitimately rewrites (line endings), make the fixture deterministic ... rather than loosening the assertion'. The diff changes _repo (tests/test_drive_phase.py:~150-151) to write src/f<n>.txt through the existing _write_lf (newline='\\n'), so the project tree's src/f2.txt is b'v0\\n' on every OS; ww2's last conjunct (in_project == b'v0\\n') is unchanged in strictness, and its repr now carries every conjunct's value. I read _write_lf (line 281), _read (rb), _filed_body and _wave_repo: ww2 uses _wave_repo -> _repo for f2, so the fixed writer is the one that matters. The executor's claim ('fixture, not product; drive-phase.py and _worktrees.py unchanged; only tests/test_drive_phase.py edited') matches the diff: git diff --stat shows that one file, 10 insertions and 6 deletions. The Windows cause is reasoned from code and the CI repr, not measured on Windows, and the executor says so. The cause is consistent: text-mode write gives b'v0\\r\\n' on Windows, and the CI repr showed the filing and carry conjuncts true. Dependants: no case id, stage label or helper name changed, so the executor's per-dependant answer holds.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Executor filed not-attempted: a regression task with tests.add none, and the defect is Windows-only so a HEAD-vs-fix run on macOS is green on both sides. It states it emulated CRLF writes in _repo before the fix and saw sr2-block go red (ww2, 3/4), but I did not re-run that. Nothing is claimed as proved.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "The gate (python3 tools/sweep-selftests.py tests/test_drive_phase.py) selects one very large suite. I read only the changed cases (_repo, ww2) and the helpers they use, not the whole suite, so I cannot answer whether other cases there would pass with the behaviour deleted. Not a none-found."
+ },
+ "verdict": "clean",
+ "tasks": []
+}
