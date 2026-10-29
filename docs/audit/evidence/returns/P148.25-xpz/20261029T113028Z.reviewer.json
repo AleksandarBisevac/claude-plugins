@@ -1,0 +1,15 @@
+{
+ "findings": [],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clause: 'Classify CLAUDE_IGNORE_LINES the way the old row classified the panel's table ... and drop the row for the table that no longer exists'. The old row was in NOT_AN_EXEMPTION (HEAD tools/gate-parity.py:1174, _PANEL_PRIVATE_FILES: 'the lines the panel writes into .claude/.gitignore, each with the comment that explains it'). The diff replaces it, at the same place in NOT_AN_EXEMPTION, with a CLAUDE_IGNORE_LINES row whose sentence is true of _manifest_io.py:1360 (a (writer, pattern, note) table, read by claude_ignore_rows and adds_only_plugin_ignore_lines, not an excuse from any rule). Only tools/gate-parity.py changed in code, no F/P/BUG ids. python3 tools/gate-parity.py --selftest exits 0 with 93/93 cases, ea1-ea7 PASS; I ran it once. The executor's outcome (data-table row swap; dependants use the file by path or name only) matches the 4-insertion/2-deletion diff. Note: panel-server.py:573 still defines _PANEL_PRIVATE_FILES, but as a call result (claude_ignore_rows), not a reason-carrying literal table, and ea4 passes, so the stale row's removal is right.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Executor filed not-attempted: regression task, expectRedFirst false, no tests.add; it states the red (ea1, ea4-ea7 on the stale row) was seen before the fix. No test was added, so nothing further is owed.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "tests.gate is `python3 tools/sweep-selftests.py tools/gate-parity.py`, which runs the file's selftest cases. Read by judgement: ea1 (live: every reason-carrying table classified, every instrument exists) and ea3/ea4 (unclassified table / row for a vanished table reported) go red if the CLAUDE_IGNORE_LINES row is deleted, so the behaviour is guarded. I did not read every one of the 93 cases."
+ },
+ "verdict": "clean",
+ "tasks": []
+}

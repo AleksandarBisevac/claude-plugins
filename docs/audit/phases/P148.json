@@ -369,8 +369,10 @@
         "severity": "low",
         "file": "tools/prove-gates.py:4109",
         "issue": "P148-R6 stays open: the conjunct `respelled is None and os.name == \"nt\"` still lets pw5 pass on a Windows runner that cannot make the link, and the windows-latest confirmation that the pw5 line reads 'a second spelling, through a link' has not been made. The executor's evidence for why nothing can be done here holds (the 'NOT exercised' text sits only in 6bb76efb, and no Windows log of a head containing it exists), so this is a correct deferral, not a miss, but the finding is not closed by this diff.",
-        "resolution": "Carry P148-R6 to the first windows-latest run of a head containing 6bb76efb. If the pw5 line reads 'NOT exercised', drop the `os.name == \"nt\"` conjunct.",
-        "fixTask": "P148.24-xpz"
+        "resolution": "fixed in P148.24-xpz (c47a68305eb9): Carry P148-R6 to the first windows-latest run of a head containing 6bb76efb. If the pw5 line reads 'NOT exercised', drop the `os.name == \"nt\"` conjunct.",
+        "fixTask": "P148.24-xpz",
+        "commit": "c47a68305eb9",
+        "status": "fixed"
       },
       {
         "id": "P148-R36",
@@ -434,8 +436,10 @@
         "severity": "low",
         "file": "tests/test_stamp_verification.py:2022-2029",
         "issue": "The rewritten _BUILD_DELAY row says a helper granting a fresh timeout at the spawn 'stays half the delay less one beat interval over sr42's bound however slow the runner'. That holds for the interpreter start, which is the thing this task removes, but not for every slowness: the mutant is caught only because its run keeps beating to within one beat of the cut, and a child starved of CPU for about the whole 'half the delay less one beat' before the cut (a stall of nearly a second inside time.sleep of the beat) leaves its last beat under the bound, so the mutant passes. The row two entries up for _BEAT already says a slower beat 'can let a mutated helper pass', so the file now makes two incompatible statements. This only ever lets the mutant through, never fails a correct helper, and needs a stall near one second at the end of the run, so it is a wording overclaim and not a speed dependence of the kind the task named.",
-        "resolution": "Reword the row to say what is true: the interpreter start enters neither side, and the margin over the bound is half the delay less one beat interval, which only a stall of the child's own beats of about that length can consume (and then only toward passing the mutant). Drop 'however slow the runner'.",
-        "fixTask": "P148.24-xpz"
+        "resolution": "fixed in P148.24-xpz (c47a68305eb9): Reword the row to say what is true: the interpreter start enters neither side, and the margin over the bound is half the delay less one beat interval, which only a stall of the child's own beats of about that length can consume (and then only toward passing the mutant). Drop 'however slow the runner'.",
+        "fixTask": "P148.24-xpz",
+        "commit": "c47a68305eb9",
+        "status": "fixed"
       },
       {
         "id": "P148-R43",
@@ -452,8 +456,10 @@
         "severity": "med",
         "file": "tests/test__evidence_io.py:4182-4186,4205-4207",
         "issue": "The skip path reads as a pass that proved something. tk2s asserts (linked is None) == (link_skip is not None); linked is set only in the same try whose except sets link_skip, so the two are complementary by construction and tk2s cannot fail on either branch. On a machine that refuses os.symlink (an unprivileged Windows account) tk2l is not emitted at all, the abspath-writer hole this task closes is open again there, and the only trace is a green tk2s whose label is the same fixed sentence on both branches ('either ran ... or was skipped'), with the reason buried in a repr at its tail. The label never says SKIPPED HERE and tk2l never appears under its own id. The repo already has the idiom for exactly this: _harness.skip(check, id, mechanism, absent) (tests/_harness.py:444), used for an os.symlink refusal at tests/test__config.py:3033, tests/test__journal_io.py:2105 and tests/test__output.py:1096; it keeps the case id at the front, says SKIPPED HERE, and fails if the skip is taken on a platform that has the mechanism. The executor's claim that tk2s 'stated the reason' is true only of a repr inside a passing label.",
-        "resolution": "Drop tk2s. Where the symlink is refused call _harness.skip(check, \"tk2l\", \"os.symlink is refused here (%s)\" % link_skip, True), as test__config.py:3033 does, so the lost case keeps its id and reads SKIPPED HERE; keep the tk2l check in the else branch.",
-        "fixTask": "P148.24-xpz"
+        "resolution": "fixed in P148.24-xpz (c47a68305eb9): Drop tk2s. Where the symlink is refused call _harness.skip(check, \"tk2l\", \"os.symlink is refused here (%s)\" % link_skip, True), as test__config.py:3033 does, so the lost case keeps its id and reads SKIPPED HERE; keep the tk2l check in the else branch.",
+        "fixTask": "P148.24-xpz",
+        "commit": "c47a68305eb9",
+        "status": "fixed"
       },
       {
         "id": "P148-R45",
@@ -496,7 +502,7 @@
         "status": "fixed"
       }
     ],
-    "outcome": "[findings: 48 - 0 high, 12 med, 36 low; 44 with a recorded fix commit]"
+    "outcome": "[findings: 48 - 0 high, 12 med, 36 low; 47 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2408,7 +2414,7 @@
     {
       "id": "P148.24-xpz",
       "title": "Skips and comment rows in the suites say what ran: a refused symlink is a named skip, the build-delay row claims only what holds, pw5 says which spelling it exercised",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix P148-R44, R42, R35 (docs/audit/phases/P148.json review.findings). R44: drop tk2s; when os.symlink is refused call _harness.skip(check, 'tk2l', <mechanism with the reason>, True) as tests/test__config.py does, so the skip is named and never reads as a proof. R42: reword the _BUILD_DELAY judged-literal row to claim only what holds (interpreter start is outside the bound; a child starved of CPU near the cut can let a mutant through, as the _BEAT row already says). R35: make pw5's windows disjunct either assert the spelling it did exercise or record a named skip, never pass silently. Prove red where a case changed. Edit only declared files. No F/P/BUG ids in code.",
       "files": [
         "tests/test__evidence_io.py",
@@ -2438,14 +2444,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c47a68305eb9",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tests/test__evidence_io.py: tk2s removed; when os.symlink is refused _harness.skip(check, 'tk2l', 'os.symlink is refused here (<reason>), so the tree stayed plain ...', True) records a named skip; comment updated. tests/test_stamp_verification.py: the _BUILD_DELAY judged-literal row reworded: interpreter start enters neither side of the bound, the margin is half the delay less one beat interval on an unloaded runner, a CPU-starved child near the cut can let a mutant through (as the _BEAT row says), a slow runner never fails a correct helper. tools/prove-gates.py: pw5's windows disjunct now requires exactly one registration whose canonical path equals the pool's own worker tree (_canonical_path), instead of passing on os.name == nt alone; comment says so. Gate: python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_stamp_verification.py tools/prove-gates.py exit 0, 3/3 files ok, 716 cases. Dependants: test__config.py untouched (its skip pattern was only copied); the other listed dependants read only names I did not change (_cases/_selftest/_fs_row/_crlf_cases/_scan etc.) and the labels tk2o/tk2t/tk3/sk1/pw5 keep their ids, so they are still correct. tk2s no longer exists; nothing outside the suite referenced it (grep tk2s over tests/ found only the file itself).",
+        "descriptive": "A refused symlink is now a named skip, the build-delay row claims only what holds, and pw5 asserts the spelling it exercised."
       },
       "startedAt": "2026-10-29T10:42:37Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-29T11:16:23Z",
+      "verifiedBy": [
+        "tk2l named skip when os.symlink is refused, replacing the tautological tk2s",
+        "sk1 judged-literal row for _BUILD_DELAY reworded to claim only what holds",
+        "pw5 windows disjunct now asserts git's own record matches the pool's worker tree"
+      ],
       "notes": [
         {
           "at": "2026-10-29T10:42:32Z",
@@ -2474,6 +2484,56 @@
         "runId": "2026-10-29T11:14:48Z.d8f01a",
         "status": "passed",
         "at": "2026-10-29T11:14:48Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c47a68305eb9",
+        "at": "2026-10-29T11:16:23Z",
+        "return": "docs/audit/evidence/returns/P148.24-xpz/20261029T104237Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task (expectRedFirst false). Changed cases proven by scratch drivers instead, not the shared tree: pw5's None-spelling branch with the link refused, os.name patched to nt and _canonical_path made to disagree went False (the old disjunct stayed True); tk2l with os.symlink raising printed 'tk2l SKIPPED HERE - os.symlink is refused here (OSError: no privilege)' and with symlinks working printed 'tk2l RED-FIRST'.",
+        "at": "2026-10-29 session, __pycache__ purged before each run"
+      }
+    },
+    {
+      "id": "P148.25-xpz",
+      "title": "gate-parity classifies the plugin's ignore-line table where the panel's old table stood",
+      "status": "in_progress",
+      "description": "The phase's full sweep is red on tools/gate-parity.py ea1/ea4-ea7: the reason-carrying table classifier still names _PANEL_PRIVATE_FILES (panel-server.py), which P148.16 replaced with _manifest_io.CLAUDE_IGNORE_LINES, and does not classify the new table. Classify CLAUDE_IGNORE_LINES the way the old row classified the panel's table (read the old row and the table's own comment to decide between AUDITED_EXEMPTIONS naming its instrument and NOT_AN_EXEMPTION with a reason), and drop the row for the table that no longer exists. python3 tools/gate-parity.py --selftest must pass. Edit only tools/gate-parity.py. No F/P/BUG ids in code.",
+      "files": [
+        "tools/gate-parity.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tools/gate-parity.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-29T11:30:28Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-29T11:34:59Z.f6f7dd",
+        "status": "passed",
+        "at": "2026-10-29T11:34:59Z"
       }
     }
   ],
@@ -2483,5 +2543,10 @@
     "branch": "audit/p148-the-carried-low-batch",
     "at": "2026-10-28T23:05:10Z"
   },
-  "startedAt": "2026-10-28T23:05:10Z"
+  "startedAt": "2026-10-28T23:05:10Z",
+  "testEvidence": {
+    "runId": "2026-10-29T11:28:43Z.5a7a53",
+    "status": "failed",
+    "at": "2026-10-29T11:28:43Z"
+  }
 }

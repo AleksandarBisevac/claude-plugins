@@ -1171,8 +1171,10 @@ NOT_AN_EXEMPTION = {
                       "would leave the silence reading as good news",
     "_PANEL_FILES": "the panel's own local files, with the remedy the doctor prints "
                     "when one is tracked - subjects of a check, not excuses from it",
-    "_PANEL_PRIVATE_FILES": "the lines the panel writes into `.claude/.gitignore`, "
-                            "each with the comment that explains it in the file",
+    "CLAUDE_IGNORE_LINES": "every line the plugin writes into `.claude/.gitignore`, "
+                           "each with the writer that owns it and the comment that "
+                           "explains it in the file - the rows the ignore file's "
+                           "commit check recognises, not an excuse from any rule",
     "OWED_REASON": "what the tests.add migration prints about an entry it will "
                    "NOT rewrite, one sentence per reason it refused - the "
                    "opposite of an exemption: a row is why a repair was declined "

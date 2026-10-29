@@ -1,0 +1,19 @@
+{
+  "gates": {
+    "python3 tools/gate-parity.py --selftest": "pass",
+    "python3 tools/sweep-selftests.py tools/gate-parity.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task with expectRedFirst false and no tests.add; the red (ea1, ea4-ea7 failing on the stale _PANEL_PRIVATE_FILES row) was seen before the fix",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "In tools/gate-parity.py NOT_AN_EXEMPTION, replaced the _PANEL_PRIVATE_FILES row with a CLAUDE_IGNORE_LINES row carrying a reason sentence. Selftest exits 0 with 93/93 cases (ea1-ea7 PASS); sweep-selftests.py tools/gate-parity.py exits 0. Dependants (sweep-costs.json, ci.yml, _areas.py, test_audit_task.py, affected.py, bench-hooks.py, _output_lints.py, measure-affected-miss.py) only use the file by path or name; only a data table row changed, so all remain correct.",
+    "descriptive": "gate-parity classifies the plugin's ignore-line table where the panel's old table stood, and its selftest is green again"
+  },
+  "testsAdded": [],
+  "stamp": "audit-stamp: {\"content\":\"sha256:21c9660e25fed36e3445ff56c386c79dca11aa71d09700aea5c868060b6e469c\",\"dirtyDigest\":\"sha256:cb02c12066431c530da322939c8d5acac6130a4d43ae13792917dd8ce3ef4c0a\",\"dirtyPaths\":{\"tools/gate-parity.py\":\"0a9db12bb7eef8a1\"},\"head\":\"c47a6830\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tools/gate-parity.py\"],\"scopeDigest\":\"sha256:cc13a6694bff263587b33cb5b01df520c9fc458445b0758967d70625232f83ee\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}
