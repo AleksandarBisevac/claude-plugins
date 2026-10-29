@@ -38,9 +38,11 @@
         "severity": "low",
         "file": "docs/audit/audit-plan.json (P142.3 vs P131.16-dau)",
         "issue": "P142.3's description is a verbatim re-ask of a task already done (b52ba79a, amended 66b3635d): tools/measure-affected-miss.py has existed since P131.16-dau, so this task adds nothing and its tests.add entries are met only by pre-existing cases m6, m8, m10, m13. A duplicate task in the plan is an input error that wastes an executor run and can double-count 'tests added'.",
-        "resolution": "Close P142.3 with --no-change and a reason naming b52ba79a/66b3635d and the pre-existing cases, after (5) is measured; or rewrite its description to the measurement alone.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.8 (6dc002ec5723): Close P142.3 with --no-change and a reason naming b52ba79a/66b3635d and the pre-existing cases, after (5) is measured; or rewrite its description to the measurement alone.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.8",
+        "commit": "6dc002ec5723"
       },
       {
         "id": "P142-R3",
@@ -137,9 +139,11 @@
         "severity": "low",
         "file": "tools/sweep-selftests.py:1620-1628, 4017-4035",
         "issue": "A staged suite's grant is fixed when it is admitted. If it is admitted with 1 slot, it runs every block serially (stage_workers=min(6,1)) for its whole run, even after other slots free up. Its timeout at held=1 is 3 x cost, which can exceed SWEEP_DEADLINE. tt5 still only bounds timeouts at the full grant, and its label was widened to accept that the deadline 'cuts ... a staged suite admitted late with fewer slots'. On today's windows table this is latent, not live. At jobs=4 the staged suite second in each shard gets 1 slot (shard 2/3: test_commit_task_work 222.9; shard 3/3: test__deps 268.2), and both serial costs are well under the 1380 s deadline. A rebalance that put test_audit_task (606.0) or test_drive_phase (1346.4) second in a shard would have the deadline cut a run that is slow, not hung, and nothing would turn red first.",
-        "resolution": "Add a tt5 sibling over the live table: for each `--shard i/3` at jobs=4, compute each staged suite's admitted slots (ticket order, with what is free at its turn, assuming earlier holders have not yet finished). Assert that file_timeout at those slots, and the serial cost it implies, stay under SWEEP_DEADLINE. That makes the latent case fail on the table change that creates it.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.3 (b8c642ec2e6e): Add a tt5 sibling over the live table: for each `--shard i/3` at jobs=4, compute each staged suite's admitted slots (ticket order, with what is free at its turn, assuming earlier holders have not yet finished). Assert that file_timeout at those slots, and the serial cost it implies, stay under SWEEP_DEADLINE. That makes the latent case fail on the table change that creates it.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.3",
+        "commit": "b8c642ec2e6e"
       },
       {
         "id": "P142-R13",
@@ -166,64 +170,77 @@
         "severity": "low",
         "file": "tools/sweep-selftests.py:3801-3805 (sh6)",
         "issue": "sh6 says 'a shard runs its costliest files FIRST, so the slowest suite starts at once', but it asserts run_order(), which sweep() no longer calls. Submission order is now work_items (:1743). bb3 pins work_items as a function, but no case shows that sweep() submits in that order. Reverting :1743 to any other order leaves sh6 and bb3 green. bb1 uses equal costs, so it cannot tell either.",
-        "resolution": "Retitle sh6 to what it asserts: the split's order. Add a case that sweeps, at jobs=1, a heavy plain file and a staged fixture whose per-block estimate is higher, with costs given, and reads the order off each row's windows (start times): costliest job first.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.3 (b8c642ec2e6e): Retitle sh6 to what it asserts: the split's order. Add a case that sweeps, at jobs=1, a heavy plain file and a staged fixture whose per-block estimate is higher, with costs given, and reads the order off each row's windows (start times): costliest job first.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.3",
+        "commit": "b8c642ec2e6e"
       },
       {
         "id": "P142-R16",
         "severity": "low",
         "file": "tests/_harness.py:1185-1187 (replayed)",
         "issue": "replayed() keeps the first entry for a label (by.setdefault) and drops any later one silently. A list naming one block twice - the shape a sweep that ran a block twice would hand over - replays one copy and is never named. The sweep cannot produce that today: labels are unique by stage_labels, paths are set-deduped, and there is one counter per suite. But the replay is meant to be the honest reading, and it names a missing block and a stray block yet not a doubled one.",
-        "resolution": "Count labels in entries. A label listed more than once becomes one failing case '<label> RAN TWICE'. Add it to sr15's list, red-first by restoring setdefault.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.3 (b8c642ec2e6e): Count labels in entries. A label listed more than once becomes one failing case '<label> RAN TWICE'. Add it to sr15's list, red-first by restoring setdefault.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.3",
+        "commit": "b8c642ec2e6e"
       },
       {
         "id": "P142-R17",
         "severity": "low",
         "file": "tools/sweep-selftests.py:4111-4165 (bb1)",
         "issue": "The clause 'at some moment blocks of both run' rests on a-blocks sleeping 0.3 s, measured inside each child after its own interpreter start. It fails whenever b1's sleep starts more than 0.3 s after the last a-block's sleep began. That is start-up jitter, which the executor itself measured at load average 18-20 on 10 cores, and this case runs inside a full sweep's 8 workers. The other clauses (two b blocks at once, never more than four) are robust.",
-        "resolution": "Lengthen the a nap (for example 1.5 s, still well under b's 3 s), or read concurrency off the rows' per-process windows that sweep() now returns, rather than off in-sleep spans.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.3 (b8c642ec2e6e): Lengthen the a nap (for example 1.5 s, still well under b's 3 s), or read concurrency off the rows' per-process windows that sweep() now returns, rather than off in-sleep spans.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.3",
+        "commit": "b8c642ec2e6e"
       },
       {
         "id": "P142-R18",
         "severity": "low",
         "file": "tools/lints/_output_lints.py:392-403",
         "issue": "RUNNER_LINE_END_PENDING leaves the class open in _runner_output._pytest_cases/_pytest_tally and stamp-verification.final_error, and its comment explains the rows by a task boundary (\"files the change that added this lint did not own\"), which stops being true the moment another task touches them. The rows have no owner recorded where the next reader will look, and the docstring's own advice (a function handed normalised text should call plain_text itself, since it is idempotent) is not applied to these sites. runner_line_end_violations(pending=()) on the real tree returns exactly these three sites (_runner_output.py:444, :594, stamp-verification.py:728), so the debt is real and measured.",
-        "resolution": "State the reason in terms of the code (the public caller normalises; final_error strips after matching), not the change that added the lint, and file or name the follow-up task that deletes each row (calling plain_text inside the three functions costs nothing and removes them).",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.6 (275948a9d6a0): State the reason in terms of the code (the public caller normalises; final_error strips after matching), not the change that added the lint, and file or name the follow-up task that deletes each row (calling plain_text inside the three functions costs nothing and removes them).",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.6",
+        "commit": "275948a9d6a0"
       },
       {
         "id": "P142-R19",
         "severity": "low",
         "file": "tests/test_run_test_gate.py:6071-6079",
         "issue": "The house_red fixture is built with odd string surgery (\"SELFTEST FAILED: 2/3 cases \" + \"passed\\n\" and \"1/2 files ok, %d cases\\n\" % (5,)), which reads as a contrivance to get past the prose-number lint and makes the fixture harder to read than the output it imitates.",
-        "resolution": "Write the fixture as one literal block, or build it from the runner's own formatter if one exists, so the CRLF twin is visibly the same text.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.3 (b8c642ec2e6e): Write the fixture as one literal block, or build it from the runner's own formatter if one exists, so the CRLF twin is visibly the same text.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.3",
+        "commit": "b8c642ec2e6e"
       },
       {
         "id": "P142-R20",
         "severity": "low",
         "file": ".github/sweep-costs.json:2",
         "issue": "The committed cost table's `about` text still reads 'wall seconds times the slots of the sweep's budget the file held' - the very sentence the task's second med clause lists as false ('record_costs about text ... which --record-costs writes into .github/sweep-costs.json'). The diff corrects the generator (record_costs, tools/sweep-selftests.py) but not the file it wrote, so the repo now carries the retired-model wording until someone re-records. The executor disclosed this and says it was told not to edit the file; nothing in the task description says so.",
-        "resolution": "Replace the `about` string in .github/sweep-costs.json with the text record_costs now writes (same bytes, no cost values touched), or file a follow-up that re-records the table and names it.",
-        "fixTask": "P142.29-6yq",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.3 (b8c642ec2e6e): Replace the `about` string in .github/sweep-costs.json with the text record_costs now writes (same bytes, no cost values touched), or file a follow-up that re-records the table and names it.",
+        "fixTask": "P148.3",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "commit": "b8c642ec2e6e"
       },
       {
         "id": "P142-R21",
         "severity": "low",
         "file": "tests/_harness.py:1228-1241 (sr18 at 2195-2209)",
         "issue": "The new duplicate-label failure (replayed() third return value, replay_selftest 'RAN n TIMES') and its case sr18 live in tests/_harness.py, which the recorded gate (`python3 tools/sweep-selftests.py tools/sweep-selftests.py`) does not select and tests.add does not name. The executor ran `tests/_harness.py --selftest` (90/90) separately and states sr18 was not proved red by mutation; the gate record therefore says nothing about this low clause.",
-        "resolution": "Add `python3 tools/sweep-selftests.py tests/_harness.py` (or the harness selftest) to the task's tests.gate / list tests/_harness.py in tests.add, and mutate replayed() to the old setdefault-only form once to show sr18 red.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.3 (b8c642ec2e6e): Add `python3 tools/sweep-selftests.py tests/_harness.py` (or the harness selftest) to the task's tests.gate / list tests/_harness.py in tests.add, and mutate replayed() to the old setdefault-only form once to show sr18 red.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.3",
+        "commit": "b8c642ec2e6e"
       },
       {
         "id": "P142-R22",
@@ -240,45 +257,55 @@
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:7324-7335",
         "issue": "phase_gate's new docstring says 'each step held to SIGNOFF_STEP_SECONDS', but only run-test-gate.py is handed --timeout; the derive-phase-gate.py call just above it is not bounded by it.",
-        "resolution": "Reword to say the recorded gate run is held to it, or pass the bound to derive-phase-gate.py if it takes one.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.1 (d83aeee96039): Reword to say the recorded gate run is held to it, or pass the bound to derive-phase-gate.py if it takes one.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.1",
+        "commit": "d83aeee96039"
       },
       {
         "id": "P142-R24",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:651-668 (STEPS decide-not-fast-forward, done)",
         "issue": "To make the prints fit the byte budget the diff rewrote two step texts that R4 did not name (R4 asked to 'Shorten or merge the clause'). The done rule lost its consequence: 'a parent that is not the development branch does not hold the work yet' became 'Report where it landed, and whether that is the development branch', which no longer tells the agent what to say; PLUGIN-BUILD-GUIDE.md:956 still describes the note as one the sign-off report must repeat. The not-fast-forward line dropped 'the parent moved'. Only lp7 pins the sizes, not the wording.",
-        "resolution": "Keep the consequence in the done rule (terse form) and take the bytes from the probe clause or the did-line instead, or add a case pinning the wording the guide promises.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.1 (d83aeee96039): Keep the consequence in the done rule (terse form) and take the bytes from the probe clause or the did-line instead, or add a case pinning the wording the guide promises.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.1",
+        "commit": "d83aeee96039"
       },
       {
         "id": "P142-R25",
         "severity": "low",
         "file": ".github/sweep-costs.json:2",
         "issue": "The committed cost table's about text still reads 'wall seconds times the slots of the sweep's budget the file held', which the edited record_costs string (tools/sweep-selftests.py:1624-1630) now contradicts for a block-run suite. The generator and the file it writes disagree until a re-record, and no live task holds that: the tasks that named the re-record and the about text are both cancelled, and no case compares the two.",
-        "resolution": "File a task that either replaces the about string in the table with the bytes record_costs now writes (no cost values touched) or re-records the table from the Windows cells' logs, and name the file in its scope.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.3 (b8c642ec2e6e): File a task that either replaces the about string in the table with the bytes record_costs now writes (no cost values touched) or re-records the table from the Windows cells' logs, and name the file in its scope.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.3",
+        "commit": "b8c642ec2e6e"
       },
       {
         "id": "P142-R26",
         "severity": "low",
         "file": "tests/_harness.py:805-826 (run's print(text)), reached from replay_selftest at 1232-1262",
         "issue": "The replay now escapes what each block PRINTED (res out/err) through encodable, but the replay's own report is still written strictly: run() does print(text) of a _render() whose FAIL lines carry each failing case's label and detail, and those details are text the child produced and the sweep decoded as UTF-8 (a %r or str of a value holding an arrow or U+FFFD). Under the same strict cp1252 stdout a failing replayed case with such a detail still raises out of print(text), hiding the tally behind the same 0/1 the change set out to remove. It only bites when a case is already failing, so a green run is unaffected; sr19 covers the out path only, not a failing detail.",
-        "resolution": "Write the rendered text through encodable(text, sys.stdout) in run() (or reconfigure the stream with errors=backslashreplace once at the replay's entry), and add a case beside sr19 whose replayed block FAILS with a non-cp1252 detail and still prints the exact tally under PYTHONIOENCODING=cp1252.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.3 (b8c642ec2e6e): Write the rendered text through encodable(text, sys.stdout) in run() (or reconfigure the stream with errors=backslashreplace once at the replay's entry), and add a case beside sr19 whose replayed block FAILS with a non-cp1252 detail and still prints the exact tally under PYTHONIOENCODING=cp1252.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.3",
+        "commit": "b8c642ec2e6e"
       },
       {
         "id": "P142-R27",
         "severity": "low",
         "file": "tests/test_drive_phase.py:696-728",
         "issue": "The ar17 comment says the redo is refused because the commit the read builds is checked against what git status lists in the tree. The refusal ar17 actually sees comes from tree_undescribed (the forced file is staged in the index as neither its base nor the work holds it), because _unheld counts an ignored file the scratch index lacks as held. The executor's own notes say so, and the mutation log agrees: the row 'carry commit trusted, never checked against the files' turns ar17b and ar17c red but not ar17. So ar17 would stay green with carry_commit's status-versus-scratch check deleted, and its title and comment name the wrong layer.",
-        "resolution": "Reword the ar17 comment and title to say the staged-state question refuses a forced file the read misses, and leave the status-versus-scratch check to ar17b and ar17c. Or point ar17 at a path the read misses that is not ignored, so it reaches carry_commit's check.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.1 (d83aeee96039): Reword the ar17 comment and title to say the staged-state question refuses a forced file the read misses, and leave the status-versus-scratch check to ar17b and ar17c. Or point ar17 at a path the read misses that is not ignored, so it reaches carry_commit's check.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.1",
+        "commit": "d83aeee96039"
       },
       {
         "id": "P142-R28",
@@ -435,18 +462,22 @@
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:9178-9190",
         "issue": "submit_tree reads wave.trees directly and never calls settle_kept_markers, which runs only in drive_locked. A submit that arrives after a redo died between the marker rewrite and the state write is keyed to the old tree, whose marker already names the kept key. Confirmed: no other caller of the settle.",
-        "resolution": "Call settle_kept_markers (or the marker read) in submit_tree before it resolves the tree, or document that submit is refused until the next drive step.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.1 (d83aeee96039): Call settle_kept_markers (or the marker read) in submit_tree before it resolves the tree, or document that submit is refused until the next drive step.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.1",
+        "commit": "d83aeee96039"
       },
       {
         "id": "P142-R44",
         "severity": "low",
         "file": "plugins/audit/scripts/git/_worktrees.py:1299",
         "issue": "The sweep's reason for a kept tree says 'the wave driver removes it with `task-remove` after integration', which is false for a kept old tree (its key is no task, and task-remove refuses it). The task's own list named this reader (the sweep's kept-tree reason in _worktrees.py); the executor checked it, called the wording wrong and left it. The sweep is path-agnostic and still keeps the tree, so no work is at risk, but it is the one remedy surface left naming a verb that cannot act on a kept old tree.",
-        "resolution": "Make the reason depend on whether the marker's taskId is a ` set aside <n>` key, and for that case name `git worktree remove --force <path>` or the driver's retire.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.5 (8e46457ccc23): Make the reason depend on whether the marker's taskId is a ` set aside <n>` key, and for that case name `git worktree remove --force <path>` or the driver's retire.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.5",
+        "commit": "8e46457ccc23"
       },
       {
         "id": "P142-R45",
@@ -493,30 +524,36 @@
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/audit-task.py:2836-2857",
         "issue": "_ordinary_task_gate's files arm hands every declared file to a path-scoped spelling, docs included; the runner_aware arm filters to suite paths but the ordinary one does not, so a task declaring CLAUDE.md/CONTRIBUTING.md got 'python3 tools/sweep-selftests.py tools/prove-gates.py CLAUDE.md ...', which the sweep refuses (exit 2, 'not a suite this sweep covers'), and the task gate was red before any work (P142.50's first judge). Separately, scope --tests-add on a pending task does not re-derive a gate derived from files.",
-        "resolution": "Filter the ordinary files arm to suite paths as the runner_aware arm does (falling through to the wide gate when none is a suite), and re-derive a files-basis gate when tests.add changes on a task that has not started.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.7 (04261ee5efac): Filter the ordinary files arm to suite paths as the runner_aware arm does (falling through to the wide gate when none is a suite), and re-derive a files-basis gate when tests.add changes on a task that has not started.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.7",
+        "commit": "04261ee5efac"
       },
       {
         "id": "P142-R50",
         "severity": "low",
         "file": "tools/prove-gates.py (reap_stale, main)",
         "issue": "reap_stale discards close_workers' problem list and returns every stale root, so main prints 'took down X' even when _drop_registration or remove_tree failed, and the exit stays 0; only a git worktree list failure exits 2.",
-        "resolution": "Return what was actually taken down beside what was not, say the failures on stderr, and exit 2 when a stale pool could not be taken down.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.4 (6bb76efba90b): Return what was actually taken down beside what was not, say the failures on stderr, and exit 2 when a stale pool could not be taken down.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.4",
+        "commit": "6bb76efba90b"
       },
       {
         "id": "P142-R51",
         "severity": "low",
         "file": "tools/prove-gates.py (run_ordered, SIGTERM)",
         "issue": "On SIGTERM, run_ordered's finally calls pool.shutdown(wait=True), which waits for the rows already running (multi-minute suites); a caller that follows SIGTERM with SIGKILL after a short grace leaves the pool registered until the next run reaps it, so the docstring's 'SIGTERM included' holds only if the caller waits.",
-        "resolution": "Terminate the running rows' process groups on SIGTERM before shutdown, or state the grace the cleanup needs and check drive-phase's teardown grace against it.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.4 (6bb76efba90b): Terminate the running rows' process groups on SIGTERM before shutdown, or state the grace the cleanup needs and check drive-phase's teardown grace against it.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.4",
+        "commit": "6bb76efba90b"
       }
     ],
-    "outcome": "[findings: 51 - 0 high, 16 med, 35 low; 29 with a recorded fix commit]",
+    "outcome": "[findings: 51 - 0 high, 16 med, 35 low; 48 with a recorded fix commit]",
     "readReturns": []
   },
   "summary": "P142 delivered the gate ladder: affected selection per task, the full gate and scanners per phase, the one commit verb and red-first through a sweep, plus the fixes the phase review and adversarial rounds asked for, and a lint probe that runs its rows in parallel worker trees so a phase-wide probe fits the sign-off bound. Three meds are left as recorded. R1: the miss measurement was taken over 20 of 26 commits and found misses (D13), so promoting the selection to the task gate moved to P143.1, gated on P143.4 and a 0-miss re-measurement. R9: the per-block cost split needs true per-block costs, so it moved to P143.6, because the re-recorded table cannot balance the shards today. R10: the sweep under 4 minutes moved to 3.8.0 (D13) as P143.5. Lows are carried to BUG-29-dau. Per-task reviewer answers continued over: P142.8 intent diverges: P142.8 diverges on acceptance (1) and the cost table: the split itself is correct and every case is kept (reviewer-verified). Under-240s is carried by P142.11-6yq (R10); the cost table is re-recorded from the Windows CI cell logs with --costs-from-log after the ci/P142 run, since a recording from this Mac would understate Windows timeouts (R9). Lows R11, R12 go to the batch.; P142.11-6yq intent diverges: P142.11 diverges on acceptance (1): measured 385.3/385.4 s vs 240 s on a quiet machine (HEAD 415.8/416.1). Block scheduling (Part 2) matches; Part 1 cut only one repeat. Med findings go to P142.14-6yq (timeout case, stale docs) and BUG-30-6yq (product temp-dir leak); the remaining gap to 240 s needs less total work in tests/test_drive_phase.py and goes to the owner as a design decision.; P142.13-6yq red-first not-proved: orchestrator proved le1-le3 red: runner_line_end_violations crippled to return [] in a git-archive copy of HEAD 0544c08c -> 170/173, le1/le2/le3 FAIL; le4 (live tree quiet) correctly stays green; sf12/sf13 red-first proved by the helper; P142.45-6yq intent diverges: The 6 findings of P142.45 are handed to P142.47, which redesigns the redo to move no tree. Every finding sits in the move machinery that task deletes.",
