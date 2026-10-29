@@ -189,45 +189,55 @@
         "severity": "low",
         "file": "plugins/audit/scripts/governance/run-agent-session.py:48-54; PLUGIN-BUILD-GUIDE.md:5076-5081",
         "issue": "The docstring and the guide say the TMPDIR 'is left in place afterwards, and removing it is the task's teardown, which finds it through that record'. No teardown exists: nothing under plugins/audit/scripts removes the scratch or reads a *.tmpdir file (the same paragraph admits 'nothing in the drive reads the path back today'). The TMPDIRs, which hold whatever fixtures a writer's suites built, previously sat in the project's gitignored state dir and now accumulate in the machine's system temp, once per session (writer and reviewer, every round), with a record file nobody consumes. The sentence names a mechanism that is not there.",
-        "resolution": "Reword to say no teardown reads the record yet, and file a follow-up task for the drive to remove the TMPDIRs the scratch records name when it closes the task (or have the runner remove its own TMPDIR after the child exits, since the stream already carries the evidence).",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.2 (d5cce403c68f): Reword to say no teardown reads the record yet, and file a follow-up task for the drive to remove the TMPDIRs the scratch records name when it closes the task (or have the runner remove its own TMPDIR after the child exits, since the stream already carries the evidence).",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.2",
+        "commit": "d5cce403c68f"
       },
       {
         "id": "P137-R18",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/run-agent-session.py:111-130",
         "issue": "A parent temp directory with a .git above it is refused with exit 5 and no other root is tried. That blocks a user who worked before this change: TMPDIR set inside the project, or a Windows user whose TEMP (under the profile) has a dotfiles repo at the profile root. The task says to 'refuse to start when no temp root outside a checkout exists'; the diff refuses when the one gettempdir() returned is inside a checkout, even though /tmp or /var/tmp may exist outside one. The refusal does name the directory and the remedy, and ras34 pins that it makes nothing, so this is a deliberate narrowing, not a silent one.",
-        "resolution": "Either keep the strict reading and say in the guide that a caller whose temp is inside a checkout must repoint TMPDIR, or try the remaining tempfile candidates (/tmp, /var/tmp) and refuse only when none is outside a checkout.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.2 (d5cce403c68f): Either keep the strict reading and say in the guide that a caller whose temp is inside a checkout must repoint TMPDIR, or try the remaining tempfile candidates (/tmp, /var/tmp) and refuse only when none is outside a checkout.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.2",
+        "commit": "d5cce403c68f"
       },
       {
         "id": "P137-R19",
         "severity": "low",
         "file": "tests/test_run_agent_session.py:254,209-216 (root = tempfile.mkdtemp) and the ras32/ras34 cases",
         "issue": "The suite's root comes from tempfile.mkdtemp under the ambient TMPDIR, and every _run now makes its parent temp under that root. If the suite is run with TMPDIR inside a checkout (the P137.3 scenario) the new refusal fires in every case, so the whole file goes red with exit 5 instead of naming the cause, and ras32's '_git_above(seen_tmp) is None' premise is no longer independent of the environment.",
-        "resolution": "Assert up front that root has no .git ancestor (one case naming the ambient TMPDIR), so a bad environment reads as that and not as 40 unrelated failures.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.2 (d5cce403c68f): Assert up front that root has no .git ancestor (one case naming the ambient TMPDIR), so a bad environment reads as that and not as 40 unrelated failures.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.2",
+        "commit": "d5cce403c68f"
       },
       {
         "id": "P137-R20",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:3768-3779 (_attempt_start_moment) vs plugins/audit/scripts/governance/_scoped_commit.py:1208-1220 (start_head_of)",
         "issue": "own_commit now reads the attempt's start through a local copy of start_head_of's row predicate (action task.start, details.taskId, details.attempt == task attempts). The docstring says it is found by the same three fields, so two readers of one row exist and agree only while nobody edits one. The executor disclosed this (the file is outside the task's files); R4 itself is about own_commit being a second reader beside attempt_span, and this reintroduces the same shape one level down.",
-        "resolution": "File a follow-up that adds a start_row_of(rows, task) to _scoped_commit.py, has start_head_of read its head from it and has own_commit read the moment from it; drop _attempt_start_moment.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.1 (d83aeee96039): File a follow-up that adds a start_row_of(rows, task) to _scoped_commit.py, has start_head_of read its head from it and has own_commit read the moment from it; drop _attempt_start_moment.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.1",
+        "commit": "d83aeee96039"
       },
       {
         "id": "P137-R21",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:3852 (header = re.compile(...))",
         "issue": "The task-commit header is respelled as the regex ^[^\\s()]+\\(<taskId>\\): . commit-task-work.message_parts builds the header as `<type>(<taskId>): audit - <subject>` where type is the manifest's meta.commit.type, any non-empty string after strip(); a type containing whitespace or parentheses (for example `feat(audit)`) gives a header this regex does not match. own_commit then returns None for the task's real commit and the caller offers no-change, which is the fault P137.2 fixed, reintroduced for that configuration. R6 asked for the header shape recorded_commits uses (a caller-supplied header prefix), not a new pattern. No case pins a non-default type.",
-        "resolution": "Match on what the task id pins rather than on the type: accept a subject containing `(<taskId>): ` after a non-empty prefix (str.find, no character class), or build the expected header from commit-task-work.message_parts with the manifest, as recorded_commits' header argument does. Add one oc case with meta.commit.type holding a space or parenthesis.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.1 (d83aeee96039): Match on what the task id pins rather than on the type: accept a subject containing `(<taskId>): ` after a non-empty prefix (str.find, no character class), or build the expected header from commit-task-work.message_parts with the manifest, as recorded_commits' header argument does. Add one oc case with meta.commit.type holding a space or parenthesis.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.1",
+        "commit": "d83aeee96039"
       },
       {
         "id": "P137-R22",
@@ -254,27 +264,33 @@
         "severity": "low",
         "file": "tools/sweep-selftests.py:662-697 (CLAUDE_LIVE_WRITES) and cw5 'theirs' at ~2306",
         "issue": "The exemptions are largely evidence-backed: each pattern matches names present in .claude/state of the live checkout with mtimes from the current session (call-start, journal-preimage, plan-gate, bash-writes, tdd-reminder, running-plugin, attempts, briefs, drive), and every writer cited resolves to a constant. But the table's rule 'a name that command did not list is not in this table' turns absence from a 240-minute sample into 'not written by the session'. `bash-writes-plugin-<sid>.json` is written by the live PostToolUse hook (plugins/audit/hooks/journal-writes.py:1225-1260, record_plugin_write) the first time a plugin script journals a new rel in a session; the row's own sentence admits it is 'not left out', and cw5 pins `state/bash-writes-plugin-<sid>.json` as a SUITE's file. A sweep typed inside a session at that moment (the checkout holds bash-writes-plugin-cli.json and -panel.json from the same hook) goes red once on a session write; it clears on re-run, which is the 'guard gets routed around' shape the file's comments warn about.",
-        "resolution": "Add a row for `^state/bash-writes-plugin-[A-Za-z0-9._-]+\\.json$` citing record_plugin_write, and move the plugin-sidecar example from cw5's `theirs` to `live`. Derive the writer list from the hooks' own filename constants rather than from a time-windowed ls.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.3 (b8c642ec2e6e): Add a row for `^state/bash-writes-plugin-[A-Za-z0-9._-]+\\.json$` citing record_plugin_write, and move the plugin-sidecar example from cw5's `theirs` to `live`. Derive the writer list from the hooks' own filename constants rather than from a time-windowed ls.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.3",
+        "commit": "b8c642ec2e6e"
       },
       {
         "id": "P137-R25",
         "severity": "low",
         "file": "tools/sweep-selftests.py:2491-2500 (cw10) and tools/gate-parity.py:1097-1103",
         "issue": "cw10's 'a character wrong' variant is always `state/` -> `state/x`, a prefix change. A row loosened at its tail or anchor (e.g. `\\.json$` becoming `\\.json`, or `(?:-[0-9a-f]+)?` becoming `.*`) still skips its example and still fails to match the prefix-mutated one, so cw10 stays green. The new gate-parity comment and the case text claim a row 'grown loose enough to swallow a suite's file' is reported; the mutation only reaches prefix looseness.",
-        "resolution": "Also test a tail mutation per row (append 'x' to the example, and for the directory rows a sibling like 'state/briefs-extra/x'), and assert the sentence.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.3 (b8c642ec2e6e): Also test a tail mutation per row (append 'x' to the example, and for the directory rows a sibling like 'state/briefs-extra/x'), and assert the sentence.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.3",
+        "commit": "b8c642ec2e6e"
       },
       {
         "id": "P137-R26",
         "severity": "low",
         "file": "tests/test__scoped_commit.py:207-217,242-253,298-303,325-329",
         "issue": "The structural scan (result_scan, sc-ua10/sc-ua11) can be fooled by a reader that hands the narrowed list to a helper, and the comment claims more than it delivers. Taint is only set by `x = R[\"during\"]` (a direct Subscript, line 300-303); an assignment from a call (`during = _drop_config(strays[\"during\"])`, or `during = _drop_config(during)` after the tainted assignment) taints nothing, and a Call argument is never examined, so nothing is flagged. The helper itself is not scanned either: only functions that call `undeclared_changes` are walked (line 268), so a comprehension over its parameter is invisible. Passing the WHOLE answer to a helper is caught (`used other than by key`), but passing a list read by key is not. Further holes in the same shape: a `for p in R[\"during\"]` loop that appends in an else branch rather than using `continue` (325-329); `_only_membership` accepts any comparator that is not a literal and not an upper-case Name, so `p not in _skiplist()`, `p in _mio.SKIP` (Attribute) and a lower-case module list all count as 'computed' (251-253); a tuple-unpacked or `or`-wrapped read is not tainted. The comment at 207-217 says the lists may be narrowed 'by a membership test ... and by nothing else' and that a reader has 'no way to rebuild it ... handing it on' - false for the helper route. The docstring at _scoped_commit.py:~1160 does admit 'a reader that reaches a skip by a route neither describes is not caught', which satisfies the first alternative of P137-R2, but the helper hand-off is the most obvious such route and is cheap to close. Read from the code; not run.",
-        "resolution": "Make taint transitive: an Assign whose value contains any tainted name or a by-key read of an UNDECLARED_KEYS list taints its targets (any expression, including calls, BoolOps, tuples). Flag a tainted value passed as an argument to any call except a short allowlist of presentation builtins (len, sorted, set, list, tuple, str.join) and, for a same-file helper receiving it, scan that helper's body with its parameter as tainted. Narrow `_only_membership` to a comparator that is a bare lower-case Name bound in the function from something other than a literal, and flag loops that filter without `continue` (any `if` guarding an append of the loop variable). Add a sc-ua11 mutation per hole (call-wrapped, helper, Attribute comparator). Or reword the comment so it does not say 'nothing else'.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.6 (275948a9d6a0): Make taint transitive: an Assign whose value contains any tainted name or a by-key read of an UNDECLARED_KEYS list taints its targets (any expression, including calls, BoolOps, tuples). Flag a tainted value passed as an argument to any call except a short allowlist of presentation builtins (len, sorted, set, list, tuple, str.join) and, for a same-file helper receiving it, scan that helper's body with its parameter as tainted. Narrow `_only_membership` to a comparator that is a bare lower-case Name bound in the function from something other than a literal, and flag loops that filter without `continue` (any `if` guarding an append of the loop variable). Add a sc-ua11 mutation per hole (call-wrapped, helper, Attribute comparator). Or reword the comment so it does not say 'nothing else'.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.6",
+        "commit": "275948a9d6a0"
       },
       {
         "id": "P137-R27",
@@ -291,30 +307,36 @@
         "severity": "low",
         "file": "tests/test_drive_phase.py:1500-1535 (xs6)",
         "issue": "The change edits tests/test_drive_phase.py, which is in neither the task's `files` nor its `tests.gate` (the gate is the three suites test__scoped_commit, test_audit_task, test_commit_task_work). The behaviour change really does turn xs6 red (a tracked config is no longer plugin-owned for the set-aside), so the recorded gate run, which passed, would have passed over a stale xs6; only the executor's own wider gate command ran it. The brief's diff also omits the file, so a reader of the brief does not see the set-aside's new expectation. The outcome does describe the xs6 change, so the claim is honest; the scope declaration is not.",
-        "resolution": "Add tests/test_drive_phase.py to the task's files and to tests.gate (retarget --gate-set) so the dependant suite is part of the recorded gate, or record the widening as a scope note on the task.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.1 (d83aeee96039): Add tests/test_drive_phase.py to the task's files and to tests.gate (retarget --gate-set) so the dependant suite is part of the recorded gate, or record the widening as a scope note on the task.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.1",
+        "commit": "d83aeee96039"
       },
       {
         "id": "P137-R29",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_scoped_commit.py:1129-1145",
         "issue": "`tracking()` is now a public name that returns UNKNOWN with no direction attached. plugin_owned_rels is guarded three ways (required argument, ValueError on any other value, and the tree-wide sc-ua17 scan that pins the exact two call sites and their constants), but nothing scans for a third reader calling `tracking()` directly and deciding for itself what UNKNOWN means, which is the original defect shape (a reader picking a side by omission). Today it has one caller (plugin_owned_rels), so nothing is wrong yet.",
-        "resolution": "Either keep it private (`_tracking`) so only plugin_owned_rels reads it, or extend sc-ua17's scan to assert `tracking` is called only from _scoped_commit.plugin_owned_rels.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.6 (275948a9d6a0): Either keep it private (`_tracking`) so only plugin_owned_rels reads it, or extend sc-ua17's scan to assert `tracking` is called only from _scoped_commit.plugin_owned_rels.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.6",
+        "commit": "275948a9d6a0"
       },
       {
         "id": "P137-R30",
         "severity": "low",
         "file": "executor return (claims item 2 / redFirst.basis)",
         "issue": "The claims block says the M1-M6 mutations 'went red as listed in redFirst.basis', but redFirst.basis lists no mutation: it is the red-first helper's timeout text with status could-not-prove. The mutation results are therefore not on the record; the new cases (sc-ua12..sc-ua17, xs6b) were never seen red in anything handed to me.",
-        "resolution": "Re-run the mutations (revert drive-phase.py to UNKNOWN_REFUSES; make tracking() return TRACKED on failure) as a probe the driver can run, or file the mutation table in the outcome so the claim has a basis.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.8 (6dc002ec5723): Re-run the mutations (revert drive-phase.py to UNKNOWN_REFUSES; make tracking() return TRACKED on failure) as a probe the driver can run, or file the mutation table in the outcome so the claim has a basis.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.8",
+        "commit": "6dc002ec5723"
       }
     ],
-    "outcome": "[findings: 30 - 0 high, 6 med, 24 low; 19 with a recorded fix commit]",
+    "outcome": "[findings: 30 - 0 high, 6 med, 24 low; 30 with a recorded fix commit]",
     "readReturns": []
   },
   "summary": "P137: one function (_scoped_commit.undeclared_changes) answers what an attempt changed that no task declares, read by commit, close and set-aside, with a structural lint; a task whose work the drive committed closes on its own still-present commit of this attempt; writer/reviewer TMPDIR is outside every checkout; the sweep names a suite writing into the checkout's .claude/ and refuses to start with its temp inside a checkout; a tracked config is the task's edit, and an unknown tracked state protects at set-aside and refuses at commit/close. Lows carried to BUG-29-dau. Per-task reviewer answers continued over: P137.2 intent diverges: owner, standing for this run: 'Radis autonomno ... ne izbacujes mi prompt-ove da ti ja nesto potvrdim'; the divergence (nonces from every attempt, no ancestry check) is a med finding fixed by a follow-up task in this phase before sign-off; P137.3-3y3 intent diverges: owner, standing for this run: 'Radis autonomno ... ne izbacujes mi prompt-ove da ti ja nesto potvrdim'; the two med divergences (unwatched state/, a finding hidden behind an earlier exit) are fixed by a follow-up task in this phase before sign-off; P137.6-3y3 intent diverges: owner, standing for this run: 'Radis autonomno ... ne izbacujes mi prompt-ove da ti ja nesto potvrdim'; the two med findings (timeout hides a .claude write; main()'s refusal unpinned) get a fix task in this phase before sign-off; P137.7-3y3 intent cannot-tell: owner, standing for this run: 'Radis autonomno ... ne izbacujes mi prompt-ove da ti ja nesto potvrdim'; cannot-tell rests on three low findings, carried; P137.9-3y3 intent cannot-tell: owner, standing for this run: 'Radis autonomno ... ne izbacujes mi prompt-ove da ti ja nesto potvrdim'; cannot-tell rests on two low findings, carried",
