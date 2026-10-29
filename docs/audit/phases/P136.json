@@ -29,12 +29,14 @@
         "severity": "low",
         "file": "tests/test_run_agent_session.py:463-464",
         "issue": "ras31b's 'unrecorded' check is hardcoded to the one tuple ('ORCH_KEEP_Q81Z',), not derived from kept_decoys. A renamed or newly added filter-only decoy would be unchecked, so the recorder-agrees-with-decoys guarantee holds only for that literal.",
-        "resolution": "Derive the names to check from kept_decoys (names not starting with CLAUDE or AUDIT_) and assert each appears quoted in STUB.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.2 (d5cce403c68f): Derive the names to check from kept_decoys (names not starting with CLAUDE or AUDIT_) and assert each appears quoted in STUB.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.2",
+        "commit": "d5cce403c68f"
       }
     ],
-    "outcome": "[findings: 1 - 0 high, 0 med, 1 low; 0 with a recorded fix commit]",
+    "outcome": "[findings: 1 - 0 high, 0 med, 1 low; 1 with a recorded fix commit]",
     "readReturns": []
   },
   "summary": "P136: the run-agent-session environment cases name every decoy in upper case, so ras30b and ras31 exercise the drop rule on Windows as on posix (CI run 39805287981 red on ras31). One low carried to BUG-29-dau.",
