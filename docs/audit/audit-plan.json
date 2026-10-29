@@ -1244,7 +1244,8 @@
       "P147.6-bno",
       "P147.7-bno",
       "P148.5",
-      "P148.15-xpz"
+      "P148.15-xpz",
+      "P148.21-xpz"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1726,7 +1727,8 @@
       "P142.49-6yq",
       "P142.50-6yq",
       "P148.5",
-      "P148.7"
+      "P148.7",
+      "P148.21-xpz"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2371,7 +2373,8 @@
       "P129.7-izt",
       "P131.13",
       "P132.3",
-      "P148.10-xpz"
+      "P148.10-xpz",
+      "P148.21-xpz"
     ],
     "plugins/audit/commands/layout.md": [
       "P57.1",
@@ -3372,7 +3375,8 @@
       "P130.21-ywo",
       "P131.13",
       "P138.2",
-      "P148.10-xpz"
+      "P148.10-xpz",
+      "P148.21-xpz"
     ],
     "plugins/audit/scripts/_deps.py": [
       "P15.1",
@@ -4577,7 +4581,8 @@
       "P131.13",
       "P138.2",
       "P142.24-6yq",
-      "P148.18-xpz"
+      "P148.18-xpz",
+      "P148.21-xpz"
     ],
     "plugins/audit/scripts/manifest/_manifest_rules.py": [
       "P18.2",
@@ -4891,7 +4896,8 @@
       "P142.46-6yq",
       "P148.7",
       "P148.10-xpz",
-      "P148.18-xpz"
+      "P148.18-xpz",
+      "P148.21-xpz"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -8404,7 +8410,8 @@
       "P131.1",
       "P131.2",
       "P143.1-6yq",
-      "P148.18-xpz"
+      "P148.18-xpz",
+      "P148.21-xpz"
     ],
     "plugins/audit/tests/test__gate_derive.py": [
       "P79.2",
@@ -10488,7 +10495,8 @@
       "P142.1",
       "P142.19-6yq",
       "P148.5",
-      "P148.10-xpz"
+      "P148.10-xpz",
+      "P148.21-xpz"
     ],
     "docs/research/pipeline-cost-results.md": [
       "P118.19-v7t",
@@ -11404,7 +11412,8 @@
     "tests/test__gate_derive.py": [
       "P131.1",
       "P143.1-6yq",
-      "P148.18-xpz"
+      "P148.18-xpz",
+      "P148.21-xpz"
     ],
     "tests/test__gate_feed.py": [
       "P131.1"
@@ -11463,7 +11472,8 @@
       "P131.2",
       "P131.13",
       "P142.24-6yq",
-      "P148.18-xpz"
+      "P148.18-xpz",
+      "P148.21-xpz"
     ],
     "tests/test__manifest_rules.py": [
       "P131.1"
@@ -11734,7 +11744,8 @@
       "P148.7",
       "P148.10-xpz",
       "P148.14-xpz",
-      "P148.18-xpz"
+      "P148.18-xpz",
+      "P148.21-xpz"
     ],
     "tests/test_audit_usage.py": [
       "P131.1"

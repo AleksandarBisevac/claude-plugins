@@ -1,0 +1,25 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__manifest_io.py tests/test__scoped_commit.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-29T09:41:42Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__manifest_io.py` in a throwaway tree at HEAD exited 1 with 1 of 193 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cil4 (house FAIL): SELFTEST FAILED: 192/193 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - 3 times the recorded 130s of tests/test__manifest_io.py in .github/sweep-costs.json is only 390s; fix run: held back 130s of the deadline, the recorded slot-seconds of tests/test__manifest_io.py in .github/sweep-costs.json",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "_manifest_io.py: adds_only_plugin_ignore_lines now compares lines via _ignore_lines (split on LF, drop the empty piece after a final newline, remove only a trailing CR - no strip) and requires the old lines to be a subsequence of the new (_is_subsequence), with the added lines (multiset difference) all in CLAUDE_IGNORE_LINES; plugin set no longer strips. tests/test__manifest_io.py: new case cil4 with 13 shapes (8 deny: trailing space, escaped trailing space, tab indent, reorder, spaced plugin pattern, indented note, whitespace-only line, lone CR; 5 allow: CRLF-appended plugin lines onto LF file, LF plugin lines onto CRLF file, no final newline in after, no final newline in before under CRLF, whole-file CRLF conversion with nothing added). Mutations (pycache purged each): keep CR -> cil2+cil4 red; drop order check -> cil2+cil4 red; strip() instead of CR removal -> cil4 red; restored, 193/193. Gate python3 tools/sweep-selftests.py tests/test__manifest_io.py tests/test__scoped_commit.py exit 0 (193 + 66 cases). A pure whole-file CRLF conversion with nothing else added is still read as the plugin's (indistinguishable from an autocrlf checkout, and git sees no change either) - pinned as an allow shape; the finding's 'CRLF conversion' is only caught when it comes with an edit. Dependants: tests/test__scoped_commit.py sc-ua21/22/23 and tests/test_panel_server.py call the same predicate and still pass (scoped_commit suite green); _scoped_commit._ignore_edit unchanged, same signature; .claude/.gitignore unchanged (real plugin appends pass); _line_counts had no other caller (grep).",
+    "descriptive": "A tracked .claude/.gitignore edit that only changes spacing or order is now a task's edit instead of being left out of the commit as the plugin's."
+  },
+  "testsAdded": [
+    "cil4: ignore-file line comparison removes only a trailing CR and keeps order; whitespace deny shapes and CRLF/no-final-newline allow shapes"
+  ],
+  "casesAdded": [
+    "cil4"
+  ],
+  "claims": "claims:\n1 _manifest_io.py _ignore_lines/_is_subsequence/adds_only_plugin_ignore_lines are the lines the docstring describes (CR-only removal, order, counts)\n2 strip-instead-of-CR -> cil4 red; no-order -> cil2,cil4 red; keep-CR -> cil2,cil4 red; restored 193/193\n3 grep _line_counts and .strip() in the function: only caller of _line_counts was the predicate itself; ensure_claude_ignored's own have-strip is a separate writer-side check, left because it decides whether to append, not whether an edit is the plugin's\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 decision reads the file's lines vs HEAD's blob, not a command text; allow cases (real plugin appends, CRLF) proven in cil2/cil4 and sc-ua22\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:46da19510bed143ec159a4baaa0b2f51311d7234c80bdb7116d72ce69967cb6d\",\"dirtyDigest\":\"sha256:b23a4bc01962f4dd75b4d9ea5a445681a5e51637fbfedf29d02515e96c6750d6\",\"dirtyPaths\":{\"plugins/audit/scripts/manifest/_manifest_io.py\":\"74b57ac7aeb11f93\",\"tests/test__manifest_io.py\":\"1af3bffb745d6aa9\"},\"head\":\"e052cac0\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".claude/.gitignore\",\"plugins/audit/scripts/manifest/_manifest_io.py\",\"tests/test__manifest_io.py\",\"tests/test__scoped_commit.py\"],\"scopeDigest\":\"sha256:0323e8886624b3212450e051314514a676f2308ae449201606c62a876bd3f7cf\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

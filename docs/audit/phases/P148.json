@@ -349,8 +349,10 @@
         "severity": "low",
         "file": "tests/test_stamp_verification.py:1979 (sr42; _CLOCK_LITERALS_JUDGED row for _BUILD_DELAY)",
         "issue": "sr42 bounds the last heartbeat against the child's own start stamp; a mutant helper granting a fresh timeout from Popen is killed at about R - I + D, so once interpreter start I >= 1 s the mutant passes: on a slow runner sr42 goes green over the bug it guards. The judged-literal row reasons only about the correct helper.",
-        "resolution": "Bound against a helper-side stamp taken at spawn (or size the delay from a measured interpreter start) so the mutant is caught at any speed; reason the row about the mutant too; red first against that mutant.",
-        "fixTask": "P148.17-xpz"
+        "resolution": "fixed in P148.17-xpz (e052cac025b7): Bound against a helper-side stamp taken at spawn (or size the delay from a measured interpreter start) so the mutant is caught at any speed; reason the row about the mutant too; red first against that mutant.",
+        "fixTask": "P148.17-xpz",
+        "commit": "e052cac025b7",
+        "status": "fixed"
       },
       {
         "id": "P148-R34",
@@ -379,21 +381,24 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/_gate_derive.py:437,469 (slot_takes_sources any() over entries; untaken_slot_paths); audit-task.py:2862-2864",
         "issue": "Whether a slot takes sources is decided once for the whole gate, not per entry or command. Sibling ['npx vitest related src/O.ts --run', 'npx playwright test e2e/o.spec.ts'] with --files src/y.ts derives 'npx playwright test src/y.ts' (red every attempt), refusal None. Sibling ['npx jest --findRelatedTests src/O.ts', 'pytest tests/test_o.py'] with src/y.py,tests/test_y.py gives 'pytest src/y.py tests/test_y.py' where the parent of 04261ee5 gave 'pytest tests/test_y.py' (regression). An '&&' entry hands both commands' paths to the first.",
-        "resolution": "Decide source-taking per command slot; the re-point gives each command only the paths its own slot takes; the refusal judges each command by its own mode; multi-entry and && rows in the matrix, red first."
+        "resolution": "Decide source-taking per command slot; the re-point gives each command only the paths its own slot takes; the refusal judges each command by its own mode; multi-entry and && rows in the matrix, red first.",
+        "fixTask": "P148.21-xpz"
       },
       {
         "id": "P148-R38",
         "severity": "med",
         "file": "plugins/audit/scripts/manifest/_manifest_phases.py:1203 (path_kind via is_suite_path)",
         "issue": "Every non-test file under a test directory is a suite: tests/conftest.py, e2e/playwright.config.ts, test/setup.ts, __tests__/README.md, tests/fixtures/a.json. A task --files src/a.py,tests/conftest.py under 'pytest {paths}' derives 'pytest tests/conftest.py' (no tests collected) and is not refused. Present before this phase; the new docstrings say a document or config is never handed.",
-        "resolution": "Classify by kind first (document, config, fixture/data) and call a path a suite only by a test mark or test_ prefix, using the directory only for non-config source-extension files; rows for conftest.py, playwright.config.ts, fixtures/*.json."
+        "resolution": "Classify by kind first (document, config, fixture/data) and call a path a suite only by a test mark or test_ prefix, using the directory only for non-config source-extension files; rows for conftest.py, playwright.config.ts, fixtures/*.json.",
+        "fixTask": "P148.21-xpz"
       },
       {
         "id": "P148-R39",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/_gate_derive.py:237 (repointed); command_slots; _program_index",
         "issue": "The re-point puts paths where the sibling's first path stood, including an option's argument, and drops later option arguments: 'npx jest --config jest.config.js src/Other.test.tsx' + a suite gives 'npx jest --config src/Card.test.tsx'; 'pytest -c setup.cfg tests/test_o.py' gives 'pytest -c tests/test_a.py'; 'npx jest --findRelatedTests src/O.tsx --config jest.config.js' gives '... src/Card.tsx --config' (argument dropped); 'python3 tools/a.py t && python3 tools/b.py u' loses tools/b.py. Each is red on every attempt and not refused. Present before this phase.",
-        "resolution": "Locate the slot per command as the path words that are neither the program nor an option's argument, replace only those, keep option arguments in place; rows for each shape, red first."
+        "resolution": "Locate the slot per command as the path words that are neither the program nor an option's argument, replace only those, keep option arguments in place; rows for each shape, red first.",
+        "fixTask": "P148.21-xpz"
       },
       {
         "id": "P148-R40",
@@ -408,7 +413,8 @@
         "severity": "low",
         "file": "CHANGELOG.md:158; plugins/audit/reference/verbs-in-full.md:368; plugins/audit/commands/init.md:402; plugins/audit/schema/audit-plan.schema.json:1848; PLUGIN-BUILD-GUIDE.md (_gate_derive section)",
         "issue": "Prose describing the files-derived gate predates the per-path rule.",
-        "resolution": "Rescope each to the rule as finally landed."
+        "resolution": "Rescope each to the rule as finally landed.",
+        "fixTask": "P148.21-xpz"
       },
       {
         "id": "P148-R42",
@@ -418,7 +424,7 @@
         "resolution": "Reword the row to say what is true: the interpreter start enters neither side, and the margin over the bound is half the delay less one beat interval, which only a stall of the child's own beats of about that length can consume (and then only toward passing the mutant). Drop 'however slow the runner'."
       }
     ],
-    "outcome": "[findings: 42 - 0 high, 9 med, 33 low; 32 with a recorded fix commit]"
+    "outcome": "[findings: 42 - 0 high, 9 med, 33 low; 33 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1720,7 +1726,7 @@
     {
       "id": "P148.17-xpz",
       "title": "sr42 catches a helper that grants a fresh timeout at spawn on a runner of any speed",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix P148-R33 (docs/audit/phases/P148.json review.findings): sr42 bounds the last heartbeat against the child's own start stamp, so a mutant helper that grants a fresh timeout from Popen passes once interpreter start reaches a second. Bound against a helper-side moment taken at spawn (or size the delay from a measured interpreter start) so that mutant is caught at any runner speed, and make the judged-literal row reason about the mutant as well as the correct helper. Prove red against that mutant in your tree (purge __pycache__ between mutate and restore). Edit only the test file. No F/P/BUG ids in code.",
       "files": [
         "tests/test_stamp_verification.py",
@@ -1744,14 +1750,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e052cac025b7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tests/test_stamp_verification.py only. sr42 bounded the last sign of life against the CHILD's start stamp (spawn + interpreter start I), so the fresh-timeout-at-spawn mutant (cut at spawn + R) passed whenever I >= _BUILD_DELAY/2. Now _build_counted_tries' slow_build (moved inside attempt) appends time.time() in a finally after the real build returns: `built`, a helper-process moment that precedes the spawn. _build_counted bounds `last < built + deadline - _BUILD_DELAY/2`, and a run that started with no `built` read is red rather than passing. Reasoning in both directions, now in the docstring and in the _CLOCK_LITERALS_JUDGED row for _BUILD_DELAY: correct helper cuts at helper-start + R <= built - D + R, margin D/2 plus the real build (grows with load), and I enters neither side; mutant (fresh timeout at the spawn or anywhere after the build) cuts at >= built + R and beats until cut, so it sits D/2 minus one beat interval over the bound, and a multi-second I delays only the child's first beat, not the cut. sr42's label and the _BUILD_DELAY comment updated to match. Probe (scratchpad probe.py, in-process: M._timed_run swapped for the mutant, T._beating_source prefixed with time.sleep(I) to stand in for interpreter start), old vs new bound, run twice with a gap: I=3.0 s at 08:4x -> correct normal PASS/PASS, correct slow PASS/PASS (climbed to rung 12), mutant normal FAIL/FAIL, mutant slow old=PASS new=FAIL (last-start 2.97 s vs old slack 5 s; last-built 6.01 s vs new bound 5 s); I=1.5 s at 08:49:51Z -> same matrix, mutant slow old=PASS new=FAIL (last-built 5.99 s), correct slow last-built 2.99 s. Gate `python3 tools/sweep-selftests.py tests/test_stamp_verification.py` run twice, exit read directly into a file, no pipe: exit 0 at 08:45:04Z and exit 0 at 08:49:22Z, both '1/1 files ok, 338 cases'. ruff check on the file exit 0; vermin -t=3.8- exit 0; _output_lints.prose_number_claims() and house_style_violations() report nothing for the file. Dependants: .github/sweep-costs.json - still correct, block labels unchanged and sr-budget runs the same number of red runs; tests/test__filed_returns.py (_crlf_cases) and tools/affected.py (_scan) - still correct, neither name touched; tools/sweep-selftests.py and tools/verify.sh name the path only, which is unchanged. claims:\n1 _build_counted at tests/test_stamp_verification.py (`last < t[\"built\"] + t[\"deadline\"] - _BUILD_DELAY / 2`) and slow_build's finally `built.append(time.time())` are the lines the docstring and row describe\n2 _timed_run -> _run_in(..., timeout, ...) mutant: sr42 FAIL, 8/9, exit 1 -> restored, 9/9 exit 0; probe shows the old bound PASSes that mutant at I=1.5 s and 3.0 s while the new one FAILs it, and the correct helper PASSes both bounds at both speeds\n3 grep of the file for the bare '_BUILD_DELAY' and \"t[\\\"start\\\"] +\": the start-stamp bound lived only in _build_counted; the sibling _one_deadline_holds (sr39) bounds against the first run's stamp, a different pair and outside this finding, left as is\n4 n/a - no rule to an agent\n5 probe run twice with a gap (I=3.0 s, then I=1.5 s at 08:49:51Z): correct last-built 3.02 s / 2.99 s under bound 5 s; mutant 6.01 s / 5.99 s over it; gate twice, exit 0 both\n7 no number written into prose; the sums are stated in terms of the named constants",
+        "descriptive": "sr42 now catches a helper that grants a fresh timeout at the spawn at any interpreter-start speed, because its bound is the build's end read in the helper's process rather than the child's own start stamp"
       },
       "startedAt": "2026-10-29T08:40:34Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-29T09:37:36Z",
+      "verifiedBy": [
+        "sr42 rebound: the last heartbeat must sit before the build's end (helper-side stamp taken just before the spawn) plus the deadline less half the build delay, which fails the fresh-timeout-at-spawn mutant at any interpreter start and passes the correct helper with a margin that only grows on a slower runner"
+      ],
       "notes": [
         {
           "at": "2026-10-29T07:59:04Z",
@@ -1770,6 +1778,17 @@
         "runId": "2026-10-29T09:23:05Z.fa6dbf",
         "status": "passed",
         "at": "2026-10-29T09:23:05Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "e052cac025b7",
+        "at": "2026-10-29T09:37:36Z",
+        "return": "docs/audit/evidence/returns/P148.17-xpz/20261029T084034Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "Regression task, expectRedFirst false, test-only change: HEAD's stamp-verification.py is the correct helper, so the helper's HEAD-code-plus-my-test red cannot exhibit the mutant. The red owed by the brief was watched by hand instead, in my own worktree: _timed_run mutated to `_run_in(path, cmd, timeout, env)` (fresh full timeout at the spawn; anchor count asserted == 1), __pycache__ purged, `python3 tests/test_stamp_verification.py --selftest --stage sr-budget` -> exit 1, 'FAIL sr42 ... SELFTEST FAILED: 8/9 cases passed'; restored from a copy plus pycache purge in the same command, `git diff --stat` of the helper empty afterwards. Same stage on the restored helper: exit 0, 'ALL PASS: 9/9 cases passed'.",
+        "at": "2026-10-29T08:48:48Z (mutant run, hand-made; no helper run)"
       }
     },
     {
@@ -1859,7 +1878,7 @@
     {
       "id": "P148.19-xpz",
       "title": "The recorded tree key is pinned where it is written, not only by the alias",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fix P148-R34 (docs/audit/phases/P148.json review.findings): add a case that records a gate run through run-test-gate.py and compares the written testedState.tree.key with _evidence_io.tree_key of the same tree; prove it red by putting a local hash at the write site in your tree and restoring (purge __pycache__). Edit only the test files. No F/P/BUG ids in code.",
       "files": [
         "tests/test__evidence_io.py",
@@ -1884,14 +1903,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-29T09:37:39Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -1910,12 +1929,18 @@
       ],
       "fixes": [
         "P148-R34"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-29T09:44:25Z.29b738",
+        "status": "passed",
+        "at": "2026-10-29T09:44:25Z"
+      }
     },
     {
       "id": "P148.20-xpz",
       "title": "A tracked .claude/.gitignore edit that only changes whitespace is a task's edit, not the plugin's",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fix P148-R40 (docs/audit/phases/P148.json review.findings): the tracked .claude/.gitignore comparison strips each line, so a whitespace-only edit (CRLF conversion, reorder, escaped trailing space) reads as plugin lines only and is left out of the commit. Compare removing only a trailing CR; the plugin's own lines (with or without a final newline) must still count as the plugin's. Cases for each whitespace edit and the allow case, red first. Edit only declared files. No F/P/BUG ids in code.",
       "files": [
         "plugins/audit/scripts/manifest/_manifest_io.py",
@@ -1941,14 +1966,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-29T09:37:43Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -1967,6 +1992,118 @@
       ],
       "fixes": [
         "P148-R40"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-29T09:50:34Z.85a0a4",
+        "status": "passed",
+        "at": "2026-10-29T09:50:34Z"
+      }
+    },
+    {
+      "id": "P148.21-xpz",
+      "title": "A derived gate's slot is found per command, and each command receives only the declared paths its own runner takes, classified by kind before directory",
+      "status": "pending",
+      "description": "Fix P148-R37, R38, R39, R41 (docs/audit/phases/P148.json review.findings). The previous redesign (3b2a1512) made the per-path decision but still models the slot per GATE: whether it takes sources is one flag for every entry, the slot is wherever the sibling's first path stood (an option's argument included), and a path under a test directory is a suite whatever it is. Finish the model at the right grain: (1) split each gate entry into its commands at the shell's command separators; (2) per command, the program is its own word and the slot is the path words that are neither the program nor an option's argument (an option taking an argument such as --config, -c, --rootdir, --cov-config, and the = forms) - option arguments stay in place, never replaced or dropped; (3) per command, its runner decides whether it takes sources (related-tests words in THAT command); (4) path kind is decided by kind first - document, config (conftest.py, *.config.*, setup files), fixture or data - and a suite only by a test mark or test_ prefix; (5) each command receives only the declared paths its own slot takes, and the refusal judges each command by its own mode. Rows from the review that must hold: the vitest-related plus playwright pair; the jest-related plus pytest pair (pytest gets only tests/test_y.py, as before 04261ee5); the chained entry; --config and -c before and after the slot; the two-program chained entry keeping tools/b.py; conftest.py, playwright.config.ts, fixtures/*.json, __tests__/README.md. Add them to the existing table-driven matrix, each red first against HEAD, and keep every existing row green. Then rescope the prose R41 names to the rule as landed (no number in prose). Edit only declared files. No F/P/BUG ids in code.",
+      "files": [
+        "plugins/audit/scripts/governance/_gate_derive.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "tests/test__gate_derive.py",
+        "tests/test__manifest_phases.py",
+        "tests/test_audit_task.py",
+        "CHANGELOG.md",
+        "plugins/audit/reference/verbs-in-full.md",
+        "plugins/audit/commands/init.md",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/governance/_gate_derive.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "CHANGELOG.md",
+        "plugins/audit/reference/verbs-in-full.md",
+        "plugins/audit/commands/init.md",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tests/test__gate_derive.py",
+        "tests/test_audit_task.py",
+        "tests/test__manifest_phases.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test__gate_derive.py: Decide source-taking per command slot",
+          "tests/test__manifest_phases.py: Classify by kind first (document, config, fixture/data) and call a path a suite only by a test mark or test_ prefix, using the directory only for non-config ...",
+          "tests/test__gate_derive.py: Locate the slot per command as the path words that are neither the program nor an option's argument, replace only those, keep option arguments in place"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__gate_derive.py tests/test__manifest_phases.py tests/test_audit_task.py tests/test__deps.py tests/test__output_lints.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-29T09:38:23Z",
+          "text": "scope: plugins/audit/scripts/governance/_gate_derive.py, plugins/audit/scripts/manifest/audit-task.py, plugins/audit/scripts/manifest/_manifest_phases.py, CHANGELOG.md, plugins/audit/reference/verbs-in-full.md, plugins/audit/commands/init.md, plugins/audit/schema/audit-plan.schema.json, PLUGIN-BUILD-GUIDE.md, every path the finding(s) P148-R37, P148-R38, P148-R39, P148-R41 name"
+        },
+        {
+          "at": "2026-10-29T09:38:23Z",
+          "text": "scope: tests/test__gate_derive.py, the suite that tests plugins/audit/scripts/governance/_gate_derive.py (python: its import closure reaches plugins/audit/scripts/governance/_gate_derive.py)"
+        },
+        {
+          "at": "2026-10-29T09:38:23Z",
+          "text": "scope: tests/test_audit_task.py, the suite that tests plugins/audit/scripts/manifest/audit-task.py (python: its import closure reaches plugins/audit/scripts/manifest/audit-task.py)"
+        },
+        {
+          "at": "2026-10-29T09:38:23Z",
+          "text": "scope: tests/test__manifest_phases.py, the suite that tests plugins/audit/scripts/manifest/_manifest_phases.py (python: its import closure reaches plugins/audit/scripts/manifest/_manifest_phases.py)"
+        },
+        {
+          "at": "2026-10-29T09:38:23Z",
+          "text": "no suite: plugins/audit/schema/audit-plan.schema.json - 14 test files name it and none is named for it (tests/test__config_rules.py, tests/test__filed_returns.py, tests/test__help.py, tests/test__id_refs.py, tests/test__json_schema.py and 9 more); name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-29T09:38:23Z",
+          "text": "no suite: CHANGELOG.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__deps.py, tests/test__output.py, tests/test__panel_settings.py, tests/test__refs.py, tools/lints/_deps.py, tools/lints/_output_lints.py and 2 more"
+        },
+        {
+          "at": "2026-10-29T09:38:23Z",
+          "text": "no suite: plugins/audit/reference/verbs-in-full.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are plugins/audit/scripts/manifest/_areas.py, tests/test__manifest_vocab.py, tests/test_audit_task.py"
+        },
+        {
+          "at": "2026-10-29T09:38:23Z",
+          "text": "no suite: plugins/audit/commands/init.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__deps.py, tests/test__manifest_vocab.py, tests/test__refs.py, tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-10-29T09:38:23Z",
+          "text": "no suite: PLUGIN-BUILD-GUIDE.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__affected_tests.py, tests/test__deps.py, tests/test__doctor_trail.py, tests/test__output.py, tests/test__refs.py, tests/test_drive_phase.py and 6 more"
+        },
+        {
+          "at": "2026-10-29T09:38:23Z",
+          "text": "no tests.add clause for P148-R41: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P148-R37",
+        "P148-R38",
+        "P148-R39",
+        "P148-R41"
       ]
     }
   ],

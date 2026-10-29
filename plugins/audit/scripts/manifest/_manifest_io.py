@@ -1380,30 +1380,55 @@ def claude_ignore_rows(writer):
     return rows
 
 
-def _line_counts(text):
+def _ignore_lines(text):
+    """The lines of an ignore file, each with only a trailing carriage return
+    removed - the one whitespace that varies with the checkout (git's CRLF
+    conversion) and says nothing about a rule. Every other space or tab is
+    part of the line, because git reads an escaped trailing space as part of
+    the pattern and an indented one as a different pattern. A final newline
+    ends the last line rather than starting an empty one, so a file with and
+    without it hold the same lines."""
+    if not text:
+        return []
+    lines = text.split("\n")
+    if lines[-1] == "":
+        lines.pop()
+    return [ln[:-1] if ln.endswith("\r") else ln for ln in lines]
+
+
+def _line_counts(lines):
     counts = {}
-    for line in (text or "").splitlines():
-        key = line.strip()
-        counts[key] = counts.get(key, 0) + 1
+    for line in lines:
+        counts[line] = counts.get(line, 0) + 1
     return counts
+
+
+def _is_subsequence(old, new):
+    """True when `old` appears in `new` in the same order, other lines allowed
+    between. A reorder is not an append, and counting lines cannot tell them
+    apart."""
+    rest = iter(new)
+    return all(any(line == got for got in rest) for line in old)
 
 
 def adds_only_plugin_ignore_lines(before, after):
     """True when the ignore file's text `after` is `before` with nothing taken
     away and every added line a pattern or a note of `CLAUDE_IGNORE_LINES`.
 
-    Lines are compared whole, stripped and counted, so a repeated line is
-    counted as often as it appears. Nothing removed, because every writer only
-    appends (`ensure_claude_ignored`): a dropped rule is somebody's edit. A
-    blank added line is not the plugin's either - no writer writes one."""
+    Lines are compared whole, counted, and in order (`_ignore_lines`): a
+    repeated line counts as often as it appears, and `before`'s lines must
+    still run in their order through `after`'s. Nothing removed, because every
+    writer only appends (`ensure_claude_ignored`): a dropped rule is somebody's
+    edit. A blank added line is not the plugin's either - no writer writes one."""
     plugin = set()
     for _writer, pattern, note in CLAUDE_IGNORE_LINES:
-        plugin.update((pattern.strip(), note.strip()))
-    old, new = _line_counts(before), _line_counts(after)
-    if any(new.get(line, 0) < n for line, n in old.items()):
+        plugin.update((pattern, note))
+    old, new = _ignore_lines(before), _ignore_lines(after)
+    if not _is_subsequence(old, new):
         return False
-    return all(line in plugin for line, n in new.items()
-               if n > old.get(line, 0))
+    held = _line_counts(old)
+    return all(line in plugin for line, n in _line_counts(new).items()
+               if n > held.get(line, 0))
 
 # EVERY PATH UNDER A `.claude/` THE PLUGIN WRITES FOR ITS OWN REASONS, as
 # `(name, why)`: the one table the writers' constants above and the commit check

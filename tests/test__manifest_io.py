@@ -1685,6 +1685,55 @@ def _ignore_lines_cases(check):
           "directions, over %d shapes; wrong: %r" % (len(shapes), wrong),
           not wrong)
 
+    # Lines are compared with nothing removed but a trailing carriage return,
+    # and in order: each deny shape below is a whitespace-only edit that a
+    # stripped, multiset comparison reads as "nothing but the plugin's lines";
+    # each allow shape is a spelling of the plugin's own append that a
+    # comparison keeping the CR (or demanding a final newline) refuses.
+    first = plugin.splitlines()[0]
+    pattern = M.CLAUDE_IGNORE_LINES[0][1]
+    lf_base = "node_modules/\n*.log\n"
+    crlf_base = lf_base.replace("\n", "\r\n")
+    ws_shapes = [
+        ("a trailing space added to a rule", lf_base,
+         "node_modules/ \n*.log\n" + plugin, False),
+        ("an escaped trailing space on a rule", lf_base,
+         "node_modules/\n*.log\\ \n" + plugin, False),
+        ("a rule indented with a tab", lf_base,
+         "node_modules/\n\t*.log\n" + plugin, False),
+        ("two rules swapped", lf_base,
+         "*.log\nnode_modules/\n" + plugin, False),
+        ("a plugin pattern with a trailing space", lf_base,
+         lf_base + first + "\n" + pattern + " \n", False),
+        ("a plugin note indented", lf_base,
+         lf_base + " " + first + "\n" + pattern + "\n", False),
+        ("a whitespace-only line", lf_base, lf_base + "  \n", False),
+        ("a lone CR inside a rule", lf_base,
+         "node_modules/\n*.\rlog\n" + plugin, False),
+        ("plugin lines under CRLF onto an LF file", lf_base,
+         lf_base + plugin.replace("\n", "\r\n"), True),
+        ("plugin lines in LF onto a CRLF file", crlf_base,
+         crlf_base + plugin, True),
+        ("plugin lines, the last without its newline", lf_base,
+         lf_base + plugin.rstrip("\n"), True),
+        ("plugin lines onto a file with no final newline, CRLF", 
+         crlf_base.rstrip("\r\n"), crlf_base + plugin.replace("\n", "\r\n"),
+         True),
+        ("a whole file converted to CRLF, nothing added", lf_base, crlf_base,
+         True),
+    ]
+    ws_wrong = [(label, got) for label, before, after, want in ws_shapes
+                for got in [M.adds_only_plugin_ignore_lines(before, after)]
+                if got is not want]
+    check("cil4 an ignore file's change is compared line by line with only a "
+          "trailing carriage return removed, in order: a space, an escaped "
+          "space or a tab, a reorder and a lone CR are a task's edit, and the "
+          "plugin's own append is the plugin's whatever its line ending or "
+          "final newline - %d shapes, %d deny; wrong: %r"
+          % (len(ws_shapes), len([s for s in ws_shapes if not s[3]]), ws_wrong),
+          not ws_wrong and any(s[3] for s in ws_shapes)
+          and any(not s[3] for s in ws_shapes))
+
     tmp = tempfile.mkdtemp(prefix="mio-ignore-")
     try:
         claude = os.path.join(tmp, ".claude")

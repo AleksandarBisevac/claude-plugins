@@ -1,0 +1,29 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_run_test_gate.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task (expectRedFirst false): the cases pin behaviour HEAD already has, so they pass on HEAD by construction and the helper's HEAD-plus-tests run would show no red. Red watched by hand instead, in the task tree with a backup copy restored (not HEAD's copy): the write site in run-test-gate.py replaced by a local sha1 over os.path.abspath, __pycache__ purged -> tests/test__evidence_io.py 310/312 with tk2o and tk2t FAIL (written 205b8cd9dd69 vs tree_key 8f9d4709f093), tests/test_run_test_gate.py 570/571 with wt4 FAIL; restored, __pycache__ purged, 312/312.",
+    "at": "2026-10-29 manual mutation run in task tree"
+  },
+  "outcome": {
+    "technical": "Added to tests/test__evidence_io.py (_tree_key_cases) tk2o and tk2t: each builds a git project and a separate git tree, runs run-test-gate.main([plan, P1, --project-dir, --record, --tree, tree]), reads the row back with read_rows and compares testedState.tree.key with _evidence_io.tree_key(tree) (code E_OK, one row, key non-empty). tk3 (allow): the two trees were recorded under different keys, so a constant writer fails. Each tree has its own project so the second run is measured, not a reused verdict (first draft shared a project and the second row carried no testedState). No change to run-test-gate.py or tests/test_run_test_gate.py (existing wt1/wt4 already compare with M.tree_key, but via the gate module's alias, which is why they stayed green when only the write site was swapped and the alias kept; wt4 did go red under my mutation because it also differed from the alias). Gate: python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_run_test_gate.py exit 0, 2/2 files ok, 883 cases. Dependants: test__doctor_trail.py/test_audit_status.py use _fs_row/_full_status_cases/_real_two_commits/_cases from test__evidence_io.py - untouched, still correct; tools/affected.py and tools/sweep-selftests.py/sweep-costs.json read the file by path, only case count changed (312 cases). test_run_test_gate.py and run-test-gate.py not modified, so their dependants are unchanged.",
+    "descriptive": "The tree key a gate run records is now pinned at the write by a case that reads it off a written row and compares it with the reader's own function, not only by the alias."
+  },
+  "testsAdded": [
+    "tk2o/tk2t: record a gate run through run-test-gate --record --tree on two trees and compare the written testedState.tree.key with _evidence_io.tree_key of the same tree",
+    "tk3: the two recorded keys differ"
+  ],
+  "casesAdded": [
+    [
+      "tk2o",
+      "tk2t",
+      "tk3"
+    ]
+  ],
+  "claims": "claims:\n1 n/a - no behaviour claimed beyond test titles; tk2 asserts written == M.tree_key(tree) at tests/test__evidence_io.py _tree_key_cases\n2 write site swapped for local sha1(abspath) -> tk2o, tk2t FAIL (310/312), wt4 FAIL (570/571) -> restored from backup, pycache purged, 312/312; over-fire direction: tk3 asserts keys differ, a constant writer fails it\n3 n/a - not a fix of a reported defect in code; tree_key hits in tests: test__evidence_io.py tk1 (alias), test_run_test_gate.py:10290,10317 (via M alias) - left, still valid, tk2 adds the direct comparison\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:bdc3268c95d9fae35f07a94b4f25e51ca74f01369d3f2bed35b582268999fa03\",\"dirtyDigest\":\"sha256:7eadd7c74b90f970e514ba951aab468c32f7bae827d68dfeaa771c120ba53006\",\"dirtyPaths\":{\"tests/test__evidence_io.py\":\"6b78291e2d92fef8\"},\"head\":\"e052cac0\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/run-test-gate.py\",\"tests/test__evidence_io.py\",\"tests/test_run_test_gate.py\"],\"scopeDigest\":\"sha256:20135552ffcd06c01a5e57920859599bf028b12992c99d2d593b1179e1b9acc3\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}
