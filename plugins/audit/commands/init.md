@@ -399,9 +399,11 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
      paths, so there is nothing to narrow with; `phase-no-paths` says a sibling does record it
      and this task named no file to point a gate at. The two are repaired differently, which is
      why they are two words — and why a plan that writes neither is read as an unnarrowed
-     default. `files-no-suite` is a fix task's own word: it named files and none is a suite
-     path, so the phase's gate is the answer and narrowing to those files would hand a runner
-     something that is no test. The rest of the vocabulary belongs to `/audit:task`: `declared`,
+     default. `files-no-suite` says a task with no `tests.add` named files and none is a path
+     its spelling takes — no suite path, under a spelling whose own slot holds suites alone —
+     so the phase's gate is the answer and narrowing to those files would hand a runner
+     something that is no test. A sibling whose gate hands its runner a source path (a
+     source→test mode) takes the task's source files as they are. The rest of the vocabulary belongs to `/audit:task`: `declared`,
      `cleared`, `tests.add`, `files`.
 
      **And the wide entry is the one the validator says out loud.**

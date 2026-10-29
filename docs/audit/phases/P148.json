@@ -29,123 +29,237 @@
         "severity": "med",
         "file": "tests/test_stamp_verification.py",
         "issue": "sr39 failed on the windows resample leg of run 40781798399 (c35ffffb): exit 3 in 7.1 s but the basis did not say timed out. The case builds a first run sleeping 3 s under a 7 s deadline, so whether the deadline lands in the second run, in the first, or not at all depends on how fast the runner starts interpreters; on a loaded windows runner the first run can eat the budget.",
-        "resolution": "Make sr39 independent of runner speed: drive the cut-off with a witness rather than a sleep sized against the deadline (as tt3c in tools/sweep-selftests.py does), so the second run is reached and cut off on any runner; keep the assertion that one deadline covers both runs.",
-        "fixTask": "P148.9-xpz"
+        "resolution": "fixed in P148.9-xpz (00fe7be82038): Make sr39 independent of runner speed: drive the cut-off with a witness rather than a sleep sized against the deadline (as tt3c in tools/sweep-selftests.py does), so the second run is reached and cut off on any runner; keep the assertion that one deadline covers both runs.",
+        "fixTask": "P148.9-xpz",
+        "commit": "00fe7be82038",
+        "status": "fixed"
       },
       {
         "id": "P148-R2",
         "severity": "low",
         "file": "tests/_harness.py:2254-2295 (sr3d, sr19c) and the task's tests.gate",
         "issue": "The recorded gate command selects tools/sweep-selftests.py, tools/_suite.py, tools/gate-parity.py, tests/test_import_evidence.py and tests/test_run_test_gate.py, but not tests/_harness.py, which holds the largest part of the diff: the reach, id-reading and print changes and their cases sr3d and sr19c (and sr18, the case the P142-R21 finding is about). So the gate record says nothing about P144-R7/R8/R9, P142-R26 or P142-R21. I ran tests/_harness.py --selftest once in the task tree: exit 0, 98/98 cases passed, sr3d and sr19c PASS, so nothing is wrong today. The executor discloses this but leaves it open. The P142-R21 finding is therefore only half answered: sr18's red-first proof is claimed, the gate-record half is not made.",
-        "resolution": "Add `python3 tools/sweep-selftests.py tests/_harness.py` (or the file) to this task's tests.gate; the manifest edit is outside the declared files, so the orchestrator does it."
+        "resolution": "Add `python3 tools/sweep-selftests.py tests/_harness.py` (or the file) to this task's tests.gate; the manifest edit is outside the declared files, so the orchestrator does it.",
+        "fixTask": "P148.13-xpz"
       },
       {
         "id": "P148-R3",
         "severity": "low",
         "file": "tools/_suite.py:510-513, 516-546 (_ignores_errors early-continue) and case s21",
         "issue": "P132-R6 is not made. The executor's reason holds in the tree: the three sites it names exist at HEAD (tests/test__doctor_trail.py:495 shutil.rmtree(journal_dir(wiped)), tests/test_audit_task.py:14728 shutil.rmtree(wt), tests/test_drive_phase.py:10696 shutil.rmtree(first + '.redo-5')). It is reported rather than fixed, which the task allows. But the phase's desired outcome ('fixed, or answered with the evidence that nothing is left to change, and the bug closes') is not met for this id: the coverage loss (a plain rmtree over a git-written directory is not convicted) is still in the code.",
-        "resolution": "Carry P132-R6 to a follow-up task whose scope holds tests/test__doctor_trail.py, tests/test_audit_task.py and tests/test_drive_phase.py (switch the three sites to _harness.remove_tree), then drop the early-continue and turn s21 into the init-only allow case. Do not close the bug over it."
+        "resolution": "Carry P132-R6 to a follow-up task whose scope holds tests/test__doctor_trail.py, tests/test_audit_task.py and tests/test_drive_phase.py (switch the three sites to _harness.remove_tree), then drop the early-continue and turn s21 into the init-only allow case. Do not close the bug over it.",
+        "fixTask": "P148.14-xpz"
       },
       {
         "id": "P148-R4",
         "severity": "low",
         "file": "tools/sweep-selftests.py (cw10b label, lines near 3084-3095)",
         "issue": "The cw10b label writes a cardinality into prose ('exactly the two whose writers format the name inline') beside a check that pins those rows by prefix. A third inline-formatted row would make the sentence false while the check says what it checks. The task says no number written into prose; a word under ten is legal to the lint, so this is author-enforced, not a lint failure.",
-        "resolution": "Drop 'the two' from the label and name the pinned rows (journal pre-image, TDD reminder) only, as the comment above it already does."
+        "resolution": "Drop 'the two' from the label and name the pinned rows (journal pre-image, TDD reminder) only, as the comment above it already does.",
+        "fixTask": "P148.13-xpz"
       },
       {
         "id": "P148-R5",
         "severity": "low",
         "file": "tools/release.py:976",
         "issue": "P131-R7 is answered in part. The finding named the leaked handles in x2 and in x4/rl16. x2 and x4 now read through a with block. rl16 still reads `texts = {n: io.open(os.path.join(folder, n), encoding=\"utf-8\").read() ...}`, so the handle is still left to the GC. The outcome says rl16 is 'left as it is' because release.py is not a declared file, which is the declared-files rule at work, but the finding stays half open.",
-        "resolution": "Carry the rl16 half forward (or add tools/release.py to a task's files) and replace the comprehension's io.open().read() with a with-block read, as x4 now does."
+        "resolution": "Carry the rl16 half forward (or add tools/release.py to a task's files) and replace the comprehension's io.open().read() with a with-block read, as x4 now does.",
+        "fixTask": "P148.13-xpz"
       },
       {
         "id": "P148-R6",
         "severity": "low",
         "file": "tools/prove-gates.py:4091",
         "issue": "P145-R1 is answered in part. The finding offered 'fail loudly or name the spelling exercised', and the second was done: pw5's text now prints `exercised: ... NOT exercised`. Two things remain. The conjunct `respelled is None and os.name == \"nt\"` still lets pw5 pass on a Windows runner that cannot make the link. And the finding's second request, confirming on a windows-latest run that pw5, pw6 and pw13 pass with the symlink branch taken, is not done. The outcome defers it to the next Windows CI log, which cannot be read here.",
-        "resolution": "Leave the finding open on that one confirmation: after the next windows-latest log, check that the pw5 line reads 'a second spelling, through a link'. If it reads 'NOT exercised', make the case fail on nt."
+        "resolution": "Leave the finding open on that one confirmation: after the next windows-latest log, check that the pw5 line reads 'a second spelling, through a link'. If it reads 'NOT exercised', make the case fail on nt.",
+        "fixTask": "P148.13-xpz"
       },
       {
         "id": "P148-R7",
         "severity": "low",
         "file": "CONTRIBUTING.md:534",
         "issue": "The sentence 'A mutation that turns nothing red is printed as `inert`' is now a subset of the behaviour. inert also covers a mutation whose only reds were already red unmutated or green when swept again, and the CI tail now prints WINDOW TRUNCATED. The executor reported this and left it, since the file is outside the task. The doc and the tool now disagree, but only by understatement, and no other document pins the old wording.",
-        "resolution": "In a follow-up that owns CONTRIBUTING.md, reword to 'a mutation that changes no suite's verdict' and add the truncation line."
+        "resolution": "In a follow-up that owns CONTRIBUTING.md, reword to 'a mutation that changes no suite's verdict' and add the truncation line.",
+        "fixTask": "P148.15-xpz"
       },
       {
         "id": "P148-R8",
         "severity": "low",
         "file": "CHANGELOG.md:52",
         "issue": "The new Unreleased/Added entry about the task gate and open high bugs has a line 142 characters wide (the sentence beginning '3.6.0 with no line here, so it is recorded now. `audit-status.py --gate --task <id>` sets aside...'), against a file wrap of about 95. This is the class P147-R6 asked to fix, re-introduced by the same diff that fixes that one.",
-        "resolution": "Rewrap that entry so no line passes the file's usual width."
+        "resolution": "Rewrap that entry so no line passes the file's usual width.",
+        "fixTask": "P148.15-xpz"
       },
       {
         "id": "P148-R9",
         "severity": "low",
         "file": "plugins/audit/scripts/status/_doctor_hygiene.py:374; plugins/audit/scripts/status/audit-status.py:1136; plugins/audit/scripts/governance/propose-gates.py:31",
         "issue": "P131-R5 is only partly answered. Its resolution had three parts: delete the `--selftest` usage lines, reword phase-signoff.md, and reword the three comments that name `_output.prose_number_claims()`, which now lives in tools/lints. The first two are done for the declared files. The three comments are still at those lines (grep at the task tree) and still name a function that is not in _output. The executor reported this as not made because the files are outside the task's declared files, which is the correct handling, but the finding stays open.",
-        "resolution": "File a follow-up task owning those three scripts that rewords each comment to name the source-repository lint (tools/lints/_output_lints.py). The executor also lists audit-task.py:123, audit-status.py:14 and _proposals.py:40 as further `--selftest` mentions of the same class; confirm each in that task."
+        "resolution": "File a follow-up task owning those three scripts that rewords each comment to name the source-repository lint (tools/lints/_output_lints.py). The executor also lists audit-task.py:123, audit-status.py:14 and _proposals.py:40 as further `--selftest` mentions of the same class; confirm each in that task.",
+        "fixTask": "P148.15-xpz"
       },
       {
         "id": "P148-R10",
         "severity": "low",
         "file": "tests/test__worktrees.py:1001",
         "issue": "P142-R44 is fixed in _worktrees.sweep_plan, but the title of case ts2 still says removing a clean task tree is `task-remove`'s job, the claim the reason string no longer makes. The case asserts nothing on the reason text, so it is wording only. The executor left it because the file is outside the task's files.",
-        "resolution": "Reword the ts2 title to the step driver's removal in a task that owns tests/test__worktrees.py."
+        "resolution": "Reword the ts2 title to the step driver's removal in a task that owns tests/test__worktrees.py.",
+        "fixTask": "P148.14-xpz"
       },
       {
         "id": "P148-R11",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_scoped_commit.py:1186-1192; plugins/audit/scripts/manifest/_manifest_io.py:1353-1362",
         "issue": "P135-R1 is answered only in part. The config half (PLUGIN_OWNED_WHILE_UNTRACKED holds CONFIG_NAME, plugin_owned_rels skips it while tracked; _manifest_io.py:1363 is not in the diff, so it is at HEAD) and the 'at minimum' half (commit-task-work.py:1119-1121 adds notes to skipped before the refusal answer; ctw-at19 now pins it, and it held at HEAD) are verified. What remains: a TRACKED .claude/.gitignore edited by a task is still waved as plugin-owned whatever its content (sc-ua9 pins exactly that). The finding's main resolution, waving it only when every added line is one the plugin writes, is not done. The executor says it needs _PANEL_PRIVATE_FILES (panel/panel-server.py:573) moved into a shared table, which is outside the declared files.",
-        "resolution": "Carry the remainder as its own task whose files include panel-server.py: put the panel's ignore patterns beside ensure_claude_ignored in _manifest_io, have plugin_owned_rels wave a tracked .gitignore only when its diff adds nothing but those lines, and change sc-ua9's .gitignore expectation with it."
+        "resolution": "Carry the remainder as its own task whose files include panel-server.py: put the panel's ignore patterns beside ensure_claude_ignored in _manifest_io, have plugin_owned_rels wave a tracked .gitignore only when its diff adds nothing but those lines, and change sc-ua9's .gitignore expectation with it.",
+        "fixTask": "P148.16-xpz"
       },
       {
         "id": "P148-R12",
         "severity": "low",
         "file": "tools/lints/_output_lints.py:1384-1400",
         "issue": "P142-R18 is answered only in part. The comment now gives the reason in terms of the code, and I read that reason against the tree: _pytest_cases and _pytest_tally are reached only through CASE_READERS and TALLY_READERS from failing_cases and read_tally, both of which call plain_text; final_error strips what it captured (stamp-verification.py:733-734). The three RUNNER_LINE_END_PENDING rows are still there, and the comment names no follow-up task that deletes them. The finding asked for one, so the debt still has no owner where the next reader will look.",
-        "resolution": "File a task covering _runner_output.py and stamp-verification.py that calls plain_text inside _pytest_cases, _pytest_tally and final_error and empties RUNNER_LINE_END_PENDING, and cite it where the table is read."
+        "resolution": "File a task covering _runner_output.py and stamp-verification.py that calls plain_text inside _pytest_cases, _pytest_tally and final_error and empties RUNNER_LINE_END_PENDING, and cite it where the table is read.",
+        "fixTask": "P148.12-xpz"
       },
       {
         "id": "P148-R13",
         "severity": "low",
         "file": "tests/test_drive_phase.py:3669-3672",
         "issue": "sv7 can no longer fail, and this diff is what made it so. It compares _evio.tree_key(where) with rtg.tree_key(where), and run-test-gate.py:5128 now binds tree_key = _ev.tree_key, so it compares one function with itself. P131-R39 asked to keep sv7 as the pin until the delegation landed. The file is outside this task's declared files and the executor reported it, so it was not edited. It is not in the gate command, so the inherited-tests question does not reach it.",
-        "resolution": "In the next task that may touch tests/test_drive_phase.py, delete sv7 or turn it into an identity check. tk1 in tests/test__evidence_io.py is now the real pin."
+        "resolution": "In the next task that may touch tests/test_drive_phase.py, delete sv7 or turn it into an identity check. tk1 in tests/test__evidence_io.py is now the real pin.",
+        "fixTask": "P148.14-xpz"
       },
       {
         "id": "P148-R14",
         "severity": "low",
         "file": "tools/release.py:294-296",
         "issue": "step_preflight's docstring still says the question is the one `release_permitted` asks, but the body now calls `release_verdict` directly (line 304). The executor's claim that the docstrings were reworded to match leaves this one behind.",
-        "resolution": "Change the docstring to say `release_verdict` asks the open-bug / provisional-phase question."
+        "resolution": "Change the docstring to say `release_verdict` asks the open-bug / provisional-phase question.",
+        "fixTask": "P148.13-xpz"
       },
       {
         "id": "P148-R15",
         "severity": "low",
         "file": "docs/audit/phases/P137.json (P137-R30)",
         "issue": "Answered no-change on the grounds that the filed return cannot be edited and that the mutation table belongs to P148.6. That holds for the record. The finding's second resolution (re-run the mutations so the claim has a basis) is not carried out here, so sc-ua12..sc-ua17 and xs6b are still not shown red by anything this task filed. P148.6's outcome does mention sc-ua and mutations, which is where the proof would live.",
-        "resolution": "No code change owed by this task. Phase sign-off should confirm P148.6's filed mutation table covers those cases."
+        "resolution": "No code change owed by this task. Phase sign-off should confirm P148.6's filed mutation table covers those cases.",
+        "fixTask": "P148.13-xpz"
       },
       {
         "id": "P148-R16",
         "severity": "med",
         "file": "tests/test_stamp_verification.py:1398-1410,1585",
         "issue": "A bounded speed dependence remains: whether the second run is reached is still decided by the runner. The ladder stops at 24 s and the case requires tries[-1]['second'] is not None, so a runner that spends more than about 22 s before the second interpreter stamps (throwaway build, baseline interpreter start, task interpreter start plus the 2 s hold, three reset/lay-over git sequences, then the second interpreter start) fails sr39 with no helper fault. Reasoned for a loaded windows runner with an interpreter start of 4-5 s: three interpreter starts are 12-15 s, the hold 2 s, and a dozen git calls at 0.5-1 s each are 6-12 s, so 20-29 s against a 24 s top rung. The correctness half is speed-independent (the pass side only gains margin as F-S grows, the mutated side only gains margin from the extra reset/startup time), but the 'reached' half is a finite ladder, which is the shape of the original R1 failure moved to a higher threshold. The rung count is the executor's choice, not something it measured on windows.",
-        "resolution": "Make the top of the ladder open-ended in cost-on-demand rather than fixed: extend _DEADLINE_LADDER by 48 and 96 (a fast runner never reaches them, so no cost there), or derive the next rung from the previous try's own witness (next deadline = 3 * (first - try start) + hold + slack when 'first' was stamped but 'second' was not, doubling when 'first' was not stamped). Keep the final assertion that a rung reached the second run."
+        "resolution": "Make the top of the ladder open-ended in cost-on-demand rather than fixed: extend _DEADLINE_LADDER by 48 and 96 (a fast runner never reaches them, so no cost there), or derive the next rung from the previous try's own witness (next deadline = 3 * (first - try start) + hold + slack when 'first' was stamped but 'second' was not, doubling when 'first' was not stamped). Keep the final assertion that a rung reached the second run.",
+        "fixTask": "P148.12-xpz"
       },
       {
         "id": "P148-R17",
         "severity": "low",
         "file": "tests/test_stamp_verification.py:1570-1581,1717-1722",
         "issue": "_one_deadline_holds returns False when t['second'] is stamped but t['beat'] is None. The suite stamps 'second' and only then creates the 'beat' file (a new file create/open per beat, slow under antivirus scanning on windows), so a rung that barely reaches the second run and is killed between those two statements fails the case although the helper behaved. The window is small but widens exactly on the slow runners this task is about.",
-        "resolution": "When 'beat' is None use the 'second' stamp as the last-activity time (it is a valid, weaker, bound on the second run's life) instead of failing the try; or write the first beat in the same step as the second stamp."
+        "resolution": "When 'beat' is None use the 'second' stamp as the last-activity time (it is a valid, weaker, bound on the second run's life) instead of failing the try; or write the first beat in the same step as the second stamp.",
+        "fixTask": "P148.12-xpz"
+      },
+      {
+        "id": "P148-R18",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:2835-2847 (_ordinary_task_gate files arm); _rederive_gate/_gate_follows_scope ~9759-9783",
+        "issue": "An ordinary task whose phase gate spelling takes source paths (a sibling shape such as `npx jest --findRelatedTests {paths}`, which _gate_derive.repointed supports) used to get a narrow gate naming its source files; it now gets the phase's wide gate with basis files-no-suite, and a scope --files/--tests-add on a pending task with basis files silently rewrites its working narrow gate to the wide one. Probed: parent ['npx jest --findRelatedTests src/Card.tsx'] basis files; HEAD ['npm test'] basis files-no-suite.",
+        "resolution": "Filter to suite paths only when the resolved spelling does not take source paths (keep a path the spelling or sibling entry holds as a related-tests shape, or ask derived.listing.related); add an allow case with a --findRelatedTests sibling, red first.",
+        "fixTask": "P148.10-xpz"
+      },
+      {
+        "id": "P148-R19",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:1473-1505 (_files_gate_refusal), now called for every add (~4129) and phase-add batch (~9490)",
+        "issue": "_files_gate_refusal builds `own` from the spelling template only; the meta.phaseGate.always entries _point prepends are not in it. A plan with always ['sh tools/check.sh'] and a task --files tools/check.sh,tests/test_check.py derives a correct gate and is then refused with a false message ('names tools/check.sh, which is no suite'). Latent for fix tasks before, now for every add.",
+        "resolution": "Count the always entries' paths as the task's own (or skip always entries as build keys are skipped); add a case pinning the probed scenario, red first.",
+        "fixTask": "P148.10-xpz"
+      },
+      {
+        "id": "P148-R20",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py ~9759 (_gate_follows_scope)",
+        "issue": "It tests status == 'pending' only, while its docstring excludes a started task; a task reset to pending after a failed attempt (attempts > 0, started by _started()) has its gate re-derived on a widening scope without being asked.",
+        "resolution": "Use not _started(node), or make the docstring say what the code does; a case.",
+        "fixTask": "P148.10-xpz"
+      },
+      {
+        "id": "P148-R21",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py ~4407 (_release_findings)",
+        "issue": "Reads only the cancelled task's current phase; move rewrites fixTask, so a fix task moved to another phase leaves its finding in the old phase, and cancelling it releases nothing.",
+        "resolution": "Walk every phase as _unresolve_findings does; a case with a moved fix task.",
+        "fixTask": "P148.10-xpz"
+      },
+      {
+        "id": "P148-R22",
+        "severity": "low",
+        "file": "plugins/audit/scripts/status/_doctor_policy.py (_same_file); plugins/audit/scripts/panel/_panel_write.py (_one_file)",
+        "issue": "The same-file comparison exists twice.",
+        "resolution": "One definition in _skill_places.py used by both.",
+        "fixTask": "P148.11-xpz"
+      },
+      {
+        "id": "P148-R23",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/_manifest_typos.py:252; tests/test__warning_groups.py:32 (SKILLS_BODY, wg2)",
+        "issue": "The remaining half of P138-R9: the unresolved-skills warning text does not name the plan default exit (meta.defaultSkills); wg2 pins the text byte for byte.",
+        "resolution": "Change the warning and SKILLS_BODY together.",
+        "fixTask": "P148.11-xpz"
+      },
+      {
+        "id": "P148-R24",
+        "severity": "low",
+        "file": "plugins/audit/schema/audit-plan.schema.json:1848; plugins/audit/scripts/manifest/_manifest_vocab.py:194-211; plugins/audit/commands/init.md:402; plugins/audit/reference/verbs-in-full.md:370",
+        "issue": "Four places still call files-no-suite a fix task's word only; after the files-arm change it is any task's.",
+        "resolution": "Make each say what the derivation does now (after the med about related-tests shapes is settled).",
+        "fixTask": "P148.10-xpz"
+      },
+      {
+        "id": "P148-R25",
+        "severity": "low",
+        "file": "tests/test_stamp_verification.py ~1630",
+        "issue": "Another wall-clock bound (spent < 4 + 3*GRACE + ...) in the same suite as sr39, of the class that failed sr39 on the windows resample leg.",
+        "resolution": "Read every clock bound in the suite; make each independent of runner speed or show why it cannot flake.",
+        "fixTask": "P148.12-xpz"
+      },
+      {
+        "id": "P148-R26",
+        "severity": "low",
+        "file": "README.md:397,452",
+        "issue": "The remaining statements of P132-R8: they read the red-first obligation off the mode alone.",
+        "resolution": "Make them say what execute-task.md now says.",
+        "fixTask": "P148.15-xpz"
+      },
+      {
+        "id": "P148-R27",
+        "severity": "low",
+        "file": "plugins/audit/commands/status.md:464-466",
+        "issue": "Says --gate --json prints the GATE line on the same stream, contradicting audit-status.py:46-50 and the document's earlier paragraph (stderr).",
+        "resolution": "Make it say stderr.",
+        "fixTask": "P148.15-xpz"
+      },
+      {
+        "id": "P148-R28",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:123; plugins/audit/scripts/manifest/_proposals.py:40",
+        "issue": "Stale --selftest text of the P131-R5 class outside P148.5's files.",
+        "resolution": "Delete or reword it.",
+        "fixTask": "P148.10-xpz"
+      },
+      {
+        "id": "P148-R29",
+        "severity": "low",
+        "file": "plugins/audit/scripts/panel/_panel_write.py ~2130-2160 (_reject_stranded)",
+        "issue": "Accepts when the resolver finds a different file than the scan graded; some accepted files do not travel (a personal copy found through CLAUDE_CONFIG_DIR while the scan read the default personal directory; a personal directory whose front-matter name differs). Fail-open under strict.",
+        "resolution": "Grade the resolved file (personal means it does not travel) instead of accepting on any mismatch; a case.",
+        "fixTask": "P148.11-xpz"
       }
     ],
-    "outcome": "[findings: 17 - 0 high, 2 med, 15 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 29 - 0 high, 4 med, 25 low; 1 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -675,7 +789,7 @@
     {
       "id": "P148.9-xpz",
       "title": "The red-first deadline case holds on any runner: one deadline covering both runs is shown by a witness, not by a sleep sized against it",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix P148-R1 (docs/audit/phases/P148.json review.findings): sr39 in tests/test_stamp_verification.py failed on the windows resample leg because its first run sleeps a fixed time against a fixed deadline. Make it independent of runner speed - e.g. the first run touches a witness and the second blocks until the deadline, or the deadline derived from the measured first run - so that on any runner the second run is reached and cut off, and the case still proves one deadline covers both runs. Prove it red first: the assertion must still fail against a helper that grants each run its own full deadline. Edit only the test file. No F/P/BUG ids in code.",
       "files": [
         "tests/test_stamp_verification.py",
@@ -699,14 +813,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "00fe7be82038",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tests/test_stamp_verification.py: sr39 no longer sizes a sleep against the deadline. New helpers above _final_pass_cases: _witness_test, _witness_time, _one_deadline_tries and _one_deadline_holds, plus the constants _FIRST_HOLD=2.0, _BEAT=0.05 and _DEADLINE_LADDER=(6,12,24). The suite tells its runs apart by whether newmod imports. The task's run stamps `first`, holds 2 s and re-raises the ImportError that makes a second run owed. The second run stamps `second` and then appends a heartbeat every 0.05 s until it is killed, so it can only end at the deadline. Each try writes the suite again with a witness directory of its own. The deadline doubles 6 -> 12 -> 24 until a try's second run stamps its witness. Every try must be exit 3 (E_CANNOT_PROVE) with 'timed out' in the basis. The try that reaches the second run must also have run.exit == 1 and run.second set, and its last heartbeat must be earlier than first + deadline + hold/2. With one deadline the beat is at most helper-start + deadline, and helper-start is before first. With a deadline per run the beat lands at least first + hold + deadline. The old `spent < 7 + 3*GRACE` bound is gone because it depended on runner speed; `took` is still printed. Green runs: standalone sr-final block exit 0 twice (beat-first 5.03 both times, second-first 2.08, took 5.3 s, bound 7.0). Gate `python3 tools/sweep-selftests.py tests/test_stamp_verification.py` exit 0 at 01:58:20, and again (with --loud) exit 0 at 01:59:04: 1/1 files ok, 333 cases. A probe patched the ladder in memory to (2,6). The 2 s try did not reach the second run and still held (exit 3, timed out); the 6 s try reached it and the verdict was True, so the slow-runner rung is exercised. ruff and vermin on the file both exit 0. prose_number_claims and house_style_violations report no hits in the file. Dependants: .github/sweep-costs.json is still correct. It records 32.5 s for the sr-final block, and the case now takes about 5.3 s on one rung, about 42 s at worst on all three, under the sweep's 300 s floor; re-recording is optional. tests/test__filed_returns.py (_crlf_cases), tools/affected.py (_scan), tools/sweep-selftests.py and tools/verify.sh (path references) are unchanged: no name they use was touched and the file path is the same.",
+        "descriptive": "sr39 now shows that one deadline covers both runs using a witness and a heartbeat, not a sleep sized against the deadline, so it holds on any runner speed."
       },
       "startedAt": "2026-10-29T00:53:36Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-29T01:48:00Z",
+      "verifiedBy": [
+        "sr39 rewritten: a witness suite whose second run beats until killed. The deadline doubles until the second run is reached, and the last heartbeat must come before the first run's stamp plus the deadline plus half the hold."
+      ],
       "notes": [
         {
           "at": "2026-10-28T23:07:19Z",
@@ -725,7 +841,572 @@
         "runId": "2026-10-29T01:42:59Z.b785db",
         "status": "passed",
         "at": "2026-10-29T01:42:59Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "00fe7be82038",
+        "at": "2026-10-29T01:48:00Z",
+        "return": "docs/audit/evidence/returns/P148.9-xpz/20261029T005336Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "None owed: the task is mode regression with expectRedFirst false, and it edits only the test. HEAD's stamp-verification already applies one deadline to every run, so the helper's throwaway (HEAD code plus this test) would be green by design. The red the brief asked for was made by hand in the task tree. stamp-verification.py _timed_run `left = _left(deadline)` became `left = timeout`, so each run gets its own full --timeout. The mutation was asserted to have applied (count == 1, and grep showed line 3610). __pycache__ was purged, then `--selftest --stage sr-final` ran and exited 1: FAIL sr39, SELFTEST FAILED 8/9, deadline 6, beat-first=8.05 against a bound of 7.0, took 8.3 s. The file was restored from a copy in the same command and __pycache__ purged again. git diff --stat afterwards names only tests/test_stamp_verification.py.",
+        "at": "2026-10-29 ~01:57 CET (hand mutation run, not the helper)"
       }
+    },
+    {
+      "id": "P148.10-xpz",
+      "title": "A files-derived gate keeps a related-tests spelling narrow, counts the plan's always entries as the task's own, re-derives only for a task never started, and a cancel releases a moved fix task's findings",
+      "status": "in_progress",
+      "description": "Fix the P148 review findings P148-R18, P148-R19, P148-R20, P148-R21, P148-R24, P148-R28 (each finding's file, issue and resolution is in docs/audit/phases/P148.json review.findings, by id). Read each against the code at HEAD first. Fix each with a case proven red first where it is about behaviour; where HEAD no longer has the defect or the finding records something nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id. Edit only the declared files; a fix needing another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "tests/test_audit_task.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/commands/init.md",
+        "plugins/audit/reference/verbs-in-full.md",
+        "plugins/audit/scripts/manifest/_proposals.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/commands/init.md",
+        "plugins/audit/reference/verbs-in-full.md",
+        "plugins/audit/scripts/manifest/_proposals.py",
+        "tests/test_audit_task.py",
+        "tests/test__manifest_vocab.py",
+        "tests/test__proposals.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test_audit_task.py: Filter to suite paths only when the resolved spelling does not take source paths (keep a path the spelling or sibling entry holds as a related-tests shape, or ...",
+          "tests/test_audit_task.py: Count the always entries' paths as the task's own (or skip always entries as build keys are skipped)",
+          "tests/test_audit_task.py: Use not _started(node), or make the docstring say what the code does",
+          "tests/test_audit_task.py: Walk every phase as _unresolve_findings does",
+          "tests/test__manifest_vocab.py: Make each say what the derivation does now (after the med about related-tests shapes is settled)",
+          "tests/test_audit_task.py: Delete or reword it"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__manifest_vocab.py tests/test__proposals.py tests/test_validate_manifest.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-29T07:04:35Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-29T07:03:32Z",
+          "text": "scope: plugins/audit/scripts/manifest/audit-task.py, plugins/audit/schema/audit-plan.schema.json, plugins/audit/scripts/manifest/_manifest_vocab.py, plugins/audit/commands/init.md, plugins/audit/reference/verbs-in-full.md, plugins/audit/scripts/manifest/_proposals.py, every path the finding(s) P148-R18, P148-R19, P148-R20, P148-R21, P148-R24, P148-R28 name"
+        },
+        {
+          "at": "2026-10-29T07:03:32Z",
+          "text": "scope: tests/test_audit_task.py, the suite that tests plugins/audit/scripts/manifest/audit-task.py (python: its import closure reaches plugins/audit/scripts/manifest/audit-task.py)"
+        },
+        {
+          "at": "2026-10-29T07:03:32Z",
+          "text": "scope: tests/test__manifest_vocab.py, the suite that tests plugins/audit/scripts/manifest/_manifest_vocab.py (python: its import closure reaches plugins/audit/scripts/manifest/_manifest_vocab.py)"
+        },
+        {
+          "at": "2026-10-29T07:03:32Z",
+          "text": "scope: tests/test__proposals.py, the suite that tests plugins/audit/scripts/manifest/_proposals.py (python: its import closure reaches plugins/audit/scripts/manifest/_proposals.py)"
+        },
+        {
+          "at": "2026-10-29T07:03:32Z",
+          "text": "no suite: plugins/audit/schema/audit-plan.schema.json - 13 test files name it and none is named for it (tests/test__config_rules.py, tests/test__filed_returns.py, tests/test__help.py, tests/test__id_refs.py, tests/test__json_schema.py and 8 more); name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-29T07:03:32Z",
+          "text": "no suite: plugins/audit/commands/init.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__deps.py, tests/test__refs.py, tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-10-29T07:03:32Z",
+          "text": "no suite: plugins/audit/reference/verbs-in-full.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are plugins/audit/scripts/manifest/_areas.py, tests/test_audit_task.py"
+        }
+      ],
+      "fixes": [
+        "P148-R18",
+        "P148-R19",
+        "P148-R20",
+        "P148-R21",
+        "P148-R24",
+        "P148-R28"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-29T07:40:13Z.4523cb",
+        "status": "passed",
+        "at": "2026-10-29T07:40:13Z"
+      }
+    },
+    {
+      "id": "P148.11-xpz",
+      "title": "Skill portability is graded on the file a session loads in the panel as in doctor, through one same-file comparison, and the unresolved-skills warning names the plan default",
+      "status": "in_progress",
+      "description": "Fix the P148 review findings P148-R22, P148-R23, P148-R29 (each finding's file, issue and resolution is in docs/audit/phases/P148.json review.findings, by id). Read each against the code at HEAD first. Fix each with a case proven red first where it is about behaviour; where HEAD no longer has the defect or the finding records something nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id. Edit only the declared files; a fix needing another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
+      "files": [
+        "plugins/audit/scripts/status/_skill_places.py",
+        "plugins/audit/scripts/status/_doctor_policy.py",
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/scripts/manifest/_manifest_typos.py",
+        "tests/test__skill_places.py",
+        "tests/test__doctor_policy.py",
+        "tests/test__panel_write.py",
+        "tests/test__warning_groups.py",
+        "tests/test__manifest_typos.py",
+        "plugins/audit/scripts/status/_doctor_policy.py",
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/scripts/manifest/_manifest_typos.py",
+        "tests/test__warning_groups.py",
+        "tests/test__doctor_policy.py",
+        "tests/test__panel_write.py",
+        "tests/test__manifest_typos.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test__doctor_policy.py: One definition in _skill_places.py used by both",
+          "tests/test__warning_groups.py: Change the warning and SKILLS_BODY together",
+          "tests/test__panel_write.py: Grade the resolved file (personal means it does not travel) instead of accepting on any mismatch"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__skill_places.py tests/test__doctor_policy.py tests/test__panel_write.py tests/test__warning_groups.py tests/test__manifest_typos.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-29T07:04:39Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-29T07:03:44Z",
+          "text": "scope: plugins/audit/scripts/status/_doctor_policy.py, plugins/audit/scripts/panel/_panel_write.py, plugins/audit/scripts/manifest/_manifest_typos.py, tests/test__warning_groups.py, every path the finding(s) P148-R22, P148-R23, P148-R29 name"
+        },
+        {
+          "at": "2026-10-29T07:03:44Z",
+          "text": "scope: tests/test__doctor_policy.py, the suite that tests plugins/audit/scripts/status/_doctor_policy.py (python: its import closure reaches plugins/audit/scripts/status/_doctor_policy.py)"
+        },
+        {
+          "at": "2026-10-29T07:03:44Z",
+          "text": "scope: tests/test__panel_write.py, the suite that tests plugins/audit/scripts/panel/_panel_write.py (python: its import closure reaches plugins/audit/scripts/panel/_panel_write.py)"
+        },
+        {
+          "at": "2026-10-29T07:03:44Z",
+          "text": "scope: tests/test__manifest_typos.py, the suite that tests plugins/audit/scripts/manifest/_manifest_typos.py (python: its import closure reaches plugins/audit/scripts/manifest/_manifest_typos.py)"
+        },
+        {
+          "at": "2026-10-29T07:03:44Z",
+          "text": "no test runner in this task's gate for the test P148-R22, P148-R23, P148-R29 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test__skill_places.py tests/test__doctor_policy.py tests/test__panel_write.py tests/test__warning_groups.py tests/test__manifest_typos.py'], derived as from --gate; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P148-R22",
+        "P148-R23",
+        "P148-R29"
+      ],
+      "reviewPerTask": "signals"
+    },
+    {
+      "id": "P148.12-xpz",
+      "title": "The red-first suite's clock bounds hold on any runner, and runner output read anywhere goes through the one line-end normalisation so no pending exemption remains",
+      "status": "in_progress",
+      "description": "Fix the P148 review findings P148-R16, P148-R17, P148-R25, P148-R12 (each finding's file, issue and resolution is in docs/audit/phases/P148.json review.findings, by id). Read each against the code at HEAD first. Fix each with a case proven red first where it is about behaviour; where HEAD no longer has the defect or the finding records something nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id. Edit only the declared files; a fix needing another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
+      "files": [
+        "tests/test_stamp_verification.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/scripts/governance/_runner_output.py",
+        "tools/lints/_output_lints.py",
+        "tests/test__runner_output.py",
+        "tests/test__output_lints.py",
+        "tests/test_stamp_verification.py",
+        "tools/lints/_output_lints.py",
+        "tests/test__output_lints.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test_stamp_verification.py: Make the top of the ladder open-ended in cost-on-demand rather than fixed: extend _DEADLINE_LADDER by 48 and 96 (a fast runner never reaches them, so no cost ...",
+          "tests/test_stamp_verification.py: When 'beat' is None use the 'second' stamp as the last-activity time (it is a valid, weaker, bound on the second run's life) instead of failing the try",
+          "tests/test_stamp_verification.py: Read every clock bound in the suite",
+          "tests/test__output_lints.py: File a task covering _runner_output.py and stamp-verification.py that calls plain_text inside _pytest_cases, _pytest_tally and final_error and empties ..."
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_stamp_verification.py tests/test__runner_output.py tests/test__output_lints.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-29T07:04:42Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-29T07:03:48Z",
+          "text": "scope: tests/test_stamp_verification.py, tools/lints/_output_lints.py, every path the finding(s) P148-R16, P148-R17, P148-R25, P148-R12 name"
+        },
+        {
+          "at": "2026-10-29T07:03:48Z",
+          "text": "scope: tests/test__output_lints.py, the suite that tests tools/lints/_output_lints.py (python: its import closure reaches tools/lints/_output_lints.py)"
+        },
+        {
+          "at": "2026-10-29T07:03:48Z",
+          "text": "no test runner in this task's gate for the test P148-R16, P148-R17, P148-R25, P148-R12 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test_stamp_verification.py tests/test__runner_output.py tests/test__output_lints.py'], derived as from --gate; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P148-R16",
+        "P148-R17",
+        "P148-R25",
+        "P148-R12"
+      ],
+      "reviewPerTask": "signals"
+    },
+    {
+      "id": "P148.13-xpz",
+      "title": "The maintainer tools' review leftovers: release preflight's docstring and a closed handle, prove-gates naming the spelling it exercised, the sweep label without a count",
+      "status": "pending",
+      "description": "Fix the P148 review findings P148-R2, P148-R4, P148-R5, P148-R6, P148-R14, P148-R15 (each finding's file, issue and resolution is in docs/audit/phases/P148.json review.findings, by id). Read each against the code at HEAD first. Fix each with a case proven red first where it is about behaviour; where HEAD no longer has the defect or the finding records something nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id. Edit only the declared files; a fix needing another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
+      "files": [
+        "tools/sweep-selftests.py",
+        "tools/release.py",
+        "tools/prove-gates.py",
+        "tests/_harness.py",
+        "tools/sweep-selftests.py",
+        "tools/release.py",
+        "tools/prove-gates.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/_harness.py: Add `python3 tools/sweep-selftests.py tests/_harness.py` (or the file) to this task's tests.gate"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tools/sweep-selftests.py tools/release.py tools/prove-gates.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-29T07:04:01Z",
+          "text": "scope: tests/_harness.py, tools/sweep-selftests.py, tools/release.py, tools/prove-gates.py, every path the finding(s) P148-R2, P148-R4, P148-R5, P148-R6, P148-R14, P148-R15 name"
+        },
+        {
+          "at": "2026-10-29T07:04:01Z",
+          "text": "no suite: tools/sweep-selftests.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-29T07:04:01Z",
+          "text": "no suite: tools/release.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-29T07:04:01Z",
+          "text": "no suite: tools/prove-gates.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-29T07:04:01Z",
+          "text": "scope: dropped docs/audit/phases/P137.json, named by the finding(s) P148-R2, P148-R4, P148-R5, P148-R6, P148-R14, P148-R15 but a record this commit already carries beside the task's own files, not a task's own work"
+        },
+        {
+          "at": "2026-10-29T07:04:01Z",
+          "text": "scope: tests.gate matches no tracked file and is not written"
+        },
+        {
+          "at": "2026-10-29T07:04:01Z",
+          "text": "no tests.add clause for P148-R4, P148-R5, P148-R6, P148-R14, P148-R15: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        },
+        {
+          "at": "2026-10-29T07:04:01Z",
+          "text": "no test runner in this task's gate for the test P148-R2, P148-R4, P148-R5, P148-R6, P148-R14, P148-R15 asks for: the gate is ['python3 tools/sweep-selftests.py tools/sweep-selftests.py tools/release.py tools/prove-gates.py'], derived as from --gate; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P148-R2",
+        "P148-R4",
+        "P148-R5",
+        "P148-R6",
+        "P148-R14",
+        "P148-R15"
+      ]
+    },
+    {
+      "id": "P148.14-xpz",
+      "title": "No suite leaves a fixture behind on a removal error the scratch check cannot see, and no case is left that cannot fail",
+      "status": "pending",
+      "description": "Fix the P148 review findings P148-R3, P148-R10, P148-R13 (each finding's file, issue and resolution is in docs/audit/phases/P148.json review.findings, by id). Read each against the code at HEAD first. Fix each with a case proven red first where it is about behaviour; where HEAD no longer has the defect or the finding records something nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id. Edit only the declared files; a fix needing another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
+      "files": [
+        "tools/_suite.py",
+        "tests/test__doctor_trail.py",
+        "tests/test_audit_task.py",
+        "tests/test_drive_phase.py",
+        "tests/test__worktrees.py",
+        "tools/_suite.py",
+        "tests/test__doctor_trail.py",
+        "tests/test_audit_task.py",
+        "tests/test_drive_phase.py",
+        "tests/test__worktrees.py",
+        "tests/test__evidence_io.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test__doctor_trail.py: Carry P132-R6 to a follow-up task whose scope holds tests/test__doctor_trail.py, tests/test_audit_task.py and tests/test_drive_phase.py (switch the three sites ...",
+          "tests/test__worktrees.py: Reword the ts2 title to the step driver's removal in a task that owns tests/test__worktrees.py",
+          "tests/test_drive_phase.py: In the next task that may touch tests/test_drive_phase.py, delete sv7 or turn it into an identity check"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tools/_suite.py tests/test__doctor_trail.py tests/test_audit_task.py tests/test_drive_phase.py tests/test__worktrees.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P148.10-xpz"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-29T07:04:06Z",
+          "text": "scope: tools/_suite.py, tests/test__doctor_trail.py, tests/test_audit_task.py, tests/test_drive_phase.py, tests/test__worktrees.py, tests/test__evidence_io.py, every path the finding(s) P148-R3, P148-R10, P148-R13 name"
+        },
+        {
+          "at": "2026-10-29T07:04:06Z",
+          "text": "no suite: tools/_suite.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-29T07:04:06Z",
+          "text": "no test runner in this task's gate for the test P148-R3, P148-R10, P148-R13 asks for: the gate is ['python3 tools/sweep-selftests.py tools/_suite.py tests/test__doctor_trail.py tests/test_audit_task.py tests/test_drive_phase.py tests/test__worktrees.py'], derived as from --gate; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P148-R3",
+        "P148-R10",
+        "P148-R13"
+      ]
+    },
+    {
+      "id": "P148.15-xpz",
+      "title": "The documents' review leftovers: what inert means, the changelog wrap, comments naming where the prose lint lives, the README's red-first obligation, the gate line's stream",
+      "status": "pending",
+      "description": "Fix the P148 review findings P148-R7, P148-R8, P148-R9, P148-R26, P148-R27 (each finding's file, issue and resolution is in docs/audit/phases/P148.json review.findings, by id). Read each against the code at HEAD first. Fix each with a case proven red first where it is about behaviour; where HEAD no longer has the defect or the finding records something nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id. Edit only the declared files; a fix needing another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
+      "files": [
+        "CONTRIBUTING.md",
+        "CHANGELOG.md",
+        "plugins/audit/scripts/status/_doctor_hygiene.py",
+        "plugins/audit/scripts/governance/propose-gates.py",
+        "README.md",
+        "plugins/audit/commands/status.md",
+        "CONTRIBUTING.md",
+        "CHANGELOG.md",
+        "plugins/audit/scripts/status/_doctor_hygiene.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/scripts/governance/propose-gates.py",
+        "README.md",
+        "plugins/audit/commands/status.md",
+        "tests/test__doctor_hygiene.py",
+        "tests/test_audit_status.py",
+        "tests/test_propose_gates.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test__doctor_hygiene.py: File a follow-up task owning those three scripts that rewords each comment to name the source-repository lint (tools/lints/_output_lints.py)"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__deps.py tests/test__output_lints.py tests/test__doctor_hygiene.py tests/test_propose_gates.py tests/test__refs.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-29T07:04:18Z",
+          "text": "scope: CONTRIBUTING.md, CHANGELOG.md, plugins/audit/scripts/status/_doctor_hygiene.py, plugins/audit/scripts/status/audit-status.py, plugins/audit/scripts/governance/propose-gates.py, README.md, plugins/audit/commands/status.md, every path the finding(s) P148-R7, P148-R8, P148-R9, P148-R26, P148-R27 name"
+        },
+        {
+          "at": "2026-10-29T07:04:18Z",
+          "text": "scope: tests/test__doctor_hygiene.py, the suite that tests plugins/audit/scripts/status/_doctor_hygiene.py (python: its import closure reaches plugins/audit/scripts/status/_doctor_hygiene.py)"
+        },
+        {
+          "at": "2026-10-29T07:04:18Z",
+          "text": "scope: tests/test_audit_status.py, the suite that tests plugins/audit/scripts/status/audit-status.py (python: its import closure reaches plugins/audit/scripts/status/audit-status.py)"
+        },
+        {
+          "at": "2026-10-29T07:04:18Z",
+          "text": "scope: tests/test_propose_gates.py, the suite that tests plugins/audit/scripts/governance/propose-gates.py (python: its import closure reaches plugins/audit/scripts/governance/propose-gates.py)"
+        },
+        {
+          "at": "2026-10-29T07:04:18Z",
+          "text": "no suite: CONTRIBUTING.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test_derive_phase_gate.py, tools/affected.py, tools/check-committed-pii.py, tools/lints/_deps.py, tools/lints/_refs.py, tools/sweep-selftests.py"
+        },
+        {
+          "at": "2026-10-29T07:04:18Z",
+          "text": "no suite: CHANGELOG.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__deps.py, tests/test__output.py, tests/test__panel_settings.py, tests/test__refs.py, tools/lints/_deps.py, tools/lints/_output_lints.py and 2 more"
+        },
+        {
+          "at": "2026-10-29T07:04:18Z",
+          "text": "no suite: README.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are .claude/hooks/require-claim-block.py, tests/test__affected_tests.py, tests/test__config.py, tests/test__deps.py, tests/test__doctor_report.py and 24 more"
+        },
+        {
+          "at": "2026-10-29T07:04:18Z",
+          "text": "no suite: plugins/audit/commands/status.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__help_lints.py, tests/test__refs.py, tests/test_audit_status.py, tools/gate-parity.py, tools/measure-context.py, tools/prove-gates.py"
+        },
+        {
+          "at": "2026-10-29T07:04:18Z",
+          "text": "no tests.add clause for P148-R7, P148-R8, P148-R26, P148-R27: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P148-R7",
+        "P148-R8",
+        "P148-R9",
+        "P148-R26",
+        "P148-R27"
+      ]
+    },
+    {
+      "id": "P148.16-xpz",
+      "title": "A tracked .claude/.gitignore counts as the plugin's only when every line it adds is one the plugin writes, read from one table",
+      "status": "pending",
+      "description": "Fix the P148 review findings P148-R11 (each finding's file, issue and resolution is in docs/audit/phases/P148.json review.findings, by id). Read each against the code at HEAD first. Fix each with a case proven red first where it is about behaviour; where HEAD no longer has the defect or the finding records something nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id. Edit only the declared files; a fix needing another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
+      "files": [
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "plugins/audit/scripts/panel/panel-server.py",
+        "tests/test__scoped_commit.py",
+        "tests/test_commit_task_work.py",
+        "tests/test__manifest_io.py",
+        "tests/test_panel_server.py",
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "tests/test__scoped_commit.py",
+        "tests/test__manifest_io.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test__scoped_commit.py: Carry the remainder as its own task whose files include panel-server.py: put the panel's ignore patterns beside ensure_claude_ignored in _manifest_io, have ..."
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__scoped_commit.py tests/test_commit_task_work.py tests/test__manifest_io.py tests/test_panel_server.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-29T07:04:26Z",
+          "text": "scope: plugins/audit/scripts/governance/_scoped_commit.py, plugins/audit/scripts/manifest/_manifest_io.py, every path the finding(s) P148-R11 name"
+        },
+        {
+          "at": "2026-10-29T07:04:26Z",
+          "text": "scope: tests/test__scoped_commit.py, the suite that tests plugins/audit/scripts/governance/_scoped_commit.py (python: its import closure reaches plugins/audit/scripts/governance/_scoped_commit.py)"
+        },
+        {
+          "at": "2026-10-29T07:04:26Z",
+          "text": "scope: tests/test__manifest_io.py, the suite that tests plugins/audit/scripts/manifest/_manifest_io.py (python: its import closure reaches plugins/audit/scripts/manifest/_manifest_io.py)"
+        }
+      ],
+      "fixes": [
+        "P148-R11"
+      ]
     }
   ],
   "reviewPerTask": "signals",

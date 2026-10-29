@@ -1243,7 +1243,8 @@
       "P147.5-bno",
       "P147.6-bno",
       "P147.7-bno",
-      "P148.5"
+      "P148.5",
+      "P148.15-xpz"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1409,7 +1410,8 @@
       "P142.50-6yq",
       "P142.51-6yq",
       "P144.6-ttw",
-      "P144.7-ttw"
+      "P144.7-ttw",
+      "P148.15-xpz"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -1753,7 +1755,8 @@
       "P118.9",
       "P124.8",
       "P125.95-0h5",
-      "P128.34-0h5"
+      "P128.34-0h5",
+      "P148.15-xpz"
     ],
     "SECURITY.md": [
       "P2.2",
@@ -2367,7 +2370,8 @@
       "P125.22",
       "P129.7-izt",
       "P131.13",
-      "P132.3"
+      "P132.3",
+      "P148.10-xpz"
     ],
     "plugins/audit/commands/layout.md": [
       "P57.1",
@@ -2556,7 +2560,8 @@
       "P114.4-ffv",
       "P115.2-4yc",
       "P118.9",
-      "P148.5"
+      "P148.5",
+      "P148.15-xpz"
     ],
     "plugins/audit/commands/sync.md": [
       "P3.1",
@@ -3366,7 +3371,8 @@
       "P130.6",
       "P130.21-ywo",
       "P131.13",
-      "P138.2"
+      "P138.2",
+      "P148.10-xpz"
     ],
     "plugins/audit/scripts/_deps.py": [
       "P15.1",
@@ -4054,7 +4060,8 @@
       "P142.1",
       "P142.30-6yq",
       "P142.39-6yq",
-      "P148.6"
+      "P148.6",
+      "P148.16-xpz"
     ],
     "plugins/audit/scripts/governance/_tree_stamp.py": [
       "P43.4",
@@ -4392,7 +4399,8 @@
       "P131.10",
       "P142.2",
       "P142.23-6yq",
-      "P142.34-6yq"
+      "P142.34-6yq",
+      "P148.12-xpz"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -4516,7 +4524,8 @@
       "P131.2",
       "P135.1",
       "P137.7-3y3",
-      "P148.6"
+      "P148.6",
+      "P148.16-xpz"
     ],
     "plugins/audit/scripts/manifest/_manifest_merge.py": [
       "P60.1"
@@ -4637,7 +4646,8 @@
       "P131.15-dau",
       "P131.13",
       "P138.2",
-      "P142.24-6yq"
+      "P142.24-6yq",
+      "P148.10-xpz"
     ],
     "plugins/audit/scripts/manifest/_merge_install.py": [
       "P60.5",
@@ -4673,7 +4683,8 @@
       "P130.7",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P148.10-xpz"
     ],
     "plugins/audit/scripts/manifest/_warning_groups.py": [
       "P51.5",
@@ -4875,7 +4886,8 @@
       "P142.41-6yq",
       "P142.44-6yq",
       "P142.46-6yq",
-      "P148.7"
+      "P148.7",
+      "P148.10-xpz"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -5159,7 +5171,8 @@
       "P130.8",
       "P131.1",
       "P131.2",
-      "P148.7"
+      "P148.7",
+      "P148.11-xpz"
     ],
     "plugins/audit/scripts/panel/panel-server.py": [
       "P10.2",
@@ -5191,7 +5204,8 @@
       "P126.11-13q",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P148.16-xpz"
     ],
     "plugins/audit/scripts/report/_evidence_view.py": [
       "P32.7",
@@ -5372,7 +5386,8 @@
       "P125.68-0h5",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P148.15-xpz"
     ],
     "plugins/audit/scripts/status/_doctor_policy.py": [
       "P18.6",
@@ -5385,7 +5400,8 @@
       "P131.15-dau",
       "P138.4-myr",
       "P138.5-myr",
-      "P148.7"
+      "P148.7",
+      "P148.11-xpz"
     ],
     "plugins/audit/scripts/status/_doctor_report.py": [
       "P53.5",
@@ -5674,7 +5690,8 @@
       "P142.48-6yq",
       "P142.49-6yq",
       "P144.2-6yq",
-      "P148.7"
+      "P148.7",
+      "P148.15-xpz"
     ],
     "plugins/audit/scripts/status/audit-version.py": [
       "P67.1",
@@ -8248,7 +8265,8 @@
       "P144.6-ttw",
       "P144.7-ttw",
       "P145.2",
-      "P148.4"
+      "P148.4",
+      "P148.13-xpz"
     ],
     "tools/redfirst.sh": [
       "P55.13",
@@ -8304,7 +8322,8 @@
       "P142.38-6yq",
       "P144.8-ttw",
       "P145.1",
-      "P148.3"
+      "P148.3",
+      "P148.13-xpz"
     ],
     "tools/ui-tests/evidence-badge.test.mjs": [
       "P32.7",
@@ -9479,7 +9498,8 @@
       "P123.65-64p",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P148.15-xpz"
     ],
     "plugins/audit/tests/test_propose_gates.py": [
       "P80.15-rtb",
@@ -9571,7 +9591,8 @@
       "P132.5-5mm",
       "P134.1",
       "P142.51-6yq",
-      "P148.3"
+      "P148.3",
+      "P148.14-xpz"
     ],
     "docs/research/guard-refusals-by-owner.md": [
       "P110.1",
@@ -9601,7 +9622,8 @@
       "P131.1",
       "P131.2",
       "P142.2",
-      "P142.9-6yq"
+      "P142.9-6yq",
+      "P148.12-xpz"
     ],
     "plugins/audit/tests/test__runner_output.py": [
       "P102.3",
@@ -10460,7 +10482,8 @@
       "P138.3-myr",
       "P142.1",
       "P142.19-6yq",
-      "P148.5"
+      "P148.5",
+      "P148.10-xpz"
     ],
     "docs/research/pipeline-cost-results.md": [
       "P118.19-v7t",
@@ -10545,7 +10568,8 @@
       "P131.1",
       "P131.2",
       "P138.3-myr",
-      "P148.7"
+      "P148.7",
+      "P148.11-xpz"
     ],
     "plugins/audit/scripts/manifest/ado-connect.py": [
       "P122.8-z4y",
@@ -10889,7 +10913,8 @@
       "P131.11",
       "P140.1",
       "P140.2-ohy",
-      "P148.8"
+      "P148.8",
+      "P148.13-xpz"
     ],
     "plugins/audit/hooks/hold-handback.py": [
       "P128.6-0h5"
@@ -11247,7 +11272,8 @@
       "P142.37-6yq",
       "P142.38-6yq",
       "P144.8-ttw",
-      "P148.3"
+      "P148.3",
+      "P148.13-xpz"
     ],
     "tests/fixtures/pricing-page-2026-10-10.md": [
       "P131.1"
@@ -11326,14 +11352,16 @@
       "P131.1"
     ],
     "tests/test__doctor_hygiene.py": [
-      "P131.1"
+      "P131.1",
+      "P148.15-xpz"
     ],
     "tests/test__doctor_policy.py": [
       "P131.1",
       "P138.4-myr",
       "P138.5-myr",
       "P148.2",
-      "P148.7"
+      "P148.7",
+      "P148.11-xpz"
     ],
     "tests/test__doctor_report.py": [
       "P131.1"
@@ -11345,11 +11373,13 @@
     ],
     "tests/test__doctor_trail.py": [
       "P131.1",
-      "P132.5-5mm"
+      "P132.5-5mm",
+      "P148.14-xpz"
     ],
     "tests/test__evidence_io.py": [
       "P131.1",
-      "P148.6"
+      "P148.6",
+      "P148.14-xpz"
     ],
     "tests/test__evidence_view.py": [
       "P131.1"
@@ -11414,7 +11444,8 @@
     ],
     "tests/test__manifest_io.py": [
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P148.16-xpz"
     ],
     "tests/test__manifest_merge.py": [
       "P131.1"
@@ -11430,7 +11461,8 @@
     ],
     "tests/test__manifest_typos.py": [
       "P131.1",
-      "P138.3-myr"
+      "P138.3-myr",
+      "P148.11-xpz"
     ],
     "tests/test__manifest_vocab.py": [
       "P131.1",
@@ -11438,7 +11470,8 @@
       "P129.7-izt",
       "P129.8-izt",
       "P131.13",
-      "P142.24-6yq"
+      "P142.24-6yq",
+      "P148.10-xpz"
     ],
     "tests/test__merge_install.py": [
       "P131.1"
@@ -11492,7 +11525,8 @@
       "P131.1"
     ],
     "tests/test__panel_write.py": [
-      "P131.1"
+      "P131.1",
+      "P148.11-xpz"
     ],
     "tests/test__policy.py": [
       "P131.1"
@@ -11504,7 +11538,8 @@
       "P131.1"
     ],
     "tests/test__proposals.py": [
-      "P131.1"
+      "P131.1",
+      "P148.10-xpz"
     ],
     "tests/test__refs.py": [
       "P131.1",
@@ -11537,7 +11572,8 @@
       "P131.2",
       "P142.2",
       "P142.9-6yq",
-      "P142.16-6yq"
+      "P142.16-6yq",
+      "P148.12-xpz"
     ],
     "tests/test__scope_companions.py": [
       "P131.1"
@@ -11550,7 +11586,8 @@
       "P142.1",
       "P142.30-6yq",
       "P142.39-6yq",
-      "P148.6"
+      "P148.6",
+      "P148.16-xpz"
     ],
     "tests/test__status_facts.py": [
       "P131.1",
@@ -11613,7 +11650,8 @@
       "P131.1"
     ],
     "tests/test__warning_groups.py": [
-      "P131.1"
+      "P131.1",
+      "P148.11-xpz"
     ],
     "tests/test__wave.py": [
       "P131.1"
@@ -11621,7 +11659,8 @@
     "tests/test__worktrees.py": [
       "P131.1",
       "P142.18-6yq",
-      "P142.20-6yq"
+      "P142.20-6yq",
+      "P148.14-xpz"
     ],
     "tests/test_ado_connect.py": [
       "P131.1"
@@ -11661,7 +11700,8 @@
       "P142.48-6yq",
       "P142.49-6yq",
       "P144.2-6yq",
-      "P148.7"
+      "P148.7",
+      "P148.15-xpz"
     ],
     "tests/test_audit_task.py": [
       "P131.1",
@@ -11681,7 +11721,9 @@
       "P142.41-6yq",
       "P142.44-6yq",
       "P142.46-6yq",
-      "P148.7"
+      "P148.7",
+      "P148.10-xpz",
+      "P148.14-xpz"
     ],
     "tests/test_audit_usage.py": [
       "P131.1"
@@ -11713,7 +11755,8 @@
       "P142.19-6yq",
       "P142.30-6yq",
       "P142.39-6yq",
-      "P148.6"
+      "P148.6",
+      "P148.16-xpz"
     ],
     "tests/test_derive_phase_gate.py": [
       "P131.1"
@@ -11770,7 +11813,8 @@
       "P142.49-6yq",
       "P142.51-6yq",
       "P144.3-6yq",
-      "P148.1"
+      "P148.1",
+      "P148.14-xpz"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -11849,10 +11893,12 @@
     ],
     "tests/test_panel_server.py": [
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P148.16-xpz"
     ],
     "tests/test_propose_gates.py": [
-      "P131.1"
+      "P131.1",
+      "P148.15-xpz"
     ],
     "tests/test_py_launch.py": [
       "P131.1"
@@ -11917,7 +11963,8 @@
       "P142.29-6yq",
       "P144.5-ttw",
       "P142.34-6yq",
-      "P148.9-xpz"
+      "P148.9-xpz",
+      "P148.12-xpz"
     ],
     "tests/test_usage_ledger.py": [
       "P131.1",
@@ -11965,7 +12012,8 @@
       "P131.19-dau",
       "P132.5-5mm",
       "P142.13-6yq",
-      "P148.6"
+      "P148.6",
+      "P148.12-xpz"
     ],
     "tools/lints/_ui_theme_lints.py": [
       "P131.2"
@@ -12012,7 +12060,8 @@
       "P131.2",
       "P131.19-dau",
       "P132.5-5mm",
-      "P142.13-6yq"
+      "P142.13-6yq",
+      "P148.12-xpz"
     ],
     "tests/test__ui_theme_lints.py": [
       "P131.2"
@@ -12047,12 +12096,14 @@
     ],
     "plugins/audit/scripts/status/_skill_places.py": [
       "P138.4-myr",
-      "P138.5-myr"
+      "P138.5-myr",
+      "P148.11-xpz"
     ],
     "tests/test__skill_places.py": [
       "P138.4-myr",
       "P138.5-myr",
-      "P148.2"
+      "P148.2",
+      "P148.11-xpz"
     ],
     "tests/test_verify_sh.py": [
       "P140.1"

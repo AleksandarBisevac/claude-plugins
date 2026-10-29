@@ -191,10 +191,12 @@ GATE_BASIS = ("declared", "cleared", "tests.add", "files",
               # up in the evidence ledger, and never parses it further, because
               # the schema calls a runId opaque.
               "gate-only-no-suite", "failing-from-run",
-              # `files-no-suite`: a FIX task's `files` hold no suite path, so
-              # the runner has nothing of this task's to be pointed at and the
-              # phase's gate is the answer. Not `phase-no-paths`, which says
-              # the task named no file at all and is repaired by naming one.
+              # `files-no-suite`: a task with no `tests.add` names files and
+              # none is a path its spelling takes - no suite path, under a
+              # spelling whose slot holds suites alone - so the runner has
+              # nothing of this task's to be pointed at and the phase's gate
+              # is the answer. Not `phase-no-paths`, which says the task named
+              # no file at all and is repaired by naming one.
               "files-no-suite")
 
 # The arms under which the phase's gate verbatim is the ANSWER rather than an

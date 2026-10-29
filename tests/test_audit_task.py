@@ -11140,9 +11140,9 @@ def _record_cases(check):
               code == 2 and "Likely COMMAND SUBSTITUTION" in txt)
 
         # ---- (dg) a gate-only task narrows only to a SUITE PATH ----------------
-        # `tests.add` already proves a tdd/regression task creates a real test
-        # file, so its `files` arm stays unfiltered (dg3, unchanged from
-        # today) - but a gate-only task names no case at all, and a source
+        # A tdd/regression task's `files` arm hands its runner only the paths
+        # the spelling takes (dg3, and the dr block below for a spelling that
+        # takes a source path) - and a gate-only task names no case at all, and a source
         # file among its `files` is not evidence the sibling's suite-running
         # command has anything of THIS task's to run. RED-FIRST on today's
         # code: before this fix, dg1 below reads back
@@ -11286,6 +11286,154 @@ def _record_cases(check):
               and dg_tests("P1.3").get("gate")
               == ["vitest run src/Button.test.tsx --reporter dot"]
               and dg_tests("P1.3").get("gateBasis") == "declared")
+
+        # A task that has run once and was put back to pending is started: its
+        # gate is the one its attempt was graded against, so a widening scope
+        # leaves it as it stands. dg4 is the other direction - a pending task
+        # with no attempt follows the scope.
+        run(["add", "Fix after a run", "--phase", "P1", "--project-dir", dg_proj,
+             "--tests-mode", "regression", "--files", "src/Button.tsx"])
+        raw_s7 = _mio.read_json(dg_mp)
+        for t in raw_s7["phases"][0]["tasks"]:
+            if t.get("id") == "P1.7":
+                t["attempts"] = 1
+        _panel_write._atomic_write_json(dg_mp, raw_s7)
+        before_s7 = dict(dg_tests("P1.7"))
+        code_s7, txt_s7 = run(["scope", "P1.7", "--project-dir", dg_proj,
+                               "--tests-add",
+                               "src/Late.test.tsx: the late case"])
+        check("dg7 `scope --tests-add` on a pending task that already ran an "
+              "attempt leaves its derived gate as it was: %r"
+              % ((before_s7.get("gate"), before_s7.get("gateBasis"), code_s7,
+                  dg_tests("P1.7").get("gate"),
+                  dg_tests("P1.7").get("gateBasis"), txt_s7[-300:]),),
+              before_s7.get("gateBasis") == "files-no-suite"
+              and code_s7 == 0
+              and dg_tests("P1.7").get("gate") == before_s7.get("gate")
+              and dg_tests("P1.7").get("gateBasis") == "files-no-suite")
+
+        # ---- (dr) a spelling whose own slot takes a SOURCE path ----------------
+        # A sibling whose gate hands its runner a source file
+        # (`--findRelatedTests`, which resolves the tests by import graph) is
+        # evidence that this project's runner takes a source path in that
+        # slot, so a task's source files are pointed at it - narrow, never the
+        # phase's wide gate - and a scope that widens the files keeps it
+        # narrow.
+        def dr_manifest(sibling_gate, test_cmd):
+            return {
+                "meta": {"version": 2, "buildCommands": {"test": test_cmd}},
+                "phases": [
+                    {"id": "P1", "title": "UI", "status": "in_progress",
+                     "testGate": ["test"],
+                     "tasks": [
+                         {"id": "P1.1", "title": "seed", "status": "done",
+                          "files": ["src/Other.tsx"],
+                          "tests": {"mode": "regression", "add": [],
+                                    "expectRedFirst": False,
+                                    "gate": [sibling_gate]}}]}],
+                "fileIndex": {"src/Other.tsx": ["P1.1"]},
+                "bugs": [],
+            }
+
+        dr_proj, dr_mp = mk("dr-related", dr_manifest(
+            "npx jest --findRelatedTests src/Other.tsx", "npx jest"))
+
+        def dr_tests(mp, tid):
+            return (task_in(mp, tid) or {}).get("tests") or {}
+
+        code_r1, txt_r1 = run(["add", "Fix the card", "--phase", "P1",
+                               "--project-dir", dr_proj,
+                               "--tests-mode", "regression",
+                               "--files", "src/Card.tsx"])
+        check("dg5 a sibling whose gate hands its runner a source file points "
+              "a task's source files at the same spelling, basis `files`: %r"
+              % ((code_r1, dr_tests(dr_mp, "P1.2").get("gate"),
+                  dr_tests(dr_mp, "P1.2").get("gateBasis"), txt_r1[-300:]),),
+              code_r1 == 0
+              and dr_tests(dr_mp, "P1.2").get("gate")
+              == ["npx jest --findRelatedTests src/Card.tsx"]
+              and dr_tests(dr_mp, "P1.2").get("gateBasis") == "files")
+
+        code_r2, txt_r2 = run(["scope", "P1.2", "--project-dir", dr_proj,
+                               "--files", "src/Card.tsx,src/Deck.tsx"])
+        check("dg5b `scope --files` on that task re-derives the gate narrow "
+              "over the widened files, never the phase's wide gate: %r"
+              % ((code_r2, dr_tests(dr_mp, "P1.2").get("gate"),
+                  dr_tests(dr_mp, "P1.2").get("gateBasis"), txt_r2[-300:]),),
+              code_r2 == 0
+              and dr_tests(dr_mp, "P1.2").get("gate")
+              == ["npx jest --findRelatedTests src/Card.tsx src/Deck.tsx"]
+              and dr_tests(dr_mp, "P1.2").get("gateBasis") == "files")
+
+        # ALLOW CASE, the over-fire direction: a sibling whose only source
+        # path is the PROGRAM its interpreter runs hands that runner suites
+        # alone, so a task naming a document and a source file still gets the
+        # wide gate. Reading the program as a slot path would point the
+        # runner at both.
+        dp_proj, dp_mp = mk("dr-program", dr_manifest(
+            "python3 tools/runner.py tests/test_other.py",
+            "python3 tools/runner.py"))
+        code_r3, txt_r3 = run(["add", "Fix the docs", "--phase", "P1",
+                               "--project-dir", dp_proj,
+                               "--tests-mode", "regression",
+                               "--files", "docs/guide.md,src/other.py"])
+        check("dg5c ALLOW CASE: a sibling whose source path is only its "
+              "interpreter's program takes suites alone, so source and "
+              "document files get the wide gate, basis `files-no-suite`: %r"
+              % ((code_r3, dr_tests(dp_mp, "P1.2").get("gate"),
+                  dr_tests(dp_mp, "P1.2").get("gateBasis"), txt_r3[-300:]),),
+              code_r3 == 0
+              and dr_tests(dp_mp, "P1.2").get("gate") == ["test"]
+              and dr_tests(dp_mp, "P1.2").get("gateBasis") == "files-no-suite")
+
+        # ---- (da) `meta.phaseGate.always` names a file the task edits ---------
+        # The recorded spelling's gate is led by the plan's always entries, so
+        # a path one of them names is the derived gate's own, exactly as the
+        # spelling's own program is - a task editing that script is not
+        # handing it to the runner.
+        da_plan = {
+            "meta": {"version": 2,
+                     "buildCommands": {"test": "pytest"},
+                     "phaseGate": {"always": ["sh tools/check.sh"],
+                                   "derived": {"spelling": "pytest {paths}"}}},
+            "phases": [
+                {"id": "P1", "title": "Checks", "status": "in_progress",
+                 "testGate": ["sh tools/check.sh", "test"],
+                 "tasks": [{"id": "P1.1", "title": "seed", "status": "done",
+                            "files": ["src/a.py"]}]}],
+            "fileIndex": {"src/a.py": ["P1.1"]},
+            "bugs": [],
+        }
+        da_proj, da_mp = mk("da-always", da_plan)
+        code_a1, txt_a1 = run(["add", "Fix the check", "--phase", "P1",
+                               "--project-dir", da_proj,
+                               "--tests-mode", "regression",
+                               "--files", "tools/check.sh,tests/test_check.py"])
+        check("dg6 a task editing the file an always entry runs is not refused: "
+              "the gate is the always entry then the spelling over its suite, "
+              "basis `files`: %r"
+              % ((code_a1, dr_tests(da_mp, "P1.2").get("gate"),
+                  dr_tests(da_mp, "P1.2").get("gateBasis"), txt_a1[-300:]),),
+              code_a1 == 0
+              and dr_tests(da_mp, "P1.2").get("gate")
+              == ["sh tools/check.sh", "pytest tests/test_check.py"]
+              and dr_tests(da_mp, "P1.2").get("gateBasis") == "files")
+
+        # ALLOW CASE, the over-fire direction: the refusal still names a
+        # declared file that is neither a suite nor a path the spelling or an
+        # always entry names - asked of the gate a derivation that stopped
+        # filtering would write.
+        da_assembled = _mio.load_manifest(da_mp)
+        da_phase = da_assembled["phases"][0]
+        unfiltered = {"files": ["tools/check.sh", "docs/x.md"],
+                      "tests": {"gateBasis": "files",
+                                "gate": ["sh tools/check.sh",
+                                         "pytest docs/x.md"]}}
+        refusal = M._files_gate_refusal(unfiltered, da_phase, da_assembled) or ""
+        check("dg6b ALLOW CASE: the files-gate refusal still names a declared "
+              "document handed to the runner, and not the always entry's own "
+              "script: %r" % (refusal,),
+              "docs/x.md" in refusal and "tools/check.sh" not in refusal)
 
         # ---- (pg) a NEW PHASE's gate: always FIRST, exclude the only drop ------
         pg_always = {
@@ -18187,6 +18335,39 @@ def _finding_disposition_cases(check):
               and moved == [{"id": "P1-R1", "field": "fixTask",
                              "from": first, "to": None}]
               and code_a == 0 and bool(second) and second != first)
+
+        # `move` rewrites a finding's fixTask to the task's new id and leaves
+        # the finding in the phase that reviewed it, so the cancel of a fix
+        # task moved elsewhere has to read every phase's findings, not only
+        # the phase the task now sits in.
+        proj, mpath = project("cancel-moved", [finding("P1-R1")])
+        raw = _mio.read_json(mpath)
+        raw["phases"].append({"id": "P2", "title": "P2", "status": "pending",
+                              "testGate": ["test"], "tasks": []})
+        _panel_write._atomic_write_json(mpath, raw)
+        verb(proj, "add", "fix it", "--phase", "P1", "--files", "src/f.ts",
+             "--fixes", "P1-R1")
+        old_id = entry(mpath, "P1-R1").get("fixTask")
+        code_m, text_m = verb(proj, "move", old_id, "--to", "P2")
+        moved_id = entry(mpath, "P1-R1").get("fixTask")
+        code_c, text_c = verb(proj, "cancel", moved_id, "--reason", "not needed")
+        after = entry(mpath, "P1-R1")
+        rows = [r for r in _journal_io.read_all(proj)
+                if r.get("action") == "task.cancel"]
+        check("fd10 cancelling a fix task moved to another phase takes its id "
+              "off the finding left in the phase that reviewed it, on the "
+              "cancel's journal row: %r"
+              % ((code_m, old_id, moved_id, code_c, after,
+                  [(r.get("details") or {}).get("changes") for r in rows],
+                  text_m[-300:], text_c[-300:]),),
+              code_m == 0 and code_c == 0 and bool(moved_id)
+              and moved_id != old_id and moved_id.startswith("P2.")
+              and "fixTask" not in after
+              and len(rows) == 1
+              and [{"id": "P1-R1", "field": "fixTask", "from": moved_id,
+                    "to": None}]
+              == [c for c in ((rows[0].get("details") or {}).get("changes")
+                              or []) if c.get("field") == "fixTask"])
     finally:
         shutil.rmtree(root, ignore_errors=True)
 
@@ -20746,6 +20927,26 @@ def _retired_flag_cases(check):
                          if "falsifiers" in flags)
         check("rf2 no verb's flag table holds `falsifiers` (held by %r)"
               % (holders,), holders == [])
+
+        # `--selftest` is a retired mode as well: neither module answers it, so
+        # the only sentence about it either module's docstring may carry is
+        # the one saying it carries none - a usage line offering it, or a
+        # sentence saying what it points at, sends a reader to an exit 2.
+        import _proposals
+        said = dict((name, str(doc or "")) for name, doc in
+                    (("audit-task.py", M.__doc__),
+                     ("_proposals.py", _proposals.__doc__)))
+        offered = dict((name, doc.count("--selftest")
+                        - doc.count("no `--selftest`"))
+                       for name, doc in said.items())
+        code_st, _txt_st = run(["--selftest"])
+        check("rf3 no docstring offers the retired `--selftest`: every mention "
+              "in audit-task.py's and _proposals.py's is the sentence saying "
+              "each carries none, and the verb refuses it (exit %r): %r"
+              % (code_st, offered,),
+              offered == {"audit-task.py": 0, "_proposals.py": 0}
+              and all("no `--selftest`" in doc for doc in said.values())
+              and code_st == 2)
     finally:
         _harness.remove_tree(tmp)
 

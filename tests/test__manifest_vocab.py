@@ -28,7 +28,9 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 
 import ast
 import datetime
+import json
 import os
+import re
 import sys
 import time
 import types
@@ -1028,6 +1030,43 @@ def _cases(check):
           and so_entry(None) is False and so_entry("") is False
           and not (set(getattr(M, "SIGNOFF_ONLY_GATES", ("?",)))
                    & set(M.REVIEW_ONLY_GATES)))
+
+    # `files-no-suite` is any task's word since the `files` arm stopped being
+    # a fix task's alone: every task with no `tests.add` points its gate only
+    # at the paths its spelling takes. Each place that defines the word is
+    # read sentence by sentence, and a sentence naming the word may not scope
+    # it to a fix task. The comment here is read as prose, `#` stripped.
+    def _prose(path, comment=False):
+        with open(path, encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+        if comment:
+            lines = [ln.strip().lstrip("#") for ln in lines]
+        return " ".join(ln.strip() for ln in lines)
+
+    with open(os.path.join(_output.PLUGIN_ROOT, "schema",
+                           "audit-plan.schema.json"), encoding="utf-8") as fh:
+        _schema_basis = json.load(fh)["$defs"]["tests"]["properties"][
+            "gateBasis"]["description"]
+    _basis_texts = {
+        "_manifest_vocab.py": _prose(M.__file__, comment=True),
+        "schema gateBasis": _schema_basis,
+        "commands/init.md": _prose(os.path.join(_output.PLUGIN_ROOT,
+                                                "commands", "init.md")),
+        "reference/verbs-in-full.md": _prose(os.path.join(
+            _output.PLUGIN_ROOT, "reference", "verbs-in-full.md")),
+    }
+    _scoped = dict(
+        (name, [s for s in re.split(r"(?<=[.!?])\s+", text)
+                if "files-no-suite" in s and "fix task" in s.lower()])
+        for name, text in _basis_texts.items())
+    _naming = dict((name, sum(1 for s in re.split(r"(?<=[.!?])\s+", text)
+                              if "files-no-suite" in s))
+                   for name, text in _basis_texts.items())
+    check("mv67 no place defining `files-no-suite` calls it a fix task's word "
+          "- the files arm narrows every task the same way - and each still "
+          "names it: %r" % ((_scoped, _naming),),
+          all(not hits for hits in _scoped.values())
+          and all(_naming.values()))
 
 
 def _selftest():

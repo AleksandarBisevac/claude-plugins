@@ -37,8 +37,7 @@ is undecided, because a rule that stops to interview cannot be called from an HT
 endpoint and a rule that guesses is worse than one that refuses.
 
 This file carries no `--selftest` of its own; its cases live in
-`tests/test__proposals.py`, which is what `--selftest` here points
-at. They were in `test_materialize_proposal.py` while this module was part of that
+`tests/test__proposals.py`. They were in `test_materialize_proposal.py` while this module was part of that
 file and this sentence went on naming it afterwards -- the door's suite still tests
 the door, and the two are no longer one.
 """
