@@ -22,7 +22,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P149-R1",
@@ -119,44 +119,55 @@
         "severity": "med",
         "file": "PLUGIN-BUILD-GUIDE.md:4818-4830",
         "issue": "contradicts task clause \"No number written into prose\": the new stop_and_drain paragraph writes cardinalities - \"all three hold\", \"so the three cannot come to disagree\", \"this module's two functions\", \"Two callers still tear down without it\". The last is the one that rots: it is true of the tree today (derive-phase-gate.py:202-203 and run-agent-session.py:444 are the only non-stop_and_drain teardowns) and goes false the day either migrates, while the names beside it stay right. The prose lint passes only because it does not know these shapes (a plain 'the N noun' is author-enforced, per CLAUDE.md).",
-        "resolution": "Delete the numbers and keep the names: 'only when each of these holds: ...', 'so the callers cannot come to disagree', 'this module's tear_down and drain_to_eof', 'Callers that still tear down without it and record no confirmation: derive-phase-gate._spawn ..., run-agent-session.run_session ...'.",
-        "fixTask": "P149.12-hwg"
+        "resolution": "fixed in P149.12-hwg (69ab4da87549): Delete the numbers and keep the names: 'only when each of these holds: ...', 'so the callers cannot come to disagree', 'this module's tear_down and drain_to_eof', 'Callers that still tear down without it and record no confirmation: derive-phase-gate._spawn ..., run-agent-session.run_session ...'.",
+        "fixTask": "P149.12-hwg",
+        "commit": "69ab4da87549",
+        "status": "fixed"
       },
       {
         "id": "P149-R11",
         "severity": "low",
         "file": "PLUGIN-BUILD-GUIDE.md:4820",
         "issue": "The line starts with \"- and calls the teardown confirmed only when ...\" (the dash is a sentence dash that wrapped to a line start). In CommonMark/GitHub a bullet can interrupt a paragraph, so the page renders the tail of the sentence as a list item and splits the paragraph.",
-        "resolution": "Re-wrap so the dash is not the first character of a line (e.g. put 'full pipe -' at the end of the previous line, as the paragraph above does with 'and').",
-        "fixTask": "P149.12-hwg"
+        "resolution": "fixed in P149.12-hwg (69ab4da87549): Re-wrap so the dash is not the first character of a line (e.g. put 'full pipe -' at the end of the previous line, as the paragraph above does with 'and').",
+        "fixTask": "P149.12-hwg",
+        "commit": "69ab4da87549",
+        "status": "fixed"
       },
       {
         "id": "P149-R12",
         "severity": "low",
         "file": "PLUGIN-BUILD-GUIDE.md:4825-4826",
         "issue": "\"each wording an unconfirmed answer its own way\" is not true of drive-phase.run_lint_probe: its docstring (drive-phase.py:8231-8233) says it takes the wording stamp-verification red gives, and its suffix \" (not confirmed)\" (drive-phase.py:8250-8251) is identical to stamp-verification._run_in's (stamp-verification.py:3350-3351). Only run-test-gate (facts[\"teardown\"] = \"unconfirmed\", run-test-gate.py:3150-3151) words it differently. stop_and_drain's own docstring says the same 'its own way', so the guide copies a loose phrase.",
-        "resolution": "Say what is true: run-test-gate records teardown: unconfirmed in its facts, while stamp-verification._run_in and drive-phase.run_lint_probe append '(not confirmed)' to the timeout sentence.",
-        "fixTask": "P149.12-hwg"
+        "resolution": "fixed in P149.12-hwg (69ab4da87549): Say what is true: run-test-gate records teardown: unconfirmed in its facts, while stamp-verification._run_in and drive-phase.run_lint_probe append '(not confirmed)' to the timeout sentence.",
+        "fixTask": "P149.12-hwg",
+        "commit": "69ab4da87549",
+        "status": "fixed"
       },
       {
         "id": "P149-R13",
         "severity": "low",
         "file": "PLUGIN-BUILD-GUIDE.md:4942-4944",
         "issue": "The run list \"HEAD's own, the task's, the second (--introduces) and the fix run\" is presented as every run the one deadline covers, but red_run also makes a 'task-held' re-run (stamp-verification.py:4333-4344, guarded by start_problem(['task-held'], ...)) when inline-pulled-in code made the task's run green. The task asked that every sentence be true of the code; the enumeration is closed and omits that run.",
-        "resolution": "Add the conditional re-run with the task's run held back to the list, or word it as 'every run red makes' without a closed enumeration.",
-        "fixTask": "P149.12-hwg"
+        "resolution": "fixed in P149.12-hwg (69ab4da87549): Add the conditional re-run with the task's run held back to the list, or word it as 'every run red makes' without a closed enumeration.",
+        "fixTask": "P149.12-hwg",
+        "commit": "69ab4da87549",
+        "status": "fixed"
       },
       {
         "id": "P149-R14",
         "severity": "low",
         "file": "tests/test__deps.py:484 (gate: tests/test__deps.py, tests/test__output_lints.py)",
         "issue": "Inherited-tests judgement from reading: the task's gate selects two lint suites that assert the guide's structure (path, enumeration, prose-number shapes), none of its claims. Both would still pass with the whole stop_and_drain paragraph and the rewritten deadline paragraph deleted or made false.",
-        "resolution": "Accept as inherent to a prose task, or file a task for a case that checks the guide's named functions (stop_and_drain, drain_to_eof, fit_problem, start_problem, sweep_budget) still exist in the code it names."
+        "resolution": "Accept as inherent to a prose task, or file a task for a case that checks the guide's named functions (stop_and_drain, drain_to_eof, fit_problem, start_problem, sweep_budget) still exist in the code it names.",
+        "status": "accepted-open",
+        "acceptedReason": "Both Windows reds the release CI found are fixed at their cause: ww2's fixture wrote text-mode CRLF (P149.1), and a timed-out throwaway build left a locked tree a single --force could not remove (P149.2). The review findings on that work are fixed: one teardown helper every reader calls (P149.3, .8, .9), a red-first deadline sized in wall time that refuses a proof that cannot fit (P149.10), derived gates that name each declared suite once (P149.4, .7), and a guide that states both (P149.11, .12). P149-R14 is left: it says the guide paragraphs' truth has no test, which no suite can hold; the per-task review is what checked it. Per-task reviewer answers continued over: P149.8-hwg intent diverges: Nastavi + fix task (Recommended)"
       }
     ],
-    "outcome": "[findings: 14 - 0 high, 3 med, 11 low; 9 with a recorded fix commit]"
+    "outcome": "[findings: 14 - 0 high, 3 med, 11 low; 13 with a recorded fix commit]",
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "Both Windows reds the release CI found are fixed at their cause: ww2's fixture wrote text-mode CRLF (P149.1), and a timed-out throwaway build left a locked tree a single --force could not remove (P149.2). The review findings on that work are fixed: one teardown helper every reader calls (P149.3, .8, .9), a red-first deadline sized in wall time that refuses a proof that cannot fit (P149.10), derived gates that name each declared suite once (P149.4, .7), and a guide that states both (P149.11, .12). P149-R14 is left: it says the guide paragraphs' truth has no test, which no suite can hold; the per-task review is what checked it. Per-task reviewer answers continued over: P149.8-hwg intent diverges: Nastavi + fix task (Recommended)",
   "tasks": [
     {
       "id": "P149.1",
@@ -874,7 +885,7 @@
     {
       "id": "P149.12-hwg",
       "title": "The build guide's teardown and deadline paragraphs name what they describe instead of counting it, and render as one paragraph",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix review findings P149-R10, P149-R11, P149-R12, P149-R13 on P149.11's paragraphs in PLUGIN-BUILD-GUIDE.md (each finding's file, issue and resolution is in docs/audit/phases/P149.json review.findings, by id). R10: delete every count the new paragraphs write ('all three hold', 'the three', 'two functions', 'Two callers still tear down without it') - name the conditions, the functions and the callers instead of counting them, so the text cannot go stale when a caller migrates. R11: no line in the paragraph may start with '- ' where it is a sentence continuation (CommonMark renders it as a bullet); rewrap. R12: state truthfully which readers word an unconfirmed teardown how (run_lint_probe and _run_in share the '(not confirmed)' suffix; run-test-gate words it its own way), read from the code at HEAD. R13: the list of runs the deadline covers includes the conditional task-held re-run red makes; read it from stamp-verification.py's red and state it. Run the before-you-claim skill. No number written into prose; no F/P/BUG ids. Edit only the declared file.",
       "files": [
         "PLUGIN-BUILD-GUIDE.md",
@@ -896,13 +907,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "69ab4da87549",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "PLUGIN-BUILD-GUIDE.md only. Teardown paragraph (from line 4818): R10 - the counts 'all three hold', 'the three', 'this module's two functions', 'Two callers still' became 'each of these holds', 'its callers', 'this module's `tear_down` and `drain_to_eof`', 'Callers that still tear down without it ...', with derive-phase-gate._spawn and run-agent-session.run_session still named. R11 - rewrapped so 'full pipe -' ends a line. An awk scan of lines 4818-4995 for list-shaped line starts (^ {0,3}([-*+] |[0-9]+[.)] )) prints nothing. R12 - now states run-test-gate._shell records `teardown: unconfirmed` in the step's facts (run-test-gate.py:3150-3151), while stamp-verification._run_in (stamp-verification.py:3349-3351) and drive-phase.run_lint_probe (drive-phase.py:8248-8251) end their timeout sentence with '(not confirmed)', the lint probe taking red's wording (drive-phase.py:8230-8232). Deadline paragraph: R13 - the list of runs now includes the task's run again with what it pulled in held back, made only when its run was green with that code in (stamp-verification.py:4331-4344: held = no problem and _pulled_in(inline) and classify_run == V_GREEN, start_problem(['task-held'])). Also dropped the count 'the removal's two git calls' from the same rewritten paragraph; it copied the literal 2 in TEARDOWN_MARGIN (stamp-verification.py:659), and it now reads 'the removal's git calls'. Checks: _deps.doc_prose_numbers() over the derived set returns [] for PLUGIN-BUILD-GUIDE.md (python exit 0). The lint was shown to fire on a scratch copy with 'all 3 of them' planted: [('planted.md', 4825, 'all 3 of them')]. The spelled-out word form 'all three of them' gave [], which confirms that the word shapes are left to the author, so a manual grep of both paragraphs for one|two|three|four|five|six|both|digits was the check there. Its only hits are singular articles or property statements ('one home', 'ONE deadline', 'one run's wall time', 'one teardown', 'At most one run can time out') and the code-derived 'half the deadline' beside sweep_budget. Gates: runsGate own-tests, and the task adds no test, so I ran nothing (gates {}); the orchestrator's recorded run of `python3 tools/sweep-selftests.py tests/test__deps.py tests/test__output_lints.py` is the evidence. Left outside scope: _proc_group.stop_and_drain's own docstring (_proc_group.py:278-279) still says every reader 'words the answer its own way', the loose phrase R12 traces the guide's wording to; it is not in this task's files. Dependants (the 25 files naming PLUGIN-BUILD-GUIDE.md by basename, the 8 shown being .claude/skills/before-you-claim/evals/evals.json, plugins/audit/evals/bugfix/case.yaml, plugins/audit/evals/guard-stop/case.yaml, plugins/audit/scripts/status/_doctor_hygiene.py, tests/test__affected_tests.py, tests/test__deps.py, tests/test__doctor_trail.py, tests/test__help.py): all still correct. The edit rewords prose inside two existing paragraphs and adds, removes or renames no heading, tree line, section, module name or file path, which is what those readers key on (the enumeration and tree lints in _deps, help/doctor section lookups, eval fixtures quoting the guide by name).",
+        "descriptive": "The build guide's teardown and deadline paragraphs now name the conditions, functions and callers instead of counting them, render as one paragraph, word each caller's unconfirmed teardown as the code does, and list the task-held re-run."
       },
       "startedAt": "2026-10-29T16:16:13Z",
-      "completedAt": null,
+      "completedAt": "2026-10-29T16:24:56Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -925,16 +936,27 @@
         "runId": "2026-10-29T16:23:31Z.c0ce6a",
         "status": "passed",
         "at": "2026-10-29T16:23:31Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "69ab4da87549",
+        "at": "2026-10-29T16:24:56Z",
+        "return": "docs/audit/evidence/returns/P149.12-hwg/20261029T161613Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task with expectRedFirst false and no tests.add entry: a prose-only edit to PLUGIN-BUILD-GUIDE.md owes no red",
+        "at": "n/a - no red run owed"
       }
     }
   ],
   "request": "release CI on ci/P148 is red on Windows only; fix both reds before 3.7.0",
   "openChoices": [],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "482d7bf5-025e-4eb9-acc8-1383e2a9aaa8",
-    "branch": "audit/p149-the-windows-reds-release-ci-fo",
-    "at": "2026-10-29T13:16:46Z"
-  },
-  "startedAt": "2026-10-29T13:16:46Z"
+  "startedAt": "2026-10-29T13:16:46Z",
+  "testEvidence": {
+    "runId": "2026-10-29T16:38:20Z.f86242",
+    "status": "passed",
+    "at": "2026-10-29T16:38:20Z"
+  }
 }
