@@ -11393,7 +11393,8 @@
       "P131.1",
       "P148.6",
       "P148.14-xpz",
-      "P148.19-xpz"
+      "P148.19-xpz",
+      "P148.22-xpz"
     ],
     "tests/test__evidence_view.py": [
       "P131.1"

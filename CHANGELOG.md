@@ -151,13 +151,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   findings and journals each as a `fixTask` change. Such a finding used to stay bound to a task
   that fixes nothing, refused by `add --fixes` and by the drive's `fix` answer until the plan
   was edited by hand. A finding a commit already settled keeps its fix task.
-- **A gate derived from a task's `files` hands the runner only what it takes.** With no
-  `tests.add`, every task's gate - not only a fix task's - is pointed at the suite paths among
-  its `files`, so a document, workflow or source file no longer reaches a suite runner and
-  turns the gate red before any work; when none is left the gate is the phase's own
-  (`gateBasis: files-no-suite`). When a sibling's gate already hands its runner a source path
-  (a related-tests spelling such as `jest --findRelatedTests`), the task's files go to it
-  whole.
+- **A gate derived from a task's `files` hands each runner only what it takes.** With no
+  `tests.add`, every task's gate - not only a fix task's - is pointed at the paths among its
+  `files` that a command of its spelling takes, and each command of a gate entry is read on its
+  own: a suite always, a source file only where that command relates sources to their tests
+  in its runner's language (`jest --findRelatedTests`, `vitest related`), a document,
+  workflow, config, setup or fixture file never - a `conftest.py`, a `playwright.config.ts` or
+  a `fixtures/` file under a test directory is no suite. Each command is handed only the paths
+  its own slot takes, so the e2e command beside a related-tests one is not handed a source
+  file, and a command left with none is dropped. An option's argument (`--config
+  jest.config.js`, `-c setup.cfg`) stays where it stands, before the slot or after it, and each
+  command of a chained entry keeps its own program. When nothing is left the gate is the
+  phase's own (`gateBasis: files-no-suite`).
 - **`/audit:task scope` re-derives a derived gate.** `scope --files` or `--tests-add` on a task
   that has never started, whose gate the derivation wrote, derives the gate again from the
   scope the call ends with, as `add` would. A gate a task declared, and the gate of a task that

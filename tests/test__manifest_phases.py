@@ -1487,13 +1487,40 @@ def _cases(check):
           "source only by one that relates sources to tests, a document, "
           "workflow, config or other file by none; rows that disagree: %r"
           % (_sk_bad,), not _sk_bad)
-    _cs = [(e, M.command_slots(e)) for e in (
-        "python3 tools/run.py tests/test_a.py", "python3 tests/test_a.py",
-        "npx jest --config jest.config.js src/a.test.tsx")]
-    check("pks2 `command_slots` leaves out the program an interpreter runs, but "
-          "not a suite run as the program, and keeps an option's argument "
-          "(its kind decides it): %r" % (_cs,),
-          [found for _e, ((_w, found),) in _cs] == [[2], [1], [3, 4]])
+    # KIND BEFORE DIRECTORY: a file under a test directory is a suite only when
+    # nothing else it is says otherwise - a config (conftest.py, *.config.*, a
+    # setup file), a document, a fixture or data file is never one, and a
+    # suite is otherwise told by its test mark or `test_` prefix, the
+    # directory deciding only for a source-extension file with neither.
+    _kd_rows = (
+        ("tests/conftest.py", "config"), ("conftest.py", "config"),
+        ("e2e/playwright.config.ts", "config"), ("test/setup.ts", "config"),
+        ("src/setupTests.ts", "config"), ("jest.setup.js", "config"),
+        ("tests/global-setup.ts", "config"),
+        ("__tests__/README.md", "document"),
+        ("tests/fixtures/a.json", "fixture"), ("tests/fixtures/helper.py", "fixture"),
+        ("src/__mocks__/api.ts", "fixture"), ("tests/data/cases.csv", "fixture"),
+        ("tests/__snapshots__/a.test.ts.snap", "fixture"),
+        ("__tests__/order.ts", "suite"), ("tests/_harness.py", "suite"),
+        ("tests/test_setup.py", "suite"), ("src/foo.test.ts", "suite"),
+        ("e2e/y.spec.ts", "suite"), ("src/app.config.ts", "config"),
+    )
+    _kd_bad = [(p, M.path_kind(p), M.slot_takes(p, False), M.slot_takes(p, True))
+               for p, kind in _kd_rows
+               if (M.path_kind(p), M.slot_takes(p, False), M.slot_takes(p, True))
+               != (kind, kind == "suite", kind == "suite")]
+    # A related slot relates modules of its runner's language: given the
+    # extensions it relates, a path outside them - source or suite - is not
+    # taken, and one inside is (the allow rows).
+    _ts = frozenset([".ts"])
+    _lang = [M.slot_takes(p, _ts) for p in (
+        "src/y.py", "tests/test_y.py", "src/y.ts", "src/y.test.ts")]
+    check("pks3 `path_kind` decides by kind before directory - config, "
+          "document, fixture or data first, a suite only by its test mark, "
+          "its `test_` prefix, or a test directory holding a source file - and "
+          "a related slot takes only its runner's language; rows that "
+          "disagree: %r, language: %r" % (_kd_bad, _lang),
+          not _kd_bad and _lang == [False, False, True, True])
 
 
 def _selftest():

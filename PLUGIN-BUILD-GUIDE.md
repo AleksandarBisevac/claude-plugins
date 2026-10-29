@@ -3660,8 +3660,8 @@ when it carries a literal `{paths}` placeholder (the one place the project
 recorded how its gate narrows; a spelling without the placeholder is skipped,
 with a printed reason, and the next source is read), and only when no usable
 spelling exists, a sibling task's own `path_scoped_sibling` entries SECOND
-(one task's own gate, whose repointing replaces every path-shaped word in it,
-the runner included). Neither existing is `phase-no-spelling`, unchanged. `derive()`'s own result
+(one task's own gate, whose slot the re-point reads off its words). Neither
+existing is `phase-no-spelling`, unchanged. `derive()`'s own result
 carries `shapeSource` — the sibling's task id, or the literal
 `meta.phaseGate.derived.spelling` — so a reader can tell which of the two
 supplied the shape; a spelling-sourced shape is filled by literal `{paths}`
@@ -3672,6 +3672,25 @@ substitution is `point_shape`, which `/audit:task add` asks too: its task gate
 reads the shape through `resolve_shape` as well, and no caller outside
 `_gate_derive.py` names `path_scoped_sibling` (the AST case `os3` in
 `test__gate_derive.py` walks every script and hook for it).
+
+**A gate entry is read command by command, and each command's slot is its own.**
+`_read_command` splits an entry at the shell's list operators and reads each
+simple command apart: its slot is the path words that are neither its program
+(the interpreter's script, unless that is itself a suite) nor an option or the
+argument of one that takes it (`OPTION_ARGUMENT_WORDS`; an `=` form carries its
+argument in the same word), and its mode is whether THAT command relates
+sources to their tests (`RELATED_SLOT_WORDS`, at no option-argument position),
+in its runner's language (`_manifest_phases.SCRIPT_MODULE_EXTENSIONS`).
+`_manifest_phases.slot_takes` - the one per-path decision, over
+`path_kind`, which reads a config, setup, document or fixture file before any
+test directory - is asked of each declared path for each command, by
+`taken_paths` (which of a task's `files` some command takes), by `repointed`
+and `point_shape` with `by_kind` (each command handed only what its own slot
+takes, a command left with none dropped with its separator, an option's
+argument left where it stands), and by `untaken_slot_paths` (the refusal,
+each command judged by its own mode). A task's `tests.add` paths are handed
+to every slot without `by_kind`: the gate must run every case the task
+promises to author.
 
 **`derived-empty` has TWO triggers, and `derive()` is the only place either is
 computed.** The first: `meta.phaseGate.derived.listing.all` ran, exited 0 and
@@ -5179,10 +5198,12 @@ file's own lines and `testGateDerived` name, never resolved or run for a listing
 **`meta.phaseGate.derived.spelling` is that runner's own path-scoped RUN command**, carrying a
 `{paths}` placeholder — the FIRST shape source `_gate_derive.resolve_shape` tries; a sibling
 task's own path-scoped gate entry is read only when no usable spelling exists, because repointing
-a sibling's entry replaces every path-shaped word in it, the runner included, so the recorded
-spelling wins whenever both exist. `{paths}` is filled by LITERAL
+a sibling's entry has to read its slot off its words (each command's program and every option's
+argument told apart from the paths it hands), where the recorded spelling states it outright, so
+the recorded spelling wins whenever both exist. `{paths}` is filled by LITERAL
 substitution with the shell-quoted, resolved test paths — never through `repointed()`, because
-the placeholder is not a path-shaped token that function would recognize. A `spelling` with no
+the placeholder is not a path-shaped token that function would recognize; a template whose
+commands take different paths (`point_shape`'s `by_kind`) is rebuilt command by command. A `spelling` with no
 `{paths}` placeholder is ignored, with a printed reason; with neither a sibling nor a usable
 `spelling`, the basis is `phase-no-spelling`, unchanged. The printed lines and `testGateDerived
 .shapeSource` name WHICH source supplied the shape — the sibling task's id, or the literal

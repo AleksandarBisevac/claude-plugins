@@ -255,8 +255,9 @@ def _slot_cases(check):
     wrong = [(shape, M.slot_takes_sources(shape, src, {}))
              for shape, src, want in reads
              if M.slot_takes_sources(shape, src, {}) is not want]
-    check("gdk1 `slot_takes_sources` reads the word in front of the slot, the "
-          "recorded `{paths}` and a sibling's first slot path alike: "
+    check("gdk1 `slot_takes_sources` reads the related-tests word in a "
+          "slot-holding command, the recorded `{paths}` and a sibling's slot "
+          "alike: "
           "--findRelatedTests anywhere, `related` only after vitest, and never "
           "an option's argument or what the slot holds; wrong: %r" % (wrong,),
           not wrong)
@@ -288,6 +289,164 @@ def _slot_cases(check):
           "it is written into the slot, and a source-taking slot still has a "
           "document named: %r" % (named,),
           named == ([], ["tools/run.py"], ["tools/check.sh"], ["docs/g.md"]))
+    _command_mode_cases(check)
+    _command_slot_cases(check)
+
+
+# --- one command, one slot, one mode -----------------------------------------
+def _reading(entry):
+    """`[(slot paths, takes sources)]` per command of `entry`, or the reason
+    the module cannot answer (no per-command reading at all)."""
+    read = getattr(M, "slot_reading", None)
+    if read is None:
+        return "no slot_reading"
+    return [(paths, bool(sources)) for paths, sources in read(entry)]
+
+
+def _call(fn, *args, **kwargs):
+    """`fn(*args, **kwargs)`, or the TypeError a module without the keyword
+    raises, as a value the case prints rather than a crash."""
+    try:
+        return fn(*args, **kwargs)
+    except TypeError as exc:
+        return "TypeError: %s" % exc
+
+
+def _command_mode_cases(check):
+    """Whether a slot takes sources is its OWN command's question: a related
+    word in one command of an entry, or in one entry of a gate, says nothing
+    about the next one's slot."""
+    reads = (
+        ("npx vitest related src/O.ts --run && npx playwright test e2e/o.spec.ts",
+         [(["src/O.ts"], True), (["e2e/o.spec.ts"], False)]),
+        ("npx jest --findRelatedTests src/O.ts && pytest tests/test_o.py",
+         [(["src/O.ts"], True), (["tests/test_o.py"], False)]),
+        ("npx jest --config jest.config.js --findRelatedTests src/O.tsx",
+         [(["src/O.tsx"], True)]),
+        ("npm test -- --findRelatedTests src/O.ts", [(["src/O.ts"], True)]),
+        # the over-fire direction: a word that only looks like the mode
+        ("pytest -k related tests/test_o.py", [(["tests/test_o.py"], False)]),
+        ("npx related src/O.ts", [(["src/O.ts"], False)]),
+    )
+    wrong = [(e, _reading(e)) for e, want in reads if _reading(e) != want]
+    pair = ["npx vitest related src/O.ts --run", "npx playwright test e2e/o.spec.ts"]
+    chained = ["npx jest --findRelatedTests src/O.ts && pytest tests/test_o.py"]
+    named = (
+        M.untaken_slot_paths(["npx vitest related src/y.ts --run",
+                              "npx playwright test src/y.ts"],
+                             ["src/y.ts"], pair, "P1.1", {}),
+        M.untaken_slot_paths(["npx vitest related src/y.ts --run"],
+                             ["src/y.ts"], pair, "P1.1", {}),
+        M.untaken_slot_paths(
+            ["npx jest --findRelatedTests src/y.ts && pytest src/y.ts tests/test_y.py"],
+            ["src/y.ts", "tests/test_y.py"], chained, "P1.1", {}),
+        M.untaken_slot_paths(
+            ["npx jest --findRelatedTests src/y.ts && pytest tests/test_y.py"],
+            ["src/y.ts", "tests/test_y.py"], chained, "P1.1", {}),
+        # a related slot relates modules of its runner's language: a Python
+        # source or suite handed to jest's is a run of nothing
+        M.untaken_slot_paths(["npx jest --findRelatedTests src/y.py tests/test_y.py"],
+                             ["src/y.py", "tests/test_y.py"], chained, "P1.1", {}))
+    check("gdk4 a slot takes sources by its own command's words - a related "
+          "word in one command or one entry leaves the next one's slot taking "
+          "suites alone - and the refusal names, per command, what that "
+          "command's slot does not take (allow rows: the same paths where "
+          "each command takes them); wrong readings: %r, named: %r"
+          % (wrong, named),
+          not wrong and named == (["src/y.ts"], [], ["src/y.ts"], [],
+                                  ["src/y.py", "tests/test_y.py"]))
+    spelling = ["npx jest --findRelatedTests {paths} && pytest {paths}"]
+    handed = (
+        _call(M.repointed, chained, {}, ["src/a.ts", "tests/test_a.py"],
+              by_kind=True),
+        _call(M.repointed, chained, {}, ["src/a.ts"], by_kind=True),
+        _call(M.repointed, pair, {}, ["src/y.ts"], by_kind=True),
+        _call(M.repointed, pair, {}, ["src/y.ts", "e2e/y.spec.ts"], by_kind=True),
+        _call(M.point_shape, spelling, M.SPELLING_SOURCE, {},
+              ["src/a.ts", "tests/test_a.py"], by_kind=True),
+        # a template whose one command takes every path is filled byte for byte
+        _call(M.point_shape, ["pytest  -q {paths}"], M.SPELLING_SOURCE, {},
+              ["tests/test_a.py"], by_kind=True))
+    check("gdk6 each command of an entry receives only the declared paths its "
+          "own slot takes, a command left with none is dropped with its "
+          "separator and an entry left with none is dropped, recorded "
+          "spelling and sibling alike: %r" % (handed,),
+          handed == (
+              ["npx jest --findRelatedTests src/a.ts && pytest tests/test_a.py"],
+              ["npx jest --findRelatedTests src/a.ts"],
+              ["npx vitest related src/y.ts --run"],
+              ["npx vitest related src/y.ts e2e/y.spec.ts --run",
+               "npx playwright test e2e/y.spec.ts"],
+              ["npx jest --findRelatedTests src/a.ts && pytest tests/test_a.py"],
+              ["pytest  -q tests/test_a.py"]))
+
+
+def _command_slot_cases(check):
+    """The slot is located per command: the path words that are neither the
+    program nor an option or its argument. Only those are replaced; an
+    option's argument stays where it stands, before the slot or after it."""
+    rows = (
+        ("npx jest --config jest.config.js src/Other.test.tsx",
+         ["src/Card.test.tsx"],
+         "npx jest --config jest.config.js src/Card.test.tsx"),
+        ("npx jest src/Other.test.tsx --config jest.config.js",
+         ["src/Card.test.tsx"],
+         "npx jest src/Card.test.tsx --config jest.config.js"),
+        ("npx jest --config=jest.config.js src/Other.test.tsx",
+         ["src/Card.test.tsx"],
+         "npx jest --config=jest.config.js src/Card.test.tsx"),
+        ("pytest -c setup.cfg tests/test_o.py", ["tests/test_a.py"],
+         "pytest -c setup.cfg tests/test_a.py"),
+        ("pytest tests/test_o.py -c setup.cfg", ["tests/test_a.py"],
+         "pytest tests/test_a.py -c setup.cfg"),
+        ("pytest --cov-config .coveragerc --rootdir sub/root.d tests/test_o.py",
+         ["tests/test_a.py"],
+         "pytest --cov-config .coveragerc --rootdir sub/root.d tests/test_a.py"),
+        ("npx jest --findRelatedTests src/O.tsx --config jest.config.js",
+         ["src/Card.tsx"],
+         "npx jest --findRelatedTests src/Card.tsx --config jest.config.js"),
+        ("python3 tools/a.py tests/test_o.py && python3 tools/b.py tests/test_p.py",
+         ["tests/test_x.py"],
+         "python3 tools/a.py tests/test_x.py && python3 tools/b.py tests/test_x.py"),
+        # no command has a slot: the entry is the spelling's own, copied whole
+        ("python3 tools/a.py t && python3 tools/b.py u", ["tests/test_x.py"],
+         "python3 tools/a.py t && python3 tools/b.py u"),
+        # the program stays; a suite run as the program is the slot
+        ("python3 tools/run.py tests/test_o.py", ["tests/test_a.py"],
+         "python3 tools/run.py tests/test_a.py"),
+        ("python3 tests/test_o.py", ["tests/test_a.py"], "python3 tests/test_a.py"),
+    )
+    wrong = [(entry, M.repointed([entry], {}, paths), want)
+             for entry, paths, want in rows
+             if M.repointed([entry], {}, paths) != [want]]
+    located = [(e, _reading(e)) for e in (
+        "npx jest --config jest.config.js src/a.test.tsx",
+        "pytest tests/test_o.py -c setup.cfg",
+        "python3 tools/run.py tests/test_a.py",
+        "python3 tests/test_a.py")]
+    # A recorded template's own positional path is the spelling's, not the
+    # slot: read by the template's words around `{paths}`, it is exempt where
+    # the template names it and named where it is written into the slot. A
+    # reading of the words alone would call it the slot and refuse the gate
+    # the derivation itself wrote.
+    tpl = ["pytest tools/plugin_hooks.py {paths}"]
+    rec = M.SPELLING_SOURCE
+    own = (M.untaken_slot_paths(["pytest tools/plugin_hooks.py tests/test_a.py"],
+                                ["tools/plugin_hooks.py", "tests/test_a.py"],
+                                tpl, rec, {}),
+           M.untaken_slot_paths(
+               ["pytest tools/plugin_hooks.py tools/plugin_hooks.py tests/test_a.py"],
+               ["tools/plugin_hooks.py", "tests/test_a.py"], tpl, rec, {}))
+    check("gdk7 a path the recorded template names in its own words is not in "
+          "the slot, and the same path written into the slot is: %r" % (own,),
+          own == ([], ["tools/plugin_hooks.py"]))
+    check("gdk5 the slot of each command is its path words less the program "
+          "and every option's argument (`--config`, `-c`, `--cov-config`, "
+          "`--rootdir` and the `=` forms), and only those are replaced; "
+          "wrong re-points: %r; readings: %r" % (wrong, located),
+          not wrong and [r for _e, r in located] == [
+              [(["src/a.test.tsx"], False)], [(["tests/test_o.py"], False)],
+              [(["tests/test_a.py"], False)], [(["tests/test_a.py"], False)]])
 
 
 def _cases(check):

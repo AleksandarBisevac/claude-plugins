@@ -1489,11 +1489,13 @@ def _files_gate_refusal(task, phase, assembled):
     task declares is its own (`--gate` writes basis `declared`), so only a
     derived one is asked.
 
-    BY POSITION, WHATEVER THE SPELLING (`_gate_derive.untaken_slot_paths`): a
-    path an always entry or the spelling's own words name is exempt where they
-    name it, and the same path written into the slot is named; a spelling whose
-    slot relates sources to their tests still has a document or workflow in it
-    named."""
+    BY POSITION AND BY COMMAND, WHATEVER THE SPELLING
+    (`_gate_derive.untaken_slot_paths`): a path an always entry, an option's
+    argument or the spelling's own words name is exempt where they name it,
+    and the same path written into a slot is named; each command of the gate
+    is judged by its own mode, so a slot that relates sources to their tests
+    still has a document in it named, and a suite-taking command beside it
+    has a source in it named."""
     tests = task.get("tests") if isinstance(task.get("tests"), dict) else {}
     if tests.get("gateBasis") != "files":
         return None
@@ -1504,9 +1506,10 @@ def _files_gate_refusal(task, phase, assembled):
     if not bad:
         return None
     return ("[audit-task] tests.gate was derived from this task's files and "
-            "hands its runner %s, which %s no path the slot of %s takes (a "
-            "suite always; a source only where the spelling relates sources "
-            "to their tests; a document, workflow or config file never) -- "
+            "hands its runner %s, which %s no path the command's slot in %s "
+            "takes (a suite always; a source only where that command relates "
+            "sources to their tests, in its runner's language; a document, "
+            "workflow, config or fixture file never) -- "
             "refused, nothing "
             "written. A runner given a file that is not a test runs nothing "
             "of this task's. Name the suite that tests it (`--tests-add "
@@ -2764,7 +2767,8 @@ def _spelled_in(owner):
     return "%s's spelling" % (owner,)
 
 
-def _point(shape, build, paths, project, runner_aware, owner=None, meta=None):
+def _point(shape, build, paths, project, runner_aware, owner=None, meta=None,
+           by_kind=False):
     """`(entries, suffix)` - the resolved shape pointed at `paths`, and the
     sentence to append to the gate's basis. A recorded spelling is filled by
     `_gate_derive.point_shape` and led by `meta.phaseGate.always`, as the
@@ -2772,20 +2776,23 @@ def _point(shape, build, paths, project, runner_aware, owner=None, meta=None):
     holds through whole. A sibling's shape for a fix task sends each
     path to the runner that takes it (`_gate_derive.repointed_by_runner`);
     every other task keeps the plain re-point, so a plan with one runner reads
-    as it always did."""
+    as it always did. `by_kind` hands each command of the shape only the
+    paths its own slot takes (`_gate_derive.repointed`); without it every
+    slot is handed every path, as a task's `tests.add` paths are."""
     if owner == _gate_derive.SPELLING_SOURCE:
         always = _phases.phase_gate_default(
             meta if isinstance(meta, dict) else {})["always"]
         entries = list(always)
-        for entry in _gate_derive.point_shape(shape, owner, build, paths):
+        for entry in _gate_derive.point_shape(shape, owner, build, paths,
+                                              by_kind):
             if entry not in entries:
                 entries.append(entry)
         return entries, ""
     keep = _always_entries(meta)
     if not runner_aware:
-        return _repointed(shape, build, paths, keep), ""
-    entries, notes = _gate_derive.repointed_by_runner(shape, build, paths,
-                                                      project or ".", keep=keep)
+        return _repointed(shape, build, paths, keep, by_kind), ""
+    entries, notes = _gate_derive.repointed_by_runner(
+        shape, build, paths, project or ".", keep=keep, by_kind=by_kind)
     return entries, ("; " + "; ".join(notes)) if notes else ""
 
 
@@ -2826,7 +2833,7 @@ def _ordinary_task_gate(shape, owner, wide, build, add_paths, files, mode,
             suite_files = [p for p in files if _phases.slot_takes(p, False)]
             if suite_files:
                 entries, more = _point(shape, build, suite_files, project,
-                                       runner_aware, owner, meta)
+                                       runner_aware, owner, meta, True)
                 return (entries,
                         "narrowed to this task's files, in %s%s"
                         % (_spelled_in(owner), more), "files")
@@ -2852,26 +2859,35 @@ def _ordinary_task_gate(shape, owner, wide, build, add_paths, files, mode,
                     "%s's gate entries that name no path, carried through -- "
                     "this task's files name no suite path to narrow %s's gate "
                     "at" % (owner, owner), "gate-only-no-suite")
-        # EACH DECLARED PATH IS ASKED ON ITS OWN (`_phases.slot_takes`): a
-        # suite always, a source only where the words in front of the slot
-        # relate sources to their tests (`_gate_derive.slot_takes_sources`),
-        # a document, workflow or config file never. This arm is reached with
-        # `tests.add` empty, so `files` is all it has, and a file handed to a
-        # slot that cannot take it is a gate red on every run whatever the
-        # work. Nothing left to point at is the wide gate's question.
-        takes_sources = _gate_derive.slot_takes_sources(
-            shape, owner, build, _always_entries(meta))
-        pointed = [p for p in files if _phases.slot_takes(p, takes_sources)]
+        # EACH DECLARED PATH IS ASKED OF EACH COMMAND (`_phases.slot_takes`
+        # under that command's own mode): a suite always, a source only where
+        # that command relates sources to their tests in its runner's language,
+        # a document, workflow, config or fixture never - and each command is
+        # handed only what its own slot takes (`by_kind`). This arm is reached
+        # with `tests.add` empty, so `files` is all it has, and a file handed
+        # to a slot that cannot take it is a gate red on every run whatever
+        # the work. Nothing left to point at is the wide gate's question.
+        keep = _always_entries(meta)
+        takes_sources = _gate_derive.slot_takes_sources(shape, owner, build, keep)
+        pointed = _gate_derive.taken_paths(shape, owner, build, files, keep)
         if not pointed:
             return wide, ("the phase's testGate, wide -- none of this task's "
-                          "files (%s) is a path the slot of %s takes (%s), "
+                          "files (%s) is a path a slot of %s takes (%s), "
                           "so it has nothing to be pointed at"
                           % (", ".join(files), _spelled_in(owner),
-                             "suites and source files" if takes_sources
+                             "suites, and source files where a command "
+                             "relates them to their tests" if takes_sources
                              else "suites alone")), \
                 "files-no-suite"
         entries, more = _point(shape, build, pointed, project, runner_aware,
-                               owner, meta)
+                               owner, meta, True)
+        if not entries:
+            # The runner routing of a fix task can hand a path to a runner
+            # whose command does not take it; an empty gate would pass on
+            # nothing, so the wide gate is the answer, with what was dropped.
+            return wide, ("the phase's testGate, wide -- no command of %s "
+                          "was left with a path of this task's to run%s"
+                          % (_spelled_in(owner), more)), "files-no-suite"
         return (entries,
                 "narrowed to this task's files, in %s%s"
                 % (_spelled_in(owner), more), "files")
@@ -2938,17 +2954,18 @@ def _task_gate(args, phase, assembled, add_paths, files, mode="gate-only"):
     what was missing, never with silence.
 
     EVERY TASK NARROWS ONLY TO WHAT ITS SPELLING TAKES. Arm 2 above asks each
-    of `files` `_manifest_phases.slot_takes`: a suite always, a source only
-    where the words in front of the slot relate sources to their tests
-    (`_gate_derive.slot_takes_sources`), a document, workflow or config file
-    never - a file handed to a slot that cannot take it is a gate red before
-    any work. A tdd or regression task left with nothing to
-    point at gets the phase's wide gate (`files-no-suite`). A gate-only task
+    of `files` `_manifest_phases.slot_takes` for each command of the spelling
+    (`_gate_derive.taken_paths`), and hands each command only what its own
+    slot takes: a suite always, a source only where that command relates
+    sources to their tests in its runner's language, a document, workflow,
+    config or fixture file never - a file handed to a slot that cannot take it
+    is a gate red before any work. A tdd or regression task left with nothing
+    to point at gets the phase's wide gate (`files-no-suite`). A gate-only task
     names no case at all, so a source file
     among its `files` is not evidence the project's suite-running command has
     anything of this task's to run. When
     `mode` is `"gate-only"` and none of `files` is a suite path
-    (`_manifest_phases.is_suite_path`), narrowing to it would point the gate at
+    (`_manifest_phases.slot_takes` with no source mode), narrowing to it would point the gate at
     a command that runs nothing this task touched -- a green bought on work
     nobody wrote. The gate is `meta.phaseGate.always` when the plan declares
     one, else the sibling's own shared keys and path-less entries, carried

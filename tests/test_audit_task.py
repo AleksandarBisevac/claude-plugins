@@ -21131,27 +21131,171 @@ _GS_PATHS = (("suite", "src/Card.test.tsx"), ("source", "src/Card.tsx"),
              ("config", "jest.config.js"))
 
 # (id, meta.phaseGate, the sibling's gate or None, buildCommands.test, whether
-# the spelling's slot takes sources). The `-k related` and `--config` / `-c`
-# rows are the over-fire direction: a word that only looks like a mode, and a
-# source or config path that is an option's argument, take no source.
+# the spelling's slot takes sources, the gate entry the handed paths make).
+# The `-k related` and `--config` / `-c` rows are the over-fire direction: a
+# word that only looks like a mode, and a source or config path that is an
+# option's argument, take no source - and the argument stays where it stands.
 _GS_SPELLINGS = (
     ("rec-suite", {"derived": {"spelling": "pytest {paths}"}}, None,
-     "pytest", False),
+     "pytest", False, "pytest %s"),
     ("rec-related",
      {"derived": {"spelling": "npx jest --findRelatedTests {paths}"}}, None,
-     "npx jest", True),
+     "npx jest", True, "npx jest --findRelatedTests %s"),
     ("rec-k-related", {"derived": {"spelling": "pytest -k related {paths}"}},
-     None, "pytest", False),
-    ("sib-suite", {}, ["npx jest src/Other.test.tsx"], "npx jest", False),
+     None, "pytest", False, "pytest -k related %s"),
+    ("sib-suite", {}, ["npx jest src/Other.test.tsx"], "npx jest", False,
+     "npx jest %s"),
     ("sib-related", {}, ["npx jest --findRelatedTests src/Other.tsx"],
-     "npx jest", True),
+     "npx jest", True, "npx jest --findRelatedTests %s"),
     ("sib-vitest-related", {}, ["npx vitest related src/Other.ts --run"],
-     "npx vitest run", True),
+     "npx vitest run", True, "npx vitest related %s --run"),
     ("sib-config", {}, ["npx jest --config jest.config.js src/Other.test.tsx"],
-     "npx jest", False),
-    ("sib-c", {}, ["pytest -c setup.cfg tests/test_o.py"], "pytest", False),
+     "npx jest", False, "npx jest --config jest.config.js %s"),
+    ("sib-c", {}, ["pytest -c setup.cfg tests/test_o.py"], "pytest", False,
+     "pytest -c setup.cfg %s"),
     ("sib-program", {}, ["python3 tools/runner.py tests/test_other.py"],
-     "python3 tools/runner.py", False),
+     "python3 tools/runner.py", False, "python3 tools/runner.py %s"),
+)
+
+# PER COMMAND: (id, meta.phaseGate, sibling gate or None, buildCommands.test,
+# wide gate, files, the gate an ordinary task derives (None: the wide gate,
+# basis files-no-suite), the fix task's (SAME: as the ordinary one), the paths
+# the refusal names for a derivation that stopped filtering - ordinary, fix).
+# Each command of a gate is its own slot and its own mode, the slot is the
+# path words that are neither the program nor an option's argument, and a
+# path's kind is read before its directory.
+_GS_SAME = "same as the ordinary task"
+_GS_UNPINNED = "not pinned by this row"
+_GS_REC_RELATED = {"derived": {"spelling": "npx jest --findRelatedTests {paths}"}}
+_GS_JEST_PY = ["npx jest --findRelatedTests src/O.ts", "pytest tests/test_o.py"]
+_GS_VITEST_PW = ["npx vitest related src/O.ts --run",
+                 "npx playwright test e2e/o.spec.ts"]
+_GS_CHAIN = ["npx jest --findRelatedTests src/O.ts && pytest tests/test_o.py"]
+_GS_COMMAND_ROWS = (
+    ("cfg-related-src", {}, ["npx jest --config jest.config.js "
+                             "--findRelatedTests src/Other.tsx"],
+     "npx jest", ["test"], ["src/Card.tsx"],
+     ["npx jest --config jest.config.js --findRelatedTests src/Card.tsx"],
+     _GS_SAME, ([], [])),
+    ("cfg-related-suite", {}, ["npx jest --config jest.config.js "
+                               "--findRelatedTests src/Other.tsx"],
+     "npx jest", ["test"], ["src/Card.test.tsx"],
+     ["npx jest --config jest.config.js --findRelatedTests src/Card.test.tsx"],
+     _GS_SAME, ([], [])),
+    ("config-before", {}, ["npx jest --config jest.config.js src/Other.test.tsx"],
+     "npx jest", ["test"], ["src/Card.test.tsx", "docs/guide.md"],
+     ["npx jest --config jest.config.js src/Card.test.tsx"], _GS_SAME,
+     (["docs/guide.md"], ["docs/guide.md"])),
+    ("config-after", {}, ["npx jest src/Other.test.tsx --config jest.config.js"],
+     "npx jest", ["test"], ["src/Card.test.tsx", "docs/guide.md"],
+     ["npx jest src/Card.test.tsx --config jest.config.js"], _GS_SAME,
+     (["docs/guide.md"], ["docs/guide.md"])),
+    ("config-eq", {}, ["npx jest --config=jest.config.js src/Other.test.tsx"],
+     "npx jest", ["test"], ["src/Card.test.tsx", "docs/guide.md"],
+     ["npx jest --config=jest.config.js src/Card.test.tsx"], _GS_SAME,
+     (["docs/guide.md"], ["docs/guide.md"])),
+    ("c-before", {}, ["pytest -c setup.cfg tests/test_o.py"], "pytest", ["test"],
+     ["tests/test_a.py", "docs/guide.md"], ["pytest -c setup.cfg tests/test_a.py"],
+     _GS_SAME, (["docs/guide.md"], ["docs/guide.md"])),
+    ("c-after", {}, ["pytest tests/test_o.py -c setup.cfg"], "pytest", ["test"],
+     ["tests/test_a.py", "docs/guide.md"], ["pytest tests/test_a.py -c setup.cfg"],
+     _GS_SAME, (["docs/guide.md"], ["docs/guide.md"])),
+    ("related-then-config", {}, ["npx jest --findRelatedTests src/Other.tsx "
+                                 "--config jest.config.js"],
+     "npx jest", ["test"], ["src/Card.tsx", "docs/guide.md"],
+     ["npx jest --findRelatedTests src/Card.tsx --config jest.config.js"],
+     _GS_SAME, (["docs/guide.md"], ["docs/guide.md"])),
+    ("rec-related-then-config",
+     {"derived": {"spelling": "npx jest --findRelatedTests {paths} "
+                              "--config jest.config.js"}}, None, "npx jest",
+     ["test"], ["src/Card.tsx", "docs/a.md"],
+     ["npx jest --findRelatedTests src/Card.tsx --config jest.config.js"],
+     _GS_SAME, (["docs/a.md"], ["docs/a.md"])),
+    ("rec-conftest", {"derived": {"spelling": "pytest {paths}"}}, None, "pytest",
+     ["test"], ["src/a.py", "tests/test_a.py", "tests/conftest.py"],
+     ["pytest tests/test_a.py"], _GS_SAME,
+     (["src/a.py", "tests/conftest.py"], ["src/a.py", "tests/conftest.py"])),
+    ("rec-conftest-only", {"derived": {"spelling": "pytest {paths}"}}, None,
+     "pytest", ["test"], ["src/a.py", "tests/conftest.py"], None, _GS_SAME,
+     (["src/a.py", "tests/conftest.py"], ["src/a.py", "tests/conftest.py"])),
+    ("rec-fixture-json", {"derived": {"spelling": "pytest {paths}"}}, None,
+     "pytest", ["test"], ["tests/fixtures/a.json"], None, _GS_SAME,
+     (["tests/fixtures/a.json"], ["tests/fixtures/a.json"])),
+    ("rec-tests-readme", {"derived": {"spelling": "npx jest {paths}"}}, None,
+     "npx jest", ["test"], ["__tests__/README.md"], None, _GS_SAME,
+     (["__tests__/README.md"], ["__tests__/README.md"])),
+    ("rec-setup", {"derived": {"spelling": "npx vitest run {paths}"}}, None,
+     "npx vitest run", ["test"], ["test/setup.ts", "src/a.test.ts"],
+     ["npx vitest run src/a.test.ts"], _GS_SAME,
+     (["test/setup.ts"], ["test/setup.ts"])),
+    ("pw-config", {}, ["npx playwright test e2e/o.spec.ts"], "npx playwright test",
+     ["test"], ["e2e/playwright.config.ts", "e2e/y.spec.ts"],
+     ["npx playwright test e2e/y.spec.ts"], _GS_SAME,
+     (["e2e/playwright.config.ts"], ["e2e/playwright.config.ts"])),
+    ("vitest-related-doc", {}, ["npx vitest related src/Other.ts --run"],
+     "npx jest", ["test"], ["src/a.ts", "docs/x.md"],
+     ["npx vitest related src/a.ts --run"], _GS_SAME,
+     (["docs/x.md"], ["docs/x.md"])),
+    ("npm-related", {}, ["npm test -- --findRelatedTests src/Other.ts"],
+     "npx jest", ["test"], ["src/a.ts"],
+     ["npm test -- --findRelatedTests src/a.ts"], _GS_SAME, ([], [])),
+    # an `=` form is an option with its argument, so this entry holds no slot
+    ("related-eq-form", {}, ["npx jest --findRelatedTests=src/Other.ts"],
+     "npx jest", ["test"], ["src/a.ts"], None, _GS_SAME, ([], [])),
+    ("runner-suites", {}, ["python3 tools/run.py tests/test_o.py"], "npx jest",
+     ["test"], ["tools/run.py", "tests/test_a.py"],
+     ["python3 tools/run.py tests/test_a.py"], _GS_SAME,
+     (["tools/run.py"], ["tools/run.py"])),
+    ("runner-only-program", {}, ["python3 tools/run.py tests/test_o.py"],
+     "npx jest", ["test"], ["tools/run.py"], None, _GS_SAME,
+     (["tools/run.py"], ["tools/run.py"])),
+    ("suite-as-program", {}, ["python3 tests/test_o.py"], "npx jest", ["test"],
+     ["tests/test_a.py", "tests/test_b.py"],
+     ["python3 tests/test_a.py tests/test_b.py"], _GS_SAME, ([], [])),
+    ("always-related", dict(_GS_REC_RELATED, always=["sh tools/check.sh"]), None,
+     "npx jest", ["test"], ["tools/check.sh", "src/a.ts"],
+     ["sh tools/check.sh", "npx jest --findRelatedTests src/a.ts"], _GS_SAME,
+     (["tools/check.sh"], ["tools/check.sh"])),
+    ("always-sib-no-template",
+     {"derived": {"spelling": "x"}, "always": ["sh tools/check.sh"]},
+     ["pytest tests/test_o.py"], "npx jest", ["sh tools/check.sh", "test"],
+     ["tools/check.sh", "tests/test_a.py"], ["pytest tests/test_a.py"], _GS_SAME,
+     (["tools/check.sh"], ["tools/check.sh"])),
+    ("app-config-related", _GS_REC_RELATED, None, "npx jest", ["test"],
+     ["src/app/app.config.ts"], None, _GS_SAME,
+     (["src/app/app.config.ts"], ["src/app/app.config.ts"])),
+    ("related-no-vitest", {}, ["npx related src/Other.ts"], "npx jest", ["test"],
+     ["src/a.ts"], None, _GS_SAME, (["src/a.ts"], ["src/a.ts"])),
+    ("chain-related-suite", {}, _GS_CHAIN, "npx jest", ["test"],
+     ["src/a.ts", "tests/test_a.py"],
+     ["npx jest --findRelatedTests src/a.ts && pytest tests/test_a.py"], _GS_SAME,
+     (["tests/test_a.py", "src/a.ts"], ["tests/test_a.py", "src/a.ts"])),
+    ("chain-related-drop", {}, _GS_CHAIN, "npx jest", ["test"], ["src/a.ts"],
+     ["npx jest --findRelatedTests src/a.ts"], _GS_SAME,
+     (["src/a.ts"], ["src/a.ts"])),
+    ("chain-two-programs", {}, ["python3 tools/a.py tests/test_o.py && "
+                                "python3 tools/b.py tests/test_p.py"],
+     "npx jest", ["test"], ["tests/test_x.py"],
+     ["python3 tools/a.py tests/test_x.py && python3 tools/b.py tests/test_x.py"],
+     _GS_SAME, ([], [])),
+    ("chain-programs-no-slot", {}, ["python3 tools/a.py t && python3 tools/b.py u"],
+     "npx jest", ["test"], ["tests/test_x.py"], None, _GS_SAME, ([], [])),
+    ("vitest-related+pw", {}, _GS_VITEST_PW, "npm test", ["test"], ["src/y.ts"],
+     ["npx vitest related src/y.ts --run"], _GS_SAME, (["src/y.ts"], [])),
+    # The fix task's half asks which runner collects the spec, which reads the
+    # vitest config of the directory the case runs in, so only the ordinary
+    # half is pinned here; rg2-rg8 pin the runner reading on a fixture repo.
+    ("vitest-related+pw-spec", {}, _GS_VITEST_PW, "npm test", ["test"],
+     ["src/y.ts", "e2e/y.spec.ts"],
+     ["npx vitest related src/y.ts e2e/y.spec.ts --run",
+      "npx playwright test e2e/y.spec.ts"], _GS_UNPINNED,
+     (["src/y.ts"], _GS_UNPINNED)),
+    ("jest-related+pytest", {}, _GS_JEST_PY, "npm test", ["test"],
+     ["src/y.py", "tests/test_y.py"], ["pytest tests/test_y.py"], _GS_SAME,
+     (["src/y.py", "tests/test_y.py"], ["src/y.py"])),
+    ("sweep-harness", {}, ["python3 tools/sweep-selftests.py tests/test_o.py"],
+     "npx jest", ["test"], ["tests/_harness.py"],
+     ["python3 tools/sweep-selftests.py tests/_harness.py"], _GS_SAME, ([], [])),
 )
 
 
@@ -21204,7 +21348,7 @@ def _gs_matrix_rows():
     out = []
     kind_of = dict((path, kind) for kind, path in _GS_PATHS)
     mixed = [p for _k, p in _GS_PATHS]
-    for sid, pg, sib, cmd, takes in _GS_SPELLINGS:
+    for sid, pg, sib, cmd, takes, entry in _GS_SPELLINGS:
         phase, assembled = _gs_plan(pg, sib, cmd, ["test"])
         cases = [(kind, [path]) for kind, path in _GS_PATHS] + [("mixed", mixed)]
         for kind, files in cases:
@@ -21215,15 +21359,32 @@ def _gs_matrix_rows():
                 rid = "%s/%s/%s" % (sid, kind, "fix" if fixes else "ordinary")
                 basis, gate, refusal, named = _gs_row(phase, assembled, files,
                                                       fixes)
-                in_gate = [p for p in files
-                           if any(p in M._phases.gate_entry_paths(e)
-                                  for e in gate)]
+                # The WHOLE entry, not the paths found in it: an option's
+                # argument the spelling holds (`--config jest.config.js`)
+                # stays where it stands, and a slot written over it is red.
                 ok = (basis == ("files" if handed else "files-no-suite")
                       and refusal is None
-                      and (in_gate == handed if handed else gate == ["test"])
+                      and gate == ([entry % " ".join(handed)] if handed
+                                   else ["test"])
                       and named == untaken)
                 out.append((rid, None if ok else (basis, gate, refusal and
                                                   refusal[:80], named)))
+    for (sid, pg, sib, cmd, wide, files, want, want_fix,
+         named_want) in _GS_COMMAND_ROWS:
+        phase, assembled = _gs_plan(pg, sib, cmd, wide)
+        for fixes in (False, True):
+            rid = "%s/%s" % (sid, "fix" if fixes else "ordinary")
+            gate_want = want_fix if fixes and want_fix != _GS_SAME else want
+            named_exp = named_want[1 if fixes else 0]
+            basis, gate, refusal, named = _gs_row(phase, assembled, files, fixes)
+            ok = (refusal is None
+                  and (gate_want == _GS_UNPINNED
+                       or (basis, gate) == (
+                           ("files", gate_want) if gate_want is not None
+                           else ("files-no-suite", list(wide))))
+                  and (named_exp == _GS_UNPINNED or named == named_exp))
+            out.append((rid, None if ok else (basis, gate, refusal and
+                                              refusal[:80], named)))
     # BY POSITION: a path an always entry or the spelling's own words name is
     # the plan's where they name it, and the same path written into the slot
     # is the task's - so the stand-in gate puts it there and expects it named.
@@ -21250,6 +21411,12 @@ def _gs_matrix_rows():
          ["pytest tests/test_smoke.py", "test"], ["tests/test_check.py"], None,
          ("files", ["pytest tests/test_smoke.py", "pytest tests/test_check.py"],
           None, [])),
+        ("template-own-path",
+         {"derived": {"spelling": "pytest tools/plugin_hooks.py {paths}"}},
+         None, "pytest", ["test"], ["tools/plugin_hooks.py", "tests/test_x.py"],
+         ["pytest tools/plugin_hooks.py tools/plugin_hooks.py tests/test_x.py"],
+         ("files", ["pytest tools/plugin_hooks.py tests/test_x.py"], None,
+          ["tools/plugin_hooks.py"])),
         ("program-rec", {"derived": {"spelling": "python3 tools/run.py {paths}"}},
          None, "python3 tools/run.py", ["test"],
          ["tools/run.py", "tests/test_x.py"],
@@ -21272,14 +21439,16 @@ def _gate_slot_matrix(check):
     always entry or the spelling's own program name."""
     rows = _gs_matrix_rows()
     bad = [(rid, why) for rid, why in rows if why is not None]
-    check("slm1 a files-derived gate hands its slot each declared path the slot "
-          "takes and no other - a suite always, a source only behind "
-          "--findRelatedTests or vitest's related, a document, workflow or "
-          "config file never, recorded spelling and sibling alike, ordinary "
-          "and fix task alike - and the refusal names, by position, every "
-          "declared path a derivation that stopped filtering would put in the "
-          "slot, but not a path an always entry or the spelling's program "
-          "names where it names it; failing rows: %r" % (bad,),
+    check("slm1 a files-derived gate hands each command's slot each declared "
+          "path that slot takes and no other - a suite always, a source only "
+          "behind that command's --findRelatedTests or vitest's related, a "
+          "document, workflow, config or fixture file never, an option's "
+          "argument left where it stands, recorded spelling and sibling "
+          "alike, ordinary and fix task alike - and the refusal names, by "
+          "position and per command, every declared path a derivation that "
+          "stopped filtering would put in a slot, but not a path an always "
+          "entry or the spelling's program names where it names it; failing "
+          "rows: %r" % (bad,),
           bool(rows) and not bad)
 
 

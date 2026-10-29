@@ -26,6 +26,7 @@ subprocess and no git: a fixture is a dict, not a checkout.
 """
 
 import os
+import re
 import shlex
 import sys
 
@@ -80,12 +81,12 @@ import _runner_collects              # noqa: E402  (collects: which runner takes
 
 # THE SAME ALIAS `audit-task.py` HELD before these bodies moved: `_phases.
 # gate_entry_paths` asked of a gate entry rather than of a `tests.add` one.
-# Kept under this name because `path_scoped_sibling` and `repointed` below are
-# their PRE-MOVE bodies, unchanged, and both read it under this name.
+# Kept under this name because `path_scoped_sibling` below is its PRE-MOVE
+# body, unchanged, and reads it under this name.
 _gate_entry_paths = _phases.gate_entry_paths
 
 
-# --- moved from audit-task.py, bodies and docstrings unchanged ------------------
+# --- moved from audit-task.py; `repointed` since reads each command's slot ------
 def is_shared_key(entry, build):
     """True when the entry is a `meta.buildCommands` KEY rather than a command.
 
@@ -143,10 +144,11 @@ def resolve_shape(phase, build, derived_cfg):
 
     THE RECORDED SPELLING WINS ON PURPOSE: it is the one place the project
     wrote down how its gate narrows, with the single slot the derivation
-    fills. A sibling's entry is one task's own gate, and re-pointing it
-    replaces every path-shaped word in it -- the runner included -- so a
-    sibling spelled with another runner turned a narrowed gate into a run of
-    one suite. A sibling is read only when no usable spelling exists.
+    fills. A sibling's entry is one task's own gate, whose slot the re-point
+    has to read off its words (`_read_command`: each command's program and
+    every option's argument told apart from the paths it hands its runner),
+    where a template states it outright. A sibling is read only when no
+    usable spelling exists.
 
     A `spelling` carrying no literal `{paths}` placeholder is IGNORED, with a
     printed reason (`lines`) rather than a silent fallback -- the schema says
@@ -168,38 +170,62 @@ def resolve_shape(phase, build, derived_cfg):
     return None, None, lines
 
 
-def point_shape(shape, source, build, paths):
+def point_shape(shape, source, build, paths, by_kind=False):
     """`shape` pointed at `paths`, whichever source `resolve_shape` took it from.
 
     THE SPELLING IS FILLED, A SIBLING IS RE-POINTED: the schema's `{paths}`
     placeholder is not a path-shaped token `repointed` would recognize
     (`gate_entry_paths` only counts tokens that already look like a file), so
-    a template is substituted literally with the shell-quoted paths, and a
-    sibling's entries go through `repointed`. Asked by the phase-level
-    derivation and by `/audit:task add` alike, so the two cannot read one shape
-    two ways.
+    a template is substituted with the shell-quoted paths, and a sibling's
+    entries go through `repointed`. Asked by the phase-level derivation and by
+    `/audit:task add` alike, so the two cannot read one shape two ways.
+
+    `by_kind` hands each command only the paths its own slot takes, as
+    `repointed` does. A template whose every `{paths}` command takes the same
+    paths is substituted literally, byte for byte as written; one whose
+    commands take different paths is rebuilt command by command.
     """
     if source == SPELLING_SOURCE:
-        quoted = " ".join(shlex.quote(p) for p in paths)
-        return [shape[0].replace("{paths}", quoted)]
-    return repointed(shape, build, paths)
+        template = shape[0]
+        tokens = _entry_tokens(template)
+        commands = [_read_command(tokens, span, placeholder=True)
+                    for span in _command_spans(tokens)]
+        plan = [_given(c, paths, by_kind) for c in commands]
+        handed = [p for p in plan if p is not None]
+        if handed and handed[0] and all(p == handed[0] for p in handed):
+            quoted = " ".join(shlex.quote(p) for p in handed[0])
+            return [template.replace("{paths}", quoted)]
+        rebuilt = _rebuilt(tokens, commands, plan)
+        return [rebuilt] if rebuilt is not None else []
+    return repointed(shape, build, paths, by_kind=by_kind)
 
 
-def repointed(entries, build, paths, keep=()):
+def repointed(entries, build, paths, keep=(), by_kind=False):
     """`entries` with every path-scoped entry re-pointed at `paths`.
 
-    THE FLAGS ARE KEPT AND ONLY THE PATHS MOVE: the sibling's tokens are rebuilt
-    in order, the paths it named are dropped, and this task's paths go in where
-    the first of them stood. That is what carries a source-to-test flag, a `--`
-    separator or a project selector through a substitution nobody wrote a parser
-    for.
+    THE FLAGS ARE KEPT AND ONLY THE SLOT MOVES: each simple command of an
+    entry is read on its own (`_read_command`), its slot is the path words
+    that are neither its program nor an option's argument, those words are
+    dropped and this task's paths go in where the first of them stood. Every
+    other word keeps its place and spelling, so a source-to-test flag, a `--`
+    separator, a project selector and an option's argument (`--config
+    jest.config.js`, `-c setup.cfg`, before the slot or after it) are carried
+    through, and each command of `a && b` keeps its own program and slot.
+
+    `by_kind` hands each command only the paths ITS slot takes
+    (`_manifest_phases.slot_takes`, under that command's own mode): a command
+    left with none is dropped with the separator in front of it, and an entry
+    left with no command that has a slot is dropped - a path-scoped command
+    with its path removed runs the whole suite, the opposite of narrowing.
+    Without it every slot is handed every path, which is what a caller handing
+    a task's `tests.add` paths asks: the derived gate runs every case the task
+    promises to author.
 
     THE PROGRAM STAYS WHERE IT STANDS: a path an interpreter runs
     (`python3 tools/run.py <suites>`) is the spelling's own and not the slot,
     unless it is itself a suite (`python3 tests/test_a.py` runs the suite it
-    names, so that path IS the slot) - `_program_index`, the reading
-    `_manifest_phases.command_slots` makes of the same words. An entry whose
-    only path is its program has no slot and is copied through.
+    names, so that path IS the slot). An entry whose commands hold no slot is
+    the spelling's own and is copied through.
 
     A shared key and an entry naming no path are copied THROUGH rather than
     dropped: a gate of `["lint", "npm test -- <a suite>"]` narrows the suite and
@@ -215,45 +241,233 @@ def repointed(entries, build, paths, keep=()):
     open. The sibling's own words come from `_phases.shell_words`, the same
     reader `gate_entry_paths` -- and so `path_scoped_sibling` -- uses, so a
     path it already quoted is recognized and replaced rather than copied
-    through, and every word that is not a path keeps the exact spelling it
-    had, quotes and operators included.
+    through, and every word that is not in the slot keeps the exact spelling
+    it had, quotes and operators included.
     """
     out = []
     for entry in entries:
-        words = _phases.shell_words(entry)
-        program = _program_index(words)
-        if is_shared_key(entry, build) or entry in keep or not any(
-                _phases.shell_word_path(value)
-                for i, (_raw, value) in enumerate(words) if i != program):
+        if _carried(entry, build, keep):
             out.append(entry)
             continue
-        rebuilt, placed = [], False
-        for i, (raw, value) in enumerate(words):
-            # `_phases` directly -- see the import note above: the filename
-            # bound reached through `_manifest_rules`' re-export is the one
-            # edge this module cannot afford without moving up a layer.
-            if i == program or not _phases.shell_word_path(value):
-                rebuilt.append(raw)
-            elif not placed:
-                rebuilt.extend(shlex.quote(p) for p in paths)
-                placed = True
-        out.append(" ".join(rebuilt))
+        tokens = _entry_tokens(entry)
+        commands = [_read_command(tokens, span) for span in _command_spans(tokens)]
+        if not any(c["slot"] for c in commands):
+            out.append(entry)
+            continue
+        rebuilt = _rebuilt(tokens, commands,
+                           [_given(c, paths, by_kind) for c in commands])
+        if rebuilt is not None:
+            out.append(rebuilt)
     return out
 
 
-def _program_index(words):
-    """The index in `words` (`_phases.shell_words` pairs) of the program an
-    entry's interpreter runs - its first path, when the words in front of it
-    make it the program (`_manifest_phases._runs_first_path_as_program`) and it
-    is no suite - or None."""
-    for i, (_raw, value) in enumerate(words):
-        path = _phases.shell_word_path(value)
-        if path:
-            before = [v for _r, v in words[:i]]
-            run_as_program = _phases._runs_first_path_as_program(before)
-            return i if run_as_program and not _phases.is_suite_path(path) \
-                else None
-    return None
+# --- one entry, its commands, each command's slot ---------------------------------
+# The options that take the NEXT word as their argument, across the runners a
+# gate entry names (pytest, jest, vitest, playwright, node, the Python
+# interpreter). A path standing behind one is that option's argument - a
+# config, a root, a report file - and never the slot, so it stays where it
+# stands when the slot moves. An `=` form (`--config=jest.config.js`) carries
+# its argument in the same word and is an option word whatever its name. An
+# option this table lacks has the word behind it read as positional: a path
+# there is read as the slot, which is how every option was read before.
+OPTION_ARGUMENT_WORDS = frozenset((
+    # pytest
+    "-c", "--config-file", "--rootdir", "--confcutdir", "-k", "-m", "-p",
+    "-o", "--override-ini", "--basetemp", "--junitxml", "--junit-xml",
+    "--cov", "--cov-config", "--cov-report", "--ignore", "--ignore-glob",
+    "--deselect", "--log-file", "--tb", "--durations", "--maxfail", "-n",
+    "--dist", "--html", "--import-mode", "--capture", "-W", "-r",
+    # jest
+    "--config", "--rootDir", "--roots", "--testPathPattern",
+    "--testPathPatterns", "--testPathIgnorePatterns", "--testNamePattern",
+    "-t", "--selectProjects", "--shard", "--maxWorkers", "-w",
+    "--coverageDirectory", "--outputFile", "--reporters", "--testEnvironment",
+    "--env", "--globalSetup", "--globalTeardown", "--setupFilesAfterEnv",
+    "--testTimeout", "--cacheDirectory",
+    # vitest
+    "--root", "--dir", "--project", "--reporter", "--environment", "--pool",
+    "--workspace", "--mode",
+    # playwright
+    "--grep", "-g", "--grep-invert", "--workers", "-j", "--output",
+    "--retries", "--timeout", "--repeat-each", "--max-failures",
+    # node and the Python interpreter
+    "--require", "--import", "--loader", "--test-reporter",
+    "--test-name-pattern", "-e", "-X",
+))
+# A redirection operator standing alone takes the next word, the file it names.
+_REDIRECT_OPERATOR = re.compile(r"^[0-9]*(?:>>?|<<?|>&|<&|&>>?|>\|)$")
+# A list operator an unquoted word carries against it (`a;b`, `(cd`).
+_GLUED_OPERATOR = re.compile(r"(&&|\|\||[;&|()])")
+
+
+def _entry_tokens(entry):
+    """`[(raw, value)]` - `_phases.shell_words` of `entry`, with a list
+    operator written against an unquoted word split off it, so `a;b` is the
+    two commands the shell reads. A redirection with its target attached
+    (`2>&1`, `>out.log`) and any quoted word stay whole."""
+    out = []
+    for raw, value in _phases.shell_words(entry):
+        if ("'" in raw or '"' in raw or _phases._is_list_operator(raw)
+                or _phases._ATTACHED_REDIRECTION.match(raw)):
+            out.append((raw, value))
+            continue
+        out.extend((part, part) for part in _GLUED_OPERATOR.split(raw) if part)
+    return out
+
+
+def _command_spans(tokens):
+    """`[[token index, ...], ...]` - each simple command's tokens; a list
+    operator ends one and belongs to none."""
+    spans, current = [], []
+    for i, (raw, _value) in enumerate(tokens):
+        if _phases._is_list_operator(raw):
+            if current:
+                spans.append(current)
+            current = []
+        else:
+            current.append(i)
+    if current:
+        spans.append(current)
+    return spans
+
+
+def _basename(word):
+    return (word or "").replace("\\", "/").rsplit("/", 1)[-1]
+
+
+def _read_command(tokens, span, placeholder=False):
+    """`{"span", "words", "slot", "sources"}` for one simple command.
+
+    `words` is its token indices less redirections and the file each names.
+    `slot` is the indices of the words that hand its runner a path: the path
+    words that are neither an option (`-x`, `--opt=value`), nor the argument
+    of an option that takes one (`OPTION_ARGUMENT_WORDS`), nor the program an
+    interpreter runs (`_manifest_phases._runs_first_path_as_program`, the
+    shape check's own reading) unless that program is itself a suite. With
+    `placeholder`, the slot is the template's `{paths}` words instead.
+
+    `sources` is what THIS command's slot relates to tests: the extensions a
+    related-tests runner resolves (`RELATED_SLOT_WORDS` said in this
+    command, at a position that is no option's argument), else empty - a
+    slot that takes suites alone. One command's mode says nothing about the
+    next command's, nor about another entry's."""
+    words, skip = [], False
+    for i in span:
+        raw = tokens[i][0]
+        if skip:
+            skip = False
+        elif _REDIRECT_OPERATOR.match(raw):
+            skip = True
+        elif not _phases._ATTACHED_REDIRECTION.match(raw):
+            words.append(i)
+    values = [tokens[i][1] or "" for i in words]
+    options, arguments, k = set(), set(), 0
+    while k < len(values):
+        value = values[k]
+        if len(value) > 1 and value.startswith("-"):
+            options.add(k)
+            if "=" not in value and value in OPTION_ARGUMENT_WORDS \
+                    and k + 1 < len(values):
+                arguments.add(k + 1)
+                k += 1
+        k += 1
+    positional = [k for k in range(len(values))
+                  if k not in options and k not in arguments]
+    if placeholder:
+        slot = [k for k in positional if values[k] == "{paths}"]
+    else:
+        slot = [k for k in positional if _phases.shell_word_path(values[k])]
+        if slot and _phases._runs_first_path_as_program(values[:slot[0]]) \
+                and _phases.path_kind(_phases.shell_word_path(
+                    values[slot[0]])) != "suite":
+            slot = slot[1:]
+    sources = frozenset()
+    for k, value in enumerate(values):
+        if k in arguments or value not in RELATED_SLOT_WORDS:
+            continue
+        runner = RELATED_SLOT_WORDS[value]
+        if runner is None or any(_basename(w) == runner for w in values[:k]):
+            sources = _phases.SCRIPT_MODULE_EXTENSIONS
+    return {"span": span, "words": words, "slot": [words[k] for k in slot],
+            "sources": sources}
+
+
+def _given(command, paths, by_kind):
+    """What one command's slot is handed: None for a command with no slot (it
+    is copied as written), else the paths it takes - every one, or with
+    `by_kind` those `_manifest_phases.slot_takes` admits under its mode."""
+    if not command["slot"]:
+        return None
+    return [p for p in paths
+            if not by_kind or _phases.slot_takes(p, command["sources"])]
+
+
+def _rebuilt(tokens, commands, plan):
+    """The entry with each command's slot replaced by its `plan` paths (None:
+    the command as written; []: the command dropped with the separator in
+    front of it), or None when no command with a slot is left."""
+    def text(ci, indices):
+        slot, given, words = commands[ci]["slot"], plan[ci], []
+        for i in indices:
+            if given and i in slot:
+                if i == slot[0]:
+                    words.extend(shlex.quote(p) for p in given)
+                continue
+            words.append(tokens[i][0])
+        return words
+
+    kept = [ci for ci, given in enumerate(plan) if given is None or given]
+    if not any(plan[ci] for ci in kept):
+        return None
+    if len(kept) == len(commands):
+        owner = dict((i, ci) for ci, c in enumerate(commands) for i in c["span"])
+        out = []
+        for i, (raw, _value) in enumerate(tokens):
+            if i not in owner:
+                out.append(raw)
+            elif i == commands[owner[i]]["span"][0]:
+                out.extend(text(owner[i], commands[owner[i]]["span"]))
+        return " ".join(out)
+    out = []
+    for n, ci in enumerate(kept):
+        if n:
+            start = commands[ci - 1]["span"][-1] + 1 if ci else 0
+            out.extend(raw for raw, _v in tokens[start:commands[ci]["span"][0]])
+        out.extend(text(ci, commands[ci]["span"]))
+    return " ".join(out)
+
+
+def slot_reading(entry, template=None):
+    """`[(slot paths, sources)]` for each simple command of a WRITTEN gate
+    entry, as `_read_command` reads it - or, for a command the recorded
+    `template` filled (its words in front of `{paths}` and behind it match),
+    the paths between those words, so a path the template names itself is
+    not in the slot and the same path written into it is."""
+    tokens = _entry_tokens(entry)
+    shapes = []
+    if isinstance(template, str) and "{paths}" in template:
+        t_tokens = _entry_tokens(template)
+        for span in _command_spans(t_tokens):
+            c = _read_command(t_tokens, span, placeholder=True)
+            if c["slot"]:
+                vals = [t_tokens[i][1] for i in c["words"]]
+                at = c["words"].index(c["slot"][0])
+                shapes.append((vals[:at], vals[at + 1:]))
+    out = []
+    for span in _command_spans(tokens):
+        c = _read_command(tokens, span)
+        slot = c["slot"]
+        vals = [tokens[i][1] for i in c["words"]]
+        for head, tail in shapes:
+            end = len(vals) - len(tail)
+            if end >= len(head) and vals[:len(head)] == head \
+                    and vals[end:] == tail:
+                slot = [i for i in c["words"][len(head):end]
+                        if _phases.shell_word_path(tokens[i][1])]
+                break
+        out.append(([_phases.shell_word_path(tokens[i][1]) for i in slot],
+                    c["sources"]))
+    return out
 
 
 # --- one path, one runner ---------------------------------------------------------
@@ -329,12 +543,19 @@ def _runners_for(path, unit_runners, has_e2e, project, lister):
 
 
 def _scoped_runners(entries, build, keep=()):
-    """`[(entry, runner)]` for every path-scoped entry (a shared key, an entry
-    in `keep` and an entry naming no path are not), `runner` None when it names
-    no known one."""
+    """`[(entry, runner)]` for every path-scoped entry - one holding a slot
+    (`_read_command`); a shared key, an entry in `keep` and an entry whose
+    only paths are its program or an option's argument are not - `runner`
+    None when it names no known one."""
     return [(e, entry_runner(e)) for e in entries
-            if not is_shared_key(e, build) and e not in keep
-            and any(_phases.shell_word_path(v) for _r, v in _phases.shell_words(e))]
+            if not _carried(e, build, keep) and _has_slot(e)]
+
+
+def _has_slot(entry):
+    """Whether any simple command of `entry` hands its runner a path."""
+    tokens = _entry_tokens(entry)
+    return any(_read_command(tokens, span)["slot"]
+               for span in _command_spans(tokens))
 
 
 def paths_by_runner(entries, build, paths, project, lister=None):
@@ -359,7 +580,8 @@ def paths_by_runner(entries, build, paths, project, lister=None):
     return given, notes
 
 
-def repointed_by_runner(entries, build, paths, project, lister=None, keep=()):
+def repointed_by_runner(entries, build, paths, project, lister=None, keep=(),
+                        by_kind=False):
     """`(entries, notes)` - `repointed`, but each path-scoped entry of a KNOWN
     runner is given only the paths that runner takes (`paths_by_runner`).
 
@@ -371,34 +593,39 @@ def repointed_by_runner(entries, build, paths, project, lister=None, keep=()):
     AN ENTRY LEFT WITH NO PATH IS DROPPED, never kept: a path-scoped command
     with its path removed runs the whole suite, which is the opposite of what
     narrowing asked for. Each drop, and each path no entry takes, is a note.
-    An entry in `keep` is carried through as `repointed` carries it.
+    An entry in `keep` is carried through as `repointed` carries it, and
+    `by_kind` is `repointed`'s: each command is then handed, of its runner's
+    paths, only those its own slot takes.
     """
     scoped = dict(_scoped_runners(entries, build, keep))
     if len(set(r for r in scoped.values() if r)) < 2:
-        return repointed(entries, build, paths, keep), []
+        return repointed(entries, build, paths, keep, by_kind), []
     given, notes = paths_by_runner(entries, build, paths, project, lister)
     out = []
     for entry in entries:
         runner = scoped.get(entry)
-        if runner is None:
-            out.extend(repointed([entry], build, paths, keep))
-        elif given.get(runner):
-            out.extend(repointed([entry], build, given[runner]))
-        else:
+        handed = (paths if runner is None else given.get(runner)) or []
+        pointed = repointed([entry], build, handed, keep, by_kind) if handed \
+            or runner is None else []
+        if pointed:
+            out.extend(pointed)
+        elif runner is not None:
             notes.append("no %s entry kept: none of %s is a path %s takes"
                          % (runner, ", ".join(paths), runner))
+        else:
+            notes.append("%r not kept: none of %s is a path its slot takes"
+                         % (entry, ", ".join(paths)))
     return out, notes
 
 
 # --- which of a task's declared paths a slot takes ----------------------------------
-# The word standing directly in front of a slot that puts its runner in a
-# source-to-test mode: jest's `--findRelatedTests <source files>` and vitest's
-# `related <source files>` resolve each source through the import graph to the
-# tests that cover it. Mapped to the runner the word belongs to, None where the
-# option is spelled by no other tool. Read from the WORDS around the slot - the
-# recorded template's `{paths}`, or where a sibling entry's paths begin - and
-# never from what the slot holds: a path behind `--config` or `-c` is an option's
-# argument, and a source file there says nothing about what the runner relates.
+# The word that puts ITS COMMAND's runner in a source-to-test mode: jest's
+# `--findRelatedTests` (a flag; the command's positional paths are the
+# sources) and vitest's `related` subcommand resolve each source through the
+# import graph to the tests that cover it. Mapped to the runner the word
+# belongs to, None where the option is spelled by no other tool. Read per
+# simple command (`_read_command`) and never from what the slot holds or from
+# an option's argument (`pytest -k related` is a filter, not the mode).
 RELATED_SLOT_WORDS = {"--findRelatedTests": None, "related": "vitest"}
 
 
@@ -410,77 +637,61 @@ def _carried(entry, build, keep):
         or entry in keep
 
 
-def _slot_starts(entry, source):
-    """`[(words, index)]` - each command of a shape entry that holds a slot,
-    with the index of the slot's first word: the `{paths}` word of a recorded
-    template, or a sibling's first path that is not its program."""
-    if source == SPELLING_SOURCE:
-        return [(words, words.index("{paths}"))
-                for words in _phases.gate_entry_commands(entry)
-                if "{paths}" in words]
-    return [(words, found[0])
-            for words, found in _phases.command_slots(entry) if found]
-
-
-def _related_mode(words, at):
-    """Whether the word in front of the slot starting at `words[at]` is a
-    `RELATED_SLOT_WORDS` word, said by the runner it belongs to."""
-    word = words[at - 1] if at > 0 else None
-    if word not in RELATED_SLOT_WORDS:
-        return False
-    runner = RELATED_SLOT_WORDS[word]
-    return runner is None or any(
-        (w or "").replace("\\", "/").rsplit("/", 1)[-1] == runner
-        for w in words[:at - 1])
+def _shape_modes(shape, source, build, keep=()):
+    """The `sources` of every slot-holding command of the shape
+    `resolve_shape` returned - a recorded template's `{paths}` commands, or a
+    sibling's commands that hand their runner a path."""
+    modes = []
+    for entry in shape or ():
+        if _carried(entry, build, keep):
+            continue
+        tokens = _entry_tokens(entry)
+        for span in _command_spans(tokens):
+            c = _read_command(tokens, span,
+                              placeholder=source == SPELLING_SOURCE)
+            if c["slot"]:
+                modes.append(c["sources"])
+    return modes
 
 
 def slot_takes_sources(shape, source, build, keep=()):
-    """Whether the slot of the shape `resolve_shape` returned relates source
-    files to their tests, so a task's source files may be handed to it
-    (`_manifest_phases.slot_takes`). One reading for both sources of a shape:
-    the word in front of the slot (`RELATED_SLOT_WORDS`). A shape with no
-    such word takes suites alone."""
-    return any(_related_mode(words, at)
-               for entry in shape or () if not _carried(entry, build, keep)
-               for words, at in _slot_starts(entry, source))
+    """Whether any command of the shape `resolve_shape` returned has a slot
+    that relates source files to their tests. Said in the basis sentence;
+    which command takes which path is `taken_paths`'s question."""
+    return any(_shape_modes(shape, source, build, keep))
 
 
-def slot_paths(entry, shape, source, build, keep=()):
-    """The paths a WRITTEN gate entry hands its runner's slot, read by
-    position: none for a shared key or an entry in `keep` (the always entries
-    the plan runs whole); for an entry the recorded template filled, the
-    paths between the template's own words in front of `{paths}` and behind
-    it; otherwise every path but the program its interpreter runs
-    (`_manifest_phases.command_slots`). A path the spelling names itself -
-    its program, its own words around the slot, an always entry - is not in
-    the slot, and the same path written INTO the slot is."""
-    if _carried(entry, build, keep):
-        return []
-    template = shape[0] if source == SPELLING_SOURCE and shape else None
-    if isinstance(template, str) and "{paths}" in template:
-        head, _sep, tail = template.partition("{paths}")
-        if entry.startswith(head) and entry.endswith(tail) \
-                and len(entry) >= len(head) + len(tail):
-            return _phases.gate_entry_paths(entry[len(head):len(entry) - len(tail)])
-    return [_phases.shell_word_path(words[i])
-            for words, found in _phases.command_slots(entry) for i in found]
+def taken_paths(shape, source, build, paths, keep=()):
+    """The `paths` some command of the shape has a slot for: each asked
+    `_manifest_phases.slot_takes` under that command's own mode. A path no
+    command takes is handed to none, and a derivation left with none has
+    nothing to point at."""
+    modes = _shape_modes(shape, source, build, keep)
+    return [p for p in paths
+            if any(_phases.slot_takes(p, mode) for mode in modes)]
 
 
 def untaken_slot_paths(gate, files, shape, source, build, keep=()):
-    """The declared `files` a gate's entries hand their slot (`slot_paths`)
-    that the slot does not take (`_manifest_phases.slot_takes`, under this
-    shape's `slot_takes_sources`), in the order the gate names them, once
-    each - whatever the spelling, so a source-to-test slot handed a document
-    or a workflow is named as a suite slot handed one is. Only a declared
-    path counts: the derivation was handed nothing else."""
-    takes_sources = slot_takes_sources(shape, source, build, keep)
+    """The declared `files` a gate's commands hand their slot that the
+    command's own slot does not take (`_manifest_phases.slot_takes` under
+    that command's mode, `slot_reading`), in the order the gate names them,
+    once each - whatever the spelling, so a source-to-test slot handed a
+    document, or one command of `a && b` handed a path only the other takes,
+    is named. Read by position: an always entry or a shared key hands no slot,
+    and a path the recorded template names itself is not in the slot while the
+    same path written into it is. Only a declared path counts: the derivation
+    was handed nothing else."""
+    template = shape[0] if source == SPELLING_SOURCE and shape else None
     declared = [_vocab._strip_line_suffix(str(f)) for f in files or ()]
     out = []
     for entry in gate or ():
-        for path in slot_paths(entry, shape, source, build, keep):
-            if path in declared and path not in out \
-                    and not _phases.slot_takes(path, takes_sources):
-                out.append(path)
+        if _carried(entry, build, keep):
+            continue
+        for slot, sources in slot_reading(entry, template):
+            for path in slot:
+                if path in declared and path not in out \
+                        and not _phases.slot_takes(path, sources):
+                    out.append(path)
     return out
 
 

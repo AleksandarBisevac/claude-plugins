@@ -365,10 +365,11 @@ that asks for a test where the repo shows no place for one says so in a task not
 each path to the runner that takes it: a project whose gate names vitest and playwright
 runs a unit test under vitest and an e2e spec under playwright, never the other way round,
 and an entry left with no path is dropped rather than left to run the whole suite. With no
-`tests.add`, the gate is pointed as any task's is: at the paths among its `files` that its
-spelling takes - the suites, or every file when a sibling's gate hands its runner a source
-path - and when none is left (a workflow file, a source file with no test) the gate is the
-phase's own, and `gateBasis` says `files-no-suite`. The
+`tests.add`, the gate is pointed as any task's is: each command of its spelling is handed the
+paths among its `files` that the command's own slot takes - suites, and source files only
+where that command relates sources to their tests in its runner's language - and when none
+is left (a workflow, config or fixture file, a source file no command relates) the gate is
+the phase's own, and `gateBasis` says `files-no-suite`. The
 companions below apply to a fix task too, and a test outside the runner's include widens
 the runner's config. When the test a finding asks for has no runner in the task's gate
 (the phase's gate names none), a task note says so and says how the gate was derived. A finding whose `file` text names no

@@ -359,8 +359,10 @@
         "severity": "low",
         "file": "tests/test__evidence_io.py (tk1); plugins/audit/scripts/governance/run-test-gate.py ~5128,~5542",
         "issue": "tk1 pins the alias tree_key = _ev.tree_key, but the recorder writes testedState.tree.key through _ev.tree_key(tree) directly; a local hash re-introduced at the write site would leave tk1 green.",
-        "resolution": "Pin the written key: a case that records a gate run and compares testedState.tree.key with _evidence_io.tree_key of the same tree, red first against a local hash at the write site.",
-        "fixTask": "P148.19-xpz"
+        "resolution": "fixed in P148.19-xpz (418e4eb00ccd): Pin the written key: a case that records a gate run and compares testedState.tree.key with _evidence_io.tree_key of the same tree, red first against a local hash at the write site.",
+        "fixTask": "P148.19-xpz",
+        "commit": "418e4eb00ccd",
+        "status": "fixed"
       },
       {
         "id": "P148-R35",
@@ -430,10 +432,11 @@
         "severity": "med",
         "file": "tests/test__evidence_io.py:4151-4190",
         "issue": "The new tk2o/tk2t cases go red for a write that is not _evidence_io.tree_key only where the fixture tree's abspath differs from its realpath. Both trees come from _harness.fixture_root (a plain temp dir) and nothing symlinks them, so the realpath-to-abspath drift that the enclosing docstring names (_tree_key_cases: 'a realpath policy changed in one') is red on macOS, where /var is a symlink to /private/var, and green on a Linux runner whose temp dir has no symlink. The executor's red (written 205b8cd9dd69 vs tree_key 8f9d4709f093) was a macOS measurement of a local sha1 over os.path.abspath; the claim 'now pinned at the write' is true there and unproved on CI's platform. Other mutations (constant, wrong tree such as project, different slice length, basename) do go red by reading: tk2 equality or tk3 inequality fails.",
-        "resolution": "Make one of the two trees a symlink to a real directory (os.symlink in a fixture dir, passed as --tree), so realpath(tree) != abspath(tree) on every platform with symlinks. Skip that tree with a stated reason on a platform that cannot symlink. Then a writer using abspath or no realpath fails tk2 everywhere."
+        "resolution": "Make one of the two trees a symlink to a real directory (os.symlink in a fixture dir, passed as --tree), so realpath(tree) != abspath(tree) on every platform with symlinks. Skip that tree with a stated reason on a platform that cannot symlink. Then a writer using abspath or no realpath fails tk2 everywhere.",
+        "fixTask": "P148.22-xpz"
       }
     ],
-    "outcome": "[findings: 43 - 0 high, 10 med, 33 low; 34 with a recorded fix commit]"
+    "outcome": "[findings: 43 - 0 high, 10 med, 33 low; 35 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1887,7 +1890,7 @@
     {
       "id": "P148.19-xpz",
       "title": "The recorded tree key is pinned where it is written, not only by the alias",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix P148-R34 (docs/audit/phases/P148.json review.findings): add a case that records a gate run through run-test-gate.py and compares the written testedState.tree.key with _evidence_io.tree_key of the same tree; prove it red by putting a local hash at the write site in your tree and restoring (purge __pycache__). Edit only the test files. No F/P/BUG ids in code.",
       "files": [
         "tests/test__evidence_io.py",
@@ -1914,14 +1917,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "418e4eb00ccd",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added to tests/test__evidence_io.py (_tree_key_cases) tk2o and tk2t: each builds a git project and a separate git tree, runs run-test-gate.main([plan, P1, --project-dir, --record, --tree, tree]), reads the row back with read_rows and compares testedState.tree.key with _evidence_io.tree_key(tree) (code E_OK, one row, key non-empty). tk3 (allow): the two trees were recorded under different keys, so a constant writer fails. Each tree has its own project so the second run is measured, not a reused verdict (first draft shared a project and the second row carried no testedState). No change to run-test-gate.py or tests/test_run_test_gate.py (existing wt1/wt4 already compare with M.tree_key, but via the gate module's alias, which is why they stayed green when only the write site was swapped and the alias kept; wt4 did go red under my mutation because it also differed from the alias). Gate: python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_run_test_gate.py exit 0, 2/2 files ok, 883 cases. Dependants: test__doctor_trail.py/test_audit_status.py use _fs_row/_full_status_cases/_real_two_commits/_cases from test__evidence_io.py - untouched, still correct; tools/affected.py and tools/sweep-selftests.py/sweep-costs.json read the file by path, only case count changed (312 cases). test_run_test_gate.py and run-test-gate.py not modified, so their dependants are unchanged.",
+        "descriptive": "The tree key a gate run records is now pinned at the write by a case that reads it off a written row and compares it with the reader's own function, not only by the alias."
       },
       "startedAt": "2026-10-29T09:37:39Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-29T09:52:21Z",
+      "verifiedBy": [
+        "tk2o/tk2t: record a gate run through run-test-gate --record --tree on two trees and compare the written testedState.tree.key with _evidence_io.tree_key of the same tree",
+        "tk3: the two recorded keys differ"
+      ],
       "notes": [
         {
           "at": "2026-10-29T08:40:17Z",
@@ -1944,6 +1950,17 @@
         "runId": "2026-10-29T09:44:25Z.29b738",
         "status": "passed",
         "at": "2026-10-29T09:44:25Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "418e4eb00ccd",
+        "at": "2026-10-29T09:52:21Z",
+        "return": "docs/audit/evidence/returns/P148.19-xpz/20261029T093739Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task (expectRedFirst false): the cases pin behaviour HEAD already has, so they pass on HEAD by construction and the helper's HEAD-plus-tests run would show no red. Red watched by hand instead, in the task tree with a backup copy restored (not HEAD's copy): the write site in run-test-gate.py replaced by a local sha1 over os.path.abspath, __pycache__ purged -> tests/test__evidence_io.py 310/312 with tk2o and tk2t FAIL (written 205b8cd9dd69 vs tree_key 8f9d4709f093), tests/test_run_test_gate.py 570/571 with wt4 FAIL; restored, __pycache__ purged, 312/312.",
+        "at": "2026-10-29 manual mutation run in task tree"
       }
     },
     {
@@ -2026,7 +2043,7 @@
     {
       "id": "P148.21-xpz",
       "title": "A derived gate's slot is found per command, and each command receives only the declared paths its own runner takes, classified by kind before directory",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fix P148-R37, R38, R39, R41 (docs/audit/phases/P148.json review.findings). The previous redesign (3b2a1512) made the per-path decision but still models the slot per GATE: whether it takes sources is one flag for every entry, the slot is wherever the sibling's first path stood (an option's argument included), and a path under a test directory is a suite whatever it is. Finish the model at the right grain: (1) split each gate entry into its commands at the shell's command separators; (2) per command, the program is its own word and the slot is the path words that are neither the program nor an option's argument (an option taking an argument such as --config, -c, --rootdir, --cov-config, and the = forms) - option arguments stay in place, never replaced or dropped; (3) per command, its runner decides whether it takes sources (related-tests words in THAT command); (4) path kind is decided by kind first - document, config (conftest.py, *.config.*, setup files), fixture or data - and a suite only by a test mark or test_ prefix; (5) each command receives only the declared paths its own slot takes, and the refusal judges each command by its own mode. Rows from the review that must hold: the vitest-related plus playwright pair; the jest-related plus pytest pair (pytest gets only tests/test_y.py, as before 04261ee5); the chained entry; --config and -c before and after the slot; the two-program chained entry keeping tools/b.py; conftest.py, playwright.config.ts, fixtures/*.json, __tests__/README.md. Add them to the existing table-driven matrix, each red first against HEAD, and keep every existing row green. Then rescope the prose R41 names to the rule as landed (no number in prose). Edit only declared files. No F/P/BUG ids in code.",
       "files": [
         "plugins/audit/scripts/governance/_gate_derive.py",
@@ -2070,14 +2087,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-29T09:52:24Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -2127,6 +2144,61 @@
         "P148-R38",
         "P148-R39",
         "P148-R41"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-29T10:34:35Z.df4c88",
+        "status": "passed",
+        "at": "2026-10-29T10:34:35Z"
+      }
+    },
+    {
+      "id": "P148.22-xpz",
+      "title": "The recorded tree key case tells realpath from abspath on every platform",
+      "status": "pending",
+      "description": "Fix P148-R43 (docs/audit/phases/P148.json review.findings): tk2o/tk2t compare the written testedState.tree.key with _evidence_io.tree_key over plain temp trees, so a writer hashing abspath instead of realpath passes on Linux (only macOS's /var symlink tells them apart). Reach one tree through a symlink so realpath and abspath differ on every platform (skip with a stated reason only where symlinks cannot be made). Prove red with an abspath writer at the write site in your tree (purge __pycache__ between mutate and restore). Edit only the test file. No F/P/BUG ids in code.",
+      "files": [
+        "tests/test__evidence_io.py",
+        "tests/test__evidence_io.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test__evidence_io.py: Make one of the two trees a symlink to a real directory (os.symlink in a fixture dir, passed as --tree), so realpath(tree) != abspath(tree) on every platform ..."
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__evidence_io.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-29T09:52:40Z",
+          "text": "scope: tests/test__evidence_io.py, every path the finding(s) P148-R43 name"
+        },
+        {
+          "at": "2026-10-29T09:52:40Z",
+          "text": "no test runner in this task's gate for the test P148-R43 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test__evidence_io.py'], derived as from --gate; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P148-R43"
       ]
     }
   ],

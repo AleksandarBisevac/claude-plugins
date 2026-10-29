@@ -1186,49 +1186,113 @@ WORKFLOW_FILES = frozenset((
     ".gitlab-ci.yml", ".travis.yml", "azure-pipelines.yml",
     "bitbucket-pipelines.yml", "appveyor.yml", "Jenkinsfile",
 ))
+# A file a runner or its plugins read to set a run up, by NAME: it sits beside
+# the tests and carries a source extension, and no runner collects it as one.
+CONFIG_NAMES = frozenset(("conftest.py", "setup.py", "noxfile.py",
+                          "jest-preset.js"))
+# The basename stems (before the first dot) of a setup file a runner is told
+# to load first - `setupFiles`, `globalSetup` - matched case-blind.
+SETUP_STEMS = frozenset((
+    "setup", "teardown", "setuptests", "setup-tests", "setup_tests",
+    "test-setup", "tests-setup", "globalsetup", "global-setup", "global_setup",
+    "globalteardown", "global-teardown", "global_teardown",
+))
+# The words a config's or setup file's middle dot-separated part carries:
+# `jest.config.js`, `karma.conf.js`, `jest.setup.ts`, `vitest.workspace.ts`.
+CONFIG_INNER_WORDS = frozenset(("config", "conf", "setup", "teardown",
+                                "workspace"))
+# Where a test's inputs live rather than its cases: any file under one of
+# these directories is a fixture, whatever its extension.
+FIXTURE_DIRS = frozenset((
+    "fixtures", "fixture", "__fixtures__", "__mocks__", "__snapshots__",
+    "testdata", "test-data", "test_data",
+))
+# The modules jest's and vitest's import graph resolves - the two runners
+# whose related-tests mode `_gate_derive.RELATED_SLOT_WORDS` reads. A related
+# slot handed a file outside these relates nothing, so a Python source given
+# to `jest --findRelatedTests` is a run of nothing.
+SCRIPT_MODULE_EXTENSIONS = frozenset((
+    ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".vue",
+    ".svelte",
+))
+
+
+def _is_config_name(base):
+    """Whether a basename names a config or setup file whatever its folder."""
+    low = base.lower()
+    words = low.split(".")
+    return (low in CONFIG_NAMES or base.startswith(".")
+            or words[0] in SETUP_STEMS
+            or any(w in CONFIG_INNER_WORDS for w in words[1:-1]))
 
 
 def path_kind(path):
-    """`suite`, `workflow`, `document`, `config`, `source` or `other` - what
-    kind of file a declared path is, for the one question `slot_takes` asks.
+    """`workflow`, `document`, `config`, `fixture`, `suite`, `source` or
+    `other` - what kind of file a declared path is, for the one question
+    `slot_takes` asks.
 
-    A SUITE FIRST, by `is_suite_path`, because a test file is a source file by
-    its extension and the slot question is decided by its being a test. A
-    config is told apart from a source by name as well as by extension:
-    `jest.config.js` and `.eslintrc.js` carry a source extension and are read
-    by the tool, never imported by a test."""
+    KIND BEFORE DIRECTORY: a test directory holds more than tests - its
+    `conftest.py`, a `playwright.config.ts`, a `setup.ts` a runner loads
+    first, a `README.md`, a `fixtures/a.json` - and none of them is a test
+    any runner collects. So a workflow, a document, a config by name, a
+    fixture by folder and a config or data file by extension are decided
+    first; a suite is then a path whose name says so (`subject_of`'s test
+    mark or pytest's `test_` prefix), and a test directory decides only for a
+    file with a source extension and neither mark (`__tests__/order.ts`,
+    jest's own layout) - any other file there is a test's input, a fixture.
+    `is_suite_path` keeps its wider reading, because it answers a different
+    question: whether a runner printed a path as a test it ran."""
     norm = str(path or "").replace("\\", "/")
     base = norm.rsplit("/", 1)[-1]
     ext = ("." + base.rsplit(".", 1)[-1].lower()) if "." in base[1:] else ""
-    if is_suite_path(norm):
-        return "suite"
-    folder = "/" + "/".join(path_segments(norm))
+    segments = path_segments(norm)
+    folder = "/" + "/".join(segments)
     if base in WORKFLOW_FILES or any(("/" + d) in folder for d in WORKFLOW_DIRS):
         return "workflow"
     if ext in DOCUMENT_EXTENSIONS:
         return "document"
-    inner = base.lower().split(".")[1:-1]
-    if (ext in CONFIG_EXTENSIONS or base.startswith(".")
-            or any(w in ("config", "conf") for w in inner)):
+    if _is_config_name(base):
         return "config"
-    if ext in SOURCE_EXTENSIONS:
-        return "source"
-    return "other"
+    if any(seg in FIXTURE_DIRS for seg in segments):
+        return "fixture"
+    in_test_dir = any(seg in TEST_DIRS for seg in segments)
+    if ext in CONFIG_EXTENSIONS:
+        return "fixture" if in_test_dir else "config"
+    if subject_of(norm) is not None or base.startswith("test_"):
+        return "suite"
+    if in_test_dir:
+        return "suite" if ext in SOURCE_EXTENSIONS else "fixture"
+    return "source" if ext in SOURCE_EXTENSIONS else "other"
 
 
 def slot_takes(path, takes_sources):
-    """Whether a derived gate's slot may be handed `path`: a suite always; a
-    source only when the spelling's slot relates sources to their tests
-    (`takes_sources`, read by `_gate_derive.slot_takes_sources`); a document,
-    workflow, config or any other file never.
+    """Whether a derived gate's slot may be handed `path` - `takes_sources`
+    being what that slot's own command relates (`_gate_derive.slot_reading`):
+    falsy for a slot that takes suites alone, the extensions a related-tests
+    runner resolves (`SCRIPT_MODULE_EXTENSIONS`), or True for any source.
 
-    THE ONE DECISION, asked of each declared path by the `files` arm that
-    points a task's gate (and so by `scope`'s re-derivation, which runs that
-    arm) and by the refusal reading back what was written
-    (`_gate_derive.untaken_slot_paths`). A runner handed a file it cannot
-    turn into a test runs nothing of the task's, red whatever the work."""
+    A suite always, except that a related slot takes a suite only in its own
+    runner's language as it takes a source; a source only when the slot
+    relates sources to their tests; a document, workflow, config, fixture or
+    any other file never.
+
+    THE ONE DECISION, asked of each declared path for each command: by the
+    `files` arm that points a task's gate (and so by `scope`'s re-derivation,
+    which runs that arm), by the re-point handing each command its paths
+    (`_gate_derive.repointed`, `point_shape`), and by the refusal reading back
+    what was written (`_gate_derive.untaken_slot_paths`). A runner handed a
+    file it cannot turn into a test runs nothing of the task's, red whatever
+    the work."""
     kind = path_kind(path)
-    return kind == "suite" or (kind == "source" and bool(takes_sources))
+    if kind not in ("suite", "source"):
+        return False
+    if not takes_sources:
+        return kind == "suite"
+    if takes_sources is True:
+        return True
+    norm = str(path or "")
+    ext = ("." + norm.rsplit(".", 1)[-1].lower()) if "." in norm else ""
+    return ext in takes_sources
 
 
 # --- what an open finding is ----------------------------------------------------
@@ -1271,24 +1335,6 @@ def gate_entry_paths(entry):
         if path:
             found.append(path)
     return found
-
-
-def command_slots(entry):
-    """`[(words, [index, ...]), ...]` - each simple command of a gate entry
-    (`gate_entry_commands`) with the indices of the words that hand its runner
-    a path: every path word, less the program an interpreter runs
-    (`python3 tools/run.py tests/test_a.py` hands `tests/test_a.py` and runs
-    `tools/run.py`), read by `_runs_first_path_as_program` as the shape check
-    reads it. A suite run as the program (`python3 tests/test_a.py`) is the
-    path the command hands over, so it stays."""
-    out = []
-    for words in gate_entry_commands(entry):
-        found = [i for i, w in enumerate(words) if shell_word_path(w)]
-        if found and _runs_first_path_as_program(words[:found[0]]) \
-                and not is_suite_path(shell_word_path(words[found[0]])):
-            found = found[1:]
-        out.append((words, found))
-    return out
 
 
 # The words a gate entry starts its SCRIPT with: what is run, not what is tested.
