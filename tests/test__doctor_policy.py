@@ -527,6 +527,29 @@ def _cases(check):
               "(THE OTHER DIRECTION: an unconditional sentence fails here): %r"
               % (_detail(rep, "skills"),),
               "does not load" not in _detail(rep, "skills"))
+        # The scan keys a skill by its front-matter name; the launcher looks for
+        # a DIRECTORY of that name. A skill in a directory the launcher reads,
+        # under another directory name, is that mismatch - and the row says so
+        # rather than implying the place is one no session reads.
+        renamed_at = os.path.join(home, "skills", "other-dir", "SKILL.md")
+        rep = _skills(_plan_with(["renamed"]),
+                      {"skills": [{"name": "renamed", "path": renamed_at}]},
+                      home=home)
+        renamed_row = _detail(rep, "skills")
+        rep = _skills(_plan_with(["scan-only"]),
+                      {"skills": [{"name": "scan-only",
+                                   "path": "/elsewhere/scan-only/SKILL.md"}]},
+                      home=home)
+        elsewhere_row = _detail(rep, "skills")
+        check("dp53c a refused name the scan lists in a skills directory the "
+              "launcher reads, under another directory name, is named as the "
+              "directory/front-matter mismatch with the directory it sits in; a "
+              "sighting outside every place looked in draws no such sentence: "
+              "%r" % ((renamed_row, elsewhere_row),),
+              "'renamed'" in renamed_row and "other-dir" in renamed_row
+              and "directory name" in renamed_row
+              and "directory name" not in elsewhere_row
+              and "does not load" in elsewhere_row)
 
         # --- would it survive a CLONE? the half "resolves here" cannot see ------
         # The row above is answered on the authoring machine, where every name
@@ -656,6 +679,41 @@ def _cases(check):
               "as graded: %r" % (_detail(rep, _PORT),),
               "would survive a clone" in _detail(rep, _PORT)
               and "UNKNOWN" not in _detail(rep, _PORT))
+
+        # The panel's strict-tier refusal asks the same question at the point
+        # of choice, so it must grade the same file: a "would not travel"
+        # verdict about the copy no session loads refuses nothing (UNKNOWN is
+        # accepted there), and one about the loaded copy refuses by name.
+        import _panel_write
+
+        def _panel_refusal(inv):
+            saved = os.environ.get("CLAUDE_CONFIG_DIR")
+            os.environ["CLAUDE_CONFIG_DIR"] = home
+            try:
+                return _panel_write._reject_stranded(
+                    tmp, {"portability": "strict"},
+                    {"meta": {"reviewSkill": "both-dup"}},
+                    _discover=lambda _p: inv)
+            finally:
+                if saved is None:
+                    os.environ.pop("CLAUDE_CONFIG_DIR", None)
+                else:
+                    os.environ["CLAUDE_CONFIG_DIR"] = saved
+        paired = []
+        for at in (project_dup, personal_dup):
+            inv = {"skills": [_travels("both-dup", False, "home dir", path=at)]}
+            paired.append((
+                "will NOT survive" in _detail(
+                    _skills(mfb, inv, {"portability": "strict"}, home=home),
+                    _PORT),
+                _panel_refusal(inv)))
+        check("dp56 the panel's strict refusal and doctor grade the same copy: "
+              "a stranding verdict about the copy no session loads is refused "
+              "by neither, one about the loaded copy by both, naming it: %r"
+              % (paired,),
+              paired[0] == (False, None)
+              and paired[1][0] is True
+              and "'both-dup'" in (paired[1][1] or ""))
 
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

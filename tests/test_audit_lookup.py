@@ -2603,6 +2603,26 @@ def _conventions_order_cases(check):
           and 0 <= at_plan < at_area < at_task
           and "area first" not in bullet)
 
+    # The brief's Skills section names every level the resolver read when
+    # none answered - the plan default included - and an opted-out task is
+    # told it opted out rather than that the plan declares nothing.
+    bare = {"meta": {}}
+    none_line = " ".join(M.skills_lines(bare, {"id": "P1"}, {"id": "P1.1"}))
+    opted_line = " ".join(M.skills_lines(
+        {"meta": {"defaultSkills": ["from-plan"]}}, {"id": "P1"},
+        {"id": "P1.1", "skills": None}))
+    listed = M.skills_lines({"meta": {"defaultSkills": ["from-plan"]}},
+                            {"id": "P1"}, {"id": "P1.1"})
+    check("co2 the brief's Skills section with nothing resolving names the "
+          "plan default, the area default and the task's skills; an opted-out "
+          "task is told it opted out; a resolving plan default is listed: %r"
+          % ((none_line, opted_line, listed),),
+          "meta.defaultSkills" in none_line and "area" in none_line
+          and "task" in none_line
+          and "skills: null" in opted_line
+          and "meta.defaultSkills" not in opted_line
+          and listed[1:] == ["- from-plan"])
+
 
 def _red_command_reader_cases(check):
     """The brief's test command after `--` is `_filed_returns.red_command`'s

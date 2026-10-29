@@ -626,6 +626,22 @@ BIND_RULE = ("Return `casesAdded`: for each tests.add entry, by index, the case 
              "is reported as a gap. Your titles are free wording.")
 
 
+def skills_lines(manifest, phase, task):
+    """The brief's Skills section: what `_areas.resolve_skills` loads, in its
+    order, or - when nothing resolves - why, naming every level it read. A task
+    that opted out (`skills: null`) is told so, since that stops the plan and
+    area defaults whatever they declare."""
+    skills = _areas.resolve_skills(manifest, phase, task)
+    if skills:
+        return (["Invoke each via the Skill tool before touching code, in "
+                 "this order:"] + ["- %s" % (s,) for s in skills])
+    if _areas.skills_opted_out(task):
+        return ["No skill resolves for this task: it opts out with "
+                "`skills: null`, which stops the plan and area defaults."]
+    return ["No skill resolves for this task: no plan default "
+            "(meta.defaultSkills), no area default and no task skill."]
+
+
 def compose_executor_brief(manifest, phase, task, ctx, files, gate):
     """The executor's whole brief, as lines. `files` is `brief_lookup`'s payload
     and `gate` the `executor.runsGate` reading with its basis.
@@ -649,11 +665,7 @@ def compose_executor_brief(manifest, phase, task, ctx, files, gate):
     tree_lines = wave_tree_lines(ctx, phase, task)
     if tree_lines:
         lines += _section("Tree", tree_lines)
-    skills = _areas.resolve_skills(manifest, phase, task)
-    lines += _section("Skills", [
-        "Invoke each via the Skill tool before touching code, in this order:"]
-        + ["- %s" % (s,) for s in skills] if skills else [
-        "No skill resolves for this task: no area default and no task skill."])
+    lines += _section("Skills", skills_lines(manifest, phase, task))
     lines += _section("Description (verbatim)",
                       _verbatim(task.get("description"),
                                 "The task records no description."))

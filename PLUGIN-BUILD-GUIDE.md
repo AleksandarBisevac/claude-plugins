@@ -421,7 +421,7 @@ L7:
 
 L8:
   _live_copy -> _branch, _excerpt, _invariants, _locks, _manifest_io, _output, _scoped_commit, _status_facts, _worktrees
-  _panel_write -> _ado_parent, _ado_tracked, _areas, _branch, _config_rules, _gate_feed, _journal_io, _locks, _machine_paths, _manifest_io, _output, _panel_discovery, _panel_settings, _panel_state, _policy, _priority, _proposals, _ui_theme, _warning_groups, _worktrees
+  _panel_write -> _ado_parent, _ado_tracked, _areas, _branch, _claude_home, _config_rules, _gate_feed, _journal_io, _locks, _machine_paths, _manifest_io, _output, _panel_discovery, _panel_settings, _panel_state, _policy, _priority, _proposals, _skill_places, _ui_theme, _warning_groups, _worktrees
   _report_page -> _fmt, _manifest_io, _output, _report_html, _report_md, _report_ui, _report_usage, _status_facts
 
 L9:

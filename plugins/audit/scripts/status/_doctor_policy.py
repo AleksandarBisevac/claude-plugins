@@ -483,7 +483,8 @@ def check_plan_skills(rep, project, cfg, cfg_mod, manifest, _discover=None):
     running = _skill_places.plugin_name(plugin_root)
     resolved = dict((name, _skill_places.resolve_skill(
         name, project, user_home, plugin_root, running)) for _where, name in named)
-    missing = ["%r (%s)%s" % (name, where, _scan_sighting(have.get(name)))
+    missing = ["%r (%s)%s" % (name, where, _scan_sighting(
+        have.get(name), resolved[name].get("places")))
                for where, name in named if not resolved[name]["found"]]
     if missing:
         rep.warn("skills",
@@ -499,15 +500,37 @@ def check_plan_skills(rep, project, cfg, cfg_mod, manifest, _discover=None):
     _plan_skills_travel(rep, cfg, cfg_mod, named, have, resolved)
 
 
-def _scan_sighting(entry):
+def _scan_sighting(entry, places=()):
     """The sentence for a name the resolver refused but the machine scan lists, or
-    "" when the scan does not list it: it is another plugin's skill (or a copy in a
-    place no session reads), and a bare `name` in a plan reaches neither."""
+    "" when the scan does not list it. Three causes: another plugin's skill, a copy
+    in a place no session reads - a bare `name` in a plan reaches neither - or a
+    skill in a skills directory the launcher DOES read, whose directory is not
+    named after it. The scan keys a skill by its front-matter `name` while the
+    resolver looks for a directory of that name (`places`, the SKILL.md paths it
+    tried), so the third is told by the directory it sits in."""
     if not entry:
         return ""
     where = entry.get("path")
-    return " - the machine scan lists it%s, which a session does not load by that " \
-           "bare name" % (" at %s" % where if where else " (no path recorded)",)
+    if not where:
+        return " - the machine scan lists it (no path recorded), which a session " \
+               "does not load by that bare name"
+    folder = os.path.dirname(where)
+    if _skills_dir_read(os.path.dirname(folder), places):
+        return (" - the machine scan lists it at %s, in a skills directory a "
+                "session reads, but under the directory name %r: the launcher "
+                "looks a skill up by its directory name, not its front-matter "
+                "name, so rename the directory or name the skill %r in the plan"
+                % (where, os.path.basename(folder), os.path.basename(folder)))
+    return " - the machine scan lists it at %s, which a session does not load " \
+           "by that bare name" % (where,)
+
+
+def _skills_dir_read(skills_dir, places):
+    """True iff `skills_dir` is the parent of a skill directory the resolver
+    looked in - the same directory, symlinks resolved."""
+    want = os.path.normcase(os.path.realpath(skills_dir))
+    return any(os.path.normcase(os.path.realpath(os.path.dirname(
+        os.path.dirname(p)))) == want for p in places or () if p)
 
 
 def _same_file(first, second):

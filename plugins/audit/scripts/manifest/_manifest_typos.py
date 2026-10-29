@@ -179,12 +179,17 @@ def _skills_in_use(manifest):
     """True iff the manifest uses executor skills DELIBERATELY, anywhere.
 
     Evidence: a task whose `skills` key holds a non-empty list, an explicit
-    null (the opt-out is use), or a wrong-typed value (someone tried); or a
-    registered area declaring a non-empty default list. `skills: []` alone is
-    NOT evidence -- generators initialize empty lists on every task, and a
-    project that ignores the feature must get zero new warnings from it."""
+    null (the opt-out is use), or a wrong-typed value (someone tried); a
+    registered area declaring a non-empty default list; or a non-empty plan
+    default (`meta.defaultSkills`). `skills: []` alone is NOT evidence --
+    generators initialize empty lists on every task, and a project that
+    ignores the feature must get zero new warnings from it."""
     if not isinstance(manifest, dict):
         return False
+    meta = manifest.get("meta")
+    plan = meta.get("defaultSkills") if isinstance(meta, dict) else None
+    if isinstance(plan, list) and plan:
+        return True
     for phase in _safe_list(manifest.get("phases")):
         if not isinstance(phase, dict):
             continue

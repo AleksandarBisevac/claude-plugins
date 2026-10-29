@@ -59,6 +59,7 @@ from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
 import _manifest_io as _mio                        # noqa: E402  (as audit-task imports it)
 import _manifest_rules as _rules                   # noqa: E402  (the validator, to ask what a written plan warns about)
+import _manifest_typos as _typos                   # noqa: E402  (whether a plan uses skills, which the default this verb writes is)
 import _manifest_vocab as _vocab                   # noqa: E402  (the gate-basis words the validator grades against)
 import _manifest_phases as _phases                 # noqa: E402  (the identity pin below: an alias, not a second body)
 import _gate_derive                                # noqa: E402  (the identity pin below: an alias, not a second body)
@@ -11200,19 +11201,91 @@ def _record_cases(check):
               == ["vitest run src/Button.test.tsx"]
               and dg_tests("P1.3").get("gateBasis") == "files")
 
-        # ALLOW CASE: a REGRESSION task's `files` arm is unfiltered, exactly as
-        # today - `tests.add`'s invariant already covers it, this fix is
-        # gate-only's alone.
+        # Every task's `files` arm hands the runner suites only: a document or
+        # a source file given to a suite runner is a gate red before any work
+        # (the sweep refuses a path it does not cover by name). With no suite
+        # among the files the phase's wide gate answers, said as such.
         codedg, txtdg = run(
             ["add", "Fix a regression", "--phase", "P1",
              "--project-dir", dg_proj, "--tests-mode", "regression",
              "--files", "src/Button.tsx"])
-        check("dg3 ALLOW CASE: a regression task keeps today's unfiltered "
-              "`files` arm even with only a source file named: %r"
+        check("dg3 a regression task whose files name no suite path gets the "
+              "phase's wide gate, basis `files-no-suite`, never the runner "
+              "pointed at a source file: %r"
               % ((dg_tests("P1.4").get("gate"), dg_tests("P1.4").get("gateBasis")),),
               codedg == 0
-              and dg_tests("P1.4").get("gate") == ["vitest run src/Button.tsx"]
-              and dg_tests("P1.4").get("gateBasis") == "files")
+              and dg_tests("P1.4").get("gate") == ["lint", "typecheck", "test"]
+              and dg_tests("P1.4").get("gateBasis") == "files-no-suite")
+
+        # ALLOW CASE: a suite among a regression task's files still narrows the
+        # gate to that suite alone - the arm the filter must not disable.
+        codedg, txtdg = run(
+            ["add", "Fix a regression, tested", "--phase", "P1",
+             "--project-dir", dg_proj, "--tests-mode", "regression",
+             "--files", "src/Button.tsx,README.md,src/Button.test.tsx"])
+        check("dg3b ALLOW CASE: a regression task's files with a suite among "
+              "them narrow the gate to the suite alone: %r"
+              % ((dg_tests("P1.5").get("gate"), dg_tests("P1.5").get("gateBasis")),),
+              codedg == 0
+              and dg_tests("P1.5").get("gate")
+              == ["vitest run src/Button.test.tsx"]
+              and dg_tests("P1.5").get("gateBasis") == "files")
+
+        # A gate the `files` arm derived is the derivation's, not the
+        # author's: once `scope --tests-add` names a suite on a task not yet
+        # started, the `tests.add` arm is the one that answers, so the gate
+        # follows. Both `files` words are asked - the narrowed one and the
+        # wide fallback.
+        code_s4, txt_s4 = run(["scope", "P1.4", "--project-dir", dg_proj,
+                               "--tests-add",
+                               "src/Fix.test.tsx: the regression is pinned"])
+        code_s5, txt_s5 = run(["scope", "P1.5", "--project-dir", dg_proj,
+                               "--tests-add",
+                               "src/Other.test.tsx: the other case"])
+        check("dg4 `scope --tests-add` on a pending task whose gate the `files` "
+              "arm derived re-derives it from the new tests.add: %r"
+              % ((code_s4, dg_tests("P1.4").get("gate"),
+                  dg_tests("P1.4").get("gateBasis"), code_s5,
+                  dg_tests("P1.5").get("gate"),
+                  dg_tests("P1.5").get("gateBasis"),
+                  txt_s4[-300:], txt_s5[-300:]),),
+              code_s4 == 0 and code_s5 == 0
+              and dg_tests("P1.4").get("gate") == ["vitest run src/Fix.test.tsx"]
+              and dg_tests("P1.4").get("gateBasis") == "tests.add"
+              and dg_tests("P1.5").get("gate")
+              == ["vitest run src/Other.test.tsx"]
+              and dg_tests("P1.5").get("gateBasis") == "tests.add")
+
+        # `scope --files` moves the other input of the same derivation, so a
+        # `files`-derived gate follows it too.
+        run(["add", "Fix by files", "--phase", "P1", "--project-dir", dg_proj,
+             "--tests-mode", "regression", "--files", "src/Button.tsx"])
+        before_s6 = dg_tests("P1.6").get("gateBasis")
+        code_s6, txt_s6 = run(["scope", "P1.6", "--project-dir", dg_proj,
+                               "--files", "src/Button.tsx,src/Btn.test.tsx"])
+        check("dg4c `scope --files` on a pending task whose gate the `files` arm "
+              "derived re-derives it from the new files: %r"
+              % ((before_s6, code_s6, dg_tests("P1.6").get("gate"),
+                  dg_tests("P1.6").get("gateBasis"), txt_s6[-300:]),),
+              before_s6 == "files-no-suite" and code_s6 == 0
+              and dg_tests("P1.6").get("gate") == ["vitest run src/Btn.test.tsx"]
+              and dg_tests("P1.6").get("gateBasis") == "files")
+
+        # ALLOW CASE, the over-fire direction: a gate the author declared is
+        # never re-derived by a `--tests-add` beside it.
+        run(["scope", "P1.3", "--project-dir", dg_proj,
+             "--gate", "vitest run src/Button.test.tsx --reporter dot"])
+        code_s3, txt_s3 = run(["scope", "P1.3", "--project-dir", dg_proj,
+                               "--tests-add",
+                               "src/Third.test.tsx: a third case"])
+        check("dg4b ALLOW CASE: a declared gate stays as declared when "
+              "`scope --tests-add` widens tests.add: %r"
+              % ((code_s3, dg_tests("P1.3").get("gate"),
+                  dg_tests("P1.3").get("gateBasis"), txt_s3[-300:]),),
+              code_s3 == 0
+              and dg_tests("P1.3").get("gate")
+              == ["vitest run src/Button.test.tsx --reporter dot"]
+              and dg_tests("P1.3").get("gateBasis") == "declared")
 
         # ---- (pg) a NEW PHASE's gate: always FIRST, exclude the only drop ------
         pg_always = {
@@ -18076,6 +18149,44 @@ def _finding_disposition_cases(check):
               "does: %r" % (entry(mpath, "P1-R2"),),
               entry(mpath, "P1-R2").get("status") == "fixed"
               and entry(mpath, "P1-R2").get("commit") == _FR_SHA)
+
+        # A cancelled fix task will fix nothing, so a finding it held open must
+        # be free again: both `add --fixes` and the drive's `--answer fix`
+        # refuse a finding that still names a fix task. A finding a commit
+        # already settled keeps its fix task - that is the record of the fix,
+        # and the tally counts the pair - which is the over-fire direction.
+        proj, mpath = project("cancel", [finding("P1-R1"), finding("P1-R2")])
+        verb(proj, "add", "fix both", "--phase", "P1", "--files", "src/f.ts",
+             "--fixes", "P1-R1,P1-R2")
+        first = entry(mpath, "P1-R1").get("fixTask")
+        raw = _mio.read_json(mpath)
+        for f in raw["phases"][0]["review"]["findings"]:
+            if f.get("id") == "P1-R2":
+                f.update(commit=_FR_SHA, status="fixed")
+        _panel_write._atomic_write_json(mpath, raw)
+        code_c, text_c = verb(proj, "cancel", first, "--reason", "wrong scope")
+        freed, kept = entry(mpath, "P1-R1"), entry(mpath, "P1-R2")
+        rows = [r for r in _journal_io.read_all(proj)
+                if r.get("action") == "task.cancel"]
+        moved = [c for r in rows
+                 for c in ((r.get("details") or {}).get("changes") or [])]
+        code_a, text_a = verb(proj, "add", "fix P1-R1 again", "--phase", "P1",
+                              "--files", "src/g.ts", "--fixes", "P1-R1")
+        second = entry(mpath, "P1-R1").get("fixTask")
+        check("fd9 cancelling a fix task takes its id off the open finding it "
+              "fixed, on the cancel's journal row, keeps it on the finding a "
+              "commit settled, and a second `add --fixes` on the freed finding "
+              "is then accepted: %r"
+              % ((code_c, freed, kept, moved, code_a, second,
+                  text_c[-300:], text_a[-300:]),),
+              code_c == 0 and bool(first)
+              and "fixTask" not in freed and freed.get("status") is None
+              and kept.get("fixTask") == first
+              and kept.get("commit") == _FR_SHA
+              and len(rows) == 1
+              and moved == [{"id": "P1-R1", "field": "fixTask",
+                             "from": first, "to": None}]
+              and code_a == 0 and bool(second) and second != first)
     finally:
         shutil.rmtree(root, ignore_errors=True)
 
@@ -20467,6 +20578,45 @@ def _default_skills_cases(check):
               and len(rows(named_proj)) == 1
               and raw(home_mp) == home_before and rows(home_proj) == []
               and 0 <= moved < door.find("_resolve_project(args)"))
+
+        # A positional naming no plan is refused by its path or its root,
+        # never read as "no manifest named" and answered by the project the
+        # shell stands in. `--skills` rather than `--remove`, so a fall-back
+        # to the cwd project would WRITE there and this case could see it.
+        missing = os.path.join(tmp, "dsv-nowhere", "audit-plan.json")
+        try:
+            os.chdir(home_proj)
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+            miss_code, miss_txt = run(["default-skills", "--skills",
+                                       "writing-python", missing])
+        finally:
+            os.chdir(saved_cwd)
+            if saved_env is None:
+                os.environ.pop("CLAUDE_PROJECT_DIR", None)
+            else:
+                os.environ["CLAUDE_PROJECT_DIR"] = saved_env
+        check("dsv4 default-skills naming a manifest path that does not exist "
+              "exits non-zero naming that path or its root, and the project "
+              "the cwd stands in is byte-identical with no journal row: %r"
+              % ((miss_code, miss_txt[-200:], len(rows(home_proj))),),
+              miss_code != 0
+              and (missing in miss_txt
+                   or os.path.dirname(missing) in miss_txt)
+              and raw(home_mp) == home_before and rows(home_proj) == []
+              and not os.path.exists(os.path.dirname(missing)))
+
+        # The plan default this verb writes is use of the skills feature in
+        # its own right, beside a task's list and an area's; an empty one is
+        # not, the way `skills: []` on a task is not.
+        plan_only = {"meta": {"defaultSkills": ["a-skill"]}, "phases": []}
+        plan_empty = {"meta": {"defaultSkills": []}, "phases": []}
+        check("dsv5 a plan default alone counts as use of skills, and an "
+              "empty one or none does not: %r"
+              % ((_typos._skills_in_use(plan_only),
+                  _typos._skills_in_use(plan_empty)),),
+              _typos._skills_in_use(plan_only) is True
+              and _typos._skills_in_use(plan_empty) is False
+              and _typos._skills_in_use({"meta": {}, "phases": []}) is False)
     finally:
         _harness.remove_tree(tmp)
 

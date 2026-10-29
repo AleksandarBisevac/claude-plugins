@@ -1471,21 +1471,22 @@ def _gate_write_refusal(entries, assembled, project, where, shape=True):
 
 
 def _files_gate_refusal(task, phase, assembled):
-    """The refusal line for a FIX task whose `files`-derived gate names a file of
+    """The refusal line for a task whose `files`-derived gate names a file of
     its own that is no suite, or None.
 
-    A gate pointed at `files` goes to a test runner, and a workflow or source
-    file given to one runs nothing and fails every attempt (a fix task over a
-    finding naming `.github/workflows/ci.yml` carried exactly that). The
+    A gate pointed at `files` goes to a test runner, and a workflow, document or
+    source file given to one runs nothing and fails every attempt (a fix task
+    over a finding naming `.github/workflows/ci.yml` carried exactly that, and
+    an ordinary task naming two documents was red before any work). The
     derivation filters to suites (`_ordinary_task_gate`); this asks the same
     question of what it wrote, so a derivation that stops filtering is refused
     by the path's name instead of landing as a gate red on every run.
 
     WHY NOTHING CAUGHT IT BEFORE: `gate_entry_shape_problem` only reads the
-    shapes that run a suite twice, and the `files` arm of a fix task handed
-    every path to the sibling's spelling unread - the gate was well-formed and
-    wrong. Ordinary tasks are not asked: their `files` arm is unfiltered on
-    purpose, and a gate they declare is theirs.
+    shapes that run a suite twice, and the `files` arm handed every path to the
+    sibling's spelling unread - the gate was well-formed and wrong. A gate a
+    task declares is its own (`--gate` writes basis `declared`), so only a
+    derived one is asked.
 
     The runner's own program is not a path the derivation was handed, so the
     paths the sibling's spelling names itself are exempt
@@ -2831,22 +2832,19 @@ def _ordinary_task_gate(shape, owner, wide, build, add_paths, files, mode,
                     "%s's gate entries that name no path, carried through -- "
                     "this task's files name no suite path to narrow %s's gate "
                     "at" % (owner, owner), "gate-only-no-suite")
-        if runner_aware:
-            # A FIX TASK'S FILES ARE POINTED AT ONLY WHERE THEY ARE SUITES. Its
-            # `tests.add` is often empty (a finding naming a workflow and a
-            # source file owes no case it can place), so `files` is all this
-            # arm has, and a workflow handed to the runner is a gate that is red
-            # on every run whatever the work. No suite among them is the wide
-            # gate's question, said as such. Ordinary tasks keep the unfiltered
-            # arm above: their `files` were declared with the gate in mind.
-            suite_files = [p for p in files if _phases.is_suite_path(p)]
-            if not suite_files:
-                return wide, ("the phase's testGate, wide -- none of this fix "
-                              "task's files is a suite path (%s), so %s's "
-                              "spelling has nothing to be pointed at"
-                              % (", ".join(files), owner)), "files-no-suite"
-            files = suite_files
-        entries, more = _point(shape, build, files, project, runner_aware,
+        # A TASK'S FILES ARE POINTED AT ONLY WHERE THEY ARE SUITES. This arm is
+        # reached with `tests.add` empty, so `files` is all it has, and a
+        # document, workflow or source file handed to a suite runner is a gate
+        # red on every run whatever the work - a sweep refuses a path it does
+        # not cover by name. No suite among them is the wide gate's question,
+        # said as such.
+        suite_files = [p for p in files if _phases.is_suite_path(p)]
+        if not suite_files:
+            return wide, ("the phase's testGate, wide -- none of this task's "
+                          "files is a suite path (%s), so %s's spelling has "
+                          "nothing to be pointed at"
+                          % (", ".join(files), owner)), "files-no-suite"
+        entries, more = _point(shape, build, suite_files, project, runner_aware,
                                owner, meta)
         return (entries,
                 "narrowed to this task's files, in %s%s"
@@ -2913,11 +2911,13 @@ def _task_gate(args, phase, assembled, add_paths, files, mode="gate-only"):
     is never noticed at all. So the third default is reached with a reason naming
     what was missing, never with silence.
 
-    A GATE-ONLY TASK NARROWS ONLY TO A SUITE. Arm 2 above reads every kind of
-    `files` entry for a tdd or regression task, because `tests.add` already
-    proved the task creates a real test file -- but a gate-only task names no
-    case at all, so a source file among its `files` is not evidence the
-    project's suite-running command has anything of this task's to run. When
+    EVERY TASK NARROWS ONLY TO A SUITE. Arm 2 above points the gate at the
+    suite paths among `files` and nothing else: a document or source file
+    handed to a suite runner is a gate red before any work. A tdd or
+    regression task with no suite among its files gets the phase's wide gate
+    (`files-no-suite`). A gate-only task names no case at all, so a source file
+    among its `files` is not evidence the project's suite-running command has
+    anything of this task's to run. When
     `mode` is `"gate-only"` and none of `files` is a suite path
     (`_manifest_phases.is_suite_path`), narrowing to it would point the gate at
     a command that runs nothing this task touched -- a green bought on work
@@ -4126,7 +4126,7 @@ def _locked_add(args, project, config, mpath, title, out):
     if gate_refusal:
         out(gate_refusal)
         return E_USAGE
-    gate_refusal = _files_gate_refusal(task, phase, assembled) if fixes else None
+    gate_refusal = _files_gate_refusal(task, phase, assembled)
     if gate_refusal:
         out(gate_refusal)
         return E_USAGE
@@ -4404,6 +4404,36 @@ def _cancel_task(task, reason, now):
     return task
 
 
+def _release_findings(phase, tids):
+    """The journal-shaped changes after taking each id in `tids` off every
+    finding of `phase` that names it as its fix task and carries no commit -
+    mutating the phase's review in place.
+
+    A CANCELLED TASK FIXES NOTHING, and a finding still naming it is refused by
+    `add --fixes` and by the drive's `--answer fix` alike, so the finding was
+    stranded until a hand edit. A finding a commit already settled keeps its fix
+    task: the pair is the record of the fix and what the tally counts. Only the
+    owning phase is read because `add --fixes` binds only its own phase's
+    findings."""
+    review = phase.get("review") if isinstance(phase.get("review"), dict) else None
+    listed = review.get("findings") if review else None
+    if not tids or not isinstance(listed, list):
+        return []
+    findings, changes = list(listed), []
+    for i, was in enumerate(listed):
+        if not isinstance(was, dict) or was.get("commit") \
+                or not was.get("fixTask") or was.get("fixTask") not in tids:
+            continue
+        entry = dict(was)
+        entry.pop("fixTask")
+        findings[i] = entry
+        changes.append({"id": was.get("id"), "field": "fixTask",
+                        "from": was.get("fixTask"), "to": None})
+    if changes:
+        phase["review"] = dict(review, findings=findings)
+    return changes
+
+
 def _locked_cancel(args, project, config, mpath, tid, reason, out):
     try:
         raw_index = _mio.read_json(mpath)
@@ -4461,6 +4491,7 @@ def _locked_cancel(args, project, config, mpath, tid, reason, out):
                 _cancel_task(t, "phase %s cancelled: %s" % (tid, reason), now)
 
     cascaded = _cascade_ids(cascade)
+    released = _release_findings(phase, [tid] if kind == "task" else cascaded)
     phase_id = phase.get("id")
     snap = _snapshot(_write_paths(project, mpath, raw_index, phase_id))
     try:
@@ -4485,7 +4516,7 @@ def _locked_cancel(args, project, config, mpath, tid, reason, out):
         return E_INVALID
 
     jres = _journal_cancel(project, config, mpath, kind, tid, phase_id,
-                           reason, cascade)
+                           reason, cascade, released)
     index_note = _index_dirty_note(written, mpath, project, phase_id)
     git_root = os.path.abspath(os.path.join(project,
                                             (config or {}).get("gitRoot") or "."))
@@ -4496,6 +4527,7 @@ def _locked_cancel(args, project, config, mpath, tid, reason, out):
     if args.as_json:
         result = {"ok": True, "id": tid, "kind": kind, "phase": phase_id,
                   "reason": reason, "at": now, "cascaded": cascaded,
+                  "releasedFindings": [c["id"] for c in released],
                   "written": written,
                   "warnings": _wg.collapse_machine(warnings, written_manifest)}
         result.update(jres)
@@ -4509,6 +4541,9 @@ def _locked_cancel(args, project, config, mpath, tid, reason, out):
     out("[audit-task] %s %s cancelled -- %s" % (kind, tid, reason))
     if cascaded:
         out("  also cancelled inside it: %s" % ", ".join(cascaded))
+    if released:
+        out("  free for a new fix task (`add --fixes`): %s"
+            % ", ".join("%s" % (c["id"],) for c in released))
     for line in _wg.collapse(warnings, written_manifest):
         out("WARNING: " + line)
     if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
@@ -4533,9 +4568,13 @@ def _cascade_ids(cascade):
 
 
 def _journal_cancel(project, config, mpath, kind, tid, phase_id, reason,
-                    cascade):
+                    cascade, released=()):
     """The `task.cancel` / `phase.cancel` row: why the work stopped, and what
     stopped with it.
+
+    A FINDING THE CANCEL RELEASED rides `changes` too, as the field that moved
+    (`fixTask`, from the cancelled task to none) - `_release_findings` hands the
+    entries in that shape already.
 
     THE REASON RIDES BOTH the summary and the details -- a trail that records the
     state change and not the why answers the wrong question a month later -- and
@@ -4572,10 +4611,14 @@ def _journal_cancel(project, config, mpath, kind, tid, phase_id, reason,
     details = {"phaseId": phase_id, "reason": reason}
     if kind == "task":
         details["taskId"] = tid
-    if cascade:
-        details["changes"] = [{"id": c["id"], "field": "status",
-                               "from": c["was"], "to": "cancelled"}
-                              for c in cascade if c.get("id")]
+    if released:
+        summary += " (released %s)" % ", ".join(
+            "%s" % (c["id"],) for c in released)
+    changes = [{"id": c["id"], "field": "status",
+                "from": c["was"], "to": "cancelled"}
+               for c in cascade if c.get("id")] + list(released)
+    if changes:
+        details["changes"] = changes
     return _journal_row(project, config, mpath, "%s.cancel" % kind, summary,
                         details)
 
@@ -9444,8 +9487,7 @@ def _batch_build_tasks(doc, ids, keys, phase, first, assembled, project, mpath):
             project, companions, runner_aware=bool(fixes))
         gate_refusal = (_gate_write_refusal(task["tests"]["gate"], assembled,
                                             project, "tests.gate")
-                        or (_files_gate_refusal(task, phase, assembled)
-                            if fixes else None))
+                        or _files_gate_refusal(task, phase, assembled))
         if gate_refusal:
             bad.append("tasks[%d]: %s" % (i, gate_refusal))
             continue
@@ -9704,6 +9746,41 @@ def cmd_phase_add(args, out):
                        lambda config, mpath, seed=None: _locked_phase_add(
                            args, project, config, mpath, title, out, seed),
                        create=True)
+
+
+# The `tests.gateBasis` words only the derivation writes. A gate carrying one
+# was read off `tests.add` or `files`, so it is stale the moment either
+# changes; `declared`, `cleared` and `failing-from-run:<id>` name a choice the
+# derivation did not make, and an absent basis says nothing about who chose.
+_DERIVED_GATE_BASES = ("tests.add", "files", "files-no-suite",
+                       "gate-only-no-suite", "phase-no-paths",
+                       "phase-no-spelling")
+
+
+def _gate_follows_scope(node, prior_tests):
+    """Whether a `scope --files` or `--tests-add` re-derives this task's gate:
+    its basis is the derivation's own word, and the task has not started - a
+    started task's gate is the one its attempt is graded against."""
+    return (node.get("status") == "pending"
+            and prior_tests.get("gateBasis") in _DERIVED_GATE_BASES)
+
+
+def _rederive_gate(tid, node, tests, phase, assembled, project):
+    """The journal-shaped changes after writing onto `tests` the gate `add`
+    would derive for the task as it now stands - the same arms, fix tasks
+    pointed by runner as `add` points them."""
+    add_paths = _tests_add_paths(tests.get("add") or [])[0]
+    wide, meta, build, shape, owner = _task_gate_setup(phase, assembled)
+    gate, _sentence, basis = _ordinary_task_gate(
+        shape, owner, wide, build, add_paths, list(node.get("files") or []),
+        tests.get("mode"), meta, phase, project, bool(node.get("fixes")))
+    changes = []
+    for field, now in (("gate", list(gate)), ("gateBasis", basis)):
+        if tests.get(field) != now:
+            changes.append({"id": tid, "field": "tests." + field,
+                            "from": tests.get(field), "to": now})
+        tests[field] = now
+    return changes
 
 
 def _locked_scope(args, project, config, mpath, tid, out):
@@ -10049,6 +10126,11 @@ def _locked_scope(args, project, config, mpath, tid, out):
             changes.append({"id": tid, "field": "files",
                             "from": before_union, "to": now_files})
             node["files"] = now_files
+    if (files or args.tests_add) and not gate_writes \
+            and _gate_follows_scope(node, prior_tests):
+        changes.extend(_rederive_gate(tid, node, tests, phase, assembled,
+                                      project))
+        tests_writes = True
     companions, companion_notes = [], []
     if args.introduces:
         # AFTER `files` and `tests.add` have both landed on the node, so the

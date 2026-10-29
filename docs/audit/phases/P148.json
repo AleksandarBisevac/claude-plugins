@@ -445,7 +445,7 @@
     {
       "id": "P148.6",
       "title": "The commit and evidence layer's carried lows: one spelling of the tree key, the tracked-file table, the scoped-commit scan and tracking direction, the runner line-end class, the impact rule for private names",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix the low review findings P131-R30, P131-R39, P135-R1, P135-R2, P137-R26, P137-R29, P142-R18, carried to BUG-29-dau. Each finding's file, issue and resolution is in its phase shard (docs/audit/phases/<phase>.json, review.findings, by id). Read each against the code at HEAD first: lines have moved since it was filed. For each finding either fix it - with a case proven red first where the finding is about behaviour or a missing case - or, where HEAD no longer has the defect or the finding records a past return or plan record that nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id, one line each: fixed (what changed, which case) or no-change (why, with the line read). Edit only the declared files; a fix that needs another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
       "files": [
         "plugins/audit/scripts/status/_impact.py",
@@ -476,25 +476,45 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "275948a9d6a0",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "P131-R30 fixed: _impact._file_dependants now builds the private-name referrers only from non-prose files (is_doc), so a document that names the module no longer counts as a user of its private names. The module docstring and _name_users docstring were updated to match. Cases: im3c is new; im3b's fixture now has a CI step naming the module's path and a private name, which still counts, while docs/guide.md naming _round_down does not. P131-R39 fixed: run-test-gate.py no longer defines tree_key. It binds `tree_key = _ev.tree_key` for its readers (test_run_test_gate, test_drive_phase sv7) and writes testedState.tree.key through _ev.tree_key. The unused hashlib import was dropped, and _evidence_io.tree_key's docstring now calls it the only spelling. New case tk1 asserts rtg.tree_key is _evidence_io.tree_key. sv7 in tests/test_drive_phase.py now compares one function with itself; it is outside my files, so I left it for its owner to delete or keep. P135-R1, partly fixed and partly reported: (a) the config half was already done at HEAD. _manifest_io.PLUGIN_OWNED_WHILE_UNTRACKED holds CONFIG_NAME, and _scoped_commit.plugin_owned_rels skips it while git tracks it (sc-ua9 and ctw-at10 pin this). (b) The 'at minimum' half was also already at HEAD: commit_work does `skipped = skipped + notes` before returning the refusal, and render prints the degraded lines before REFUSED. New case ctw-at19 now pins that the refusal output carries the plugin-owned line naming .claude/.gitignore and .claude/audit.config.json. (c) Not done: waving a TRACKED .gitignore only when every added line is one the plugin writes. That check needs the panel's ignore patterns (_PANEL_PRIVATE_FILES in plugins/audit/scripts/panel/panel-server.py, not my file) moved into one table in _manifest_io for both writers and the check to read. sc-ua9 also currently pins a tracked, edited .gitignore as plugin-owned whatever its content, so this design change goes back to the orchestrator. P135-R2 fixed: ctw-at9 now asserts os.path.join(root, '.claude', _mio.CONFIG_NAME) is a table row. The _manifest_io comment now says ctw-at9 pins the rows by name. Measured: deleting the row also reddens ctw-at7 at HEAD, so the finding's claim that no case went red no longer holds, but the row now has a case that names it. P137-R26 fixed in the structural scan (tests/test__scoped_commit.py), which is now transitive. A name assigned from any expression holding a by-key read or a followed name is followed, including through tuples, calls and `or`. A followed list handed to a call is named unless the callee is in PRESENTATION_CALLS or is a same-file helper, which is then scanned with that parameter followed. _only_membership now accepts only a lower-case name, or a by-key read of one, bound in the function from a non-literal. A loop over a followed list is named for a `continue`, or for a branch on any other condition that uses the loop variable. The comment now lists what the scan still cannot see: in-place methods, slices, other modules' helpers named rather than followed, getattr/exec. New case sc-ua18 runs eight hole mutations of the real commit-task-work source: call-wrapped, re-wrapped, narrowing helper, attribute comparator, call comparator, unbound module list, else-branch loop, tuple/or unpack. All went unseen at HEAD and all are named now. New case sc-ua19 is the allow twin: presentation builtin, presenting helper, bound set. sc-ua11's `allowed` mutation now binds mine_elsewhere in the function. sc-ua10 stays clean on both real readers (bound 1, no violations). P137-R29 fixed: tracking renamed _tracking, with its one caller in plugin_owned_rels and a docstring naming the case. New case sc-ua20 walks scripts/ for calls of _tracking or tracking, expects only (_scoped_commit.py, plugin_owned_rels), and is shown to see a planted caller. P142-R18 partly fixed: the RUNNER_LINE_END_PENDING comment now gives the reason in code terms (private readers reached only through failing_cases/read_tally, which normalise; final_error strips after matching) and names what deletes each row (the function calling plain_text itself, after which the lint reports the row as stale). Deleting the rows needs plugins/audit/scripts/governance/_runner_output.py and stamp-verification.py, which are outside my files; runner_line_end_violations(pending=()) still returns those three sites (_runner_output.py:444, :594, stamp-verification.py:730). The gate passed: exit 0, 6/6 files ok, 1361 cases. Dependant suites run via sweep, exit 0: test_audit_lookup 143, test__deps 254, test__refs 292, test_drive_phase 671 (sv7 included), test__manifest_io 189. ruff check plugins/audit tools tests passed with exit 0, and vermin -t=3.8- on the changed files passed with exit 0. Dependants: _impact.py's readers audit-lookup.py and test_audit_lookup.py are unaffected (green), and the PLUGIN-BUILD-GUIDE.md mention is unchanged; this change removes that guide from private-name users, which was the finding. _evidence_io.py's sixty-odd importers are unaffected: tree_key's signature and value are unchanged and only the docstring moved. run-test-gate.py keeps the module name tree_key, so test_run_test_gate (green) and test_drive_phase sv7 (green) still read it, and its doc and config dependants name the script, not tree_key. commit-task-work.py's code is unchanged. _manifest_io.py: comment only. _scoped_commit.py: the only rename is tracking to _tracking, which had no other caller in plugins, tests or tools (grep). tools/lints/_output_lints.py: comment only (test__output_lints green in the gate). The test files' dependants (.github/sweep-costs.json, tools/affected.py) name them by path, and no path changed.",
+        "descriptive": "Fixed in code with cases proven red: R30, R39, R2, R26, R29. Partly fixed and reported: R1 (its gitignore content check needs the panel's ignore patterns, which live in panel-server.py) and R18 (deleting the rows needs _runner_output.py and stamp-verification.py)."
       },
       "startedAt": "2026-10-29T00:01:19Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-29T00:53:27Z",
+      "verifiedBy": [
+        "im3c: a document that references a module is no user of the private name it mentions; im3b's fixture also has a CI step naming the path, which still counts",
+        "tk1: run-test-gate's tree_key is _evidence_io.tree_key itself",
+        "ctw-at19: a refusal over an ordinary stray still prints the plugin-owned line naming the ignore and config files",
+        "ctw-at9 extended: the configuration file is a row of the plugin-owned table",
+        "sc-ua18: the shape scan names eight narrowing routes it missed at HEAD",
+        "sc-ua19: allow twin - presentation builtin, presenting helper, bound membership set are clean",
+        "sc-ua20: the tracked-or-not question is private and asked only by plugin_owned_rels, tree-wide"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-29T00:48:33Z.1df20d",
         "status": "passed",
         "at": "2026-10-29T00:48:33Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "275948a9d6a0",
+        "at": "2026-10-29T00:53:27Z",
+        "return": "docs/audit/evidence/returns/P148.6/20261029T000119Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-29T00:26:16Z",
+        "basis": "`python3 tests/test__scoped_commit.py --selftest` in a throwaway tree at HEAD exited 1, but no case --case names failed an assertion as the task's own: sc-ua20 (house FAIL) - SELFTEST FAILED: 62/63 cases passed; --case sc-ua18 names no case that failed an assertion in this run; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P148.7",
       "title": "The task verbs' and status readers' carried lows: a cancelled fix task releases its findings, a files-derived gate hands only suites, skill-default wording, portability grades and their cases",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fix the low review findings P138-R9, P138-R10, P138-R11, P138-R16, P138-R17, P142-R49, P144-R1, P147-R7, carried to BUG-29-dau. Each finding's file, issue and resolution is in its phase shard (docs/audit/phases/<phase>.json, review.findings, by id). Read each against the code at HEAD first: lines have moved since it was filed. For each finding either fix it - with a case proven red first where the finding is about behaviour or a missing case - or, where HEAD no longer has the defect or the finding records a past return or plan record that nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id, one line each: fixed (what changed, which case) or no-change (why, with the line read). Edit only the declared files; a fix that needs another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -506,7 +526,8 @@
         "tests/test_audit_task.py",
         "tests/test_audit_lookup.py",
         "tests/test_audit_status.py",
-        "tests/test__doctor_policy.py"
+        "tests/test__doctor_policy.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "regression",
@@ -522,21 +543,33 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-29T00:53:30Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-29T01:40:02Z.226349",
+        "status": "passed",
+        "at": "2026-10-29T01:40:02Z"
+      },
+      "notes": [
+        {
+          "at": "2026-10-29T01:34:07Z",
+          "text": "files widened by PLUGIN-BUILD-GUIDE.md: owed by _deps.map_drift on run 2026-10-29T01:34:06Z.274dba"
+        }
+      ]
     },
     {
       "id": "P148.8",
       "title": "The release tool's carried lows and the findings that record a past return: verify-release's step text, and an answer for each historical record",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fix the low review findings P131-R3, P131-R6, P134-R3, P137-R30, P140-R5, P140-R6, P142-R2, carried to BUG-29-dau. Each finding's file, issue and resolution is in its phase shard (docs/audit/phases/<phase>.json, review.findings, by id). Read each against the code at HEAD first: lines have moved since it was filed. For each finding either fix it - with a case proven red first where the finding is about behaviour or a missing case - or, where HEAD no longer has the defect or the finding records a past return or plan record that nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id, one line each: fixed (what changed, which case) or no-change (why, with the line read). Edit only the declared files; a fix that needs another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
       "files": [
         "tools/release.py"
@@ -555,21 +588,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-29T00:53:33Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P148.9-xpz",
       "title": "The red-first deadline case holds on any runner: one deadline covering both runs is shown by a witness, not by a sleep sized against it",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fix P148-R1 (docs/audit/phases/P148.json review.findings): sr39 in tests/test_stamp_verification.py failed on the windows resample leg because its first run sleeps a fixed time against a fixed deadline. Make it independent of runner speed - e.g. the first run touches a witness and the second blocks until the deadline, or the deadline derived from the measured first run - so that on any runner the second run is reached and cut off, and the case still proves one deadline covers both runs. Prove it red first: the assertion must still fail against a helper that grants each run its own full deadline. Edit only the test file. No F/P/BUG ids in code.",
       "files": [
         "tests/test_stamp_verification.py",
@@ -591,14 +625,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-29T00:53:36Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -613,7 +647,8 @@
       ],
       "fixes": [
         "P148-R1"
-      ]
+      ],
+      "reviewPerTask": "signals"
     }
   ],
   "reviewPerTask": "signals",

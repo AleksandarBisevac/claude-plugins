@@ -111,6 +111,8 @@ import _branch                # noqa: E402  (where a phase's branch lands)
 import _worktrees             # noqa: E402  (the worktree list, the sweep plan, the runner)
 import _panel_discovery       # noqa: E402  (the inventory AND the portability verdict on it)
 import _config_rules          # noqa: E402  (PORTABILITY_MODES: the enum this reads a tier from)
+import _skill_places          # noqa: E402  (which copy of a named skill a session loads)
+import _claude_home           # noqa: E402  (the user's Claude home that copy may sit in)
 
 # The write allow-lists: what a composition patch may legally name.
 _META_KEYS = _panel_settings._META_KEYS
@@ -2094,7 +2096,15 @@ def _patched_skill_names(patch):
     return out
 
 
-def _reject_stranded(project, config, patch):
+def _one_file(first, second):
+    """True iff both paths are given and name one file, symlinks resolved."""
+    if not first or not second:
+        return False
+    return os.path.normcase(os.path.realpath(first)) == \
+        os.path.normcase(os.path.realpath(second))
+
+
+def _reject_stranded(project, config, patch, _discover=None):
     """The refusal string when `portability` is strict and a name would not travel.
 
     PREVENTION AT THE POINT OF CHOICE. The doctor reports this after the fact and
@@ -2108,6 +2118,14 @@ def _reject_stranded(project, config, patch):
     everything is accepted under `warn` and `off` — the tier is what the user set,
     and a panel that ignored it would be worse than one that never had the switch.
 
+    THE VERDICT MUST DESCRIBE THE COPY A SESSION LOADS. The scan keeps one copy
+    per name in its own order, so for a name held by two tiers its verdict can be
+    about the project copy while the launcher loads the personal one. Where
+    `_skill_places` resolves the name to another file, that verdict is about a
+    file nobody reads - UNKNOWN, so accepted, as doctor grades it. A name the
+    resolver finds nowhere has no loaded copy, and the scan's is the only one the
+    name can mean.
+
     Fails OPEN on a scan that raises: this is a write path, and taking somebody's
     edit away because a filesystem walk failed is not a trade this makes.
     """
@@ -2117,19 +2135,28 @@ def _reject_stranded(project, config, patch):
     if not names:
         return None
     try:
-        found = _panel_discovery.discover(project) or {}
+        found = (_discover or _panel_discovery.discover)(project) or {}
     except Exception:
         return None
     have = {}
     for entry in (found.get("skills") or []):
         if isinstance(entry, dict) and entry.get("name"):
             have[entry["name"]] = entry
+    plugin_root = _output.PLUGIN_ROOT
+    home = _claude_home.claude_home()
+    running = _skill_places.plugin_name(plugin_root)
     bad = []
     for name in names:
         entry = have.get(name)
-        if entry is not None and entry.get("travels") is False:
-            bad.append("%r - %s" % (name, entry.get("travelsBasis")
-                                    or "no basis was recorded"))
+        if entry is None or entry.get("travels") is not False:
+            continue
+        hit = _skill_places.resolve_skill(name, project, home, plugin_root,
+                                          running)
+        if hit.get("found") and not _one_file(entry.get("path"),
+                                              hit.get("path")):
+            continue
+        bad.append("%r - %s" % (name, entry.get("travelsBasis")
+                                or "no basis was recorded"))
     if not bad:
         return None
     return ("portability is strict and %s would not survive a clone of this "

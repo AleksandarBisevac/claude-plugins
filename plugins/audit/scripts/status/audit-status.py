@@ -1133,7 +1133,8 @@ def _phase_table_lines(manifest, summary, only_phase=None, view=None):
     A cap that goes quiet reads as "that is all of them", which is the failure
     `READY_LIST_MAX` already refuses one block down; and the counts are computed
     here rather than written anywhere, which is the house rule
-    `_output.prose_number_claims()` enforces on prose and this line honours by
+    `_output_lints.prose_number_claims()` (tools/lints/) enforces on prose and
+    this line honours by
     construction.
     """
     unmet = unmet_refs(manifest)

@@ -4390,6 +4390,29 @@ def _kept_tree_cases(check):
           and "kept-trees/P2.1" not in task_row)
     _kept_unreadable_plan_cases(check, root, mpath, drive, kept, aside)
     _kept_remedy_runs_cases(check)
+    _kept_quoting_cases(check)
+
+
+def _kept_quoting_cases(check):
+    """The forced row's commands quote the tree's path on EVERY run. The other
+    `kt` cases see a path that needs quoting only when the temp root holds a
+    space or on Windows, so on a plain POSIX run an unquoted path left them
+    green; this one hands the remedy such a path itself."""
+    path = "/tmp/kept tree/it's a\\path"
+    got = M._kept_tree_remedy("P2.1 set aside 1", path, None)
+    saves = [_posix_words(s) or [] for s in got.get("saveFirst") or []]
+    push = (_posix_words(saves[1][6]) or [])[:6] \
+        if len(saves) == 2 and len(saves[1]) == 7 else []
+    check("kt10 a path holding a space, a single quote and a backslash is one "
+          "word, read back unchanged, in the forced remover, the HEAD pin and "
+          "the submodule push the inner shell runs: %r"
+          % ((got.get("remedy"), got.get("saveFirst")),),
+          _posix_words(got.get("remedy"))
+          == ["git", "worktree", "remove", "--force", path]
+          and saves[0][:3] == ["git", "-C", path]
+          and saves[1][:3] == ["git", "-C", path]
+          and push == ["git", "-c", "protocol.file.allow=always", "push",
+                       "-q", path])
 
 
 def _kept_unreadable_plan_cases(check, root, mpath, drive, kept, aside):
