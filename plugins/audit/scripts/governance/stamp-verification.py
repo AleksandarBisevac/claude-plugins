@@ -637,8 +637,10 @@ DEFAULT_TIMEOUT = 480
 # ONE deadline, `--timeout`, starts before anything runs and covers every git
 # call that builds or reads the throwaway and every run - HEAD's own, the task's,
 # the second (`--introduces`) and the fix run: each stage gets what the earlier
-# ones left - except that a sweep-shaped command holds the fix run's recorded
-# cost back from the stages before it (`sweep_budget`). Its length is `--timeout`
+# ones left - except that a sweep-shaped command holds the fix run's wall time,
+# read off its recorded cost, back from the stages before it (`sweep_budget`),
+# and starts no run at all when the runs it needs cannot fit (`fit_problem`,
+# `start_problem`). Its length is `--timeout`
 # when given, else the default or what the command's recorded cost sizes it to
 # (`sized_deadline`). `_isolated_run` makes no run, and `_isolate` starts neither of the
 # reset's git calls, with less than a whole second left, so none of those is
@@ -3732,9 +3734,10 @@ def _left(deadline):
 # The sweep records what each suite cost in `.github/sweep-costs.json`, and a
 # command that runs the sweep over named suites has its own answer to how long
 # its fix run needs. The fix run is the last of the deadline's runs, so it gets
-# what the earlier ones left; held back for it is the recorded cost of the
-# suites the command names, so a baseline or a task run that ran long cannot
-# spend the time the proof's last step needed. A suite the table does not time
+# what the earlier ones left; held back for it is the wall time one run of the
+# suites the command names takes, read off their recorded cost (`sweep_wall`),
+# so a baseline or a task run that ran long cannot spend the time the proof's
+# last step needed. A suite the table does not time
 # holds nothing back and is named as having no recorded cost - there is no
 # default figure to stand in for a measurement nobody made.
 SWEEP_SCRIPT = "sweep-selftests.py"
@@ -3866,21 +3869,186 @@ def sweep_count_problem(task_text, fix_text):
     return None
 
 
-def load_sweep_costs(root):
-    """`({path: slot-seconds}, problem)` off the project's cost table; problem is
-    None when it was read, else the sentence saying why nothing was."""
+def _is_figure(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def load_sweep_table(root):
+    """`({path: slot-seconds}, {path: {block: slot-seconds}}, problem)` off the
+    project's cost table; problem is None when it was read, else the sentence
+    saying why nothing was. A table with no `blocks` object has none to give -
+    every suite is then one job, as a file the sweep runs whole is."""
     path = os.path.join(root, *SWEEP_COSTS_REL.split("/"))
     try:
         with open(path, encoding="utf-8") as fh:
-            costs = json.load(fh).get("costs")
+            doc = json.load(fh)
+        costs, blocks = doc.get("costs"), doc.get("blocks", {})
     except (OSError, ValueError, AttributeError) as exc:
-        return {}, "no cost table read from %s (%s)" % (SWEEP_COSTS_REL,
-                                                        type(exc).__name__)
-    if not isinstance(costs, dict) or not all(
-            isinstance(v, (int, float)) and not isinstance(v, bool)
-            for v in costs.values()):
-        return {}, "%s carries no `costs` object of numbers" % (SWEEP_COSTS_REL,)
-    return costs, None
+        return {}, {}, "no cost table read from %s (%s)" % (SWEEP_COSTS_REL,
+                                                            type(exc).__name__)
+    if not isinstance(costs, dict) or not all(_is_figure(v) for v in costs.values()):
+        return {}, {}, "%s carries no `costs` object of numbers" % (SWEEP_COSTS_REL,)
+    if not isinstance(blocks, dict) or not all(
+            isinstance(b, dict) and all(_is_figure(v) for v in b.values())
+            for b in blocks.values()):
+        return {}, {}, ("%s carries a `blocks` object that is not one object of "
+                        "numbers a suite" % (SWEEP_COSTS_REL,))
+    return costs, blocks, None
+
+
+def load_sweep_costs(root):
+    """`({path: slot-seconds}, problem)` - `load_sweep_table` without the blocks."""
+    costs, _blocks, problem = load_sweep_table(root)
+    return costs, problem
+
+
+# --- a sweep-shaped command: slot-seconds are not wall seconds ---
+# A figure in the cost table is SLOT-SECONDS: what a file or a block took out of
+# the sweep's budget, its seconds times the slots it held. The sweep runs its
+# jobs side by side - every block of a staged suite one job on one slot, every
+# other file one job, costliest first onto whichever slot frees next
+# (`work_items` and `slot_gate` in `tools/sweep-selftests.py`) - so a run's wall
+# time is the longest any one slot is kept busy by that schedule, not the
+# figures summed. Read as wall seconds, a suite of many blocks looked several
+# times longer than a run of it takes, and the time held back for the fix run
+# was the whole sum. The plugin ships without `tools/`, so the schedule and the
+# worker count are read here the way the sweep reads them, and a case in the
+# suite fails when they part.
+#
+# A proof is the runs `PROOF_RUNS` names - the baseline, the task's run and the
+# fix run - and each takes that wall time. When they cannot fit the deadline, no run is
+# started: a run started with less time than it needs times out for want of
+# time, and its timeout is no fact about the task.
+PROOF_RUNS = ("baseline", "task", "fix")
+
+
+def _flag_word(args, name):
+    """`--name X` or `--name=X` in `args`, or None - the sweep's two spellings."""
+    for i, arg in enumerate(args):
+        if arg == name and i + 1 < len(args):
+            return args[i + 1]
+        if arg.startswith(name + "="):
+            return arg.split("=", 1)[1]
+    return None
+
+
+def sweep_jobs(cmd, environ=None, cpus=None):
+    """`(workers, why)` the sweep `cmd` starts runs on: its own `--jobs N` when
+    the command gives a whole number of at least one, else the sweep's default -
+    every core on a CI runner (`CI=true`), all cores but two elsewhere, never
+    below one (`default_jobs` in `tools/sweep-selftests.py`)."""
+    given = _flag_word(_sweep_args(cmd) or [], "--jobs")
+    if given is not None and given.isdigit() and int(given) >= 1:
+        return int(given), "its --jobs"
+    environ = os.environ if environ is None else environ
+    cpus = cpus if cpus is not None else (os.cpu_count() or 1)
+    if environ.get("CI", "").strip().lower() == "true":
+        return max(1, cpus), "every core, CI=true"
+    return max(1, cpus - 2), "all cores but two"
+
+
+def schedule_wall(units, workers):
+    """The wall time of `units` (slot-seconds, one job each) run costliest first
+    on `workers` slots, each job onto the slot that frees first: the busiest
+    slot's total. Zero for no units."""
+    loads = [0.0] * max(1, workers)
+    for cost in sorted(units, reverse=True):
+        at = loads.index(min(loads))
+        loads[at] += cost
+    return max(loads) if units else 0.0
+
+
+def sweep_units(suites, costs, blocks):
+    """`[slot-seconds]` - one per job the sweep runs for `suites`: each recorded
+    block of a suite the table times block by block, else the suite whole. A
+    suite the table does not time is left out; the caller names it."""
+    units = []
+    for suite in suites:
+        own = (blocks or {}).get(suite) or {}
+        if own:
+            units.extend(own.values())
+        elif suite in (costs or {}):
+            units.append(costs[suite])
+    return units
+
+
+def sweep_wall(cmd, costs, blocks=None, jobs=None):
+    """What one run of a sweep-shaped command takes in wall time, read off the
+    cost table, or None for a command that is not a sweep naming suites.
+
+    `{"suites", "costed", "uncosted", "recorded", "wall", "jobs", "jobsFrom"}`:
+    `recorded` is the slot-seconds of the suites the table times, summed and
+    rounded up; `wall` the busiest slot of the sweep's schedule of their jobs
+    over `jobs` workers (`sweep_jobs` when None), rounded up - zero when no
+    suite is timed, which is no measurement and is never read as one."""
+    suites = sweep_suites(cmd)
+    if suites is None:
+        return None
+    workers, why = jobs if jobs is not None else sweep_jobs(cmd)
+    costed = dict((s, costs[s]) for s in suites if s in (costs or {}))
+    units = sweep_units(suites, costed, dict((s, b) for s, b in (blocks or {}).items()
+                                             if s in costed))
+    return {"suites": suites, "costed": costed,
+            "uncosted": [s for s in suites if s not in costed],
+            "recorded": int(-(-sum(costed.values()) // 1)),
+            "wall": int(-(-schedule_wall(units, workers) // 1)),
+            "jobs": workers, "jobsFrom": why}
+
+
+def wall_clause(wall):
+    """How a run's wall time was read: the schedule, the table, the workers."""
+    return ("the sweep's costliest-first schedule of the recorded %ds slot-seconds "
+            "of %s in %s over %d worker%s (%s)"
+            % (wall["recorded"], ", ".join(sorted(wall["costed"])), SWEEP_COSTS_REL,
+               wall["jobs"], "" if wall["jobs"] == 1 else "s", wall["jobsFrom"]))
+
+
+def _runs_named(names):
+    """`the baseline, task and fix runs` for `names`."""
+    names = list(names)
+    head = ", ".join(names[:-1])
+    return "the %s runs" % ("%s and %s" % (head, names[-1]) if head else names[-1],)
+
+
+def proof_need(wall):
+    """The wall seconds every run of a proof together takes, or None when no
+    suite the command names has a recorded cost."""
+    if wall is None or not wall["costed"]:
+        return None
+    return len(PROOF_RUNS) * wall["wall"]
+
+
+def fit_problem(sized):
+    """Why no run is started at all - the runs a proof needs come to more wall
+    time than its deadline - or None when they fit, or when nothing measured
+    what they need."""
+    need = sized.get("need")
+    if need is None or need <= sized["seconds"]:
+        return None
+    return ("no run was started: %s need about %ds of wall time - %ds "
+            "each, %s - and the deadline is %ds, so a run started inside it "
+            "could not finish and its timeout would be the deadline's, not the "
+            "task's" % (_runs_named(PROOF_RUNS), need, sized["wall"]["wall"],
+                        wall_clause(sized["wall"]), sized["seconds"]))
+
+
+def start_problem(owed, budget, left):
+    """Why the first of the runs `owed` is not started - `left` whole seconds
+    are less than the wall time those runs need - or None when they fit or the
+    command's wall time is unmeasured. `budget` is `sweep_budget`'s answer."""
+    wall = (budget or {}).get("wall") or 0
+    need = len(owed) * wall
+    if not wall or left >= need:
+        return None
+    return ("the %s run was not started: %s about %ds of wall time, %ds a run "
+            "(%s), and %ds of the deadline was left for %s - a run started with "
+            "less than it needs times out for want of time, which says nothing "
+            "about the task"
+            % (owed[0], "it needs" if len(owed) == 1 else
+               "it and the %s run%s after it need" % (
+                   ", ".join(owed[1:]), "" if len(owed) == 2 else "s"),
+               need, wall, wall_clause(budget), max(0, left),
+               "it" if len(owed) == 1 else "them"))
 
 
 # THE DEADLINE IS SIZED FROM THE COMMAND, not typed once for every command. The
@@ -3889,49 +4057,53 @@ def load_sweep_costs(root):
 # each to finish inside it, and a deadline under that makes the proof
 # `could-not-prove` for a reason that is the helper's, not the task's. So a
 # sweep-shaped command that names suites the table times gets
-# `TIMEOUT_PER_COST` times their recorded slot-seconds together - the allowance
-# the sweep itself gives them before it calls them hung - when that is more than
-# the default, and never more than `MAX_TIMEOUT`. A command the table says
-# nothing about keeps the default, and the basis says that was the reason.
-# `--timeout`, when given, is used as given.
-def sized_deadline(cmd, costs, problem, explicit, default):
-    """`{"seconds", "source", "why"}` - the deadline `red` works to, and where it
-    came from. `explicit` is `--timeout` or None, `default` the figure used when
-    nothing sizes it, `costs` and `problem` what `load_sweep_costs` answered.
+# `TIMEOUT_PER_COST` times the wall time those runs need (`proof_need`) - the
+# allowance the sweep itself gives a job over its figure before it calls it
+# hung - when that is more than the default, and never more than
+# `MAX_TIMEOUT`. A command the table says nothing about keeps the default, and
+# the basis says that was the reason. `--timeout`, when given, is used as given;
+# what the runs need is measured either way, and `fit_problem` reads the two.
+def sized_deadline(cmd, costs, problem, explicit, default, blocks=None, jobs=None):
+    """`{"seconds", "source", "why", "wall", "need"}` - the deadline `red` works
+    to, where it came from, and what one run and the whole proof take in wall
+    time. `explicit` is `--timeout` or None, `default` the figure used when
+    nothing sizes it, `costs`, `blocks` and `problem` what `load_sweep_table`
+    answered, `jobs` the `(workers, why)` the sweep runs on (`sweep_jobs` when
+    None).
 
     `source` is one of "timeout", "costs" and "default"; `why` is what the
-    clause quotes: the suites and the recorded figure for "costs", else the
-    sentence saying why the default stood."""
+    clause quotes: the suites and the wall time for "costs", else the sentence
+    saying why the default stood. `wall` is `sweep_wall`'s answer and `need`
+    `proof_need`'s, both None when nothing measured them."""
+    wall = None if problem else sweep_wall(cmd, costs, blocks, jobs)
+    need = proof_need(wall)
+    measured = {"wall": wall, "need": need}
     if explicit is not None:
-        return {"seconds": explicit, "source": "timeout", "why": "--timeout"}
+        return dict(measured, seconds=explicit, source="timeout", why="--timeout")
     suites = sweep_suites(cmd)
     if suites is None:
-        return {"seconds": default, "source": "default",
-                "why": "the command is not a sweep naming suites, so there is no "
-                       "recorded cost to size it from"}
+        return dict(measured, seconds=default, source="default",
+                    why="the command is not a sweep naming suites, so there is no "
+                        "recorded cost to size it from")
     if problem:
-        return {"seconds": default, "source": "default", "why": problem}
-    costed = dict((s, costs[s]) for s in suites if s in costs)
-    if not costed:
-        return {"seconds": default, "source": "default",
-                "why": "no recorded cost for %s in %s"
-                       % (", ".join(suites), SWEEP_COSTS_REL)}
-    total = sum(costed.values())
-    recorded = int(-(-total // 1))
-    wanted = int(-(-(TIMEOUT_PER_COST * total) // 1))
+        return dict(measured, seconds=default, source="default", why=problem)
+    if need is None:
+        return dict(measured, seconds=default, source="default",
+                    why="no recorded cost for %s in %s"
+                        % (", ".join(suites), SWEEP_COSTS_REL))
+    wanted = TIMEOUT_PER_COST * need
+    said = ("%d times the %ds of wall time %s need, %ds each - %s"
+            % (TIMEOUT_PER_COST, need, _runs_named(PROOF_RUNS), wall["wall"],
+               wall_clause(wall)))
     if wanted <= default:
-        return {"seconds": default, "source": "default",
-                "why": "%d times the recorded %ds of %s in %s is only %ds"
-                       % (TIMEOUT_PER_COST, recorded, ", ".join(sorted(costed)),
-                          SWEEP_COSTS_REL, wanted)}
+        return dict(measured, seconds=default, source="default",
+                    why="%s - is only %ds" % (said, wanted))
     seconds = min(wanted, MAX_TIMEOUT)
-    return {"seconds": seconds, "source": "costs", "wanted": wanted,
-            "recorded": recorded, "suites": sorted(costed),
-            "why": "%d times the recorded %ds of %s in %s%s"
-                   % (TIMEOUT_PER_COST, recorded, ", ".join(sorted(costed)),
-                      SWEEP_COSTS_REL,
-                      "" if seconds == wanted else
-                      ", capped at the %ds the host's Bash limit leaves" % (seconds,))}
+    return dict(measured, seconds=seconds, source="costs", wanted=wanted,
+                recorded=wall["recorded"], suites=sorted(wall["costed"]),
+                why="%s%s" % (said, "" if seconds == wanted else
+                              ", capped at the %ds the host's Bash limit leaves"
+                              % (seconds,)))
 
 
 def deadline_clause(sized):
@@ -3946,29 +4118,28 @@ def deadline_clause(sized):
     return "; deadline: %ds, %s" % (sized["seconds"], sized["why"])
 
 
-def sweep_budget(cmd, costs, problem, timeout):
+def sweep_budget(cmd, costs, problem, timeout, blocks=None, jobs=None):
     """What a sweep-shaped command's fix run holds back, or None for a command
-    that is not one. `costs` is the table, `problem` why it could not be read,
-    `timeout` the one deadline in seconds.
+    that is not one. `costs` and `blocks` are the table, `problem` why it could
+    not be read, `timeout` the one deadline in seconds, `jobs` the `(workers,
+    why)` the sweep runs on (`sweep_jobs` when None).
 
-    `reserve` is the recorded slot-seconds of the suites that HAVE a cost,
-    rounded up and never more than half the deadline, so the baseline and the
-    task's run keep the rest; `recorded` is that sum before the cap. A suite
-    with no recorded cost is in `uncosted` and adds nothing."""
-    suites = sweep_suites(cmd)
-    if suites is None:
+    `sweep_wall`'s answer, plus `reserve`: the wall time one run of the suites
+    that HAVE a cost takes, never more than half the deadline, so the baseline
+    and the task's run keep the rest; `wall` is that figure before the cap and
+    `recorded` their slot-seconds summed, which is no wall time and is quoted
+    only as what the schedule was read from. A suite with no recorded cost is
+    in `uncosted` and adds nothing."""
+    wall = sweep_wall(cmd, {} if problem else costs, blocks, jobs)
+    if wall is None:
         return None
-    costed = dict((s, costs[s]) for s in suites if s in costs)
-    recorded = int(-(-sum(costed.values()) // 1))
-    return {"suites": suites, "costed": costed,
-            "uncosted": [s for s in suites if s not in costs],
-            "recorded": recorded, "timeout": timeout, "problem": problem,
-            "reserve": 0 if problem else min(recorded, timeout // 2)}
+    return dict(wall, timeout=timeout, problem=problem,
+                reserve=0 if problem else min(wall["wall"], timeout // 2))
 
 
 def budget_clause(budget):
-    """The basis clause saying what was held back for the fix run, from which
-    table and for which suites, and which suite has no recorded cost."""
+    """The basis clause saying what was held back for the fix run, how its
+    wall time was read, and which suite has no recorded cost."""
     if budget is None:
         return ""
     if budget["problem"]:
@@ -3978,13 +4149,12 @@ def budget_clause(budget):
     if not budget["costed"]:
         return ("; fix run: no time held back, no recorded cost for %s in %s"
                 % (", ".join(budget["suites"]), SWEEP_COSTS_REL))
-    capped = (" (the recorded %ds, capped at half the %ds deadline)"
-              % (budget["recorded"], budget["timeout"])
-              if budget["reserve"] < budget["recorded"] else "")
-    return ("; fix run: held back %ds of the deadline%s, the recorded slot-seconds "
-            "of %s in %s%s" % (budget["reserve"], capped,
-                               ", ".join(sorted(budget["costed"])),
-                               SWEEP_COSTS_REL, missing))
+    capped = (" (the %ds it needs, capped at half the %ds deadline)"
+              % (budget["wall"], budget["timeout"])
+              if budget["reserve"] < budget["wall"] else "")
+    return ("; fix run: held back %ds of the deadline%s, the wall time one run "
+            "takes - %s%s" % (budget["reserve"], capped, wall_clause(budget),
+                              missing))
 
 
 def _red_scope(args, cmd, deadline):
@@ -4052,12 +4222,15 @@ def run_red(args, cmd, out):
         sys.stderr.write("ERROR: %s\n" % (problem,))
         return E_USAGE
     root = scope["root"]
-    costs, cost_problem = (load_sweep_costs(root) if sweep_suites(cmd)
-                           else ({}, None))
-    sized = sized_deadline(cmd, costs, cost_problem, explicit, DEFAULT_TIMEOUT)
+    costs, blocks, cost_problem = (load_sweep_table(root) if sweep_suites(cmd)
+                                   else ({}, {}, None))
+    jobs = sweep_jobs(cmd)
+    sized = sized_deadline(cmd, costs, cost_problem, explicit, DEFAULT_TIMEOUT,
+                           blocks=blocks, jobs=jobs)
     args.timeout = sized["seconds"]
     deadline = start + args.timeout
-    budget = sweep_budget(cmd, costs, cost_problem, args.timeout)
+    budget = sweep_budget(cmd, costs, cost_problem, args.timeout, blocks=blocks,
+                          jobs=jobs)
     # The runs before the fix run end where the fix run's held-back time begins.
     early = deadline - (budget["reserve"] if budget else 0)
     overlays, inline, inline_problem = inline_overlays(root, scope["tests"], deadline)
@@ -4109,7 +4282,11 @@ def run_red(args, cmd, out):
     previous = _arm()
     try:
         try:
-            present, run["problem"] = _at_head(root, scope["declared"], deadline)
+            # Said before anything is built: a proof whose runs cannot fit the
+            # deadline starts none of them.
+            run["problem"] = fit_problem(sized)
+            if run["problem"] is None:
+                present, run["problem"] = _at_head(root, scope["declared"], deadline)
             if run["problem"] is None:
                 run["problem"] = inline_problem
             if run["problem"] is None:
@@ -4131,6 +4308,12 @@ def run_red(args, cmd, out):
             if run["problem"] is None and _left(deadline) < 1:
                 run["problem"] = ("the run timed out: building the throwaway spent "
                                   "the %s-second deadline" % (args.timeout,))
+            # Each run is started only with the wall time it needs left: one
+            # started short would time out for want of time, and that timeout
+            # would read as the run's own.
+            if run["problem"] is None:
+                run["problem"] = start_problem(["baseline", "task"], budget,
+                                               _left(early))
             if run["problem"] is None:
                 run["head"], _c = _isolated_run(
                     root, path, [], cmd, early, args.timeout, env, holder,
@@ -4138,15 +4321,20 @@ def run_red(args, cmd, out):
                                        if rel not in state["absent"]], deps=deps)
                 run["head"]["absent"] = state["absent"]
             if run["problem"] is None:
+                run["problem"] = start_problem(["task"], budget, _left(early))
+            if run["problem"] is None:
                 task, copied = _isolated_run(root, path, scope["declared"], cmd,
                                              early, args.timeout, env, holder,
                                              "task", deps=deps, texts=overlays)
                 run["code"], run["text"], run["problem"] = (
                     task["code"], task["text"], task["problem"])
-            if (run["problem"] is None and _pulled_in(inline)
-                    and classify_run(run["code"], run["text"], cmd)[0] == V_GREEN):
-                # What was pulled in may be the fix the new case tests, so a
-                # pass with it cannot be credited: run again with it held back.
+            # What was pulled in may be the fix the new case tests, so a pass
+            # with it cannot be credited: run again with it held back.
+            held = (run["problem"] is None and _pulled_in(inline)
+                    and classify_run(run["code"], run["text"], cmd)[0] == V_GREEN)
+            if held:
+                run["problem"] = start_problem(["task-held"], budget, _left(early))
+            if held and run["problem"] is None:
                 task, _c = _isolated_run(
                     root, path, scope["declared"], cmd, early, args.timeout,
                     env, holder, "task-held", deps=deps,
@@ -4154,9 +4342,12 @@ def run_red(args, cmd, out):
                 run["code"], run["text"], run["problem"] = (
                     task["code"], task["text"], task["problem"])
                 run["withdrawn"] = _pulled_in(inline)
-            if run["problem"] is None and _wants_second(
-                    run["code"], run["text"], args.introduces, cmd, sources,
-                    _roots(root, path)):
+            second = run["problem"] is None and _wants_second(
+                run["code"], run["text"], args.introduces, cmd, sources,
+                _roots(root, path))
+            if second:
+                run["problem"] = start_problem(["second"], budget, _left(early))
+            if second and run["problem"] is None:
                 run["second"], _c = _isolated_run(
                     root, path, scope["declared"] + scope["implementation"], cmd,
                     early, args.timeout, env, holder, "second", deps=deps)
@@ -4167,9 +4358,11 @@ def run_red(args, cmd, out):
                     run["head"], cmd, state["stages"],
                     [rel for rel in state["new"]
                      if rel not in state["absent"]]) is None:
-                run["fix"], _c = _isolated_run(
-                    root, path, scope["declared"] + scope["implementation"], cmd,
-                    deadline, args.timeout, env, holder, "fix", deps=deps)
+                run["problem"] = start_problem(["fix"], budget, _left(deadline))
+                if run["problem"] is None:
+                    run["fix"], _c = _isolated_run(
+                        root, path, scope["declared"] + scope["implementation"],
+                        cmd, deadline, args.timeout, env, holder, "fix", deps=deps)
         except KeyboardInterrupt as exc:
             run["problem"] = ("interrupted by %s before the run finished; the "
                               "run's process group was torn down"

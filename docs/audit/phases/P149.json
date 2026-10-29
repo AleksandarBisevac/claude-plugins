@@ -89,8 +89,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/run-test-gate.py:3149-3151, plugins/audit/scripts/governance/drive-phase.py:8246-8248 (and the existing copy at plugins/audit/scripts/governance/stamp-verification.py:3347-3349)",
         "issue": "contradicts task clause 'One helper, no second copy of the rule': the rule the task defines ('a teardown is reported confirmed only when the root exited and the drain reached EOF') is written out by hand as `confirmed = confirmed and complete and proc.poll() is not None` after a separate tear_down + drain_to_eof pair in each reader. Before the diff it lived once (stamp-verification _run_in); after it, three identical copies, so a fourth reader, or a change to the rule such as dropping the `poll()` term that `complete` already implies, has to be made three times. The executor reported this rather than fixing it, because the one place for it is plugins/audit/scripts/governance/_proc_group.py, which is outside the declared files. The task description is the half that cannot be met as written.",
-        "resolution": "Add one helper to _proc_group.py, e.g. `stop_and_drain(proc)` -> `(text, confirmed)`, which runs tear_down, drain_to_eof and the exited check. Replace the three-line block in _run_in, _shell and run_lint_probe with a call to it, and pin it in tests/test__proc_group.py in both directions (kill confirmed + drain incomplete -> False; both complete -> True). Run this as a follow-up task that declares _proc_group.py, its suite and the three readers. lc10e/lc10f and lp9b/lp9c then stub the helper's two inputs, as they do now.",
-        "fixTask": "P149.9-hwg"
+        "resolution": "fixed in P149.9-hwg (844ba48fa589): Add one helper to _proc_group.py, e.g. `stop_and_drain(proc)` -> `(text, confirmed)`, which runs tear_down, drain_to_eof and the exited check. Replace the three-line block in _run_in, _shell and run_lint_probe with a call to it, and pin it in tests/test__proc_group.py in both directions (kill confirmed + drain incomplete -> False; both complete -> True). Run this as a follow-up task that declares _proc_group.py, its suite and the three readers. lc10e/lc10f and lp9b/lp9c then stub the helper's two inputs, as they do now.",
+        "fixTask": "P149.9-hwg",
+        "commit": "844ba48fa589",
+        "status": "fixed"
       },
       {
         "id": "P149-R8",
@@ -101,7 +103,7 @@
         "fixTask": "P149.10-hwg"
       }
     ],
-    "outcome": "[findings: 8 - 0 high, 2 med, 6 low; 6 with a recorded fix commit]"
+    "outcome": "[findings: 8 - 0 high, 2 med, 6 low; 7 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -581,7 +583,7 @@
     {
       "id": "P149.9-hwg",
       "title": "A timed-out run's teardown is judged confirmed in one place that every reader calls",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix review finding P149-R7 (docs/audit/phases/P149.json review.findings): the rule that a timed-out run's teardown is confirmed - the group kill reported success, the drain reached the end of the pipe, and the root process exited - is written three times: stamp-verification.py _run_in, run-test-gate.py _shell and drive-phase.py run_lint_probe. Give it one home in plugins/audit/scripts/governance/_proc_group.py (one function that kills, drains and returns the drained text with whether the teardown is confirmed), and make all three readers call it, keeping each reader's evidence fields and wording as they are now. No reader keeps a private copy of any of the three conditions. Cases in tests/test__proc_group.py for the helper (each condition false on its own makes it unconfirmed, proven red by mutating that condition away), and the readers' existing cases (lc10e/lc10f, lp9b/lp9c, skb/srn cases) stay green unchanged. Edit only the declared files; a fix that needs another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
       "files": [
         "plugins/audit/scripts/governance/_proc_group.py",
@@ -615,14 +617,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "844ba48fa589",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added _proc_group.stop_and_drain(proc, tear=None, drain_eof=None) -> (text, confirmed): tear_down, then drain_to_eof, confirmed = bool(killed and complete and proc.poll() is not None). The seams default to the module's tear_down/drain_to_eof looked up at CALL time, so the drive-phase and stamp cases that swap _proc_group's attributes still reach it. stamp-verification._run_in and drive-phase.run_lint_probe call stop_and_drain(proc); run-test-gate._shell calls stop_and_drain(proc, _tear_down, _drain_to_eof) so lc10e/lc10f's swap of its own aliases still lands. Each reader's interrupt (BaseException) branch calls the same helper too, so the kill-then-drain order also lives in one place. Evidence fields and wording are unchanged: '(not confirmed)' in stamp/drive, facts teardown=unconfirmed in rtg. The three reader docstrings that restated the rule now name the helper, and drive-phase's import comment names stop_and_drain. run-test-gate keeps its _drain alias, which _shell no longer calls but pg1 pins; I left it alone. Cases pgc1-pgc6 added to tests/test__proc_group.py (39/39). Mutations were run on a scratch copy (scratchpad/mut-p1499, __pycache__ purged each cycle), never the shared tree: drop kill -> pgc1 red; drop drain -> pgc2; drop exit -> pgc3; poll() truthiness -> pgc4, pgc5; always False -> pgc4, pgc5; drain before kill -> pgc1-pgc5; defaults bound at import -> pgc5; old three-line block back in _run_in -> pgc6; restored 39/39 exit 0. Gate: python3 tools/sweep-selftests.py over the four suites -> '4/4 files ok, 1631 cases', exit 0. Direct runs: test_run_test_gate 573/573, test_drive_phase 673/673, test_stamp_verification 346/346, each exit 0, with PASS lines for lc10e, lc10f, lp9b, lp9c, skb1-skb4 and srn1-srn3 seen. Those three suites were not edited (git diff --stat shows only the five changed files). ruff check on the touched files exit 0; vermin -t=3.8- on the new code exit 0. Dependants: derive-phase-gate, run-agent-session, audit-task and test_audit_status import _proc_group and use none of what changed (a function was added, nothing renamed), so they are still correct. tools/prove-gates.py (_gone) and test__proc_group (_in_system_dir, _reaped_group_empty, _kill) are untouched. run-test-gate's _kill use in test_run_test_gate is unchanged. stamp-verification's dependants (tests' _binds, _build_throwaway, ...) are unaffected because only _run_in's body changed, keeping its signature and return. Sibling P149.10-hwg (pending) also declares stamp-verification.py; my edit there is confined to _run_in. run-test-gate's _shell and drive-phase's run_lint_probe keep their signature and return, so close-phase's _git_text and the drive tests are unaffected. .github/sweep-costs.json: test__proc_group gains only stand-in cases (no process started), so its recorded cost is not re-recorded here. PLUGIN-BUILD-GUIDE.md's _proc_group section names tear_down and drain and does not name stop_and_drain (it already omitted drain_to_eof). It is outside this task's files, so it is reported, not edited.",
+        "descriptive": "The rule that a timed-out run's teardown is confirmed (kill confirmed, pipe drained to EOF, root exited) now lives once in _proc_group.stop_and_drain and all three readers call it."
       },
       "startedAt": "2026-10-29T15:18:25Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-29T15:44:16Z",
+      "verifiedBy": [
+        "pgc1-pgc3: each of the three conditions withheld alone (kill unconfirmed, drain short of EOF, root still running) leaves the teardown unconfirmed",
+        "pgc4: the allow case - all three hold with exit code 0 -> confirmed, text returned, kill before drain",
+        "pgc5: with no seams passed the helper reaches the module's tear_down/drain_to_eof as they stand at call time",
+        "pgc6: AST read of _run_in, _shell and run_lint_probe - each calls stop_and_drain and none calls tear_down/drain_to_eof/drain/poll itself"
+      ],
       "notes": [
         {
           "at": "2026-10-29T15:18:11Z",
@@ -653,12 +660,24 @@
         "runId": "2026-10-29T15:44:13Z.37d350",
         "status": "passed",
         "at": "2026-10-29T15:44:13Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "844ba48fa589",
+        "at": "2026-10-29T15:44:16Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-29T15:36:31Z",
+        "basis": "`python3 tests/test__proc_group.py --selftest` in a throwaway tree at HEAD exited 1 on \"AttributeError: module '_proc_group' has no attribute 'stop_and_drain'\" (read as python), and the task introduces 'stop_and_drain': absent from HEAD's module-level bindings of plugins/audit/scripts/governance/_proc_group.py and bound in the working tree's; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P149.10-hwg",
       "title": "The red-first helper sizes its runs in wall time and refuses up front a proof that cannot fit, instead of timing out a run it never gave time",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fix review finding P149-R8 (docs/audit/phases/P149.json review.findings): the red-first helper in plugins/audit/scripts/governance/stamp-verification.py sizes its deadline from the recorded sweep cost in slot-seconds (sized_deadline, sweep_budget) and reads it as wall-clock seconds, then caps the whole proof at the host's limit and holds half back for the fix run, so a suite whose single recorded gate run takes longer than the window left (tests/test_drive_phase.py: a recorded run of about six minutes) gets the baseline run and then a task run started with seconds left, and the basis says 'the run timed out after N s' when the helper gave it N s. Every task whose gate sweeps a long suite comes back could-not-prove this way. Fix: convert recorded slot-seconds to the wall time the sweep will actually take (the sweep runs blocks in parallel - read how tools/sweep-selftests.py schedules them and use the same reading, or measure from the recorded gate run's wall time when the plan has one), and when the runs the proof needs cannot fit the deadline, say so BEFORE starting them - could-not-prove with a basis naming the measured need and the deadline - rather than starting a run that cannot finish and reporting its timeout as the cause. A task run started with less time than its measured need is never reported as having timed out on its own. Cases in tests/test_stamp_verification.py, each proven red first: slot-seconds are not read as wall seconds; a proof that cannot fit is refused up front with that basis; a proof that fits is unchanged. No case may rest on a short deadline surviving a loaded runner - drive the arithmetic through recorded costs and a fake clock, not a real sleep. Edit only the declared files; a fix that needs another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -684,14 +703,14 @@
       "dependsOn": [
         "P149.9-hwg"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-29T15:44:17Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -710,7 +729,13 @@
       ],
       "fixes": [
         "P149-R8"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-29T16:05:28Z.a13a74",
+        "status": "passed",
+        "at": "2026-10-29T16:05:28Z"
+      }
     }
   ],
   "request": "release CI on ci/P148 is red on Windows only; fix both reds before 3.7.0",

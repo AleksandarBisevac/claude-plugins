@@ -40,8 +40,9 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 
-import _harness                                    # sets sys.path for scripts/ + hooks/
+import _harness                                   # sets sys.path for scripts/ + hooks/
 import _output                                     # noqa: E402
 import _output_lints  # noqa: E402  (the lint half, development code)
 from _output import safe_stdio                     # noqa: E402
@@ -6637,6 +6638,7 @@ STAGES = (
     ("sdr-block", "_drive_red_cases"),
     ("swc-block", "_sweep_cases"),
     ("swd-block", "_sweep_deadline_cases"),
+    ("swt-wall", "_wall_cases"),
     ("swn-block", "_sweep_new_suite_cases"),
 )
 
@@ -6860,10 +6862,14 @@ def _sweep_cases(check):
     sweep = ["tools/sweep-selftests.py"]
     budget = M.sweep_budget([py] + sweep + ["tests/a.py", "./tests/b.py", "tests/c.py",
                                             "--jobs", "4"], costs, None, 480)
-    check("swc5 a sweep-shaped command's fix-run budget is the recorded cost of "
-          "the suites it names, rounded up, and a suite with no recorded cost is "
-          "listed as having none rather than given a figure: %r" % (budget,),
-          budget is not None and budget["reserve"] == 43
+    # The suites named run side by side on the workers the command gives, so
+    # one run takes the longest of them, not their sum.
+    check("swc5 a sweep-shaped command's fix-run budget is the wall time one run "
+          "of the suites it names takes on the workers it gives - the longest of "
+          "them side by side, rounded up, not their summed slot-seconds - and a "
+          "suite with no recorded cost is listed as having none rather than "
+          "given a figure: %r" % (budget,),
+          budget is not None and budget["reserve"] == 30
           and budget["costed"] == {"tests/a.py": 12.4, "tests/b.py": 30.0}
           and budget["uncosted"] == ["tests/c.py"])
     capped = M.sweep_budget([py] + sweep + ["tests/z.py"], costs, None, 100)
@@ -6882,7 +6888,7 @@ def _sweep_cases(check):
     clause = M.budget_clause(budget)
     check("swc7 the basis says how much time was held back, from which table, for "
           "which suites, and which suite has no recorded cost: %r" % (clause,),
-          "held back 43s" in clause and _COSTS_REL in clause
+          "held back 30s" in clause and _COSTS_REL in clause
           and "tests/a.py" in clause and "no recorded cost for tests/c.py" in clause
           and M.budget_clause(None) == ""
           and "no time held back, no recorded cost for tests/c.py"
@@ -6940,10 +6946,15 @@ def _sweep_cases(check):
 _SLOW_SECONDS = 4
 _SLOW_SWEEP = "import time\ntime.sleep(%d)\n" % (_SLOW_SECONDS,) + _FAKE_SWEEP
 # The default the end-to-end cases patch in: shorter than one slow run. The
-# cost below sizes the deadline to the helper's own default, so the runs that
-# must finish under it are given as long as a real proof would be.
+# cost below sizes the deadline to just under the helper's own default - the
+# sweep's per-cost factor over the wall time of every run a proof makes - so
+# the runs that must finish under it are given about as long as a real proof
+# would be.
 _SHORT_DEFAULT = 3
-_SLOW_COST = M.DEFAULT_TIMEOUT / float(M.TIMEOUT_PER_COST)
+# The runs a proof makes, written here rather than read off the module, so the
+# module's own count is checked against it (swt1) instead of trusted.
+_PROOF_RUNS = ("baseline", "task", "fix")
+_SLOW_COST = M.DEFAULT_TIMEOUT // (M.TIMEOUT_PER_COST * len(_PROOF_RUNS))
 
 
 def _red_with_default(root, man, cmd, default, *extra):
@@ -6970,7 +6981,7 @@ def _sweep_deadline_cases(check):
     code, got = _red_with_default(costed_root, costed_man, cmd, _SHORT_DEFAULT)
     block = got.get("redFirst") or {}
     basis = block.get("basis") or ""
-    wanted = int(_SLOW_COST * M.TIMEOUT_PER_COST)
+    wanted = M.TIMEOUT_PER_COST * len(_PROOF_RUNS) * _SLOW_COST
     check("swd1 a sweep command whose suite is recorded as costing more than the "
           "default deadline allows runs to the end under a deadline sized from "
           "that cost - the sweep takes %ds a run and the default is %ds - and the "
@@ -7000,20 +7011,24 @@ def _sweep_deadline_cases(check):
 
     costs = {"tests/a.py": 12.4, "tests/b.py": 30.0, "tests/big.py": 5000.0}
     sweep = ["tools/sweep-selftests.py"]
-    plain = M.sized_deadline([py] + sweep + ["tests/a.py", "tests/b.py"], costs,
-                             None, None, 20)
+    plain = M.sized_deadline([py] + sweep + ["tests/a.py", "tests/b.py", "--jobs", "4"],
+                             costs, None, None, 20)
     capped = M.sized_deadline([py] + sweep + ["tests/big.py"], costs, None, None, 20)
     small = M.sized_deadline([py] + sweep + ["tests/a.py"], costs, None, None, 480)
     given = M.sized_deadline([py] + sweep + ["tests/a.py"], costs, None, 7, 20)
     other = M.sized_deadline([py, "tests/test_mine.py"], costs, None, None, 20)
     unread = M.sized_deadline([py] + sweep + ["tests/a.py"], {}, "no table", None, 20)
     whole = M.sized_deadline([py] + sweep, costs, None, None, 20)
-    check("swd3 the sized deadline is the sweep's per-cost factor times the "
-          "recorded slot-seconds of the suites named (rounded up), never under the "
-          "default, never over what the host's Bash limit leaves, and a --timeout "
-          "given wins over all of it: %r"
+    # Side by side on the workers the command gives, one run takes the longer
+    # suite's figure; a proof makes every run `_PROOF_RUNS` names, and the sweep
+    # allows a job its per-cost factor over that.
+    check("swd3 the sized deadline is the sweep's per-cost factor times the wall "
+          "time of every run a proof makes - one run of the suites named on the "
+          "workers the command gives, not their summed slot-seconds - never under "
+          "the default, never over what the host's Bash limit leaves, and a "
+          "--timeout given wins over all of it: %r"
           % ((plain, capped, small, given),),
-          plain["seconds"] == int(-(-M.TIMEOUT_PER_COST * (12.4 + 30.0) // 1))
+          plain["seconds"] == M.TIMEOUT_PER_COST * len(_PROOF_RUNS) * 30
           and capped["seconds"] == M.MAX_TIMEOUT
           and "capped" in M.deadline_clause(capped)
           and small["seconds"] == 480
@@ -7033,18 +7048,23 @@ def _sweep_deadline_cases(check):
     spec.loader.exec_module(sweep_mod)
     table, table_problem = sweep_mod.load_costs(sweep_mod.COSTS_PATH)
     ours, ours_problem = M.load_sweep_costs(_output.REPO_ROOT)
-    mine = {"tests/x.py": 91.0}
-    check("swd5 the factor is the sweep's own (%r vs %r), a one-suite deadline is "
-          "what the sweep allows that file when it holds one slot, and this "
-          "module reads the same table the sweep does (%d entries each way): %r"
+    mine = {"tests/x.py": 41.0}
+    one_cmd = [py] + sweep + ["tests/x.py"]
+    one, one_error = _called("sweep_wall", one_cmd, mine)
+    allowed = sweep_mod.file_timeout("tests/x.py", mine, floor=1)
+    check("swd5 the factor is the sweep's own (%r vs %r), the factor over one "
+          "run of a one-file sweep is what the sweep allows that file when it "
+          "holds one slot, the deadline is that allowance for every run a proof "
+          "makes, and this module reads the same table the sweep does (%d entries "
+          "each way): %r"
           % (M.TIMEOUT_PER_COST, getattr(sweep_mod, "TIMEOUT_PER_COST", None),
-             len(ours), (table_problem, ours_problem)),
+             len(ours), (table_problem, ours_problem, one, one_error, allowed)),
           M.TIMEOUT_PER_COST == getattr(sweep_mod, "TIMEOUT_PER_COST", None)
           and table_problem is None and ours_problem is None
           and dict((k, float(v)) for k, v in ours.items()) == table
-          and M.sized_deadline([py] + sweep + ["tests/x.py"], mine, None, None,
-                               1)["seconds"]
-          == sweep_mod.file_timeout("tests/x.py", mine, floor=1))
+          and one is not None and M.TIMEOUT_PER_COST * one["wall"] == allowed
+          and M.sized_deadline(one_cmd, mine, None, None, 1)["seconds"]
+          == len(_PROOF_RUNS) * allowed)
 
     # The deadline above and every timeout the sweep gives are read off this
     # table, so it has to be what the recorder writes. Written again from its
@@ -7091,6 +7111,209 @@ def _sweep_deadline_cases(check):
           code_s == M.E_PROVED and block_s.get("status") == "proved"
           and "its cases did not exist at HEAD, which is red for them" in basis_s
           and "`zz`" in basis_s)
+
+
+# --- slot-seconds are not wall seconds, and a proof that cannot fit runs nothing --
+# The cost table's figures are slot-seconds, and the sweep runs a suite's blocks
+# side by side, so one run's wall time is the busiest slot of its schedule. The
+# deadline is sized from that, and a proof whose runs cannot fit it - or a run
+# left less than it needs - is refused before it starts. No case here waits on
+# a short deadline: the figures come from recorded costs, and the one case
+# about time running short moves a fake clock.
+def _called(name, *args, **kwargs):
+    """`(value, None)` from `M.<name>(...)`, or `(None, "Error: text")` when the
+    module lacks the name or the call raises - so a case on a reading the
+    module does not have fails as an assertion, never as a block that crashed."""
+    try:
+        return getattr(M, name)(*args, **kwargs), None
+    except Exception as exc:                                   # noqa: BLE001
+        return None, "%s: %s" % (type(exc).__name__, exc)
+
+
+def _spied_red(root, man, cmd, *extra, after=None):
+    """`(code, payload, {tag: deadline})` - `_red` with every `_isolated_run`
+    recorded by its tag and the deadline it was handed; `after(tag, deadline)`
+    is called once each run returns."""
+    real, seen = M._isolated_run, {}
+
+    def spy(*args, **kwargs):
+        seen[args[8]] = args[4]
+        got = real(*args, **kwargs)
+        if after is not None:
+            after(args[8], args[4])
+        return got
+    M._isolated_run = spy
+    try:
+        code, got = _red(root, man, cmd, *extra)
+    finally:
+        M._isolated_run = real
+    return code, got, seen
+
+
+def _wall_cases(check):
+    py = sys.executable
+    sweep = [py, "tools/sweep-selftests.py"]
+    costs = {"tests/s.py": 200.0, "tests/f.py": 30.0}
+    blocks = {"tests/s.py": {"a": 50.0, "b": 50.0, "c": 50.0, "d": 50.0}}
+    four = sweep + ["tests/s.py", "--jobs", "4"]
+    wide, wide_e = _called("sweep_wall", four, costs, blocks)
+    serial, serial_e = _called("sweep_wall", sweep + ["tests/s.py", "--jobs=1"],
+                               costs, blocks)
+    whole, whole_e = _called("sweep_wall", four, costs, {})
+    budget = M.sweep_budget(four, costs, None, 480, blocks=blocks) \
+        if not wide_e else None
+    sized, sized_e = _called("sized_deadline", four, costs, None, None, 20,
+                             blocks=blocks)
+    # The second direction is the serial run: on one worker the wall time IS
+    # the summed figure, so a reading that never sums would go red there.
+    check("swt1 slot-seconds are not read as wall seconds: equal recorded blocks "
+          "on as many workers take one block's time, not the suite's summed "
+          "figure; on one worker they take the sum; a suite the table times "
+          "only whole is one job; the fix run holds back one run's wall time, "
+          "and the proof needs that for each of its runs: %r"
+          % ((wide, serial, whole, budget, sized,
+              wide_e or serial_e or whole_e or sized_e),),
+          wide is not None and wide["wall"] == 50 and wide["recorded"] == 200
+          and wide["jobs"] == 4
+          and serial is not None and serial["wall"] == 200
+          and whole is not None and whole["wall"] == 200
+          and budget is not None and budget["reserve"] == 50
+          and sized is not None and sized.get("need") == 50 * len(_PROOF_RUNS)
+          and tuple(getattr(M, "PROOF_RUNS", ())) == _PROOF_RUNS)
+
+    spec = importlib.util.spec_from_file_location(
+        "sweep_selftests_wall",
+        os.path.join(_output.REPO_ROOT, "tools", "sweep-selftests.py"))
+    sweep_mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(sweep_mod)
+    with io.open(sweep_mod.COSTS_PATH, encoding="utf-8") as fh:
+        doc = json.load(fh)
+    table, per_block = doc["costs"], doc.get("blocks") or {}
+    suite = max(per_block, key=lambda p: (len(per_block[p]), p)) if per_block else None
+    pairs = []
+    for workers in range(1, 9):
+        if suite is None:
+            break
+        labels = list(per_block[suite])
+        units = sweep_mod.unit_costs([suite], table, {suite: labels}, per_block)
+        parts = sweep_mod.shard_units([suite], table, workers, {suite: labels},
+                                      per_block)
+        theirs = max(sum(units[u] for u in part) for part in parts)
+        ours, ours_e = _called("schedule_wall",
+                               _called("sweep_units", [suite], table, per_block)[0]
+                               or [], workers)
+        pairs.append((workers, round(theirs, 6),
+                      None if ours is None else round(ours, 6), ours_e))
+    check("swt2 a run's wall time is read the way the sweep schedules it - its "
+          "own split of the committed table's most-blocked suite (%s), costliest "
+          "first onto the least-loaded slot, ends on the same busiest slot at "
+          "every worker count: %r" % (suite, pairs),
+          suite is not None and len(pairs) == 8
+          and all(theirs == ours for _w, theirs, ours, _e in pairs))
+    envs = [{}, {"CI": "true"}, {"CI": " TRUE "}, {"CI": "false"}]
+    jobs = [((cpus, e.get("CI")),
+             (_called("sweep_jobs", sweep + ["tests/s.py"], environ=e,
+                      cpus=cpus)[0] or (None,))[0],
+             sweep_mod.default_jobs(cpus=cpus, environ=e))
+            for cpus in range(1, 12) for e in envs]
+    given = [_called("sweep_jobs", sweep + ["tests/s.py"] + flag, environ={},
+                     cpus=10)[0] for flag in (["--jobs", "3"], ["--jobs=3"],
+                                              ["--jobs", "0"], ["--jobs", "x"])]
+    check("swt3 the workers a run is read over are the sweep's: its default for "
+          "every core count, on a CI runner and off one, and the --jobs the "
+          "command gives in either spelling - a value the sweep could not use "
+          "falls back to the default: disagree %r, given %r"
+          % ([j for j in jobs if j[1] != j[2]], given),
+          jobs and all(j[1] == j[2] for j in jobs)
+          and [g and g[0] for g in given] == [3, 3, 8, 8])
+
+    wt = _red_test("import mine", "mine.v == 2")
+    cmd = sweep + ["tests/test_mine.py"]
+    huge = float(M.MAX_TIMEOUT)
+    big_root, big_man = _sweep_repo("stamp-swt-huge-", wt,
+                                    costs={"tests/test_mine.py": huge})
+    code_h, got_h, seen_h = _spied_red(big_root, big_man, cmd)
+    block_h = got_h.get("redFirst") or {}
+    basis_h = block_h.get("basis") or ""
+    need_h = len(_PROOF_RUNS) * M.MAX_TIMEOUT
+    small_root, small_man = _sweep_repo("stamp-swt-given-", wt,
+                                        costs={"tests/test_mine.py": 7.0})
+    short = str(7 * len(_PROOF_RUNS) - 1)
+    code_g, got_g, seen_g = _spied_red(small_root, small_man, cmd, "--timeout", short)
+    block_g = got_g.get("redFirst") or {}
+    basis_g = block_g.get("basis") or ""
+    check("swt4 a proof whose runs cannot fit the deadline is refused before any "
+          "run starts - sized from the table and capped, or given by --timeout - "
+          "as could-not-prove with a basis naming the wall time the runs need and "
+          "the deadline, never as a run that timed out: %r"
+          % ((code_h, sorted(seen_h), basis_h[:300], code_g, sorted(seen_g),
+              basis_g[:300]),),
+          code_h == M.E_CANNOT_PROVE and block_h.get("status") == "could-not-prove"
+          and seen_h == {} and "no run was started" in basis_h
+          and "%ds of wall time" % (need_h,) in basis_h
+          and "the deadline is %ds" % (M.MAX_TIMEOUT,) in basis_h
+          and "timed out" not in basis_h
+          and code_g == M.E_CANNOT_PROVE and seen_g == {}
+          and "%ds of wall time" % (7 * len(_PROOF_RUNS),) in basis_g
+          and "the deadline is %ss" % (short,) in basis_g
+          and "timed out" not in basis_g)
+
+    # A FAKE CLOCK, not a short deadline: once the baseline returns, the
+    # helper's clock is moved to half a run's wall time before the runs ahead of
+    # the fix run must end, so the task run would start with less than it needs.
+    run_wall = 40
+    root, man = _sweep_repo("stamp-swt-short-", wt,
+                            costs={"tests/test_mine.py": float(run_wall)})
+    real_time, offset = M.time, [0.0]
+    M.time = types.SimpleNamespace(
+        time=lambda: real_time.time() + offset[0], monotonic=real_time.monotonic,
+        sleep=real_time.sleep)
+
+    def jump(tag, deadline):
+        if tag == "baseline":
+            offset[0] += (deadline - M.time.time()) - run_wall // 2
+    try:
+        code_s, got_s, seen_s = _spied_red(root, man, cmd, after=jump)
+    finally:
+        M.time = real_time
+    block_s = got_s.get("redFirst") or {}
+    basis_s = block_s.get("basis") or ""
+    check("swt5 a task run left less than the wall time it needs is not started, "
+          "and the basis says so - its need and what was left - rather than "
+          "reporting a timeout the helper caused: %r"
+          % ((code_s, sorted(seen_s), basis_s[:400]),),
+          code_s == M.E_CANNOT_PROVE and block_s.get("status") == "could-not-prove"
+          and sorted(seen_s) == ["baseline"]
+          and "the task run was not started" in basis_s
+          and "needs about %ds of wall time" % (run_wall,) in basis_s
+          and "timed out" not in basis_s)
+
+    wall40 = {"wall": 40, "recorded": 40, "costed": {"tests/t.py": 40.0},
+              "jobs": 1, "jobsFrom": "its --jobs"}
+    fits = [_called("fit_problem", {"seconds": s, "need": n, "wall": w})
+            for s, n, w in ((120, 120, wall40), (119, 120, wall40),
+                            (20, None, None))]
+    starts = [_called("start_problem", owed, b, left)
+              for owed, b, left in ((["baseline", "task"], wall40, 80),
+                                    (["baseline", "task"], wall40, 79),
+                                    (["fix"], wall40, 40), (["fix"], wall40, 39),
+                                    (["fix"], None, 0),
+                                    (["fix"], dict(wall40, wall=0), 0))]
+    code_f, got_f, seen_f = _spied_red(small_root, small_man, cmd)
+    block_f = got_f.get("redFirst") or {}
+    # The over-fire direction: a refusal that fired on every sweep would turn
+    # this red, which is why a proof that fits is asserted whole.
+    check("swt6 a proof that fits is unchanged: runs that fit the deadline "
+          "exactly, or that nothing measured, are not refused, a run left its "
+          "need is started, and end to end the baseline, the task's run and the "
+          "fix run are all made and the red is proved: %r"
+          % ((fits, starts, code_f, sorted(seen_f), block_f.get("status")),),
+          [f[0] is None and f[1] is None for f in fits] == [True, False, True]
+          and [s[0] is None and s[1] is None for s in starts]
+          == [True, False, True, False, True, True]
+          and code_f == M.E_PROVED and block_f.get("status") == "proved"
+          and sorted(seen_f) == ["baseline", "fix", "task"]
+          and round(seen_f["fix"] - seen_f["task"], 3) == 7)
 
 
 # --- a brand-new suite under the sweep's own grading -------------------------
