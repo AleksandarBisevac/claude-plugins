@@ -1395,6 +1395,110 @@ _PYTEST_COLLECT = (
     "1 error in 0.04s\n")
 
 
+# How long the task's run holds before its ImportError, and how often the
+# second run beats while it waits to be killed. The first is the gap a helper
+# granting each run a deadline of its own adds to the second run's cut-off, so
+# half of it is the margin on either side of the bound `_one_deadline_holds`
+# draws; the second only has to be well under that half.
+_FIRST_HOLD = 2.0
+_BEAT = 0.05
+# WHETHER THE SECOND RUN IS REACHED AT ALL is the runner's speed, not the
+# helper's: a slow runner spends the deadline building the throwaway and
+# starting interpreters. So the witness, not a margin, says whether a try
+# reached it, and the deadline doubles until one does.
+_DEADLINE_LADDER = (6, 12, 24)
+
+
+def _witness_test(witness):
+    """A suite that tells its two runs apart by whether `newmod` imports: the
+    task's run (no `newmod` at HEAD) stamps `first`, holds `_FIRST_HOLD` and
+    re-raises the ImportError that owes a second run; the second run stamps
+    `second` and then appends a heartbeat to `beat` until it is killed, so it
+    can only end at the deadline, however fast the runner is."""
+    prelude = "\n".join([
+        "import time",
+        "W = %r" % (witness,),
+        "def mark(name, mode='w'):",
+        "    with open(os.path.join(W, name), mode) as fh:",
+        "        fh.write(repr(time.time()) + '\\n')",
+        "try:",
+        "    from newmod import helper_fn",
+        "except ImportError:",
+        "    mark('first')",
+        "    time.sleep(%r)" % (_FIRST_HOLD,),
+        "    raise",
+        "mark('second')",
+        "while True:",
+        "    mark('beat', 'a')",
+        "    time.sleep(%r)" % (_BEAT,)])
+    return _house_test(prelude, [("new1", "helper_fn() == 2")])
+
+
+def _witness_time(witness, name):
+    """The last COMPLETE line of a witness file as a time, or None - a line the
+    kill cut short has no newline yet and is not read."""
+    try:
+        with open(os.path.join(witness, name), encoding="utf-8") as fh:
+            lines = fh.read().split("\n")[:-1]
+    except OSError:
+        return None
+    for line in reversed(lines):
+        try:
+            return float(line)
+        except ValueError:
+            continue
+    return None
+
+
+def _one_deadline_tries(py):
+    """One `red` per rung of `_DEADLINE_LADDER` over the witness suite, until a
+    try's second run stamps its witness. Each try writes the suite again with
+    a witness directory of its own, so no file a killed run may still hold is
+    removed or reused."""
+    witness = _harness.fixture_root("stamp-red-witness-")
+    root, man = _red_repo("stamp-red-deadline-", _witness_test(witness),
+                          extra={"src/newmod.py": "def helper_fn():\n    return 2\n"},
+                          files=["src/mine.py", "src/newmod.py", "tests/test_mine.py"])
+    tries = []
+    for deadline in _DEADLINE_LADDER:
+        here = os.path.join(witness, "try-%d" % (deadline,))
+        os.makedirs(here)
+        _write(os.path.join(root, "tests", "test_mine.py"), _witness_test(here))
+        started = time.time()
+        code, got = _red(root, man, [py, "tests/test_mine.py"],
+                         "--introduces", "newmod", "--timeout", str(deadline))
+        basis = (got.get("redFirst") or {}).get("basis", "")
+        tries.append({"deadline": deadline, "exit": code,
+                      "took": round(time.time() - started, 1),
+                      "first": _witness_time(here, "first"),
+                      "second": _witness_time(here, "second"),
+                      "beat": _witness_time(here, "beat"),
+                      "run_exit": (got.get("run") or {}).get("exit"),
+                      "second_run": (got.get("run") or {}).get("second") is not None,
+                      "timed_out": "timed out" in basis, "basis": basis[-140:]})
+        if tries[-1]["second"] is not None:
+            break
+    return tries
+
+
+def _one_deadline_holds(t):
+    """Every try is a could-not-prove that says it timed out; a try whose
+    second run was reached also has the task's run ending in its error and a
+    last heartbeat before the first run's stamp plus the deadline plus half the
+    hold. One deadline puts that beat before the helper's start plus the
+    deadline, which is earlier than the first stamp plus the deadline; a
+    deadline of its own for the second run puts it at least the whole hold
+    past the first stamp plus the deadline, since the second run starts only
+    after the hold."""
+    if t["exit"] != M.E_CANNOT_PROVE or not t["timed_out"]:
+        return False
+    if t["second"] is None:
+        return True
+    return (t["run_exit"] == 1 and t["second_run"]
+            and t["first"] is not None and t["beat"] is not None
+            and t["beat"] < t["first"] + t["deadline"] + _FIRST_HOLD / 2)
+
+
 def _final_pass_cases(check):
     py = sys.executable
     env = {"PATH": os.pathsep.join(["/repo/x/.venv/bin", "/usr/bin", "/bin"]),
@@ -1466,25 +1570,14 @@ def _final_pass_cases(check):
     check("sr38 a --timeout that would outlive the host's Bash limit is refused: "
           "the helper's own deadline has to fire first: exit=%r" % (big[0],),
           big[0] == M.E_USAGE)
-    files = ["src/mine.py", "src/newmod.py", "tests/test_mine.py"]
-    slow = _house_test("import time\ntime.sleep(3)\nfrom newmod import helper_fn",
-                       [("new1", "helper_fn() == 2")])
-    root_s, man_s = _red_repo("stamp-red-deadline-", slow,
-                              extra={"src/newmod.py": "def helper_fn():\n    return 2\n"},
-                              files=files)
-    started = time.time()
-    code_s, got_s = _red(root_s, man_s, [py, "tests/test_mine.py"],
-                         "--introduces", "newmod", "--timeout", "7")
-    spent = time.time() - started
+    tries = _one_deadline_tries(py)
     check("sr39 ONE deadline covers both runs: the second run gets what the first "
-          "left, so a two-run proof cannot take twice the budget - here the "
-          "second run is cut off and the proof is could-not-prove: exit=%r in "
-          "%.1f s %r" % (code_s, spent,
-                         (got_s.get("redFirst") or {}).get("basis", "")[-140:]),
-          code_s == M.E_CANNOT_PROVE and spent < 7 + 3 * _proc_group.GRACE_SECONDS
-          and "timed out" in (got_s.get("redFirst") or {}).get("basis", "")
-          and (got_s.get("run") or {}).get("exit") == 1
-          and (got_s.get("run") or {}).get("second") is not None)
+          "left, so a two-run proof cannot take twice the budget - the second "
+          "run is reached and cut off, its last heartbeat before the first "
+          "run's start plus the deadline, and the proof is could-not-prove, "
+          "however slow the runner: %r" % (tries,),
+          tries[-1]["second"] is not None
+          and all(_one_deadline_holds(t) for t in tries))
 
     root_t, man_t = _red_repo("stamp-red-tmpdir-",
                               _red_test("import mine", "mine.v == 2"))
