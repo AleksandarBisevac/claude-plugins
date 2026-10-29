@@ -550,6 +550,26 @@ def _cases(check):
           "ignore rule for, and no rule names a file it does not write - "
           "unruled %r, unused %r" % (_unruled, _unused),
           len(_written) == 3 and not _unruled and not _unused)
+    # i7: the commit check waves a committed `.claude/.gitignore` only while
+    # its change adds lines of `_manifest_io.CLAUDE_IGNORE_LINES`, so a rule
+    # the panel writes that the table does not hold would make every panel
+    # launch read as a task's edit. The panel's real writer is run over a file
+    # holding a line of the project's own, and its whole output asked of the
+    # same predicate the commit check asks.
+    _committed = "node_modules/\n"
+    with open(_gi, "w", encoding="utf-8") as fh:
+        fh.write(_committed)
+    _ensured = M._ensure_panel_files_ignored(proj)
+    with open(_gi, encoding="utf-8") as fh:
+        _appended = fh.read()
+    check("i7 every line the panel appends to a committed .claude/.gitignore is "
+          "one the commit check counts as the plugin's, and the panel's rows "
+          "are that table's panel rows: ensured %r, appended %r"
+          % (_ensured, _appended[len(_committed):]),
+          _ensured is True and _appended != _committed
+          and _mio.adds_only_plugin_ignore_lines(_committed, _appended)
+          and tuple(M._PANEL_PRIVATE_FILES)
+          == _mio.claude_ignore_rows(_mio.PANEL_WRITER))
 
     # --- no surface prints the session token -------------------------------------
     # `--status` hid it and `--stop` printed it in full, one line apart in the

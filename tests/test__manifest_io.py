@@ -1635,8 +1635,82 @@ def _newline_cases(check):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _ignore_lines_cases(check):
+    """The one table of `.claude/.gitignore` lines: what each writer takes from
+    it, and the predicate the commit check reads it through. Each shape is one
+    a by-name reading, an added-only reading or a substring reading gets
+    wrong."""
+    writers = sorted(set(row[0] for row in M.CLAUDE_IGNORE_LINES))
+    rows = dict((w, M.claude_ignore_rows(w)) for w in writers)
+    try:
+        M.claude_ignore_rows("nobody")
+        unknown = "answered"
+    except ValueError as exc:
+        unknown = "ValueError: %s" % (exc,)
+    check("cil1 every row of the table belongs to a writer that reads it, the "
+          "writers' rows together are the whole table, and a writer with no "
+          "row is refused rather than handed nothing to write: %r / %r"
+          % (writers, unknown),
+          writers == sorted([M.PANEL_WRITER, M.RESTORE_POINT_WRITER])
+          and sum(len(r) for r in rows.values()) == len(M.CLAUDE_IGNORE_LINES)
+          and all(note.startswith("#") and not pattern.startswith("#")
+                  for r in rows.values() for pattern, note in r)
+          and unknown.startswith("ValueError"))
+
+    base = "node_modules/\n*.log\n"
+    plugin = "".join("%s\n%s\n" % (note, pattern)
+                     for r in rows.values() for pattern, note in r)
+    pid = M.PANEL_PIDFILE_NAME
+    shapes = [
+        ("unchanged", base, base, True),
+        ("plugin lines appended", base, base + plugin, True),
+        ("to a file with no final newline", base.rstrip("\n"),
+         base + plugin, True),
+        ("under CRLF", base, (base + plugin).replace("\n", "\r\n"), True),
+        ("a line of the project's own", base, base + "secrets.env\n", False),
+        ("the plugin's lines and one of its own", base,
+         base + plugin + "secrets.env\n", False),
+        ("a rule taken away", base, "node_modules/\n" + plugin, False),
+        ("a blank line", base, base + "\n", False),
+        ("a line holding a pattern as a substring", base,
+         base + pid + ".bak\n", False),
+        ("a pattern with a trailing comment", base,
+         base + pid + "  # mine\n", False),
+    ]
+    wrong = [(label, M.adds_only_plugin_ignore_lines(before, after))
+             for label, before, after, want in shapes
+             if M.adds_only_plugin_ignore_lines(before, after) is not want]
+    check("cil2 a change counts as the plugin's only when nothing is taken away "
+          "and every added line is a pattern or a note of the table - both "
+          "directions, over %d shapes; wrong: %r" % (len(shapes), wrong),
+          not wrong)
+
+    tmp = tempfile.mkdtemp(prefix="mio-ignore-")
+    try:
+        claude = os.path.join(tmp, ".claude")
+        os.makedirs(claude)
+        gi = os.path.join(claude, M.GITIGNORE_NAME)
+        with open(gi, "w", encoding="utf-8") as fh:
+            fh.write(base)
+        manifest = os.path.join(tmp, "audit-plan.json")
+        _directory, ignored = M.ensure_backup_dir(manifest)
+        with open(gi, encoding="utf-8") as fh:
+            after = fh.read()
+        check("cil3 the restore-point writer takes its line from the table: "
+              "what it appends is the table's restore-point rows and nothing "
+              "else (ignored %r, appended %r)" % (ignored, after[len(base):]),
+              ignored is True
+              and after == base + "".join(
+                  "%s\n%s\n" % (note, pattern)
+                  for pattern, note in rows[M.RESTORE_POINT_WRITER])
+              and M.adds_only_plugin_ignore_lines(base, after))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def _selftest():
     def body(check):
+        _ignore_lines_cases(check)
         _newline_cases(check)
         _executed_cases(check)
         _corpus_cases(check)

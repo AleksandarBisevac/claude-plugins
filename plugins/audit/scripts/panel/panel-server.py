@@ -498,19 +498,19 @@ def _free_port():
 
 # --- lifecycle: a pidfile so a running panel is always discoverable + stoppable -
 #
-# The two per-project filenames, spelled ONCE for the three readers below:
-# `_pidfile()`/`_log_path()` build the paths this server writes, and
+# The per-project filenames, spelled ONCE in `_manifest_io` for the readers
+# below: `_pidfile()`/`_log_path()` build the paths this server writes, and
 # `_PANEL_PRIVATE_FILES` carries the ignore rule that keeps each out of git.
 # Those two functions used to hold literals of their own, so renaming either
 # moved the file the panel writes and left the rule pointing at the old name --
 # and the pidfile carries a LIVE session token, which makes that divergence one
 # `git add .claude` from history with no case anywhere going red. `i6` in
 # `tests/test_panel_server.py` is what would go red now.
-_PIDFILE_NAME = "audit-panel.json"
-_LAUNCH_LOG_NAME = "audit-panel.log"
+_PIDFILE_NAME = _mio.PANEL_PIDFILE_NAME
+_LAUNCH_LOG_NAME = _mio.PANEL_LAUNCH_LOG_NAME
 # The pidfile is written to a temp sibling and renamed into place; a launch
 # killed between the two leaves the sibling behind, holding the live token.
-_PIDFILE_TMP_PREFIX = _PIDFILE_NAME + ".tmp-"
+_PIDFILE_TMP_PREFIX = _mio.PANEL_PIDFILE_TMP_PREFIX
 # How old a temp sibling must be before a sweep may remove it. A write in
 # flight holds its temp for the moment between `os.open` and `os.replace`;
 # removing it then kills that launch after it has bound. Seconds, judged by
@@ -567,17 +567,10 @@ def _redact_token(url):
 
 
 # The panel's own per-project files, each with the note that goes above it in
-# `.claude/.gitignore`. A note is its OWN line: git reads `#` as a comment only at
-# the start of a line, so `name  # why` would be a pattern matching that whole
-# string and would ignore nothing.
-_PANEL_PRIVATE_FILES = (
-    (_PIDFILE_NAME,
-     "# audit plugin: the panel pidfile holds a live session token"),
-    (_LAUNCH_LOG_NAME,
-     "# ...and the stderr of its detached launch, so a failure has a reason"),
-    (_PIDFILE_TMP_PREFIX + "*",
-     "# ...and the pidfile's temp sibling, which a killed launch leaves behind"),
-)
+# `.claude/.gitignore` - its rows of `_manifest_io.CLAUDE_IGNORE_LINES`, the
+# table the commit check reads to tell the plugin's appended lines from a
+# task's edit of a tracked ignore file.
+_PANEL_PRIVATE_FILES = _mio.claude_ignore_rows(_mio.PANEL_WRITER)
 
 
 def _ensure_panel_files_ignored(project):

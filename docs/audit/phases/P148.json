@@ -49,8 +49,10 @@
         "severity": "low",
         "file": "tools/_suite.py:510-513, 516-546 (_ignores_errors early-continue) and case s21",
         "issue": "P132-R6 is not made. The executor's reason holds in the tree: the three sites it names exist at HEAD (tests/test__doctor_trail.py:495 shutil.rmtree(journal_dir(wiped)), tests/test_audit_task.py:14728 shutil.rmtree(wt), tests/test_drive_phase.py:10696 shutil.rmtree(first + '.redo-5')). It is reported rather than fixed, which the task allows. But the phase's desired outcome ('fixed, or answered with the evidence that nothing is left to change, and the bug closes') is not met for this id: the coverage loss (a plain rmtree over a git-written directory is not convicted) is still in the code.",
-        "resolution": "Carry P132-R6 to a follow-up task whose scope holds tests/test__doctor_trail.py, tests/test_audit_task.py and tests/test_drive_phase.py (switch the three sites to _harness.remove_tree), then drop the early-continue and turn s21 into the init-only allow case. Do not close the bug over it.",
-        "fixTask": "P148.14-xpz"
+        "resolution": "fixed in P148.14-xpz (41245e2f1bcd): Carry P132-R6 to a follow-up task whose scope holds tests/test__doctor_trail.py, tests/test_audit_task.py and tests/test_drive_phase.py (switch the three sites to _harness.remove_tree), then drop the early-continue and turn s21 into the init-only allow case. Do not close the bug over it.",
+        "fixTask": "P148.14-xpz",
+        "commit": "41245e2f1bcd",
+        "status": "fixed"
       },
       {
         "id": "P148-R4",
@@ -117,8 +119,10 @@
         "severity": "low",
         "file": "tests/test__worktrees.py:1001",
         "issue": "P142-R44 is fixed in _worktrees.sweep_plan, but the title of case ts2 still says removing a clean task tree is `task-remove`'s job, the claim the reason string no longer makes. The case asserts nothing on the reason text, so it is wording only. The executor left it because the file is outside the task's files.",
-        "resolution": "Reword the ts2 title to the step driver's removal in a task that owns tests/test__worktrees.py.",
-        "fixTask": "P148.14-xpz"
+        "resolution": "fixed in P148.14-xpz (41245e2f1bcd): Reword the ts2 title to the step driver's removal in a task that owns tests/test__worktrees.py.",
+        "fixTask": "P148.14-xpz",
+        "commit": "41245e2f1bcd",
+        "status": "fixed"
       },
       {
         "id": "P148-R11",
@@ -143,8 +147,10 @@
         "severity": "low",
         "file": "tests/test_drive_phase.py:3669-3672",
         "issue": "sv7 can no longer fail, and this diff is what made it so. It compares _evio.tree_key(where) with rtg.tree_key(where), and run-test-gate.py:5128 now binds tree_key = _ev.tree_key, so it compares one function with itself. P131-R39 asked to keep sv7 as the pin until the delegation landed. The file is outside this task's declared files and the executor reported it, so it was not edited. It is not in the gate command, so the inherited-tests question does not reach it.",
-        "resolution": "In the next task that may touch tests/test_drive_phase.py, delete sv7 or turn it into an identity check. tk1 in tests/test__evidence_io.py is now the real pin.",
-        "fixTask": "P148.14-xpz"
+        "resolution": "fixed in P148.14-xpz (41245e2f1bcd): In the next task that may touch tests/test_drive_phase.py, delete sv7 or turn it into an identity check. tk1 in tests/test__evidence_io.py is now the real pin.",
+        "fixTask": "P148.14-xpz",
+        "commit": "41245e2f1bcd",
+        "status": "fixed"
       },
       {
         "id": "P148-R14",
@@ -361,7 +367,7 @@
         "resolution": "Orchestrator adds `python3 tools/sweep-selftests.py tests/_harness.py` to P148.13-xpz tests.gate and re-records the gate run before close."
       }
     ],
-    "outcome": "[findings: 36 - 0 high, 6 med, 30 low; 25 with a recorded fix commit]"
+    "outcome": "[findings: 36 - 0 high, 6 med, 30 low; 28 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1371,7 +1377,7 @@
     {
       "id": "P148.14-xpz",
       "title": "No suite leaves a fixture behind on a removal error the scratch check cannot see, and no case is left that cannot fail",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix the P148 review findings P148-R3, P148-R10, P148-R13 (each finding's file, issue and resolution is in docs/audit/phases/P148.json review.findings, by id). Read each against the code at HEAD first. Fix each with a case proven red first where it is about behaviour; where HEAD no longer has the defect or the finding records something nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id. Edit only the declared files; a fix needing another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
       "files": [
         "tools/_suite.py",
@@ -1408,14 +1414,19 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "41245e2f1bcd",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "P148-R3 (carried P132-R6): the three named plain removals now go through _harness.remove_tree and the case that follows each reads its answer (tests/test__doctor_trail.py dt50 `wiped_gone`, tests/test_audit_task.py hs5e `wt_gone`, tests/test_drive_phase.py ta20b `redo5_gone`), so a removal that leaves the tree behind fails the case by name instead of grading a tree still there. tools/_suite.py: the `_ignores_errors` early-continue in _written_removal_lines is dropped and the helper deleted (no other user: grep found only its definition), so a plain shutil.rmtree over a git-written directory is convicted as well; the removal_problem message and the module docstring now describe both spellings. s21 rewritten as the two-direction case: the plain spelling over the staged fixture is reported at line 11, and the plain spelling of the mixed fixture (staged + init-only reusing the name + untouched dir, in an object-writing module) reports only line 11. With the rule widened, the live tests/ walk convicted exactly the three named sites before the suite fix (s23 red) and none after; tools/ walk still [] (s16). P148-R10: ts2 title reworded to the step driver's removal, and the case now also asserts the kept tree's reason names `step driver` and not `task-remove`. P148-R13: the tautological sv7 (two names of one function) replaced by a behavioural case: a ledger row recorded in tree A via append_row; drive-phase verdict_basis answers holds for A, moved for another tree and for the project - it fails if the drive names the tree any way other than the row was keyed, or stops comparing the tree. The rtg load stays (used later in the block by success_line), renamed rtg_sv_cases. Gate: `python3 tools/sweep-selftests.py tools/_suite.py tests/test__doctor_trail.py tests/test_audit_task.py tests/test_drive_phase.py tests/test__worktrees.py` exit 0, 5/5 files ok, 2177 cases. ruff check on the five files: exit 0; prose_number_claims and house_style_violations report nothing for them. An earlier gate run (before the rtg fix) failed sv-block with NameError rtg - fixed and rerun. Dependants: tools/_suite.py importers (affected, bench-hooks, capture-demo-gif, check-*, prove-gates, orchestrator-state, sweep-selftests) still correct - no public name changed; prove-gates rows still anchor (`if not any(marker in words for marker in OBJECT_MARKERS):` unchanged; the s16 row plants an ignore_errors removal, still convicted); capture-demo-gif's plain removal premise (init-only fixture) and prove-gates rf3 premise both still hold, s16 green. test__doctor_trail/_audit_task/_drive_phase/_worktrees: no name used elsewhere changed (_age, _cases, _selftest, _held_cases, _attempt_cases, _counting, _follower_cases, _head unchanged). tests/test__evidence_io.py: not edited. Observation for the orchestrator, not fixed (outside the three findings): tk1 pins `rtg.tree_key is _evidence_io.tree_key`, the module-level alias at run-test-gate.py:5128, while the recorder writes testedState.tree.key through `_ev.tree_key(tree)` at run-test-gate.py:5542 directly - a local hash there would leave tk1 green. A prove-gates row for the plain-spelling direction of s21 would need tools/prove-gates.py, which is outside this task's files.",
+        "descriptive": "The removal rule now convicts a plain rmtree over a git-written fixture, the three suites that had one read remove_tree's answer, ts2 asserts the step-driver reason, and sv7 tests the drive's tree comparison instead of comparing a function with itself."
       },
       "startedAt": "2026-10-29T07:53:03Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-29T08:40:27Z",
+      "verifiedBy": [
+        "s21 both directions: plain removal over a staged fixture reported; plain removals over init-only/untouched dirs beside it not",
+        "dt50/hs5e/ta20b read remove_tree's answer, so a fixture left behind fails the case",
+        "ts2 asserts the kept task tree's reason names the step driver and no task-remove",
+        "sv7 drives verdict_basis over a recorded row: holds in the recorded tree, moved elsewhere and in the project"
+      ],
       "notes": [
         {
           "at": "2026-10-29T07:04:06Z",
@@ -1440,6 +1451,17 @@
         "runId": "2026-10-29T08:32:10Z.f61dbe",
         "status": "passed",
         "at": "2026-10-29T08:32:10Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "41245e2f1bcd",
+        "at": "2026-10-29T08:40:27Z",
+        "return": "docs/audit/evidence/returns/P148.14-xpz/20261029T075303Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "mode regression, expectRedFirst false. Every changed file is a declared test file (tools/_suite.py carries both the rule and its cases), so the helper's HEAD-plus-test-files tree is the whole change and cannot show a red; the behaviour sv7 and ts2 lock (drive-phase verdict_basis, _worktrees.sweep_plan reason) was already correct at HEAD. Each new or changed case was instead proven red by mutation in a scratch COPY of the task tree (never the shared tree), restored by cmp each time: (1) early-continue reinstated -> s21 FAIL, 34/35, exit 1; (2) every plain removal convicted -> s21 + s23 FAIL, 33/35, exit 1; (3) HEAD's three suites with the new rule -> s23 FAIL naming tests/test__doctor_trail.py:495, test_audit_task.py:14949, test_drive_phase.py:10887, 34/35, exit 1; (4) drive-phase verdict_basis tree = raw path, and = None -> sv7 FAIL {same: moved, ...}, sv-block 6/7, exit 1 each; (5) _evidence_io tree comparison disabled -> sv7 FAIL {other: holds, project: holds}, 5/7; (6) _worktrees reason reverted to task-remove wording -> ts2 FAIL, 155/156, exit 1; (7) _output.remove_tree reporting False after a successful removal -> ta20b FAIL (ta-block 27/28), hs5e FAIL (hd-block 63/64), dt50 FAIL (154/155), exit 1 each.",
+        "at": "2026-10-29, scratch-copy mutation runs before the final gate; no helper run"
       }
     },
     {
@@ -1561,7 +1583,7 @@
     {
       "id": "P148.16-xpz",
       "title": "A tracked .claude/.gitignore counts as the plugin's only when every line it adds is one the plugin writes, read from one table",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fix the P148 review findings P148-R11 (each finding's file, issue and resolution is in docs/audit/phases/P148.json review.findings, by id). Read each against the code at HEAD first. Fix each with a case proven red first where it is about behaviour; where HEAD no longer has the defect or the finding records something nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id. Edit only the declared files; a fix needing another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
       "files": [
         "plugins/audit/scripts/governance/_scoped_commit.py",
@@ -1592,14 +1614,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-29T08:40:31Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -1618,12 +1640,18 @@
       ],
       "fixes": [
         "P148-R11"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-29T09:21:26Z.7be91d",
+        "status": "passed",
+        "at": "2026-10-29T09:21:26Z"
+      }
     },
     {
       "id": "P148.17-xpz",
       "title": "sr42 catches a helper that grants a fresh timeout at spawn on a runner of any speed",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fix P148-R33 (docs/audit/phases/P148.json review.findings): sr42 bounds the last heartbeat against the child's own start stamp, so a mutant helper that grants a fresh timeout from Popen passes once interpreter start reaches a second. Bound against a helper-side moment taken at spawn (or size the delay from a measured interpreter start) so that mutant is caught at any runner speed, and make the judged-literal row reason about the mutant as well as the correct helper. Prove red against that mutant in your tree (purge __pycache__ between mutate and restore). Edit only the test file. No F/P/BUG ids in code.",
       "files": [
         "tests/test_stamp_verification.py",
@@ -1645,14 +1673,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-29T08:40:34Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -1667,12 +1695,13 @@
       ],
       "fixes": [
         "P148-R33"
-      ]
+      ],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P148.18-xpz",
       "title": "A derived gate hands its slot only what the slot's runner takes, decided per declared path, and the refusal names every declared path in the gate the slot cannot take",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fix P148-R30, P148-R31, P148-R32 (docs/audit/phases/P148.json review.findings) as ONE redesign: the files-derived gate rule has now regressed twice in this phase, so do not patch the cases. The invariant: for each path a task declares, the derived gate's slot receives it only if the slot's runner takes that kind of path - a suite always; a source only when the spelling takes sources (read from the recorded template's own words around the paths slot or a sibling entry's slot, never from an option's argument such as --config or -c); a document, workflow or config file never. The always entries and shape entries keep their own paths by position. The refusal names each declared path that ends up in the slot and is not one the slot takes, whatever the spelling. Behaviour before the files-arm change (commit 04261ee5's parent) is the reference for every row that was right then: a related-tests spelling, recorded or sibling, keeps a source task narrow. Pin the whole matrix (suite/source/doc/workflow/config path x suite-taking/source-taking spelling, recorded and sibling x ordinary/fix task, plus an always entry naming a task file, plus a --config/-c sibling) in one table-driven case; prove each row red against HEAD where HEAD is wrong and against a deliberately weakened rule in the other direction. Edit only declared files. No F/P/BUG ids in code.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -1704,14 +1733,14 @@
       "dependsOn": [
         "P148.14-xpz"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-29T08:40:37Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -1728,7 +1757,8 @@
         "P148-R30",
         "P148-R31",
         "P148-R32"
-      ]
+      ],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P148.19-xpz",

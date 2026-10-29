@@ -1151,6 +1151,9 @@ def run_state_rels(project, config, git_root):
 # placed, so for it an unknown places the path. `plugin_owned_rels` takes the
 # reader's side as a required argument.
 TRACKED, UNTRACKED, UNKNOWN = "tracked", "untracked", "unknown"
+# What a tracked ignore file's change holds, against HEAD's copy: only lines
+# the plugin writes, or a line somebody else's.
+PLUGIN_LINES_ONLY, FOREIGN_LINES = "plugin-lines-only", "foreign-lines"
 UNKNOWN_REFUSES = "unknown-refuses"
 UNKNOWN_PROTECTS = "unknown-protects"
 
@@ -1163,9 +1166,12 @@ def plugin_owned_rels(project, git_root, when_unknown):
 
     A row of `_manifest_io.PLUGIN_OWNED_WHILE_UNTRACKED` is placed only while
     git does not track it: the committed configuration file is a project file a
-    task can edit, so its change is an undeclared one like any other. The
-    commit, the close and the set-aside all place the rows here, so they agree
-    on it wherever git can say.
+    task can edit, so its change is an undeclared one like any other. A row
+    of `_manifest_io.PLUGIN_OWNED_WHILE_ONLY_ITS_LINES` that git tracks is
+    placed only while its change adds nothing but lines the plugin writes
+    (`_ignore_edit`): a task's own line in a committed ignore file is that
+    task's edit. The commit, the close and the set-aside all place the rows
+    here, so they agree on it wherever git can say.
 
     `when_unknown` is where they differ, and it has no default so that no
     reader takes a side by omission: `UNKNOWN_REFUSES` for a reader that
@@ -1185,13 +1191,41 @@ def plugin_owned_rels(project, git_root, when_unknown):
                 continue
             seen.add(rel)
             name = os.path.relpath(path, claude).replace("\\", "/")
-            if name in _mio.PLUGIN_OWNED_WHILE_UNTRACKED:
+            by_lines = name in _mio.PLUGIN_OWNED_WHILE_ONLY_ITS_LINES
+            if by_lines or name in _mio.PLUGIN_OWNED_WHILE_UNTRACKED:
                 state = _tracking(git_root, rel)
-                if state == TRACKED or (state == UNKNOWN
-                                        and when_unknown == UNKNOWN_REFUSES):
+                if state == TRACKED and by_lines:
+                    state = _ignore_edit(git_root, rel)
+                if state in (TRACKED, FOREIGN_LINES) or (
+                        state == UNKNOWN and when_unknown == UNKNOWN_REFUSES):
                     continue
             rows.append((rel, why))
     return rows
+
+
+def _ignore_edit(git_root, rel):
+    """`PLUGIN_LINES_ONLY` when the tracked ignore file `rel` differs from
+    HEAD's copy only by lines the plugin writes
+    (`_manifest_io.adds_only_plugin_ignore_lines`), `FOREIGN_LINES` when the
+    change holds anything else, and `UNKNOWN` when HEAD's copy or the one on
+    disk could not be read - a path the index holds and HEAD does not included.
+
+    A file deleted from disk is `FOREIGN_LINES`: no writer of the plugin
+    deletes it. The reader's side of an unknown is `plugin_owned_rels`'s, as
+    it is for `_tracking`."""
+    code, before, _err = run_git(git_root, ["cat-file", "blob", "HEAD:" + rel])
+    if code != 0:
+        return UNKNOWN
+    path = os.path.join(git_root, *rel.split("/"))
+    if not os.path.lexists(path):
+        return FOREIGN_LINES
+    try:
+        with open(path, "rb") as fh:
+            after = fh.read().decode("utf-8", "replace")
+    except OSError:
+        return UNKNOWN
+    return (PLUGIN_LINES_ONLY if _mio.adds_only_plugin_ignore_lines(before, after)
+            else FOREIGN_LINES)
 
 
 def _tracking(git_root, rel):
@@ -1250,8 +1284,9 @@ def undeclared_changes(git_root, project, config, record, started_at, owned,
     `_manifest_io.PLUGIN_OWNED_IN_CLAUDE` (`plugin_owned_rels`) are never a
     task's edit, so a path the commit step leaves out as plugin-owned is
     never one the close refuses, nor one the set-aside reverts - except the
-    committed configuration file, which `plugin_owned_rels` leaves to the
-    strays. A reader that kept a skip list of its own is the defect this
+    committed configuration file, and a committed ignore file whose change
+    adds a line the plugin does not write, which `plugin_owned_rels` leaves
+    to the strays. A reader that kept a skip list of its own is the defect this
     function exists to remove. `tests/test__scoped_commit.py` fails by name
     when a reader names the primitives of one, and when a reader reads this
     answer other than by key or narrows an undeclared list by anything but a

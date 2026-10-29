@@ -295,8 +295,9 @@ def _undeclared_changes_cases(check, tmp, outside):
     # below separates a wrong implementation from the right one: a committed config
     # edited (a table that exempts it by name keeps it out of every list), an
     # untracked config (a guard that refuses all config over-fires), a
-    # committed and edited `.gitignore` (the other rows stay as they were), and
-    # a git that cannot answer (the loud side).
+    # committed `.gitignore` the plugin's own writers appended to (that row
+    # stays the plugin's - a task's own line in it is `_ignore_file_cases`'),
+    # and a git that cannot answer (the loud side).
     config_rel = ".claude/audit.config.json"
     ignore_rel = ".claude/.gitignore"
     held = _repo(tmp, "undeclared-config-tracked")
@@ -305,7 +306,7 @@ def _undeclared_changes_cases(check, tmp, outside):
     _git(held, "add", "-A")
     _git(held, "commit", "-q", "-m", "the project commits its config")
     _write(os.path.join(held, *config_rel.split("/")), '{"edited": true}\n')
-    _write(os.path.join(held, *ignore_rel.split("/")), "x\ny\n")
+    _plugin_appends(os.path.join(held, ".claude"))
     edited, _w = (("missing", "") if asked is None else
                   asked(held, held, {}, None, LONG_AGO, [], []))
     fresh = _repo(tmp, "undeclared-config-untracked")
@@ -320,7 +321,8 @@ def _undeclared_changes_cases(check, tmp, outside):
     check("sc-ua9 a TRACKED configuration file that was edited is an undeclared "
           "change - in during and strays, in no plugin-owned list, and not in "
           "the rows the set-aside places - while the ignore file beside it, "
-          "tracked and edited, stays plugin-owned; the same file untracked is "
+          "tracked and appended to by the plugin's own writers, stays "
+          "plugin-owned; the same configuration file untracked is "
           "named and left out; and where git cannot say it is not exempted: %r"
           % ((edited, created, placed, blind_rows),),
           isinstance(edited, dict) and isinstance(created, dict)
@@ -334,6 +336,123 @@ def _undeclared_changes_cases(check, tmp, outside):
 
     _tracking_unknown_cases(check, held, fresh, config_rel, ignore_rel,
                             unknown_refuses, unknown_protects)
+    _ignore_file_cases(check, tmp, asked, ignore_rel)
+
+
+def _plugin_appends(claude):
+    """Run every writer of `<claude>/.gitignore` the plugin has, through the
+    real writer and the real table, so a case that calls the result the
+    plugin's own write is not one this suite typed. A tree without the
+    table writes nothing, so the cases that read the result go red by
+    assertion there rather than stopping the suite."""
+    mio = M._mio
+    if not hasattr(mio, "claude_ignore_rows"):
+        return
+    for writer in (mio.RESTORE_POINT_WRITER, mio.PANEL_WRITER):
+        if not mio.ensure_claude_ignored(claude, mio.claude_ignore_rows(writer)):
+            raise RuntimeError("the %s ignore lines could not be written in %s"
+                               % (writer, claude))
+
+
+def _ignore_file_cases(check, tmp, asked, ignore_rel):
+    """A COMMITTED `.claude/.gitignore` IS THE PLUGIN'S ONLY WHILE ITS CHANGE
+    ADDS NOTHING BUT LINES THE PLUGIN WRITES. Each foreign shape is one a
+    by-name exemption waves through and a line-count or added-only reading
+    each miss one of: a line of the task's own, the plugin's lines with one
+    of the task's among them, a line taken away while the plugin's were
+    added, and the file deleted. The allow side runs the plugin's real
+    writers, so a reading that refuses every tracked ignore file goes red."""
+    committed = "node_modules/\n"
+    def edited(name, after):
+        repo = _repo(tmp, "ignore-" + name)
+        gi = os.path.join(repo, *ignore_rel.split("/"))
+        _write(gi, committed)
+        _git(repo, "add", "--", ignore_rel)
+        _git(repo, "commit", "-q", "-m", "the project commits its ignore file")
+        after(repo, gi)
+        return repo
+
+    def own_line(repo, gi):
+        _write(gi, committed + "secrets.env\n")
+
+    def mixed(repo, gi):
+        _plugin_appends(os.path.dirname(gi))
+        with io.open(gi, "a", encoding="utf-8") as fh:
+            fh.write("secrets.env\n")
+
+    def dropped(repo, gi):
+        _write(gi, "")
+        _plugin_appends(os.path.dirname(gi))
+
+    def deleted(repo, gi):
+        os.remove(gi)
+
+    def plugin(repo, gi):
+        _plugin_appends(os.path.dirname(gi))
+
+    def answer(repo):
+        got, why = (("missing", "") if asked is None else
+                    asked(repo, repo, {}, None, LONG_AGO, [], []))
+        if not isinstance(got, dict):
+            return (got, why)
+        return (got["during"] + got["undated"], got["strays"],
+                [p for p, _w in got["pluginOwned"]])
+
+    foreign = dict((name, answer(edited(name, how)))
+                   for name, how in (("own-line", own_line), ("mixed", mixed),
+                                     ("dropped", dropped),
+                                     ("deleted", deleted)))
+    check("sc-ua21 a committed ignore file whose change adds a line the plugin "
+          "does not write - its own line alone, the plugin's lines with it, a "
+          "line taken away beside the plugin's, the file deleted - is an "
+          "undeclared change - in strays, and in during or (deleted, with no "
+          "file to date) undated - and in no plugin-owned list: "
+          "%r" % (foreign,),
+          all(got == ([ignore_rel], [ignore_rel], [])
+              for got in foreign.values()) and len(foreign) == 4)
+
+    ours = edited("plugin", plugin)
+    with io.open(os.path.join(ours, *ignore_rel.split("/")),
+                 encoding="utf-8") as fh:
+        appended = fh.read()
+    fresh = _repo(tmp, "ignore-untracked")
+    _plugin_appends(os.path.join(fresh, ".claude"))
+    allowed = (answer(ours), answer(fresh))
+    check("sc-ua22 ALLOW: the same committed file appended to by the plugin's "
+          "own writers - every row of the one table, written by the real "
+          "writer - is plugin-owned and refuses nothing, and so is the file "
+          "those writers create where none was committed; this goes red under "
+          "a reading that refuses every tracked ignore file: %r"
+          % ((allowed, appended.count("\n")),),
+          allowed[0] == ([], [], [ignore_rel])
+          and allowed[1] == ([], [], [ignore_rel])
+          and appended.startswith(committed)
+          and appended.count("\n")
+          == 1 + 2 * len(getattr(M._mio, "CLAUDE_IGNORE_LINES", ())))
+
+    real_run_git = M.run_git
+
+    def blind_to_head(git_root, args, *rest, **kwargs):
+        # Only HEAD's copy of the ignore file: tracked-or-not and the status
+        # listing are still answered.
+        if list(args[:2]) == ["cat-file", "blob"]:
+            return 128, "", "fatal: HEAD's copy could not be read (fixture)"
+        return real_run_git(git_root, args, *rest, **kwargs)
+
+    M.run_git = blind_to_head
+    try:
+        blind = dict((how, _placed(ours, how))
+                     for how in (M.UNKNOWN_REFUSES, M.UNKNOWN_PROTECTS))
+        blind_answer = answer(ours)
+    finally:
+        M.run_git = real_run_git
+    check("sc-ua23 where HEAD's copy of a committed ignore file cannot be read, "
+          "a reader that refuses does not place it, so the commit and the close "
+          "count it among the strays, and a reader that protects does place "
+          "it: %r" % ((blind, blind_answer),),
+          ignore_rel not in blind[M.UNKNOWN_REFUSES]
+          and ignore_rel in blind[M.UNKNOWN_PROTECTS]
+          and blind_answer == ([ignore_rel], [ignore_rel], []))
 
 
 def _rel_names(rows):
@@ -391,10 +510,12 @@ def _tracking_unknown_cases(check, held, fresh, config_rel, ignore_rel,
     check("sc-ua13 where git cannot say whether the configuration file is "
           "tracked, a reader that refuses does not place it and a reader that "
           "protects does - for an edited tracked file and an untracked one "
-          "alike, and the ignore file is placed either way: %r" % (blind,),
+          "alike, and the committed ignore file, whose change is read only "
+          "once git says it is tracked, goes the same way: %r" % (blind,),
           config_rel not in blind["refuse"][0] and config_rel not in blind["refuse"][1]
           and config_rel in blind["protect"][0] and config_rel in blind["protect"][1]
-          and ignore_rel in blind["refuse"][0] and ignore_rel in blind["protect"][0])
+          and ignore_rel not in blind["refuse"][0]
+          and ignore_rel in blind["protect"][0])
 
     check("sc-ua14 the direction is a required argument with two values, so no "
           "reader gets one by default or by a misspelling: %r"

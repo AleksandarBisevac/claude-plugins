@@ -1335,6 +1335,75 @@ def checkout_of(path):
 BACKUP_DIR_NAME = "audit-backups"
 GITIGNORE_NAME = ".gitignore"
 CONFIG_NAME = "audit.config.json"
+# The panel's own per-project files, spelled here because the ignore lines
+# below are built from them and the commit check reads those lines: the
+# panel's paths and its rules are one fact. The pidfile is written to a temp
+# sibling and renamed into place, so a launch killed between the two leaves
+# the sibling behind, holding the live token.
+PANEL_PIDFILE_NAME = "audit-panel.json"
+PANEL_LAUNCH_LOG_NAME = "audit-panel.log"
+PANEL_PIDFILE_TMP_PREFIX = PANEL_PIDFILE_NAME + ".tmp-"
+
+# The writers of `.claude/.gitignore`, each the key its rows are read by.
+RESTORE_POINT_WRITER = "restore-points"
+PANEL_WRITER = "panel"
+
+# EVERY LINE THE PLUGIN WRITES INTO A `.claude/.gitignore`, as
+# `(writer, pattern, note)`: the one table each writer takes its rows from
+# (`claude_ignore_rows`) and the commit check reads, so a tracked ignore file
+# a task edited is the plugin's only while every line the edit adds is one of
+# these (`adds_only_plugin_ignore_lines`). A note is its OWN line above the
+# pattern: git reads `#` as a comment only at the start of a line, so
+# `name  # why` would be a pattern matching that whole string. A writer that
+# appended a line missing from this table would make its own write read as a
+# task's edit, and the commit would refuse it by name.
+CLAUDE_IGNORE_LINES = (
+    (RESTORE_POINT_WRITER, BACKUP_DIR_NAME + "/",
+     "# audit plugin: restore points a layout change parks, never to be committed"),
+    (PANEL_WRITER, PANEL_PIDFILE_NAME,
+     "# audit plugin: the panel pidfile holds a live session token"),
+    (PANEL_WRITER, PANEL_LAUNCH_LOG_NAME,
+     "# ...and the stderr of its detached launch, so a failure has a reason"),
+    (PANEL_WRITER, PANEL_PIDFILE_TMP_PREFIX + "*",
+     "# ...and the pidfile's temp sibling, which a killed launch leaves behind"),
+)
+
+
+def claude_ignore_rows(writer):
+    """`((pattern, note), ...)` - the rows of `CLAUDE_IGNORE_LINES` that
+    `writer` writes, in the table's order. Raises `ValueError` for a writer
+    with no row: an empty answer would write nothing and report success."""
+    rows = tuple((pattern, note) for who, pattern, note in CLAUDE_IGNORE_LINES
+                 if who == writer)
+    if not rows:
+        raise ValueError("no ignore lines are written by %r" % (writer,))
+    return rows
+
+
+def _line_counts(text):
+    counts = {}
+    for line in (text or "").splitlines():
+        key = line.strip()
+        counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def adds_only_plugin_ignore_lines(before, after):
+    """True when the ignore file's text `after` is `before` with nothing taken
+    away and every added line a pattern or a note of `CLAUDE_IGNORE_LINES`.
+
+    Lines are compared whole, stripped and counted, so a repeated line is
+    counted as often as it appears. Nothing removed, because every writer only
+    appends (`ensure_claude_ignored`): a dropped rule is somebody's edit. A
+    blank added line is not the plugin's either - no writer writes one."""
+    plugin = set()
+    for _writer, pattern, note in CLAUDE_IGNORE_LINES:
+        plugin.update((pattern.strip(), note.strip()))
+    old, new = _line_counts(before), _line_counts(after)
+    if any(new.get(line, 0) < n for line, n in old.items()):
+        return False
+    return all(line in plugin for line, n in new.items()
+               if n > old.get(line, 0))
 
 # EVERY PATH UNDER A `.claude/` THE PLUGIN WRITES FOR ITS OWN REASONS, as
 # `(name, why)`: the one table the writers' constants above and the commit check
@@ -1359,8 +1428,15 @@ PLUGIN_OWNED_IN_CLAUDE = (
 # the project commits is a file a task can really change, and exempting it
 # there would let that change pass the commit and the close as a note. The
 # reader of the table (`_scoped_commit.plugin_owned_rels`) asks git per path;
-# the ignore file and the restore points are not a project's own files.
+# the restore points are not a project's own files.
 PLUGIN_OWNED_WHILE_UNTRACKED = (CONFIG_NAME,)
+
+# THE ROWS ABOVE THAT, ONCE TRACKED, ARE THE PLUGIN'S ONLY WHILE THE CHANGE
+# ADDS NOTHING BUT `CLAUDE_IGNORE_LINES`. A project may commit its ignore file,
+# and the plugin's writers append to it; a task's own line in it is an edit
+# like any other, so the reader compares the file on disk with HEAD's copy
+# (`adds_only_plugin_ignore_lines`) rather than waving it by name.
+PLUGIN_OWNED_WHILE_ONLY_ITS_LINES = (GITIGNORE_NAME,)
 
 
 def plugin_owned_under(claude_dir):
@@ -1418,9 +1494,7 @@ def ensure_backup_dir(path):
     directory = backup_dir_for(path)
     os.makedirs(directory, exist_ok=True)
     ignored = ensure_claude_ignored(
-        os.path.dirname(directory),
-        ((BACKUP_DIR_NAME + "/",
-          "# audit plugin: restore points a layout change parks, never to be committed"),))
+        os.path.dirname(directory), claude_ignore_rows(RESTORE_POINT_WRITER))
     return directory, ignored
 
 
