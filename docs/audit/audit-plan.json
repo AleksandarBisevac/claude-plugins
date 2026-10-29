@@ -4335,7 +4335,9 @@
       "P142.1",
       "P142.13-6yq",
       "P148.6",
-      "P148.19-xpz"
+      "P148.19-xpz",
+      "P149.6-hwg",
+      "P149.8-hwg"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -4909,7 +4911,9 @@
       "P148.7",
       "P148.10-xpz",
       "P148.18-xpz",
-      "P148.21-xpz"
+      "P148.21-xpz",
+      "P149.5-hwg",
+      "P149.7-hwg"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -10251,7 +10255,9 @@
       "P142.51-6yq",
       "P144.3-6yq",
       "P148.1",
-      "P149.1"
+      "P149.1",
+      "P149.6-hwg",
+      "P149.8-hwg"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -11774,7 +11780,9 @@
       "P148.18-xpz",
       "P148.21-xpz",
       "P148.23-xpz",
-      "P149.4-hwg"
+      "P149.4-hwg",
+      "P149.5-hwg",
+      "P149.7-hwg"
     ],
     "tests/test_audit_usage.py": [
       "P131.1"
@@ -11867,7 +11875,9 @@
       "P144.3-6yq",
       "P148.1",
       "P148.14-xpz",
-      "P149.1"
+      "P149.1",
+      "P149.6-hwg",
+      "P149.8-hwg"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -11999,7 +12009,9 @@
       "P142.1",
       "P142.13-6yq",
       "P148.3",
-      "P148.19-xpz"
+      "P148.19-xpz",
+      "P149.6-hwg",
+      "P149.8-hwg"
     ],
     "tests/test_set_priority.py": [
       "P131.1"

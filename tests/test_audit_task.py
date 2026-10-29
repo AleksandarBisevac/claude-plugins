@@ -11252,8 +11252,10 @@ def _record_cases(check):
               code_s4 == 0 and code_s5 == 0
               and dg_tests("P1.4").get("gate") == ["vitest run src/Fix.test.tsx"]
               and dg_tests("P1.4").get("gateBasis") == "tests.add"
+              # P1.5's files still declare the suite its gate ran before, so
+              # the re-derived gate runs it after the new tests.add path.
               and dg_tests("P1.5").get("gate")
-              == ["vitest run src/Other.test.tsx"]
+              == ["vitest run src/Other.test.tsx src/Button.test.tsx"]
               and dg_tests("P1.5").get("gateBasis") == "tests.add")
 
         # `scope --files` moves the other input of the same derivation, so a
@@ -11623,6 +11625,40 @@ def _record_cases(check):
                   "vitest run src/cart.test.ts src/cart2.test.ts"]
               and ff_tests("P1.2").get("gateBasis")
               == "failing-from-run:RUN-VITEST")
+
+        # ---- a suite the fix task DECLARES joins the union too ---------------
+        # A project of its own, so the task ids the cases below read in
+        # `ff_proj` stay where they are. The source among the files is no
+        # suite and stays out; the declared suite no failure named joins
+        # after the failing suite and the tests.add path.
+        fd_proj, fd_mp = mk("ff-declared", ff_manifest())
+        os.makedirs(os.path.join(fd_proj, "src"), exist_ok=True)
+        with open(os.path.join(fd_proj, "src", "cart.test.ts"), "w") as fh:
+            fh.write("// a fixture suite\n")
+        _ff_ev.append_row(fd_proj, {
+            "v": 1, "runId": "RUN-VITEST", "ts": "2026-09-01T00:00:00Z",
+            "scope": "phase", "phaseId": "P1", "status": "failed",
+            "steps": [{"name": "test", "exit": 1,
+                      "failingSuites": ["src/cart.test.ts"],
+                      "failingSuitesBasis": ("the 1 suite file(s) vitest "
+                                             "named as failing, read from "
+                                             "vitest's FAIL <file> line(s)")}]})
+        code_fd, txt_fd = run(
+            ["add", "Fix the cart total", "--phase", "P1",
+             "--project-dir", fd_proj, "--failing-from", "RUN-VITEST",
+             "--files", "src/cart.ts,src/spied.test.ts",
+             "--tests-add", "src/cart2.test.ts: covers the new branch too"])
+        fd_tests = (task_in(fd_mp, "P1.2") or {}).get("tests") or {}
+        check("ff1b --failing-from unions the failing suite, the tests.add "
+              "path and a suite the task's files declare, each once, and "
+              "never the source beside it: %r"
+              % ((code_fd, fd_tests.get("gate"), fd_tests.get("gateBasis"),
+                  txt_fd[-200:]),),
+              code_fd == 0
+              and fd_tests.get("gate")
+              == ["lint", "vitest run src/cart.test.ts src/cart2.test.ts "
+                          "src/spied.test.ts"]
+              and fd_tests.get("gateBasis") == "failing-from-run:RUN-VITEST")
 
         # ---- MUTATION GUARD: a JEST-shaped row, `failing` carries CHECK -----
         # names, never a suite path - reading suites off it instead of
@@ -21644,6 +21680,57 @@ def _gate_entry_cases(check):
               "refuses (%r)" % ((code_r, code_rb, got_r, txt_r[-200:],
                                   txt_rb[-200:]),),
               code_r == 0 and code_rb == 0 and got_r == ([once], [once]))
+
+        # A SUITE THE TASK DECLARES IN ITS FILES IS IN THE GATE even when no
+        # `tests.add` entry names it: the gate is never narrower than the
+        # task's own files ask for. The source beside them is no suite and
+        # stays out, so a fill that took every declared file reads red too.
+        # Asked of each mode that carries a `tests.add` entry, through `add`
+        # and `add --from-file` alike.
+        declared = ("backend/tests/test_a.py,backend/tests/test_b.py,"
+                    "backend/src/thing.py")
+        union = ("python3 tools/sweep-selftests.py "
+                 "backend/tests/test_a.py backend/tests/test_b.py")
+        unioned = []
+        for mode in ("tdd", "regression"):
+            proj_u, mp_u = mk("gx-union-%s" % mode, plan())
+            code_u, txt_u = run(["add", "Union", "--phase", "P2",
+                                 "--tests-mode", mode, "--files", declared,
+                                 "--tests-add",
+                                 "backend/tests/test_a.py: the case",
+                                 "--project-dir", proj_u])
+            proj_ub, mp_ub = mk("gx-union-batch-%s" % mode, plan())
+            code_ub, txt_ub = run(["add", "--from-file", batch(proj_ub, [
+                {"title": "Union", "files": declared.split(","),
+                 "tests": {"mode": mode,
+                           "add": ["backend/tests/test_a.py: the case"]}}]),
+                "--project-dir", proj_ub])
+            unioned.append((mode, code_u, code_ub, gate(mp_u, "P2.4"),
+                            gate(mp_ub, "P2.4"), txt_u[-200:], txt_ub[-200:]))
+        check("gx3 add and add --from-file derive a gate naming every suite "
+              "the task declares in its files, after its tests.add paths, "
+              "when tests.add names only some of them - never a source "
+              "beside them (%r)" % (unioned,),
+              len(unioned) == 2
+              and all(cu == 0 and cub == 0 and gu == [union] and gub == [union]
+                      for _m, cu, cub, gu, gub, _t, _tb in unioned))
+
+        # A SUITE NAMED BOTH WAYS - in tests.add and in files - is in the
+        # entry once, tests.add's paths first and the declared suites after
+        # in the order declared (b before a, so a sorted fill reads red).
+        proj_o, mp_o = mk("gx-both", plan())
+        code_o, txt_o = run(["add", "Both", "--phase", "P2",
+                             "--tests-mode", "tdd", "--files",
+                             "backend/tests/test_a.py,backend/tests/test_b.py",
+                             "--tests-add", "backend/tests/test_b.py: one",
+                             "--tests-add", "backend/tests/test_b.py: two",
+                             "--project-dir", proj_o])
+        both = ("python3 tools/sweep-selftests.py "
+                "backend/tests/test_b.py backend/tests/test_a.py")
+        check("gx4 a suite named in both tests.add and files is in the "
+              "derived entry once, tests.add's paths first (%r)"
+              % ((code_o, gate(mp_o, "P2.4"), txt_o[-200:]),),
+              code_o == 0 and gate(mp_o, "P2.4") == [both])
     finally:
         _harness.remove_tree(tmp)
 

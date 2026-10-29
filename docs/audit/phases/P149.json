@@ -63,9 +63,25 @@
         "fixTask": "P149.3-hwg",
         "commit": "b7386fe646fd",
         "status": "fixed"
+      },
+      {
+        "id": "P149-R5",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "_ordinary_task_gate passes only tests.add paths to the slot fill, so a derived task gate leaves out a suite the task declares in its files (reported by P149.4's executor, outside its files)",
+        "resolution": "Derive the union of tests.add and declared suite files, each once",
+        "fixTask": "P149.7-hwg"
+      },
+      {
+        "id": "P149-R6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py",
+        "issue": "run-test-gate.py and drive-phase.py judge a timed-out run's teardown confirmed from the kill alone, without the drain-to-EOF check the red-first path now uses (reported by P149.3's executor, outside its files)",
+        "resolution": "Use _proc_group.drain_to_eof in both readers",
+        "fixTask": "P149.8-hwg"
       }
     ],
-    "outcome": "[findings: 4 - 0 high, 0 med, 4 low; 4 with a recorded fix commit]"
+    "outcome": "[findings: 6 - 0 high, 0 med, 6 low; 4 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -267,7 +283,7 @@
     {
       "id": "P149.4-hwg",
       "title": "A derived task gate names each suite once and every declared suite, so add never refuses the gate it derived itself",
-      "status": "in_progress",
+      "status": "done",
       "description": "A task added without --gate, whose declared files are plugins/audit/scripts/governance/stamp-verification.py, plugins/audit/scripts/governance/_proc_group.py, tests/test_stamp_verification.py and tests/test__proc_group.py, is refused by its own derived gate: `audit-task.py add` derives the entry 'python3 tools/sweep-selftests.py tests/test_stamp_verification.py tests/test_stamp_verification.py tests/test_stamp_verification.py tests/test_stamp_verification.py' and then refuses it as naming one suite more than once (the duplicate check in plugins/audit/scripts/manifest/_manifest_phases.py). The derivation emits one slot path per declared file instead of the de-duplicated set of suites those files select, and here it also leaves tests/test__proc_group.py out although that suite is a declared file. Reproduce it first in a scratch plan with exactly those four files (no --gate). Fix the derivation in plugins/audit/scripts/governance/_gate_derive.py (and the per-command slot fill in _manifest_phases.py if that is where the paths are joined) so a derived entry names each suite once, in a stable order, and names every declared suite file; the duplicate refusal stays for a hand-written --gate. Add cases (tests/test__gate_derive.py and/or tests/test_audit_task.py) proven red first: several sources selecting one suite derive it once; a declared suite file is always in the derived entry. Read the other spelling shapes the slot model supports (one command per suite, {paths} not a standalone word) and make each de-duplicate, since the same defect is a class across them. Edit only the declared files; a fix that needs another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
       "files": [
         "plugins/audit/scripts/governance/_gate_derive.py",
@@ -291,20 +307,218 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "aa34ebd496e3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "REPRODUCED in a scratch plan (meta.phaseGate.derived.spelling 'python3 tools/sweep-selftests.py {paths}', no --gate), driving audit-task.py add: with --tests-mode regression and the four declared files and no --tests-add, add derives 'python3 tools/sweep-selftests.py tests/test_stamp_verification.py tests/test__proc_group.py' and succeeds - the files arm was never the duplicating one. The refusal reproduces with --tests-mode tdd and one --tests-add entry per case all naming tests/test_stamp_verification.py: add exit 2, '[audit-task] tests.gate entry ... names tests/test_stamp_verification.py more than once'. So the repeat comes from the tests.add arm handing _point one path per tests.add ENTRY, and test__proc_group.py is missing because that arm hands the slot tests.add paths alone and never the declared suite files. FIX (plugins/audit/scripts/governance/_gate_derive.py): new _once(paths), first-given order, compared as written (the reading _manifest_phases.gate_entry_shape_problem gives a repeat), applied at the top of point_shape (covers the {paths}-word template filled literally, the template rebuilt command by command, and the literal fill for {paths} inside quoting or glued to an option), repointed (sibling one-command, a chain where each command holds a slot, a suite run as its program) and repointed_by_runner (two-runner routing, and its notes). The duplicate refusal in _manifest_phases.py is untouched, so a hand-written --gate repeating a suite is still refused (gx1 still green). _manifest_phases.py NOT edited: paths are joined in _gate_derive (_rebuilt / point_shape), not there. NOT DONE, NEEDS A FILE OUTSIDE THIS TASK: 'a declared suite file is always in the derived entry'. The tests.add arm is plugins/audit/scripts/manifest/audit-task.py _ordinary_task_gate (line 2822-2827: `if add_paths: entries, more = _point(shape, build, add_paths, ...)`), which hands _point add_paths alone; none of the declared files reaches it. Making it name declared suites means handing `add_paths` unioned with the declared suite files (_phases.slot_takes(p, False)) there, a change in audit-task.py, which this task does not declare; the brief says such a fix is reported, not made. After this fix the reported task's gate would be 'python3 tools/sweep-selftests.py tests/test_stamp_verification.py' (accepted, but still without tests/test__proc_group.py). CASES: tests/test__gate_derive.py gdo1 (13 rows: every spelling shape handed b,a,b,a repeats; equality with 'b a' plus no 'more than once' from gate_entry_shape_problem), gdo2 (two-runner re-point with repeats), gdo3 (dropped-entry note names the repeat once); tests/test_audit_task.py gx2 (add and add --from-file, tdd, tests.add entries b,a,b,a -> exit 0 and gate == ['python3 tools/sweep-selftests.py backend/tests/test_b.py backend/tests/test_a.py']). OWN CHECKS (not the gate; runsGate own-tests and the brief says nothing of this task's own to run, so the gate command was not run): python3 tests/test__gate_derive.py --selftest exit 0, 62/62; python3 tests/test_audit_task.py --selftest --stage gx-block exit 0, 3/3 (slm1, gx1, gx2), run twice with a gap; on a HEAD export with my test files: 59/62 and 2/3 (red as above); sort mutation (_once -> sorted(set())) on a scratch copy: gdo1 and gx2 red (plus rg8, gdk6, dg1-allow, dg23-allow); ruff check on the three files exit 0; vermin -t=3.8- exit 0; _output_lints.prose_number_claims and house_style_violations report nothing for _gate_derive. DEPENDANTS: _affected_tests.py (repointed_by_runner) still correct - its paths now reach each slot once, unchanged when unique; derive-phase-gate.py (derive -> point_shape) still correct - derive already de-duplicates test_paths, so no output changes; drive-phase.py (entry_collector) and run-test-gate.py (listing_command, entry helpers) still correct - functions untouched; audit-task.py (_point/_repointed/repointed_by_runner) changed in behaviour only where a list repeats a path: the repeat collapses instead of producing an entry add refuses; tests/test__gate_derive.py and tests/test_audit_task.py gain cases; PLUGIN-BUILD-GUIDE.md still correct - no name it cites changed. _manifest_phases.py not edited, so its dependants are unchanged. tests/test__gate_derive.py's dependants: test_derive_phase_gate.py defines its own _cases/_manifest/_selftest (no import), .github/sweep-costs.json gains a little runtime, no figure rewritten; PLUGIN-BUILD-GUIDE.md names the file only. tests/test_audit_task.py's dependants: gx-block only gained gx2; no shared helper changed. listing_command (fills the listing template, not a gate entry, and never shape-checked) left as is.",
+        "descriptive": "A task whose tests.add entries name one suite several times now derives an entry naming it once, so add no longer refuses its own derived gate; naming every declared suite needs audit-task.py, reported not made"
       },
       "startedAt": "2026-10-29T13:55:35Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-29T14:24:51Z",
+      "verifiedBy": [
+        "gdo1: every spelling shape (template word, rebuilt chain, sh -c quoting, --files= form, sibling single command, sibling chain, suite as program) handed repeated paths fills each slot once in first-given order and passes the shape check",
+        "gdo2: the two-runner re-point hands each runner's entry each of its paths once",
+        "gdo3: an entry dropped for want of a path is named in one note naming the repeated path once",
+        "gx2: add and add --from-file with tests.add entries repeating suites derive one entry naming each suite once, exit 0"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-29T14:24:48Z.ab30ce",
         "status": "passed",
         "at": "2026-10-29T14:24:48Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "aa34ebd496e3",
+        "at": "2026-10-29T14:24:51Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-29T14:05:50Z",
+        "basis": "`python3 tests/test__gate_derive.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 62 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - gdo1 (house FAIL): SELFTEST FAILED: 59/62 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "proved",
+        "source": "red-first-helper"
       }
+    },
+    {
+      "id": "P149.5-hwg",
+      "title": "A derived task gate runs every suite the task declares, not only the ones its tests.add names",
+      "status": "cancelled",
+      "description": "A task gate derived at add time leaves out a test suite the task itself declares. In plugins/audit/scripts/manifest/audit-task.py, _ordinary_task_gate passes only the tests.add paths to the slot fill (_point), so a task declaring tests/test_a.py and tests/test_b.py in --files with --tests-add naming only test_a derives a gate that never runs test_b - a narrower gate than the task's own files ask for. Make the derived entry name the union of the tests.add paths and every declared file that is a suite (classified the way the gate derivation already classifies a suite), each once, in a stable order; the de-duplication _gate_derive._once gives is the one to reuse, not a second copy. Check the other arms that derive a task gate (regression, gate-only, tdd) for the same omission, since it is a class. Cases in tests/test_audit_task.py, each proven red first: a declared suite absent from tests.add is in the derived entry; a suite named both ways appears once. Edit only the declared files; a fix that needs another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__gate_derive.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: re-added bound to finding P149-R5 so the drive dispatches it during triage"
+      },
+      "startedAt": null,
+      "completedAt": "2026-10-29T14:26:01Z",
+      "verifiedBy": []
+    },
+    {
+      "id": "P149.6-hwg",
+      "title": "A timed-out gate or session teardown is confirmed only when its drain reached the end of the pipe",
+      "status": "cancelled",
+      "description": "A timed-out run's teardown is judged confirmed from the process-group kill alone in two readers outside the red-first path: plugins/audit/scripts/governance/run-test-gate.py (the timed-out gate run's teardown) and plugins/audit/scripts/governance/drive-phase.py (the timed-out session or command teardown). The red-first path now ANDs in _proc_group.drain_to_eof, which says whether the drain reached the end of the pipe; on Windows a taskkill that succeeded only requested the kill, and a drain that timed out means a grandchild still holds the pipe. Switch both readers to the same helper so a teardown is reported confirmed only when the root exited and the drain reached EOF, with the wording the red-first path uses for the unconfirmed case. One helper, no second copy of the rule. Cases in tests/test_run_test_gate.py and tests/test_drive_phase.py, each proven red by mutating the reader back to the kill-only judgement. Edit only the declared files; a fix that needs another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_run_test_gate.py",
+        "tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: re-added bound to finding P149-R6 so the drive dispatches it during triage"
+      },
+      "startedAt": null,
+      "completedAt": "2026-10-29T14:26:02Z",
+      "verifiedBy": []
+    },
+    {
+      "id": "P149.7-hwg",
+      "title": "A derived task gate runs every suite the task declares, not only the ones its tests.add names",
+      "status": "in_progress",
+      "description": "A task gate derived at add time leaves out a test suite the task itself declares. In plugins/audit/scripts/manifest/audit-task.py, _ordinary_task_gate passes only the tests.add paths to the slot fill (_point), so a task declaring tests/test_a.py and tests/test_b.py in --files with --tests-add naming only test_a derives a gate that never runs test_b - a narrower gate than the task's own files ask for. Make the derived entry name the union of the tests.add paths and every declared file that is a suite (classified the way the gate derivation already classifies a suite), each once, in a stable order; the de-duplication _gate_derive._once gives is the one to reuse, not a second copy. Check the other arms that derive a task gate (regression, gate-only, tdd) for the same omission, since it is a class. Cases in tests/test_audit_task.py, each proven red first: a declared suite absent from tests.add is in the derived entry; a suite named both ways appears once. Edit only the declared files; a fix that needs another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "tests/test_audit_task.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test_audit_task.py: Derive the union of tests.add and declared suite files, each once"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__gate_derive.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-29T14:26:12Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-29T14:26:06Z",
+          "text": "scope: plugins/audit/scripts/manifest/audit-task.py, every path the finding(s) P149-R5 name"
+        },
+        {
+          "at": "2026-10-29T14:26:06Z",
+          "text": "scope: tests/test_audit_task.py, the suite that tests plugins/audit/scripts/manifest/audit-task.py (python: its import closure reaches plugins/audit/scripts/manifest/audit-task.py)"
+        }
+      ],
+      "fixes": [
+        "P149-R5"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-29T14:59:09Z.10821a",
+        "status": "passed",
+        "at": "2026-10-29T14:59:09Z"
+      }
+    },
+    {
+      "id": "P149.8-hwg",
+      "title": "A timed-out gate or session teardown is confirmed only when its drain reached the end of the pipe",
+      "status": "in_progress",
+      "description": "A timed-out run's teardown is judged confirmed from the process-group kill alone in two readers outside the red-first path: plugins/audit/scripts/governance/run-test-gate.py (the timed-out gate run's teardown) and plugins/audit/scripts/governance/drive-phase.py (the timed-out session or command teardown). The red-first path now ANDs in _proc_group.drain_to_eof, which says whether the drain reached the end of the pipe; on Windows a taskkill that succeeded only requested the kill, and a drain that timed out means a grandchild still holds the pipe. Switch both readers to the same helper so a teardown is reported confirmed only when the root exited and the drain reached EOF, with the wording the red-first path uses for the unconfirmed case. One helper, no second copy of the rule. Cases in tests/test_run_test_gate.py and tests/test_drive_phase.py, each proven red by mutating the reader back to the kill-only judgement. Edit only the declared files; a fix that needs another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_run_test_gate.py",
+        "tests/test_drive_phase.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "tests/test_run_test_gate.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test_run_test_gate.py: Use _proc_group.drain_to_eof in both readers"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-29T14:26:16Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-29T14:26:11Z",
+          "text": "scope: plugins/audit/scripts/governance/run-test-gate.py, every path the finding(s) P149-R6 name"
+        },
+        {
+          "at": "2026-10-29T14:26:11Z",
+          "text": "scope: tests/test_run_test_gate.py, the suite that tests plugins/audit/scripts/governance/run-test-gate.py (python: its import closure reaches plugins/audit/scripts/governance/run-test-gate.py)"
+        }
+      ],
+      "fixes": [
+        "P149-R6"
+      ],
+      "reviewPerTask": "signals"
     }
   ],
   "request": "release CI on ci/P148 is red on Windows only; fix both reds before 3.7.0",

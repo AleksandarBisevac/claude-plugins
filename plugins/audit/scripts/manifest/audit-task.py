@@ -2804,6 +2804,35 @@ def _always_entries(meta):
         meta if isinstance(meta, dict) else {})["always"] if isinstance(e, str)]
 
 
+def _task_suite_paths(add_paths, files):
+    """`(paths, declared)` - the paths a task's gate is pointed at when its
+    `tests.add` names some: those paths, then every suite its `files`
+    declare, each once in the order first named (`_gate_derive._once`), and
+    `declared` the suites `files` added that `tests.add` did not name.
+
+    A SUITE THE TASK DECLARES IS RUN even when no `tests.add` entry names it:
+    pointed at `tests.add` alone, the gate is narrower than the task's own
+    files ask for, and a suite the work edits is never run by the gate that
+    grades it. A suite is what `_phases.slot_takes` calls one for a slot that
+    takes suites alone - the reading gate-only's arm gives its files - so a
+    source, document or fixture among the files is never added. `tests.add`
+    leads so a task whose files declare no further suite keeps the gate it
+    was derived before."""
+    paths = _gate_derive._once(add_paths)
+    suites = [p for p in (files or []) if _phases.slot_takes(p, False)]
+    declared = [p for p in _gate_derive._once(suites) if p not in paths]
+    return paths + declared, declared
+
+
+def _declared_clause(declared):
+    """The words a gate's basis adds when `files` contributed suites of its
+    own (`_task_suite_paths`), naming each; nothing when it contributed none,
+    so a basis read before this clause existed reads the same."""
+    if not declared:
+        return ""
+    return " and the suite(s) its files declare (%s)" % (", ".join(declared),)
+
+
 def _ordinary_task_gate(shape, owner, wide, build, add_paths, files, mode,
                         meta, phase, project=None, runner_aware=False):
     """The three ordinary defaults (`tests.add`, `files`, the phase's wide
@@ -2820,11 +2849,13 @@ def _ordinary_task_gate(shape, owner, wide, build, add_paths, files, mode,
                       % (phase.get("id"),)), \
             "phase-no-spelling"
     if add_paths:
-        entries, more = _point(shape, build, add_paths, project, runner_aware,
+        paths, declared = _task_suite_paths(add_paths, files)
+        entries, more = _point(shape, build, paths, project, runner_aware,
                                owner, meta)
         return (entries,
-                "narrowed to this task's tests.add paths, in %s%s"
-                % (_spelled_in(owner), more), "tests.add")
+                "narrowed to this task's tests.add paths%s, in %s%s"
+                % (_declared_clause(declared), _spelled_in(owner), more),
+                "tests.add")
     if files:
         if mode == "gate-only":
             # A gate-only task names no case, so even a slot that relates
@@ -3045,9 +3076,11 @@ def _failing_from_task_gate(args, phase, assembled, add_paths, files, mode,
     When the row's failed steps NAMED at least one suite
     (`_evidence_io.named_failing_suites`) and the phase has a path-scoped
     spelling to point them through, the gate is those suites UNIONED with this task's own
-    `tests.add` paths, in the sibling's spelling -- the union because a fix
-    task may still be asked to write a NEW case beside the failure it
-    repairs, and dropping that path would buy a green the task never earned.
+    `tests.add` paths and the suites its `files` declare (`_task_suite_paths`),
+    in the sibling's spelling -- the union because a fix task may still be
+    asked to write a NEW case beside the failure it repairs, or edit a suite
+    no failure named, and dropping that path would buy a green the task never
+    earned.
     Source word `failing-from-run:<runId>` (`_manifest_vocab.GATE_BASIS`'s own
     spelling for it) -- a reader compares the word before the colon and looks
     the runId up, never parsing further.
@@ -3082,13 +3115,15 @@ def _failing_from_task_gate(args, phase, assembled, add_paths, files, mode,
         pinned, why = ((None, None) if not suites
                        else _root_spelled_suites(suites, project or "."))
         if pinned:
-            union = _union_paths(pinned, add_paths)
+            own, declared = _task_suite_paths(add_paths, files)
+            union = _union_paths(pinned, own)
             entries, more = _point(shape, build, union, project, runner_aware,
                                    owner, meta)
             return (entries,
                     "narrowed to the suite(s) run %s named as failing, "
-                    "union with this task's tests.add paths, in %s%s"
-                    % (args.failing_from, _spelled_in(owner), more),
+                    "union with this task's tests.add paths%s, in %s%s"
+                    % (args.failing_from, _declared_clause(declared),
+                       _spelled_in(owner), more),
                     "failing-from-run:%s" % (args.failing_from,))
         if not suites:
             why = ("run %s's failed steps named no suite as failing (a tail "
