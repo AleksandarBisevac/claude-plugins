@@ -1240,6 +1240,9 @@ def path_kind(path):
     mark or pytest's `test_` prefix), and a test directory decides only for a
     file with a source extension and neither mark (`__tests__/order.ts`,
     jest's own layout) - any other file there is a test's input, a fixture.
+    A TEST MARK OUTRANKS A CONFIG NAME on a source file: `setup.test.ts` and
+    `app.config.test.ts` are the suites of a setup file and a config, and a
+    runner collects them by that mark; a fixture folder still decides first.
     `is_suite_path` keeps its wider reading, because it answers a different
     question: whether a runner printed a path as a test it ran."""
     norm = str(path or "").replace("\\", "/")
@@ -1251,7 +1254,8 @@ def path_kind(path):
         return "workflow"
     if ext in DOCUMENT_EXTENSIONS:
         return "document"
-    if _is_config_name(base):
+    marked = subject_of(norm) is not None and ext in SOURCE_EXTENSIONS
+    if _is_config_name(base) and not marked:
         return "config"
     if any(seg in FIXTURE_DIRS for seg in segments):
         return "fixture"

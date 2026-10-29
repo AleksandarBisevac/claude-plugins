@@ -24,11 +24,15 @@ narrowed gate repoints. A sibling task's own path-scoped gate entry is read
 only when no usable spelling exists - a `spelling` with no literal `{paths}`
 placeholder is skipped with a printed reason and the sibling is read instead
 (the recorded spelling wins because a sibling's entry is one task's own gate,
-and repointing it replaces every path-shaped word in it, the runner
-included). `{paths}` is filled with the
-shell-quoted, resolved test paths by LITERAL substitution, never through
-`repointed()` (the placeholder is not a path-shaped token that function would
-recognize). The TWO LISTINGS this file actually
+whose slot a re-point has to read off its words, where a template states
+it). `{paths}` is filled with the shell-quoted, resolved test paths by
+`_gate_derive.point_shape`, never through `repointed()` (the placeholder is
+not a path-shaped token that function would recognize). The phase-level
+derivation hands every command every path, so the template's text is
+substituted LITERALLY wherever `{paths}` sits - a word of its own, inside
+`bash -c '...'` quoting, or glued to an option (`--files={paths}`) alike;
+only a task's files-derived gate hands each command the paths its own slot
+takes. The TWO LISTINGS this file actually
 runs live under `meta.phaseGate.derived.listing`: `.all` lists every suite
 file the runner would collect, with no path filter -- the FULL listing --and
 `.related` carries a `{paths}` placeholder, filled with the shell-quoted union

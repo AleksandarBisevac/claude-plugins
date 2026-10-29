@@ -184,12 +184,27 @@ def point_shape(shape, source, build, paths, by_kind=False):
     `repointed` does. A template whose every `{paths}` command takes the same
     paths is substituted literally, byte for byte as written; one whose
     commands take different paths is rebuilt command by command.
+
+    A TEMPLATE WITH NO `{paths}` WORD OF ITS OWN - the placeholder inside
+    `sh -c '...'` quoting, or glued to an option (`--files={paths}`) - has no
+    command whose slot can be located, so it is substituted literally, as it
+    always was: every path, or with `by_kind` those its one mode
+    (`_literal_mode`) takes. Answered with no entry only when `by_kind`
+    leaves no path, as a located slot is.
     """
     if source == SPELLING_SOURCE:
         template = shape[0]
         tokens = _entry_tokens(template)
         commands = [_read_command(tokens, span, placeholder=True)
                     for span in _command_spans(tokens)]
+        if not any(c["slot"] for c in commands):
+            mode = _literal_mode(template)
+            given = [p for p in paths
+                     if not by_kind or _phases.slot_takes(p, mode)]
+            if not given:
+                return []
+            return [template.replace(
+                "{paths}", " ".join(shlex.quote(p) for p in given))]
         plan = [_given(c, paths, by_kind) for c in commands]
         handed = [p for p in plan if p is not None]
         if handed and handed[0] and all(p == handed[0] for p in handed):
@@ -270,7 +285,7 @@ def repointed(entries, build, paths, keep=(), by_kind=False):
 # its argument in the same word and is an option word whatever its name. An
 # option this table lacks has the word behind it read as positional: a path
 # there is read as the slot, which is how every option was read before.
-OPTION_ARGUMENT_WORDS = frozenset((
+_ARGUMENT_TAKING_WORDS = frozenset((
     # pytest
     "-c", "--config-file", "--rootdir", "--confcutdir", "-k", "-m", "-p",
     "-o", "--override-ini", "--basetemp", "--junitxml", "--junit-xml",
@@ -294,6 +309,18 @@ OPTION_ARGUMENT_WORDS = frozenset((
     "--require", "--import", "--loader", "--test-reporter",
     "--test-name-pattern", "-e", "-X",
 ))
+# The words one of those runners spells with an argument and another reads
+# BARE: vitest's `-w` (watch; jest's `--maxWorkers`), jest's `-o`
+# (onlyChanged; pytest's `--override-ini`) and `-e` (expand; node's eval).
+# The table is read without the runner it belongs to, so a word in both
+# would swallow the suite behind it on the runner that reads it bare and
+# send the gate wide. Left out, the word behind it is read as positional -
+# a path there is the slot, which narrows - and the argument it takes where
+# it takes one is a count, an ini override or code (`-w 4`, `-o key=value`),
+# which is ordinarily no path and so not the slot. Add a word here, not by
+# deleting it from the table above, so the reason stays beside it.
+_BARE_IN_SOME_RUNNER = frozenset(("-w", "-o", "-e"))
+OPTION_ARGUMENT_WORDS = _ARGUMENT_TAKING_WORDS - _BARE_IN_SOME_RUNNER
 # A redirection operator standing alone takes the next word, the file it names.
 _REDIRECT_OPERATOR = re.compile(r"^[0-9]*(?:>>?|<<?|>&|<&|&>>?|>\|)$")
 # A list operator an unquoted word carries against it (`a;b`, `(cd`).
@@ -437,14 +464,74 @@ def _rebuilt(tokens, commands, plan):
     return " ".join(out)
 
 
+def _placeholder_modes(template):
+    """`(standalone, carried)` - the `sources` of each command of a recorded
+    template that holds `{paths}` as a word of its own, and of each that
+    carries it inside a word (`--files={paths}`). A quoted word carrying it
+    (`sh -c 'cd api && pytest {paths}'`) is read as an entry of its own, so
+    the command inside the quoting decides the mode."""
+    tokens = _entry_tokens(template)
+    standalone, carried = [], []
+    for span in _command_spans(tokens):
+        c = _read_command(tokens, span, placeholder=True)
+        if c["slot"]:
+            standalone.append(c["sources"])
+            continue
+        for i in c["words"]:
+            raw, value = tokens[i][0], tokens[i][1] or ""
+            if "{paths}" not in value:
+                continue
+            if "'" in raw or '"' in raw:
+                inner = _placeholder_modes(value)
+                carried.extend(inner[0] + inner[1])
+            else:
+                carried.append(c["sources"])
+    return standalone, carried
+
+
+def _literal_mode(template):
+    """The ONE mode of a template filled by literal substitution: every
+    command carrying `{paths}` receives the same text, so the paths it may
+    hold are those each such command takes - its shared mode, and suites
+    alone when the commands disagree or none can be read."""
+    _standalone, carried = _placeholder_modes(template)
+    if carried and all(m == carried[0] for m in carried):
+        return carried[0]
+    return frozenset()
+
+
+def _literal_slot(entry, template):
+    """The paths `entry` holds where a literally filled `template` holds
+    `{paths}` - the text between the template's own words, the same text at
+    every placeholder - or None when `entry` is not that template filled."""
+    parts = template.split("{paths}")
+    pattern = re.escape(parts[0]) + "(.*)" + "\\1".join(
+        re.escape(p) for p in parts[1:])
+    match = re.match(pattern + r"\Z", entry, re.S)
+    if match is None:
+        return None
+    try:
+        words = shlex.split(match.group(1))
+    except ValueError:
+        return None
+    return [p for p in (_phases.shell_word_path(w) for w in words) if p]
+
+
 def slot_reading(entry, template=None):
     """`[(slot paths, sources)]` for each simple command of a WRITTEN gate
     entry, as `_read_command` reads it - or, for a command the recorded
     `template` filled (its words in front of `{paths}` and behind it match),
     the paths between those words, so a path the template names itself is
-    not in the slot and the same path written into it is."""
+    not in the slot and the same path written into it is. A template with no
+    `{paths}` word of its own was filled literally, so an entry that is that
+    template filled is read back by its text, under `_literal_mode`."""
     tokens = _entry_tokens(entry)
     shapes = []
+    if isinstance(template, str) and "{paths}" in template \
+            and not _placeholder_modes(template)[0]:
+        slot = _literal_slot(entry, template)
+        if slot is not None:
+            return [(slot, _literal_mode(template))]
     if isinstance(template, str) and "{paths}" in template:
         t_tokens = _entry_tokens(template)
         for span in _command_spans(t_tokens):
@@ -639,11 +726,15 @@ def _carried(entry, build, keep):
 
 def _shape_modes(shape, source, build, keep=()):
     """The `sources` of every slot-holding command of the shape
-    `resolve_shape` returned - a recorded template's `{paths}` commands, or a
-    sibling's commands that hand their runner a path."""
+    `resolve_shape` returned - a recorded template's `{paths}` commands (its
+    one `_literal_mode` when no command holds `{paths}` as a word of its
+    own), or a sibling's commands that hand their runner a path."""
     modes = []
     for entry in shape or ():
         if _carried(entry, build, keep):
+            continue
+        if source == SPELLING_SOURCE and not _placeholder_modes(entry)[0]:
+            modes.append(_literal_mode(entry))
             continue
         tokens = _entry_tokens(entry)
         for span in _command_spans(tokens):

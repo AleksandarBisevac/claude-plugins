@@ -1504,6 +1504,14 @@ def _cases(check):
         ("__tests__/order.ts", "suite"), ("tests/_harness.py", "suite"),
         ("tests/test_setup.py", "suite"), ("src/foo.test.ts", "suite"),
         ("e2e/y.spec.ts", "suite"), ("src/app.config.ts", "config"),
+        # A TEST MARK IS READ BEFORE A CONFIG NAME: a suite whose subject is a
+        # setup file or a config is still a suite. Only on a source file - a
+        # data file carrying the mark stays what its extension says - and
+        # never under a fixture folder, which still decides first.
+        ("src/setup.test.ts", "suite"), ("src/app.config.test.ts", "suite"),
+        ("test/global-setup.spec.ts", "suite"),
+        ("src/setup.test.json", "config"), ("src/setup.test.snap", "config"),
+        ("src/__mocks__/setup.test.ts", "fixture"),
     )
     _kd_bad = [(p, M.path_kind(p), M.slot_takes(p, False), M.slot_takes(p, True))
                for p, kind in _kd_rows

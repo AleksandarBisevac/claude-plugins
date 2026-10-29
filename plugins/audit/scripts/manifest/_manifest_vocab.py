@@ -192,8 +192,10 @@ GATE_BASIS = ("declared", "cleared", "tests.add", "files",
               # the schema calls a runId opaque.
               "gate-only-no-suite", "failing-from-run",
               # `files-no-suite`: a task with no `tests.add` names files and
-              # none is a path its spelling takes - no suite path, under a
-              # spelling whose slot holds suites alone - so the runner has
+              # none is a path some command of its spelling takes
+              # (`_manifest_phases.slot_takes` under that command's own mode:
+              # a suite, or a source where the command relates sources to
+              # their tests) - so the runner has
               # nothing of this task's to be pointed at and the phase's gate
               # is the answer. Not `phase-no-paths`, which says the task named
               # no file at all and is repaired by naming one.

@@ -369,7 +369,8 @@
         "severity": "low",
         "file": "tools/prove-gates.py:4109",
         "issue": "P148-R6 stays open: the conjunct `respelled is None and os.name == \"nt\"` still lets pw5 pass on a Windows runner that cannot make the link, and the windows-latest confirmation that the pw5 line reads 'a second spelling, through a link' has not been made. The executor's evidence for why nothing can be done here holds (the 'NOT exercised' text sits only in 6bb76efb, and no Windows log of a head containing it exists), so this is a correct deferral, not a miss, but the finding is not closed by this diff.",
-        "resolution": "Carry P148-R6 to the first windows-latest run of a head containing 6bb76efb. If the pw5 line reads 'NOT exercised', drop the `os.name == \"nt\"` conjunct."
+        "resolution": "Carry P148-R6 to the first windows-latest run of a head containing 6bb76efb. If the pw5 line reads 'NOT exercised', drop the `os.name == \"nt\"` conjunct.",
+        "fixTask": "P148.24-xpz"
       },
       {
         "id": "P148-R36",
@@ -433,25 +434,61 @@
         "severity": "low",
         "file": "tests/test_stamp_verification.py:2022-2029",
         "issue": "The rewritten _BUILD_DELAY row says a helper granting a fresh timeout at the spawn 'stays half the delay less one beat interval over sr42's bound however slow the runner'. That holds for the interpreter start, which is the thing this task removes, but not for every slowness: the mutant is caught only because its run keeps beating to within one beat of the cut, and a child starved of CPU for about the whole 'half the delay less one beat' before the cut (a stall of nearly a second inside time.sleep of the beat) leaves its last beat under the bound, so the mutant passes. The row two entries up for _BEAT already says a slower beat 'can let a mutated helper pass', so the file now makes two incompatible statements. This only ever lets the mutant through, never fails a correct helper, and needs a stall near one second at the end of the run, so it is a wording overclaim and not a speed dependence of the kind the task named.",
-        "resolution": "Reword the row to say what is true: the interpreter start enters neither side, and the margin over the bound is half the delay less one beat interval, which only a stall of the child's own beats of about that length can consume (and then only toward passing the mutant). Drop 'however slow the runner'."
+        "resolution": "Reword the row to say what is true: the interpreter start enters neither side, and the margin over the bound is half the delay less one beat interval, which only a stall of the child's own beats of about that length can consume (and then only toward passing the mutant). Drop 'however slow the runner'.",
+        "fixTask": "P148.24-xpz"
       },
       {
         "id": "P148-R43",
         "severity": "med",
         "file": "tests/test__evidence_io.py:4151-4190",
         "issue": "The new tk2o/tk2t cases go red for a write that is not _evidence_io.tree_key only where the fixture tree's abspath differs from its realpath. Both trees come from _harness.fixture_root (a plain temp dir) and nothing symlinks them, so the realpath-to-abspath drift that the enclosing docstring names (_tree_key_cases: 'a realpath policy changed in one') is red on macOS, where /var is a symlink to /private/var, and green on a Linux runner whose temp dir has no symlink. The executor's red (written 205b8cd9dd69 vs tree_key 8f9d4709f093) was a macOS measurement of a local sha1 over os.path.abspath; the claim 'now pinned at the write' is true there and unproved on CI's platform. Other mutations (constant, wrong tree such as project, different slice length, basename) do go red by reading: tk2 equality or tk3 inequality fails.",
-        "resolution": "Make one of the two trees a symlink to a real directory (os.symlink in a fixture dir, passed as --tree), so realpath(tree) != abspath(tree) on every platform with symlinks. Skip that tree with a stated reason on a platform that cannot symlink. Then a writer using abspath or no realpath fails tk2 everywhere.",
-        "fixTask": "P148.22-xpz"
+        "resolution": "fixed in P148.22-xpz (7376684efa6d): Make one of the two trees a symlink to a real directory (os.symlink in a fixture dir, passed as --tree), so realpath(tree) != abspath(tree) on every platform with symlinks. Skip that tree with a stated reason on a platform that cannot symlink. Then a writer using abspath or no realpath fails tk2 everywhere.",
+        "fixTask": "P148.22-xpz",
+        "commit": "7376684efa6d",
+        "status": "fixed"
       },
       {
         "id": "P148-R44",
         "severity": "med",
         "file": "tests/test__evidence_io.py:4182-4186,4205-4207",
         "issue": "The skip path reads as a pass that proved something. tk2s asserts (linked is None) == (link_skip is not None); linked is set only in the same try whose except sets link_skip, so the two are complementary by construction and tk2s cannot fail on either branch. On a machine that refuses os.symlink (an unprivileged Windows account) tk2l is not emitted at all, the abspath-writer hole this task closes is open again there, and the only trace is a green tk2s whose label is the same fixed sentence on both branches ('either ran ... or was skipped'), with the reason buried in a repr at its tail. The label never says SKIPPED HERE and tk2l never appears under its own id. The repo already has the idiom for exactly this: _harness.skip(check, id, mechanism, absent) (tests/_harness.py:444), used for an os.symlink refusal at tests/test__config.py:3033, tests/test__journal_io.py:2105 and tests/test__output.py:1096; it keeps the case id at the front, says SKIPPED HERE, and fails if the skip is taken on a platform that has the mechanism. The executor's claim that tk2s 'stated the reason' is true only of a repr inside a passing label.",
-        "resolution": "Drop tk2s. Where the symlink is refused call _harness.skip(check, \"tk2l\", \"os.symlink is refused here (%s)\" % link_skip, True), as test__config.py:3033 does, so the lost case keeps its id and reads SKIPPED HERE; keep the tk2l check in the else branch."
+        "resolution": "Drop tk2s. Where the symlink is refused call _harness.skip(check, \"tk2l\", \"os.symlink is refused here (%s)\" % link_skip, True), as test__config.py:3033 does, so the lost case keeps its id and reads SKIPPED HERE; keep the tk2l check in the else branch.",
+        "fixTask": "P148.24-xpz"
+      },
+      {
+        "id": "P148-R45",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_gate_derive.py:173-201 (point_shape), :338-393 (_read_command placeholder)",
+        "issue": "A spelling whose {paths} is not a word of its own now derives no test command: 'bash -c \"cd api && pytest {paths}\"' and 'pytest --files={paths}' gave the filled command at 3b2a1512 and give entries [] (narrowed, basis 'selected by import graph...') at 64baa140; in enforce mode derive-phase-gate writes that as testGate and run-test-gate runs nothing (or only the always entries). The schema and derive-phase-gate promise literal substitution.",
+        "resolution": "When no command of the template holds a standalone {paths} slot, fall back to literal substitution (filtered by the template's one mode under by_kind); never return [] for a template; cases for sh -c '... {paths}' and --x={paths} at derive() and task level, red first.",
+        "fixTask": "P148.23-xpz"
+      },
+      {
+        "id": "P148-R46",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/_manifest_phases.py (_is_config_name before the suite mark)",
+        "issue": "src/setup.test.ts and src/app.config.test.ts are read as config; 3b2a1512 narrowed to them, 64baa140 falls to files-no-suite (wide).",
+        "resolution": "Check the suite mark (subject_of) before the config name; rows in the matrix.",
+        "fixTask": "P148.23-xpz"
+      },
+      {
+        "id": "P148-R47",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_gate_derive.py:273 (OPTION_ARGUMENT_WORDS)",
+        "issue": "-w is listed as taking an argument (jest --maxWorkers) but is vitest's boolean watch; 'npx vitest -w src/o.test.ts' narrowed at 3b2a1512 and goes wide now.",
+        "resolution": "Make the option-argument table per runner (or drop ambiguous short flags so they fail toward narrowing as before); a row.",
+        "fixTask": "P148.23-xpz"
+      },
+      {
+        "id": "P148-R48",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/derive-phase-gate.py:27; plugins/audit/scripts/manifest/_manifest_vocab.py:196",
+        "issue": "Prose describing re-pointing ('replaces every path-shaped word, the runner included', 'literal substitution') and files-no-suite ('a spelling whose slot holds suites alone') no longer matches the per-command rule.",
+        "resolution": "Rescope both to the rule as landed.",
+        "fixTask": "P148.23-xpz"
       }
     ],
-    "outcome": "[findings: 44 - 0 high, 11 med, 33 low; 39 with a recorded fix commit]"
+    "outcome": "[findings: 48 - 0 high, 12 med, 36 low; 40 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2189,7 +2226,7 @@
     {
       "id": "P148.22-xpz",
       "title": "The recorded tree key case tells realpath from abspath on every platform",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix P148-R43 (docs/audit/phases/P148.json review.findings): tk2o/tk2t compare the written testedState.tree.key with _evidence_io.tree_key over plain temp trees, so a writer hashing abspath instead of realpath passes on Linux (only macOS's /var symlink tells them apart). Reach one tree through a symlink so realpath and abspath differ on every platform (skip with a stated reason only where symlinks cannot be made). Prove red with an abspath writer at the write site in your tree (purge __pycache__ between mutate and restore). Edit only the test file. No F/P/BUG ids in code.",
       "files": [
         "tests/test__evidence_io.py",
@@ -2213,14 +2250,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7376684efa6d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Edited only tests/test__evidence_io.py (+import hashlib). In _tree_key_cases the second tree is now passed to run-test-gate --record --tree through an os.symlink in a fixture dir, so abspath != realpath on every platform. New case tk2l: abspath(link) != realpath(link) == realpath(target); written key == M.tree_key(target) == sha1(realpath)[:12] and != sha1(abspath(link))[:12]. New case tk2s: either the symlink ran (tk2l) or was skipped with the OSError/NotImplementedError reason shown in the label. tk2o/tk2t/tk3 unchanged in wording. Gate: python3 tools/sweep-selftests.py tests/test__evidence_io.py exit 0, 314 cases. Dependants (_evidence_io.py, affected.py, sweep-selftests.py, sweep-costs.json, test__doctor_trail.py, test_audit_status.py): still correct - no code or defined name changed; only two cases added inside _tree_key_cases, none of the names used elsewhere (_fs_row, _full_status_cases, _real_two_commits, _cases) were touched; sweep-costs.json per-file cost may drift slightly (5.2s run) but is not a correctness matter.",
+        "descriptive": "The recorded tree key is now pinned against an abspath writer on every platform, via a symlinked --tree."
       },
       "startedAt": "2026-10-29T10:34:39Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-29T10:40:40Z",
+      "verifiedBy": [
+        "tk2l: tree reached through a symlink must be recorded under the hash of its real path, not its abspath",
+        "tk2s: symlink case ran or was skipped with the stated reason"
+      ],
       "notes": [
         {
           "at": "2026-10-29T09:52:40Z",
@@ -2239,7 +2279,171 @@
         "runId": "2026-10-29T10:39:02Z.e5367c",
         "status": "passed",
         "at": "2026-10-29T10:39:02Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "7376684efa6d",
+        "at": "2026-10-29T10:40:40Z",
+        "return": "docs/audit/evidence/returns/P148.22-xpz/20261029T103439Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task (expectRedFirst false), so the helper was not run. By hand: replaced the write site in run-test-gate.py (the line setting res[testedState][tree] to the key) with a sha1 over os.path.abspath(tree), purged __pycache__, ran python3 tests/test__evidence_io.py --selftest -> exit 1, 311/314, FAIL tk2o, tk2l, tk2t (tk2o/tk2t fail on macOS only because /var is a symlink; tk2l fails on every platform). Restored from a copy in one command: cmp identical, git diff on run-test-gate.py empty.",
+        "at": "2026-10-29"
       }
+    },
+    {
+      "id": "P148.23-xpz",
+      "title": "A spelling whose paths slot is not a word of its own is still filled by literal substitution, a test-marked config name is a suite, and an ambiguous short flag does not swallow the slot",
+      "status": "in_progress",
+      "description": "Fix P148-R45..R48 (docs/audit/phases/P148.json review.findings), regressions the per-command slot model (64baa140) introduced against 3b2a1512. The reviewer's probes p4-p8 under the session scratchpad's rv21/probe/ reproduce each (paths in the finding text). R45: when no command of a template holds a standalone paths slot (a slot inside sh -c quoting, or --x={paths}), fill by literal substitution as before, filtered by the template's one mode under by_kind; point_shape never returns an empty list for a template. R46: the suite mark is read before the config name. R47: an option-argument word that is boolean for some runner (vitest -w) must not swallow the slot. R48: rescope the two stale prose spots. Add each as a row in the existing matrices (derive() level and task level), red first against HEAD; every existing row stays green. Edit only declared files. No F/P/BUG ids in code.",
+      "files": [
+        "plugins/audit/scripts/governance/_gate_derive.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/scripts/governance/derive-phase-gate.py",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "tests/test__gate_derive.py",
+        "tests/test__manifest_phases.py",
+        "tests/test_derive_phase_gate.py",
+        "tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/_gate_derive.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/scripts/governance/derive-phase-gate.py",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "tests/test__gate_derive.py",
+        "tests/test__manifest_phases.py",
+        "tests/test_derive_phase_gate.py",
+        "tests/test__manifest_vocab.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test__gate_derive.py: When no command of the template holds a standalone {paths} slot, fall back to literal substitution (filtered by the template's one mode under by_kind)",
+          "tests/test__manifest_phases.py: Check the suite mark (subject_of) before the config name",
+          "tests/test__gate_derive.py: Make the option-argument table per runner (or drop ambiguous short flags so they fail toward narrowing as before)",
+          "tests/test_derive_phase_gate.py: Rescope both to the rule as landed"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__gate_derive.py tests/test__manifest_phases.py tests/test_derive_phase_gate.py tests/test_audit_task.py tests/test__manifest_vocab.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-29T10:42:33Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-29T10:42:27Z",
+          "text": "scope: plugins/audit/scripts/governance/_gate_derive.py, plugins/audit/scripts/manifest/_manifest_phases.py, plugins/audit/scripts/governance/derive-phase-gate.py, plugins/audit/scripts/manifest/_manifest_vocab.py, every path the finding(s) P148-R45, P148-R46, P148-R47, P148-R48 name"
+        },
+        {
+          "at": "2026-10-29T10:42:27Z",
+          "text": "scope: tests/test__gate_derive.py, the suite that tests plugins/audit/scripts/governance/_gate_derive.py (python: its import closure reaches plugins/audit/scripts/governance/_gate_derive.py)"
+        },
+        {
+          "at": "2026-10-29T10:42:27Z",
+          "text": "scope: tests/test__manifest_phases.py, the suite that tests plugins/audit/scripts/manifest/_manifest_phases.py (python: its import closure reaches plugins/audit/scripts/manifest/_manifest_phases.py)"
+        },
+        {
+          "at": "2026-10-29T10:42:27Z",
+          "text": "scope: tests/test_derive_phase_gate.py, the suite that tests plugins/audit/scripts/governance/derive-phase-gate.py (python: its import closure reaches plugins/audit/scripts/governance/derive-phase-gate.py)"
+        },
+        {
+          "at": "2026-10-29T10:42:27Z",
+          "text": "scope: tests/test__manifest_vocab.py, the suite that tests plugins/audit/scripts/manifest/_manifest_vocab.py (python: its import closure reaches plugins/audit/scripts/manifest/_manifest_vocab.py)"
+        }
+      ],
+      "fixes": [
+        "P148-R45",
+        "P148-R46",
+        "P148-R47",
+        "P148-R48"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-29T11:08:45Z.49b1dc",
+        "status": "passed",
+        "at": "2026-10-29T11:08:45Z"
+      }
+    },
+    {
+      "id": "P148.24-xpz",
+      "title": "Skips and comment rows in the suites say what ran: a refused symlink is a named skip, the build-delay row claims only what holds, pw5 says which spelling it exercised",
+      "status": "in_progress",
+      "description": "Fix P148-R44, R42, R35 (docs/audit/phases/P148.json review.findings). R44: drop tk2s; when os.symlink is refused call _harness.skip(check, 'tk2l', <mechanism with the reason>, True) as tests/test__config.py does, so the skip is named and never reads as a proof. R42: reword the _BUILD_DELAY judged-literal row to claim only what holds (interpreter start is outside the bound; a child starved of CPU near the cut can let a mutant through, as the _BEAT row already says). R35: make pw5's windows disjunct either assert the spelling it did exercise or record a named skip, never pass silently. Prove red where a case changed. Edit only declared files. No F/P/BUG ids in code.",
+      "files": [
+        "tests/test__evidence_io.py",
+        "tests/test_stamp_verification.py",
+        "tools/prove-gates.py",
+        "tests/test__evidence_io.py",
+        "tests/test__config.py",
+        "tests/test_stamp_verification.py",
+        "tools/prove-gates.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test__evidence_io.py: Drop tk2s",
+          "tests/test_stamp_verification.py: Reword the row to say what is true: the interpreter start enters neither side, and the margin over the bound is half the delay less one beat interval, which ..."
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_stamp_verification.py tools/prove-gates.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-29T10:42:37Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-29T10:42:32Z",
+          "text": "scope: tests/test__evidence_io.py, tests/test__config.py, tests/test_stamp_verification.py, tools/prove-gates.py, every path the finding(s) P148-R44, P148-R42, P148-R35 name"
+        },
+        {
+          "at": "2026-10-29T10:42:32Z",
+          "text": "no suite: tools/prove-gates.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-29T10:42:32Z",
+          "text": "no tests.add clause for P148-R35: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        },
+        {
+          "at": "2026-10-29T10:42:32Z",
+          "text": "no test runner in this task's gate for the test P148-R44, P148-R42, P148-R35 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_stamp_verification.py tools/prove-gates.py'], derived as from --gate; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P148-R44",
+        "P148-R42",
+        "P148-R35"
+      ],
+      "reviewPerTask": "signals"
     }
   ],
   "reviewPerTask": "signals",

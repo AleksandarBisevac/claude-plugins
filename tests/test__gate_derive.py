@@ -346,7 +346,15 @@ def _command_mode_cases(check):
         # a related slot relates modules of its runner's language: a Python
         # source or suite handed to jest's is a run of nothing
         M.untaken_slot_paths(["npx jest --findRelatedTests src/y.py tests/test_y.py"],
-                             ["src/y.py", "tests/test_y.py"], chained, "P1.1", {}))
+                             ["src/y.py", "tests/test_y.py"], chained, "P1.1", {}),
+        # a template whose `{paths}` is no word of its own is read back by
+        # its text around the placeholder, under the template's one mode
+        M.untaken_slot_paths(["sh -c 'pytest tests/test_y.py docs/y.md'"],
+                             ["tests/test_y.py", "docs/y.md"],
+                             ["sh -c 'pytest {paths}'"], M.SPELLING_SOURCE, {}),
+        M.untaken_slot_paths(["pytest --files=tests/test_y.py src/y.py"],
+                             ["tests/test_y.py", "src/y.py"],
+                             ["pytest --files={paths}"], M.SPELLING_SOURCE, {}))
     check("gdk4 a slot takes sources by its own command's words - a related "
           "word in one command or one entry leaves the next one's slot taking "
           "suites alone - and the refusal names, per command, what that "
@@ -354,7 +362,8 @@ def _command_mode_cases(check):
           "each command takes them); wrong readings: %r, named: %r"
           % (wrong, named),
           not wrong and named == (["src/y.ts"], [], ["src/y.ts"], [],
-                                  ["src/y.py", "tests/test_y.py"]))
+                                  ["src/y.py", "tests/test_y.py"],
+                                  ["docs/y.md"], ["src/y.py"]))
     spelling = ["npx jest --findRelatedTests {paths} && pytest {paths}"]
     handed = (
         _call(M.repointed, chained, {}, ["src/a.ts", "tests/test_a.py"],
@@ -366,11 +375,31 @@ def _command_mode_cases(check):
               ["src/a.ts", "tests/test_a.py"], by_kind=True),
         # a template whose one command takes every path is filled byte for byte
         _call(M.point_shape, ["pytest  -q {paths}"], M.SPELLING_SOURCE, {},
-              ["tests/test_a.py"], by_kind=True))
+              ["tests/test_a.py"], by_kind=True),
+        # NO COMMAND HOLDS `{paths}` AS A WORD OF ITS OWN (inside `sh -c`
+        # quoting, or `--x={paths}`): the template is filled by literal
+        # substitution, every path without `by_kind` and those the template's
+        # one mode takes with it - read inside the quoting where it sits
+        _call(M.point_shape, ["sh -c 'pytest {paths}'"], M.SPELLING_SOURCE,
+              {}, ["tests/test_a.py", "src/a.ts"]),
+        _call(M.point_shape, ["sh -c 'pytest {paths}'"], M.SPELLING_SOURCE,
+              {}, ["tests/test_a.py", "src/a.ts"], by_kind=True),
+        _call(M.point_shape, ["pytest --files={paths}"], M.SPELLING_SOURCE,
+              {}, ["tests/test_a.py", "src/a.ts"], by_kind=True),
+        _call(M.point_shape,
+              ["bash -c 'cd web && npx jest --findRelatedTests {paths}'"],
+              M.SPELLING_SOURCE, {}, ["src/a.ts", "docs/a.md"], by_kind=True),
+        _call(M.taken_paths, ["pytest --files={paths}"], M.SPELLING_SOURCE,
+              {}, ["tests/test_a.py", "src/a.ts", "docs/a.md"]),
+        # ...and so does the phase-level derivation, which hands it every path
+        _literal_derived("bash -c 'cd api && pytest {paths}'"),
+        _literal_derived("pytest --files={paths}"))
     check("gdk6 each command of an entry receives only the declared paths its "
           "own slot takes, a command left with none is dropped with its "
           "separator and an entry left with none is dropped, recorded "
-          "spelling and sibling alike: %r" % (handed,),
+          "spelling and sibling alike; a template with no `{paths}` word of "
+          "its own is filled literally, at derive() and point_shape alike, "
+          "never answered with no entry: %r" % (handed,),
           handed == (
               ["npx jest --findRelatedTests src/a.ts && pytest tests/test_a.py"],
               ["npx jest --findRelatedTests src/a.ts"],
@@ -378,7 +407,25 @@ def _command_mode_cases(check):
               ["npx vitest related src/y.ts e2e/y.spec.ts --run",
                "npx playwright test e2e/y.spec.ts"],
               ["npx jest --findRelatedTests src/a.ts && pytest tests/test_a.py"],
-              ["pytest  -q tests/test_a.py"]))
+              ["pytest  -q tests/test_a.py"],
+              ["sh -c 'pytest tests/test_a.py src/a.ts'"],
+              ["sh -c 'pytest tests/test_a.py'"],
+              ["pytest --files=tests/test_a.py"],
+              ["bash -c 'cd web && npx jest --findRelatedTests src/a.ts'"],
+              ["tests/test_a.py"],
+              ["bash -c 'cd api && pytest tests/test_new.py'"],
+              ["pytest --files=tests/test_new.py"]))
+
+
+def _literal_derived(spelling):
+    """`derive()`'s entries for a phase whose recorded spelling is `spelling`
+    and whose one changed path is a new suite."""
+    man = _manifest(
+        meta={"buildCommands": {"unit": "pytest"},
+              "phaseGate": {"mode": "shadow", "derived": {"spelling": spelling}}},
+        phase=_phase(tasks=[_task("P1.1", tests={"gate": ["unit"]})]))
+    return M.derive(man, man["phases"][0],
+                    {"changedSince": ["tests/test_new.py"]})["entries"]
 
 
 def _command_slot_cases(check):
@@ -415,6 +462,15 @@ def _command_slot_cases(check):
         ("python3 tools/run.py tests/test_o.py", ["tests/test_a.py"],
          "python3 tools/run.py tests/test_a.py"),
         ("python3 tests/test_o.py", ["tests/test_a.py"], "python3 tests/test_a.py"),
+        # a short flag one runner reads bare (vitest's -w watch, jest's -o
+        # onlyChanged and -e expand) takes no argument, so the suite behind
+        # it is still the slot, whichever runner spells it with one
+        ("npx vitest -w src/o.test.ts", ["src/a.test.ts"],
+         "npx vitest -w src/a.test.ts"),
+        ("npx jest -o src/O.test.tsx", ["src/Card.test.tsx"],
+         "npx jest -o src/Card.test.tsx"),
+        ("npx jest -e src/O.test.tsx", ["src/Card.test.tsx"],
+         "npx jest -e src/Card.test.tsx"),
     )
     wrong = [(entry, M.repointed([entry], {}, paths), want)
              for entry, paths, want in rows
@@ -423,7 +479,8 @@ def _command_slot_cases(check):
         "npx jest --config jest.config.js src/a.test.tsx",
         "pytest tests/test_o.py -c setup.cfg",
         "python3 tools/run.py tests/test_a.py",
-        "python3 tests/test_a.py")]
+        "python3 tests/test_a.py",
+        "npx vitest -w src/a.test.ts")]
     # A recorded template's own positional path is the spelling's, not the
     # slot: read by the template's words around `{paths}`, it is exempt where
     # the template names it and named where it is written into the slot. A
@@ -446,7 +503,8 @@ def _command_slot_cases(check):
           "wrong re-points: %r; readings: %r" % (wrong, located),
           not wrong and [r for _e, r in located] == [
               [(["src/a.test.tsx"], False)], [(["tests/test_o.py"], False)],
-              [(["tests/test_a.py"], False)], [(["tests/test_a.py"], False)]])
+              [(["tests/test_a.py"], False)], [(["tests/test_a.py"], False)],
+              [(["src/a.test.ts"], False)]])
 
 
 def _cases(check):

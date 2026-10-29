@@ -4582,7 +4582,8 @@
       "P138.2",
       "P142.24-6yq",
       "P148.18-xpz",
-      "P148.21-xpz"
+      "P148.21-xpz",
+      "P148.23-xpz"
     ],
     "plugins/audit/scripts/manifest/_manifest_rules.py": [
       "P18.2",
@@ -4655,7 +4656,8 @@
       "P131.13",
       "P138.2",
       "P142.24-6yq",
-      "P148.10-xpz"
+      "P148.10-xpz",
+      "P148.23-xpz"
     ],
     "plugins/audit/scripts/manifest/_merge_install.py": [
       "P60.5",
@@ -8276,7 +8278,8 @@
       "P144.7-ttw",
       "P145.2",
       "P148.4",
-      "P148.13-xpz"
+      "P148.13-xpz",
+      "P148.24-xpz"
     ],
     "tools/redfirst.sh": [
       "P55.13",
@@ -8411,7 +8414,8 @@
       "P131.2",
       "P143.1-6yq",
       "P148.18-xpz",
-      "P148.21-xpz"
+      "P148.21-xpz",
+      "P148.23-xpz"
     ],
     "plugins/audit/tests/test__gate_derive.py": [
       "P79.2",
@@ -8448,7 +8452,8 @@
       "P130.40-ywo",
       "P131.1",
       "P131.2",
-      "P148.5"
+      "P148.5",
+      "P148.23-xpz"
     ],
     "plugins/audit/tests/test_derive_phase_gate.py": [
       "P79.3",
@@ -11338,7 +11343,8 @@
       "P131.1",
       "P131.2",
       "P86.3",
-      "P142.46-6yq"
+      "P142.46-6yq",
+      "P148.24-xpz"
     ],
     "tests/test__config_rules.py": [
       "P131.1",
@@ -11394,7 +11400,8 @@
       "P148.6",
       "P148.14-xpz",
       "P148.19-xpz",
-      "P148.22-xpz"
+      "P148.22-xpz",
+      "P148.24-xpz"
     ],
     "tests/test__evidence_view.py": [
       "P131.1"
@@ -11414,7 +11421,8 @@
       "P131.1",
       "P143.1-6yq",
       "P148.18-xpz",
-      "P148.21-xpz"
+      "P148.21-xpz",
+      "P148.23-xpz"
     ],
     "tests/test__gate_feed.py": [
       "P131.1"
@@ -11474,7 +11482,8 @@
       "P131.13",
       "P142.24-6yq",
       "P148.18-xpz",
-      "P148.21-xpz"
+      "P148.21-xpz",
+      "P148.23-xpz"
     ],
     "tests/test__manifest_rules.py": [
       "P131.1"
@@ -11491,7 +11500,8 @@
       "P129.8-izt",
       "P131.13",
       "P142.24-6yq",
-      "P148.10-xpz"
+      "P148.10-xpz",
+      "P148.23-xpz"
     ],
     "tests/test__merge_install.py": [
       "P131.1"
@@ -11746,7 +11756,8 @@
       "P148.10-xpz",
       "P148.14-xpz",
       "P148.18-xpz",
-      "P148.21-xpz"
+      "P148.21-xpz",
+      "P148.23-xpz"
     ],
     "tests/test_audit_usage.py": [
       "P131.1"
@@ -11782,7 +11793,8 @@
       "P148.16-xpz"
     ],
     "tests/test_derive_phase_gate.py": [
-      "P131.1"
+      "P131.1",
+      "P148.23-xpz"
     ],
     "tests/test_detect_plan_skip.py": [
       "P131.1",
@@ -11989,7 +12001,8 @@
       "P142.34-6yq",
       "P148.9-xpz",
       "P148.12-xpz",
-      "P148.17-xpz"
+      "P148.17-xpz",
+      "P148.24-xpz"
     ],
     "tests/test_usage_ledger.py": [
       "P131.1",

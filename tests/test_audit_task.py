@@ -21296,6 +21296,30 @@ _GS_COMMAND_ROWS = (
     ("sweep-harness", {}, ["python3 tools/sweep-selftests.py tests/test_o.py"],
      "npx jest", ["test"], ["tests/_harness.py"],
      ["python3 tools/sweep-selftests.py tests/_harness.py"], _GS_SAME, ([], [])),
+    # A recorded template whose `{paths}` is no word of its own - inside
+    # `sh -c` quoting, or an `=` form - is filled by literal substitution
+    # with the paths its one mode takes, and read back by its text around
+    # the placeholder, so the refusal still names what the slot cannot take.
+    ("rec-sh-c", {"derived": {"spelling": "sh -c 'pytest {paths}'"}}, None,
+     "pytest", ["test"], ["tests/test_a.py", "docs/x.md"],
+     ["sh -c 'pytest tests/test_a.py'"], _GS_SAME,
+     (["docs/x.md"], ["docs/x.md"])),
+    ("rec-eq-form", {"derived": {"spelling": "pytest --files={paths}"}}, None,
+     "pytest", ["test"], ["tests/test_a.py", "src/a.py"],
+     ["pytest --files=tests/test_a.py"], _GS_SAME,
+     (["src/a.py"], ["src/a.py"])),
+    ("rec-eq-form-no-suite", {"derived": {"spelling": "pytest --files={paths}"}},
+     None, "pytest", ["test"], ["src/a.py"], None, _GS_SAME,
+     (["src/a.py"], ["src/a.py"])),
+    # a test mark is read before a config name: these are suites
+    ("setup-test-suite", {}, ["npx jest src/O.test.ts"], "npx jest", ["test"],
+     ["src/setup.test.ts"], ["npx jest src/setup.test.ts"], _GS_SAME, ([], [])),
+    ("config-test-suite", {}, ["npx jest src/O.test.ts"], "npx jest", ["test"],
+     ["src/app.config.test.ts"], ["npx jest src/app.config.test.ts"], _GS_SAME,
+     ([], [])),
+    # a short flag some runner reads bare swallows no slot
+    ("vitest-w", {}, ["npx vitest -w src/o.test.ts"], "npx vitest", ["test"],
+     ["src/a.test.ts"], ["npx vitest -w src/a.test.ts"], _GS_SAME, ([], [])),
 )
 
 

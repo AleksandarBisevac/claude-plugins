@@ -500,6 +500,43 @@ def _cases(check):
           code13 == 0
           and ph13.get("testGate") == ["pytest 'tests/my file.test.ts'"])
 
+    # --- dp-spelling-literal: a spelling whose `{paths}` is no word of its --
+    # own (inside `bash -c` quoting, or an `=` form) is filled by literal
+    # substitution, as this script's docstring says - end to end, through a
+    # REAL git diff, into the testGate enforce mode writes.
+    literal = {}
+    for spelling in ("bash -c 'cd . && pytest {paths}'", "pytest --files={paths}"):
+        d14, m14, base14 = _project(root, mode="enforce", write_manifest=False)
+        os.makedirs(os.path.join(d14, "tests"), exist_ok=True)
+        with open(os.path.join(d14, "tests", "test_new.py"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("# a new suite\n")
+        _git(d14, "add", "-A")
+        _git(d14, "commit", "-q", "-m", "add a suite")
+        manifest14 = {
+            "meta": {"version": 2, "buildCommands": _build_commands(),
+                     "phaseGate": {"mode": "enforce",
+                                   "derived": {"spelling": spelling}}},
+            "phases": [{"id": "P1", "title": "P", "status": "pending",
+                        "baseRef": base14,
+                        "tasks": [{"id": "P1.1", "title": "sib",
+                                   "status": "pending", "files": ["src/a.ts"],
+                                   "tests": {"mode": "gate-only",
+                                             "gate": ["lint"],
+                                             "gateBasis": "tests.add"}}]}],
+        }
+        with open(m14, "w", encoding="utf-8") as fh:
+            json.dump(manifest14, fh, indent=2)
+        code14, _out14 = _run([m14, "P1"])
+        literal[spelling] = (code14, _raw(m14)["phases"][0].get("testGate"))
+    check("dp-spelling-literal a spelling whose {paths} is no word of its own "
+          "is filled by literal substitution into the written testGate, never "
+          "written as an empty gate: %r" % (literal,),
+          literal == {
+              "bash -c 'cd . && pytest {paths}'":
+                  (0, ["bash -c 'cd . && pytest tests/test_new.py'"]),
+              "pytest --files={paths}": (0, ["pytest --files=tests/test_new.py"])})
+
     # --- dp-muted: a quarantined failure is not a suite to learn -------------
     _named = "the suite file(s) jest named as failing, read from jest's FAIL"
     _red_row = {"steps": [

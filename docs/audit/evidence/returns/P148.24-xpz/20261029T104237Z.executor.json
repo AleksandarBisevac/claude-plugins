@@ -1,0 +1,31 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_stamp_verification.py tools/prove-gates.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task (expectRedFirst false). Changed cases proven by scratch drivers instead, not the shared tree: pw5's None-spelling branch with the link refused, os.name patched to nt and _canonical_path made to disagree went False (the old disjunct stayed True); tk2l with os.symlink raising printed 'tk2l SKIPPED HERE - os.symlink is refused here (OSError: no privilege)' and with symlinks working printed 'tk2l RED-FIRST'.",
+    "at": "2026-10-29 session, __pycache__ purged before each run"
+  },
+  "outcome": {
+    "technical": "tests/test__evidence_io.py: tk2s removed; when os.symlink is refused _harness.skip(check, 'tk2l', 'os.symlink is refused here (<reason>), so the tree stayed plain ...', True) records a named skip; comment updated. tests/test_stamp_verification.py: the _BUILD_DELAY judged-literal row reworded: interpreter start enters neither side of the bound, the margin is half the delay less one beat interval on an unloaded runner, a CPU-starved child near the cut can let a mutant through (as the _BEAT row says), a slow runner never fails a correct helper. tools/prove-gates.py: pw5's windows disjunct now requires exactly one registration whose canonical path equals the pool's own worker tree (_canonical_path), instead of passing on os.name == nt alone; comment says so. Gate: python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_stamp_verification.py tools/prove-gates.py exit 0, 3/3 files ok, 716 cases. Dependants: test__config.py untouched (its skip pattern was only copied); the other listed dependants read only names I did not change (_cases/_selftest/_fs_row/_crlf_cases/_scan etc.) and the labels tk2o/tk2t/tk3/sk1/pw5 keep their ids, so they are still correct. tk2s no longer exists; nothing outside the suite referenced it (grep tk2s over tests/ found only the file itself).",
+    "descriptive": "A refused symlink is now a named skip, the build-delay row claims only what holds, and pw5 asserts the spelling it exercised."
+  },
+  "testsAdded": [
+    "tk2l named skip when os.symlink is refused, replacing the tautological tk2s",
+    "sk1 judged-literal row for _BUILD_DELAY reworded to claim only what holds",
+    "pw5 windows disjunct now asserts git's own record matches the pool's worker tree"
+  ],
+  "casesAdded": [
+    [
+      "tk2l"
+    ],
+    [
+      "sk1"
+    ]
+  ],
+  "claims": "claims:\n1 test_stamp_verification.py _CLOCK_LITERALS_JUDGED _BUILD_DELAY row rewritten to say only what _build_counted (bound = built + deadline - delay/2, interpreter start not in it) does; _BEAT row is the cited neighbour\n2 pw5 None branch: link refused + os.name patched nt + _canonical_path disagreeing -> pw5 False (old disjunct True); tk2l: os.symlink raising -> 'SKIPPED HERE' line, normal -> 'RED-FIRST' line; scratch drivers, pycache purged\n3 grep tk2s over tests/: 3 hits, all in test__evidence_io.py and all removed or reworded; os.name == nt disjunct: only in pw5\n4 n/a \u2014 no rule to an agent\n5 n/a \u2014 no property recorded\n6 n/a \u2014 no guard\n7 n/a \u2014 no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:13f06e9a3a36d353e35810721cb9c352db3126dc3f462b5fdc33585fc3b165fd\",\"dirtyDigest\":\"sha256:e2b8c4434de3d3e37901a3412fa82882414bfb9b2bfe7b62711b9d420e26f078\",\"dirtyPaths\":{\"tests/test__evidence_io.py\":\"70cbbaeca9ac2fcf\",\"tests/test_stamp_verification.py\":\"46f3ad0a6c69f075\",\"tools/prove-gates.py\":\"96046b32d66e5573\"},\"head\":\"7376684e\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tests/test__config.py\",\"tests/test__evidence_io.py\",\"tests/test_stamp_verification.py\",\"tools/prove-gates.py\"],\"scopeDigest\":\"sha256:56fec86aed50e9dd85f87060499735cdf722f5252e6a997387cbb0e607c1f068\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}
