@@ -19876,27 +19876,24 @@ def _batch_fix_cases(check):
               and workflow in said and workflow in txt_b
               and "src/a.py" in said and _plan_bytes(proj) == before
               and _plan_bytes(proj_b) == before_b)
-        entry = ["vitest run src/a.py %s tests/test_a.py" % (workflow,)]
-        own = M._phases.gate_entry_paths("python3 tools/run-suite.py {paths}")
-        runner_entry = ["python3 tools/run-suite.py tests/test_a.py"]
+        untaken = _gate_derive.untaken_slot_paths
+        sib_shape, sib = ["vitest run src/x.test.ts"], "P1.1"
+        tpl = ["python3 tools/run-suite.py {paths}"]
+        rec = _gate_derive.SPELLING_SOURCE
+        edits_runner = ["tools/run-suite.py", "tests/test_a.py"]
+        named = (
+            untaken(["vitest run src/a.py %s tests/test_a.py" % (workflow,)],
+                    ["src/a.py", workflow, "tests/test_a.py"], sib_shape, sib,
+                    None),
+            untaken(["python3 tools/run-suite.py tests/test_a.py"],
+                    edits_runner, tpl, rec, None),
+            untaken(["python3 tools/run-suite.py tools/run-suite.py "
+                     "tests/test_a.py"], edits_runner, tpl, rec, None))
         check("bx11 the check reads which path the derivation pointed at: a "
               "suite is not named, a source or workflow file is, and the "
-              "runner's own program is never named even when the task edits "
-              "it: %r"
-              % ((M._phases.files_gate_non_suite_paths(
-                  entry, ["src/a.py", workflow, "tests/test_a.py"]),
-                  M._phases.files_gate_non_suite_paths(
-                      runner_entry, ["tools/run-suite.py", "tests/test_a.py"],
-                      own)),),
-              M._phases.files_gate_non_suite_paths(
-                  entry, ["src/a.py", workflow, "tests/test_a.py"])
-              == ["src/a.py", workflow]
-              and M._phases.files_gate_non_suite_paths(
-                  runner_entry, ["tools/run-suite.py", "tests/test_a.py"], own)
-              == []
-              and M._phases.files_gate_non_suite_paths(
-                  runner_entry, ["tools/run-suite.py", "tests/test_a.py"])
-              == ["tools/run-suite.py"])
+              "runner's own program is named only where it is written into "
+              "the slot, never where the spelling names it: %r" % (named,),
+              named == (["src/a.py", workflow], [], ["tools/run-suite.py"]))
 
         # ---- a fix task owing no case is not born expecting a red first --------
         findings = [
@@ -21121,11 +21118,178 @@ def _start_head_cases(check):
           and seen[0] == (rows, task))
 
 
+# --- which declared paths a files-derived gate's slot takes ----------------------
+# The kind of each path the matrix declares, written out here rather than read
+# from the module: the expectation is the rule as the task states it - a suite
+# always, a source only under a spelling whose slot relates sources to tests, a
+# document, workflow or config file never. `jest.config.js` carries a source
+# extension and is a config, so an extension-only reading hands it to a
+# related-tests slot and that row goes red.
+_GS_PATHS = (("suite", "src/Card.test.tsx"), ("source", "src/Card.tsx"),
+             ("document", "docs/guide.md"),
+             ("workflow", ".github/workflows/ci.yml"),
+             ("config", "jest.config.js"))
+
+# (id, meta.phaseGate, the sibling's gate or None, buildCommands.test, whether
+# the spelling's slot takes sources). The `-k related` and `--config` / `-c`
+# rows are the over-fire direction: a word that only looks like a mode, and a
+# source or config path that is an option's argument, take no source.
+_GS_SPELLINGS = (
+    ("rec-suite", {"derived": {"spelling": "pytest {paths}"}}, None,
+     "pytest", False),
+    ("rec-related",
+     {"derived": {"spelling": "npx jest --findRelatedTests {paths}"}}, None,
+     "npx jest", True),
+    ("rec-k-related", {"derived": {"spelling": "pytest -k related {paths}"}},
+     None, "pytest", False),
+    ("sib-suite", {}, ["npx jest src/Other.test.tsx"], "npx jest", False),
+    ("sib-related", {}, ["npx jest --findRelatedTests src/Other.tsx"],
+     "npx jest", True),
+    ("sib-vitest-related", {}, ["npx vitest related src/Other.ts --run"],
+     "npx vitest run", True),
+    ("sib-config", {}, ["npx jest --config jest.config.js src/Other.test.tsx"],
+     "npx jest", False),
+    ("sib-c", {}, ["pytest -c setup.cfg tests/test_o.py"], "pytest", False),
+    ("sib-program", {}, ["python3 tools/runner.py tests/test_other.py"],
+     "python3 tools/runner.py", False),
+)
+
+
+def _gs_plan(phase_gate, sibling_gate, test_cmd, wide):
+    """`(phase, assembled)` for one spelling: a done sibling carrying
+    `sibling_gate` (or the wide key when the plan records the spelling)."""
+    sibling = {"id": "P1.1", "title": "seed", "status": "done",
+               "files": ["src/Other.tsx"],
+               "tests": {"mode": "regression", "add": [],
+                         "expectRedFirst": False,
+                         "gate": list(sibling_gate or ["test"])}}
+    phase = {"id": "P1", "title": "Slots", "status": "in_progress",
+             "testGate": list(wide), "tasks": [sibling]}
+    meta = {"version": 2, "buildCommands": {"test": test_cmd}}
+    if phase_gate:
+        meta["phaseGate"] = phase_gate
+    return phase, {"meta": meta, "phases": [phase]}
+
+
+def _gs_named(refusal):
+    """The paths a files-gate refusal names, or [] for no refusal."""
+    if not refusal:
+        return []
+    head = refusal.split("hands its runner ", 1)[-1] \
+        if "hands its runner " in refusal else refusal.split("names ", 1)[-1]
+    return [p.strip() for p in head.split(", which", 1)[0].split(",")]
+
+
+def _gs_row(phase, assembled, files, fixes, standin=None):
+    """`(basis, gate, refusal of the derived gate, paths the refusal names
+    for `standin` - or for the gate a derivation that stopped filtering would
+    write)` for one task declaring `files`."""
+    wide, meta, build, shape, owner = M._task_gate_setup(phase, assembled)
+    gate, _why, basis = M._ordinary_task_gate(
+        shape, owner, wide, build, [], list(files), "regression", meta, phase,
+        ".", fixes)
+    derived = {"files": list(files),
+               "tests": {"gateBasis": basis, "gate": list(gate)}}
+    if standin is None:
+        standin = M._point(shape, build, list(files), ".", fixes, owner,
+                           meta)[0]
+    unfiltered = {"files": list(files),
+                  "tests": {"gateBasis": "files", "gate": list(standin)}}
+    return (basis, list(gate), M._files_gate_refusal(derived, phase, assembled),
+            _gs_named(M._files_gate_refusal(unfiltered, phase, assembled)))
+
+
+def _gs_matrix_rows():
+    """`[(row id, failure or None)]` for every row of the matrix."""
+    out = []
+    kind_of = dict((path, kind) for kind, path in _GS_PATHS)
+    mixed = [p for _k, p in _GS_PATHS]
+    for sid, pg, sib, cmd, takes in _GS_SPELLINGS:
+        phase, assembled = _gs_plan(pg, sib, cmd, ["test"])
+        cases = [(kind, [path]) for kind, path in _GS_PATHS] + [("mixed", mixed)]
+        for kind, files in cases:
+            handed = [p for p in files if kind_of[p] == "suite"
+                      or (takes and kind_of[p] == "source")]
+            untaken = [p for p in files if p not in handed]
+            for fixes in (False, True):
+                rid = "%s/%s/%s" % (sid, kind, "fix" if fixes else "ordinary")
+                basis, gate, refusal, named = _gs_row(phase, assembled, files,
+                                                      fixes)
+                in_gate = [p for p in files
+                           if any(p in M._phases.gate_entry_paths(e)
+                                  for e in gate)]
+                ok = (basis == ("files" if handed else "files-no-suite")
+                      and refusal is None
+                      and (in_gate == handed if handed else gate == ["test"])
+                      and named == untaken)
+                out.append((rid, None if ok else (basis, gate, refusal and
+                                                  refusal[:80], named)))
+    # BY POSITION: a path an always entry or the spelling's own words name is
+    # the plan's where they name it, and the same path written into the slot
+    # is the task's - so the stand-in gate puts it there and expects it named.
+    # (id, meta.phaseGate, sibling gate, buildCommands.test, wide gate, files,
+    # stand-in gate, the (basis, gate, refusal, named) the row must read back).
+    sh_always = {"always": ["sh tools/check.sh"]}
+    suite_always = {"always": ["pytest tests/test_smoke.py"]}
+    sh_gate = ["sh tools/check.sh", "pytest tests/test_check.py"]
+    positional = (
+        ("always-rec", dict(sh_always, derived={"spelling": "pytest {paths}"}),
+         None, "pytest", ["sh tools/check.sh", "test"],
+         ["tools/check.sh", "tests/test_check.py"],
+         ["sh tools/check.sh", "pytest tools/check.sh"],
+         ("files", sh_gate, None, ["tools/check.sh"])),
+        ("always-sib", sh_always, list(sh_gate[:1]) + ["pytest tests/test_o.py"],
+         "pytest", ["sh tools/check.sh", "test"],
+         ["tools/check.sh", "tests/test_check.py"],
+         ["sh tools/check.sh", "pytest tools/check.sh"],
+         ("files", sh_gate, None, ["tools/check.sh"])),
+        # An always entry holding a suite is carried whole too, not re-pointed
+        # at the task's suite as a sibling's own entry would be.
+        ("always-suite-sib", suite_always,
+         ["pytest tests/test_smoke.py", "pytest tests/test_o.py"], "pytest",
+         ["pytest tests/test_smoke.py", "test"], ["tests/test_check.py"], None,
+         ("files", ["pytest tests/test_smoke.py", "pytest tests/test_check.py"],
+          None, [])),
+        ("program-rec", {"derived": {"spelling": "python3 tools/run.py {paths}"}},
+         None, "python3 tools/run.py", ["test"],
+         ["tools/run.py", "tests/test_x.py"],
+         ["python3 tools/run.py tools/run.py tests/test_x.py"],
+         ("files", ["python3 tools/run.py tests/test_x.py"], None,
+          ["tools/run.py"])),
+    )
+    for sid, pg, sib, cmd, wide, files, standin, want in positional:
+        phase, assembled = _gs_plan(pg, sib, cmd, wide)
+        for fixes in (False, True):
+            rid = "%s/%s" % (sid, "fix" if fixes else "ordinary")
+            got = _gs_row(phase, assembled, files, fixes, standin)
+            out.append((rid, None if got == want else got))
+    return out
+
+
+def _gate_slot_matrix(check):
+    """One table: every declared-path kind under every spelling, recorded and
+    sibling, for an ordinary and a fix task, plus the rows whose paths an
+    always entry or the spelling's own program name."""
+    rows = _gs_matrix_rows()
+    bad = [(rid, why) for rid, why in rows if why is not None]
+    check("slm1 a files-derived gate hands its slot each declared path the slot "
+          "takes and no other - a suite always, a source only behind "
+          "--findRelatedTests or vitest's related, a document, workflow or "
+          "config file never, recorded spelling and sibling alike, ordinary "
+          "and fix task alike - and the refusal names, by position, every "
+          "declared path a derivation that stopped filtering would put in the "
+          "slot, but not a path an always entry or the spelling's program "
+          "names where it names it; failing rows: %r" % (bad,),
+          bool(rows) and not bad)
+
+
 def _gate_entry_cases(check):
     """The shape of a gate entry is asked where it is WRITTEN: four verbs
     refuse the entry that runs one suite with another as its argument, `add
     --from-file` derives one spelled entry naming every suite of a task, and
-    `--gate-set` leaves a trailing manifest positional alone."""
+    `--gate-set` leaves a trailing manifest positional alone. And which of a
+    task's declared paths a files-derived gate's slot takes (`slm1`)."""
+    _gate_slot_matrix(check)
     tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
     (run, _run_on_stdin, base_manifest, mk, _mk_empty, task_in, _pin, _unpin,
      _PD_SHA, _pd_fixture, _pd_repo, _git) = _at_kit(tmp)

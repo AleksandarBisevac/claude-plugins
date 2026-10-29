@@ -1161,6 +1161,76 @@ def is_suite_path(path):
             or any(seg in TEST_DIRS for seg in path_segments(path)))
 
 
+# --- what a derived gate's slot may be handed ------------------------------------
+# A runner that relates source files to their tests (`jest --findRelatedTests`,
+# `vitest related`) resolves a module through its import graph, so a SOURCE is
+# a file in a language a test imports. Anything else that is not a suite - a
+# document, a workflow, a config file, a stylesheet, a shell script - is an
+# input neither kind of slot turns into a test, and is handed to none.
+SOURCE_EXTENSIONS = frozenset((
+    ".py", ".pyi", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts",
+    ".vue", ".svelte", ".go", ".rs", ".java", ".kt", ".kts", ".scala", ".rb",
+    ".php", ".cs", ".fs", ".c", ".h", ".cc", ".cpp", ".hpp", ".cxx", ".m",
+    ".mm", ".swift", ".dart", ".ex", ".exs", ".erl", ".clj", ".lua", ".jl",
+))
+DOCUMENT_EXTENSIONS = frozenset((
+    ".md", ".markdown", ".mdx", ".rst", ".txt", ".adoc", ".asciidoc", ".org",
+))
+CONFIG_EXTENSIONS = frozenset((
+    ".json", ".jsonc", ".json5", ".yml", ".yaml", ".toml", ".ini", ".cfg",
+    ".conf", ".lock", ".env", ".properties", ".xml",
+))
+# Where a CI system reads its pipeline: under a directory, or one root file.
+WORKFLOW_DIRS = (".github/workflows", ".circleci", ".buildkite")
+WORKFLOW_FILES = frozenset((
+    ".gitlab-ci.yml", ".travis.yml", "azure-pipelines.yml",
+    "bitbucket-pipelines.yml", "appveyor.yml", "Jenkinsfile",
+))
+
+
+def path_kind(path):
+    """`suite`, `workflow`, `document`, `config`, `source` or `other` - what
+    kind of file a declared path is, for the one question `slot_takes` asks.
+
+    A SUITE FIRST, by `is_suite_path`, because a test file is a source file by
+    its extension and the slot question is decided by its being a test. A
+    config is told apart from a source by name as well as by extension:
+    `jest.config.js` and `.eslintrc.js` carry a source extension and are read
+    by the tool, never imported by a test."""
+    norm = str(path or "").replace("\\", "/")
+    base = norm.rsplit("/", 1)[-1]
+    ext = ("." + base.rsplit(".", 1)[-1].lower()) if "." in base[1:] else ""
+    if is_suite_path(norm):
+        return "suite"
+    folder = "/" + "/".join(path_segments(norm))
+    if base in WORKFLOW_FILES or any(("/" + d) in folder for d in WORKFLOW_DIRS):
+        return "workflow"
+    if ext in DOCUMENT_EXTENSIONS:
+        return "document"
+    inner = base.lower().split(".")[1:-1]
+    if (ext in CONFIG_EXTENSIONS or base.startswith(".")
+            or any(w in ("config", "conf") for w in inner)):
+        return "config"
+    if ext in SOURCE_EXTENSIONS:
+        return "source"
+    return "other"
+
+
+def slot_takes(path, takes_sources):
+    """Whether a derived gate's slot may be handed `path`: a suite always; a
+    source only when the spelling's slot relates sources to their tests
+    (`takes_sources`, read by `_gate_derive.slot_takes_sources`); a document,
+    workflow, config or any other file never.
+
+    THE ONE DECISION, asked of each declared path by the `files` arm that
+    points a task's gate (and so by `scope`'s re-derivation, which runs that
+    arm) and by the refusal reading back what was written
+    (`_gate_derive.untaken_slot_paths`). A runner handed a file it cannot
+    turn into a test runs nothing of the task's, red whatever the work."""
+    kind = path_kind(path)
+    return kind == "suite" or (kind == "source" and bool(takes_sources))
+
+
 # --- what an open finding is ----------------------------------------------------
 # A finding is SETTLED when it names a status from this table or a fix commit; an
 # entry that is neither is open, and a sign-off must say what became of it.
@@ -1203,32 +1273,21 @@ def gate_entry_paths(entry):
     return found
 
 
-def files_gate_non_suite_paths(entries, files, own=(), build=None):
-    """The files of a task that its `files`-derived gate `entries` name without
-    their being suites, in the order the entries name them, once each.
-
-    A gate pointed at a task's files is handed to a test runner, which can only
-    take a suite: a workflow file or a source file given to it is a run of
-    nothing, red on every attempt whatever the work. The derivation filters
-    `files` to `is_suite_path` before it points a gate, and this is the same
-    question asked of what it wrote, so a derivation that stops filtering is
-    named by the path it let through instead of by a gate that fails.
-
-    ONLY A PATH THE TASK DECLARES COUNTS, not every non-suite path in an entry:
-    an entry also names the runner's own program (`python3 tools/sweep.py
-    <suites>`), which is no file the derivation was handed. `own` is the paths
-    the sibling's spelling names itself, and a task that edits that program
-    still does not have it read as a path pointed at. A bare `meta.buildCommands`
-    key (`build`) is resolved through the plan whole and names nothing here."""
-    declared = [_vocab._strip_line_suffix(str(f)) for f in files or ()]
+def command_slots(entry):
+    """`[(words, [index, ...]), ...]` - each simple command of a gate entry
+    (`gate_entry_commands`) with the indices of the words that hand its runner
+    a path: every path word, less the program an interpreter runs
+    (`python3 tools/run.py tests/test_a.py` hands `tests/test_a.py` and runs
+    `tools/run.py`), read by `_runs_first_path_as_program` as the shape check
+    reads it. A suite run as the program (`python3 tests/test_a.py`) is the
+    path the command hands over, so it stays."""
     out = []
-    for entry in entries or ():
-        if not isinstance(entry, str) or (build and entry in build):
-            continue
-        for path in gate_entry_paths(entry):
-            if (path in declared and path not in own and path not in out
-                    and not is_suite_path(path)):
-                out.append(path)
+    for words in gate_entry_commands(entry):
+        found = [i for i, w in enumerate(words) if shell_word_path(w)]
+        if found and _runs_first_path_as_program(words[:found[0]]) \
+                and not is_suite_path(shell_word_path(words[found[0]])):
+            found = found[1:]
+        out.append((words, found))
     return out
 
 

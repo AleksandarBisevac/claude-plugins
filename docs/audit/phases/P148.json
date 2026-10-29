@@ -129,8 +129,10 @@
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_scoped_commit.py:1186-1192; plugins/audit/scripts/manifest/_manifest_io.py:1353-1362",
         "issue": "P135-R1 is answered only in part. The config half (PLUGIN_OWNED_WHILE_UNTRACKED holds CONFIG_NAME, plugin_owned_rels skips it while tracked; _manifest_io.py:1363 is not in the diff, so it is at HEAD) and the 'at minimum' half (commit-task-work.py:1119-1121 adds notes to skipped before the refusal answer; ctw-at19 now pins it, and it held at HEAD) are verified. What remains: a TRACKED .claude/.gitignore edited by a task is still waved as plugin-owned whatever its content (sc-ua9 pins exactly that). The finding's main resolution, waving it only when every added line is one the plugin writes, is not done. The executor says it needs _PANEL_PRIVATE_FILES (panel/panel-server.py:573) moved into a shared table, which is outside the declared files.",
-        "resolution": "Carry the remainder as its own task whose files include panel-server.py: put the panel's ignore patterns beside ensure_claude_ignored in _manifest_io, have plugin_owned_rels wave a tracked .gitignore only when its diff adds nothing but those lines, and change sc-ua9's .gitignore expectation with it.",
-        "fixTask": "P148.16-xpz"
+        "resolution": "fixed in P148.16-xpz (7bbbf494ac1b): Carry the remainder as its own task whose files include panel-server.py: put the panel's ignore patterns beside ensure_claude_ignored in _manifest_io, have plugin_owned_rels wave a tracked .gitignore only when its diff adds nothing but those lines, and change sc-ua9's .gitignore expectation with it.",
+        "fixTask": "P148.16-xpz",
+        "commit": "7bbbf494ac1b",
+        "status": "fixed"
       },
       {
         "id": "P148-R12",
@@ -367,7 +369,7 @@
         "resolution": "Orchestrator adds `python3 tools/sweep-selftests.py tests/_harness.py` to P148.13-xpz tests.gate and re-records the gate run before close."
       }
     ],
-    "outcome": "[findings: 36 - 0 high, 6 med, 30 low; 28 with a recorded fix commit]"
+    "outcome": "[findings: 36 - 0 high, 6 med, 30 low; 29 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1583,7 +1585,7 @@
     {
       "id": "P148.16-xpz",
       "title": "A tracked .claude/.gitignore counts as the plugin's only when every line it adds is one the plugin writes, read from one table",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix the P148 review findings P148-R11 (each finding's file, issue and resolution is in docs/audit/phases/P148.json review.findings, by id). Read each against the code at HEAD first. Fix each with a case proven red first where it is about behaviour; where HEAD no longer has the defect or the finding records something nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id. Edit only the declared files; a fix needing another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
       "files": [
         "plugins/audit/scripts/governance/_scoped_commit.py",
@@ -1616,14 +1618,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7bbbf494ac1b",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "P148-R11: fixed. (1) _manifest_io: the panel's file names (PANEL_PIDFILE_NAME, PANEL_LAUNCH_LOG_NAME, PANEL_PIDFILE_TMP_PREFIX) moved here; one table CLAUDE_IGNORE_LINES of (writer, pattern, note) holds every line the plugin writes into .claude/.gitignore (the restore-point row that ensure_backup_dir used to spell inline, and the panel's rows); claude_ignore_rows(writer) is how each writer takes its rows (ValueError for a writer with none); adds_only_plugin_ignore_lines(before, after) is True only when nothing is taken away and every added line (whole, stripped, counted) is a pattern or note of the table; PLUGIN_OWNED_WHILE_ONLY_ITS_LINES = (GITIGNORE_NAME,). ensure_backup_dir now writes claude_ignore_rows(RESTORE_POINT_WRITER). (2) panel-server: _PIDFILE_NAME/_LAUNCH_LOG_NAME/_PIDFILE_TMP_PREFIX alias the _mio names and _PANEL_PRIVATE_FILES = _mio.claude_ignore_rows(_mio.PANEL_WRITER) (name kept, so dh19 in tests/test__doctor_hygiene.py and the panel suite still read it). (3) _scoped_commit.plugin_owned_rels: a tracked ignore row is placed only when _ignore_edit says PLUGIN_LINES_ONLY (HEAD's blob via `git cat-file blob HEAD:<rel>` against the file on disk); FOREIGN_LINES (a foreign line, a removal, or the file deleted) leaves it to the strays; UNKNOWN (HEAD copy or disk unreadable) follows the reader's when_unknown like the config row. _tracking is still called once, from plugin_owned_rels (sc-ua20 holds). Untracked .claude/.gitignore stays plugin-owned whatever it holds - left, because the finding and the order name the tracked file. Tests: sc-ua9 fixture now edits the tracked ignore file through the real writers (the finding's 'change sc-ua9's expectation'); sc-ua13 now expects the refusing reader NOT to place the tracked ignore file when git cannot say it is tracked; new sc-ua21 (four foreign shapes refused), sc-ua22 (ALLOW: plugin writers' appends to a committed file and a fresh untracked file stay plugin-owned), sc-ua23 (HEAD copy unreadable: refuse side leaves out, protect side places); test__manifest_io cil1-cil3 (table partition and unknown writer, predicate over ten shapes in both directions, restore-point writer takes its line from the table); test_panel_server i7 (the panel's real writer appends only table lines). Mutation probe in a scratch copy (<scratchpad>/probe/mutations.py, anchors asserted, pycache purged): by-name wave -> sc-ua13/21/23 red; over-fire -> sc-ua9/12/22 red; removals ignored -> cil2, sc-ua21 red; substring match -> cil2 red; unknown read as plugin's -> sc-ua23 red; panel retypes a row -> i6/i7/eg1 red; restore-point writer retypes its note -> cil3 red; deleted file as plugin's -> sc-ua21 red; restored: all three suites green. Gate (as given, in the task tree): exit 0, 4/4 files ok, 590 cases. Dependants: sweep over test_drive_phase, test__doctor_hygiene, test_migrate_manifest, test_audit_task, test_close_phase exit 0 (5/5 files ok); ruff exit 0, vermin exit 0; house_style_violations/prose_number_claims/depth_sensitive_paths report nothing on these files. OUT OF SCOPE, NEEDS A FOLLOW-UP: tools/gate-parity.py exemption_audit_drift() now reports two findings (base: none) - CLAUDE_IGNORE_LINES unclassified, and NOT_AN_EXEMPTION's '_PANEL_PRIVATE_FILES' row outliving its literal table. The repair is renaming that NOT_AN_EXEMPTION key to CLAUDE_IGNORE_LINES ('the lines the plugin's writers put into `.claude/.gitignore`, each with the comment that explains it in the file'); applied in a scratch copy it returns []. Not made: tools/gate-parity.py is not a declared file. Also stale, not edited: _doctor_hygiene.py's comment above _PANEL_FILES says the basenames are spelled in panel-server's _PANEL_PRIVATE_FILES; they are now spelled in _manifest_io (dh19 still passes, its set comparison is unchanged). Dependants: close-phase, commit-task-work, drive-phase, audit-task, _live_copy import _scoped_commit - still correct, plugin_owned_rels' signature and return shape are unchanged, only a foreign edit of a tracked ignore file moves from pluginOwned to strays (xs6 in test_drive_phase passes); _manifest_io's importers (guard-release, close-phase, integrate-task, manage-worktrees, _evidence_io, _gate_derive, _invariants, _scoped_commit) - unchanged names kept, only additions; migrate-manifest's ensure_backup_dir writes the same bytes; panel-server dependants (examples/panel.sh, docs, _loader-based readers) - the file names and _PANEL_PRIVATE_FILES rows are byte-identical (eg1 passes); tools/affected.py and .github/sweep-costs.json name the suites by path, unchanged.",
+        "descriptive": "A task's own line in a committed .claude/.gitignore is now refused as an undeclared change, while the plugin's own appends, read from one table every writer uses, still pass"
       },
       "startedAt": "2026-10-29T08:40:31Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-29T09:21:29Z",
+      "verifiedBy": [
+        "sc-ua21: a committed .claude/.gitignore with a foreign line, a mixed edit, a removed rule, or deleted is a stray and not plugin-owned",
+        "sc-ua22: the plugin's real writers appending to a committed (or creating an untracked) ignore file stay plugin-owned",
+        "sc-ua23: HEAD's copy unreadable - the refusing reader leaves the file out, the protecting one places it",
+        "cil1-cil3 in tests/test__manifest_io.py: the table, the predicate in both directions, the restore-point writer reading the table",
+        "i7 in tests/test_panel_server.py: the panel's real writer appends only lines the commit check counts as the plugin's"
+      ],
       "notes": [
         {
           "at": "2026-10-29T07:04:26Z",
@@ -1646,6 +1654,18 @@
         "runId": "2026-10-29T09:21:26Z.7be91d",
         "status": "passed",
         "at": "2026-10-29T09:21:26Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "7bbbf494ac1b",
+        "at": "2026-10-29T09:21:29Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-29T08:58:09Z",
+        "basis": "`python3 tests/test__scoped_commit.py --selftest` in a throwaway tree at HEAD exited 1 with 5 of 66 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sc-ua9 (house FAIL), sc-ua13 (house FAIL), sc-ua21 (house FAIL), sc-ua22 (house FAIL), sc-ua23 (house FAIL): SELFTEST FAILED: 61/66 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1696,7 +1716,12 @@
       "fixes": [
         "P148-R33"
       ],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-29T09:23:05Z.fa6dbf",
+        "status": "passed",
+        "at": "2026-10-29T09:23:05Z"
+      }
     },
     {
       "id": "P148.18-xpz",
@@ -1758,7 +1783,12 @@
         "P148-R31",
         "P148-R32"
       ],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-29T09:29:42Z.20bc13",
+        "status": "passed",
+        "at": "2026-10-29T09:29:42Z"
+      }
     },
     {
       "id": "P148.19-xpz",

@@ -1458,6 +1458,43 @@ def _cases(check):
           _of_ids == ["fb", "fe"] and M.open_findings({}) == []
           and M.SETTLED_STATUS == ("fixed", "accepted-open", "carried"))
 
+    # --- what a derived gate's slot may be handed ---------------------------
+    # Each path beside the kind it is and whether a suite-taking slot and a
+    # source-taking slot take it. `jest.config.js` and `.eslintrc.js` carry a
+    # source extension and are configs; a folder named `tests` makes a suite
+    # of any file in it, as `is_suite_path` reads it.
+    _sk_rows = (
+        ("src/Card.test.tsx", "suite", True, True),
+        ("tests/test_a.py", "suite", True, True),
+        ("src/Card.tsx", "source", False, True),
+        ("plugins/x/_mod.py", "source", False, True),
+        ("docs/guide.md", "document", False, False),
+        ("NOTES.txt", "document", False, False),
+        (".github/workflows/ci.yml", "workflow", False, False),
+        (".gitlab-ci.yml", "workflow", False, False),
+        ("jest.config.js", "config", False, False),
+        (".eslintrc.js", "config", False, False),
+        ("setup.cfg", "config", False, False),
+        ("package.json", "config", False, False),
+        ("tools/check.sh", "other", False, False),
+        ("src/a.css", "other", False, False),
+    )
+    _sk_bad = [(p, M.path_kind(p), M.slot_takes(p, False), M.slot_takes(p, True))
+               for p, kind, suite_slot, source_slot in _sk_rows
+               if (M.path_kind(p), M.slot_takes(p, False), M.slot_takes(p, True))
+               != (kind, suite_slot, source_slot)]
+    check("pks1 `path_kind` and `slot_takes`: a suite is taken by every slot, a "
+          "source only by one that relates sources to tests, a document, "
+          "workflow, config or other file by none; rows that disagree: %r"
+          % (_sk_bad,), not _sk_bad)
+    _cs = [(e, M.command_slots(e)) for e in (
+        "python3 tools/run.py tests/test_a.py", "python3 tests/test_a.py",
+        "npx jest --config jest.config.js src/a.test.tsx")]
+    check("pks2 `command_slots` leaves out the program an interpreter runs, but "
+          "not a suite run as the program, and keeps an option's argument "
+          "(its kind decides it): %r" % (_cs,),
+          [found for _e, ((_w, found),) in _cs] == [[2], [1], [3, 4]])
+
 
 def _selftest():
     return _harness.run(_cases)

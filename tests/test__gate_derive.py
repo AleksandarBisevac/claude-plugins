@@ -234,6 +234,62 @@ def _runner_cases(check):
         shutil.rmtree(bare, ignore_errors=True)
 
 
+# --- which declared paths a slot takes ----------------------------------------
+def _slot_cases(check):
+    """The word in front of a slot decides whether it takes sources, read the
+    same way off a recorded template and a sibling's entry; a re-point keeps
+    the program and an always entry where they stand."""
+    rec = M.SPELLING_SOURCE
+    reads = (
+        (["npx jest --findRelatedTests {paths}"], rec, True),
+        (["npx vitest related {paths} --run"], rec, True),
+        (["pytest -k related {paths}"], rec, False),
+        (["pytest {paths}"], rec, False),
+        (["npx jest --findRelatedTests src/a.tsx"], "P1.1", True),
+        (["npm test -- --findRelatedTests src/a.tsx"], "P1.1", True),
+        (["npx jest --config jest.config.js src/a.test.tsx"], "P1.1", False),
+        (["pytest -c setup.cfg tests/test_o.py"], "P1.1", False),
+        (["npx jest src/a.tsx"], "P1.1", False),
+        (["python3 tools/run.py tests/test_a.py"], "P1.1", False),
+    )
+    wrong = [(shape, M.slot_takes_sources(shape, src, {}))
+             for shape, src, want in reads
+             if M.slot_takes_sources(shape, src, {}) is not want]
+    check("gdk1 `slot_takes_sources` reads the word in front of the slot, the "
+          "recorded `{paths}` and a sibling's first slot path alike: "
+          "--findRelatedTests anywhere, `related` only after vitest, and never "
+          "an option's argument or what the slot holds; wrong: %r" % (wrong,),
+          not wrong)
+    kept = M.repointed(["pytest tests/test_smoke.py",
+                        "python3 tools/run.py tests/a.py",
+                        "python3 tests/test_a.py"], {}, ["tests/test_b.py"],
+                       keep=["pytest tests/test_smoke.py"])
+    check("gdk2 `repointed` carries an always entry (`keep`) through whole, keeps "
+          "the program an interpreter runs where it stands, and still replaces "
+          "a suite run as the program: %r" % (kept,),
+          kept == ["pytest tests/test_smoke.py",
+                   "python3 tools/run.py tests/test_b.py",
+                   "python3 tests/test_b.py"])
+    tpl = ["python3 tools/run.py {paths}"]
+    named = (
+        M.untaken_slot_paths(["python3 tools/run.py tests/test_a.py"],
+                             ["tools/run.py", "tests/test_a.py"], tpl, rec, {}),
+        M.untaken_slot_paths(["python3 tools/run.py tools/run.py"],
+                             ["tools/run.py"], tpl, rec, {}),
+        M.untaken_slot_paths(["sh tools/check.sh", "pytest tools/check.sh"],
+                             ["tools/check.sh"], ["pytest {paths}"], rec, {},
+                             keep=["sh tools/check.sh"]),
+        M.untaken_slot_paths(["npx jest --findRelatedTests src/a.tsx docs/g.md"],
+                             ["src/a.tsx", "docs/g.md"],
+                             ["npx jest --findRelatedTests src/o.tsx"], "P1.1",
+                             {}))
+    check("gdk3 `untaken_slot_paths` reads by position: a path the template or "
+          "an always entry names is exempt where it names it and named where "
+          "it is written into the slot, and a source-taking slot still has a "
+          "document named: %r" % (named,),
+          named == ([], ["tools/run.py"], ["tools/check.sh"], ["docs/g.md"]))
+
+
 def _cases(check):
     build = {"unit": "npm test -- ph.test.ts", "lint": "eslint ."}
 
@@ -253,6 +309,7 @@ def _cases(check):
           == ["npm test -- src/a.test.ts"])
     _quoting_cases(check, build)
     _runner_cases(check)
+    _slot_cases(check)
 
     # --- mode absent: no derivation at all ------------------------------------
     no_mode = _manifest(meta={"buildCommands": build},
