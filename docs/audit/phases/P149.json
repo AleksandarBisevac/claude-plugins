@@ -23,14 +23,44 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P149-R1",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:3344-3356",
+        "issue": "On Windows, `confirmed` in _run_in now depends only on whether the root process has exited (`confirmed and proc.poll() is not None`). `_proc_group.drain` swallows its own TimeoutExpired and returns \"\". So a process outside the `taskkill /T` tree that still holds the output pipe (an orphan whose parent exited before the kill) survives the bounded drain, and the result still says 'was torn down' with no '(not confirmed)'. The docstring says the drain waits 'for every process holding its output pipe to let go', but whether that wait succeeded never reaches the confirmation. Nothing is misreported as removed: `_remove_throwaway`'s disk-and-list check is still the backstop that yields E_LEFT_BEHIND.",
+        "resolution": "Have `_proc_group.drain` say whether it reached EOF (for example, return `(text, complete)`), and AND that result into `confirmed` in _run_in. `_proc_group.py` is not one of this task's declared files, so this needs a follow-up task. Until then, narrow the docstring to say the confirmation covers the root only."
+      },
+      {
+        "id": "P149-R2",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:3637, 3353",
+        "issue": "No case covers `group=True` on _isolate's reset calls (`checkout -f`, `clean -ffdxq`), and none covers the new '(not confirmed)' wording when the root is still alive after the drain. Removing either change leaves the whole suite green. The executor's own outcome says so: 'Not covered by a case: the group=True on _isolate's reset calls, and the `(not confirmed)` wording.'",
+        "resolution": "Add a case where the build succeeds and the reset's `checkout -f` hangs in a smudge filter. Gate the filter on a marker file that the fixture creates after the build, so only the reset triggers it. Assert events == ['kill', 'drain', 'remove'] and could-not-prove. Add a second case that swaps tear_down to return True and drain to return \"\" with a root still alive, and assert the problem ends in '(not confirmed)'."
+      },
+      {
+        "id": "P149-R3",
+        "severity": "low",
+        "file": "tests/test_stamp_verification.py:2047-2049, 4232",
+        "issue": "The _CLOCK_LITERALS_JUDGED entry says skb1's build 'is what times out on every runner, a slower one only sooner'. That does not hold. Under `--timeout 1`, several ungrouped git calls run before the build, each on the same one-second floor: leftover_throwaways, `rev-parse`, _at_head (stamp-verification.py:3619), head_tree and _cat_blobs. On a runner slow enough for one of them to overrun, red stops before the build and skb1 reads events == ['remove']. That is a red caused by load, not by the code: the same 'under resample load' exposure the task asked a fix not to depend on.",
+        "resolution": "Give skb1 a deadline the pre-build reads can meet: the filter sleeps far past any small `--timeout`, so the build is still what times out. Alternatively, swap the pre-build reads for fixed answers in skb1. Then reword the judged reason to what holds."
+      },
+      {
+        "id": "P149-R4",
+        "severity": "low",
+        "file": "tests/test_stamp_verification.py:1036-1050",
+        "issue": "Inherited test, read and not run. sr9 claims 'a run that times out ... is could-not-prove', but its timeout half never starts that run. The whole deadline is `--timeout 1`. The build is given `max(1, _left(deadline))` (stamp-verification.py:4131-4132). After the build, red sets 'building the throwaway spent the N-second deadline' whenever `_left(deadline) < 1` (:4133-4135), which always holds by then, and _isolated_run would refuse anyway (:3684). So `time.sleep(30)` is never spawned, and the 'timed out' sr9 asserts comes from the build or the spent deadline, never from _run_in's timeout teardown. sr9 would still pass if _run_in's TimeoutExpired arm were deleted. The ladder cases (_one_deadline_tries, _build_counted) are what reach that arm. This shape is also what made the task description read sr9 as a timed-out run.",
+        "resolution": "Either retitle sr9's timeout half to what it reaches (a deadline spent before the run starts), or give it a deadline the build fits inside and assert the run's own basis, 'the run timed out after ... process group was torn down'. Add a red-first mutation to prove the case: remove the tear_down call in _run_in."
+      }
+    ],
+    "outcome": "[findings: 4 - 0 high, 0 med, 4 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
     {
       "id": "P149.1",
       "title": "A wave writer session's edit on Windows is filed from its member tree and leaves the project tree's file as the base held it",
-      "status": "in_progress",
+      "status": "done",
       "description": "Release CI (run 40877191420, jobs 'selftests (windows, plain 4)' and 'selftests (windows, cp1252 4)') fails tests/test_drive_phase.py case ww2 deterministically on Windows; it passes on Linux and macOS. The case's own repr on Windows shows the filing succeeded (gate P1.2 green, work carried in refs/audit/carry/P1.2) and the carried blob is 'changed by P1.2\\n'; the conjunct that fails is therefore one of: _filed_body(mpath, filer) is None, or the project tree's src/f2.txt is not b'v0\\n' (on Windows it may hold the member's edit, or CRLF bytes from a checkout under core.autocrlf - read which). Find which conjunct fails and why on Windows - the case was added by P148.1 (d83aeee9) in _wave_writer_cases; the code paths are the drive's writer filing from a member tree in plugins/audit/scripts/governance/drive-phase.py and the tree helpers in plugins/audit/scripts/git/_worktrees.py, and the test's helpers _play_session, _read, _filed_body. If the product writes or restores the project tree's file on Windows, fix the product; if the case reads bytes a Windows checkout legitimately rewrites (line endings), make the fixture deterministic (e.g. the fixture repo's own .gitattributes or core.autocrlf=false in _wave_repo) rather than loosening the assertion. You cannot run Windows here: reason from the code and the CI repr, state the cause with the line you read, and add or keep a case that would go red on Linux/macOS for the same defect where one can exist. Edit only the declared files; a fix that needs another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
       "files": [
         "tests/test_drive_phase.py",
@@ -53,19 +83,30 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "68db7dcad8a3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Cause: the fixture, not the product. tests/test_drive_phase.py _repo wrote every src/f<n>.txt with open(path, 'w', encoding='utf-8') and fh.write('v0\\n') (base lines 147-150). Python text mode translates '\\n' to os.linesep on write, so on Windows the project tree's src/f2.txt held b'v0\\r\\n' from the start, and ww2's last conjunct `_read(root/src/f2.txt) == b'v0\\n'` was false there with the product never touching the file. The sweep sets GIT_CONFIG_NOSYSTEM, so Git for Windows' system core.autocrlf is not read and no checkout is involved - the root file is the one the fixture wrote. The CI repr's other conjuncts were all visibly true (gate P1.2 green, carried blob 'changed by P1.2\\n', 'P1.2 writer return filed by the drive'). Reproduced locally: emulating the Windows bytes in _repo turned ww2 red (3/4 in sr2-block) with the CI's repr shape. Fix (tests/test_drive_phase.py only): _repo now writes its source files through the file's existing _write_lf helper (newline='\\n', utf-8), with a comment stating the constraint; ww2's assertion is unchanged in strictness (still the literal b'v0\\n'), and its repr now carries every conjunct's value (filed, filed_said, carried, the project file's bytes) so a future red names its conjunct. drive-phase.py and _worktrees.py unchanged. Runs: `python3 tests/test_drive_phase.py --selftest --stage sr2-block` exit 0, 4/4, ww2 repr ends ', 'changed by P1.2\\n', b'v0\\n')'; `python3 tools/sweep-selftests.py tests/test_drive_phase.py` exit 0, '1/1 files ok, 671 cases' (run although the brief said own-tests had nothing to run - stated rather than hidden); `ruff check tests/test_drive_phase.py` exit 0; `vermin -t=3.8- --no-tips --violations tests/test_drive_phase.py` exit 0. A Linux/macOS case for the same defect cannot exist (text-mode translation is a Windows property); ww2's byte conjunct stays the case that goes red on any OS if the product writes the member's edit into the project tree. Class sweep: grep '\"v0\\\\n\"' in the file - other text-mode writers at extra_files (~6098), _wave_repo spare f3 (~7487), notes.txt fixtures (~11278, ~11297) left, because no case compares their bytes against a literal; the other byte-literal assertions in the file (e.g. 1786, 7986, 8397, 8436, 8676, 9292) were green on Windows in the CI log (only ww2 FAILed in that shard). Dependants: tests/test_drive_phase.py - still correct for every listed dependant: no case id, stage label or helper name changed (_counting, _follower_cases, _git_said, _head untouched), so sweep-costs.json blocks, ci.yml, affected.py, sweep-selftests.py, test__runner_output.py, test_run_test_gate.py and PLUGIN-BUILD-GUIDE.md read the same file shape; fixture bytes change only on Windows (LF instead of CRLF), and on POSIX they are identical. drive-phase.py and _worktrees.py: not edited, so all their dependants are unaffected.",
+        "descriptive": "ww2's Windows red was the fixture writing CRLF via text mode; _repo now writes LF bytes and ww2's repr names every conjunct."
       },
       "startedAt": "2026-10-29T13:16:46Z",
-      "completedAt": null,
+      "completedAt": "2026-10-29T13:54:05Z",
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-29T13:39:17Z.a39502",
         "status": "passed",
         "at": "2026-10-29T13:39:17Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "68db7dcad8a3",
+        "at": "2026-10-29T13:54:05Z",
+        "return": "docs/audit/evidence/returns/P149.1/20261029T131646Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task with tests.add none and expectRedFirst false: no case of its own to prove through the helper, and the defect is Windows-only (text-mode newline translation), so a HEAD-vs-fix run on this macOS host is green on both sides. The cause was reproduced before the fix instead, by hand in the task tree: _repo's source-file write temporarily given newline='\\r\\n' (the bytes Windows text mode writes) -> `python3 tests/test_drive_phase.py --selftest --stage sr2-block` exit 1, 'FAIL ww2 ... gate P1.2 green; work of P1.2 carried ...', 'SELFTEST FAILED: 3/4 cases passed' - the same shape as the CI repr; file restored from a byte copy before the fix was written (git diff --stat empty).",
+        "at": "2026-10-29, before the fix, in the task's own worktree"
       }
     },
     {

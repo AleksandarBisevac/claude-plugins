@@ -646,10 +646,12 @@ DEFAULT_TIMEOUT = 480
 # git calls before the throwaway exists (listing and reading HEAD's files,
 # building it) keep that floor and can overrun it by up to a second each. What happens after the deadline has to fit in
 # the rest of the host's limit, so it is bounded and summed here: one teardown
-# of a timed-out run (`_proc_group.GRACE_SECONDS` for SIGTERM, again for
-# SIGKILL, again for the drain - at most one run can time out, because each
-# later run is made only when the one before it finished and a second is
-# left), and the removal's two git calls, each capped at `REMOVE_GIT_TIMEOUT`.
+# of a timed-out run, or of a git call building or resetting the throwaway,
+# which is torn down the same way (`_proc_group.GRACE_SECONDS` for SIGTERM,
+# again for SIGKILL, again for the drain - at most one of them can time out,
+# because each is given what is left of the deadline and each later one is
+# started only when the one before it finished and a second is left), and the
+# removal's two git calls, each capped at `REMOVE_GIT_TIMEOUT`.
 # Copying files and deleting the temp directory are local and are not budgeted.
 REMOVE_GIT_TIMEOUT = 10
 TEARDOWN_MARGIN = 3 * _proc_group.GRACE_SECONDS + 2 * REMOVE_GIT_TIMEOUT
@@ -1162,7 +1164,7 @@ def _git_env():
     return dict((k, v) for k, v in os.environ.items() if not k.startswith("GIT_"))
 
 
-def _git(root, args, timeout=120, strip=True):
+def _git(root, args, timeout=120, strip=True, group=False):
     """`(code, text)` for one git call; the hooks path points nowhere, so no hook
     the repository carries runs on the throwaway's behalf. `strip=False` keeps
     the output as git wrote it, for a file's contents.
@@ -1180,12 +1182,24 @@ def _git(root, args, timeout=120, strip=True):
     name a plan declared, never a pattern: a declared path beginning with `:`
     would otherwise be read as pathspec magic and name a different file. A
     command that refuses the flag outright (`check-ignore` exits 128 on it)
-    cannot be run through here."""
+    cannot be run through here.
+
+    `group=True` runs the call the way a test run is run (`_run_in`): as a
+    process group torn down whole on a timeout, and drained before this
+    returns. It is for the calls that WRITE the throwaway - building it and
+    resetting it. `git worktree add` checks the tree out in a git process of
+    its own, which may start a filter in turn, and `subprocess.run`'s timeout
+    kills only the direct child: the rest went on writing into the throwaway
+    while the `finally` removed it, and the removal failed."""
+    argv = ["git", "--literal-pathspecs", "-C", root, "-c",
+            "core.hooksPath=%s" % os.devnull, "-c", "core.autocrlf=false"] + list(args)
+    if group:
+        code, text, problem = _run_in(root, argv, timeout, _git_env())
+        if problem is not None:
+            return None, problem
+        return code, text.strip() if strip else text
     try:
-        out = subprocess.run(["git", "--literal-pathspecs", "-C", root, "-c",
-                              "core.hooksPath=%s" % os.devnull,
-                              "-c", "core.autocrlf=false"] + list(args),
-                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        out = subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                              timeout=timeout, env=_git_env())
     except (OSError, subprocess.SubprocessError) as exc:
         return None, "%s" % (exc,)
@@ -3226,7 +3240,7 @@ def _platform_temp_dirs(platform=None, environ=None):
 def _build_throwaway(root, path, tests, timeout=120):
     """`(copied, problem)`: HEAD checked out at `path`, the tests laid over it."""
     code, text = _git(root, ["worktree", "add", "--detach", "--quiet", path, "HEAD"],
-                      timeout=timeout)
+                      timeout=timeout, group=True)
     if code != 0:
         return [], "git could not build the throwaway tree: %s" % (text,)
     return _lay_over(root, path, tests), None
@@ -3263,10 +3277,20 @@ def _remove_throwaway(root, holder, path, wait=None, clock=time.monotonic):
     than retried forever. `wait` defaults to the shared helper's own bound,
     read at the call, so a killed process's slow release gets the same grace
     every other sharing retry here gets. Any other refusal ends the attempt
-    at once and shows as a holder still there."""
+    at once and shows as a holder still there.
+
+    `--force` TWICE, because one does not remove a LOCKED worktree, and
+    `git worktree add` locks the tree it is building ("initializing") until
+    it finishes: a build killed on its timeout leaves that lock, and a single
+    `--force` refused the removal, so the tree stayed listed. The path is
+    this run's own throwaway, so no lock on it is anybody else's to keep. A
+    registration whose directory exists without its `.git` file - a build
+    killed between those two writes - is still refused by git, and is
+    reported left behind."""
     if wait is None:
         wait = _output.SHARING_WAIT_SECONDS
-    _git(root, ["worktree", "remove", "--force", path], timeout=REMOVE_GIT_TIMEOUT)
+    _git(root, ["worktree", "remove", "--force", "--force", path],
+         timeout=REMOVE_GIT_TIMEOUT)
     try:
         _output.while_shared(lambda: shutil.rmtree(holder),
                              deadline=clock() + wait, clock=clock)
@@ -3300,7 +3324,15 @@ def _canonical_path(path):
 
 def _run_in(path, cmd, timeout, env):
     """`(code, text, problem)` for the command, run in the throwaway as a process
-    group, so a timeout or an interrupt stops everything it started."""
+    group, so a timeout or an interrupt stops everything it started.
+
+    On a timeout this returns only after the kill AND the drain, so the
+    removal that follows never races the tree it killed: on Windows
+    `taskkill /T` returns once the kill is asked for, not once the processes
+    are gone, and the drain is what waits - for the root to exit and for every
+    process holding its output pipe to let go - bounded by
+    `_proc_group.GRACE_SECONDS`. A root still running after that is said
+    as a teardown not confirmed."""
     try:
         proc = subprocess.Popen(cmd, cwd=path, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, env=env,
@@ -3312,6 +3344,7 @@ def _run_in(path, cmd, timeout, env):
     except subprocess.TimeoutExpired:
         confirmed = _proc_group.tear_down(proc)
         text = _proc_group.drain(proc)
+        confirmed = confirmed and proc.poll() is not None
         return None, text, ("the run timed out after %s s and its process group "
                             "was torn down%s" % (timeout, "" if confirmed else
                                                  " (not confirmed)"))
@@ -3601,7 +3634,7 @@ def _isolate(path, deadline):
     for args in (["checkout", "-f", "HEAD", "--", "."], ["clean", "-ffdxq"]):
         if _left(deadline) < 1:
             return "the run timed out: no time was left of the deadline for the reset"
-        code, text = _git(path, args, timeout=max(1, _left(deadline)))
+        code, text = _git(path, args, timeout=max(1, _left(deadline)), group=True)
         if code != 0:
             return "git could not reset the throwaway to HEAD: %s" % (text,)
     return None

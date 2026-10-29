@@ -2044,6 +2044,9 @@ _CLOCK_LITERALS_JUDGED = {
     ("_red_cases", "--timeout 1"):
         "sr9's run sleeps far past it: a slower runner reaches the deadline "
         "sooner, and every path past the deadline says it timed out",
+    ("_killed_build_cases", "--timeout 1"):
+        "skb1's build blocks in a filter that sleeps far past it, so the build "
+        "is what times out on every runner, a slower one only sooner",
     ("_located_cases", "time.time() + 0.5"):
         "sr155 needs under a second left: a slower runner only leaves less",
     ("_scan_cases", "time.time() - 1"):
@@ -3847,7 +3850,8 @@ def _located_cases(check):
     calls = []
     lefts = [5, 0]
     real_git, real_left = M._git, M._left
-    M._git = lambda path, args, timeout=120, strip=True: calls.append(args) or (0, "")
+    M._git = lambda path, args, timeout=120, strip=True, group=False: \
+        calls.append(args) or (0, "")
     M._left = lambda deadline: lefts.pop(0) if lefts else 0
     try:
         floor = M._isolate("/nowhere", 0)
@@ -4188,6 +4192,85 @@ def _remove_retry_cases(check):
           "reported left behind - the removal lives behind the helper, not "
           "beside it: %r" % ((removed_mut, len(seen_mut)),),
           removed_mut is False and len(seen_mut) == 0)
+
+
+def _killed_build_cases(check):
+    """`skb1`: a build of the throwaway that times out is torn down whole and
+    waited for, and only then removed; `skb2`: the removal gets past the lock
+    `git worktree add` holds on a tree it never finished.
+
+    The build is made to time out whatever the runner's speed: HEAD carries a
+    file under a smudge filter that never returns, so the checkout
+    `git worktree add` starts in a git process of its own blocks inside it
+    until it is killed. Before the fix that process and the filter outlived
+    the killed `git worktree add`, still inside the throwaway while it was
+    removed, and the lock it left refused a single `--force`: exit 4 with the
+    tree still listed."""
+    py = sys.executable.replace("\\", "/")
+    root, man = _red_repo("stamp-killed-build-",
+                          _red_test("import mine", "mine.v == 2"))
+    _write(os.path.join(root, ".gitattributes"), "hang.txt filter=hang\n")
+    _write(os.path.join(root, "hang.txt"), "held by the filter\n")
+    _git(root, "add", ".gitattributes", "hang.txt")
+    _git(root, "commit", "-q", "-m", "a file whose checkout never ends")
+    _git(root, "config", "filter.hang.smudge",
+         '"%s" -c "import time; time.sleep(120)"' % (py,))
+    events = []
+    real = (M._proc_group.tear_down, M._proc_group.drain, M._remove_throwaway)
+
+    def tear(proc):
+        events.append("kill")
+        return real[0](proc)
+
+    def drain(proc):
+        events.append("drain")
+        return real[1](proc)
+
+    def remove(*args, **kwargs):
+        events.append("remove")
+        return real[2](*args, **kwargs)
+    M._proc_group.tear_down, M._proc_group.drain = tear, drain
+    M._remove_throwaway = remove
+    try:
+        code, got = _red(root, man, [py, "tests/test_mine.py"], "--timeout", "1")
+    finally:
+        M._proc_group.tear_down, M._proc_group.drain, M._remove_throwaway = real
+    block = got.get("redFirst") or {}
+    tw = got.get("throwaway") or {}
+    # Counted as records, never searched as text: under a red-first proof
+    # this fixture itself sits in a directory carrying THROWAWAY_PREFIX.
+    listed = len(_wt.parse_list(_worktrees(root)))
+    check("skb1 a build of the throwaway that times out is `could-not-prove` "
+          "saying so, its process group is killed and drained BEFORE the "
+          "removal - nothing it started is left writing into the tree - and "
+          "the tree its lock was left on is removed from disk and from git's "
+          "list: exit=%r events=%r status=%r removed=%r worktrees=%r basis=%r"
+          % (code, events, block.get("status"), tw.get("removed"),
+             listed, block.get("basis", "")[:200]),
+          code == M.E_CANNOT_PROVE
+          and events == ["kill", "drain", "remove"]
+          and block.get("status") == M.RED_CANNOT
+          and "timed out" in block.get("basis", "")
+          and tw.get("removed") is True
+          and not os.path.exists(tw.get("path") or "")
+          and listed == 1)
+    # A POSIX kill is SIGTERM first, and git answers it by removing the tree
+    # it was building, lock and all; `taskkill /F` gives it no such chance.
+    # So skb1 meets the lock only on Windows, and skb2 leaves one by hand.
+    locked_root = _seeded_repo("stamp-locked-")
+    holder = os.path.join(_harness.fixture_root("stamp-locked-holder-"),
+                          M.THROWAWAY_PREFIX + "locked")
+    path = os.path.join(holder, "tree")
+    _git(locked_root, "worktree", "add", "--detach", "--quiet", path, "HEAD")
+    _git(locked_root, "worktree", "lock", "--reason", "initializing", path)
+    removed = M._remove_throwaway(locked_root, holder, path)
+    locked_listed = len(_wt.parse_list(_worktrees(locked_root)))
+    check("skb2 a throwaway left LOCKED the way a killed `git worktree add` "
+          "leaves it is still removed, from disk and from git's list - one "
+          "`--force` does not remove a locked worktree: removed=%r worktrees=%r"
+          % (removed, locked_listed),
+          removed is True and not os.path.exists(holder)
+          and locked_listed == 1)
 
 
 def _holder_cases(check):
@@ -6283,6 +6366,7 @@ STAGES = (
     ("sr-listing", "_listing_cases"),
     ("sr-leftover", "_leftover_cases"),
     ("sr-remove-retry", "_remove_retry_cases"),
+    ("sr-killed-build", "_killed_build_cases"),
     ("sr-holder", "_holder_cases"),
     ("sv-take", "_take_cases"),
     ("sv-compare", "_compare_cases"),
