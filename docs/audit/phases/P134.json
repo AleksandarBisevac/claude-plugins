@@ -29,30 +29,36 @@
         "severity": "low",
         "file": "tests/test_import_evidence.py:531-539",
         "issue": "rel_or_abs(mp10, os.getcwd()) returns the ABSOLUTE path whenever scratch and cwd are on different drives, which is exactly the hosted windows runner (checkout on D:, scratch on C:). i31 then feeds an absolute manifest to a case titled 'an import given a relative manifest ... prints it absolute' and its assertion (isabs(words[2]) and samefile) is trivially true: the case is green on the one machine it was fixed for without exercising the relative-to-absolute conversion. The title now says 'relative here: False', but a title is not an assertion, and nothing makes a green run on that runner read as vacuous. The helper's docstring asks such a caller to check isabs and say so; this one says so only in text.",
-        "resolution": "Make the case exercise the relative spelling on every drive layout: run the CLI with the working directory moved into os.path.dirname(mp10) (os.chdir in try/finally, M.main runs in-process) and pass os.path.basename(mp10); then no cross-drive question exists. Failing that, assert the 'relative here' leg only when it is relative and record the absolute leg as a separate, honestly-titled case.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.3 (b8c642ec2e6e): Make the case exercise the relative spelling on every drive layout: run the CLI with the working directory moved into os.path.dirname(mp10) (os.chdir in try/finally, M.main runs in-process) and pass os.path.basename(mp10); then no cross-drive question exists. Failing that, assert the 'relative here' leg only when it is relative and record the absolute leg as a separate, honestly-titled case.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.3",
+        "commit": "b8c642ec2e6e"
       },
       {
         "id": "P134-R2",
         "severity": "low",
         "file": "tools/_suite.py:SCRATCH/CHECKOUT classification (_path_kinds, lines ~228-253) and tests/test_import_evidence.py:536",
         "issue": "os.getcwd() is classified as neither scratch nor checkout, so the exact call the executor wrote to repair i31, relpath(scratch_path, os.getcwd()), is invisible to the new lint, while the one-argument spelling of the same thing is convicted (s30). The one-arg branch carries the comment that the working directory is the checkout when a suite is run by hand; the two-arg spelling of that same fact is a hole. A future relpath(mkdtemp(), os.getcwd()) goes unnamed.",
-        "resolution": "Treat a call to getcwd as a checkout-kind source in _path_kinds (or normalise relpath(x, getcwd()) to the one-argument rule), and add a planted case beside s30.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.3 (b8c642ec2e6e): Treat a call to getcwd as a checkout-kind source in _path_kinds (or normalise relpath(x, getcwd()) to the one-argument rule), and add a planted case beside s30.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.3",
+        "commit": "b8c642ec2e6e"
       },
       {
         "id": "P134-R3",
         "severity": "low",
         "file": "docs/audit/evidence/returns/P134.1 (filed return; stamp)",
         "issue": "The filed outcome and claims describe a 3-file task with cases s26-s33, listing tests/test_import_evidence.py:531 and tools/prove-gates.py rows as out-of-scope follow-ups; the diff now holds 5 files and s26-s34, and both follow-ups are done. stamp-verification.py compare reports the stamp stale (moved: tests/test_import_evidence.py, tools/_suite.py, tools/prove-gates.py), so the filed gate results (33/33, 'prove-gates c1/a4 red') are claims about a tree that no longer exists and the redFirst/gate claims are unverified against the diff reviewed.",
-        "resolution": "Re-file the return (outcome, testsAdded including s34 and the prove-gates TABLE/ALLOW rows, gates) on the current tree and re-take the stamp.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.8 (6dc002ec5723): Re-file the return (outcome, testsAdded including s34 and the prove-gates TABLE/ALLOW rows, gates) on the current tree and re-take the stamp.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.8",
+        "commit": "6dc002ec5723"
       }
     ],
-    "outcome": "[findings: 3 - 0 high, 0 med, 3 low; 0 with a recorded fix commit]",
+    "outcome": "[findings: 3 - 0 high, 0 med, 3 low; 3 with a recorded fix commit]",
     "readReturns": []
   },
   "summary": "P134 closes the cross-drive relpath class that reddened the release tier twice (P132.5's suite_elsewhere_paths, then P133.1's gtf fixture): one helper that never raises across drives, both risky sites routed through it, and a lint over tests/ and tools/ proven both ways by prove-gates; the three low review findings are carried to BUG-29-dau.",
