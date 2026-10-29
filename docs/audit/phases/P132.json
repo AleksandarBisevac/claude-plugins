@@ -29,27 +29,33 @@
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:6135-6143 (review_fix), 1712 (caller)",
         "issue": "review_fix now returns the reviewFixes entry for every writer dispatch of the task for as long as the entry exists, and finish_task (KEPT_AT_TASK_CLOSE) now keeps that entry past the task's close. Before, the one-shot 'dispatched' flag ended the injection. The entry is only removed by resolve_fixed (all findings withdrawn) or replaced by a new hand_back. So a later, unrelated writer dispatch of the same task, for example after a manual /audit:task reopen once the fix has closed at a new commit with a finding not yet withdrawn, takes the old findings and the REVIEW_FIX_HEAD preamble, and is forced to a fresh session by the non-empty 'dispatched' list. Nothing in the diff separates a retry or brief re-issue of the hand-back round (wanted) from a later re-open (not wanted). The new tests cover only the retry.",
-        "resolution": "Bound the entry to the round it was written for. For example, have review_fix return None once task.commit is set and differs from fix['from'] (the hand-back guard already reads 'from' this way), or record the start that closed the fix in finish_task, and add a case: a fix closed at a new commit, the task re-opened by hand, and the next dispatch carries the plain brief.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.1 (d83aeee96039): Bound the entry to the round it was written for. For example, have review_fix return None once task.commit is set and differs from fix['from'] (the hand-back guard already reads 'from' this way), or record the start that closed the fix in finish_task, and add a case: a fix closed at a new commit, the task re-opened by hand, and the next dispatch carries the plain brief.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.1",
+        "commit": "d83aeee96039"
       },
       {
         "id": "P132-R2",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:6797-6812 (finish_task)",
         "issue": "With the 'writer' mark and reviewFixes kept, a task-scoped drive over a writer task never reaches the 'drop the state when nothing else is in it' branch. The state file now stays until a phase-level finish drops it. The docstring says so, but no case covers a task-scoped drive that is never followed by a phase drive (rw4 covers only a task with no writer record).",
-        "resolution": "Either state in the docstring or the PLUGIN-BUILD-GUIDE section that a task-scoped run of a writer task leaves its state file behind by design, or drop the state when the kept marks hold no re-opened entry and the task was never handed back.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.1 (d83aeee96039): Either state in the docstring or the PLUGIN-BUILD-GUIDE section that a task-scoped run of a writer task leaves its state file behind by design, or drop the state when the kept marks hold no re-opened entry and the task was never handed back.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.1",
+        "commit": "d83aeee96039"
       },
       {
         "id": "P132-R3",
         "severity": "low",
         "file": "PLUGIN-BUILD-GUIDE.md:4706-4708",
         "issue": "The guide says a gap at a green gate is `clauses-uncovered-writer` and 'once the rounds are spent it is the plain `clauses-uncovered`'. After this diff the plain decision is also asked when executor.writerModel is unset or does not read whole (writer_path_on), and the same holds for red-refused. The module docstring was updated for this (drive-phase.py:227-230) but the guide section that documents the same decision was not. The executor's outcome notes this and leaves it.",
-        "resolution": "Add 'or with executor.writerModel no longer set' to that sentence in PLUGIN-BUILD-GUIDE.md, matching the module docstring.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.5 (8e46457ccc23): Add 'or with executor.writerModel no longer set' to that sentence in PLUGIN-BUILD-GUIDE.md, matching the module docstring.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.5",
+        "commit": "8e46457ccc23"
       },
       {
         "id": "P132-R4",
@@ -75,9 +81,11 @@
         "severity": "low",
         "file": "tools/_suite.py:510-513, 516-546 (_ignores_errors / _written_removal_lines) and s21",
         "issue": "The rule is narrowed for tools/ as well as widened to tests/: before, EVERY bare rmtree in a tool that built a written repository was convicted; now only `ignore_errors=True` removals are (s21 asserts a plain `shutil.rmtree(d)` over a staged dir is allowed). On Windows a plain rmtree over git's read-only objects raises PermissionError, which in a `finally` still fails the suite - the same class of CI regression, just loud. No live tool is affected today (the remaining non-ignore calls, e.g. tools/gate-parity.py:1995 and :2437, are over non-git scratch), so this is a coverage loss rather than a live defect.",
-        "resolution": "Convict both spellings over a written directory (drop the _ignores_errors early-continue, keep per-removal family tracking) and change s21 to the allow case that still holds: a removal over a directory git only initialised.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.3 (b8c642ec2e6e): Convict both spellings over a written directory (drop the _ignores_errors early-continue, keep per-removal family tracking) and change s21 to the allow case that still holds: a removal over a directory git only initialised.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.3",
+        "commit": "b8c642ec2e6e"
       },
       {
         "id": "P132-R7",
@@ -94,9 +102,11 @@
         "severity": "low",
         "file": "plugins/audit/reference/execute-task.md:253; plugins/audit/agents/audit-executor.md:123; plugins/audit/reference/verbs-in-full.md:925",
         "issue": "Three statements of the obligation still read it off the mode alone: execute-task.md:253 'Only a `tdd` task owes it; any other mode is `not-attempted` with the mode as its basis', audit-executor.md:123 'owed on a `tdd` task', verbs-in-full.md:925 'runs the red-first helper on a `tdd` task'. The diff updated line 107 of execute-task.md, README, init.md and verbs-in-full.md:250 to the stored-field rule, so these three now contradict them; audit-executor.md is the text an executor agent is spawned with.",
-        "resolution": "Reword the three to 'a task that owes a red-first proof (tdd, expectRedFirst not false)' and, in execute-task.md:253, add that a tdd task with expectRedFirst false is not-attempted with the field as its basis.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.5 (8e46457ccc23): Reword the three to 'a task that owes a red-first proof (tdd, expectRedFirst not false)' and, in execute-task.md:253, add that a tdd task with expectRedFirst false is not-attempted with the field as its basis.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.5",
+        "commit": "8e46457ccc23"
       },
       {
         "id": "P132-R9",
@@ -108,7 +118,7 @@
         "carriedTo": "BUG-29-dau"
       }
     ],
-    "outcome": "[findings: 9 - 0 high, 2 med, 7 low; 2 with a recorded fix commit]",
+    "outcome": "[findings: 9 - 0 high, 2 med, 7 low; 7 with a recorded fix commit]",
     "readReturns": []
   },
   "summary": "P132 fixes the four high/medium findings of the S1 phase code review (F774-F777) and the three S1 regressions that reddened the release tier (cross-drive relpath, git-fixture removal on Windows with the class closed by a lint over tests/, unquoted interpreter). Findings: R4 and R7 resolved by P132.5-5mm; six lows carried to BUG-29-dau; R5 (a narrow then emptied task gate on P132.5-5mm, register F779) stays as recorded - the phase gate this sign-off runs covers what that task gate did not.",
