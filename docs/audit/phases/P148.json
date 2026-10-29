@@ -119,8 +119,10 @@
         "severity": "low",
         "file": "tools/lints/_output_lints.py:1384-1400",
         "issue": "P142-R18 is answered only in part. The comment now gives the reason in terms of the code, and I read that reason against the tree: _pytest_cases and _pytest_tally are reached only through CASE_READERS and TALLY_READERS from failing_cases and read_tally, both of which call plain_text; final_error strips what it captured (stamp-verification.py:733-734). The three RUNNER_LINE_END_PENDING rows are still there, and the comment names no follow-up task that deletes them. The finding asked for one, so the debt still has no owner where the next reader will look.",
-        "resolution": "File a task covering _runner_output.py and stamp-verification.py that calls plain_text inside _pytest_cases, _pytest_tally and final_error and empties RUNNER_LINE_END_PENDING, and cite it where the table is read.",
-        "fixTask": "P148.12-xpz"
+        "resolution": "fixed in P148.12-xpz (c88e77a87ce7): File a task covering _runner_output.py and stamp-verification.py that calls plain_text inside _pytest_cases, _pytest_tally and final_error and empties RUNNER_LINE_END_PENDING, and cite it where the table is read.",
+        "fixTask": "P148.12-xpz",
+        "commit": "c88e77a87ce7",
+        "status": "fixed"
       },
       {
         "id": "P148-R13",
@@ -151,16 +153,20 @@
         "severity": "med",
         "file": "tests/test_stamp_verification.py:1398-1410,1585",
         "issue": "A bounded speed dependence remains: whether the second run is reached is still decided by the runner. The ladder stops at 24 s and the case requires tries[-1]['second'] is not None, so a runner that spends more than about 22 s before the second interpreter stamps (throwaway build, baseline interpreter start, task interpreter start plus the 2 s hold, three reset/lay-over git sequences, then the second interpreter start) fails sr39 with no helper fault. Reasoned for a loaded windows runner with an interpreter start of 4-5 s: three interpreter starts are 12-15 s, the hold 2 s, and a dozen git calls at 0.5-1 s each are 6-12 s, so 20-29 s against a 24 s top rung. The correctness half is speed-independent (the pass side only gains margin as F-S grows, the mutated side only gains margin from the extra reset/startup time), but the 'reached' half is a finite ladder, which is the shape of the original R1 failure moved to a higher threshold. The rung count is the executor's choice, not something it measured on windows.",
-        "resolution": "Make the top of the ladder open-ended in cost-on-demand rather than fixed: extend _DEADLINE_LADDER by 48 and 96 (a fast runner never reaches them, so no cost there), or derive the next rung from the previous try's own witness (next deadline = 3 * (first - try start) + hold + slack when 'first' was stamped but 'second' was not, doubling when 'first' was not stamped). Keep the final assertion that a rung reached the second run.",
-        "fixTask": "P148.12-xpz"
+        "resolution": "fixed in P148.12-xpz (c88e77a87ce7): Make the top of the ladder open-ended in cost-on-demand rather than fixed: extend _DEADLINE_LADDER by 48 and 96 (a fast runner never reaches them, so no cost there), or derive the next rung from the previous try's own witness (next deadline = 3 * (first - try start) + hold + slack when 'first' was stamped but 'second' was not, doubling when 'first' was not stamped). Keep the final assertion that a rung reached the second run.",
+        "fixTask": "P148.12-xpz",
+        "commit": "c88e77a87ce7",
+        "status": "fixed"
       },
       {
         "id": "P148-R17",
         "severity": "low",
         "file": "tests/test_stamp_verification.py:1570-1581,1717-1722",
         "issue": "_one_deadline_holds returns False when t['second'] is stamped but t['beat'] is None. The suite stamps 'second' and only then creates the 'beat' file (a new file create/open per beat, slow under antivirus scanning on windows), so a rung that barely reaches the second run and is killed between those two statements fails the case although the helper behaved. The window is small but widens exactly on the slow runners this task is about.",
-        "resolution": "When 'beat' is None use the 'second' stamp as the last-activity time (it is a valid, weaker, bound on the second run's life) instead of failing the try; or write the first beat in the same step as the second stamp.",
-        "fixTask": "P148.12-xpz"
+        "resolution": "fixed in P148.12-xpz (c88e77a87ce7): When 'beat' is None use the 'second' stamp as the last-activity time (it is a valid, weaker, bound on the second run's life) instead of failing the try; or write the first beat in the same step as the second stamp.",
+        "fixTask": "P148.12-xpz",
+        "commit": "c88e77a87ce7",
+        "status": "fixed"
       },
       {
         "id": "P148-R18",
@@ -237,8 +243,10 @@
         "severity": "low",
         "file": "tests/test_stamp_verification.py ~1630",
         "issue": "Another wall-clock bound (spent < 4 + 3*GRACE + ...) in the same suite as sr39, of the class that failed sr39 on the windows resample leg.",
-        "resolution": "Read every clock bound in the suite; make each independent of runner speed or show why it cannot flake.",
-        "fixTask": "P148.12-xpz"
+        "resolution": "fixed in P148.12-xpz (c88e77a87ce7): Read every clock bound in the suite; make each independent of runner speed or show why it cannot flake.",
+        "fixTask": "P148.12-xpz",
+        "commit": "c88e77a87ce7",
+        "status": "fixed"
       },
       {
         "id": "P148-R26",
@@ -275,9 +283,41 @@
         "fixTask": "P148.11-xpz",
         "commit": "a0e0191656ee",
         "status": "fixed"
+      },
+      {
+        "id": "P148-R30",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:2826,2892 (_spelling_reach / takes_sources)",
+        "issue": "The recorded-spelling form of the related-tests regression remains: meta.phaseGate.derived.spelling = 'npx jest --findRelatedTests {paths}', ordinary task --files src/Card.tsx. Before the files-arm change: basis files, gate 'npx jest --findRelatedTests src/Card.tsx'. Now: basis files-no-suite, the wide gate. _spelling_reach treats a recorded spelling as suite-taking always; only a sibling's slot is read as evidence.",
+        "resolution": "Part of one redesign of which declared paths a derived gate hands to its slot (see the sibling med).",
+        "fixTask": "P148.18-xpz"
+      },
+      {
+        "id": "P148-R31",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:2826,2893; _files_gate_refusal ~1501-1503 (if takes_sources: return None); _slot_paths",
+        "issue": "takes_sources switches the suite filter and the refusal off wholesale: a fix task over a finding naming .github/workflows/ci.yml with a related-tests sibling now gets 'npx jest --findRelatedTests .github/workflows/ci.yml' (red on every attempt, jest finds no related tests), refusal None; documents in an ordinary task are handed the same way. _slot_paths counts an option's argument as slot evidence, so a sibling 'npx jest --config jest.config.js src/Other.test.tsx' or 'pytest -c setup.cfg tests/test_o.py' makes a docs/guide.md task get 'npx jest --config docs/guide.md'. This is the second recurrence of the files-arm class in this phase.",
+        "resolution": "Redesign, not a third patch: decide per declared path what the slot may take - a suite always, a source only when the spelling takes sources (recorded template words around {paths} or a sibling's slot, never a flag's argument), a document/workflow/config never - and make the refusal name each declared path in the gate the slot cannot take, whatever the spelling. Pin the matrix (suite/source/doc/workflow/config x suite-taking/source-taking spelling x ordinary/fix task, plus always-entry paths by position) in one table-driven case, each row red first.",
+        "fixTask": "P148.18-xpz"
+      },
+      {
+        "id": "P148-R32",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:1501 (own from _spelling_reach); _manifest_phases.files_gate_non_suite_paths",
+        "issue": "The refusal exempts an always-entry path wherever it appears in the gate, not only inside the always entry; a gate ['sh tools/check.sh', 'pytest tools/check.sh'] for files [tools/check.sh] is no longer named.",
+        "resolution": "Exempt by position: only paths inside the always/shape entries; part of the same redesign.",
+        "fixTask": "P148.18-xpz"
+      },
+      {
+        "id": "P148-R33",
+        "severity": "low",
+        "file": "tests/test_stamp_verification.py:1979 (sr42; _CLOCK_LITERALS_JUDGED row for _BUILD_DELAY)",
+        "issue": "sr42 bounds the last heartbeat against the child's own start stamp; a mutant helper granting a fresh timeout from Popen is killed at about R - I + D, so once interpreter start I >= 1 s the mutant passes: on a slow runner sr42 goes green over the bug it guards. The judged-literal row reasons only about the correct helper.",
+        "resolution": "Bound against a helper-side stamp taken at spawn (or size the delay from a measured interpreter start) so the mutant is caught at any speed; reason the row about the mutant too; red first against that mutant.",
+        "fixTask": "P148.17-xpz"
       }
     ],
-    "outcome": "[findings: 29 - 0 high, 4 med, 25 low; 10 with a recorded fix commit]"
+    "outcome": "[findings: 33 - 0 high, 6 med, 27 low; 14 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1096,7 +1136,7 @@
     {
       "id": "P148.12-xpz",
       "title": "The red-first suite's clock bounds hold on any runner, and runner output read anywhere goes through the one line-end normalisation so no pending exemption remains",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix the P148 review findings P148-R16, P148-R17, P148-R25, P148-R12 (each finding's file, issue and resolution is in docs/audit/phases/P148.json review.findings, by id). Read each against the code at HEAD first. Fix each with a case proven red first where it is about behaviour; where HEAD no longer has the defect or the finding records something nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id. Edit only the declared files; a fix needing another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
       "files": [
         "tests/test_stamp_verification.py",
@@ -1130,14 +1170,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c88e77a87ce7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "FINDINGS. P148-R16 (fixed): tests/test_stamp_verification.py replaces the fixed _DEADLINE_LADDER with _ladder(attempt) + _next_rung(deadline, partial_after): each rung is at least double the last, and when a try reached its partial witness (`first`) it is at least 3*(first - try start) + hold + 1; the only top is M.MAX_TIMEOUT, the longest --timeout the helper accepts (a runner that cannot reach the second run inside it cannot make the proof under the helper at all). The final assertion that a rung reached the second run is kept. New pure case sr39a models runners needing up to the ceiling (and one beyond it, which ends at the ceiling). P148-R17 (fixed): _one_deadline_holds uses the `second` stamp as the last sign of life when `beat` is None; new case sr39b checks the fallback passes, and that a stamp or beat past the bound still fails. P148-R25 (fixed, class-wide): every clock bound in the suite was read and each is now derived or shown monotone - sr22 (was --timeout 3 + sleep(6) against a grandchild's sleep(5): both the reach and the absence were speed-bound) now climbs the same ladder, the grandchild stamps start and beats until killed, and after the helper returns its beat file is watched for _QUIET_GAPS times its own longest gap (floor _QUIET_FLOOR); growth = survivor, which is then killed by pid. sr42 (was `spent < 4 + 3*GRACE + 2*REMOVE_GIT_TIMEOUT`) now uses a witness: behind a build slowed by _BUILD_DELAY the run's last beat must be before its own start + deadline - delay/2, on a ladder. sr23/23b/23c: START_DEADLINE 180 -> M.HOST_BASH_LIMIT, polling also stops when the nested helper exits, communicate(timeout=120) -> HOST_BASH_LIMIT, the held command holds until killed instead of sleep(60). sr105/sr111/sr115 (deadline now+5/+30 needing completion, asserting t<=6/31) -> _frozen_git_timeouts: M._left frozen at a whole second, deadline = that + M.DEFAULT_TIMEOUT, each git timeout must EQUAL it. sr209, sr187, sd8, sw2, sw10, sw11 (+30/+60) -> _AMPLE_DEADLINE (= M.DEFAULT_TIMEOUT). sr139 subprocess timeout=60 and nu2 timeout=120 -> _harness.stage_timeout(). sr215/217/218/219 real-clock waits -> fake ticking clocks. swd1 sized deadline (was 60 s for runs that must finish) -> _SLOW_COST derived so the sized deadline is the helper's default. Left as monotone, each with its reason in the new _CLOCK_LITERALS_JUDGED table: sr9 --timeout 1, sr155 now+0.5, sd9 now-1, swd2's _SHORT_DEFAULT/_SLOW_SECONDS, _FIRST_HOLD, _BEAT. Mechanism: new cases sk1 (AST scan of this file for every literal clock figure - time.time()+/-N, timeout=N, '--timeout' 'N', time.sleep(N), module numeric constants - each must have a row, stale rows red) and sk2 (the scan over a probe: every shape found, a parameter default / string / derived figure not). Not changed, outside the declared files: tests/_harness.py's fixed GIT_TIMEOUT for fixture git and STAGE_TIMEOUT. P148-R12 (fixed): plain_text is now called at the top of every per-runner reader in _runner_output.py (_house/_pytest/_unittest/_jest/_vitest _cases and _tally) and inside stamp-verification.final_error; RUNNER_LINE_END_PENDING = () with its comment rewritten to say le4 holds it empty. New/changed cases: rx1 (tests/test__runner_output.py, every CASE_READERS/TALLY_READERS reader called directly answers CRLF, lone-CR and colour twins as the plain text), le4 (now also asserts the pending table is empty), sr34a (final_error/qualifying_error on CRLF, lone-CR, colour twins). REDS WATCHED: rx1 FAIL on HEAD readers ('differing (26)', 23/24, exit 1); final_error on HEAD returned None for the lone-CR and colour twins; runner_line_end_violations(pending=()) on HEAD's stamp-verification reported line 730. Mutations in a scratch copy (deleted after): ladder capped at 24 -> sr39a FAIL; old beat-None verdict -> sr39b FAIL (False,False,False,True); fresh full timeout in _timed_run -> sr42 FAIL and sr39 FAIL; grandchild started with start_new_session=True -> sr22 FAIL survived=True (survivor killed, ps shows none left); _isolate's git without the deadline -> sr105 FAIL [None, None]; an added time.time()+30 -> sk1 FAIL unjudged [('_sandbox_words_cases', 'time.time() + 30')] (24/31, exit 1); clock scan under-fire (timeout keyword dropped) and over-fire (bool counted) -> sk2 FAIL both. GATES (exit codes read directly, no pipe): gate run 1 exit 0 ending 07:27:16Z, run 2 exit 0 07:28:39Z-07:29:39Z, both '3/3 files ok, 535 cases'; block times identical across the runs (sr-final 7.8/7.7 s, sr-budget 5.8/5.8 s, sr-process 7.5/7.5 s). Also: ruff check and vermin -t=3.8- on the six files exit 0; prose_number_claims and house_style_violations report nothing in them; dependants' suites python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test__refs.py tests/test__filed_returns.py tests/test__deps.py tests/test__output.py exit 0 (5/5 files ok). DEPENDANTS: .github/sweep-costs.json - still correct, no block added or renamed (new cases sit in sr-final/sr-budget), the touched blocks run faster than recorded on this machine; tests/test__filed_returns.py (_crlf_cases) - name unchanged, only its deadline became _AMPLE_DEADLINE, suite green; tools/affected.py (_scan, _cases, _selftest) - names unchanged; tools/sweep-selftests.py, tools/verify.sh, PLUGIN-BUILD-GUIDE.md - path references only, no file added; stamp-verification.py's dependants (drive-phase.py, run-test-gate.py, _proc_group.py, schema, _output.py, affected.py) - only final_error's input reading changed: same answer on LF text (sr34), now also on lone-CR and coloured text; _runner_output.py's dependants (run-test-gate.py, stamp-verification.py incl. its _unittest_tally alias, _harness.py, test_run_test_gate.py 571 cases green, test__refs.py green, test__output_lints.py, test_stamp_verification.py) - public answers unchanged because plain_text is idempotent; private readers now answer the same whoever calls them; _output_lints.py's dependants (test__deps, test__output, test__refs green; test__panel_settings, test__report_page, test_drive_phase import other functions, and grep finds RUNNER_LINE_END_PENDING read only in _output_lints.py and test__output_lints.py) - still correct; tools/prove-gates.py's runner_line_end_violations rows - still apply (none names a pending row; the le4 row's mutation of run-test-gate still makes le4 red).",
+        "descriptive": "The red-first suite's clock bounds no longer depend on runner speed (open-ended witness ladders, frozen or helper-sized deadlines, fake clocks, and a self-scan that fails any unjudged literal), and every runner reader normalises its own text so the line-end lint holds with no pending rows."
       },
       "startedAt": "2026-10-29T07:04:42Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-29T07:52:57Z",
+      "verifiedBy": [
+        "sr39a: the deadline ladder, modelled without running anything, reaches a runner needing any time up to the helper's own ceiling and stops at the ceiling beyond it",
+        "sr39b: a reached try killed before its first heartbeat is judged by its second-run stamp; a stamp or beat past the bound still fails",
+        "sk1/sk2: an AST scan of the suite for every literal clock figure, each judged in _CLOCK_LITERALS_JUDGED, and the scan proven on a probe both ways; sr22, sr42, sr105, sr111, sr115 rewritten onto witnesses, ladders and a frozen clock",
+        "rx1: every per-runner case and tally reader answers CRLF, lone-CR and colour twins as plain text; le4 now holds RUNNER_LINE_END_PENDING empty; sr34a: final_error reads the same off those twins"
+      ],
       "notes": [
         {
           "at": "2026-10-29T07:03:48Z",
@@ -1163,12 +1208,24 @@
         "runId": "2026-10-29T07:52:54Z.5443f4",
         "status": "passed",
         "at": "2026-10-29T07:52:54Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "c88e77a87ce7",
+        "at": "2026-10-29T07:52:57Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-29T07:34:05Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__runner_output.py tests/test__output_lints.py` in a throwaway tree at HEAD exited 1 with 2 of 24 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - le4 (house FAIL), rx1 (house FAIL): SELFTEST FAILED: 23/24 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - 3 times the recorded 137s of tests/test__output_lints.py, tests/test__runner_output.py in .github/sweep-costs.json is only 411s; fix run: held back 137s of the deadline, the recorded slot-seconds of tests/test__output_lints.py, tests/test__runner_output.py in .github/sweep-costs.json",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P148.13-xpz",
       "title": "The maintainer tools' review leftovers: release preflight's docstring and a closed handle, prove-gates naming the spelling it exercised, the sweep label without a count",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fix the P148 review findings P148-R2, P148-R4, P148-R5, P148-R6, P148-R14, P148-R15 (each finding's file, issue and resolution is in docs/audit/phases/P148.json review.findings, by id). Read each against the code at HEAD first. Fix each with a case proven red first where it is about behaviour; where HEAD no longer has the defect or the finding records something nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id. Edit only the declared files; a fix needing another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
       "files": [
         "tools/sweep-selftests.py",
@@ -1195,14 +1252,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-29T07:53:00Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -1246,12 +1303,18 @@
         "P148-R6",
         "P148-R14",
         "P148-R15"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-29T08:26:12Z.3b53eb",
+        "status": "passed",
+        "at": "2026-10-29T08:26:12Z"
+      }
     },
     {
       "id": "P148.14-xpz",
       "title": "No suite leaves a fixture behind on a removal error the scratch check cannot see, and no case is left that cannot fail",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fix the P148 review findings P148-R3, P148-R10, P148-R13 (each finding's file, issue and resolution is in docs/audit/phases/P148.json review.findings, by id). Read each against the code at HEAD first. Fix each with a case proven red first where it is about behaviour; where HEAD no longer has the defect or the finding records something nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id. Edit only the declared files; a fix needing another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
       "files": [
         "tools/_suite.py",
@@ -1286,14 +1349,14 @@
       "dependsOn": [
         "P148.10-xpz"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-29T07:53:03Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -1314,12 +1377,18 @@
         "P148-R3",
         "P148-R10",
         "P148-R13"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-29T08:32:10Z.f61dbe",
+        "status": "passed",
+        "at": "2026-10-29T08:32:10Z"
+      }
     },
     {
       "id": "P148.15-xpz",
       "title": "The documents' review leftovers: what inert means, the changelog wrap, comments naming where the prose lint lives, the README's red-first obligation, the gate line's stream",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fix the P148 review findings P148-R7, P148-R8, P148-R9, P148-R26, P148-R27 (each finding's file, issue and resolution is in docs/audit/phases/P148.json review.findings, by id). Read each against the code at HEAD first. Fix each with a case proven red first where it is about behaviour; where HEAD no longer has the defect or the finding records something nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id. Edit only the declared files; a fix needing another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
       "files": [
         "CONTRIBUTING.md",
@@ -1355,14 +1424,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-29T07:53:07Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -1409,7 +1478,13 @@
         "P148-R9",
         "P148-R26",
         "P148-R27"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-29T08:37:40Z.88bab5",
+        "status": "passed",
+        "at": "2026-10-29T08:37:40Z"
+      }
     },
     {
       "id": "P148.16-xpz",
@@ -1471,6 +1546,116 @@
       ],
       "fixes": [
         "P148-R11"
+      ]
+    },
+    {
+      "id": "P148.17-xpz",
+      "title": "sr42 catches a helper that grants a fresh timeout at spawn on a runner of any speed",
+      "status": "pending",
+      "description": "Fix P148-R33 (docs/audit/phases/P148.json review.findings): sr42 bounds the last heartbeat against the child's own start stamp, so a mutant helper that grants a fresh timeout from Popen passes once interpreter start reaches a second. Bound against a helper-side moment taken at spawn (or size the delay from a measured interpreter start) so that mutant is caught at any runner speed, and make the judged-literal row reason about the mutant as well as the correct helper. Prove red against that mutant in your tree (purge __pycache__ between mutate and restore). Edit only the test file. No F/P/BUG ids in code.",
+      "files": [
+        "tests/test_stamp_verification.py",
+        "tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test_stamp_verification.py: Bound against a helper-side stamp taken at spawn (or size the delay from a measured interpreter start) so the mutant is caught at any speed"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_stamp_verification.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-29T07:59:04Z",
+          "text": "scope: tests/test_stamp_verification.py, every path the finding(s) P148-R33 name"
+        },
+        {
+          "at": "2026-10-29T07:59:04Z",
+          "text": "no test runner in this task's gate for the test P148-R33 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test_stamp_verification.py'], derived as from --gate; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P148-R33"
+      ]
+    },
+    {
+      "id": "P148.18-xpz",
+      "title": "A derived gate hands its slot only what the slot's runner takes, decided per declared path, and the refusal names every declared path in the gate the slot cannot take",
+      "status": "pending",
+      "description": "Fix P148-R30, P148-R31, P148-R32 (docs/audit/phases/P148.json review.findings) as ONE redesign: the files-derived gate rule has now regressed twice in this phase, so do not patch the cases. The invariant: for each path a task declares, the derived gate's slot receives it only if the slot's runner takes that kind of path - a suite always; a source only when the spelling takes sources (read from the recorded template's own words around the paths slot or a sibling entry's slot, never from an option's argument such as --config or -c); a document, workflow or config file never. The always entries and shape entries keep their own paths by position. The refusal names each declared path that ends up in the slot and is not one the slot takes, whatever the spelling. Behaviour before the files-arm change (commit 04261ee5's parent) is the reference for every row that was right then: a related-tests spelling, recorded or sibling, keeps a source task narrow. Pin the whole matrix (suite/source/doc/workflow/config path x suite-taking/source-taking spelling, recorded and sibling x ordinary/fix task, plus an always entry naming a task file, plus a --config/-c sibling) in one table-driven case; prove each row red against HEAD where HEAD is wrong and against a deliberately weakened rule in the other direction. Edit only declared files. No F/P/BUG ids in code.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/scripts/governance/_gate_derive.py",
+        "tests/test_audit_task.py",
+        "tests/test__manifest_phases.py",
+        "tests/test__gate_derive.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test_audit_task.py: Part of one redesign of which declared paths a derived gate hands to its slot (see the sibling med)",
+          "tests/test_audit_task.py: Redesign, not a third patch: decide per declared path what the slot may take - a suite always, a source only when the spelling takes sources (recorded template ...",
+          "tests/test_audit_task.py: Exempt by position: only paths inside the always/shape entries"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__manifest_phases.py tests/test__gate_derive.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P148.14-xpz"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-29T07:59:21Z",
+          "text": "scope: plugins/audit/scripts/manifest/audit-task.py, every path the finding(s) P148-R30, P148-R31, P148-R32 name"
+        },
+        {
+          "at": "2026-10-29T07:59:21Z",
+          "text": "scope: tests/test_audit_task.py, the suite that tests plugins/audit/scripts/manifest/audit-task.py (python: its import closure reaches plugins/audit/scripts/manifest/audit-task.py)"
+        }
+      ],
+      "fixes": [
+        "P148-R30",
+        "P148-R31",
+        "P148-R32"
       ]
     }
   ],

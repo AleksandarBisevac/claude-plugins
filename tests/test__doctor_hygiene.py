@@ -19,6 +19,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -645,10 +646,68 @@ def _stray_cases(check):
         _harness.remove_tree(tmp)
 
 
+# --- the lint a docstring names -----------------------------------------------
+# A shipped module's prose that names a lint as a call on `_output` sends its
+# reader to a function the anchor module does not hold once that lint moved to
+# the source repository's tools/lints/. These are the shipped modules whose
+# prose names the number lint; each must name it on the module that holds it, and
+# name no `_output` function the anchor lacks. The pinned path preamble is taken
+# out first: its sentence is a byte-for-byte contract the preamble lint reads, not
+# this module's prose.
+_NUMBER_LINT_NAMERS = (
+    os.path.join("status", "_doctor_hygiene.py"),
+    os.path.join("status", "audit-status.py"),
+    os.path.join("governance", "propose-gates.py"),
+)
+_CALLED_ON = r"(?<![A-Za-z0-9_])%s\.([A-Za-z_][A-Za-z0-9_]*)\("
+
+
+def _named_on(module_name, text):
+    """Every name `text` writes as a call on `module_name`, in order, the module
+    name read as a whole word."""
+    return re.findall(_CALLED_ON % re.escape(module_name), text)
+
+
+def _lint_home_cases(check):
+    """Each shipped module whose prose names the number lint names it where it
+    lives."""
+    import _output
+    import _output_lints
+    rows = []
+    for rel in _NUMBER_LINT_NAMERS:
+        with open(os.path.join(_harness.SCRIPTS_DIR, rel), encoding="utf-8") as fh:
+            prose = fh.read().replace(_output_lints.PATH_PREAMBLE, "", 1)
+        lints = _named_on("_output_lints", prose)
+        rows.append({
+            "file": rel,
+            "notInOutput": sorted(set(n for n in _named_on("_output", prose)
+                                      if not hasattr(_output, n))),
+            "notInLints": sorted(set(n for n in lints
+                                     if not hasattr(_output_lints, n))),
+            "namesTheLint": "prose_number_claims" in lints,
+        })
+    bad = [r for r in rows if r["notInOutput"] or r["notInLints"]
+           or not r["namesTheLint"]]
+    check("lh1 each shipped module whose prose names the number lint names it "
+          "on _output_lints, the module that holds it, and names no _output "
+          "function the anchor lacks: %r" % (bad,),
+          len(rows) == len(_NUMBER_LINT_NAMERS) and not bad)
+
+    # The reader must take the module name as a whole word: a grep for the bare
+    # shape reads a call on a module whose name ENDS in it as one of its own.
+    trap = "%s.plain_text(x) and %s.posix_rel(y)" % ("_runner" + "_output",
+                                                     "_output")
+    check("lh2 ...and the reader takes a call on _output only where _output is "
+          "the whole module name, so a module whose name ends in it is not "
+          "read as the anchor: %r" % (_named_on("_output", trap),),
+          _named_on("_output", trap) == ["posix_rel"])
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _stray_cases(check)
+        _lint_home_cases(check)
     return _harness.run(body)
 
 

@@ -11,7 +11,6 @@ Usage:
   audit-status.py [<manifest>] [--json [--discovery]] [--gate] [--phase <id>]
                                [--short] [--color auto|always|never]
                                [--fail-on <c1,c2,...>]
-  audit-status.py --selftest
 
 With no <manifest>, the plan is the one `.claude/audit.config.json`'s manifestPath
 names under the project (CLAUDE_PROJECT_DIR, else the cwd), else
@@ -24,12 +23,12 @@ Modes: a bare invocation renders a human report; --json is for machines.
             project can actually see) so /audit:init and /audit:task suggest from
             ONE mechanical source instead of each scanning the filesystem in
             prose. Without the flag the --json payload is byte-identical to the
-            pre-flag output (pinned by selftest dv1).
+            pre-flag output (pinned by case dv1).
   --phase   scope the human render to one phase (totals stay whole-plan)
   --short   the condensed human render (overall line, usage line, READY NOW, a
             pointer to the full view) instead of the full one; ignored with
             --json or --gate. Not a new default - the bare invocation above is
-            unchanged whether or not this flag exists (selftest sh0).
+            unchanged whether or not this flag exists (case sh0).
   --gate    evaluate fail conditions; exit 1 when any trips (prints a summary)
 
 The `--fail-on` conditions are NOT listed a second time here, and they are not
@@ -849,7 +848,7 @@ def usage_summary(manifest, manifest_path, project_dir=None, full=True):
 # skills/agents exist here", so commands/init.md step 6.1 and commands/task.md's
 # skills step offer real names from a payload instead of each scanning the
 # filesystem in prose. Opt-in behind --discovery because the bare --json payload
-# is a pinned machine surface (selftest dv1); the import is lazy AND inside the
+# is a pinned machine surface (case dv1); the import is lazy AND inside the
 # try so a broken discovery module can never take down the status/gate surface
 # it merely enriches.
 
@@ -951,7 +950,7 @@ def render_status(manifest, summary, width=18, only_phase=None, pt=None,
     """Plain-ASCII status report. Printed verbatim by /audit:status.
 
     Pure ASCII, no ANSI, no box-drawing — the same constraint audit-usage.py's
-    selftest enforces on its own output, so this reads in any terminal. `pt` is
+    suite enforces on its own output, so this reads in any terminal. `pt` is
     a _cli_fmt.Painter; None (every pre-color caller) means plain, and a
     disabled painter returns its input unchanged, so plain mode stays
     byte-identical to the pre-color render.

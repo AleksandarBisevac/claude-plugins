@@ -28,7 +28,9 @@ under that exact command, "history" when something has) and a `claim`:
 
 NEVER A NUMBER WRITTEN HERE. `ranTotal`/`failed` are computed at the moment this
 runs, from `_evidence_io.read_rows`, and printed - not typed into this docstring,
-which is exactly the claim `_output.prose_number_claims()` exists to catch.
+which is exactly the claim `_output_lints.prose_number_claims()` exists to catch
+(a source-repository lint in tools/lints/_output_lints.py, which an install does
+not carry).
 
 READ-ONLY. This never writes the manifest, the ledger or the journal; it is a
 question `/audit:init`'s recon step asks before drafting `meta.buildCommands`,

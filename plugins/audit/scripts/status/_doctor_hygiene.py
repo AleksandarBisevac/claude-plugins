@@ -371,9 +371,10 @@ def check_worktrees(rep, git_root, manifest):
     one direction: `git worktree prune` clears a record and LEAVES ITS BRANCH, so
     every abandoned parallel run deposits an orphan branch too.
 
-    THE COUNT IS COMPUTED, NEVER WRITTEN. `_output.prose_number_claims()` fails a
-    present-tense number in a docstring for exactly this reason, and a diagnostic is
-    the last place a stale figure belongs.
+    THE COUNT IS COMPUTED, NEVER WRITTEN. `_output_lints.prose_number_claims()`, a
+    source-repository lint in tools/lints/_output_lints.py that an install does not
+    carry, fails a present-tense number in a docstring for exactly this reason, and a
+    diagnostic is the last place a stale figure belongs.
 
     IT REPORTS AND NEVER REAPS. The doctor is read-only by contract, so the remedy is
     the command that would do it — and that command is itself read-only until the

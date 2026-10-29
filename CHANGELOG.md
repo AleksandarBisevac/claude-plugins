@@ -14,21 +14,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   (the plan's own records left out). The probe is the project's own tool, so it answers a small
   protocol: exit 0 with `ran none` when no changed file held a lint, exit 1 with a
   `ROW NOT PROVEN:` line per row it could not prove - which stops the sign-off, quoting the
-  rows, with a fix task as the remedy - and any other exit is a refusal. The run is held to the same
-  bound the phase gate is handed, a probe still running then has its process tree stopped, and
-  a plan naming none skips the step and says `lintProbe unset`. The drive reads `git status` and
-  the bytes of every listed file before and after the run and stops, naming what moved, when
-  either differs, so a probe that left the checkout changed is never the tree the verdict
-  binds; a finished run is held at its HEAD with its word (`green` or `ran none`) and a
-  decision answered after it does not pay for the run again.
+  rows, with a fix task as the remedy - and any other exit is a refusal. The run is held to the
+  same bound the phase gate is handed, a probe still running then has its process tree stopped,
+  and a plan naming none skips the step and says `lintProbe unset`. The drive reads
+  `git status` and the bytes of every listed file before and after the run and stops, naming
+  what moved, when either differs, so a probe that left the checkout changed is never the tree
+  the verdict binds; a finished run is held at its HEAD with its word (`green` or `ran none`)
+  and a decision answered after it does not pay for the run again.
 - **A kept task tree's status row says what `--force` destroys, and how to save it first.**
   `/audit:status` lists a tree a redo set aside with the forced remover and a warning naming
-  the uncommitted, untracked and ignored files it deletes, the submodules checked out in it and
-  - with the tree's git directory - the submodule repositories kept there, so a commit only one
-  of them holds is lost, and a commit on the tree's detached HEAD is left on no ref for gc. Under
-  it are `save first:` commands that pin the HEAD and push each submodule's HEAD and branches to
-  `refs/kept-trees/` in the repository's shared refs, which outlive the tree. `--force` is
-  offered to that kind of tree alone: a key that is a task of the plan keeps
+  the uncommitted, untracked and ignored files it deletes, the submodules checked out in it
+  and, with the tree's git directory, the submodule repositories kept there, so a commit only
+  one of them holds is lost, and a commit on the tree's detached HEAD is left on no ref for gc.
+  Under it are `save first:` commands that pin the HEAD and push each submodule's HEAD and
+  branches to `refs/kept-trees/` in the repository's shared refs, which outlive the tree.
+  `--force` is offered to that kind of tree alone: a key that is a task of the plan keeps
   `/audit:worktree task-remove`, a key that is neither a redo's nor a task of the plan gets
   git's unforced remover, and when the plan could not be read such a key is offered
   `task-remove` for when it reads, with nothing forced.
@@ -49,12 +49,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   table has no cost for - there is no stand-in figure for a measurement nobody made.
   `--timeout`, when given, is used as given.
 - **A task's gate does not count the high bugs its own phase is open to fix** - shipped in
-  3.6.0 with no line here, so it is recorded now. `audit-status.py --gate --task <id>` sets aside, under `open-high-bugs` alone, the open high
-  bugs linked to that task or to a not-yet-finished task of its phase, and names each with the
-  reason in a `GATE TASK` line (`gate.exempted` under `--json`); `run-test-gate.py --task` adds
-  the flag to a gate step that is one `audit-status.py --gate` invocation. Only the flag sets
-  it, never the environment, so sign-off, CI and every other `--gate` run count every open
-  high bug as before.
+  3.6.0 with no line here, so it is recorded now. `audit-status.py --gate --task <id>` sets
+  aside, under `open-high-bugs` alone, the open high bugs linked to that task or to a
+  not-yet-finished task of its phase, and names each with the reason in a `GATE TASK` line
+  (`gate.exempted` under `--json`); `run-test-gate.py --task` adds the flag to a gate step
+  that is one `audit-status.py --gate` invocation. Only the flag sets it, never the
+  environment, so sign-off, CI and every other `--gate` run count every open high bug as
+  before.
 
 ### Changed
 - **One commit verb writes the index and the shard together.** A commit carrying a phase's shard
@@ -89,14 +90,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   cannot carry those bytes back to git and a pathspec would match nothing and read the path as
   unchanged.
 - **No drive step destroys a task tree it cannot prove empty of work.** A redo moves no tree: the
-  old tree stays at its own path under a kept marker recorded in the drive state that `/audit:status`
-  lists, and the recut tree is cut at a fresh path beside it. Every forced removal of a task tree
-  goes through one function, which takes the tree down only when its work commit holds every file
-  it looks at, nothing it holds is outside that commit (no submodule checked out, no repository
-  of its own below the top, no staged state the work lacks), its work is carried or already in
-  the phase tree, the commit it stands on is held by the phase head and its marker names the
-  tree; on any doubt, or a reading that failed, it keeps the tree and says why on the did-line.
-  What it takes down is what git is told to ignore as well.
+  old tree stays at its own path under a kept marker recorded in the drive state that
+  `/audit:status` lists, and the recut tree is cut at a fresh path beside it. Every forced
+  removal of a task tree goes through one function, which takes the tree down only when its
+  work commit holds every file it looks at, nothing it holds is outside that commit (no
+  submodule checked out, no repository of its own below the top, no staged state the work
+  lacks), its work is carried or already in the phase tree, the commit it stands on is held by
+  the phase head and its marker names the tree; on any doubt, or a reading that failed, it
+  keeps the tree and says why on the did-line. What it takes down is what git is told to
+  ignore as well.
 - **Starting a task charges it only with changes that are not its own or an echo.** A start that
   is not already `in_progress` is refused when a declared file holds an uncommitted change that
   another unfinished, started task declares too, and the journal's status rows decide who was
@@ -119,15 +121,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   would then run on every gate that names it rather than once over what the phase changed.
 - **Every reader of a runner's output reads it through one normalisation.** A child on Windows
   ends its lines with CRLF and the bytes of a run are kept as they came, so every pattern
-  anchored at the end of a line matched nothing there. The tally, case, summary and sweep readers
-  - and the gate runner's own - now read the text through `plain_text`, which strips terminal
-  control sequences and turns CRLF and a lone CR into a line feed, so the same output reads the
-  same on every platform.
-- **An agent session removes the temp directory it was given when it ends.** `run-agent-session.py`
-  makes a `TMPDIR` for each session and used to leave it in the machine's temp; it is now removed
-  when the run ends - on success, on a failing or missing result, on a budget stop and on SIGINT
-  or SIGTERM, which are armed from before the directory is made. A removal that fails is named on
-  stderr and leaves the exit code as the session made it; a SIGKILL still leaves the directory.
+  anchored at the end of a line matched nothing there. The tally, case, summary and sweep
+  readers, the per-runner readers behind them, the gate runner's own and the red-first
+  helper's reading of a run's last exception line now read the text through `plain_text`, which
+  strips terminal control sequences and turns CRLF and a lone CR into a line feed, so the same
+  output reads the same on every platform.
+- **An agent session removes the temp directory it was given when it ends.**
+  `run-agent-session.py` makes a `TMPDIR` for each session and used to leave it in the
+  machine's temp; it is now removed when the run ends - on success, on a failing or missing
+  result, on a budget stop and on SIGINT or SIGTERM, which are armed from before the directory
+  is made. A removal that fails is named on stderr and leaves the exit code as the session made
+  it; a SIGKILL still leaves the directory.
 
 ### Removed
 - **`commit-audit-state.py` and `commit-manifest-index.py`.** Both are folded into
@@ -138,6 +142,45 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   the step driver, `close-phase.py` and the sign-off commands `audit-task.py` prints all call
   it. Commits of the retired index class in history are
   still read and graded.
+
+### Fixed
+- **Cancelling a fix task releases the findings bound to it.** `/audit:task cancel` takes the
+  cancelled task - or each task a phase cancel takes with it - off every review finding that
+  names it as the fix task and carries no commit, in whichever phase reviewed the finding, so a
+  fix task moved to another phase releases its findings too. The cancel prints the released
+  findings and journals each as a `fixTask` change. Such a finding used to stay bound to a task
+  that fixes nothing, refused by `add --fixes` and by the drive's `fix` answer until the plan
+  was edited by hand. A finding a commit already settled keeps its fix task.
+- **A gate derived from a task's `files` hands the runner only what it takes.** With no
+  `tests.add`, every task's gate - not only a fix task's - is pointed at the suite paths among
+  its `files`, so a document, workflow or source file no longer reaches a suite runner and
+  turns the gate red before any work; when none is left the gate is the phase's own
+  (`gateBasis: files-no-suite`). When a sibling's gate already hands its runner a source path
+  (a related-tests spelling such as `jest --findRelatedTests`), the task's files go to it
+  whole.
+- **`/audit:task scope` re-derives a derived gate.** `scope --files` or `--tests-add` on a task
+  that has never started, whose gate the derivation wrote, derives the gate again from the
+  scope the call ends with, as `add` would. A gate a task declared, and the gate of a task that
+  has started - one put back to pending after an attempt included - are left as they are.
+- **Skill checks grade the copy a session loads.** The panel's `portability: strict` refusal
+  makes the same call doctor's portability row does, so where the machine scan's verdict is
+  about another copy of a skill than the one a session resolves - or about none - the loaded
+  file is graded by the tier it was found in, and a personal copy is refused. Doctor names a
+  skill that sits in a skills directory a session reads under another directory name, and says
+  to rename the directory or name the skill by it. The validator's `no skills resolve` warning
+  names the plan default (`meta.defaultSkills`, set with `audit-task.py default-skills`) beside
+  the task and area levels, and a non-empty plan default counts as the feature being in use. A
+  brief with no skill says which levels it read, or that the task opted out with
+  `skills: null`.
+- **A brief's dependants no longer count a document as a user of a private name.** A document
+  naming a module's internals describes them rather than calls them, so the brief's *Who
+  depends on this* section counts a private name only in code files that reference the module.
+- **The drive files and dispatches against the right tree and run.** `submit` refuses a return
+  against a task tree whose marker a redo that stopped early already keeps, and says to run
+  `next` to settle it first. A reviewer session that opened no file is dispatched once more
+  only after the stored gate run is asked whether it still answers the gate, as before a first
+  dispatch. A task's own commit is recognised by its `<type>(<taskId>): ` header whatever
+  `meta.commit.type` the plan sets, a space or a parenthesis in it included.
 
 ## [3.6.0]
 

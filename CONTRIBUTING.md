@@ -531,9 +531,12 @@ import-time `raise` and then a house-style violation in the Python each one chan
 scratch worktree of that commit, runs the sweep, and counts the red suites `tools/affected.py`
 did not select - each named, each checked a second time and against the unmutated commit before
 it counts. Its CI half does the same for the suites a failed run's log names, and prints
-`could-not-ask` when `gh` cannot be asked, which is not a zero. A mutation that turns nothing red is
-printed as `inert`, so a clean line is never zero evidence read as safety. It never touches the
-checkout, and it changes no gate: trusting the selection is a separate decision that this
+`could-not-ask` when `gh` cannot be asked, which is not a zero. A mutation that changes no
+suite's verdict is printed as `inert` - nothing went red, or every suite that did was red on the
+commit unmutated too, or green when swept again - so a clean line is never zero evidence read as
+safety. When `gh` lists as many failed runs as `--ci-limit` allows and the oldest is still inside
+the window, the CI tail prints `WINDOW TRUNCATED`, because the older runs were never read. It
+never touches the checkout, and it changes no gate: trusting the selection is a separate decision that this
 number informs. `--budget-minutes` stops starting commits past a time limit and says so, because
 a mutation sweep per commit is minutes each.
 

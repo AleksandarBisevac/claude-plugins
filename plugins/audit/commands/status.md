@@ -462,8 +462,8 @@ Three things to get right when building the invocation:
   the known set. Nothing is silently dropped, so never guess a condition: run it and
   read the exit code.
 - `--gate --json` prints the rollup (with a `gate` block naming `conditions`, `failed`
-  and `passed`) **and then** the `GATE …` line, so that stream is not parseable JSON on
-  its own. Pick one, or run the two invocations separately.
+  and `passed`) on stdout and the `GATE …` lines on **stderr**, so stdout is one JSON
+  document. Parse stdout alone; the verdict is in `.gate` and in the exit code.
 
 Preflight is not needed here — this command takes no lock and mutates nothing. Read
 `${CLAUDE_PLUGIN_ROOT}/reference/orchestrator.md` only if the human then asks you to
