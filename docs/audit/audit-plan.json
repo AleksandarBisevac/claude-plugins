@@ -12767,7 +12767,7 @@
     {
       "id": "BUG-29-dau",
       "title": "S1 (P131) low review findings carried to the next release's cleanup task",
-      "status": "open",
+      "status": "fixed",
       "severity": "low",
       "reportedAt": "2026-10-21T22:37:58Z",
       "reportedBy": "orchestrator",
@@ -12778,7 +12778,7 @@
       "files": [],
       "taskId": null,
       "fixedIn": null,
-      "notes": null
+      "notes": "Phase P148 answered every low finding carried here: P148.1-.8 fixed or answered each by id (findings resolved to those tasks), and P148.9-.25 fixed what the reviews of that work found. P132-R9 asks to widen a past task's recorded gate; that is a plan record of what was run, which nothing in the tree can change, and the phase gate covers the readers it names."
     },
     {
       "id": "BUG-30-6yq",
