@@ -1,0 +1,88 @@
+{
+  "id": "P150",
+  "title": "The 3.7.0 changelog covers the Windows fixes",
+  "status": "in_progress",
+  "description": "P149 changed red-first deadline sizing and teardown reporting after P148.15 wrote the changelog lines; the unreleased section must be true of HEAD before 3.7.0 is cut.",
+  "desiredOutcome": "CHANGELOG.md's unreleased section is true of every user-visible change landed through P149",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [],
+  "baseRef": "e6f4c0c0c265e9a26ba0082b9786b77061baf7ef",
+  "branch": "audit/p150-the-3-7-0-changelog-covers-the",
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": [
+      {
+        "id": "P150-R1",
+        "severity": "low",
+        "file": "CHANGELOG.md:85-91",
+        "issue": "The throwaway entry's last-but-one sentence, 'On Windows such a run used to report the throwaway left behind.', scopes the defect to Windows. The code that landed is not Windows-specific: stamp-verification.py _git(group=True) docstring says subprocess.run's timeout kills only the direct child so the rest went on writing into the throwaway, and _remove_throwaway's docstring says a single --force never removes the lock git worktree add holds on a tree it has not finished. P149.2's own claims block records a killed-build probe leaving the tree 27 times of 30 before the fix on the machine it ran on, not on Windows. The Windows scoping comes from the commit title, not from the diff.",
+        "resolution": "Drop 'On Windows' (say the run used to report the throwaway left behind), or keep it only if the Windows-only observation can be cited; the process-group and double --force fixes apply on every platform."
+      }
+    ],
+    "outcome": "[findings: 1 - 0 high, 0 med, 1 low; 0 with a recorded fix commit]"
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P150.1",
+      "title": "The unreleased changelog is true of the red-first deadline and lists the Windows teardown and derived-gate fixes",
+      "status": "in_progress",
+      "description": "CHANGELOG.md [Unreleased] predates P149's landed changes. Read `git log --no-merges --format='%h %s' 977b133e~30..HEAD -- plugins/audit` restricted to the P149 commits (b7386fe6, aa34ebd4, 70a9023e, 6c0e8686 and the P149.8/P149.9/P149.10 commits - list them with `git log --grep P149 --oneline`) and each commit's diff, and write each line from what landed, not from its title. (1) Rewrite the existing Added entry 'The red-first deadline is sized from what the command costs' so every sentence is true of stamp-verification.py at HEAD: recorded slot-seconds are converted to the wall time the sweep's own schedule gives; the deadline is sized from the wall time the proof's runs need; a proof whose runs cannot fit is refused before any run with a basis naming the need and the deadline; a run left short is not started; what is held back for the fix run is one run's wall time. (2) Add Fixed lines, house style (bold lead sentence, prose after), for the user-visible fixes: a red-first run whose throwaway build times out removes the throwaway (the process group is killed and drained, a locked tree is removed) instead of reporting it left behind; a timed-out teardown in the red-first helper, the task gate runner and the lint probe is reported confirmed only when the kill, the drain to end of pipe and the root's exit all hold; a gate derived at add time names each suite once and includes every suite the task declares, so add no longer refuses the gate it derived. Test-only and tooling changes (fixtures, tests/, tools/) get no line. Merge with existing entries rather than duplicating (the 'A gate derived from a task's files hands each runner only what it takes' Fixed entry may absorb the derived-gate line). No number written into prose (the doc prose lint must stay empty); no F/P/BUG ids. Run the before-you-claim skill. Edit only CHANGELOG.md.",
+      "files": [
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__deps.py tests/test__output_lints.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-29T17:16:09Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-29T17:20:30Z.5e274d",
+        "status": "passed",
+        "at": "2026-10-29T17:20:30Z"
+      }
+    }
+  ],
+  "request": "bring the 3.7.0 changelog up to date with P149 before the release",
+  "openChoices": [],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "482d7bf5-025e-4eb9-acc8-1383e2a9aaa8",
+    "branch": "audit/p150-the-3-7-0-changelog-covers-the",
+    "at": "2026-10-29T17:16:09Z"
+  },
+  "startedAt": "2026-10-29T17:16:09Z"
+}

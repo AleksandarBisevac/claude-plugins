@@ -40,14 +40,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   its cases not existing, which is red for every case it adds. A file graded red in the task's
   run is also checked against its own count in the fix run, so a failing case that went missing
   is not hidden behind other files' totals.
-- **The red-first deadline is sized from what the command costs.** With no `--timeout`, a sweep
-  naming suites that `.github/sweep-costs.json` times gets the allowance the sweep itself gives
-  those suites before it calls them hung, when that is longer than the default and never longer
-  than the host's Bash limit; the fix run, the last of the runs, has the recorded cost of those
-  suites held back from the runs before it, up to half the deadline.
-  The basis names the deadline and where it came from, what was held back, and any suite the
-  table has no cost for - there is no stand-in figure for a measurement nobody made.
-  `--timeout`, when given, is used as given.
+- **The red-first deadline is sized from what the command costs.** A figure in
+  `.github/sweep-costs.json` is slot-seconds, not wall time, so for a sweep naming suites the
+  table times the helper turns the recorded figures into the wall time the sweep's own schedule
+  gives them: each block or suite one job, costliest first onto whichever worker frees next,
+  over the workers the sweep starts (its `--jobs`, else every core under `CI=true`, else all
+  cores but two). With no `--timeout`, the deadline is the allowance the sweep itself gives a
+  job before it calls it hung, taken over the wall time the proof's runs need - the baseline,
+  the task's run and the fix run - when that is longer than the default and never longer than
+  the host's Bash limit allows. A proof whose runs need more wall time than the deadline is
+  refused before any run starts, with a basis naming what the runs need and the deadline, and
+  each run is started only when the time left covers the wall time it needs, so a run is never
+  left short to time out for want of time. What is held back for the fix run is the wall time
+  one run takes, never more than half the deadline. The basis names the deadline and where it
+  came from, what was held back and how its wall time was read, and any suite the table has no
+  cost for - there is no stand-in figure for a measurement nobody made. `--timeout`, when
+  given, is used as given, and the fit is still checked against it.
 - **A task's gate does not count the high bugs its own phase is open to fix** - shipped in
   3.6.0 with no line here, so it is recorded now. `audit-status.py --gate --task <id>` sets
   aside, under `open-high-bugs` alone, the open high bugs linked to that task or to a
@@ -162,7 +170,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   file, and a command left with none is dropped. An option's argument (`--config
   jest.config.js`, `-c setup.cfg`) stays where it stands, before the slot or after it, and each
   command of a chained entry keeps its own program. When nothing is left the gate is the
-  phase's own (`gateBasis: files-no-suite`).
+  phase's own (`gateBasis: files-no-suite`). A gate derived from `tests.add` - or from a run's
+  failing suites unioned with it - also runs every suite the task's `files` declare, which the
+  basis names, so a suite the work edits is run by the gate that grades it, and every derived
+  gate names each suite once, in the order first named: a `tests.add` with one entry per case
+  naming the same file used to give a slot that file twice, which the validator refuses, so
+  `add` refused the gate it had derived itself.
 - **`/audit:task scope` re-derives a derived gate.** `scope --files` or `--tests-add` on a task
   that has never started, whose gate the derivation wrote, derives the gate again from the
   scope the call ends with, as `add` would. A gate a task declared, and the gate of a task that
@@ -186,6 +199,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   only after the stored gate run is asked whether it still answers the gate, as before a first
   dispatch. A task's own commit is recognised by its `<type>(<taskId>): ` header whatever
   `meta.commit.type` the plan sets, a space or a parenthesis in it included.
+- **A red-first run whose throwaway build times out removes the throwaway.** The git calls
+  that build and reset the throwaway tree now each run in a process group, as a test run does,
+  so a build stopped on its timeout has its group killed and its output drained before the
+  removal starts, and the removal forces past the lock `git worktree add` holds on a tree it
+  has not finished building. On Windows such a run used to report the throwaway left behind.
+  A registration whose directory was made without its `.git` file is still refused by git, and
+  is still reported left behind.
+- **A timed-out teardown is reported confirmed only when it is.** The red-first helper, the
+  gate runner (`run-test-gate.py`) and sign-off's lint probe judge a stopped run in one place,
+  and call its teardown confirmed only when the kill was confirmed, the drain read its output
+  to the end of the pipe and the root process has exited. A `taskkill` that returned has only
+  asked for the kill on Windows, and a process outside the killed tree can still hold the
+  pipe, so either used to read as a clean teardown. One that is not confirmed is said so: the
+  helper and the probe add `not confirmed` to the timeout, the gate runner records
+  `teardown: unconfirmed`.
 
 ## [3.6.0]
 

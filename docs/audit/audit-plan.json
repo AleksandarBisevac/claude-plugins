@@ -964,6 +964,12 @@
       "title": "The Windows reds release CI found on the carried low batch",
       "status": "done",
       "shard": "phases/P149.json"
+    },
+    {
+      "id": "P150",
+      "title": "The 3.7.0 changelog covers the Windows fixes",
+      "status": "in_progress",
+      "shard": "phases/P150.json"
     }
   ],
   "fileIndex": {
@@ -1251,7 +1257,8 @@
       "P147.7-bno",
       "P148.5",
       "P148.15-xpz",
-      "P148.21-xpz"
+      "P148.21-xpz",
+      "P150.1"
     ],
     "CLAUDE.md": [
       "P32.10",
