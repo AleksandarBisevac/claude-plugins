@@ -178,7 +178,9 @@ says the session files nothing: the drive files its last message through
 `submit` (`reviewer_session_step`). It counts the `tool_use` blocks in the
 saved stream first (`stream_tool_calls`), because a review of code no tool
 opened is a guess. None is recorded on the task as cannot-tell and the reviewer
-is dispatched once more (`MAX_REVIEWER_REDISPATCH`); a second such stream stops
+is dispatched once more (`MAX_REVIEWER_REDISPATCH`) - by `advance`, after the
+stored gate run is asked whether it still answers the gate, as before a first
+dispatch; a second such stream stops
 with a note naming both sessions and dispatches no third; a stream nobody can
 count in is a stop of its own, never read as a count of none. Nothing enforces
 that a session opened the RIGHT files, only that it opened some.
@@ -665,8 +667,8 @@ STEPS = {
                  "grade nothing: ask the human; the reason is kept.",)},
     "done": {
         "line": "done %(phase)s: %(why)s",
-        "rule": ("Report where it landed, and whether that is the development "
-                 "branch.",)},
+        "rule": ("Say where it landed: on another parent, the development branch "
+                 "lacks it.",)},
     # Printed ONLY when the plan's own readiness names a phase beyond the one
     # that just finished - never a guess, and never for the phase that just
     # closed, which has nothing left ready. A phase boundary is a context
@@ -2060,11 +2062,17 @@ def return_object(text):
     return None
 
 
-def reviewer_unread(ctx, state, phase, task, run, seq, tree=None):
+def reviewer_unread(ctx, state, task, run, seq):
     """What a reviewer session whose stream holds no tool call leads to: a
     note on the task that its review is cannot-tell (once per session), then
-    the reviewer dispatched once more - and, when that one also opened
-    nothing, a stop that names both sessions and dispatches no third."""
+    None with the `dispatched-reviewer` mark spent, so the reviewer is
+    dispatched once more - and, when that one also opened nothing, a stop that
+    names both sessions and dispatches no third.
+
+    THE REDISPATCH IS NOT MADE HERE. `advance` makes it, past its own question
+    of whether the stored gate run still answers the gate, the order a first
+    dispatch follows: a gate or a tree that moved while the first session ran
+    is measured again before a second reviewer is shown that run."""
     held = writer_state(state, task, REVIEWER_KEY)
     if seq not in held.get("unread", []):
         refused = note_task(ctx, task, (
@@ -2082,8 +2090,9 @@ def reviewer_unread(ctx, state, phase, task, run, seq, tree=None):
     if held.get("redispatched", 0) < MAX_REVIEWER_REDISPATCH:
         held["redispatched"] = held.get("redispatched", 0) + 1
         _mark(state, REVIEWER_KEY, task, held)
+        _spend(state, "dispatched-reviewer", task)
         write_state(ctx, state)
-        return dispatch(ctx, state, phase, task, "reviewer", tree)
+        return None
     return _stopped(ctx, "%s's reviewer sessions %s opened no file, so no review "
                     "is on record (cannot-tell) and there is no third dispatch. "
                     "The task's notes name them; read the changed code and "
@@ -2091,14 +2100,16 @@ def reviewer_unread(ctx, state, phase, task, run, seq, tree=None):
                         task["id"], " and ".join(held["unreadSessions"])))
 
 
-def reviewer_session_step(ctx, state, manifest, phase, task, tree=None):
+def reviewer_session_step(ctx, state, manifest, task):
     """`(reviewer, stop)` for a dispatched reviewer that has filed nothing: when
-    it ran as a session, the wait while its record is empty, the redispatch or
-    the stop for a stream with no tool call, and - for one that opened files -
-    its last message filed as the return through `submit`, read back as
-    `filed` reads it. `(None, None)` when no session was dispatched or the last
-    one produced no result or no return object, which the caller asks about as
-    the plain no-reviewer-return."""
+    it ran as a session, the wait while its record is empty, the stop for a
+    stream with no tool call once its redispatch is spent, and - for one that
+    opened files - its last message filed as the return through `submit`, read
+    back as `filed` reads it. `(None, None)` when no session was dispatched or
+    the last one produced no result or no return object, which the caller asks
+    about as the plain no-reviewer-return - and when a stream with no tool call
+    is owed its redispatch, which `reviewer_unread` leaves to the caller with
+    the `dispatched-reviewer` mark spent."""
     held = writer_state(state, task, REVIEWER_KEY)
     if not held["dispatches"]:
         return None, None
@@ -2118,8 +2129,7 @@ def reviewer_session_step(ctx, state, manifest, phase, task, tree=None):
                               "it opened a file is not known and nothing was "
                               "filed" % (task["id"], run["session"], why))
     if calls == 0:
-        return None, reviewer_unread(ctx, state, phase, task, run, last["seq"],
-                                     tree)
+        return None, reviewer_unread(ctx, state, task, run, last["seq"])
     text, _why = session_last_message(run["stream"])
     body = return_object(text)
     if body is None:
@@ -3739,8 +3749,9 @@ def settle_aside(ctx, state, phase, task, paths, code, text):
     rel = project_relative(ctx, patch)
     said = ("set aside before the commit, outside the task's files: %s - the "
             "writer's change kept as %s (`git apply` it from the checkout's top to "
-            "take it back) and put back to HEAD; the declared work is proved and "
-            "gated again before it is committed" % (", ".join(plan_paths), rel))
+            "take it back) and put back to HEAD; the drive proves and gates the "
+            "declared work again, then asks the commit again"
+            % (", ".join(plan_paths), rel))
     refused = note_task(ctx, task, said)
     ctx["did"].append("%s: %s%s" % (task["id"], said, "" if refused is None
                                     else " (not noted: %s)" % (refused,)))
@@ -3872,11 +3883,23 @@ def own_commit(ctx, task):
         ctx["gitRoot"], _attempt_nonces(rows, task, began))
     if not carried:
         return None
-    header = re.compile(r"^[^\s()]+\(%s\): " % (re.escape(str(task["id"])),))
     held = set(c["sha"] for found in carried.values() for c in found
-               if c["inLast"] and header.match(c["subject"]))
+               if c["inLast"] and _opens_task_header(c["subject"], task["id"]))
     newest = touched[0][1]
     return newest if newest in held else None
+
+
+def _opens_task_header(subject, task_id):
+    """Whether `subject` opens with a task commit's header, `<type>(<taskId>): `.
+
+    The type is the plan's `meta.commit.type`, any non-empty string - a space or
+    a parenthesis included - so it is not spelled as a pattern here: the scope
+    `(<taskId>): ` must stand after a non-empty lead holding no `: `, which is
+    the separator that ends a header. A subject naming the task only after
+    another header's separator is not its commit."""
+    scope = "(%s): " % (task_id,)
+    at = (subject or "").find(scope)
+    return at > 0 and ": " not in subject[:at]
 
 
 def close_task(ctx, state, phase, task, intent_basis=None):
@@ -4012,11 +4035,12 @@ def advance(ctx, state, manifest, phase, task, tree=None):
         if problem:
             return E_STOPPED, "%s %s: stopped - %s" % (PREFIX, ctx["phase"], problem)
         if reviewer is None and _marked(state, "dispatched-reviewer", task):
-            reviewer, stop = reviewer_session_step(ctx, state, manifest, phase,
-                                                   task, tree)
+            reviewer, stop = reviewer_session_step(ctx, state, manifest, task)
             if stop is not None:
                 return stop
-            if reviewer is None:
+            # A session that opened no file spends the dispatch mark, so its
+            # redispatch is the one below, past the stored gate's own check.
+            if reviewer is None and _marked(state, "dispatched-reviewer", task):
                 return decision(ctx, state, "no-reviewer-return", task, "")
     # THE RECORDED GATE RUNS ONCE PER START, BEFORE THE REVIEWER OR THE CLOSE,
     # whatever the key: a task whose review is carried to the phase still owes
@@ -4943,6 +4967,16 @@ def keep_old_tree(ctx, state, task_id):
     return {"key": key, "path": tree}, None
 
 
+def marker_kept_key(tree, task_id):
+    """The key a redo of `task_id` keeps a tree under, when `tree`'s marker
+    names one - the marker a redo rewrites first (`keep_old_tree`) - else None.
+    The one reading of it, for the settle and for `submit_tree`."""
+    key = str((_worktrees.read_provenance(tree).get("record") or {})
+              .get("taskId") or "")
+    hit = _ASIDE_KEY_RE.match(key)
+    return key if hit and hit.group(1) == str(task_id) else None
+
+
 def settle_kept_markers(ctx, state):
     """Settle by the marker a redo that died between rewriting its old tree's
     marker and recording the tree kept (`keep_old_tree`): a tree `wave.trees`
@@ -4955,11 +4989,8 @@ def settle_kept_markers(ctx, state):
     for task_id, tree in sorted(trees.items()):
         if not isinstance(tree, str) or not os.path.isdir(tree):
             continue
-        key = str((_worktrees.read_provenance(tree).get("record") or {})
-                  .get("taskId") or "")
-        hit = _ASIDE_KEY_RE.match(key)
-        if not hit or hit.group(1) != str(task_id) \
-                or (state.get("keptTrees") or {}).get(key) not in (None, tree):
+        key = marker_kept_key(tree, task_id)
+        if not key or (state.get("keptTrees") or {}).get(key) not in (None, tree):
             continue
         record_kept(ctx, state, task_id, key, tree)
         ctx["did"].append("the tree of %s at %s is kept as %r, as its marker "
@@ -8046,9 +8077,13 @@ def review_findings_step(ctx, state, phase, review):
 
 # --- sign-off's last step: the gate, the verdict, the landing -------------------
 def phase_gate(ctx, phase):
-    """`(code, stdout, stderr)` of the phase's recorded gate run, each step held
-    to `SIGNOFF_STEP_SECONDS`, derived first when `meta.phaseGate.mode` asks for
-    a derived gate."""
+    """`(code, stdout, stderr)` of the phase's recorded gate run, derived first
+    when `meta.phaseGate.mode` asks for a derived gate.
+
+    Only the recorded run is held to `SIGNOFF_STEP_SECONDS`, through
+    `run-test-gate.py --timeout`. The derivation takes no bound from here:
+    `derive-phase-gate.py` has no such flag, and each listing it spawns is held
+    to that file's own per-observation timeouts instead."""
     manifest = _mio.load_manifest(ctx["manifest"])
     if ((manifest.get("meta") or {}).get("phaseGate") or {}).get("mode"):
         code, out, err = run_verb(ctx, "derive-phase-gate.py", [
@@ -8720,7 +8755,13 @@ def finish_task(ctx, state, task):
     when nothing else is in it. Those two stay until the phase's own `finish`
     drops the whole state: a later phase review hands findings back through
     them - the hand-back's record holds the closed-at-no-new-commit guard, and
-    the writer's record of the start is the session a hand-back resumes."""
+    the writer's record of the start is the session a hand-back resumes.
+
+    SO A TASK-SCOPED DRIVE OF A WRITER TASK LEAVES ITS STATE FILE BEHIND, by
+    design, holding only those marks: no task-scoped drive drops it, and one
+    never followed by a phase drive keeps it until a phase drive's `finish`
+    does. `rw3` reads the kept state back; `rw4` is the twin with no writer
+    record, whose state is dropped."""
     stop = release_lock(ctx, state)
     if stop is not None:
         return stop
@@ -9233,7 +9274,14 @@ def submit_tree(ctx, phase, task):
     """`(tree, None)` - the worktree the driver's open wave gave `task`, or None
     when the task runs in the phase tree - or `(None, stop)` when the wave names
     a tree that is gone. Read from the driver's state, never from the agent's
-    working directory: an agent's shell does not stay where it was put."""
+    working directory: an agent's shell does not stay where it was put.
+
+    A TREE ITS MARKER CALLS KEPT IS NOT THE TASK'S: a redo that died between
+    rewriting the marker and writing the state leaves the state naming a tree
+    the marker already keeps under a redo's key, and only a drive step settles
+    that (`settle_kept_markers`, under the drive's lock, which `submit` does
+    not take). A return filed against it would be keyed to a tree the next
+    step stops naming, so it is refused until that step has run."""
     wave = wave_state(ctx, phase)
     tree = (wave.get("trees") or {}).get(task["id"])
     if not tree:
@@ -9241,6 +9289,14 @@ def submit_tree(ctx, phase, task):
     if not os.path.isdir(tree):
         return None, _stopped(ctx, "the wave gave %s the tree %s, and it is gone. "
                               "Nothing filed." % (task["id"], tree))
+    kept = marker_kept_key(tree, task["id"])
+    if kept:
+        return None, _stopped(ctx, "the wave's tree for %s, %s, is marked kept as "
+                              "%r by a redo that stopped before recording it, so "
+                              "it is no longer the task's tree. Run next %s to "
+                              "settle it and cut the task's next tree, then submit "
+                              "from there. Nothing filed." % (
+                                  task["id"], tree, kept, ctx["phase"]))
     return tree, None
 
 

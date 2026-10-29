@@ -1188,6 +1188,23 @@ def _wf_suite(cases):
     return "\n".join(body) + "\n"
 
 
+def _module_bytecode(root, name):
+    """Every bytecode file of module `name` an interpreter left for a fixture
+    rooted at `root`: in any `__pycache__` below it, and under the
+    `PYTHONPYCACHEPREFIX` tree in a directory mirroring `root`, which is where
+    an interpreter handed that prefix writes instead. Sorted paths."""
+    def wanted(f):
+        return f.startswith(name + ".") and f.endswith(".pyc")
+    found = [os.path.join(d, f) for d, _sub, files in os.walk(root)
+             for f in files if wanted(f)]
+    prefix = os.environ.get("PYTHONPYCACHEPREFIX")
+    mark = os.path.basename(os.path.normpath(root))
+    if prefix and os.path.isdir(prefix):
+        found += [os.path.join(d, f) for d, _sub, files in os.walk(prefix)
+                  for f in files if wanted(f) and mark in d.split(os.sep)]
+    return sorted(found)
+
+
 _WF_HEAD_TEST = _wf_suite([("old1", "mine.v >= 1")])
 _WF_NEW_TEST = _wf_suite([("old1", "mine.v >= 1"), ("new1", "mine.v == 2")])
 
@@ -1727,9 +1744,24 @@ def _writer_lock_cases(check):
     # round fixes it and changes the test file.
     root_r, mpath_r = _tdd_writer_repo("wl-resume", (_wf_gate(),))
     _signal_next(M, root_r, mpath_r)
-    code_r, line_r = _writer_round(M, root_r, mpath_r, bindir, log, "0.42",
-                                   edit={_WF_SRC: "v = 3\n", _WF_TEST: _WF_NEW_TEST},
-                                   result=_said("first try"))
+    # An exported PYTHONDONTWRITEBYTECODE would make the stale-bytecode hazard
+    # absent, so wl3/wl4 would pass with the suite generator's switch deleted:
+    # the round-0 gate runs without it, whatever the caller exports.
+    ambient = os.environ.pop("PYTHONDONTWRITEBYTECODE", None)
+    try:
+        code_r, line_r = _writer_round(
+            M, root_r, mpath_r, bindir, log, "0.42",
+            edit={_WF_SRC: "v = 3\n", _WF_TEST: _WF_NEW_TEST},
+            result=_said("first try"))
+    finally:
+        if ambient is not None:
+            os.environ["PYTHONDONTWRITEBYTECODE"] = ambient
+    stale = _module_bytecode(root_r, "mine")
+    check("wl3b the round-0 gate left no bytecode of src/mine.py to be trusted - "
+          "none beside the source and none under PYTHONPYCACHEPREFIX - so the "
+          "generated suite's own switch is what keeps the resume round's source "
+          "from being read stale, whatever the timing: %r" % (stale,),
+          "gate-red-writer" in line_r and stale == [])
     early = _filed_body(mpath_r, "P1.1")
     _signal_next(M, root_r, mpath_r, "--answer", "resume")
     moved = _WF_NEW_TEST + "# the resume round touched the suite\n"
@@ -2425,6 +2457,136 @@ def _reviewer_session_cases(check):
     check("rv6 THE ROLLBACK TWIN: with no writer session the reviewer is still the "
           "Agent, and names no session runner: %r" % ((code3, line3),),
           M.REVIEWER_AGENT in line3 and "run-agent-session.py" not in line3)
+    _reviewer_redispatch_gate_cases(check, M, bindir, log)
+    _reviewer_stream_branch_cases(check, M, bindir, log)
+
+
+def _rv_gate_runs(M):
+    """Wrap `M.run_verb` so each `run-test-gate.py` call is counted. -> (calls,
+    restore)."""
+    calls = []
+    real = M.run_verb
+
+    def kept(ctx, script, args, *rest, **kw):
+        if script == "run-test-gate.py":
+            calls.append(list(args))
+        return real(ctx, script, args, *rest, **kw)
+    M.run_verb = kept
+
+    def restore():
+        M.run_verb = real
+    return calls, restore
+
+
+def _rv_set_task_gate(mpath, entries):
+    """The task's own `tests.gate` edited by hand, uncommitted."""
+    with open(mpath, encoding="utf-8") as fh:
+        plan = json.load(fh)
+    plan["phases"][0]["tasks"][0]["tests"]["gate"] = list(entries)
+    with open(mpath, "w", encoding="utf-8") as fh:
+        json.dump(plan, fh, indent=2)
+
+
+def _rv_unread_then_next(M, bindir, log, between=None):
+    """A reviewer session that opened no file, `between(root, mpath)` run after
+    it, then one `next --signal`. -> (code, line, gate_calls, block)."""
+    root, mpath, _line = _reviewer_dispatch(M, bindir, log)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    _play_session(root, _run_argv(block) or [], bindir, log, "0.24",
+                  session=RV_SESSIONS[0], result=_review_json(mpath), tools=0)
+    if between is not None:
+        between(root, mpath)
+    calls, restore = _rv_gate_runs(M)
+    try:
+        code, line = _signal_next(M, root, mpath)
+    finally:
+        restore()
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    return code, line, calls, block
+
+
+def _reviewer_redispatch_gate_cases(check, M, bindir, log):
+    """The automatic redispatch of a reviewer that opened no file asks first, as
+    a first dispatch does, whether the stored gate run still answers the gate:
+    a gate edited while the first session ran is measured again before the
+    second reviewer is dispatched, and an unchanged one is not."""
+    moved_gate = ['"%s" -B %s' % (sys.executable.replace("\\", "/"), _WF_TEST)]
+    code, line, calls, block = _rv_unread_then_next(
+        M, bindir, log,
+        between=lambda root, mpath: _rv_set_task_gate(mpath, moved_gate))
+    check("rv7 a gate edited between a zero-tool reviewer session and its "
+          "redispatch is measured again - one gate run - before the second "
+          "reviewer is dispatched, and the drive says the stored green was "
+          "measured again: %r" % ((code, line, len(calls), block[:400]),),
+          code == 0 and "run-agent-session.py --role reviewer" in line
+          and len(calls) == 1 and "measured again" in block)
+    # THE TWIN for a redispatch that measures every time: an unchanged gate is
+    # not run again, so the second reviewer is shown the green it stood on.
+    code_t, line_t, calls_t, _b = _rv_unread_then_next(M, bindir, log)
+    check("rv7b THE TWIN: with the gate unchanged the redispatch runs no gate - "
+          "the stored green still answers it: %r" % ((code_t, line_t, calls_t),),
+          code_t == 0 and "run-agent-session.py --role reviewer" in line_t
+          and calls_t == [])
+
+
+def _rv_stream_of(M, block):
+    """The saved stream the last run of the record a `run:` line names wrote."""
+    runs = M.read_sessions(_flag(_run_argv(block) or [], "--record") or "")
+    return runs[-1]["stream"] if runs else None
+
+
+def _reviewer_stream_branch_cases(check, M, bindir, log):
+    """The three readings of a reviewer session's last run the zero/many-tool
+    cases do not reach: a stream with no assistant message to count in, prose
+    with no object in it, and an object `submit` refuses."""
+    # A STREAM NOBODY CAN COUNT IN: neither a read nor an unread - no
+    # cannot-tell note, no redispatch, a stop of its own.
+    root, mpath, _line = _reviewer_dispatch(M, bindir, log)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    _play_session(root, _run_argv(block) or [], bindir, log, "0.25",
+                  session=RV_SESSIONS[0], result=_review_json(mpath), tools=3)
+    stream = _rv_stream_of(M, block)
+    kept = []
+    if stream and os.path.isfile(stream):
+        with open(stream, encoding="utf-8") as fh:
+            kept = [ln for ln in fh if '"assistant"' not in ln]
+        with open(stream, "w", encoding="utf-8", newline="\n") as fh:
+            fh.writelines(kept)
+    code, full = _next(M, root, mpath)
+    check("rv8 a reviewer stream holding no assistant message is a stop that "
+          "says the drive cannot count tool calls in it - no cannot-tell note, "
+          "no redispatch, nothing filed: %r" % ((code, stream, full[-400:]),),
+          bool(kept) and code != 0
+          and "cannot count tool calls" in full
+          and "run-agent-session.py --role reviewer" not in full
+          and not [n for n in _notes(mpath, "P1.1") if "cannot-tell" in n]
+          and not os.path.exists(_filed_path(mpath, "P1.1", "reviewer")))
+    # PROSE WITH NO OBJECT: the session read files and ended with no return,
+    # which is the plain no-reviewer-return.
+    root, mpath, _line = _reviewer_dispatch(M, bindir, log)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    _play_session(root, _run_argv(block) or [], bindir, log, "0.26",
+                  session=RV_SESSIONS[1], tools=3,
+                  result="I read the change and it does what the task asks.")
+    code, line = _signal_next(M, root, mpath)
+    check("rv9 a reviewer session that read files and ended in prose holding no "
+          "object is asked as no-reviewer-return, with nothing filed: %r"
+          % ((code, line),),
+          code == 0 and "no-reviewer-return" in line
+          and not os.path.exists(_filed_path(mpath, "P1.1", "reviewer")))
+    # AN OBJECT SUBMIT REFUSES: no verdict, so the shape check stops it.
+    root, mpath, _line = _reviewer_dispatch(M, bindir, log)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    _play_session(root, _run_argv(block) or [], bindir, log, "0.27",
+                  session=RV_SESSIONS[2], tools=3,
+                  result=json.dumps({"findings": []}))
+    code, full = _next(M, root, mpath)
+    check("rv10 a reviewer session whose last object lacks a verdict is refused "
+          "by submit's shape check, relayed, and nothing is filed: %r"
+          % ((code, full[-400:]),),
+          code != 0 and "verdict" in full
+          and "no-reviewer-return" not in full
+          and not os.path.exists(_filed_path(mpath, "P1.1", "reviewer")))
 
 
 # --- a phase-review finding blocks only once a second pass confirms it ---------
@@ -6822,6 +6984,19 @@ def _reuse_gate_cases(check):
           % ((held, (named or {}).get("phaseId")),),
           named is not None and named.get("phaseId") == PHASE
           and not named.get("taskId") and held.get("head") == _head(root))
+    # The terse green line joins its records with "; ", so the id is followed
+    # by a separator whenever a pointer or a log line comes after it - which
+    # this fixture's run does not print, so dc4p alone reads the id whole.
+    terse = "[run-test-gate] GATE GREEN; evidence: recorded %s; pointer: %s" % (
+        held.get("runId"), "docs/audit/evidence/x.json")
+    read = M2._RUN_ID.search(terse)
+    read_id = read.group(1) if read else None
+    check("dc4t the run id read off a terse green line with a record after it is "
+          "the id alone, and names the ledger row the held run names: %r"
+          % ((terse, read_id),),
+          bool(held.get("runId")) and read_id == held.get("runId")
+          and _evio.row_by_run(_evio.read_rows(project, config)["rows"],
+                               read_id) is not None)
     before = seen["runs"]
     added = _add_task(root, mpath, gate=UNRELATED_GATE)
     code, text = _next(M2, root, mpath, "--answer", "accept", "--reason",
@@ -9671,10 +9846,13 @@ def _recut_precondition_cases(check, M):
           and held_f == _AR_FORCED_TEXT.encode()
           and carried_f == _AR_FORCED_TEXT)
 
-    # Whatever the read of the work misses, the commit it builds is checked
-    # against what git status lists in the tree: here the seed from the tree's
-    # own index reads nothing, as a read from HEAD would, and the redo is
-    # refused before anything comes down rather than dropping the file. The
+    # A forced file the read of the work misses is refused by the staged-state
+    # question, not by the commit's check against the files: here the seed from
+    # the tree's own index reads nothing, as a read from HEAD would, and the
+    # file is ignored on disk, so `_unheld` counts it held and the commit check
+    # passes. What stops the redo is `tree_undescribed`: the tree's index
+    # stages the file and the work commit does not hold it. The check of the
+    # commit against what git status lists is ar17b's and ar17c's to pin. The
     # filed carry ref is taken away first - a filing made on another machine,
     # or one that carried nothing - so the carry's own lost-path refusal
     # (ar8) cannot be what stops it.
@@ -9693,8 +9871,9 @@ def _recut_precondition_cases(check, M):
         code_u, said_u = _next(M, root_u, mpath_u, "--answer", "redo")
     finally:
         M.carry_git = real_git
-    check("ar17 a read of the work that misses a path git status lists in the "
-          "tree refuses the redo by name before anything comes down: the old "
+    check("ar17 a read of the work that misses a force-added file the tree's "
+          "index stages is refused by the staged-state question, by name, "
+          "before anything comes down: the old "
           "tree, its forced file and the carry ref are as they were: %r"
           % ((code_u, said_u[-500:]),),
           "redo" in _offers(text_u) and code_u != 0
@@ -9882,6 +10061,11 @@ def _command_line_git(listing, spell):
             return 0, b"".join(n + b"\0" for n in names), ""
         return 0, b"", ""
     return fake, seen
+
+
+def _pathspec_args(argv):
+    """The elements of one recorded git argv that are `:(literal)` pathspecs."""
+    return [a for a in argv if isinstance(a, str) and a.startswith(":(literal)")]
 
 
 def _redo_refused_intact(M, root, mpath, tree, base, name):
@@ -10167,16 +10351,23 @@ def _recut_describes_cases(check, M):
             M.carry_git = real_git
         answered.append((platform, [_as_git_bytes(p) for p in listed or []],
                          [_as_git_bytes(p) for p in between or []],
-                         [_as_git_bytes(p) for p in unheld or []], len(seen)))
+                         [_as_git_bytes(p) for p in unheld or []],
+                         len(seen), [a for a in seen if _pathspec_args(a)]))
+    # The fake's pathspec matching is dormant while the product narrows in
+    # Python: no argv the listings ran may carry a `:(literal)` pathspec, so a
+    # reintroduced one goes red here on every platform leg, not only where a
+    # command line cannot spell the bytes.
     check("ar22 a path git lists in bytes that are not UTF-8 is answered for as "
           "those bytes through a POSIX command line and a Windows one alike: the "
           "listing returns it whole, and a listing narrowed to it - or to a "
-          "directory above a path - names it and nothing else: %r" % (answered,),
+          "directory above a path - names it and nothing else, narrowed in the "
+          "drive with no git argv carrying a literal pathspec: %r" % (answered,),
           len(answered) == len(_COMMAND_LINES)
           and all(sorted(got) == sorted(listing)
                   and sorted(between) == [raw, b"dir/inner.txt"]
                   and sorted(unheld) == [raw, b"other.txt"]
-                  for _p, got, between, unheld, _n in answered))
+                  and ran > 0 and specs == []
+                  for _p, got, between, unheld, ran, specs in answered))
 
 
 def _recut_crash_cases(check, M):
@@ -10732,6 +10923,19 @@ def _kept_tree_cases(M, check):
         M._worktrees.write_record = real_record
     between = (_tree_of(root_k, "P1.1"),
                dict(_drive_state(root_k).get("keptTrees") or {}))
+    # A submit arriving in that window resolves its tree without the drive's
+    # settle, so it must read the marker itself: the tree the state still names
+    # is already kept, and a return keyed to it would name a tree the next
+    # step stops naming.
+    task_k = tasks_of(mpath_k).get("P1.1") or {}
+    early_tree, early_stop = M.submit_tree(_drive_ctx(root_k, mpath_k),
+                                           _phase_of(mpath_k), task_k)
+    check("ta21s a submit between the marker's rewrite and the state's is refused "
+          "naming the kept key and the step that settles it, and resolves no "
+          "tree: %r" % ((early_tree, early_stop),),
+          early_tree is None and early_stop is not None
+          and "P1.1 set aside 1" in early_stop[1] and "Nothing filed" in early_stop[1]
+          and "next %s" % (PHASE,) in early_stop[1])
     code_k, said_k = _next(M, root_k, mpath_k)
     kept_k = dict(_drive_state(root_k).get("keptTrees") or {})
     recut_k = _tree_of(root_k, "P1.1") or ""
@@ -10751,6 +10955,14 @@ def _kept_tree_cases(M, check):
           and recut_k == tree_k + ".redo-1" and os.path.isdir(recut_k)
           and "as its marker says" in said_k
           and code_k != 0 and patch in said_k and "git apply --3way" in said_k)
+    # THE TWIN for a refusal that fires on every member tree: once the step
+    # settled it, the recut tree is the task's and a submit resolves it.
+    late_tree, late_stop = M.submit_tree(_drive_ctx(root_k, mpath_k),
+                                         _phase_of(mpath_k),
+                                         tasks_of(mpath_k).get("P1.1") or {})
+    check("ta21t THE TWIN: after the settle, a submit resolves the recut tree: %r"
+          % ((late_tree, late_stop, recut_k),),
+          late_stop is None and late_tree == recut_k and bool(recut_k))
     # Following the stop's remedy as written - apply the patch in the recut
     # tree, take the patch and the pin away - the drive goes on, measures the
     # gate in the recut tree, and the member closes on both edits.
@@ -10911,6 +11123,18 @@ def _text_cases(check):
           "a section of a design document the install does not ship: %r"
           % (basis,),
           "benchmark" in basis and "design" not in basis)
+    # The sign-off report repeats where the work landed and what that means:
+    # a landing on a parent other than the development branch has not put the
+    # work there. A rule shortened to "report where it landed" alone tells the
+    # agent to say a branch name and nothing about the consequence.
+    done = " ".join((M.STEPS.get("done") or {}).get("rule") or ())
+    nff = (M.STEPS.get("decide-not-fast-forward") or {}).get("line") or ""
+    check("tx3 the done rule carries the consequence of a landing off the "
+          "development branch - another parent, a development branch that lacks "
+          "the work - and the not-fast-forward line says the parent moved: %r"
+          % ((done, nff),),
+          "another parent" in done and "development branch lacks" in done
+          and "the parent moved" in nff)
 
 
 def _submit_unchanged(root, mpath, task_id, over=None):
@@ -11507,6 +11731,20 @@ def _signal_cases(check):
           "which has no process of its own: %r" % (counted,),
           isinstance(rule, str)
           and counted == [("sessions", 1), ("mixed", 1), ("agents", 0)])
+    # The same count over the text `--explain` keeps for that wave's signal,
+    # which `signal()` builds through the render - so a render that dropped or
+    # doubled the sentence is red here, not only a wave print that did.
+    wave_ctx = {"phase": "P1", "only": None, "manifest": where["manifest"],
+                "project": "proj", "verbose": False, "log": [], "did": []}
+    explained = []
+    for name, w in waves:
+        kept = M.signal(wave_ctx, 0, w)["explain"]
+        explained.append((name, kept.count(rule) if isinstance(rule, str) else -1))
+    check("sn4x the text --explain keeps for a wave dispatch's signal carries "
+          "SESSION_BUDGET_RULE once however many of its members are sessions, "
+          "and none when every member is an Agent: %r" % (explained,),
+          isinstance(rule, str)
+          and explained == [("sessions", 1), ("mixed", 1), ("agents", 0)])
     # THE BUDGET A REVIEWER OR VALIDATION SESSION RUNS UNDER is the writer's:
     # `reviewer_session_setting` swaps the model and keeps the rest, so the
     # sentence's "set by executor.writerBudgetUsd" is true of them as worded.
@@ -12525,6 +12763,69 @@ def _redispatch_wave_cases(check):
           and _flag(last.get("argv"), "--tree") == tree
           and _flag(last.get("argv"), "--role") == "reviewer"
           and len(dispatches) == 2)
+    _wave_writer_cases(check, M, bindir, log)
+
+
+def _wave_writer_cases(check, M, bindir, log):
+    """A writer session that edits in a wave member's own tree is settled
+    there: the commit check reads that tree's HEAD, the filing gates and
+    carries that tree's work, and the digest a proof locks is read from that
+    tree - each with the project tree left as it was."""
+    root, mpath = _wave_repo("wwriter", 2, per_task="always")
+    cfg_path = os.path.join(root, ".claude", "audit.config.json")
+    with open(cfg_path, encoding="utf-8") as fh:
+        cfg = json.load(fh)
+    cfg["executor"].update(WRITER_EXECUTOR)
+    with open(cfg_path, "w", encoding="utf-8") as fh:
+        json.dump(cfg, fh)
+    _harness.git(root, "commit", "-qam", "the writer session")
+    _signal_next(M, root, mpath)
+    committer, filer = TASKS[0], TASKS[1]
+    project_head = _head_of(root)
+    for n, member in enumerate((committer, filer), 1):
+        _play_session(root, _recorded_dispatches(root, member)[-1]["argv"], bindir,
+                      log, "0.6%d" % (n,), session=RV_SESSIONS[n - 1],
+                      edit={"src/f%d.txt" % (n,): "changed by %s\n" % (member,)},
+                      result=_said("done", (1,), path="src/f%d.txt" % (n,)),
+                      commit=member == committer)
+    _signal_next(M, root, mpath)
+    tree_c, tree_f = _tree_of(root, committer), _tree_of(root, filer)
+    made = _head_of(tree_c) if tree_c else ""
+    _c, asked = _explain_of(M, root, mpath, committer)
+    check("ww1 a writer session that committed in its member tree is told by "
+          "that tree's HEAD: the decision names the commit it made there, "
+          "files nothing, and the project tree's HEAD has not moved: %r"
+          % ((made[:12], asked[:300], project_head[:12]),),
+          bool(made) and made != project_head
+          and "writer-committed" in asked and made[:12] in asked
+          and _filed_body(mpath, committer) is None
+          and _head_of(root) == project_head)
+    _c, filed_said = _explain_of(M, root, mpath, filer)
+    carried = _git_out(root, "show", "refs/audit/carry/%s:src/f2.txt" % (filer,))
+    check("ww2 a writer session that edited its member tree is filed from that "
+          "tree: its gate ran green there, its work is carried from it, and the "
+          "project tree's file is as the base held it: %r"
+          % ((filed_said[:400], carried),),
+          _filed_body(mpath, filer) is not None
+          and "gate %s green" % (filer,) in filed_said
+          and carried == "changed by %s\n" % (filer,)
+          and _read(os.path.join(root, "src", "f2.txt")) == b"v0\n")
+    # THE LOCK READS THE MEMBER TREE: a digest locked over the tree's file is
+    # unmoved there and moved against the project's copy, so a lock read from
+    # the project would call every member's test file changed.
+    task = tasks_of(mpath).get(filer) or {}
+    state = _drive_state(root)
+    held = M.writer_state(state, task)
+    lock = {"files": [{"path": "src/f2.txt", "sha256": M._journal_io.file_hash(
+        os.path.join(tree_f or "", "src", "f2.txt"))}]}
+    M._mark(state, "writer", task, dict(held, lock=lock))
+    ctx = {"gitRoot": root, "project": root}
+    in_tree = M.lock_moved(ctx, state, task, tree_f)
+    in_project = M.lock_moved(ctx, state, task)
+    check("ww3 a member's locked digest is read from its own tree - unmoved there "
+          "- while the same digest read from the project tree names the file: %r"
+          % ((in_tree, in_project),),
+          bool(tree_f) and in_tree == [] and in_project == ["src/f2.txt"])
 
 
 STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
@@ -14455,6 +14756,21 @@ def _own_commit_cases(check):
                        [_own_start(0, base), _own_nonce(5, "n1")])
         check("oc7-%s a carrier whose subject does not open with this task's "
               "header is not named: %r" % (tag, (got, sha)), got is None)
+    # ...and the header's type is the plan's `meta.commit.type`, any non-empty
+    # string: one holding a parenthesis or a space still opens a task commit,
+    # while a subject naming the task's scope only after another header's
+    # separator does not.
+    for tag, subject, named in (
+            ("paren", "feat(audit)(P1.1): audit - the work", True),
+            ("space", "my type(P1.1): audit - the work", True),
+            ("later", "chore(P1.2): audit - see fix(P1.1): elsewhere", False)):
+        root, base = _own_repo("oc7b-" + tag)
+        sha = _own_made(root, "n1", "v1\n", subject=subject)
+        got = _own_ask(M, root, _own_task(),
+                       [_own_start(0, base), _own_nonce(5, "n1")])
+        check("oc7b-%s a carrier under the subject %r is %s: %r"
+              % (tag, subject, "named" if named else "not named", (got, sha)),
+              got == (sha if named else None))
 
     # LAST PARAGRAPH: a message that absorbed the trailer in its middle.
     root, base = _own_repo("oc8")
@@ -14505,6 +14821,28 @@ def _own_commit_cases(check):
     check("oc11 a start that names no head of this attempt, or a journal that "
           "cannot be read, names no commit: %r" % ((got, sha),),
           got == [None, None, None, None])
+
+    # TWO READERS OF ONE ROW: the attempt's start moment and its start head are
+    # read by two predicates over the same rows, which agree only while nobody
+    # edits one. Each row below carries a head and a moment of its own, so the
+    # row each reader picked is named by what it returned.
+    heads = dict(("%07x" % (n,), n) for n in range(1, 8))
+    rows = [_own_start(1, "0000001"),
+            _own_start(2, "0000002", attempt=2),
+            _own_row("task.start", 3, taskId="P1.2", attempt=2, commit="0000003"),
+            _own_row("task.commit", 4, taskId="P1.1", attempt=2, commit="0000004"),
+            _own_start(5, "0000005", attempt=2),
+            _own_start(6, "0000006", attempt=3)]
+    picked = []
+    for attempts in (1, 2, 3, 4):
+        task = _own_task(attempts=attempts)
+        head = M._scoped_commit.start_head_of(rows, task)
+        moment = M._attempt_start_moment(rows, task)
+        picked.append((attempts, heads.get(head),
+                       None if moment is None else int(moment) - _OWN_EPOCH))
+    check("oc12 the attempt's start moment is read off the row its start head is: "
+          "for each attempt both readers pick the same row, or none: %r" % (picked,),
+          picked == [(1, 1, 1), (2, 5, 5), (3, 6, 6), (4, None, None)])
 
 
 def _stage_cases(check):
