@@ -1,0 +1,31 @@
+{
+ "findings": [
+  {"id": 1, "severity": "med", "file": "PLUGIN-BUILD-GUIDE.md:4818-4830",
+   "issue": "contradicts task clause \"No number written into prose\": the new stop_and_drain paragraph writes cardinalities - \"all three hold\", \"so the three cannot come to disagree\", \"this module's two functions\", \"Two callers still tear down without it\". The last is the one that rots: it is true of the tree today (derive-phase-gate.py:202-203 and run-agent-session.py:444 are the only non-stop_and_drain teardowns) and goes false the day either migrates, while the names beside it stay right. The prose lint passes only because it does not know these shapes (a plain 'the N noun' is author-enforced, per CLAUDE.md).",
+   "resolution": "Delete the numbers and keep the names: 'only when each of these holds: ...', 'so the callers cannot come to disagree', 'this module's tear_down and drain_to_eof', 'Callers that still tear down without it and record no confirmation: derive-phase-gate._spawn ..., run-agent-session.run_session ...'."},
+  {"id": 2, "severity": "low", "file": "PLUGIN-BUILD-GUIDE.md:4820",
+   "issue": "The line starts with \"- and calls the teardown confirmed only when ...\" (the dash is a sentence dash that wrapped to a line start). In CommonMark/GitHub a bullet can interrupt a paragraph, so the page renders the tail of the sentence as a list item and splits the paragraph.",
+   "resolution": "Re-wrap so the dash is not the first character of a line (e.g. put 'full pipe -' at the end of the previous line, as the paragraph above does with 'and')."},
+  {"id": 3, "severity": "low", "file": "PLUGIN-BUILD-GUIDE.md:4825-4826",
+   "issue": "\"each wording an unconfirmed answer its own way\" is not true of drive-phase.run_lint_probe: its docstring (drive-phase.py:8231-8233) says it takes the wording stamp-verification red gives, and its suffix \" (not confirmed)\" (drive-phase.py:8250-8251) is identical to stamp-verification._run_in's (stamp-verification.py:3350-3351). Only run-test-gate (facts[\"teardown\"] = \"unconfirmed\", run-test-gate.py:3150-3151) words it differently. stop_and_drain's own docstring says the same 'its own way', so the guide copies a loose phrase.",
+   "resolution": "Say what is true: run-test-gate records teardown: unconfirmed in its facts, while stamp-verification._run_in and drive-phase.run_lint_probe append '(not confirmed)' to the timeout sentence."},
+  {"id": 4, "severity": "low", "file": "PLUGIN-BUILD-GUIDE.md:4942-4944",
+   "issue": "The run list \"HEAD's own, the task's, the second (--introduces) and the fix run\" is presented as every run the one deadline covers, but red_run also makes a 'task-held' re-run (stamp-verification.py:4333-4344, guarded by start_problem(['task-held'], ...)) when inline-pulled-in code made the task's run green. The task asked that every sentence be true of the code; the enumeration is closed and omits that run.",
+   "resolution": "Add the conditional re-run with the task's run held back to the list, or word it as 'every run red makes' without a closed enumeration."},
+  {"id": 5, "severity": "low", "file": "tests/test__deps.py:484 (gate: tests/test__deps.py, tests/test__output_lints.py)",
+   "issue": "Inherited-tests judgement from reading: the task's gate selects two lint suites that assert the guide's structure (path, enumeration, prose-number shapes), none of its claims. Both would still pass with the whole stop_and_drain paragraph and the rewritten deadline paragraph deleted or made false.",
+   "resolution": "Accept as inherent to a prose task, or file a task for a case that checks the guide's named functions (stop_and_drain, drain_to_eof, fit_problem, start_problem, sweep_budget) still exist in the code it names."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Clause (1): sized_deadline's paragraph said 'per-cost factor over recorded slot-seconds'; the guide now says figures are slot-seconds, sweep_wall/schedule_wall read wall time as the busiest slot of the costliest-first schedule over sweep_jobs workers, proof_need is that wall time per PROOF_RUNS run, sized_deadline is TIMEOUT_PER_COST times the need when above DEFAULT_TIMEOUT capped at MAX_TIMEOUT, fit_problem refuses before any run (before _at_head and _build_throwaway in red, stamp-verification.py:4287) with a basis naming need, per-run wall, how read, deadline, and start_problem refuses a run left short (baseline check counts the task run after it; fix run measured against deadline, earlier ones against 'early'). Each of these sentences checked true against stamp-verification.py:3935-4137 and 4287-4365; sweep_budget reserve = min(wall, timeout//2) matches 'never more than half'. Clause (2): _proc_group.drain_to_eof (_proc_group.py:251) and stop_and_drain (:268; killed and complete and proc.poll() is not None) are named and described correctly, callers run-test-gate._shell (passing _tear_down/_drain_to_eof aliases, run-test-gate.py:3147), stamp-verification._run_in (:3348), drive-phase.run_lint_probe (:8245) each call it on timeout and on interrupt (verified). The task text says every timed-out teardown goes through it; the code does not (derive-phase-gate._spawn :202-203, run-agent-session.run_session :444), and the executor's outcome and the guide state that discrepancy as it is, which I confirm. Executor's outcome describes the diff and its dependants (test__deps, test__affected_tests, test__doctor_trail, test__help, evals) as unchanged, which holds since the diff adds no tree/map fence and touches no existing anchor line. Defects are in wording (findings 1-4), not in the claims about behaviour.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Executor filed not-attempted: a documentation-only task, tests.add is none, so no red is owed; the basis holds.",
+  "inheritedTests": "flagged",
+  "inheritedTestsBasis": "Gate is the literal `python3 tools/sweep-selftests.py tests/test__deps.py tests/test__output_lints.py`; grep of both files for stop_and_drain, drain_to_eof, fit_problem, sized_deadline finds nothing, and the only guide reference is the path at tests/test__deps.py:484. They police the guide's shape, never the truth of the changed paragraphs (finding 5)."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

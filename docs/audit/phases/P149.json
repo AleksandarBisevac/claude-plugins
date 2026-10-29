@@ -99,11 +99,56 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/stamp-verification.py:3901-3970 (sized_deadline, sweep_budget), :4066 (early), :4139-4156 (baseline and task run share `early`), :3645-3654 (_timed_run)",
         "issue": "Outside this diff's lines. Filed as a finding at the orchestrator's direction because it is why this task's red-first came back could-not-prove. The red-first helper's deadline split cannot fit this command, and its wording hides that. (a) sized_deadline and sweep_budget read the sweep's recorded slot-seconds as wall seconds. For this command they total 5109 (tests/test_drive_phase.py 4913.6 + tests/test_run_test_gate.py 194.7 in .github/sweep-costs.json). The deadline is capped at 565 and the fix-run reserve at 282, so `early` = 283 s is the whole window for BOTH the baseline and the task run. The recorded task gate for this exact command took durationMs 368645 (evidence row, runId 2026-10-29T15:05:34Z.70a002), so even one run does not fit in 283 s, and the three runs a proof needs cannot fit in 565 s. (b) Nothing reserves a share for the task run: the baseline spent about 276 s of the window, and _timed_run still started the task run because at least 1 s was left, giving it 7 s. (c) The basis then reads 'the run timed out after 7 s', which looks like the suite being slow, when the helper only gave it 7 s and knew before the first run that the proof could not fit. Every task whose gate sweeps tests/test_drive_phase.py hits the same could-not-prove, after about 283 s of wasted runs.",
-        "resolution": "Before the first run, compare what the proof needs (baseline + task run + fix run, in wall terms, not summed slot-seconds) with the sized deadline. When it cannot fit, refuse at once with could-not-prove and name the shortfall (needed vs. allowed, and the figures behind each). Give the task run a held-back share as the fix run already has, so the baseline cannot spend it. When a run is started with less than its share, word the basis that way ('started with N s of the M s window after the baseline spent K s'). For a staged suite, size and run only the blocks that hold the task's new cases (the sweep's --stage) so the proof fits. Pin each case in tests/test_stamp_verification.py with a cost table whose total exceeds MAX_TIMEOUT.",
-        "fixTask": "P149.10-hwg"
+        "resolution": "fixed in P149.10-hwg (1dc3ab5c9eeb): Before the first run, compare what the proof needs (baseline + task run + fix run, in wall terms, not summed slot-seconds) with the sized deadline. When it cannot fit, refuse at once with could-not-prove and name the shortfall (needed vs. allowed, and the figures behind each). Give the task run a held-back share as the fix run already has, so the baseline cannot spend it. When a run is started with less than its share, word the basis that way ('started with N s of the M s window after the baseline spent K s'). For a staged suite, size and run only the blocks that hold the task's new cases (the sweep's --stage) so the proof fits. Pin each case in tests/test_stamp_verification.py with a cost table whose total exceeds MAX_TIMEOUT.",
+        "fixTask": "P149.10-hwg",
+        "commit": "1dc3ab5c9eeb",
+        "status": "fixed"
+      },
+      {
+        "id": "P149-R9",
+        "severity": "low",
+        "file": "PLUGIN-BUILD-GUIDE.md",
+        "issue": "The guide's sized_deadline paragraph still says the red-first deadline is the per-cost factor over the recorded slot-seconds; since P149.10 it is the factor over the wall time the proof's runs need, a proof that cannot fit is refused before any run, and the guide's _proc_group section does not name stop_and_drain, the one home of the teardown rule since P149.9 (reported by both executors, outside their files)",
+        "resolution": "Restate both paragraphs from the code as it stands",
+        "fixTask": "P149.11-hwg"
+      },
+      {
+        "id": "P149-R10",
+        "severity": "med",
+        "file": "PLUGIN-BUILD-GUIDE.md:4818-4830",
+        "issue": "contradicts task clause \"No number written into prose\": the new stop_and_drain paragraph writes cardinalities - \"all three hold\", \"so the three cannot come to disagree\", \"this module's two functions\", \"Two callers still tear down without it\". The last is the one that rots: it is true of the tree today (derive-phase-gate.py:202-203 and run-agent-session.py:444 are the only non-stop_and_drain teardowns) and goes false the day either migrates, while the names beside it stay right. The prose lint passes only because it does not know these shapes (a plain 'the N noun' is author-enforced, per CLAUDE.md).",
+        "resolution": "Delete the numbers and keep the names: 'only when each of these holds: ...', 'so the callers cannot come to disagree', 'this module's tear_down and drain_to_eof', 'Callers that still tear down without it and record no confirmation: derive-phase-gate._spawn ..., run-agent-session.run_session ...'."
+      },
+      {
+        "id": "P149-R11",
+        "severity": "low",
+        "file": "PLUGIN-BUILD-GUIDE.md:4820",
+        "issue": "The line starts with \"- and calls the teardown confirmed only when ...\" (the dash is a sentence dash that wrapped to a line start). In CommonMark/GitHub a bullet can interrupt a paragraph, so the page renders the tail of the sentence as a list item and splits the paragraph.",
+        "resolution": "Re-wrap so the dash is not the first character of a line (e.g. put 'full pipe -' at the end of the previous line, as the paragraph above does with 'and')."
+      },
+      {
+        "id": "P149-R12",
+        "severity": "low",
+        "file": "PLUGIN-BUILD-GUIDE.md:4825-4826",
+        "issue": "\"each wording an unconfirmed answer its own way\" is not true of drive-phase.run_lint_probe: its docstring (drive-phase.py:8231-8233) says it takes the wording stamp-verification red gives, and its suffix \" (not confirmed)\" (drive-phase.py:8250-8251) is identical to stamp-verification._run_in's (stamp-verification.py:3350-3351). Only run-test-gate (facts[\"teardown\"] = \"unconfirmed\", run-test-gate.py:3150-3151) words it differently. stop_and_drain's own docstring says the same 'its own way', so the guide copies a loose phrase.",
+        "resolution": "Say what is true: run-test-gate records teardown: unconfirmed in its facts, while stamp-verification._run_in and drive-phase.run_lint_probe append '(not confirmed)' to the timeout sentence."
+      },
+      {
+        "id": "P149-R13",
+        "severity": "low",
+        "file": "PLUGIN-BUILD-GUIDE.md:4942-4944",
+        "issue": "The run list \"HEAD's own, the task's, the second (--introduces) and the fix run\" is presented as every run the one deadline covers, but red_run also makes a 'task-held' re-run (stamp-verification.py:4333-4344, guarded by start_problem(['task-held'], ...)) when inline-pulled-in code made the task's run green. The task asked that every sentence be true of the code; the enumeration is closed and omits that run.",
+        "resolution": "Add the conditional re-run with the task's run held back to the list, or word it as 'every run red makes' without a closed enumeration."
+      },
+      {
+        "id": "P149-R14",
+        "severity": "low",
+        "file": "tests/test__deps.py:484 (gate: tests/test__deps.py, tests/test__output_lints.py)",
+        "issue": "Inherited-tests judgement from reading: the task's gate selects two lint suites that assert the guide's structure (path, enumeration, prose-number shapes), none of its claims. Both would still pass with the whole stop_and_drain paragraph and the rewritten deadline paragraph deleted or made false.",
+        "resolution": "Accept as inherent to a prose task, or file a task for a case that checks the guide's named functions (stop_and_drain, drain_to_eof, fit_problem, start_problem, sweep_budget) still exist in the code it names."
       }
     ],
-    "outcome": "[findings: 8 - 0 high, 2 med, 6 low; 7 with a recorded fix commit]"
+    "outcome": "[findings: 14 - 0 high, 3 med, 11 low; 8 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -677,7 +722,7 @@
     {
       "id": "P149.10-hwg",
       "title": "The red-first helper sizes its runs in wall time and refuses up front a proof that cannot fit, instead of timing out a run it never gave time",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix review finding P149-R8 (docs/audit/phases/P149.json review.findings): the red-first helper in plugins/audit/scripts/governance/stamp-verification.py sizes its deadline from the recorded sweep cost in slot-seconds (sized_deadline, sweep_budget) and reads it as wall-clock seconds, then caps the whole proof at the host's limit and holds half back for the fix run, so a suite whose single recorded gate run takes longer than the window left (tests/test_drive_phase.py: a recorded run of about six minutes) gets the baseline run and then a task run started with seconds left, and the basis says 'the run timed out after N s' when the helper gave it N s. Every task whose gate sweeps a long suite comes back could-not-prove this way. Fix: convert recorded slot-seconds to the wall time the sweep will actually take (the sweep runs blocks in parallel - read how tools/sweep-selftests.py schedules them and use the same reading, or measure from the recorded gate run's wall time when the plan has one), and when the runs the proof needs cannot fit the deadline, say so BEFORE starting them - could-not-prove with a basis naming the measured need and the deadline - rather than starting a run that cannot finish and reporting its timeout as the cause. A task run started with less time than its measured need is never reported as having timed out on its own. Cases in tests/test_stamp_verification.py, each proven red first: slot-seconds are not read as wall seconds; a proof that cannot fit is refused up front with that basis; a proof that fits is unchanged. No case may rest on a short deadline surviving a loaded runner - drive the arithmetic through recorded costs and a fake clock, not a real sleep. Edit only the declared files; a fix that needs another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -705,14 +750,21 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "1dc3ab5c9eeb",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "stamp-verification.py: the cost table's figures are now read as slot-seconds and turned into wall time the way the sweep schedules them. New: load_sweep_table (costs plus the per-block figures; load_sweep_costs kept as a thin wrapper), sweep_jobs (the command's --jobs in either spelling, else the sweep's default_jobs rule: every core on CI=true, all cores but two elsewhere), schedule_wall (costliest first onto the least-loaded slot, the busiest slot's total), sweep_units, sweep_wall, wall_clause, proof_need (PROOF_RUNS = baseline, task, fix, times one run's wall), fit_problem, start_problem. sized_deadline now sizes from TIMEOUT_PER_COST times the proof's wall need (capped at MAX_TIMEOUT, never under the default) and carries wall/need even under --timeout. sweep_budget holds back one run's wall time (still capped at half the deadline) rather than the summed slot-seconds. run_red: fit_problem is checked before anything is built, and when the proof's runs need more than the deadline no run starts: could-not-prove, with a basis naming the wall need, how it was read and the deadline. start_problem runs before each of the baseline (owing baseline+task), task, task-held, second and fix runs, so a run left less than its measured need is not started and the basis says so, instead of a timeout the helper caused. Measured off the committed table: the P149.8-hwg command (test_run_test_gate + test_drive_phase) needs 1920s of wall time at 8 workers against a 565s deadline, so it is now refused up front; this task's own gate (test_stamp_verification) needs 198s and fits. tests/test_stamp_verification.py: new block swt-wall (_wall_cases, cases swt1-swt6, helpers _called and _spied_red); swc5/swc7/swd1/swd3/swd5 updated on purpose to the wall reading (swd3 and swc5 pass --jobs 4 so they do not depend on the host's core count; _SLOW_COST derived so the sized deadline stays just under the helper's default). Gate: `python3 tools/sweep-selftests.py tests/test_stamp_verification.py` exit 0, 1/1 files ok, 352 cases, run twice (the second after the final prose edits). `ruff check` on both files exit 0; `vermin -t=3.8-` exit 0; prose_number_claims, house_style_violations, path_preamble_violations, depth_sensitive_paths: no hits on either file. In-process mutants (each swaps one function on the loaded module, nothing written to the tree), then `_wall_cases` rerun: wall=sum -> swt1, swt2 red; fit never fires -> swt4, swt6; fit always fires -> swt4, swt5, swt6; start never fires -> swt5, swt6; start always fires -> swt5, swt6; --jobs ignored -> swt1, swt3; need counted as one run -> swt1, swt4; restored -> none red. Dependants: tools/affected.py, tools/verify.sh: they name the file paths, which did not move, so still correct. drive-phase.py: builds red's argv and reads its payload; the CLI and payload shape are unchanged, so still correct. run-test-gate.py, _proc_group.py, _runner_output.py, _output.py: not edited, and their interfaces are used as before, so still correct. audit-plan.schema.json: the redFirst status words are unchanged, so still correct. test__filed_returns.py (_crlf_cases) and tools/affected.py (_scan): not touched, so still correct. tools/sweep-selftests.py: swt2/swt3 now call its unit_costs, shard_units and default_jobs, so a change there that parts the two readings turns them red, which is what they are for. .github/sweep-costs.json: holds no figure yet for the new swt-wall block, so the sweep falls back to its largest-recorded-block rule. That is not a defect; re-recording would add the figure. NOT EDITED, OUT OF SCOPE: PLUGIN-BUILD-GUIDE.md (the paragraph naming sized_deadline, near 'per-cost factor (`TIMEOUT_PER_COST`) over their recorded slot-seconds') still says the deadline is the factor over the recorded slot-seconds. It is now stale and needs a follow-up edit: it should say the factor over the wall time the proof's runs need, plus the up-front refusal. Caveat: the table is windows-latest figures, so on this darwin host the wall estimate runs high (estimated 640s a run for the P149.8-hwg command against the 369s gate run recorded for it). That direction refuses more often than it needs to and never starts a run that cannot finish. The P149.8-hwg command does not fit either way, since three runs at 369s each exceed 565s.",
+        "descriptive": "The red-first helper converts recorded slot-seconds to the sweep's wall time and refuses up front, naming the need and the deadline, a proof whose runs cannot fit, and never starts a run short of its measured need"
       },
       "startedAt": "2026-10-29T15:44:17Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-29T16:05:31Z",
+      "verifiedBy": [
+        "swt1: four equal recorded blocks on four workers take one block's wall time, not their sum; on one worker the sum; the fix-run reserve and the proof's need follow that",
+        "swt2: schedule_wall matches the sweep's own shard_units makespan over the committed table's most-blocked suite at every worker count from one to eight",
+        "swt3: sweep_jobs matches the sweep's default_jobs for every core count on and off CI, and reads --jobs in both spellings",
+        "swt4: end to end, a proof whose runs exceed the deadline (sized and capped, or by --timeout) starts no run and is could-not-prove naming the need and the deadline, never a timeout",
+        "swt5: end to end with a fake clock, a task run left less than its measured wall need is not started and the basis says so",
+        "swt6: a proof that fits is unchanged - fit/start allow sides return None, and end to end baseline, task and fix all run and the red is proved"
+      ],
       "notes": [
         {
           "at": "2026-10-29T15:18:16Z",
@@ -735,6 +787,71 @@
         "runId": "2026-10-29T16:05:28Z.a13a74",
         "status": "passed",
         "at": "2026-10-29T16:05:28Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "1dc3ab5c9eeb",
+        "at": "2026-10-29T16:05:31Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-29T15:58:22Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_stamp_verification.py` in a throwaway tree at HEAD exited 1 with 11 of 352 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - swc5 (house FAIL), swc7 (house FAIL), swd1 (house FAIL), swd3 (house FAIL), swd5 (house FAIL), swt1 (house FAIL), swt2 (house FAIL), swt3 (house FAIL) and 3 more: SELFTEST FAILED: 341/352 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 565s, 3 times the recorded 525s of tests/test_stamp_verification.py in .github/sweep-costs.json, capped at the 565s the host's Bash limit leaves; fix run: held back 282s of the deadline (the recorded 525s, capped at half the 565s deadline), the recorded slot-seconds of tests/test_stamp_verification.py in .github/sweep-costs.json",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P149.11-hwg",
+      "title": "The build guide states the red-first deadline and the teardown helper as the code now has them",
+      "status": "in_progress",
+      "description": "Fix review finding P149-R9 (docs/audit/phases/P149.json review.findings). PLUGIN-BUILD-GUIDE.md describes two things the code no longer does. (1) The paragraph on stamp-verification.py's sized_deadline says the red-first deadline is a per-cost factor over the recorded slot-seconds; the code now converts recorded slot-seconds to the wall time the sweep's own schedule gives, sizes the deadline from the wall time the proof's runs need, refuses a proof that cannot fit before any run with a basis naming the need and the deadline, and does not start a run left short. (2) The _proc_group section names neither drain_to_eof nor stop_and_drain, the one function every timed-out teardown now goes through (kill confirmed, drain reached the end of the pipe, root exited). Read both from the code at HEAD and restate each paragraph so every sentence is true of it; name the functions, not line numbers. Run the before-you-claim skill. No number written into prose (the doc prose lint must stay empty); no F/P/BUG ids. Edit only the declared file.",
+      "files": [
+        "PLUGIN-BUILD-GUIDE.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__deps.py tests/test__output_lints.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-29T16:05:54Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-29T16:05:52Z",
+          "text": "scope: PLUGIN-BUILD-GUIDE.md, every path the finding(s) P149-R9 name"
+        },
+        {
+          "at": "2026-10-29T16:05:52Z",
+          "text": "no suite: PLUGIN-BUILD-GUIDE.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__affected_tests.py, tests/test__deps.py, tests/test__doctor_trail.py, tests/test__output.py, tests/test__refs.py, tests/test_drive_phase.py and 6 more"
+        }
+      ],
+      "fixes": [
+        "P149-R9"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-29T16:13:30Z.701cfa",
+        "status": "passed",
+        "at": "2026-10-29T16:13:30Z"
       }
     }
   ],
