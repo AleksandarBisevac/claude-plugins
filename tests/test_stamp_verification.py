@@ -2022,10 +2022,13 @@ _CLOCK_LITERALS_JUDGED = {
     ("<module>", "_BUILD_DELAY = 2.0"):
         "a delay injected into the build, measured from the build's end read "
         "in this process: a slower runner lengthens the build, which only adds "
-        "to the correct helper's margin, and a slower interpreter start moves "
-        "neither side, so a helper granting a fresh timeout at the spawn stays "
-        "half the delay less one beat interval over sr42's bound however slow "
-        "the runner",
+        "to the correct helper's margin, and the interpreter start enters "
+        "neither side of the bound. A mutated helper that grants a fresh "
+        "timeout at the spawn ends half the delay less one beat interval over "
+        "sr42's bound on an unloaded runner; a child starved of CPU near the "
+        "cut can miss its last beats and let such a mutant through, as the "
+        "_BEAT row says, so a slow runner can hide the mutant but never fail "
+        "a correct helper",
     ("<module>", "_QUIET_GAPS = 10"):
         "how long a killed writer is watched, in its own gaps: only a survivor "
         "writes at all, so it never fails a killed one",

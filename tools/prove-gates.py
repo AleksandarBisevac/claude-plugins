@@ -4091,7 +4091,9 @@ def _worker_cases(check):
         # Where the platform will not make the link, the registration keeps
         # git's own record and the second spelling goes unexercised here. That
         # narrowing is printed in the case's own line, so a log shows which
-        # spelling a pass covered rather than reading the same either way.
+        # spelling a pass covered rather than reading the same either way,
+        # and the case asserts the spelling it did exercise: the one registration
+        # git lists is the pool's own worker tree, read canonically.
         exercised = ("a second spelling, through a link" if respelled else
                      "git's own record only - this platform would not make the "
                      "link, so the second spelling was NOT exercised")
@@ -4106,7 +4108,11 @@ def _worker_cases(check):
                  killed["root"] if killed else None, after_reap,
                  bool(killed) and not os.path.exists(killed["root"])),
               killed is not None and spared == ([], []) and len(still) == 1
-              and (still == [respelled] or (respelled is None and os.name == "nt"))
+              and (still == [respelled]
+                   or (respelled is None and os.name == "nt"
+                       and len(still) == 1 and killed is not None
+                       and _canonical_path(still[0])
+                       == _canonical_path(killed["trees"][0])))
               and reaped == ([killed["root"]], []) and after_reap == []
               and not os.path.exists(killed["root"]))
     finally:

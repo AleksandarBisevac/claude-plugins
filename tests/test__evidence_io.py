@@ -4161,7 +4161,8 @@ def _tree_key_cases(check):
     # realpath and abspath of what `--tree` receives differ on every platform:
     # on a plain temp tree they agree wherever the temp root is not itself a
     # link, and a writer hashing abspath would pass there. Where a symlink
-    # cannot be made the tree stays plain and the loss is stated by tk2s.
+    # cannot be made the tree stays plain and tk2l is recorded as a named skip,
+    # which is never a proof that the symlink case held.
     keys = []
     shown = []
     linked = None
@@ -4215,9 +4216,11 @@ def _tree_key_cases(check):
               "same tree: %r" % (name[0], shown[-1]),
               code == rtg.E_OK and len(rows) == 1
               and bool(written) and written == M.tree_key(tree))
-    check("tk2s the symlink case either ran (tk2l) or was skipped for the "
-          "stated reason (no symlink could be made here); skip reason: %r"
-          % (link_skip,), (linked is None) == (link_skip is not None))
+    if link_skip is not None:
+        _harness.skip(check, "tk2l",
+                      "os.symlink is refused here (%s), so the tree stayed "
+                      "plain and no symlink-reached tree was recorded"
+                      % (link_skip,), True)
     check("tk3 ALLOW: two different trees were recorded under two different "
           "keys, so the key names the tree and not the run: %r" % (keys,),
           len(keys) == 2 and keys[0] and keys[1] and keys[0] != keys[1])
