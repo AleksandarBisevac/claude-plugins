@@ -84,12 +84,14 @@ def plain_text(text):
     lines `\\r\\n` - kept as they came, since a run's bytes are decoded without
     universal newlines - so a pattern anchored `[ \\t]*$` under re.M stops at the
     `\\r` and matches nothing. Every reader below is written against plain,
-    `\\n`-ended text, so every public reader taking a run's text - the tally,
-    case, summary and sweep readers - reads it through here, `\\r\\n` and a lone
-    `\\r` both read as `\\n`. It is idempotent, so a reader handing its text on
-    to another reader reads the same answer. `ru17` in
-    tests/test__runner_output.py runs every such reader over each fixture's
-    CRLF and lone-CR twin."""
+    `\\n`-ended text, so every reader taking a run's text - the public tally,
+    case, summary and sweep readers, and the per-runner readers of
+    `CASE_READERS` and `TALLY_READERS` behind them - reads it through here,
+    `\\r\\n` and a lone `\\r` both read as `\\n`. It is idempotent, so a reader
+    handing its text on to another reader reads the same answer. `ru17` in
+    tests/test__runner_output.py runs every public reader over each fixture's
+    CRLF and lone-CR twin, and `rx1` every per-runner reader over those twins
+    and a colour-escaped one."""
     return _CSI.sub("", text or "").replace("\r\n", "\n").replace("\r", "\n")
 # The phrasing both vitest and pytest use for "there were none", which carries no
 # `N word` pair at all and would otherwise read as a runner this cannot count.
@@ -428,6 +430,7 @@ def printed_labels(text, cmd=None):
 
 
 def _house_cases(text):
+    text = plain_text(text)
     out = []
     for ln in text.splitlines():
         # Two spaces after FAIL is the sweep's own per-file line, not a case.
@@ -440,6 +443,7 @@ def _house_cases(text):
 
 
 def _pytest_cases(text):
+    text = plain_text(text)
     out = []
     for kind, node, why in _PYTEST_FAILED.findall(text):
         why = (why or "").strip()
@@ -466,6 +470,7 @@ def _unittest_site(name, where):
 
 
 def _unittest_cases(text):
+    text = plain_text(text)
     out = []
     for kind, name, where in _UNITTEST_CASE.findall(text):
         module, cls, qual = _unittest_site(name, where)
@@ -510,6 +515,7 @@ def _suite_failure(suite, why):
 
 
 def _jest_cases(text):
+    text = plain_text(text)
     # Exact repeats collapse: with more than one suite, jest prints every
     # failure again under `Summary of all failing tests`, and the same bullet
     # read twice is one case, not two.
@@ -529,6 +535,7 @@ def _jest_cases(text):
 
 
 def _vitest_cases(text):
+    text = plain_text(text)
     lines = text.splitlines()
     out = []
     for i, line in enumerate(lines):
@@ -581,6 +588,7 @@ def failing_cases(text, runner=None):
 
 
 def _house_tally(text):
+    text = plain_text(text)
     hits = _HOUSE_TALLY.findall(text)
     if not hits:
         return None
@@ -591,6 +599,7 @@ def _house_tally(text):
 
 
 def _pytest_tally(text):
+    text = plain_text(text)
     hits = _PYTEST_SUMMARY.findall(text)
     if not hits:
         return None
@@ -610,6 +619,7 @@ def _pytest_tally(text):
 
 
 def _unittest_tally(text):
+    text = plain_text(text)
     ran = _UNITTEST_RAN.findall(text)
     if not ran:
         return None
@@ -647,10 +657,12 @@ def _summary_tally(text, runner, cases):
 
 
 def _jest_tally(text):
+    text = plain_text(text)
     return _summary_tally(text, "jest", _jest_cases(text))
 
 
 def _vitest_tally(text):
+    text = plain_text(text)
     return _summary_tally(text, "vitest", _vitest_cases(text))
 
 

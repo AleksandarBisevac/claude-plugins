@@ -2364,10 +2364,12 @@ def _line_end_cases(check):
     finally:
         shutil.rmtree(le, ignore_errors=True)
     real = L.runner_line_end_violations()
-    check("le4 ...and the real tree applies no such pattern to unnormalised "
-          "run text outside the sites RUNNER_LINE_END_PENDING names - "
-          "run-test-gate reads every run through plain_text: %r" % (real,),
-          real == [])
+    check("le4 ...and the pending table is empty while the real tree applies "
+          "no such pattern to unnormalised run text anywhere - every reader, "
+          "the per-runner ones and stamp-verification's final error included, "
+          "reads its run through plain_text: %r pending, %r found"
+          % (L.RUNNER_LINE_END_PENDING, real),
+          L.RUNNER_LINE_END_PENDING == () and real == [])
 
 
 def _selftest():

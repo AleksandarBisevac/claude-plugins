@@ -472,8 +472,52 @@ def _line_end_cases(check):
           and answered == set(names))
 
 
+def _coloured(text):
+    """`text` with every line wrapped in a bold escape and a reset, the way a
+    runner forced into colour through a pipe prints it."""
+    return "\n".join("\x1b[1m%s\x1b[0m" % (line,) if line else line
+                     for line in text.split("\n"))
+
+
+def _private_line_end_cases(check):
+    """The per-runner readers behind `failing_cases` and `read_tally`, handed a
+    run's text directly, answer its CRLF, lone-CR and colour-escaped twins as
+    they answer the plain text: each reads its own text through `plain_text`,
+    so no reader depends on its caller having normalised first."""
+    fixtures = ([text for _name, text, _want in _SUMMARIES]
+                + [_VITEST_ASSERT, _JEST_NODE_ASSERT, _JEST_COLOUR_RED,
+                   _JEST_COLOUR_GREEN, _plain_line(2, 2, 9), _HOUSE_PRINTED]
+                + list(_LINE_END_EXTRA)
+                # A pytest case line with no ` - reason`: the shape whose
+                # `$` meets the `\r` straight after the node id.
+                + ["FAILED tests/test_x.py::test_b\n=== 1 failed in 0.01s ===\n"])
+    readers = ([("cases", name, fn) for name, fn in sorted(M.CASE_READERS.items())]
+               + [("tally", name, fn) for name, fn in M.TALLY_READERS])
+    differ, answered = [], set()
+    for kind, name, fn in readers:
+        for i, text in enumerate(fixtures):
+            want = fn(text)
+            if _says_something(want):
+                answered.add((kind, name))
+            for twin, made in (("crlf", text.replace("\n", "\r\n")),
+                               ("cr", text.replace("\n", "\r")),
+                               ("colour", _coloured(text))):
+                got = fn(made)
+                if got != want:
+                    differ.append((kind, name, i, twin, repr(want)[:100],
+                                   repr(got)[:100]))
+    every = set((kind, name) for kind, name, _fn in readers)
+    check("rx1 every per-runner case and tally reader, called directly with a "
+          "run's CRLF, lone-CR or colour-escaped twin, answers as it answers the "
+          "plain text, and each has a fixture it reads something from: "
+          "differing (%d) [%s]; never answered %r"
+          % (len(differ), some_of(differ, render=repr), sorted(every - answered)),
+          readers and not differ and answered == every)
+
+
 def _cases(check):
     _line_end_cases(check)
+    _private_line_end_cases(check)
     _printed_cases(check)
     _table_cases(check)
     _summary_cases(check)

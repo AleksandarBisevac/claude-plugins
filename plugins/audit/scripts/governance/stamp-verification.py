@@ -726,8 +726,11 @@ def classify_run(code, text, cmd=None):
 
 
 def final_error(text):
-    """`(class, message, line)` of the last exception line a run printed, or None."""
-    hits = _FINAL_ERROR.findall(text)
+    """`(class, message, line)` of the last exception line a run printed, or None.
+    The text is read through `plain_text` here rather than trusted to the
+    caller: a colour escape before the class, or a lone `\\r` line end, would
+    otherwise hide the line from the `^`-anchored pattern."""
+    hits = _FINAL_ERROR.findall(_runner_output.plain_text(text))
     if not hits:
         return None
     cls, message = hits[-1]

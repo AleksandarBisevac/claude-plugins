@@ -1384,19 +1384,13 @@ _PASS_THROUGH = frozenset(("enumerate", "reversed", "sorted", "list", "tuple",
                            "iter", "zip"))
 # `(file, function)` sites that still apply such a pattern to text they did not
 # normalise. A row is a debt and not a permission: it is reported once its site
-# holds no such read, so the table can only shrink. Why each is safe today, read
-# off the code rather than off who wrote it:
-#   * the `_runner_output` rows are private readers handed text their public
-#     caller already normalised (`failing_cases`, `read_tally`), so no `\r`
-#     reaches them while those callers are their only ones;
-#   * `final_error` captures `(.*)$` and `.strip()`s what it captured, so the
-#     `\r` is dropped after the match rather than before it.
-# What deletes a row is the function reading its own text through
-# `plain_text()` first, which costs nothing because the normalisation is
-# idempotent; the lint then reports the row as stale, by name.
-RUNNER_LINE_END_PENDING = (("governance/_runner_output.py", "_pytest_cases"),
-                           ("governance/_runner_output.py", "_pytest_tally"),
-                           ("governance/stamp-verification.py", "final_error"))
+# holds no such read, so the table can only shrink - and it is empty, which
+# `le4` in tests/test__output_lints.py holds, so a row added here is red until
+# its site reads through `plain_text()` and the row is deleted again. A private
+# reader handed text its public caller already normalised is no exception:
+# it normalises its own text, which costs nothing because the normalisation is
+# idempotent, so no reader's answer rests on who called it.
+RUNNER_LINE_END_PENDING = ()
 _LINE_END_READ = ("a multiline pattern anchored at `$` applied to a run's text "
                   "that did not pass through `_runner_output.plain_text()` - on "
                   "a `\\r\\n` run it stops matching at the `\\r` or captures "

@@ -732,6 +732,202 @@ def _red(root, man, cmd, *extra):
         return code, {"unparsed": text}
 
 
+# --- clock bounds: the helper's own figure, a witness, or a ladder ---
+# A bound a slower runner can exhaust turns a correct helper red on a loaded
+# machine, and moving it higher only moves the machine that trips it. So every
+# clock bound here is one of five things: the helper's own figure, since a
+# runner that cannot finish a read inside the deadline the helper gives a whole
+# proof cannot make a proof at all, and a case asking that much asks no more of
+# the runner than the helper does; the block timeout the sweep hands down
+# (`_harness.stage_timeout()`), sized from the recorded costs, as a child's
+# hang detector; a deadline polled against, which ends the moment the awaited
+# thing happens; a fake clock; or a ladder of deadlines whose
+# tries each report through a witness file whether they reached what the case
+# judges, the next rung grown from what the last try measured, with no top
+# below the longest deadline the helper accepts. A literal clock figure is
+# none of these, so `sk1` reads this file for every one and fails one that
+# `_CLOCK_LITERALS_JUDGED` does not answer for.
+_AMPLE_DEADLINE = M.DEFAULT_TIMEOUT
+# The ladder's first rung; a runner too slow for it climbs.
+_FIRST_RUNG = 6
+
+
+def _next_rung(deadline, partial_after=None):
+    """The deadline the try after one at `deadline` that did not reach its
+    witness gets, or None when `deadline` was already the ceiling.
+
+    At least double the last; when that try reached a partial witness
+    `partial_after` seconds in, at least three times that plus the task run's
+    hold, since what is left to reach costs about what the try spent getting
+    there, twice over. Capped at `M.MAX_TIMEOUT`, the longest `--timeout` the
+    helper accepts: a runner that cannot reach the witness inside it cannot
+    make such a proof under the helper at all."""
+    if deadline >= M.MAX_TIMEOUT:
+        return None
+    grown = 2 * deadline
+    if partial_after is not None:
+        grown = max(grown, int(3 * partial_after + _FIRST_HOLD) + 1)
+    return min(grown, M.MAX_TIMEOUT)
+
+
+def _ladder(attempt, first=_FIRST_RUNG):
+    """`[try]` - `attempt(deadline)` once per rung from `first`, until a try
+    says `reached` or the ceiling's try is made. A try is a dict carrying
+    `reached` and, when it saw one, `partial_after`."""
+    tries, deadline = [], first
+    while deadline is not None:
+        tries.append(attempt(deadline))
+        if tries[-1]["reached"]:
+            break
+        deadline = _next_rung(deadline, tries[-1].get("partial_after"))
+    return tries
+
+
+def _beating_source(witness, then="beat"):
+    """Python source that stamps `start` in `witness`, writes its pid to
+    `pid`, and then appends a heartbeat to `then` until it is killed, so it
+    can only end at a deadline, however fast the runner is."""
+    return "\n".join([
+        "import os, time",
+        "W = %r" % (witness,),
+        "def mark(name, mode='w', text=None):",
+        "    with open(os.path.join(W, name), mode) as fh:",
+        "        fh.write((text or repr(time.time())) + '\\n')",
+        "mark('pid', text=str(os.getpid()))",
+        "mark('start')",
+        "while True:",
+        "    mark(%r, 'a')" % (then,),
+        "    time.sleep(%r)" % (_BEAT,)]) + "\n"
+
+
+def _witness_size(witness, name):
+    """The byte size of a witness file, 0 when there is none."""
+    try:
+        return os.path.getsize(os.path.join(witness, name))
+    except OSError:
+        return 0
+
+
+def _witness_times(witness, name):
+    """Every COMPLETE line of a witness file as a time, in order."""
+    try:
+        with open(os.path.join(witness, name), encoding="utf-8") as fh:
+            lines = fh.read().split("\n")[:-1]
+    except OSError:
+        return []
+    out = []
+    for line in lines:
+        try:
+            out.append(float(line))
+        except ValueError:
+            continue
+    return out
+
+
+def _frozen_git_timeouts(call):
+    """`(answer, [timeout])` - `call(deadline)` with the helper's clock read
+    frozen at one moment and the timeout of every git call recorded.
+
+    Frozen, the time a call has left is exactly the deadline's distance from
+    that moment however slow the runner, so each timeout is compared with it
+    for equality rather than against a window a slow runner's git could
+    outlast. The deadline is the helper's default, so the git calls it times
+    get as long as they would in a real proof, and a timeout that ignores the
+    deadline - git's own default, or any constant - is told from it. The
+    moment is a whole second, so the deadline's distance from it is exact."""
+    frozen = float(int(time.time()))
+    real_git, real_left = M._git, M._left
+    calls = []
+
+    def recording(where, args, timeout=None, **kwargs):
+        calls.append(timeout)
+        if timeout is None:
+            return real_git(where, args, **kwargs)
+        return real_git(where, args, timeout=timeout, **kwargs)
+    M._git = recording
+    M._left = lambda deadline: int(deadline - frozen)
+    try:
+        answer = call(frozen + _AMPLE_DEADLINE)
+    finally:
+        M._git, M._left = real_git, real_left
+    return answer, calls
+
+
+def _ticking(step=0.1):
+    """A fake clock that moves `step` each time it is read, so a wait it
+    measures is a count of reads, never the runner's speed."""
+    now = [0.0]
+
+    def clock():
+        now[0] += step
+        return now[0]
+    return clock
+
+
+def _clock_literals(source):
+    """`[(function, shape)]` - every literal clock figure `source` holds, by
+    the function holding it (`<module>` for a module constant).
+
+    THE SHAPES: `time.time()` plus or minus a number; a `timeout=` keyword
+    given a number; a `--timeout` argument followed by a literal; a
+    `time.sleep` of a number; and a module-level name bound to a number or a
+    tuple of numbers. WHAT IT CANNOT SEE: a figure passed positionally to a
+    function that uses it as a clock, a figure built at run time, and a
+    figure inside source text handed to a child, which is a string here."""
+    tree = ast.parse(source)
+    found = []
+
+    def number(node):
+        return isinstance(node, ast.Constant) and not isinstance(node.value, bool) \
+            and isinstance(node.value, (int, float))
+
+    def is_now(node):
+        return isinstance(node, ast.Call) and not node.args \
+            and isinstance(node.func, ast.Attribute) and node.func.attr == "time" \
+            and isinstance(node.func.value, ast.Name) and node.func.value.id == "time"
+
+    def walk(node, where):
+        for child in ast.iter_child_nodes(node):
+            inner = child.name if isinstance(child, (ast.FunctionDef,
+                                                     ast.AsyncFunctionDef)) else where
+            if isinstance(child, ast.BinOp) and is_now(child.left) \
+                    and number(child.right) \
+                    and isinstance(child.op, (ast.Add, ast.Sub)):
+                found.append((where, "time.time() %s %r" % (
+                    "+" if isinstance(child.op, ast.Add) else "-", child.right.value)))
+            if isinstance(child, ast.Call):
+                found.extend((where, "timeout=%r" % (k.value.value,))
+                             for k in child.keywords
+                             if k.arg == "timeout" and number(k.value))
+                args = child.args
+                found.extend((where, "--timeout %s" % (b.value,))
+                             for a, b in zip(args, args[1:])
+                             if isinstance(a, ast.Constant) and a.value == "--timeout"
+                             and isinstance(b, ast.Constant))
+                if isinstance(child.func, ast.Attribute) and child.func.attr == "sleep" \
+                        and args and number(args[0]):
+                    found.append((where, "time.sleep(%r)" % (args[0].value,)))
+            walk(child, inner)
+
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 \
+                and isinstance(node.targets[0], ast.Name):
+            value = node.value
+            items = value.elts if isinstance(value, ast.Tuple) else [value]
+            if items and all(number(v) for v in items):
+                found.append(("<module>", "%s = %s" % (node.targets[0].id,
+                                                       _literal_text(value))))
+    walk(tree, "<module>")
+    return found
+
+
+def _literal_text(value):
+    """A number, or a tuple of them, as source text."""
+    if isinstance(value, ast.Tuple):
+        return "(%s)" % (", ".join(repr(v.value) for v in value.elts),)
+    return repr(value.value)
+
+
 def _red_cases(check):
     py = sys.executable
     root, man = _red_repo("stamp-red-", _red_test("import mine", "mine.v == 2"))
@@ -1086,7 +1282,7 @@ def _sandbox_words_cases(check):
     try:
         _write(os.path.join(fake_home, ".npmrc"), "fund=false\n")
         os.environ["HOME"] = os.environ["USERPROFILE"] = fake_home
-        said = M._npmrc_state(fake_home, time.time() + 30)
+        said = M._npmrc_state(fake_home, time.time() + _AMPLE_DEADLINE)
     finally:
         for k, v in saved.items():
             if v is None:
@@ -1100,6 +1296,61 @@ def _sandbox_words_cases(check):
           and not any("~" in w or fake_home in w for w in said))
 
 
+# How long a killed writer's witness is watched for a write that would mean it
+# survived: this many of the longest gaps it showed between its own writes
+# while it lived, and never under the floor. Only a survivor writes at all, so
+# these decide how surely one is seen, never whether a killed writer passes.
+_QUIET_GAPS = 10
+_QUIET_FLOOR = 1.0
+
+
+def _quiet_wait(witness, name):
+    """The watch `_QUIET_GAPS` and `_QUIET_FLOOR` size for one witness file,
+    read off the gaps between the start stamp and the writes after it."""
+    times = _witness_times(witness, "start") + _witness_times(witness, name)
+    gaps = [b - a for a, b in zip(times, times[1:])]
+    return max(_QUIET_FLOOR, _QUIET_GAPS * max(gaps or [0.0]))
+
+
+def _stop_survivor(witness):
+    """Kill the writer whose pid `witness` names - called only once its
+    witness grew after the helper returned, so the pid is a live process's."""
+    try:
+        with open(os.path.join(witness, "pid"), encoding="utf-8") as fh:
+            pid = int(fh.read().strip() or "0")
+        if pid > 0:
+            os.kill(pid, signal.SIGTERM)
+    except (OSError, ValueError):
+        pass
+
+
+def _grandchild_tries(py, root, man):
+    """One `red` per rung of `_ladder` over a command that starts a grandchild
+    and then waits to be killed. The grandchild stamps its start and beats
+    until it is killed, so a try reached it when the start stamp exists; once
+    the helper returns, the beat file is watched for `_quiet_wait` and any
+    growth is a grandchild that outlived the group kill."""
+    marks = _harness.fixture_root("stamp-red-marks-")
+
+    def attempt(deadline):
+        here = os.path.join(marks, "try-%d" % (deadline,))
+        os.makedirs(here)
+        spawn = ("import subprocess, sys, time\n"
+                 "subprocess.Popen([sys.executable, '-c', %r])\n"
+                 "while True:\n    time.sleep(1)\n" % (_beating_source(here),))
+        code, got = _red(root, man, [py, "-c", spawn], "--timeout", str(deadline))
+        held = _witness_size(here, "beat")
+        time.sleep(_quiet_wait(here, "beat"))
+        survived = _witness_size(here, "beat") > held
+        if survived:
+            _stop_survivor(here)
+        return {"deadline": deadline, "exit": code,
+                "removed": (got.get("throwaway") or {}).get("removed"),
+                "start": _witness_time(here, "start"), "survived": survived,
+                "reached": _witness_time(here, "start") is not None}
+    return _ladder(attempt)
+
+
 def _process_cases(check):
     py = sys.executable
     root, man = _red_repo("stamp-red-proc-", _red_test("import mine", "mine.v == 2"))
@@ -1108,23 +1359,14 @@ def _process_cases(check):
           "kills it: %r < %r" % (M.DEFAULT_TIMEOUT, M.HOST_BASH_LIMIT),
           M.DEFAULT_TIMEOUT < M.HOST_BASH_LIMIT)
 
-    marks = _harness.fixture_root("stamp-red-marks-")
-    late = os.path.join(marks, "grandchild-wrote")
-    began = os.path.join(marks, "grandchild-began")
-    inner = ("import time; open(%r, 'w').close(); time.sleep(5); "
-             "open(%r, 'w').close()" % (began, late))
-    spawn = ("import subprocess, sys, time\n"
-             "subprocess.Popen([sys.executable, '-c', %r])\n"
-             "time.sleep(30)\n" % (inner,))
-    code_t, got_t = _red(root, man, [py, "-c", spawn], "--timeout", "3")
-    time.sleep(6)
+    tries = _grandchild_tries(py, root, man)
     check("sr22 a timeout kills the run's whole process GROUP: a grandchild the "
-          "test runner started - seen running - does not outlive the throwaway "
-          "and write after it: exit=%r began=%r wrote=%r"
-          % (code_t, os.path.exists(began), os.path.exists(late)),
-          code_t == M.E_CANNOT_PROVE and os.path.exists(began)
-          and not os.path.exists(late)
-          and (got_t.get("throwaway") or {}).get("removed") is True)
+          "test runner started - seen running - writes nothing after the helper "
+          "returns, on a rung that reached it and on every rung before: %r"
+          % (tries,),
+          tries[-1]["reached"]
+          and all(t["exit"] == M.E_CANNOT_PROVE and t["removed"] is True
+                  and not t["survived"] for t in tries))
 
     leftover = os.path.join(_harness.fixture_root("stamp-red-left-"),
                             M.THROWAWAY_PREFIX + "stale", "tree")
@@ -1163,27 +1405,33 @@ def _process_cases(check):
 
 
 # --- a signal mid-run: the throwaway is still removed ---
-# How long a case waits for the nested `red` to reach its command. A nested run
-# inside a red-first proof's own throwaway, on a loaded machine, takes far longer
-# than a run in the shared tree to build its throwaway and reach the command, so
-# the wait is a deadline polled against, not a window the child must beat.
-START_DEADLINE = 180
+# How long a case waits for the nested `red` to reach its command: as long as
+# the nested helper keeps going. A nested run inside a red-first proof's own
+# throwaway, on a loaded machine, takes far longer than a run in the shared
+# tree to reach its command, so the wait is polled against and ends the moment
+# the mark appears or the helper exits; the host's own limit is the outer
+# bound, since a helper still running past it is one the host kills too.
+START_DEADLINE = M.HOST_BASH_LIMIT
 
 
-def _await_mark(path, seconds, poll=0.05):
-    """Whether `path` exists within `seconds`, polled every `poll`."""
+def _await_mark(path, seconds, poll=0.05, running=None):
+    """Whether `path` exists within `seconds`, polled every `poll`, giving up
+    early once `running()` says the process that would write it has ended."""
     deadline = time.time() + seconds
     while time.time() < deadline:
         if os.path.exists(path):
             return True
+        if running is not None and not running():
+            break
         time.sleep(poll)
     return os.path.exists(path)
 
 
 def _signal_mid_run(root, man, marks, tag, sig, delay=0.0, wait_s=START_DEADLINE):
     """`{"started", "code", "left", "out"}` - a nested `red` whose command
-    sleeps `delay` seconds, then writes its pid to a mark and holds; `sig` is
-    sent once the mark is seen, or when `wait_s` runs out without it."""
+    sleeps `delay` seconds, then writes its pid to a mark and holds until it
+    is killed; `sig` is sent once the mark is seen, or once the helper has
+    ended or `wait_s` runs out without it."""
     py = sys.executable
     script = os.path.join(_output.PLUGIN_ROOT, "scripts", "governance",
                           "stamp-verification.py")
@@ -1192,15 +1440,19 @@ def _signal_mid_run(root, man, marks, tag, sig, delay=0.0, wait_s=START_DEADLINE
     # always carries its whole pid.
     hold = ("import os, time\ntime.sleep(%r)\n"
             "with open(%r, 'w') as fh:\n    fh.write(str(os.getpid()))\n"
-            "os.replace(%r, %r)\ntime.sleep(60)\n"
+            "os.replace(%r, %r)\nwhile True:\n    time.sleep(1)\n"
             % (delay, mark + ".part", mark + ".part", mark))
     proc = subprocess.Popen([py, script, "red", "--project", root, "--manifest",
                              man, "--task", "P1.1", "--json", "--", py, "-c", hold],
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             universal_newlines=True)
-    started = _await_mark(mark, wait_s)
-    proc.send_signal(sig)
-    out, _e = proc.communicate(timeout=120)
+    started = _await_mark(mark, wait_s, running=lambda: proc.poll() is None)
+    if proc.poll() is None:
+        proc.send_signal(sig)
+    # The helper's teardown is bounded by its own budget, which fits inside
+    # the host's limit; a helper still going past that limit is a fault the
+    # host would see too, not a slow runner.
+    out, _e = proc.communicate(timeout=M.HOST_BASH_LIMIT)
     if started and sig == getattr(signal, "SIGKILL", None):
         # A SIGKILL'd helper tears nothing down, so its command is still
         # holding; it is stopped here rather than left to outlive the case.
@@ -1279,9 +1531,10 @@ def _sigterm_cases(check):
              "turned into an exception, so the `finally` runs, and nothing is "
              "left in git's worktree list")
     if not got["started"]:
-        _harness.could_not_run(check, label, "the nested `red` did not reach its "
-                               "command within %ds: %r"
-                               % (START_DEADLINE, got["out"][-200:]))
+        _harness.could_not_run(check, label, "the nested `red` ended, or ran "
+                               "past the host's %ds limit, without reaching its "
+                               "command: exit=%r %r"
+                               % (START_DEADLINE, got["code"], got["out"][-200:]))
     else:
         check("%s: exit=%r left=%r %r" % (label, got["code"], got["left"],
                                          got["out"][-200:]), _removal_holds(got))
@@ -1405,8 +1658,9 @@ _BEAT = 0.05
 # WHETHER THE SECOND RUN IS REACHED AT ALL is the runner's speed, not the
 # helper's: a slow runner spends the deadline building the throwaway and
 # starting interpreters. So the witness, not a margin, says whether a try
-# reached it, and the deadline doubles until one does.
-_DEADLINE_LADDER = (6, 12, 24)
+# reached it, and `_ladder` grows the deadline - from the first run's stamp
+# when the try reached that far - until one does, with no rung below the
+# helper's own ceiling as its top.
 
 
 def _witness_test(witness):
@@ -1451,16 +1705,17 @@ def _witness_time(witness, name):
 
 
 def _one_deadline_tries(py):
-    """One `red` per rung of `_DEADLINE_LADDER` over the witness suite, until a
-    try's second run stamps its witness. Each try writes the suite again with
-    a witness directory of its own, so no file a killed run may still hold is
+    """One `red` per rung of `_ladder` over the witness suite, until a try's
+    second run stamps its witness; a try whose task run stamped `first` hands
+    the ladder how long that took. Each try writes the suite again with a
+    witness directory of its own, so no file a killed run may still hold is
     removed or reused."""
     witness = _harness.fixture_root("stamp-red-witness-")
     root, man = _red_repo("stamp-red-deadline-", _witness_test(witness),
                           extra={"src/newmod.py": "def helper_fn():\n    return 2\n"},
                           files=["src/mine.py", "src/newmod.py", "tests/test_mine.py"])
-    tries = []
-    for deadline in _DEADLINE_LADDER:
+
+    def attempt(deadline):
         here = os.path.join(witness, "try-%d" % (deadline,))
         os.makedirs(here)
         _write(os.path.join(root, "tests", "test_mine.py"), _witness_test(here))
@@ -1468,35 +1723,94 @@ def _one_deadline_tries(py):
         code, got = _red(root, man, [py, "tests/test_mine.py"],
                          "--introduces", "newmod", "--timeout", str(deadline))
         basis = (got.get("redFirst") or {}).get("basis", "")
-        tries.append({"deadline": deadline, "exit": code,
-                      "took": round(time.time() - started, 1),
-                      "first": _witness_time(here, "first"),
-                      "second": _witness_time(here, "second"),
-                      "beat": _witness_time(here, "beat"),
-                      "run_exit": (got.get("run") or {}).get("exit"),
-                      "second_run": (got.get("run") or {}).get("second") is not None,
-                      "timed_out": "timed out" in basis, "basis": basis[-140:]})
-        if tries[-1]["second"] is not None:
-            break
-    return tries
+        first = _witness_time(here, "first")
+        second = _witness_time(here, "second")
+        return {"deadline": deadline, "exit": code,
+                "took": round(time.time() - started, 1),
+                "first": first, "second": second,
+                "beat": _witness_time(here, "beat"),
+                "run_exit": (got.get("run") or {}).get("exit"),
+                "second_run": (got.get("run") or {}).get("second") is not None,
+                "timed_out": "timed out" in basis, "basis": basis[-140:],
+                "reached": second is not None,
+                "partial_after": None if first is None else first - started}
+    return _ladder(attempt)
 
 
 def _one_deadline_holds(t):
     """Every try is a could-not-prove that says it timed out; a try whose
     second run was reached also has the task's run ending in its error and a
-    last heartbeat before the first run's stamp plus the deadline plus half the
-    hold. One deadline puts that beat before the helper's start plus the
-    deadline, which is earlier than the first stamp plus the deadline; a
-    deadline of its own for the second run puts it at least the whole hold
-    past the first stamp plus the deadline, since the second run starts only
-    after the hold."""
+    last sign of life - its last heartbeat, or its `second` stamp when the
+    kill came before the first beat - before the first run's stamp plus the
+    deadline plus half the hold. One deadline puts that moment before the
+    helper's start plus the deadline, which is earlier than the first stamp
+    plus the deadline; a deadline of its own for the second run keeps it
+    beating until at least the whole hold past the first stamp plus the
+    deadline, since the second run starts only after the hold. The stamp is
+    the weaker bound - the run lived at least that long - and a second run
+    killed before its first beat cannot have had a deadline of its own."""
     if t["exit"] != M.E_CANNOT_PROVE or not t["timed_out"]:
         return False
     if t["second"] is None:
         return True
+    last = t["beat"] if t["beat"] is not None else t["second"]
     return (t["run_exit"] == 1 and t["second_run"]
-            and t["first"] is not None and t["beat"] is not None
-            and t["beat"] < t["first"] + t["deadline"] + _FIRST_HOLD / 2)
+            and t["first"] is not None
+            and last < t["first"] + t["deadline"] + _FIRST_HOLD / 2)
+
+
+def _modelled_ladder(need, partial=None):
+    """The ladder's tries against a modelled runner that reaches the witness
+    `need` seconds into a try and its partial witness `partial` seconds in -
+    no `red` is run, so a runner of any speed can be modelled."""
+    def attempt(deadline):
+        return {"deadline": deadline, "reached": deadline >= need,
+                "partial_after": partial if partial is not None
+                and partial < deadline else None}
+    return _ladder(attempt)
+
+
+def _ladder_cases(check):
+    """The ladder sr39 climbs, and the bound it judges a reached try by, read
+    without running anything: what they answer is the whole of what makes
+    sr39 hold on a runner of any speed."""
+    ceiling = M.MAX_TIMEOUT
+    needs = [_FIRST_RUNG - 1, 4 * _FIRST_RUNG + 1, ceiling // 4, ceiling // 2,
+             ceiling]
+    modelled = dict(((need, partial), [t["deadline"] for t in
+                                       _modelled_ladder(need, partial)])
+                    for need in needs for partial in (None, need / 3.0))
+    climbs = all(rungs[-1] >= need and rungs == sorted(set(rungs))
+                 and rungs[-1] <= ceiling
+                 for (need, _p), rungs in modelled.items())
+    beyond = [t["deadline"] for t in _modelled_ladder(ceiling + 1)]
+    grown = _next_rung(4 * _FIRST_RUNG, 20.0)
+    check("sr39a the ladder has no fixed top below the helper's own ceiling: a "
+          "modelled runner needing any time up to the longest --timeout the "
+          "helper accepts is reached, each rung at least double the last and "
+          "grown further from the partial witness a try reached, and a runner "
+          "slower than the ceiling ends at it rather than climbing for ever: "
+          "%r beyond=%r grown=%r" % (modelled, beyond, grown),
+          climbs and beyond[-1] == ceiling and beyond == sorted(set(beyond))
+          and grown >= int(3 * 20.0 + _FIRST_HOLD)
+          and _next_rung(4 * _FIRST_RUNG) == 8 * _FIRST_RUNG
+          and _next_rung(ceiling) is None)
+    reached = {"exit": M.E_CANNOT_PROVE, "timed_out": True, "run_exit": 1,
+               "second_run": True, "deadline": _FIRST_RUNG, "first": 100.0,
+               "second": 100.0 + _FIRST_HOLD + 1, "beat": None}
+    late = 100.0 + _FIRST_RUNG + _FIRST_HOLD
+    verdicts = (_one_deadline_holds(reached),
+                _one_deadline_holds(dict(reached, second=late)),
+                _one_deadline_holds(dict(reached, beat=late)),
+                _one_deadline_holds(dict(reached, beat=reached["second"] + 0.1)))
+    # The second and third verdicts are the mutated helper's shape - a sign
+    # of life past the bound - and must stay False, so a fallback that read a
+    # missing beat as a pass whatever the stamp said would be red here.
+    check("sr39b a try whose second run stamped but was killed before its first "
+          "heartbeat is judged by its stamp, the weaker bound, rather than "
+          "failed; a stamp or a beat past the bound still fails it, and an "
+          "ordinary beat inside it passes: %r" % (verdicts,),
+          verdicts == (True, False, False, True))
 
 
 def _final_pass_cases(check):
@@ -1540,6 +1854,17 @@ def _final_pass_cases(check):
           "reach its second run under pytest: %r" % (err,),
           err is not None and err[0] == "ImportError"
           and M.qualifying_error(_PYTEST_COLLECT, "helper_fn") is not None)
+    twins = {"crlf": _PYTEST_COLLECT.replace("\n", "\r\n"),
+             "cr": _PYTEST_COLLECT.replace("\n", "\r"),
+             "colour": "\n".join("\x1b[31m%s\x1b[0m" % (ln,) if ln else ln
+                                 for ln in _PYTEST_COLLECT.split("\n"))}
+    read = dict((k, (M.final_error(v), M.qualifying_error(v, "helper_fn")))
+                for k, v in twins.items())
+    check("sr34a the final error is read the same off the run's CRLF, lone-CR and "
+          "colour-escaped twins - final_error reads its text through the one "
+          "line-end normalisation, whoever calls it: %r" % (read,),
+          all(got == (err, M.qualifying_error(_PYTEST_COLLECT, "helper_fn"))
+              for got in read.values()))
     attr = "Traceback (most recent call last):\nAttributeError: module 'newmod' has no attribute 'helper_fn'\n"
     check("sr35 ...and a bare AttributeError with no tally is a collection error, "
           "so it reaches the second run too, not no-tally: %r"
@@ -1570,6 +1895,7 @@ def _final_pass_cases(check):
     check("sr38 a --timeout that would outlive the host's Bash limit is refused: "
           "the helper's own deadline has to fire first: exit=%r" % (big[0],),
           big[0] == M.E_USAGE)
+    _ladder_cases(check)
     tries = _one_deadline_tries(py)
     check("sr39 ONE deadline covers both runs: the second run gets what the first "
           "left, so a two-run proof cannot take twice the budget - the second "
@@ -1598,6 +1924,144 @@ def _final_pass_cases(check):
           and os.listdir(inside) == [] and code_t == M.E_PROVED)
 
 
+# How long a stand-in build sleeps before the throwaway is made. A helper that
+# counts the build against the deadline cuts the first run off at least this
+# long before one that grants the run a fresh timeout would, so half of it is
+# the margin on either side of the bound `_build_counted` draws.
+_BUILD_DELAY = 2.0
+
+
+def _build_counted_tries(py, root, man):
+    """One `red` per rung of `_ladder` over a command that stamps its start and
+    beats until it is killed, behind a build slowed by `_BUILD_DELAY`. A try
+    reached the run when the start stamp exists; one whose build ate the
+    deadline made no run, and the next rung is longer."""
+    real = M._build_throwaway
+    witness = _harness.fixture_root("stamp-red-budget-witness-")
+
+    def slow_build(*args, **kwargs):
+        time.sleep(_BUILD_DELAY)
+        return real(*args, **kwargs)
+
+    def attempt(deadline):
+        here = os.path.join(witness, "try-%d" % (deadline,))
+        os.makedirs(here)
+        M._build_throwaway = slow_build
+        try:
+            code, got = _red(root, man, [py, "-c", _beating_source(here)],
+                             "--timeout", str(deadline))
+        finally:
+            M._build_throwaway = real
+        basis = (got.get("redFirst") or {}).get("basis", "")
+        start = _witness_time(here, "start")
+        return {"deadline": deadline, "exit": code, "start": start,
+                "beat": _witness_time(here, "beat"),
+                "timed_out": "timed out" in basis, "basis": basis[-120:],
+                "reached": start is not None}
+    return _ladder(attempt)
+
+
+def _build_counted(t):
+    """Every try is a could-not-prove that says it timed out; a try whose run
+    started also has its last sign of life - the last heartbeat, else the
+    start stamp - before the run's start plus the deadline less half the
+    build delay. Counting the build, the run is cut off at the helper's start
+    plus the deadline, which is at least the whole delay before the run's own
+    start plus the deadline; a fresh timeout would cut it off at its own start
+    plus the deadline. The margin a correct helper has is half the delay plus
+    the real build and the run's interpreter start, which a slower runner
+    only lengthens."""
+    if t["exit"] != M.E_CANNOT_PROVE or not t["timed_out"]:
+        return False
+    if t["start"] is None:
+        return True
+    last = t["beat"] if t["beat"] is not None else t["start"]
+    return last < t["start"] + t["deadline"] - _BUILD_DELAY / 2
+
+
+# Every literal clock figure this file holds, with why a slower runner cannot
+# turn the case using it red. `sk1` fails a figure missing here and a row
+# naming a figure that is gone, so a fixed window added later is judged
+# before it lands rather than after a loaded runner trips it.
+_CLOCK_LITERALS_JUDGED = {
+    ("<module>", "_FIRST_RUNG = 6"):
+        "the ladder's first rung: a runner too slow for it climbs, and the "
+        "ladder has no top below the helper's own ceiling",
+    ("<module>", "_FIRST_HOLD = 2.0"):
+        "the task run's hold in sr39: half of it is the correct helper's "
+        "margin, to which the build and interpreter starts add, and those "
+        "grow with load",
+    ("<module>", "_BEAT = 0.05"):
+        "a heartbeat interval: only the mutated side reads it - a slower beat "
+        "can let a mutated helper pass, never fail a correct one",
+    ("<module>", "_BUILD_DELAY = 2.0"):
+        "a delay injected into the build, the thing sr42 measures against: a "
+        "slower runner only adds to the correct helper's margin",
+    ("<module>", "_QUIET_GAPS = 10"):
+        "how long a killed writer is watched, in its own gaps: only a survivor "
+        "writes at all, so it never fails a killed one",
+    ("<module>", "_QUIET_FLOOR = 1.0"):
+        "the floor of that watch, read only by a survivor's detection",
+    ("<module>", "_SLOW_SECONDS = 4"):
+        "how long the stand-in sweep sleeps: swd2 needs it to OUTLAST the "
+        "short default, which a slower runner only makes surer, and swd1 runs "
+        "it under a deadline sized to the helper's own default",
+    ("<module>", "_SHORT_DEFAULT = 3"):
+        "the default swd2 needs the slow run to outlast: a slower runner "
+        "reaches it sooner, never later",
+    ("_red_cases", "--timeout 1"):
+        "sr9's run sleeps far past it: a slower runner reaches the deadline "
+        "sooner, and every path past the deadline says it timed out",
+    ("_located_cases", "time.time() + 0.5"):
+        "sr155 needs under a second left: a slower runner only leaves less",
+    ("_scan_cases", "time.time() - 1"):
+        "sd9 needs a deadline already passed, which a slower runner cannot "
+        "undo",
+}
+
+
+def _clock_literal_cases(check):
+    """`sk1`: every literal clock figure in this file is judged; `sk2`: the
+    scan sees each shape it names and none of the shapes it must not."""
+    with open(os.path.abspath(__file__), encoding="utf-8") as fh:
+        found = _clock_literals(fh.read())
+    unjudged = sorted(set(found) - set(_CLOCK_LITERALS_JUDGED))
+    stale = sorted(set(_CLOCK_LITERALS_JUDGED) - set(found))
+    check("sk1 every literal clock figure this suite holds is one a slower "
+          "runner cannot turn red, with the reason in _CLOCK_LITERALS_JUDGED; "
+          "a figure missing there, or a row naming a figure that is gone, is "
+          "red: unjudged %r, stale %r" % (unjudged, stale),
+          found and not unjudged and not stale)
+    probe = "\n".join([
+        "import time",
+        "_HOLD = 3",
+        "_PAIR = (1, 2.5)",
+        "_NAME = 'x'",
+        "_FLAG = True",
+        "def f(timeout=120):",
+        "    a = time.time() + 30",
+        "    b = time.time() - 1",
+        "    run(x, timeout=60)",
+        "    red(r, m, cmd, '--timeout', '3')",
+        "    time.sleep(6)",
+        "    src = 'time.sleep(5)'",
+        "    c = time.time() + left",
+        "    run(x, timeout=left)"])
+    got = sorted(_clock_literals(probe))
+    want = sorted([("<module>", "_HOLD = 3"), ("<module>", "_PAIR = (1, 2.5)"),
+                   ("f", "time.time() + 30"), ("f", "time.time() - 1"),
+                   ("f", "timeout=60"), ("f", "--timeout 3"),
+                   ("f", "time.sleep(6)")])
+    # The last four lines of the probe are the allow side: a parameter's
+    # default, a figure inside source text, and a derived figure are not
+    # literal clock bounds, and a scan widened to them would bury sk1 in rows.
+    check("sk2 the clock-literal scan reports each shape it names - a "
+          "constant, a tuple of them, a deadline off time.time(), a timeout "
+          "keyword, a --timeout argument, a sleep - and none of a default, a "
+          "string or a derived figure: %r" % (got,),
+          got == want)
+
+
 def _budget_cases(check):
     py = sys.executable
     check("sr41 the margin under the host's limit pays for ONE teardown (two waits "
@@ -1608,26 +2072,14 @@ def _budget_cases(check):
           and M.TEARDOWN_MARGIN >= 3 * _proc_group.GRACE_SECONDS
           + 2 * M.REMOVE_GIT_TIMEOUT)
     root, man = _red_repo("stamp-red-budget-", _red_test("import mine", "mine.v == 2"))
-    real = M._build_throwaway
-
-    def slow_build(*args, **kwargs):
-        time.sleep(2)
-        return real(*args, **kwargs)
-    M._build_throwaway = slow_build
-    try:
-        started = time.time()
-        code, got = _red(root, man, [py, "-c", "import time; time.sleep(3)"],
-                         "--timeout", "4")
-        spent = time.time() - started
-    finally:
-        M._build_throwaway = real
+    tries = _build_counted_tries(py, root, man)
     check("sr42 the FIRST run gets what the build left of the deadline, not a "
-          "fresh full timeout - a slow build and a run that fits the timeout on "
-          "its own still end inside it: exit=%r in %.1f s %r"
-          % (code, spent, (got.get("redFirst") or {}).get("basis", "")[-120:]),
-          code == M.E_CANNOT_PROVE
-          and "timed out" in (got.get("redFirst") or {}).get("basis", "")
-          and spent < 4 + 3 * _proc_group.GRACE_SECONDS + 2 * M.REMOVE_GIT_TIMEOUT)
+          "fresh full timeout: behind a build slowed on purpose, the run is cut "
+          "off before its own start plus the deadline less half the delay, on a "
+          "rung that reached it, and every rung is a timed-out could-not-prove: "
+          "%r" % (tries,),
+          tries[-1]["reached"] and all(_build_counted(t) for t in tries))
+    _clock_literal_cases(check)
 
     env = {"NODE_OPTIONS": "--require /repo/x/test/setup.js",
            "PYTEST_ADDOPTS": "--basetemp=/repo/x/.t -c /repo/x/pytest.ini",
@@ -2406,17 +2858,7 @@ def _baseline_unit_cases(check):
     _write(os.path.join(root, "tests", "t.py"), "x = 2\n")
     _write(os.path.join(root, "tests", "stray.py"), "left behind\n")
     _write(os.path.join(root, "run.log"), "ignored, left behind\n")
-    calls = []
-    real = M._git
-
-    def recording(where, args, timeout=120, **kwargs):
-        calls.append(timeout)
-        return real(where, args, timeout=timeout, **kwargs)
-    M._git = recording
-    try:
-        problem = M._isolate(root, time.time() + 5)
-    finally:
-        M._git = real
+    problem, calls = _frozen_git_timeouts(lambda deadline: M._isolate(root, deadline))
     with open(os.path.join(root, "tests", "t.py"), "rb") as fh:
         back = fh.read()
     left = [p for p in ("tests/stray.py", "run.log")
@@ -2426,7 +2868,7 @@ def _baseline_unit_cases(check):
           "ignored file are removed, and every git call runs under the one "
           "deadline: %r" % ((problem, back, left, calls),),
           problem is None and back == committed and not left and calls
-          and all(t <= 6 for t in calls))
+          and all(t == _AMPLE_DEADLINE for t in calls))
 
 
 def _round5_cases(check):
@@ -2471,37 +2913,19 @@ def _round5_unit_cases(check):
         _write(os.path.join(root, *rel.split("/")), "x = 1\n")
     _git(root, "add", "-A")
     _git(root, "commit", "-q", "-m", "t")
-    calls = []
-    real = M._git
-
-    def recording(where, args, timeout=120, **kwargs):
-        calls.append(timeout)
-        return real(where, args, timeout=timeout, **kwargs)
-    M._git = recording
-    try:
-        present, problem = M._at_head(root, rels + ["tests/absent.py"],
-                                      time.time() + 30)
-    finally:
-        M._git = real
+    (present, problem), calls = _frozen_git_timeouts(
+        lambda deadline: M._at_head(root, rels + ["tests/absent.py"], deadline))
     check("sr111 HEAD's file list is read NUL-separated, so a path git quotes is "
           "found exactly like an ASCII one, an absent path is absent, and the git "
           "call runs under the one deadline: %r" % ((present, problem, calls),),
           problem is None and present == set(rels) and calls
-          and all(c <= 31 for c in calls))
+          and all(c == _AMPLE_DEADLINE for c in calls))
     root = _seeded_repo("stamp-introduced-")
-    calls = []
-    real = M._git
-
-    def recording(where, args, timeout=120, **kwargs):
-        calls.append(timeout)
-        return real(where, args, timeout=timeout, **kwargs)
-    M._git = recording
-    try:
-        M.introduced(root, ["src/mine.py"], "helper_fn", time.time() + 5)
-    finally:
-        M._git = real
+    _held, calls = _frozen_git_timeouts(
+        lambda deadline: M.introduced(root, ["src/mine.py"], "helper_fn", deadline))
     check("sr115 --introduces reads HEAD's implementation files under the one "
-          "deadline too: %r" % (calls,), calls and all(t <= 6 for t in calls))
+          "deadline too: %r" % (calls,),
+          calls and all(t == _AMPLE_DEADLINE for t in calls))
     wt = _house_test("import mine", [("old1", "True"), ("new1", "mine.v == 2"),
                                      ("the child writes no bytecode",
                                       "sys.dont_write_bytecode")])
@@ -2632,7 +3056,7 @@ def _every_run_cases(check):
     try:
         proc = subprocess.run([py, "-c", code], stdout=subprocess.PIPE,
                               stderr=subprocess.STDOUT, universal_newlines=True,
-                              timeout=60)
+                              timeout=_harness.stage_timeout())
         out = proc.stdout.strip().splitlines()[-1] if proc.stdout.strip() else ""
     except subprocess.TimeoutExpired:
         out = "timed out"
@@ -3479,7 +3903,7 @@ def _crlf_cases(check):
             after_add = fh.read()
         with open(target, "wb") as fh:
             fh.write(b"x = 2\r\n")
-        reset = M._isolate(path, time.time() + 30)
+        reset = M._isolate(path, time.time() + _AMPLE_DEADLINE)
         with open(target, "rb") as fh:
             after_reset = fh.read()
     finally:
@@ -3638,9 +4062,11 @@ def _remove_retry_cases(check):
         ticks[0] += 0.1
         return ticks[0]
 
-    removed_ok, seen_ok = run(flaky, 5.0)
+    # Each wait is read on a fake clock, so how many attempts fit in it is a
+    # count of reads, never how fast the runner made them.
+    removed_ok, seen_ok = run(flaky, 5.0, _ticking())
     removed_stuck, seen_stuck = run(stuck, 0.35, clock)
-    removed_bad, seen_bad = run(broken, 5.0)
+    removed_bad, seen_bad = run(broken, 5.0, _ticking())
 
     routed = []
 
@@ -3650,7 +4076,7 @@ def _remove_retry_cases(check):
             real_shared(op, deadline=deadline, clock=clock)
     M._output.while_shared = counting
     try:
-        run(flaky, 5.0)
+        run(flaky, 5.0, _ticking())
     finally:
         M._output.while_shared = real_shared
 
@@ -3662,7 +4088,7 @@ def _remove_retry_cases(check):
         return None
     M._output.while_shared = does_nothing
     try:
-        removed_mut, seen_mut = run(plain, 5.0)
+        removed_mut, seen_mut = run(plain, 5.0, _ticking())
     finally:
         M._output.while_shared = real_shared
 
@@ -4599,7 +5025,7 @@ def _scan_cases(check):
     _write(os.path.join(site, "__editable__.x-1.pth"), pkg + "\n")
     _write(os.path.join(site, "lib", "nested.pth"), pkg + "\n")
     roots = [root, os.path.realpath(root)]
-    got = _scan(root, ["node_modules", ".venv"], roots, time.time() + 60)
+    got = _scan(root, ["node_modules", ".venv"], roots, time.time() + _AMPLE_DEADLINE)
     found = sorted(e for e, _t in got[0]) if isinstance(got, tuple) else got
     check("sd8 the workspace-link scan reads only the entry shapes that can be "
           "links: top-level and scoped entries, and `.pth` or `__editable__` "
@@ -4649,7 +5075,7 @@ def _windows_cases(check):
     if fn is not None:
         M.native_top = lambda text, pathmod=None: seen.append(text) or fn(text, pathmod)
         try:
-            plan, _p = M.dependency_plan(root, root, time.time() + 60)
+            plan, _p = M.dependency_plan(root, root, time.time() + _AMPLE_DEADLINE)
         finally:
             M.native_top = fn
     check("sw2 the dependency plan's source is git's toplevel passed through "
@@ -4848,7 +5274,7 @@ def _edge_cases(check):
     try:
         args = M.build_parser().parse_args(
             ["red", "--project", root_r, "--manifest", man_r, "--task", "P1.1"])
-        scope, problem = M._red_scope(args, cmd_r, time.time() + 60)
+        scope, problem = M._red_scope(args, cmd_r, time.time() + _AMPLE_DEADLINE)
     finally:
         M._git = git_held
     check("sw10 red's root is git's toplevel in this platform's own spelling - "
@@ -4871,7 +5297,7 @@ def _edge_cases(check):
     _git(root_c, "rm", "-q", "colon_test.py")
     _git(root_c, "commit", "-q", "-m", "only the colon name")
     got_c = M._at_head(root_c, [":colon_test.py", "colon_test.py"],
-                       time.time() + 60)
+                       time.time() + _AMPLE_DEADLINE)
     check("sw11 a declared path beginning with ':' is asked of git literally: "
           "HEAD holds it, and the name it would mean as pathspec magic, which "
           "HEAD no longer holds, is not reported present: %r" % (got_c,),
@@ -5768,7 +6194,8 @@ def _new_stage_unit_cases(check):
     done = subprocess.run(
         [sys.executable, os.path.abspath(__file__), "--selftest", "--stage",
          "no-such-zz"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        universal_newlines=True, encoding="utf-8", timeout=120)
+        universal_newlines=True, encoding="utf-8",
+        timeout=_harness.stage_timeout())
     failing = _runner_output.failing_cases(done.stdout, "house")
     check("nu2 THIS suite's own unknown-stage check is the one the helper reads: "
           "run with a label it lacks, its one failing case parses to that label: "
@@ -6183,10 +6610,11 @@ def _sweep_cases(check):
 # default, so only a deadline sized from the command's recorded cost lets it end.
 _SLOW_SECONDS = 4
 _SLOW_SWEEP = "import time\ntime.sleep(%d)\n" % (_SLOW_SECONDS,) + _FAKE_SWEEP
-# The default the end-to-end cases patch in: shorter than one slow run, and the
-# cost below is such that the sized deadline is far above it.
+# The default the end-to-end cases patch in: shorter than one slow run. The
+# cost below sizes the deadline to the helper's own default, so the runs that
+# must finish under it are given as long as a real proof would be.
 _SHORT_DEFAULT = 3
-_SLOW_COST = 20.0
+_SLOW_COST = M.DEFAULT_TIMEOUT / float(M.TIMEOUT_PER_COST)
 
 
 def _red_with_default(root, man, cmd, default, *extra):

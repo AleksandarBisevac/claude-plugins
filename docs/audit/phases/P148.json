@@ -207,16 +207,20 @@
         "severity": "low",
         "file": "plugins/audit/scripts/status/_doctor_policy.py (_same_file); plugins/audit/scripts/panel/_panel_write.py (_one_file)",
         "issue": "The same-file comparison exists twice.",
-        "resolution": "One definition in _skill_places.py used by both.",
-        "fixTask": "P148.11-xpz"
+        "resolution": "fixed in P148.11-xpz (a0e0191656ee): One definition in _skill_places.py used by both.",
+        "fixTask": "P148.11-xpz",
+        "commit": "a0e0191656ee",
+        "status": "fixed"
       },
       {
         "id": "P148-R23",
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/_manifest_typos.py:252; tests/test__warning_groups.py:32 (SKILLS_BODY, wg2)",
         "issue": "The remaining half of P138-R9: the unresolved-skills warning text does not name the plan default exit (meta.defaultSkills); wg2 pins the text byte for byte.",
-        "resolution": "Change the warning and SKILLS_BODY together.",
-        "fixTask": "P148.11-xpz"
+        "resolution": "fixed in P148.11-xpz (a0e0191656ee): Change the warning and SKILLS_BODY together.",
+        "fixTask": "P148.11-xpz",
+        "commit": "a0e0191656ee",
+        "status": "fixed"
       },
       {
         "id": "P148-R24",
@@ -267,11 +271,13 @@
         "severity": "low",
         "file": "plugins/audit/scripts/panel/_panel_write.py ~2130-2160 (_reject_stranded)",
         "issue": "Accepts when the resolver finds a different file than the scan graded; some accepted files do not travel (a personal copy found through CLAUDE_CONFIG_DIR while the scan read the default personal directory; a personal directory whose front-matter name differs). Fail-open under strict.",
-        "resolution": "Grade the resolved file (personal means it does not travel) instead of accepting on any mismatch; a case.",
-        "fixTask": "P148.11-xpz"
+        "resolution": "fixed in P148.11-xpz (a0e0191656ee): Grade the resolved file (personal means it does not travel) instead of accepting on any mismatch; a case.",
+        "fixTask": "P148.11-xpz",
+        "commit": "a0e0191656ee",
+        "status": "fixed"
       }
     ],
-    "outcome": "[findings: 29 - 0 high, 4 med, 25 low; 7 with a recorded fix commit]"
+    "outcome": "[findings: 29 - 0 high, 4 med, 25 low; 10 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -987,7 +993,7 @@
     {
       "id": "P148.11-xpz",
       "title": "Skill portability is graded on the file a session loads in the panel as in doctor, through one same-file comparison, and the unresolved-skills warning names the plan default",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix the P148 review findings P148-R22, P148-R23, P148-R29 (each finding's file, issue and resolution is in docs/audit/phases/P148.json review.findings, by id). Read each against the code at HEAD first. Fix each with a case proven red first where it is about behaviour; where HEAD no longer has the defect or the finding records something nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id. Edit only the declared files; a fix needing another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
       "files": [
         "plugins/audit/scripts/status/_skill_places.py",
@@ -1027,14 +1033,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a0e0191656ee",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "P148-R22 (fixed): the duplicated same-file comparison (_doctor_policy._same_file, _panel_write._one_file) is deleted from both; one definition, _skill_places.same_file, is reached by both through the new _skill_places.loaded_verdict(entry, hit), which returns the travel verdict for the copy a session loads ({travels, basis, graded: scan|tier}, or None when neither the scan nor the resolver knows a copy). Case dp57 wraps _skill_places.same_file with a recorder and shows doctor and the panel each call it, and that neither module still defines its own copy. P148-R23 (fixed): the unresolved-skills warning in _manifest_typos._check_skills now names the plan-level exit - 'set a plan default in meta.defaultSkills (audit-task.py default-skills)' - and says what it consulted at the plan level ('no plan default', or 'plan default names no usable skill' when the key is present but resolves nothing); docstring updated to list every level. SKILLS_BODY in tests/test__warning_groups.py changed in the same edit (wg2 pins it byte for byte); new wg19 counts each exit exactly once in the line the validator really produces and checks both plan-level wordings. The other half of the original finding (_skills_in_use ignoring meta.defaultSkills) was already fixed at HEAD: _manifest_typos.py _skills_in_use reads meta.defaultSkills first. P148-R29 (fixed): _panel_write._reject_stranded now grades the resolved file instead of accepting on any mismatch - when the resolver finds a copy the scan did not grade (another path, or not listed at all), loaded_verdict grades it by tier: personal never travels (refused under strict, basis naming the loaded path), project and the running plugin's own travel, mirroring _panel_discovery.grade_entry for the same tiers (pinned by sp20). Doctor's _plan_skills_travel uses the same call, so a mismatch is no longer reported UNKNOWN there but graded on the loaded copy, with the scan's other copy named beside the basis; dp54 and dp56 rewritten to that rule (dp56 now has three pairs: loaded personal stranded by both, verdict about the loaded file stands in both, loaded project copy strands neither). New cases rs6 (personal copy under CLAUDE_CONFIG_DIR while the scan graded the default home's copy - refused), rs7 (loaded personal copy whose scan verdict said 'travels' about a renamed directory, or that the scan does not list - refused), rs8 (other direction: mismatch whose loaded copy is the vendored project copy - accepted); sp17-sp20 in test__skill_places for same_file, loaded_verdict and the tier agreement with grade_entry. Gate: python3 tools/sweep-selftests.py tests/test__skill_places.py tests/test__doctor_policy.py tests/test__panel_write.py tests/test__warning_groups.py tests/test__manifest_typos.py -> exit 0, 5/5 files ok (390 cases as that run printed). Also run, all exit 0: ruff check on the eight files; vermin -t=3.8- on the four sources; sweep over the dependants' suites test__doctor_report, test__manifest_rules, test__manifest_vocab, test_run_agent_session, test__output_lints, test__deps, test__panel_discovery (7/7 files ok); _output_lints house_style_violations / prose_number_claims / path_preamble_violations / depth_sensitive_paths report nothing in these files. Dependants: run-agent-session.py uses plugin_name/resolve_skill - unchanged, test_run_agent_session green; audit-doctor.py and test__doctor_report use check_* and _leading_executable - unchanged signatures, test__doctor_report green; _manifest_rules imports _check_skills etc. - signatures unchanged, only the warning text changed, test__manifest_rules green (it pins only the 'no skills resolve' prefix); test__manifest_vocab green; test_audit_task imports _manifest_typos - not run (grep finds no pin of the changed warning wording there); composition.js references _manifest_typos by basename only - unchanged; _panel_write's other dependants use none of the removed private _one_file (grep: no reference outside the new dp57 assertion); tools/affected.py and .github/sweep-costs.json name these files by path only - unchanged. NOT EDITED, out of scope, reported: PLUGIN-BUILD-GUIDE.md line ~3018 says 'a portability verdict counts only when it describes the very file the resolver found' and the _skill_places section (~3244) says it answers 'the two callers' - both now under-describe: doctor grades the loaded file by tier on a mismatch, and _skill_places also carries same_file/loaded_verdict shared by doctor and the panel. A follow-up edit of PLUGIN-BUILD-GUIDE.md is owed.",
+        "descriptive": "Doctor and the panel's strict refusal now grade the skill copy a session actually loads through one shared comparison in _skill_places, so a personal copy can no longer slip past strict on a path mismatch, and the unresolved-skills warning names the plan-default exit."
       },
       "startedAt": "2026-10-29T07:04:39Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-29T07:46:25Z",
+      "verifiedBy": [
+        "dp57: doctor and the panel both call _skill_places.same_file and keep no copy of their own",
+        "wg19: the unresolved-skills warning names every exit once, the plan default and its writer included, and says absent vs unusable plan default (with SKILLS_BODY/wg2 updated in step)",
+        "rs6/rs7: a loaded personal copy (CLAUDE_CONFIG_DIR, renamed directory, unlisted) is refused under strict whatever the scan said about another copy; rs8: a mismatch whose loaded copy is the project's is accepted",
+        "sp17-sp20: same_file, loaded_verdict and its tier agreement with _panel_discovery.grade_entry",
+        "dp54/dp56 rewritten to the loaded-copy rule"
+      ],
       "notes": [
         {
           "at": "2026-10-29T07:03:44Z",
@@ -1067,6 +1079,18 @@
         "runId": "2026-10-29T07:46:22Z.136e85",
         "status": "passed",
         "at": "2026-10-29T07:46:22Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "a0e0191656ee",
+        "at": "2026-10-29T07:46:25Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-29T07:16:22Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__skill_places.py tests/test__doctor_policy.py tests/test__panel_write.py tests/test__warning_groups.py` in a throwaway tree at HEAD exited 1 with 7 of 20 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - dp54 (house FAIL), dp56 (house FAIL), dp57 (house FAIL), rs6 (house FAIL), rs7 (house FAIL), wg2 (house FAIL), wg19 (house FAIL): SELFTEST FAILED: 18/20 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - 3 times the recorded 31s of tests/test__doctor_policy.py, tests/test__panel_write.py, tests/test__skill_places.py, tests/test__warning_groups.py in .github/sweep-costs.json is only 92s; fix run: held back 31s of the deadline, the recorded slot-seconds of tests/test__doctor_policy.py, tests/test__panel_write.py, tests/test__skill_places.py, tests/test__warning_groups.py in .github/sweep-costs.json",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1134,7 +1158,12 @@
         "P148-R25",
         "P148-R12"
       ],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-29T07:52:54Z.5443f4",
+        "status": "passed",
+        "at": "2026-10-29T07:52:54Z"
+      }
     },
     {
       "id": "P148.13-xpz",
