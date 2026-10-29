@@ -1132,9 +1132,112 @@ def _one_resolver_cases(check):
           and "_gate_derive.py" not in names and users == [])
 
 
+# --- a repeated path reaches each slot once ----------------------------------------
+# A caller's list may name one suite several times (one `tests.add` entry per
+# case, each naming the same file). The fixture repeats two suites in the order
+# b, a, b, a, so a fill that keeps the repeats, and one that de-duplicates by
+# sorting, both differ from the wanted `b a`.
+_ONCE_PATHS = ["tests/test_b.py", "tests/test_a.py", "tests/test_b.py",
+               "tests/test_a.py"]
+_ONCE_BA = "tests/test_b.py tests/test_a.py"
+
+
+def _once_rows():
+    """`[(spelling shape, what the fill wrote, what it must write)]` - every
+    shape the slot model reads, each handed `_ONCE_PATHS`."""
+    rec = M.SPELLING_SOURCE
+    rows = []
+    for template, want in (
+            # `{paths}` a word of its own: one command, filled literally
+            ("python3 tools/sweep-selftests.py {paths}",
+             "python3 tools/sweep-selftests.py " + _ONCE_BA),
+            # `{paths}` inside quoting, and glued to an option: no word of its own
+            ("sh -c 'pytest {paths}'", "sh -c 'pytest " + _ONCE_BA + "'"),
+            ("pytest --files={paths}", "pytest --files=" + _ONCE_BA)):
+        for by_kind in (False, True):
+            rows.append(("spelling %r by_kind=%s" % (template, by_kind),
+                         M.point_shape([template], rec, {}, list(_ONCE_PATHS),
+                                       by_kind), [want]))
+    # Two `{paths}` commands of different modes, each handed only what its
+    # slot takes, are rebuilt command by command: a source repeated for the
+    # related-tests command and a suite repeated for pytest.
+    mixed = ["src/b.ts", "tests/test_b.py", "src/a.ts", "src/b.ts",
+             "tests/test_a.py", "tests/test_b.py", "src/a.ts"]
+    rows.append(("spelling of two commands, rebuilt",
+                 M.point_shape(["npx jest --findRelatedTests {paths} && "
+                                "pytest {paths}"], rec, {}, mixed, True),
+                 ["npx jest --findRelatedTests src/b.ts src/a.ts && pytest "
+                  + _ONCE_BA]))
+    # a sibling's own entries: one runner, a chain whose every command holds a
+    # slot (one command per program), and a suite run as the program
+    for entry, want in (
+            ("pytest -q tests/test_o.py", "pytest -q " + _ONCE_BA),
+            ("python3 tools/a.py tests/test_o.py && python3 tools/b.py "
+             "tests/test_p.py",
+             "python3 tools/a.py " + _ONCE_BA + " && python3 tools/b.py "
+             + _ONCE_BA),
+            ("python3 tests/test_o.py", "python3 " + _ONCE_BA)):
+        rows.append(("sibling %r via point_shape" % entry,
+                     M.point_shape([entry], "P1.1", {}, list(_ONCE_PATHS)),
+                     [want]))
+        rows.append(("sibling %r via repointed by_kind" % entry,
+                     M.repointed([entry], {}, list(_ONCE_PATHS), by_kind=True),
+                     [want]))
+    return rows
+
+
+def _once_cases(check):
+    """Each slot is handed each path once, in the order first given, whatever
+    shape the spelling takes - so the derivation never writes the entry
+    `_manifest_phases.gate_entry_shape_problem` refuses as naming a suite
+    more than once."""
+    import _manifest_phases as P
+    rows = _once_rows()
+    wrong = [(label, got, want) for label, got, want in rows if got != want]
+    # Only the repeat is this case's question: a suite run as its program with
+    # a second suite behind it is a different shape problem the same check
+    # reports, and the sibling row that spells one is here for its repeat.
+    refused = [(label, e, P.gate_entry_shape_problem(e))
+               for label, got, _w in rows for e in got
+               if "more than once" in (P.gate_entry_shape_problem(e) or "")]
+    check("gdo1 every spelling shape - a recorded template with `{paths}` a "
+          "word of its own, one rebuilt command by command, one with `{paths}` "
+          "inside quoting or glued to an option, and a sibling's entry of one "
+          "command, of a chain, or a suite run as its program - fills its slot "
+          "with each path once, in first-given order; wrong: %r; refused by "
+          "the shape check: %r" % (wrong, refused),
+          len(rows) == 13 and not wrong and not refused)
+    # The two-runner re-point routes each path to its runner before the slot
+    # fill, so a repeat must not survive that routing either, nor be named
+    # twice in the note for a path no runner takes.
+    root = _vitest_repo()
+    try:
+        got, notes = M.repointed_by_runner(
+            TESTBED_SHAPE, TESTBED_BUILD,
+            ["e2e/b.spec.ts", "tests/unit/b.test.ts", "e2e/b.spec.ts",
+             "tests/unit/b.test.ts"], root)
+        check("gdo2 the two-runner re-point hands each runner's entry each of "
+              "its paths once, the shared key carried through: %r"
+              % ((got, notes),),
+              got == ["lint", "pnpm vitest run tests/unit/b.test.ts",
+                      "pnpm playwright test e2e/b.spec.ts"])
+        only = ["e2e/b.spec.ts", "e2e/b.spec.ts"]
+        got, notes = M.repointed_by_runner(TESTBED_SHAPE, TESTBED_BUILD, only,
+                                           root)
+        dropped = [n for n in notes if "vitest" in n]
+        check("gdo3 an entry dropped for want of a path is named in one note "
+              "that names the repeated path once: %r" % ((got, notes),),
+              got == ["lint", "pnpm playwright test e2e/b.spec.ts"]
+              and len(dropped) == 1
+              and dropped[0].count("e2e/b.spec.ts") == 1)
+    finally:
+        _harness.remove_tree(root)
+
+
 def _selftest():
     def body(check):
         _cases(check)
+        _once_cases(check)
         _one_resolver_cases(check)
         _version_trust_cases(check)
     return _harness.run(body)

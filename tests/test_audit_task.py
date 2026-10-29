@@ -21618,6 +21618,32 @@ def _gate_entry_cases(check):
               and all(c == 0 and g == ["a", "b"] for _n, c, g in positional)
               and code_q == 0 and notplan == ["a", "notes.json"]
               and all(c == 2 and named and same for c, named, same in refusals))
+
+        # ONE CASE PER `tests.add` ENTRY, SEVERAL NAMING ONE SUITE: `add`
+        # derives the gate itself, and the entry it derives must be one its
+        # own shape check accepts - each suite once, in the order first named
+        # (b before a, so neither the repeats nor a sorted set reads as it).
+        repeated = ["backend/tests/test_b.py: one", "backend/tests/test_a.py: two",
+                    "backend/tests/test_b.py: three",
+                    "backend/tests/test_a.py: four"]
+        once = ("python3 tools/sweep-selftests.py "
+                "backend/tests/test_b.py backend/tests/test_a.py")
+        proj_r, mp_r = mk("gx-repeat", plan())
+        argv_r = ["add", "Repeat", "--phase", "P2", "--tests-mode", "tdd"]
+        for entry in repeated:
+            argv_r += ["--tests-add", entry]
+        code_r, txt_r = run(argv_r + ["--project-dir", proj_r])
+        proj_rb, mp_rb = mk("gx-repeat-batch", plan())
+        code_rb, txt_rb = run(["add", "--from-file", batch(proj_rb, [
+            {"title": "Repeat", "tests": {"mode": "tdd", "add": repeated}}]),
+            "--project-dir", proj_rb])
+        got_r = (gate(mp_r, "P2.4"), gate(mp_rb, "P2.4"))
+        check("gx2 add and add --from-file derive one entry naming each suite "
+              "of a task's tests.add once, in first-named order, when several "
+              "entries name one suite - never a gate their own shape check "
+              "refuses (%r)" % ((code_r, code_rb, got_r, txt_r[-200:],
+                                  txt_rb[-200:]),),
+              code_r == 0 and code_rb == 0 and got_r == ([once], [once]))
     finally:
         _harness.remove_tree(tmp)
 

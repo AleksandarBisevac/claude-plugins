@@ -191,7 +191,14 @@ def point_shape(shape, source, build, paths, by_kind=False):
     always was: every path, or with `by_kind` those its one mode
     (`_literal_mode`) takes. Answered with no entry only when `by_kind`
     leaves no path, as a located slot is.
+
+    EACH PATH ONCE, in the order first given (`_once`): a caller's list may
+    name one suite several times - one `tests.add` entry per case, each naming
+    the same file - and a slot handed it twice is an entry
+    `_manifest_phases.gate_entry_shape_problem` refuses, so the derivation
+    would write a gate its own validator rejects.
     """
+    paths = _once(paths)
     if source == SPELLING_SOURCE:
         template = shape[0]
         tokens = _entry_tokens(template)
@@ -213,6 +220,17 @@ def point_shape(shape, source, build, paths, by_kind=False):
         rebuilt = _rebuilt(tokens, commands, plan)
         return [rebuilt] if rebuilt is not None else []
     return repointed(shape, build, paths, by_kind=by_kind)
+
+
+def _once(paths):
+    """`paths` with every repeat after the first dropped, order kept - the
+    list a slot is handed. Compared as written, the same reading
+    `_manifest_phases.gate_entry_shape_problem` gives a repeated suite."""
+    out = []
+    for path in paths or ():
+        if path not in out:
+            out.append(path)
+    return out
 
 
 def repointed(entries, build, paths, keep=(), by_kind=False):
@@ -258,7 +276,12 @@ def repointed(entries, build, paths, keep=(), by_kind=False):
     path it already quoted is recognized and replaced rather than copied
     through, and every word that is not in the slot keeps the exact spelling
     it had, quotes and operators included.
+
+    Each path is handed once, in the order first given (`_once`), as
+    `point_shape` hands it, so a sibling's shape and a recorded template
+    cannot disagree on a list that repeats a suite.
     """
+    paths = _once(paths)
     out = []
     for entry in entries:
         if _carried(entry, build, keep):
@@ -682,8 +705,10 @@ def repointed_by_runner(entries, build, paths, project, lister=None, keep=(),
     narrowing asked for. Each drop, and each path no entry takes, is a note.
     An entry in `keep` is carried through as `repointed` carries it, and
     `by_kind` is `repointed`'s: each command is then handed, of its runner's
-    paths, only those its own slot takes.
+    paths, only those its own slot takes. Each path is handed once (`_once`),
+    and each note names it once.
     """
+    paths = _once(paths)
     scoped = dict(_scoped_runners(entries, build, keep))
     if len(set(r for r in scoped.values() if r)) < 2:
         return repointed(entries, build, paths, keep, by_kind), []
