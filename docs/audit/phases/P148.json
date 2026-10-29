@@ -1,7 +1,7 @@
 {
   "id": "P148",
   "title": "The carried low batch",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "Every low review finding carried to BUG-29-dau is fixed in the code, or answered with the evidence that nothing is left to change, and the bug closes",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "d8fed9b7f8a8d0946c988b31ba591a8f31217243",
   "branch": "audit/p148-the-carried-low-batch",
-  "mergedAt": null,
+  "mergedAt": "2026-10-29T12:06:38Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -2557,5 +2557,6 @@
     "runId": "2026-10-29T11:49:22Z.02d0c3",
     "status": "passed",
     "at": "2026-10-29T11:49:22Z"
-  }
+  },
+  "mergedHead": "8939ee005932afe8daf07ff4f94a0840189d7c56"
 }
