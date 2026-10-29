@@ -661,14 +661,15 @@ def _cases(check):
         rep = _skills(mfb, {"skills": [_travels("both-dup", True,
                                                 "committed under .claude/",
                                                 path=project_dup)]}, home=home)
-        check("dp54 a name held by both tiers is graded UNKNOWN when the scan's "
-              "verdict belongs to a different file than the one the session loads, "
-              "naming BOTH paths - never 'would survive a clone' over the wrong "
-              "copy: %r" % (_detail(rep, _PORT),),
-              "UNKNOWN" in _detail(rep, _PORT)
+        check("dp54 a name held by both tiers is graded on the copy the session "
+              "LOADS when the scan's verdict belongs to another file: the personal "
+              "copy will not survive a clone, said with its path and the path the "
+              "scan's verdict was about - never 'would survive a clone' over the "
+              "wrong copy: %r" % (_detail(rep, _PORT),),
+              "will NOT survive" in _detail(rep, _PORT)
               and personal_dup in _detail(rep, _PORT)
               and project_dup in _detail(rep, _PORT)
-              and "will NOT survive" not in _detail(rep, _PORT)
+              and "would survive a clone" not in _detail(rep, _PORT)
               and "OK" not in _levels(rep, _PORT))
         rep = _skills(mfb, {"skills": [_travels("both-dup", True,
                                                 "committed under .claude/",
@@ -681,39 +682,75 @@ def _cases(check):
               and "UNKNOWN" not in _detail(rep, _PORT))
 
         # The panel's strict-tier refusal asks the same question at the point
-        # of choice, so it must grade the same file: a "would not travel"
-        # verdict about the copy no session loads refuses nothing (UNKNOWN is
-        # accepted there), and one about the loaded copy refuses by name.
+        # of choice, so it must grade the same file: the copy a session loads.
         import _panel_write
+        import _skill_places
 
-        def _panel_refusal(inv):
+        def _panel_refusal(inv, name="both-dup"):
             saved = os.environ.get("CLAUDE_CONFIG_DIR")
             os.environ["CLAUDE_CONFIG_DIR"] = home
             try:
                 return _panel_write._reject_stranded(
                     tmp, {"portability": "strict"},
-                    {"meta": {"reviewSkill": "both-dup"}},
+                    {"meta": {"reviewSkill": name}},
                     _discover=lambda _p: inv)
             finally:
                 if saved is None:
                     os.environ.pop("CLAUDE_CONFIG_DIR", None)
                 else:
                     os.environ["CLAUDE_CONFIG_DIR"] = saved
-        paired = []
-        for at in (project_dup, personal_dup):
-            inv = {"skills": [_travels("both-dup", False, "home dir", path=at)]}
-            paired.append((
-                "will NOT survive" in _detail(
-                    _skills(mfb, inv, {"portability": "strict"}, home=home),
-                    _PORT),
-                _panel_refusal(inv)))
-        check("dp56 the panel's strict refusal and doctor grade the same copy: "
-              "a stranding verdict about the copy no session loads is refused "
-              "by neither, one about the loaded copy by both, naming it: %r"
+
+        def _both_say(name, travels, at):
+            """(doctor says stranded, the panel's refusal) for one scan entry."""
+            mf = _manifest()
+            mf["meta"]["reviewSkill"] = name
+            inv = {"skills": [_travels(name, travels, "scan basis", path=at)]}
+            return ("will NOT survive" in _detail(
+                _skills(mf, inv, {"portability": "strict"}, home=home), _PORT),
+                _panel_refusal(inv, name))
+        elsewhere = os.path.join(tmp, "elsewhere", "SKILL.md")
+        paired = [_both_say("both-dup", False, project_dup),
+                  _both_say("both-dup", True, personal_dup),
+                  _both_say("project-only", False, elsewhere)]
+        check("dp56 the panel's strict refusal and doctor grade the same copy, "
+              "the one a session loads: a verdict about another copy while the "
+              "personal one loads is stranded by both, naming the loaded path; a "
+              "verdict about the loaded file stands in both; a stranding verdict "
+              "about another copy while the project's loads strands neither: %r"
               % (paired,),
-              paired[0] == (False, None)
-              and paired[1][0] is True
-              and "'both-dup'" in (paired[1][1] or ""))
+              paired[0][0] is True and personal_dup in (paired[0][1] or "")
+              and paired[1] == (False, None)
+              and paired[2] == (False, None))
+
+        # ONE same-file comparison, and both graders reach it. A copy kept in
+        # either caller would answer this case with no call recorded from that
+        # caller, whatever its body said - which is how two copies drift.
+        calls = []
+        had = hasattr(_skill_places, "same_file")
+        real = getattr(_skill_places, "same_file", None)
+
+        def _recording(first, second):
+            calls.append((first, second))
+            return real(first, second) if real else False
+        _skill_places.same_file = _recording
+        try:
+            inv = {"skills": [_travels("both-dup", True, "b", path=personal_dup)]}
+            _skills(mfb, inv, {"portability": "strict"}, home=home)
+            from_doctor = len(calls)
+            _panel_refusal(inv)
+            from_panel = len(calls) - from_doctor
+        finally:
+            if had:
+                _skill_places.same_file = real
+            else:
+                del _skill_places.same_file
+        check("dp57 doctor's portability row and the panel's strict refusal both "
+              "compare the scan's copy with the loaded one through "
+              "`_skill_places.same_file`, and neither keeps its own: doctor %d "
+              "call(s), panel %d" % (from_doctor, from_panel),
+              from_doctor >= 1 and from_panel >= 1
+              and not hasattr(M, "_same_file")
+              and not hasattr(_panel_write, "_one_file"))
 
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

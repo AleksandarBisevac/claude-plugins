@@ -124,3 +124,66 @@ def resolve_skill(name, tree, user_home, plugin_root, running):
                     "problem": None}
     return {"found": False, "path": None, "source": None, "places": places,
             "problem": None}
+
+
+# --- the copy a session loads, graded for a clone --------------------------------
+# What each tier means for a clone of the tree, worded the way
+# `_panel_discovery.grade_entry` words the same tier. That module grades what the
+# machine scan saw; this grades the copy `resolve_skill` found, which is the copy a
+# session loads, and the two must not disagree about one tier -
+# `tests/test__skill_places.py` holds them to the same answer. A home directory
+# never travels; a project skill is graded as committed, as the scan grades it; the
+# plugin tier here is only ever the RUNNING plugin's own skill, which travels with
+# the plugin that runs the plan.
+_TIER_VERDICTS = {
+    "personal": (False, "a session loads the personal copy at %s, which lives in "
+                        "a home directory no clone carries"),
+    "project": (True, "a session loads the project copy at %s, committed under "
+                      ".claude/, so a clone gets it"),
+    "plugin": (True, "a session loads the running plugin's own copy at %s, and "
+                     "that plugin is what runs the plan"),
+}
+
+
+def same_file(first, second):
+    """True iff both paths are given and name one file, symlinks resolved. The one
+    comparison of a scan entry's path against the path `resolve_skill` found."""
+    if not first or not second:
+        return False
+    return os.path.normcase(os.path.realpath(first)) == \
+        os.path.normcase(os.path.realpath(second))
+
+
+def loaded_verdict(entry, hit):
+    """`{"travels", "basis", "graded"}` for the copy a session loads, or None when
+    no copy is known at all.
+
+    `entry` is the machine scan's record for the name (`travels`, `travelsBasis`,
+    `path`) or None; `hit` is `resolve_skill`'s answer. The scan keeps ONE copy per
+    name in its own order and may read another home than the resolver, so its
+    verdict can describe a file nobody loads. It stands only when it is about the
+    resolved file, or when nothing resolved and the scan's copy is the only one the
+    name can mean (`graded` "scan"). Otherwise the resolved file is graded by the
+    tier it was found in (`graded` "tier") - a personal copy, found under another
+    home or under a directory the scan read differently, does not travel, whatever
+    the scan said about the copy it kept.
+
+    `travels` is True, False or None; None is UNKNOWN and never folded into False.
+    """
+    found = bool(hit and hit.get("found"))
+    if entry is not None and (not found
+                              or same_file(entry.get("path"), hit.get("path"))):
+        return {"travels": entry.get("travels"),
+                "basis": entry.get("travelsBasis") or "no basis was recorded",
+                "graded": "scan"}
+    if not found:
+        return None
+    tier = _TIER_VERDICTS.get(hit.get("source"))
+    if tier is None:
+        return {"travels": None,
+                "basis": "found at %s in the tier %r, which this grading does not "
+                         "know, so whether it travels is UNKNOWN"
+                         % (hit.get("path"), hit.get("source")),
+                "graded": "tier"}
+    return {"travels": tier[0], "basis": tier[1] % (hit.get("path"),),
+            "graded": "tier"}

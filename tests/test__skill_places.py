@@ -109,6 +109,67 @@ def _cases(check):
           "none, for a name nothing holds): %r" % (sorted(seen_sources, key=str),),
           seen_sources == set(["project", "personal", "plugin", None]))
 
+    # --- which copy is graded for a clone ---------------------------------------
+    link = os.path.join(root, "link-to-tree")
+    linked = False
+    try:
+        os.symlink(tree, link)
+        linked = True
+    except (OSError, NotImplementedError, AttributeError):
+        pass
+    via_link = os.path.join(link, ".claude", "skills", "only-project", "SKILL.md")
+    direct = where("only-project")["path"]
+    check("sp17 `same_file` is one file through a symlink, two files apart, and "
+          "never true when either path is missing",
+          (not linked or M.same_file(via_link, direct))
+          and not M.same_file(direct, where("only-personal")["path"])
+          and not M.same_file(None, direct) and not M.same_file(direct, ""))
+
+    def entry(travels, path):
+        return {"travels": travels, "travelsBasis": "SCAN", "path": path}
+    personal_hit = where("only-personal")
+    stands = M.loaded_verdict(entry(True, personal_hit["path"]), personal_hit)
+    retold = M.loaded_verdict(entry(True, direct), personal_hit)
+    unlisted = M.loaded_verdict(None, personal_hit)
+    check("sp18 the scan's verdict stands only for the loaded file; about another "
+          "copy, or with no copy listed, the loaded personal copy is graded by its "
+          "tier and does not travel, naming its path: %r"
+          % ((stands, retold, unlisted),),
+          stands == {"travels": True, "basis": "SCAN", "graded": "scan"}
+          and retold["travels"] is False and retold["graded"] == "tier"
+          and personal_hit["path"] in retold["basis"]
+          and unlisted == retold)
+    nowhere = where("ghost")
+    check("sp19 with nothing resolved the scan's copy is the only one the name can "
+          "mean, and with neither there is nothing to grade: %r"
+          % ((M.loaded_verdict(entry(False, "/x/SKILL.md"), nowhere),
+              M.loaded_verdict(None, nowhere)),),
+          M.loaded_verdict(entry(False, "/x/SKILL.md"), nowhere)
+          == {"travels": False, "basis": "SCAN", "graded": "scan"}
+          and M.loaded_verdict(None, nowhere) is None)
+    # THE AGREEMENT, pinned rather than claimed in a comment: the tier grade here
+    # and the scan's grade for the same tier are two implementations of one rule.
+    import _panel_discovery
+    decl = {"problem": None, "enabled": set(), "marketplaces": set(),
+            "present": False}
+    scan_source = {"personal": "user", "project": "project", "plugin": "plugin"}
+    pairs = []
+    # The plugin tier is asked through the qualified name: the bare one is
+    # shadowed by the personal and project copies written above.
+    for name in ("only-personal", "only-project", "house:only-plugin"):
+        hit = where(name)
+        bare = name.split(":")[-1]
+        mine = M.loaded_verdict(None, hit)["travels"]
+        theirs = _panel_discovery.grade_entry(
+            bare, scan_source[hit["source"]], hit["path"], decl,
+            set([bare]), plugin)["travels"]
+        pairs.append((hit["source"], mine, theirs))
+    check("sp20 each tier the resolver names is graded as the machine scan grades "
+          "the same tier - a personal copy never travels, a project or the "
+          "running plugin's own does: %r" % (pairs,),
+          pairs == [("personal", False, False), ("project", True, True),
+                    ("plugin", True, True)])
+
     # --- the running plugin's name ----------------------------------------------
     manifest = os.path.join(plugin, ".claude-plugin", "plugin.json")
     os.makedirs(os.path.dirname(manifest))

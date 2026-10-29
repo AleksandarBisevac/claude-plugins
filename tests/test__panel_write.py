@@ -633,6 +633,68 @@ def _cases(check):
     check("rs5 a name discovery has never seen is still accepted under strict - "
           "an unknown name has no verdict, and a refusal needs a basis",
           _rs_unknown["ok"])
+
+    # --- the verdict is about the copy a SESSION loads -------------------------
+    # The scan keeps one copy per name and reads the default home; the launcher
+    # reads CLAUDE_CONFIG_DIR. So a name can resolve to a personal copy the scan
+    # never graded, while the scan's verdict describes another file - or none.
+    # Each fixture below is one the old reading accepted on the mismatch alone.
+    _rs_cfg = os.path.join(tmp, "rs-config-home")
+    _rs_far = os.path.join(_rs_cfg, "skills", "far-personal", "SKILL.md")
+    os.makedirs(os.path.dirname(_rs_far), exist_ok=True)
+    with open(_rs_far, "w", encoding="utf-8") as _fh:
+        _fh.write("---\nname: far-personal\ndescription: Personal.\n---\n")
+    _rs_default = os.path.join(tmp, "rs-default-home", ".claude", "skills",
+                               "far-personal", "SKILL.md")
+
+    def _rs_refusal(name, entries):
+        """`_reject_stranded` over a fixed scan, with the launcher's home pinned
+        to `_rs_cfg` - a machine holding the name in its real home must not
+        change the answer."""
+        saved = os.environ.get("CLAUDE_CONFIG_DIR")
+        os.environ["CLAUDE_CONFIG_DIR"] = _rs_cfg
+        try:
+            return M._reject_stranded(proj, {"portability": "strict"},
+                                      {"tasks": {"P1.1": {"skills": [name]}}},
+                                      _discover=lambda _p: {"skills": entries})
+        finally:
+            if saved is None:
+                os.environ.pop("CLAUDE_CONFIG_DIR", None)
+            else:
+                os.environ["CLAUDE_CONFIG_DIR"] = saved
+
+    def _rs_entry(name, travels, path):
+        return {"name": name, "travels": travels, "path": path,
+                "travelsBasis": "scan basis for %s" % (path,)}
+    _rs_other_home = _rs_refusal("far-personal", [_rs_entry(
+        "far-personal", False, _rs_default)])
+    check("rs6 a personal copy found through CLAUDE_CONFIG_DIR while the scan "
+          "graded the default home's copy is REFUSED under strict, and the "
+          "basis is the loaded copy's, naming its path - not accepted because "
+          "the two paths differ: %r" % (_rs_other_home,),
+          _rs_other_home is not None
+          and "'far-personal'" in _rs_other_home
+          and _rs_far in _rs_other_home
+          and "home directory" in _rs_other_home)
+    _rs_renamed = _rs_refusal("far-personal", [_rs_entry(
+        "far-personal", True, os.path.join(proj, ".claude", "skills",
+                                           "other-dir", "SKILL.md"))])
+    _rs_unlisted = _rs_refusal("far-personal", [])
+    check("rs7 ...and so is a loaded personal copy whose scan verdict said "
+          "'travels' about another file (a front-matter name under another "
+          "directory), or that the scan does not list at all: %r"
+          % ((_rs_renamed, _rs_unlisted),),
+          _rs_renamed is not None and _rs_far in _rs_renamed
+          and _rs_unlisted is not None and _rs_far in _rs_unlisted)
+    # THE OTHER DIRECTION, and it passes on the old code by construction: a
+    # mismatch whose LOADED copy travels is accepted. A grading that refused on
+    # any mismatch - the overcorrection - fails here and nowhere else.
+    _rs_loaded_travels = _rs_refusal("vendored-one", [_rs_entry(
+        "vendored-one", False, _rs_default)])
+    check("rs8 a stranding verdict about another copy, while the session loads "
+          "the project's vendored copy, refuses nothing - the loaded file is "
+          "the one graded, in both directions: %r" % (_rs_loaded_travels,),
+          _rs_loaded_travels is None)
     # Put the fixture back where the cases after this one expect it: they read
     # the `from` half of a change row, which is the value on disk.
     M.write_config(proj, {"trivialLineThreshold": 40})

@@ -29,9 +29,11 @@ import _manifest_rules                             # noqa: E402
 
 # The line the defect was measured on, with its item stripped off. Written once
 # here so the fixture and the expected rendering cannot drift apart.
-SKILLS_BODY = ("no skills resolve (task skills []; phase has no area tag) -- set "
-               "task.skills, register default skills on an area in meta.areas, or "
-               "write \"skills\": null to say 'none applies'")
+SKILLS_BODY = ("no skills resolve (no plan default; task skills []; phase has no "
+               "area tag) -- set task.skills, set a plan default in "
+               "meta.defaultSkills (audit-task.py default-skills), register default "
+               "skills on an area in meta.areas, or write \"skills\": null to say "
+               "'none applies'")
 
 # The plan the defect was measured on: six areas declared, one phase tagged, four
 # untagged holding 7 + 5 + 1 + 6 tasks. The untagged counts are what produced
@@ -296,6 +298,28 @@ def _cases(check):
           "because the line says which rule it counts: %r" % (_two_rules,),
           _two_rules == ["2 tasks (P0.1, P0.2): remedy A",
                          "2 tasks (P0.1, P0.2): remedy B"])
+
+    # --- the exits the unresolved-skills warning offers -------------------------
+    # Resolution reads three levels - the plan default, the phase's areas, the
+    # task's own list - and the opt-out stops all three. A warning that offers
+    # an exit for only some of them sends a reader past the one that fixes every
+    # task at once. Counted over the line the validator really produced, not
+    # looked for in a constant this file wrote.
+    _exits = ("set task.skills", "set a plan default in meta.defaultSkills",
+              "audit-task.py default-skills", "register default skills on an area",
+              "\"skills\": null")
+    _line = (_skills_warnings(_plan((("P0", 1),))) or [""])[0]
+    _unusable = _plan((("P0", 1),))
+    _unusable["meta"]["defaultSkills"] = []
+    _unusable_line = (_skills_warnings(_unusable) or [""])[0]
+    check("wg19 the unresolved-skills warning names every level resolution reads, "
+          "the plan default and its writer included, each exit exactly once, and "
+          "says what it consulted at the plan level - absent, or present and "
+          "naming nothing usable: %r" % ((_line, _unusable_line),),
+          [_line.count(e) for e in _exits] == [1] * len(_exits)
+          and "(no plan default; " in _line
+          and "(plan default names no usable skill; " in _unusable_line
+          and "no plan default" not in _unusable_line)
 
 
 def _locator_corpus():

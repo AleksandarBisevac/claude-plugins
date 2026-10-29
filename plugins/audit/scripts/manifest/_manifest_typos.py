@@ -216,16 +216,25 @@ def _check_skills(manifest):
     A task whose RESOLVED skills are empty while the manifest uses skills
     elsewhere is usually an oversight -- the executor for that one task loads
     no conventions while its siblings do. The warning names what was consulted
-    (the task's own value, the phase's areas) and the three exits: set
-    task.skills, register defaults on an area, or write `"skills": null` to
-    say 'none applies' -- the explicit opt-out that stops the area fallback
-    and this warning with it (_areas.skills_opted_out).
+    (the plan default, the task's own value, the phase's areas) and every exit
+    resolution offers, one per level `_areas.resolve_skills` reads: set
+    task.skills, set the plan default `meta.defaultSkills` (its writer is
+    `audit-task.py default-skills`), register defaults on an area, or write
+    `"skills": null` to say 'none applies' -- the explicit opt-out that stops
+    the fallback and this warning with it (_areas.skills_opted_out).
 
     GATED on _skills_in_use: a manifest that never touches the feature gets
     zero new lines, which is the whole back-compat contract here."""
     warnings = []
     if not _skills_in_use(manifest):
         return ([], warnings)
+    # Resolution got nothing from the plan default either, or the task would have
+    # resolved; what is said is whether the key is absent or names nothing usable
+    # (its shape is `_areas`' own warning).
+    meta = manifest.get("meta")
+    ppart = ("plan default names no usable skill"
+             if isinstance(meta, dict) and "defaultSkills" in meta
+             else "no plan default")
     for phase in _safe_list(manifest.get("phases")):
         if not isinstance(phase, dict):
             continue
@@ -254,10 +263,11 @@ def _check_skills(manifest):
             apart = ("phase has no area tag" if not tags
                      else "area(s) %s declare none" % ", ".join(tags))
             warnings.append(
-                "%s: no skills resolve (%s; %s) -- set task.skills, register "
-                "default skills on an area in meta.areas, or write "
-                "\"skills\": null to say 'none applies'"
-                % (twhere, tpart, apart))
+                "%s: no skills resolve (%s; %s; %s) -- set "
+                "task.skills, set a plan default in meta.defaultSkills "
+                "(audit-task.py default-skills), register default skills on an "
+                "area in meta.areas, or write \"skills\": null to say 'none "
+                "applies'" % (twhere, ppart, tpart, apart))
     return ([], warnings)
 
 

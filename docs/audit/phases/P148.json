@@ -167,32 +167,40 @@
         "severity": "med",
         "file": "plugins/audit/scripts/manifest/audit-task.py:2835-2847 (_ordinary_task_gate files arm); _rederive_gate/_gate_follows_scope ~9759-9783",
         "issue": "An ordinary task whose phase gate spelling takes source paths (a sibling shape such as `npx jest --findRelatedTests {paths}`, which _gate_derive.repointed supports) used to get a narrow gate naming its source files; it now gets the phase's wide gate with basis files-no-suite, and a scope --files/--tests-add on a pending task with basis files silently rewrites its working narrow gate to the wide one. Probed: parent ['npx jest --findRelatedTests src/Card.tsx'] basis files; HEAD ['npm test'] basis files-no-suite.",
-        "resolution": "Filter to suite paths only when the resolved spelling does not take source paths (keep a path the spelling or sibling entry holds as a related-tests shape, or ask derived.listing.related); add an allow case with a --findRelatedTests sibling, red first.",
-        "fixTask": "P148.10-xpz"
+        "resolution": "fixed in P148.10-xpz (32a8fab8dbd9): Filter to suite paths only when the resolved spelling does not take source paths (keep a path the spelling or sibling entry holds as a related-tests shape, or ask derived.listing.related); add an allow case with a --findRelatedTests sibling, red first.",
+        "fixTask": "P148.10-xpz",
+        "commit": "32a8fab8dbd9",
+        "status": "fixed"
       },
       {
         "id": "P148-R19",
         "severity": "med",
         "file": "plugins/audit/scripts/manifest/audit-task.py:1473-1505 (_files_gate_refusal), now called for every add (~4129) and phase-add batch (~9490)",
         "issue": "_files_gate_refusal builds `own` from the spelling template only; the meta.phaseGate.always entries _point prepends are not in it. A plan with always ['sh tools/check.sh'] and a task --files tools/check.sh,tests/test_check.py derives a correct gate and is then refused with a false message ('names tools/check.sh, which is no suite'). Latent for fix tasks before, now for every add.",
-        "resolution": "Count the always entries' paths as the task's own (or skip always entries as build keys are skipped); add a case pinning the probed scenario, red first.",
-        "fixTask": "P148.10-xpz"
+        "resolution": "fixed in P148.10-xpz (32a8fab8dbd9): Count the always entries' paths as the task's own (or skip always entries as build keys are skipped); add a case pinning the probed scenario, red first.",
+        "fixTask": "P148.10-xpz",
+        "commit": "32a8fab8dbd9",
+        "status": "fixed"
       },
       {
         "id": "P148-R20",
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/audit-task.py ~9759 (_gate_follows_scope)",
         "issue": "It tests status == 'pending' only, while its docstring excludes a started task; a task reset to pending after a failed attempt (attempts > 0, started by _started()) has its gate re-derived on a widening scope without being asked.",
-        "resolution": "Use not _started(node), or make the docstring say what the code does; a case.",
-        "fixTask": "P148.10-xpz"
+        "resolution": "fixed in P148.10-xpz (32a8fab8dbd9): Use not _started(node), or make the docstring say what the code does; a case.",
+        "fixTask": "P148.10-xpz",
+        "commit": "32a8fab8dbd9",
+        "status": "fixed"
       },
       {
         "id": "P148-R21",
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/audit-task.py ~4407 (_release_findings)",
         "issue": "Reads only the cancelled task's current phase; move rewrites fixTask, so a fix task moved to another phase leaves its finding in the old phase, and cancelling it releases nothing.",
-        "resolution": "Walk every phase as _unresolve_findings does; a case with a moved fix task.",
-        "fixTask": "P148.10-xpz"
+        "resolution": "fixed in P148.10-xpz (32a8fab8dbd9): Walk every phase as _unresolve_findings does; a case with a moved fix task.",
+        "fixTask": "P148.10-xpz",
+        "commit": "32a8fab8dbd9",
+        "status": "fixed"
       },
       {
         "id": "P148-R22",
@@ -215,8 +223,10 @@
         "severity": "low",
         "file": "plugins/audit/schema/audit-plan.schema.json:1848; plugins/audit/scripts/manifest/_manifest_vocab.py:194-211; plugins/audit/commands/init.md:402; plugins/audit/reference/verbs-in-full.md:370",
         "issue": "Four places still call files-no-suite a fix task's word only; after the files-arm change it is any task's.",
-        "resolution": "Make each say what the derivation does now (after the med about related-tests shapes is settled).",
-        "fixTask": "P148.10-xpz"
+        "resolution": "fixed in P148.10-xpz (32a8fab8dbd9): Make each say what the derivation does now (after the med about related-tests shapes is settled).",
+        "fixTask": "P148.10-xpz",
+        "commit": "32a8fab8dbd9",
+        "status": "fixed"
       },
       {
         "id": "P148-R25",
@@ -247,8 +257,10 @@
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/audit-task.py:123; plugins/audit/scripts/manifest/_proposals.py:40",
         "issue": "Stale --selftest text of the P131-R5 class outside P148.5's files.",
-        "resolution": "Delete or reword it.",
-        "fixTask": "P148.10-xpz"
+        "resolution": "fixed in P148.10-xpz (32a8fab8dbd9): Delete or reword it.",
+        "fixTask": "P148.10-xpz",
+        "commit": "32a8fab8dbd9",
+        "status": "fixed"
       },
       {
         "id": "P148-R29",
@@ -259,7 +271,7 @@
         "fixTask": "P148.11-xpz"
       }
     ],
-    "outcome": "[findings: 29 - 0 high, 4 med, 25 low; 1 with a recorded fix commit]"
+    "outcome": "[findings: 29 - 0 high, 4 med, 25 low; 7 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -857,7 +869,7 @@
     {
       "id": "P148.10-xpz",
       "title": "A files-derived gate keeps a related-tests spelling narrow, counts the plan's always entries as the task's own, re-derives only for a task never started, and a cancel releases a moved fix task's findings",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix the P148 review findings P148-R18, P148-R19, P148-R20, P148-R21, P148-R24, P148-R28 (each finding's file, issue and resolution is in docs/audit/phases/P148.json review.findings, by id). Read each against the code at HEAD first. Fix each with a case proven red first where it is about behaviour; where HEAD no longer has the defect or the finding records something nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id. Edit only the declared files; a fix needing another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -900,14 +912,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "32a8fab8dbd9",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "FINDINGS. P148-R18 (med) fixed: one predicate, audit-task.py `_spelling_reach(shape, owner, build, meta)` -> (own, takes_sources), answers 'which paths does the derived gate's own spelling legitimately name'. takes_sources is read off the plan's evidence: a sibling entry (accepted by this project's runner) whose slot - every path it names less the program an interpreter runs, via `_slot_paths` and the shape check's own `_manifest_phases._runs_first_path_as_program` - holds a non-suite path. A recorded `{paths}` spelling holds no example and the phase derivation fills it with suites, so it takes suites. The files arm of `_ordinary_task_gate` points at `[p for p in files if takes_sources or is_suite_path(p)]`; `_rederive_gate` (scope) goes through the same arm, so the scope rewrite is fixed by the same change. P148-R19 (med) fixed by the same predicate: `own` now holds the paths of the always entries `_point` leads a recorded-spelling gate with, and `_files_gate_refusal` asks `_spelling_reach` instead of building `own` from the template alone (and returns None under a sources-taking slot). P148-R20 fixed: `_gate_follows_scope` reads `not _started(node)` (status not pending OR attempts > 0), docstring says so. P148-R21 fixed: `_release_findings(assembled, tids)` walks every phase like `_unresolve_findings` and returns (phase_ids, changes); `_locked_cancel` snapshots and writes every phase it freed a finding in (same loop shape as reopen). P148-R24 fixed: the four places (schema gateBasis description, _manifest_vocab.py comment, commands/init.md, reference/verbs-in-full.md) now define files-no-suite as any task's word, naming the spelling-takes-source exception. P148-R28 fixed: the `audit-task.py --selftest` usage line deleted (the verb exits 2 on it) and _proposals.py's 'which is what `--selftest` here points at' clause removed.\nCASES (tests/test_audit_task.py, at7/fd/rf blocks; tests/test__manifest_vocab.py): dg5 (related-tests sibling, add -> ['npx jest --findRelatedTests src/Card.tsx'] basis files), dg5b (scope --files keeps it narrow over both files), dg5c ALLOW (sibling `python3 tools/runner.py tests/test_other.py`: program is not slot, doc+source files -> wide, files-no-suite), dg6 (always ['sh tools/check.sh'] + spelling 'pytest {paths}', --files tools/check.sh,tests/test_check.py -> exit 0, gate ['sh tools/check.sh','pytest tests/test_check.py']), dg6b ALLOW (refusal still names docs/x.md, not tools/check.sh), dg7 (pending task with attempts 1 keeps its gate on scope --tests-add; dg4 is the other direction), fd10 (fix task moved P1->P2 then cancelled frees P1-R1, journal change row), mv67 (no sentence naming files-no-suite in the four texts says 'fix task'; each still names it), rf3 (both docstrings mention --selftest only in the 'no `--selftest`' sentence; `run(['--selftest'])` exits 2).\nMUTATIONS (scratch copy of the tree, restored by cp+cmp, __pycache__ purged each run): program kept in slot -> dg5c red; takes_sources forced True -> dg3, dg3b, dg4c, dg7, dg5c, dg6, dg6b red; always paths dropped from own -> dg6, dg6b red; refusal counting every declared file as own -> dg6b red; status-only follows-scope -> dg7 red; release reading only the task's current phase -> fd10 red (fd9 stays green: single phase). A first release mutation (first phase only) survived because the finding sits in the first phase - the mutation was wrong, not the case.\nGATE: `python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__manifest_vocab.py tests/test__proposals.py tests/test_validate_manifest.py` exit 0, 4/4 files ok. Extra, not owed: the same sweep over test__deps, test__help, test__help_lints, test__output_lints, test__refs, test_gen_demo_manifest, test_materialize_proposal exit 0, 7/7; ruff check on the edited .py exit 0; vermin -t=3.8- exit 0; schema json loads.\nDEPENDANTS: audit-task.py path/basename readers (test__output, PLUGIN-BUILD-GUIDE, docs/research/*, hooks journal-writes/require-plan) - still correct, no path, CLI verb or flag changed; only the dead `--selftest` usage line left the docstring. `_release_findings` changed signature; its only callers are in audit-task.py (grep over plugins/tests/tools), updated. test_audit_task.py names used by test_commit_task_work/test__filed_returns (_attempt_cases, _close_evidence_cases, _held_cases, _remedies_pass) - untouched. Schema readers (examples, templates, test__manifest_io, check-example-ledgers, prove-gates, verify.sh) - one description string changed, no structure. _manifest_vocab.py importers - a comment only, no value. _proposals.py importers - docstring only. test__manifest_vocab's _cases/_selftest used by test__help_lints/prove-gates - one case appended inside _cases, test__help_lints green. test__proposals.py - untouched.\nOUTSIDE MY FILES, REPORTED NOT CHANGED: `_manifest_phases.files_gate_non_suite_paths`'s docstring says `own` is 'the paths the sibling's spelling names itself'; it is now also handed the always entries' paths. The gate-only arm still filters to suites by its own documented reasoning (left as is). Known limit: under a sources-taking sibling, every declared file is pointed at, a document included, which is what that shape got before the earlier suite filter.",
+        "descriptive": "A files-derived gate points at what its spelling actually takes (a related-tests sibling stays narrow, an always entry's own script is not refused), a once-run pending task keeps its gate, and cancelling a moved fix task frees its finding."
       },
       "startedAt": "2026-10-29T07:04:35Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-29T07:40:16Z",
+      "verifiedBy": [
+        "dg5/dg5b/dg5c: a related-tests sibling keeps add and scope narrow over source files; a sibling whose only source path is its program still takes suites alone",
+        "dg6/dg6b: an always entry's own script is the gate's own and not refused; a declared document is still refused",
+        "dg7: a pending task that already ran an attempt keeps its derived gate on scope --tests-add",
+        "fd10: cancelling a fix task moved to another phase frees the finding left in the reviewing phase",
+        "mv67: no place defining files-no-suite scopes it to a fix task",
+        "rf3: neither docstring offers the retired --selftest, and the verb refuses it"
+      ],
       "notes": [
         {
           "at": "2026-10-29T07:03:32Z",
@@ -951,6 +970,18 @@
         "runId": "2026-10-29T07:40:13Z.4523cb",
         "status": "passed",
         "at": "2026-10-29T07:40:13Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "32a8fab8dbd9",
+        "at": "2026-10-29T07:40:16Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-29T07:23:34Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__manifest_vocab.py` in a throwaway tree at HEAD exited 1 with 8 of 1160 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - mv67 (house FAIL), dg7 (house FAIL), dg5 (house FAIL), dg5b (house FAIL), dg6 (house FAIL), dg6b (house FAIL), fd10 (house FAIL), rf3 (house FAIL): SELFTEST FAILED: 1153/1160 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 565s, 3 times the recorded 808s of tests/test__manifest_vocab.py, tests/test_audit_task.py in .github/sweep-costs.json, capped at the 565s the host's Bash limit leaves; fix run: held back 282s of the deadline (the recorded 808s, capped at half the 565s deadline), the recorded slot-seconds of tests/test__manifest_vocab.py, tests/test_audit_task.py in .github/sweep-costs.json",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1031,7 +1062,12 @@
         "P148-R23",
         "P148-R29"
       ],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-29T07:46:22Z.136e85",
+        "status": "passed",
+        "at": "2026-10-29T07:46:22Z"
+      }
     },
     {
       "id": "P148.12-xpz",

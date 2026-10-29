@@ -62,7 +62,7 @@ _output.install_path()
 import _doctor_report as _base  # noqa: E402  (Report, the loader, the constants)
 import _branch  # noqa: E402  (the naming convention, one expansion path)
 import _claude_home  # noqa: E402  (claude_home: where the user's skills live)
-import _skill_places  # noqa: E402  (resolve_skill: where a named skill lives, shared with the launcher)
+import _skill_places  # noqa: E402  (resolve_skill, loaded_verdict: where a named skill lives and whether that copy travels, shared with the launcher and the panel)
 import _manifest_io as _mio  # noqa: E402  (the derived phase status)
 import _worktrees  # noqa: E402  (contained / not-contained / unknown, one answer)
 
@@ -533,14 +533,6 @@ def _skills_dir_read(skills_dir, places):
         os.path.dirname(p)))) == want for p in places or () if p)
 
 
-def _same_file(first, second):
-    """True iff both paths are given and name one file, symlinks resolved."""
-    if not first or not second:
-        return False
-    return os.path.normcase(os.path.realpath(first)) == \
-        os.path.normcase(os.path.realpath(second))
-
-
 def portability_mode(cfg, cfg_mod):
     """Which tier `portability` is set to, falling back to what the plugin ships.
 
@@ -560,15 +552,13 @@ def _plan_skills_travel(rep, cfg, cfg_mod, named, have, resolved):
     reader has to be able to tell which one went red - not because the function was
     long.
 
-    `resolved` is `_skill_places.resolve_skill`'s answer per name. A name it found
-    that the scan did not list (a plugin-qualified one, whose scan keys are bare)
-    has no verdict to word, so it is UNKNOWN with that said - not skipped, which
-    would read as "graded and fine".
-
-    The scan's entry is graded for ONE file, and `resolved` names the file a session
-    loads. Only a verdict about that same file is reported as graded; any other pair
-    is UNKNOWN with both paths named, whatever made them differ (the scan's own
-    dedupe order, a front-matter rename, a different home).
+    `resolved` is `_skill_places.resolve_skill`'s answer per name, and the file it
+    names is the one a session loads - so that file is what is graded, through
+    `_skill_places.loaded_verdict`, the same call the panel's strict refusal makes.
+    The scan's verdict stands when it is about that file; when the scan kept another
+    copy, or none (a plugin-qualified name, whose scan keys are bare; a personal
+    copy under another home), the loaded file is graded by the tier it was found in,
+    and the row names the copy the scan's verdict was about.
     """
     mode = portability_mode(cfg, cfg_mod)
     if mode == "off":
@@ -585,24 +575,13 @@ def _plan_skills_travel(rep, cfg, cfg_mod, named, have, resolved):
         hit = resolved.get(name) or {}
         if not hit.get("found"):
             continue                 # already reported as unresolvable, above
-        if entry is None:
-            graded.append(name)
-            unknown.append("%r (%s) - found at %s, which the scan does not "
-                           "list, so whether it travels was not graded"
-                           % (name, where, hit.get("path")))
-            continue
-        if not _same_file(entry.get("path"), hit.get("path")):
-            # The scan dedupes by name in its own order and keeps ONE copy; the
-            # resolver names the copy a session loads. When they are two files the
-            # verdict describes a file nobody reads.
-            graded.append(name)
-            unknown.append("%r (%s) - the verdict is for %s, but a session loads %s, "
-                           "so whether the file it loads travels was not graded"
-                           % (name, where, entry.get("path") or "a copy with no "
-                              "recorded path", hit.get("path")))
-            continue
-        travels = entry.get("travels")
-        basis = entry.get("travelsBasis") or "no basis was recorded"
+        verdict = _skill_places.loaded_verdict(entry, hit)
+        travels, basis = verdict["travels"], verdict["basis"]
+        if verdict["graded"] == "tier" and entry is not None:
+            # The scan dedupes by name in its own order and keeps ONE copy; its
+            # verdict is about a file nobody loads, so it is named, not reported.
+            basis = "%s (the scan's verdict was about %s)" % (
+                basis, entry.get("path") or "a copy with no recorded path")
         graded.append(name)
         if travels is False:
             stranded.append("%r (%s) - %s" % (name, where, basis))

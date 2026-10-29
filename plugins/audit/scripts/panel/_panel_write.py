@@ -2096,14 +2096,6 @@ def _patched_skill_names(patch):
     return out
 
 
-def _one_file(first, second):
-    """True iff both paths are given and name one file, symlinks resolved."""
-    if not first or not second:
-        return False
-    return os.path.normcase(os.path.realpath(first)) == \
-        os.path.normcase(os.path.realpath(second))
-
-
 def _reject_stranded(project, config, patch, _discover=None):
     """The refusal string when `portability` is strict and a name would not travel.
 
@@ -2111,20 +2103,23 @@ def _reject_stranded(project, config, patch, _discover=None):
     the gate can fail a build over it, but the panel is where the name is picked,
     and a defect kept out of the manifest never has to be found in it.
 
-    Three things are deliberately NOT refused. A name discovery has never seen is
-    accepted, because an inventory is not a whitelist and refusing an unknown name
-    is a different feature with different consequences. A name whose verdict is
-    UNKNOWN is accepted, because a refusal needs a basis and there is none. And
-    everything is accepted under `warn` and `off` — the tier is what the user set,
-    and a panel that ignored it would be worse than one that never had the switch.
+    Three things are deliberately NOT refused. A name neither discovery nor the
+    resolver has seen is accepted, because an inventory is not a whitelist and
+    refusing an unknown name is a different feature with different consequences.
+    A name whose verdict is UNKNOWN is accepted, because a refusal needs a basis
+    and there is none. And everything is accepted under `warn` and `off` — the
+    tier is what the user set, and a panel that ignored it would be worse than one
+    that never had the switch.
 
-    THE VERDICT MUST DESCRIBE THE COPY A SESSION LOADS. The scan keeps one copy
-    per name in its own order, so for a name held by two tiers its verdict can be
-    about the project copy while the launcher loads the personal one. Where
-    `_skill_places` resolves the name to another file, that verdict is about a
-    file nobody reads - UNKNOWN, so accepted, as doctor grades it. A name the
-    resolver finds nowhere has no loaded copy, and the scan's is the only one the
-    name can mean.
+    THE VERDICT MUST DESCRIBE THE COPY A SESSION LOADS, and
+    `_skill_places.loaded_verdict` - the call doctor's portability row makes - is
+    that verdict. The scan keeps one copy per name in its own order and reads one
+    home, so its verdict can be about the project copy while the launcher loads a
+    personal one, or about no copy at all while the launcher finds one under
+    another home. Then the loaded file is graded by its tier, and a personal copy
+    is refused: accepting on the mismatch would let a name through strict that a
+    clone cannot load. A name the resolver finds nowhere has no loaded copy, and
+    the scan's is the only one the name can mean.
 
     Fails OPEN on a scan that raises: this is a write path, and taking somebody's
     edit away because a filesystem walk failed is not a trade this makes.
@@ -2147,16 +2142,12 @@ def _reject_stranded(project, config, patch, _discover=None):
     running = _skill_places.plugin_name(plugin_root)
     bad = []
     for name in names:
-        entry = have.get(name)
-        if entry is None or entry.get("travels") is not False:
-            continue
         hit = _skill_places.resolve_skill(name, project, home, plugin_root,
                                           running)
-        if hit.get("found") and not _one_file(entry.get("path"),
-                                              hit.get("path")):
+        verdict = _skill_places.loaded_verdict(have.get(name), hit)
+        if verdict is None or verdict["travels"] is not False:
             continue
-        bad.append("%r - %s" % (name, entry.get("travelsBasis")
-                                or "no basis was recorded"))
+        bad.append("%r - %s" % (name, verdict["basis"]))
     if not bad:
         return None
     return ("portability is strict and %s would not survive a clone of this "
