@@ -31,16 +31,37 @@
         "issue": "sr39 failed on the windows resample leg of run 40781798399 (c35ffffb): exit 3 in 7.1 s but the basis did not say timed out. The case builds a first run sleeping 3 s under a 7 s deadline, so whether the deadline lands in the second run, in the first, or not at all depends on how fast the runner starts interpreters; on a loaded windows runner the first run can eat the budget.",
         "resolution": "Make sr39 independent of runner speed: drive the cut-off with a witness rather than a sleep sized against the deadline (as tt3c in tools/sweep-selftests.py does), so the second run is reached and cut off on any runner; keep the assertion that one deadline covers both runs.",
         "fixTask": "P148.9-xpz"
+      },
+      {
+        "id": "P148-R2",
+        "severity": "low",
+        "file": "tests/_harness.py:2254-2295 (sr3d, sr19c) and the task's tests.gate",
+        "issue": "The recorded gate command selects tools/sweep-selftests.py, tools/_suite.py, tools/gate-parity.py, tests/test_import_evidence.py and tests/test_run_test_gate.py, but not tests/_harness.py, which holds the largest part of the diff: the reach, id-reading and print changes and their cases sr3d and sr19c (and sr18, the case the P142-R21 finding is about). So the gate record says nothing about P144-R7/R8/R9, P142-R26 or P142-R21. I ran tests/_harness.py --selftest once in the task tree: exit 0, 98/98 cases passed, sr3d and sr19c PASS, so nothing is wrong today. The executor discloses this but leaves it open. The P142-R21 finding is therefore only half answered: sr18's red-first proof is claimed, the gate-record half is not made.",
+        "resolution": "Add `python3 tools/sweep-selftests.py tests/_harness.py` (or the file) to this task's tests.gate; the manifest edit is outside the declared files, so the orchestrator does it."
+      },
+      {
+        "id": "P148-R3",
+        "severity": "low",
+        "file": "tools/_suite.py:510-513, 516-546 (_ignores_errors early-continue) and case s21",
+        "issue": "P132-R6 is not made. The executor's reason holds in the tree: the three sites it names exist at HEAD (tests/test__doctor_trail.py:495 shutil.rmtree(journal_dir(wiped)), tests/test_audit_task.py:14728 shutil.rmtree(wt), tests/test_drive_phase.py:10696 shutil.rmtree(first + '.redo-5')). It is reported rather than fixed, which the task allows. But the phase's desired outcome ('fixed, or answered with the evidence that nothing is left to change, and the bug closes') is not met for this id: the coverage loss (a plain rmtree over a git-written directory is not convicted) is still in the code.",
+        "resolution": "Carry P132-R6 to a follow-up task whose scope holds tests/test__doctor_trail.py, tests/test_audit_task.py and tests/test_drive_phase.py (switch the three sites to _harness.remove_tree), then drop the early-continue and turn s21 into the init-only allow case. Do not close the bug over it."
+      },
+      {
+        "id": "P148-R4",
+        "severity": "low",
+        "file": "tools/sweep-selftests.py (cw10b label, lines near 3084-3095)",
+        "issue": "The cw10b label writes a cardinality into prose ('exactly the two whose writers format the name inline') beside a check that pins those rows by prefix. A third inline-formatted row would make the sentence false while the check says what it checks. The task says no number written into prose; a word under ten is legal to the lint, so this is author-enforced, not a lint failure.",
+        "resolution": "Drop 'the two' from the label and name the pinned rows (journal pre-image, TDD reminder) only, as the comment above it already does."
       }
     ],
-    "outcome": "[findings: 1 - 0 high, 1 med, 0 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 4 - 0 high, 1 med, 3 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
     {
       "id": "P148.1",
       "title": "The drive's carried lows: reviewer redispatch with its tree, writer-state cleanup, step texts, commit-header and attempt-start reads, kept-tree submit, wave-path cases",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix the low review findings P131-R19, P131-R38, P131-R41, P131-R42, P131-R43, P132-R1, P132-R2, P135-R3, P137-R20, P137-R21, P137-R28, P139-R4, P141-R1, P142-R23, P142-R24, P142-R27, P142-R43, P144-R3, carried to BUG-29-dau. Each finding's file, issue and resolution is in its phase shard (docs/audit/phases/<phase>.json, review.findings, by id). Read each against the code at HEAD first: lines have moved since it was filed. For each finding either fix it - with a case proven red first where the finding is about behaviour or a missing case - or, where HEAD no longer has the defect or the finding records a past return or plan record that nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id, one line each: fixed (what changed, which case) or no-change (why, with the line read). Edit only the declared files; a fix that needs another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -62,19 +83,42 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d83aeee96039",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Files: plugins/audit/scripts/governance/drive-phase.py, tests/test_drive_phase.py only. Gate `python3 tools/sweep-selftests.py tests/test_drive_phase.py` from the task tree: exit 0, '1/1 files ok, 671 cases' (baseline before the change: exit 0, 654 cases). ruff check on both files: All checks passed; vermin -t=3.8-: no violations; prose_number_claims/house_style_violations: no hit in either file.\nPer finding:\nP131-R19 fixed: new ww1/ww2/ww3 (sr2-block, _wave_writer_cases) - a wave of two writer members with their own trees: the committing member's decision is writer-committed naming the commit made in its tree with the project HEAD unmoved; the editing member is filed from its tree (gate green there, work carried in refs/audit/carry/P1.2, project file untouched); the locked digest is read from the member tree (lock_moved with tree [] vs without ['src/f2.txt']). Note: head_move's own tree argument is not separable in this fixture (worktrees share one object store); the tree reading pinned is tree_head's.\nP131-R38 fixed: new dc4t pins that a terse green line with a record after the id ('...recorded <id>; pointer: ...') yields the id alone and that it names the held ledger row; existing dc4p did not separate the regex (it stayed green with \\S+). held_gate_binds refusing a moved head or gate was already pinned by dc5, gr1, gr4.\nP131-R41 fixed: reviewer_unread no longer dispatches; it spends the dispatched-reviewer mark and returns None, and advance only asks no-reviewer-return while that mark stands, so the redispatch is advance's own dispatch after stored_green/gate_step. reviewer_unread/reviewer_session_step lost their now-unused phase/tree parameters (only caller is in this file). Cases rv7 (task gate edited between the zero-tool session and the redispatch -> exactly one gate run, 'measured again', then the reviewer dispatch) and twin rv7b (unchanged gate -> no gate run).\nP131-R42 fixed: rv8 (stream with no assistant event -> 'cannot count tool calls' stop, no cannot-tell note, no redispatch, nothing filed), rv9 (tools>0, prose result -> no-reviewer-return, nothing filed), rv10 (tools>0, object without verdict -> submit's shape refusal relayed, nothing filed).\nP131-R43 no-change: HEAD's apply_answer 'redispatch' (drive-phase.py, `if answer == \"redispatch\":` block) already passes the member's tree from state.wave.trees, pinned by the existing sr2. Left on purpose: that human-answer path still dispatches directly rather than through advance's gate check (the class R41 closed for the automatic path), because returning None there changes how a wave member's step is re-entered, which sr2 pins.\nP132-R1 no-change: HEAD's review_fix returns None once task.commit differs from the entry's 'from', and standing_review_fix tells a human re-open apart by the journal's newest task.reopen reason; pinned by existing rw7 (unit) and rw8 (closed at a new commit, re-opened by hand, next dispatch is the plain brief).\nP132-R2 fixed: finish_task's docstring now states that a task-scoped drive of a writer task leaves its state file behind by design until a phase drive's finish, naming rw3 (kept state read back) and rw4 (twin, dropped).\nP135-R3 fixed: settle_aside's note/did-line now says what was done and what comes next ('...put back to HEAD; the drive proves and gates the declared work again, then asks the commit again') instead of 'is proved and gated again before it is committed'.\nP137-R20 partly fixed, structural fix reported: the one-reader fix (start_row_of in _scoped_commit.py) needs a file outside this task's files and was not made. Added oc12, which pins the two readers' agreement: over rows of several attempts, another task's start and a non-start row, _attempt_start_moment and _scoped_commit.start_head_of pick the same row for each attempt (red when either predicate drifts).\nP137-R21 fixed: own_commit's header regex replaced by _opens_task_header - '(<taskId>): ' found after a non-empty lead holding no ': '; cases oc7b-paren ('feat(audit)(P1.1): ...' named), oc7b-space ('my type(P1.1): ...' named), oc7b-later ('chore(P1.2): audit - see fix(P1.1): ...' not named). The message_parts route needs commit-task-work.py, which drive-phase may not import.\nP137-R28 no-change: it records P137.x's past scope declaration; nothing in the tree changes a closed task's record. The file is in this task's files and its gate is this suite.\nP139-R4 fixed: sn4x counts SESSION_BUDGET_RULE in the explain text signal() keeps for each wave (sessions 1, mixed 1, agents 0).\nP141-R1 fixed: wl3b asserts no mine.*.pyc exists after round 0 under the fixture or under PYTHONPYCACHEPREFIX's mirror of it (_module_bytecode); the round-0 run pops an exported PYTHONDONTWRITEBYTECODE and restores it after, so the hazard is present whatever the caller exports.\nP142-R23 fixed: phase_gate's docstring now says only the recorded run is held to SIGNOFF_STEP_SECONDS via run-test-gate --timeout; derive-phase-gate.py takes no such flag (its argparse: manifest, phase_id, --dry-run, --brief, --json, --project-dir, --takeover) and bounds its own listings.\nP142-R24 fixed: done rule now 'Say where it landed: on another parent, the development branch lacks it.' (the consequence back, fitted to the print bound: lp7 sizes now max 298 of 300; the longer original wording measured 315 and failed lp7). The not-fast-forward line already said 'the parent moved' at HEAD. New tx3 pins both wordings.\nP142-R27 fixed: ar17's comment and title now say the staged-state question (tree_undescribed) refuses the forced file, and leave the commit-versus-status check to ar17b/ar17c; verified by mutation (staged question off -> ar17 red; carry check off -> ar17 green, ar17b red).\nP142-R43 fixed: new marker_kept_key (one reading of the marker, now also used by settle_kept_markers); submit_tree refuses a tree its marker already keeps under a redo key, naming the key and `next <phase>`, nothing filed. Cases ta21s (refused in the died-redo window) and twin ta21t (after the settle the recut tree resolves).\nP144-R3 fixed: ar22 records, per platform, the argvs carrying a ':(literal)' element (_pathspec_args) and asserts none and that listings ran.\nDependants: tests/test_drive_phase.py - changed, green. tools/affected.py, PLUGIN-BUILD-GUIDE.md, README.md, docs/research/pipeline-cost-design.md, hooks/detect-plan-skip.py, record-risk-confirmation.py, stamp-verification.py - name drive-phase by path/basename only; no path, CLI or printed contract they read changed, still correct. Names used elsewhere (_carries, _git_said, _index_flags, _literal_matches) unchanged. From the test file: _counting, _follower_cases, _head used by tests/test_run_test_gate.py unchanged; .github/workflows/ci.yml, tools/sweep-selftests.py, test__runner_output.py unaffected (no stage added). .github/sweep-costs.json: rv-block grew from 11.9s to 28.0s locally (recorded figure 37.3) and sr2-block 9.3s -> 12.1s (29.7); both stay far under the 300 s job floor, but the shard balance figures for those blocks are now low - re-recording is outside this task's files.",
+        "descriptive": "The carried drive-phase lows are answered: the reviewer redispatch now passes the gate check, submit refuses a marker-kept tree, task-commit headers accept any commit type, step and docstring texts say what the code does, and wave/stream/bytecode/pathspec gaps carry red-proven cases."
       },
       "startedAt": "2026-10-28T23:05:10Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-29T00:01:05Z",
+      "verifiedBy": [
+        "ww1/ww2/ww3: a wave writer member's commit check, filing and lock read from its own tree",
+        "dc4t: a terse green line's run id read without the record separator",
+        "rv7/rv7b: a zero-tool reviewer's redispatch re-measures a moved gate first, and not an unchanged one",
+        "rv8/rv9/rv10: uncountable stream, prose-only result, verdict-less object",
+        "oc7b-paren/space/later: task-commit header under a non-default commit type",
+        "oc12: start moment and start head read off the same journal row",
+        "sn4x: the wave signal's explain text carries the budget sentence once",
+        "wl3b: no stale bytecode of the fixture module after the round-0 gate",
+        "tx3: the done rule's consequence and the not-fast-forward wording",
+        "ta21s/ta21t: submit refuses a marker-kept tree in the died-redo window, resolves the recut tree after",
+        "ar22 (extended): no listing argv carries a literal pathspec"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-28T23:50:22Z.0f26b3",
         "status": "passed",
         "at": "2026-10-28T23:50:22Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "d83aeee96039",
+        "at": "2026-10-29T00:01:05Z",
+        "return": "docs/audit/evidence/returns/P148.1/20261028T230510Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "mode regression, expectRedFirst false, tests.add none - no red owed. Every new case was nevertheless watched red by a mutation probe in the task tree (scratchpad p1481_probe.py: mutate, purge __pycache__, run the stage, restore, bytes compared equal after): oc7b-paren/space red under the old type pattern, oc7b-later red with the separator guard dropped, oc12 red with the attempt predicate dropped, rv7 red with the direct redispatch put back and rv7b red under an always-remeasure, rv8/rv9/rv10 red each under its branch collapsed, sn4x red with the render dropping the budget line (sn4w stayed green), tx3 red with the done rule reverted, wl3b red with the generator switch removed, ar22 red with a :(literal) pathspec reintroduced, ar17 red with the staged-state question off and green with the carry check off (ar17b red), ww1 red with tree_head read from the project, ww3 red with locked_paths_now reading the project, ta21s red with the marker unread and ta21t red when every tree is refused, dc4t red with _RUN_ID widened back to \\S+ (dc4p stayed green). All rows restored=True.",
+        "at": "2026-10-28 (task tree, before the final gate run)"
       }
     },
     {

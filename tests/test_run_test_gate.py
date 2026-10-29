@@ -6070,11 +6070,13 @@ def _suite_files_cases(check):
     # carry a `\r` when a `$`-anchored pattern reads the raw text; the house
     # run (a red suite inside the sweep) is the arm already read line by line,
     # held here so a reader moved off that path is held to the same answer.
+    # The last line is filled through the sweep's own summary format string,
+    # the one its render writes, so the fixture is the bytes a sweep prints.
     house_red = ("--- tests/test_cart.py: exited 1 ---\n"
                  "FAIL ct3 a negative quantity is refused\n"
-                 "SELFTEST FAILED: 2/3 cases " + "passed\n"
+                 "SELFTEST FAILED: 2/3 cases passed\n"
                  "FAIL  tests/test_cart.py: exited 1\n"
-                 "1/2 files ok, %d cases\n" % (5,))
+                 "%d/%d files ok, %d cases\n" % (1, 2, 5))
     pytest_red = ("FAILED tests/test_cart.py::test_negative - AssertionError\n"
                   "ERROR tests/test_boot.py\n"
                   "=== 1 failed, 2 passed in 0.12s ===\n")

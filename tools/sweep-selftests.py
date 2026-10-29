@@ -698,11 +698,17 @@ CLAUDE_ROW = ".claude/ (the checkout's own)"
 _SID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 _SLOT = "(?:[.-][0-9a-f]+)*"
 # Rows are `(pattern over the path below .claude/, an example name, the sentence)`.
-# The example is a name the table must skip and a one-character misspelling of it
-# must not be - case `cw10` drives every row that way. The sentence names the
-# writer and the observation, re-derivable as `find .claude/state -maxdepth 1
-# -mmin -240` while a session works: every pattern here was among what that listed
-# in a live checkout, and a name that command did not list is not in this table.
+# The example is a name the table must skip, and two misspellings of it - a
+# character put in after `state/`, and one put on the end (or, for a directory
+# row, on the directory's name) - must not be: case `cw10` drives every row that
+# way, which reaches a row loosened at its head or its tail and NOT one loosened
+# in the middle (a hex run grown into `.*` with both anchors kept). The sentence
+# names the writer by the constant that spells the name, and case `cw10b` formats
+# each constant the way its writer does and asks this table to skip the result,
+# so a writer's spelling and its row cannot part. A writer the live session runs
+# is what earns a row; `find .claude/state -maxdepth 1 -mmin -240` while a
+# session works shows the names, but a window can miss a writer that fires
+# rarely, so absence from it is no evidence that a writer does not exist.
 CLAUDE_LIVE_WRITES = (
     ("^state/call-start-" + _SID + "(?:-[0-9a-f]+)?\\.json$",
      "state/call-start-0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d.json",
@@ -719,8 +725,15 @@ CLAUDE_LIVE_WRITES = (
     ("^state/bash-writes-" + _SID + "\\.json$",
      "state/bash-writes-0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d.json",
      "the session slot guard-bash-writes keeps (BASH_WRITES_STATE_FILE in "
-     "hooks/_config.py); the plugin sidecars sharing its prefix were not listed "
-     "and are not left out"),
+     "hooks/_config.py)"),
+    ("^state/bash-writes-plugin-(?:" + _SID + "|cli|panel)\\.json$",
+     "state/bash-writes-plugin-0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d.json",
+     "the sidecar naming the journal files the plugin itself appended to, keyed "
+     "by the session for the journal hook (record_plugin_write in "
+     "hooks/journal-writes.py), by `cli` for a plugin script run from Bash "
+     "(CLI_JOURNAL_WRITER in scripts/governance/_journal_io.py) and by `panel` "
+     "for the panel (PANEL_JOURNAL_WRITER in scripts/panel/_panel_write.py); "
+     "the file name is PLUGIN_WRITE_SIDECAR in the same _journal_io.py"),
     ("^state/tdd-reminder-" + _SID + "\\.json$",
      "state/tdd-reminder-0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d.json",
      "the reminder's once-per-session note (hooks/remind-tdd.py)"),
@@ -2956,10 +2969,12 @@ def _claude_watch_cases(check):
                 "state/tdd-reminder-%s.json" % sid,
                 "state/running-plugin-%s.json" % sid,
                 "state/attempts/P1.1-abc.json", "state/briefs/P1.1-abc/b.md",
-                "state/drive/P1.json"]
+                "state/drive/P1.json", "state/bash-writes-plugin-%s.json" % sid,
+                "state/bash-writes-plugin-cli.json",
+                "state/bash-writes-plugin-panel.json"]
         theirs = ["state/s.json", "state/writer-token.json", "state/release-run.json",
                   "state/call-start-notauuid.json", "state/briefs-extra/x",
-                  "state/bash-writes-plugin-%s.json" % sid]
+                  "state/bash-writes-plugin-suite.json"]
         for rel in live + theirs + [
                 "logs/l.log", "usage/u.jsonl", "worktrees/w/x",
                 "hooks/__pycache__/cached", "skills/mine/state/kept",
@@ -2984,7 +2999,7 @@ def _claude_watch_cases(check):
               == sorted([".gitignore", "audit-backups/p.bak", "hooks/h",
                          "settings.json", "skills/mine/state/kept",
                          "state/call-start-notauuid.json",
-                         "state/bash-writes-plugin-%s.json" % sid,
+                         "state/bash-writes-plugin-suite.json",
                          "state/release-run.json", "state/s.json",
                          "state/writer-token.json", "state/briefs-extra/x"])
               and not [k for k in snap if k.split("/")[0] in
@@ -2997,17 +3012,92 @@ def _claude_watch_cases(check):
 
         # -- cw10: the table's own rows, driven one by one -------------------------
         # Each row carries an example name; it must be skipped, and so must it not
-        # be once a character of it is wrong - a row whose pattern grew loose
-        # enough to swallow a suite's file would otherwise stay green.
+        # be once a character is put in at its head or on its tail - a row whose
+        # anchor or ending was loosened would otherwise stay green. A directory
+        # row takes everything below the directory, so its tail is the
+        # directory's own name: `state/briefs-extra/x` is a suite's, not the
+        # drive's. A loosening in the middle with both ends kept is not reached.
+        def tail_wrong(row):
+            if row[0].endswith("(?:/|$)"):
+                head, name, rest = row[1].split("/", 2)
+                return "%s/%sx/%s" % (head, name, rest)
+            return row[1] + "x"
         examples = [row[1] for row in CLAUDE_LIVE_WRITES]
         misses = [x for x in examples if not claude_live_written(x)]
         swallowed = [x for x in examples
                      if claude_live_written(x.replace("state/", "state/x", 1))]
+        tails = [tail_wrong(row) for row in CLAUDE_LIVE_WRITES]
+        tail_swallowed = [x for x in tails if claude_live_written(x)]
         check("cw10 every row of the live-session table skips the example it "
-              "carries and does NOT skip the same name with a character wrong - "
-              "so no row is dead and none swallows a suite's own file: missed "
-              "%r, swallowed %r" % (misses, swallowed),
-              len(examples) > 0 and misses == [] and swallowed == [])
+              "carries and does NOT skip the same name with a character put in "
+              "after `state/` or on its end (a directory row's on the "
+              "directory's name) - so no row is dead and none loosened at its "
+              "head or its tail swallows a suite's own file: missed %r, "
+              "swallowed %r, swallowed at the tail %r"
+              % (misses, swallowed, tail_swallowed),
+              len(examples) > 0 and misses == [] and swallowed == []
+              and len(tails) == len(examples) and tail_swallowed == [])
+
+        # -- cw10b: the rows against the writers' own spellings -------------------
+        # Each name is FORMATTED from the constant its writer formats, read off
+        # the writer's source, never typed here: a writer that renames its slot
+        # reddens this case before a live sweep goes red on a session's file. A
+        # row no constant derives is listed by its example, and the list is
+        # pinned - both writers below format the name inline - so a row added
+        # with no constant behind it is reported rather than taken on trust.
+        def constant(rel, name):
+            with io.open(os.path.join(REPO, *rel.split("/")),
+                         encoding="utf-8") as fh:
+                tree = ast.parse(fh.read())
+            for node in tree.body:
+                if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                        and isinstance(node.targets[0], ast.Name)
+                        and node.targets[0].id == name
+                        and isinstance(node.value, ast.Constant)):
+                    return node.value.value
+            return None
+        hooks_cfg = "plugins/audit/hooks/_config.py"
+        jio = "plugins/audit/scripts/governance/_journal_io.py"
+        sidecar = constant(jio, "PLUGIN_WRITE_SIDECAR")
+        wanted = [(hooks_cfg, "CALL_START_FILE"), (hooks_cfg, "TRIVIAL_SLOT"),
+                  (hooks_cfg, "BASH_WRITES_STATE_FILE"),
+                  (hooks_cfg, "RUNNING_STAMP"),
+                  ("plugins/audit/hooks/guard-bash-writes.py", "PLUGIN_SIDECAR")]
+        keys = [(jio, "CLI_JOURNAL_WRITER"),
+                ("plugins/audit/scripts/panel/_panel_write.py",
+                 "PANEL_JOURNAL_WRITER")]
+        dirs = [("plugins/audit/scripts/governance/_scoped_commit.py",
+                 "ATTEMPT_DIR"),
+                ("plugins/audit/scripts/manifest/_filed_returns.py",
+                 "BRIEFS_DIRNAME"),
+                ("plugins/audit/scripts/manifest/_filed_returns.py",
+                 "DRIVE_DIRNAME")]
+        unread = [(rel, name) for rel, name in wanted + keys + dirs
+                  if not isinstance(constant(rel, name), str)]
+        derived = []
+        if sidecar is not None and not unread:
+            derived = (["state/" + constant(rel, name) % (sid,)
+                        for rel, name in wanted]
+                       + ["state/" + sidecar % (sid,)]
+                       + ["state/" + sidecar % (constant(rel, name),)
+                          for rel, name in keys]
+                       + ["state/%s/x.json" % (constant(rel, name),)
+                          for rel, name in dirs])
+        not_skipped = [x for x in derived if not claude_live_written(x)]
+        underived = [row[1] for row, rx in zip(CLAUDE_LIVE_WRITES, _LIVE_WRITES_RE)
+                     if not any(rx.match(x) for x in derived)]
+        check("cw10b every slot name a writer's own constant spells, formatted the "
+              "way the writer formats it, is skipped by the live-session table, "
+              "and the rows no constant derives are exactly the two whose "
+              "writers format the name inline (the journal pre-image, the TDD "
+              "reminder): unread %r, not skipped %r, underived %r"
+              % (unread, not_skipped, underived),
+              sidecar is not None and unread == [] and len(derived) > 0
+              and not_skipped == []
+              and sorted(underived)
+              == sorted(row[1] for row in CLAUDE_LIVE_WRITES
+                        if row[0].startswith(("^state/journal-preimage-",
+                                              "^state/tdd-reminder-"))))
     finally:
         remove_tree(snap_box)
 
@@ -4667,6 +4757,33 @@ def _cases(check):
           "(%s)" % (sh_problem or "read",),
           sh_problem is None)
 
+    # The table says what its figures are in its own `about` text, and the
+    # writer is the one place that text is written. A table recorded before the
+    # writer's sentence changed carries the old model until it is re-recorded,
+    # with nothing saying the two disagree - so the committed text is read
+    # against what `record_costs` writes today, into a scratch file, figures
+    # untouched.
+    sh_about_dir = tempfile.mkdtemp(prefix="sweep-about-")
+    try:
+        sh_about_path = os.path.join(sh_about_dir, "costs.json")
+        record_costs(sh_about_path, [], [], 1)
+        with io.open(sh_about_path, encoding="utf-8") as fh:
+            sh_about_now = json.load(fh).get("about")
+    finally:
+        remove_tree(sh_about_dir)
+    try:
+        with io.open(COSTS_PATH, encoding="utf-8") as fh:
+            sh_about_kept = json.load(fh).get("about")
+    except (OSError, ValueError) as exc:
+        sh_about_kept = "unreadable: %s" % (exc,)
+    check("sh7b the committed cost table's `about` text is the sentence "
+          "`record_costs` writes now, so the table does not describe its "
+          "figures by a model the writer has retired: %s"
+          % ("same" if sh_about_kept == sh_about_now
+             else "committed %r, writer %r" % (sh_about_kept, sh_about_now)),
+          isinstance(sh_about_now, str) and sh_about_now
+          and sh_about_kept == sh_about_now)
+
     # A table naming a file that is gone and missing one that is swept: the split
     # still covers every swept file once, ignores the ghost, and says so.
     sh_ghost = dict((p, 1.0) for p in sh_paths[:10])
@@ -5482,6 +5599,42 @@ def _cases(check):
           tt_minutes is not None and len(tt_units) > 100
           and SWEEP_DEADLINE + CI_SETUP_ALLOWANCE < tt_minutes * 60
           and tt_most <= SWEEP_DEADLINE)
+
+    # tt5 bounds a staged suite run WHOLE at the grant it asks for, but its
+    # grant is what is free when its ticket comes up (`slot_gate`), and it keeps
+    # that number to its last block: admitted with one slot, it runs every block
+    # in turn, at a timeout calibrated to one slot. So each such suite is
+    # bounded again at one slot, the least it can be admitted with - which
+    # covers every admission order a rebalanced table can produce, and the
+    # serial cost too, since a timeout is never under the cost it is a
+    # multiple of. A suite whose blocks the sweep runs as its own jobs holds
+    # one slot per block already and is tt5's. The live half reads every suite
+    # the sweep would run whole, and says so when there is none; the planted
+    # half is the case that goes red, a whole-run suite costly enough that
+    # one slot puts its timeout past the deadline, beside a light one and a
+    # split one that must stay quiet.
+    def tt_late(found, costs):
+        return [(p, file_timeout(p, costs, DEFAULT_TIMEOUT, 1, staged=True))
+                for p, labels in sorted(found.items()) if not labels
+                and file_timeout(p, costs, DEFAULT_TIMEOUT, 1,
+                                 staged=True) > SWEEP_DEADLINE]
+    tt_found = staged_blocks(sweep_files())
+    tt_whole = sorted(p for p, labels in tt_found.items() if not labels)
+    tt_live_late = tt_late(tt_found, tt_costs)
+    tt_planted = tt_late({"t/heavy-whole": [], "t/light-whole": [],
+                          "t/split-blocks": ["a-block", "b-block"]},
+                         {"t/heavy-whole": SWEEP_DEADLINE,
+                          "t/light-whole": 10.0,
+                          "t/split-blocks": SWEEP_DEADLINE * 4})
+    check("tt5b a staged suite the sweep runs whole, admitted with ONE slot, "
+          "still has a timeout inside the deadline - so a table that puts a "
+          "heavy one behind another cannot have the deadline cut a run that "
+          "is slow and not hung: run whole %s; past the deadline at one slot "
+          "%r; planted %r"
+          % (tt_whole or "none - every staged suite runs block by block",
+             tt_live_late, tt_planted),
+          len(tt_found) > 0 and tt_live_late == []
+          and [p for p, _s in tt_planted] == ["t/heavy-whole"])
 
     # --- a mutating gate sweep holds a marker; this sweep refuses to read the tree ---
     import _suite

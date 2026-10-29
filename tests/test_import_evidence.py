@@ -527,18 +527,24 @@ def _cases(check):
                   in proc.stdout)
 
         # A RELATIVE MANIFEST is printed absolute, so the command does not
-        # depend on the directory it is pasted into.
-        # Across drives (windows, the run started on another drive than the
-        # scratch directory) there is no relative spelling and `rel_or_abs`
-        # answers the absolute path; the title says which was exercised.
-        rel = _harness.rel_or_abs(mp10, os.getcwd())
-        code, out = run([rel, red_src, "--project-dir", d10, "--json"])
+        # depend on the directory it is pasted into. The import runs from the
+        # manifest's own directory and is handed its bare name, which is
+        # relative on every drive layout - a relative spelling computed from
+        # wherever the suite started has none when the scratch directory sits
+        # on another drive, and the case then fed an absolute path to an
+        # assertion that cannot fail on one.
+        rel = os.path.basename(mp10)
+        held_cwd = os.getcwd()
+        os.chdir(os.path.dirname(mp10))
+        try:
+            code, out = run([rel, red_src, "--project-dir", d10, "--json"])
+        finally:
+            os.chdir(held_cwd)
         words = shlex.split((json.loads(out).get("learnFrom") or [""])[0])
-        check("i31 RED-FIRST: an import given a relative manifest (%s; relative "
-              "here: %s) prints it absolute: %r"
-              % (rel, not os.path.isabs(rel), words[2:3]),
-              code == 0 and len(words) > 2 and os.path.isabs(words[2])
-              and os.path.samefile(words[2], mp10))
+        check("i31 RED-FIRST: an import given a relative manifest (%s) prints "
+              "it absolute: %r" % (rel, words[2:3]),
+              code == 0 and not os.path.isabs(rel) and len(words) > 2
+              and os.path.isabs(words[2]) and os.path.samefile(words[2], mp10))
 
         # ALLOW DIRECTION: a green import prints no --learn-from at all, so
         # the mutation 'print it for every full row' goes red here.

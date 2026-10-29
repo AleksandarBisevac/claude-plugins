@@ -842,7 +842,10 @@ def run(body):
 
     cases.extend(label_faults([c[0] for c in cases], sites))
     text, passed, total = _render(cases)
-    print(text)
+    # A FAIL line carries its case's detail, and a replayed detail is text
+    # another process wrote: printed strictly to a cp1252 stdout, one character
+    # that codec cannot spell raised here and the tally never printed.
+    print(encodable(text, sys.stdout))
     return 0 if passed == total and total else 1
 
 
@@ -994,35 +997,82 @@ def stage_reach(src, stages):
 
 
 def _written_id(node):
-    """The case id the first argument of a `check()` call spells in the source:
-    the leading token of the string literal it starts with - a `%` format or a
-    `+` concatenation reads its leftmost operand - when that token is an
-    identifier (`case_id`); None for a label built when the case runs."""
-    while isinstance(node, ast.BinOp):
-        node = node.left
+    """The case id a `check()` label spells in the source: the leading token
+    of the string literal it starts with - a `%` format or a `+`
+    concatenation reads its leftmost operand, a `.format()` call the literal
+    it is called on - when that token is an identifier (`case_id`); None for
+    a label built when the case runs (a loop variable, a name, any other
+    call), which only a run reads."""
+    while True:
+        if isinstance(node, ast.BinOp):
+            node = node.left
+        elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+              and node.func.attr == "format"):
+            node = node.func.value
+        else:
+            break
     if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
         return None
     return case_id(node.value)
 
 
+def _label_arg(call):
+    """The label a `check()` call is handed: its first argument, or its
+    `label=` keyword; None when it is given neither."""
+    if call.args:
+        return call.args[0]
+    return next((kw.value for kw in call.keywords if kw.arg == "label"), None)
+
+
+def _bound_locally(defn):
+    """Every name `defn` binds itself - its parameters, those of a function
+    nested in it, and every name it assigns - which shadows a top-level def
+    of the same name inside it."""
+    names = set()
+    for node in ast.walk(defn):
+        if isinstance(node, (ast.FunctionDef, ast.Lambda)):
+            spec = node.args
+            names.update(a.arg for a in spec.args + spec.kwonlyargs
+                         + getattr(spec, "posonlyargs", []))
+            names.update(a.arg for a in (spec.vararg, spec.kwarg) if a)
+        elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+            names.add(node.id)
+    return names
+
+
+def _handed_names(defn):
+    """The names `defn` calls, or hands to a call as an argument - the two
+    ways a case function reaches another. A name only read as data (put in a
+    list, compared) runs nothing."""
+    out = set()
+    for node in ast.walk(defn):
+        if not isinstance(node, ast.Call):
+            continue
+        out.update(n.id for n in [node.func] + node.args
+                   + [kw.value for kw in node.keywords]
+                   if isinstance(n, ast.Name))
+    return out
+
+
 def block_written_ids(src, stages):
-    """`{case id: {line: set of block labels}}` - every `check()` call in
-    `src` whose first argument spells its id in the source (`_written_id`),
-    keyed by the line it is written on, with the labels of the `STAGES` rows
-    that reach it: a row reaches its function and every top-level function
-    any reached one names, called or handed on."""
+    """`{case id: {line: (top-level function, set of block labels)}}` - every
+    `check()` call in `src` whose label spells its id in the source
+    (`_written_id`, `_label_arg`), keyed by the line it is written on, with
+    the top-level function holding that line and the labels of the `STAGES`
+    rows that reach it: a row reaches its function and every top-level
+    function a reached one calls or hands to a call, unless the name is one
+    that function binds itself (`_bound_locally`)."""
     tree = ast.parse(src)
     defs = dict((node.name, node) for node in tree.body
                 if isinstance(node, ast.FunctionDef))
 
     def named(name):
-        return set(node.id for node in ast.walk(defs[name])
-                   if isinstance(node, ast.Name) and node.id in defs)
+        return (_handed_names(defs[name]) & set(defs)) - _bound_locally(defs[name])
 
     def written(name):
-        return [(node.lineno, _written_id(node.args[0]))
+        return [(node.lineno, _written_id(_label_arg(node)))
                 for node in ast.walk(defs[name])
-                if isinstance(node, ast.Call) and node.args
+                if isinstance(node, ast.Call) and _label_arg(node) is not None
                 and isinstance(node.func, ast.Name) and node.func.id == "check"]
     found = {}
     for label, fn in stages:
@@ -1036,7 +1086,8 @@ def block_written_ids(src, stages):
         for name in seen:
             for line, cid in written(name):
                 if cid is not None:
-                    found.setdefault(cid, {}).setdefault(line, set()).add(label)
+                    found.setdefault(cid, {}).setdefault(
+                        line, (name, set()))[1].add(label)
     return found
 
 
@@ -1052,14 +1103,21 @@ def cross_block_ids(src, stages):
     every replay and every full run reads the same answer here.
 
     WHAT IT LEAVES TO THE RUN: two lines of ONE block, which every run of that
-    block reads at its call sites, and an id built when the case runs, which
-    no reading of the source can spell - a part that runs both blocks still
-    reads that one, and nothing reads it across parts."""
+    block reads at its call sites; an id built when the case runs, which no
+    reading of the source can spell; and two lines of ONE top-level function,
+    which are one site here - the `if`/`else` that writes `k1 posix` on one
+    line and `k1 win` on the next is one case on any machine, and the source
+    cannot tell it from a branch that takes the other line in the other
+    block. A part that runs both blocks reads those last two at its call
+    sites; nothing reads them across parts."""
     faults = []
     for cid, lines in sorted(block_written_ids(src, stages).items()):
-        # Two lines are two blocks' unless one block, and only it, reaches both.
-        apart = [(a, b) for a in lines for b in lines if a < b
-                 and not (lines[a] == lines[b] and len(lines[a]) == 1)]
+        sites = {}
+        for _line, (owner, labs) in lines.items():
+            sites.setdefault(owner, set()).update(labs)
+        # Two sites are two blocks' unless one block, and only it, reaches both.
+        apart = [(a, b) for a in sites for b in sites if a < b
+                 and not (sites[a] == sites[b] and len(sites[a]) == 1)]
         if not apart:
             continue
         faults.append(
@@ -1068,7 +1126,7 @@ def cross_block_ids(src, stages):
              "block runs; prove-gates.py credits a mutation to the case whose "
              "id went red, and an id naming two cases defeats that verdict"
              % (cid, ", ".join("line %d (%s)" % (line, ", ".join(sorted(labs)))
-                               for line, labs in sorted(lines.items()))),
+                               for line, (_o, labs) in sorted(lines.items()))),
              False, ""))
     return faults
 
@@ -2196,6 +2254,54 @@ def _stage_runner_cases(check):
           and "line 2 (a), line 11 (b)," in cross[0][0]
           and "line 7 (a), line 22 (b)," in cross[1][0])
 
+    # The other spellings of a written id, and the two over-reaches. `k6` is
+    # spelled through `.format` in one block and `k7` through `label=`, each
+    # beside a plain literal in the other block - a reading that skips either
+    # spelling sees one site and is quiet. `k8` is written on both arms of an
+    # `if`/`else` in one helper both blocks call: one site, whichever arm a
+    # machine takes. `k9` is written in block a and in two helpers NOTHING
+    # calls: block b calls a parameter of its own that shares one helper's
+    # name, and puts the other helper in a list - a reach that followed every
+    # name, or a called name it binds itself, would hand one to b. `k10` is the
+    # direction a reach narrowed too far fails: a helper handed to a call as
+    # an argument is still reached.
+    more_src = ("def _a_cases(check):\n"
+                "    check('k6 {} in a'.format(1), True)\n"
+                "    check(label='k7 in a', cond=True)\n"
+                "    _branchy(check, True)\n"
+                "    check('k9 in a', True)\n"
+                "    check('k10 in a', True)\n\n\n"
+                "def _b_cases(check, _k9_helper=None):\n"
+                "    check('k6 in b', True)\n"
+                "    check('k7 in b', True)\n"
+                "    _branchy(check, False)\n"
+                "    kept = [_unused]\n"
+                "    if _k9_helper is not None:\n"
+                "        _k9_helper(check)\n"
+                "    stage(check, 'x', _handed)\n\n\n"
+                "def _branchy(check, posix):\n"
+                "    if posix:\n"
+                "        check('k8 posix', True)\n"
+                "    else:\n"
+                "        check('k8 win', True)\n\n\n"
+                "def _k9_helper(check):\n"
+                "    check('k9 in a helper nothing calls', True)\n\n\n"
+                "def _unused(check):\n"
+                "    check('k9 in another helper nothing calls', True)\n\n\n"
+                "def _handed(check):\n"
+                "    check('k10 handed to a call', True)\n")
+    more = stage_faults(more_src, (("a", "_a_cases"), ("b", "_b_cases")))
+    check("sr3d a written id is read through `.format` on a literal and through "
+          "the `label=` keyword; two lines of one helper are one site, so an "
+          "`if`/`else` both blocks reach is no duplicate; a name a block binds "
+          "itself, or only puts in a list, reaches nothing - while a helper "
+          "handed to a call is still reached: %r" % (more,),
+          [lab.split(" - ")[0] for lab, _ok, _d in more]
+          == ["DUPLICATE CASE ID `k10` ACROSS BLOCKS",
+              "DUPLICATE CASE ID `k6` ACROSS BLOCKS",
+              "DUPLICATE CASE ID `k7` ACROSS BLOCKS"]
+          and all(ok is False for _lab, ok, _d in more))
+
     work = fixture_root("harness-staged-")
     good = os.path.join(work, "good_suite.py")
     bad = os.path.join(work, "bad_suite.py")
@@ -2450,6 +2556,34 @@ def _stage_runner_cases(check):
           "keeps all three: %r" % (spelled,),
           spelled == [u"café \\u2192 \\ufffd printed by a passing block\n",
                       told])
+    # The report's own lines are the other half: a FAILING replayed case
+    # prints its detail, and a detail is text the block's process wrote. The
+    # cases file below is the shape `--cases-to` writes, with `y1` failing on
+    # a detail cp1252 cannot spell - a report printed strictly raises before
+    # the tally, so the run ends on a traceback and no count at all.
+    failed_cases = os.path.join(work, "b-block.failing.cases.json")
+    with open(failed_cases, "w", encoding="utf-8") as fh:
+        json.dump({"cases": [["y1 only of b", False, told.strip()]],
+                   "sites": {}}, fh)
+    failing_list = os.path.join(work, "replay-legacy-failing.json")
+    with open(failing_list, "w", encoding="utf-8") as fh:
+        json.dump([a_entry, dict(b_entry, cases=failed_cases, code=1)], fh)
+    legacy = subprocess.run(
+        [sys.executable, good, "--selftest", "--replay", failing_list],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
+        env=dict(os.environ, PYTHONIOENCODING="cp1252", PYTHONUTF8="0"),
+        timeout=120)
+    shown = legacy.stdout.decode("cp1252", "replace")
+    fails = [line for line in shown.splitlines() if line.startswith("FAIL ")]
+    check("sr19c ...and a replayed case that FAILS on a detail a strict cp1252 "
+          "stdout cannot encode still prints its FAIL line, escaped, and the "
+          "exact tally: exit %r, %r, %r"
+          % (legacy.returncode, fails,
+             legacy.stderr.decode("cp1252", "replace")[-300:]),
+          legacy.returncode == 1
+          and fails == [u"FAIL y1 only of b (café \\u2192 \\ufffd printed by a "
+                        u"passing block)"]
+          and shown.rstrip().endswith("SELFTEST FAILED: 2/3 cases " + "passed"))
 
 
 # A suite that pushes to a local bare repository with BARE git, no fixture prefix,

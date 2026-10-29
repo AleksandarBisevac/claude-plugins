@@ -670,6 +670,10 @@ SCRATCH_MAKERS = frozenset(("mkdtemp", "mkstemp", "TemporaryDirectory",
 CHECKOUT_NAMES = frozenset(("REPO", "REPO_ROOT", "SCRIPTS_DIR", "PLUGIN_ROOT",
                             "TESTS_DIR", "HOOKS_DIR", "LINTS_DIR", "TOOLS_DIR",
                             "UI_DIR", "__file__"))
+# ...and the call that ANSWERS the working directory, which is the checkout when a
+# suite is run by hand: the same fact the one-argument `relpath` below is read by,
+# spelled as a second argument instead of left out.
+CHECKOUT_CALLS = frozenset(("getcwd",))
 RELATIVE_CALLS = frozenset(("relpath", "posix_rel"))
 
 
@@ -744,6 +748,8 @@ def _path_kinds(expr, chain, makers, seen=frozenset()):
     for node in ast.walk(expr):
         if isinstance(node, ast.Call) and _callee(node) in makers:
             scratch = True
+        elif isinstance(node, ast.Call) and _callee(node) in CHECKOUT_CALLS:
+            checkout = True
         elif isinstance(node, ast.Attribute) and node.attr in CHECKOUT_NAMES:
             checkout = True
         elif isinstance(node, ast.Name):
@@ -1276,6 +1282,26 @@ def _cases(check):
           % (relpath_problem(_posix_form), relpath_problem(_one_arg)),
           "line(s) 8." in (relpath_problem(_posix_form) or "")
           and "line(s) 6." in (relpath_problem(_one_arg) or ""))
+    # The same start spelled out: `os.getcwd()` as the second argument is the
+    # one-argument call's working directory, and it was the repair a suite
+    # actually wrote. The allow half is the mutation that reads every call
+    # naming the working directory as a finding: a pair of it and a checkout
+    # path cannot sit on two drives.
+    _cwd_arg = _one_arg.replace("os.path.join(d, 'm.json'))",
+                                "os.path.join(d, 'm.json'), os.getcwd())")
+    _cwd_repo = ("import os\n"
+                 "import _output\n"
+                 "\n"
+                 "def _cases(check):\n"
+                 "    rel = os.path.relpath(_output.SCRIPTS_DIR, os.getcwd())\n"
+                 "    check('r1', rel)\n")
+    check("s30b ...and the two-argument call whose start is `os.getcwd()` is "
+          "the same fact and named the same way, while one pairing the working "
+          "directory with a checkout path is not: %r / %r"
+          % (relpath_problem(_cwd_arg), relpath_problem(_cwd_repo)),
+          "getcwd()" in _cwd_arg
+          and "line(s) 6." in (relpath_problem(_cwd_arg) or "")
+          and relpath_problem(_cwd_repo) is None)
     _via_helper_def = ("import os\n"
                        "import _harness\n"
                        "import _output\n"
