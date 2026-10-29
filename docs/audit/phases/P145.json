@@ -29,12 +29,14 @@
         "severity": "low",
         "file": "tools/prove-gates.py:3993",
         "issue": "pw5's registration conjunct `(still == [respelled] or (respelled is None and os.name == \"nt\"))` drops the second-spelling check entirely when os.symlink fails on Windows (no privilege). On that platform pw5 then proves only the reaper's old forward-slash behaviour, so the Windows-only half of the fix (canonical comparison of a differently spelled tree) is covered by pw14's injected resolver alone and never by a real git listing. The default `_canonical_path` (realpath + normcase on a real nt) is likewise not exercised against a real 8.3 name by any case this task adds; the only evidence that realpath expands RUNNER~1 is the pw6 line in CI log 123039432291.log, read on the runner's Python.",
-        "resolution": "No code change needed for the product. Either make pw5 fail loudly (not silently narrow) when the link cannot be made on nt, or note in the case text which spelling was exercised; confirm on the next windows-latest run that pw5, pw6 and pw13 pass with the symlink branch actually taken.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.4 (6bb76efba90b): No code change needed for the product. Either make pw5 fail loudly (not silently narrow) when the link cannot be made on nt, or note in the case text which spelling was exercised; confirm on the next windows-latest run that pw5, pw6 and pw13 pass with the symlink branch actually taken.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.4",
+        "commit": "6bb76efba90b"
       }
     ],
-    "outcome": "[findings: 1 - 0 high, 0 med, 1 low; 0 with a recorded fix commit]",
+    "outcome": "[findings: 1 - 0 high, 0 med, 1 low; 1 with a recorded fix commit]",
     "readReturns": []
   },
   "summary": "P145 makes the release-tier CI green on Windows. prove-gates' pool reaper compares pool roots, worktree paths and admin gitdirs on one canonical spelling and reports each reaped root as it was opened; the windows failures were the reported spelling, not a live pool reaped, and the dead-owner rule is unchanged. The sweep's deadline-replay case tt3c judges the replay without depending on how fast a runner starts a process. The one low finding is carried to BUG-29-dau.",
