@@ -1926,8 +1926,8 @@ def _final_pass_cases(check):
 
 # How long a stand-in build sleeps before the throwaway is made. A helper that
 # counts the build against the deadline cuts the first run off at least this
-# long before one that grants the run a fresh timeout would, so half of it is
-# the margin on either side of the bound `_build_counted` draws.
+# long before one that starts a fresh timeout once the build is done would, so
+# half of it is the margin on either side of the bound `_build_counted` draws.
 _BUILD_DELAY = 2.0
 
 
@@ -1935,17 +1935,24 @@ def _build_counted_tries(py, root, man):
     """One `red` per rung of `_ladder` over a command that stamps its start and
     beats until it is killed, behind a build slowed by `_BUILD_DELAY`. A try
     reached the run when the start stamp exists; one whose build ate the
-    deadline made no run, and the next rung is longer."""
+    deadline made no run, and the next rung is longer. `built` is the moment
+    the build returned, read in this process: the spawn comes after it, and
+    the child's own start stamp comes an interpreter start after that."""
     real = M._build_throwaway
     witness = _harness.fixture_root("stamp-red-budget-witness-")
-
-    def slow_build(*args, **kwargs):
-        time.sleep(_BUILD_DELAY)
-        return real(*args, **kwargs)
 
     def attempt(deadline):
         here = os.path.join(witness, "try-%d" % (deadline,))
         os.makedirs(here)
+        built = []
+
+        def slow_build(*args, **kwargs):
+            time.sleep(_BUILD_DELAY)
+            try:
+                return real(*args, **kwargs)
+            finally:
+                built.append(time.time())
+
         M._build_throwaway = slow_build
         try:
             code, got = _red(root, man, [py, "-c", _beating_source(here)],
@@ -1956,6 +1963,7 @@ def _build_counted_tries(py, root, man):
         start = _witness_time(here, "start")
         return {"deadline": deadline, "exit": code, "start": start,
                 "beat": _witness_time(here, "beat"),
+                "built": built[-1] if built else None,
                 "timed_out": "timed out" in basis, "basis": basis[-120:],
                 "reached": start is not None}
     return _ladder(attempt)
@@ -1964,19 +1972,36 @@ def _build_counted_tries(py, root, man):
 def _build_counted(t):
     """Every try is a could-not-prove that says it timed out; a try whose run
     started also has its last sign of life - the last heartbeat, else the
-    start stamp - before the run's start plus the deadline less half the
-    build delay. Counting the build, the run is cut off at the helper's start
-    plus the deadline, which is at least the whole delay before the run's own
-    start plus the deadline; a fresh timeout would cut it off at its own start
-    plus the deadline. The margin a correct helper has is half the delay plus
-    the real build and the run's interpreter start, which a slower runner
-    only lengthens."""
+    start stamp - before the build's end plus the deadline less half the
+    build delay.
+
+    The bound is drawn from `built`, the build's end read in the helper's
+    process, and not from the child's start stamp, because the child's
+    interpreter start sits between the spawn and that stamp: a bound drawn
+    from it moves later by the interpreter start, and a helper granting a
+    fresh timeout at the spawn passes it once that start reaches half the
+    delay.
+    - A correct helper cuts the run off at its own start plus the deadline,
+      and the build ended at least the whole delay after that start, so the
+      last sign of life lies half the delay plus the real build under the
+      bound. A slower runner lengthens the build; its interpreter start does
+      not enter the sum.
+    - A helper that starts a fresh timeout at the spawn, or anywhere after the
+      build, cuts the run off no earlier than the build's end plus the
+      deadline, and the run beats until it is cut, so its last sign of life
+      lies within one beat interval of that cut - over the bound by half the
+      delay less one beat interval. A slower interpreter start delays the
+      child's first beat, not the cut, so it does not enter that sum either.
+    A run that started with no `built` read is red: the build ends before any
+    spawn, so the pair cannot happen under a helper that builds at all."""
     if t["exit"] != M.E_CANNOT_PROVE or not t["timed_out"]:
         return False
     if t["start"] is None:
         return True
+    if t["built"] is None:
+        return False
     last = t["beat"] if t["beat"] is not None else t["start"]
-    return last < t["start"] + t["deadline"] - _BUILD_DELAY / 2
+    return last < t["built"] + t["deadline"] - _BUILD_DELAY / 2
 
 
 # Every literal clock figure this file holds, with why a slower runner cannot
@@ -1995,8 +2020,12 @@ _CLOCK_LITERALS_JUDGED = {
         "a heartbeat interval: only the mutated side reads it - a slower beat "
         "can let a mutated helper pass, never fail a correct one",
     ("<module>", "_BUILD_DELAY = 2.0"):
-        "a delay injected into the build, the thing sr42 measures against: a "
-        "slower runner only adds to the correct helper's margin",
+        "a delay injected into the build, measured from the build's end read "
+        "in this process: a slower runner lengthens the build, which only adds "
+        "to the correct helper's margin, and a slower interpreter start moves "
+        "neither side, so a helper granting a fresh timeout at the spawn stays "
+        "half the delay less one beat interval over sr42's bound however slow "
+        "the runner",
     ("<module>", "_QUIET_GAPS = 10"):
         "how long a killed writer is watched, in its own gaps: only a survivor "
         "writes at all, so it never fails a killed one",
@@ -2075,8 +2104,9 @@ def _budget_cases(check):
     tries = _build_counted_tries(py, root, man)
     check("sr42 the FIRST run gets what the build left of the deadline, not a "
           "fresh full timeout: behind a build slowed on purpose, the run is cut "
-          "off before its own start plus the deadline less half the delay, on a "
-          "rung that reached it, and every rung is a timed-out could-not-prove: "
+          "off before the build's end, read in the helper's process, plus the "
+          "deadline less half the delay, on a rung that reached it, and every "
+          "rung is a timed-out could-not-prove: "
           "%r" % (tries,),
           tries[-1]["reached"] and all(_build_counted(t) for t in tries))
     _clock_literal_cases(check)

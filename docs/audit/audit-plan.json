@@ -4526,7 +4526,8 @@
       "P135.1",
       "P137.7-3y3",
       "P148.6",
-      "P148.16-xpz"
+      "P148.16-xpz",
+      "P148.20-xpz"
     ],
     "plugins/audit/scripts/manifest/_manifest_merge.py": [
       "P60.1"
@@ -11451,7 +11452,8 @@
     "tests/test__manifest_io.py": [
       "P131.1",
       "P131.2",
-      "P148.16-xpz"
+      "P148.16-xpz",
+      "P148.20-xpz"
     ],
     "tests/test__manifest_merge.py": [
       "P131.1"
@@ -11594,7 +11596,8 @@
       "P142.30-6yq",
       "P142.39-6yq",
       "P148.6",
-      "P148.16-xpz"
+      "P148.16-xpz",
+      "P148.20-xpz"
     ],
     "tests/test__status_facts.py": [
       "P131.1",
@@ -12120,6 +12123,9 @@
     ],
     "tests/test__harness.py": [
       "P142.11-6yq"
+    ],
+    ".claude/.gitignore": [
+      "P148.20-xpz"
     ]
   },
   "bugs": [

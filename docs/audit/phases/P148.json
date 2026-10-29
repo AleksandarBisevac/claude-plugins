@@ -319,24 +319,30 @@
         "severity": "med",
         "file": "plugins/audit/scripts/manifest/audit-task.py:2826,2892 (_spelling_reach / takes_sources)",
         "issue": "The recorded-spelling form of the related-tests regression remains: meta.phaseGate.derived.spelling = 'npx jest --findRelatedTests {paths}', ordinary task --files src/Card.tsx. Before the files-arm change: basis files, gate 'npx jest --findRelatedTests src/Card.tsx'. Now: basis files-no-suite, the wide gate. _spelling_reach treats a recorded spelling as suite-taking always; only a sibling's slot is read as evidence.",
-        "resolution": "Part of one redesign of which declared paths a derived gate hands to its slot (see the sibling med).",
-        "fixTask": "P148.18-xpz"
+        "resolution": "fixed in P148.18-xpz (3b2a1512d712): Part of one redesign of which declared paths a derived gate hands to its slot (see the sibling med).",
+        "fixTask": "P148.18-xpz",
+        "commit": "3b2a1512d712",
+        "status": "fixed"
       },
       {
         "id": "P148-R31",
         "severity": "med",
         "file": "plugins/audit/scripts/manifest/audit-task.py:2826,2893; _files_gate_refusal ~1501-1503 (if takes_sources: return None); _slot_paths",
         "issue": "takes_sources switches the suite filter and the refusal off wholesale: a fix task over a finding naming .github/workflows/ci.yml with a related-tests sibling now gets 'npx jest --findRelatedTests .github/workflows/ci.yml' (red on every attempt, jest finds no related tests), refusal None; documents in an ordinary task are handed the same way. _slot_paths counts an option's argument as slot evidence, so a sibling 'npx jest --config jest.config.js src/Other.test.tsx' or 'pytest -c setup.cfg tests/test_o.py' makes a docs/guide.md task get 'npx jest --config docs/guide.md'. This is the second recurrence of the files-arm class in this phase.",
-        "resolution": "Redesign, not a third patch: decide per declared path what the slot may take - a suite always, a source only when the spelling takes sources (recorded template words around {paths} or a sibling's slot, never a flag's argument), a document/workflow/config never - and make the refusal name each declared path in the gate the slot cannot take, whatever the spelling. Pin the matrix (suite/source/doc/workflow/config x suite-taking/source-taking spelling x ordinary/fix task, plus always-entry paths by position) in one table-driven case, each row red first.",
-        "fixTask": "P148.18-xpz"
+        "resolution": "fixed in P148.18-xpz (3b2a1512d712): Redesign, not a third patch: decide per declared path what the slot may take - a suite always, a source only when the spelling takes sources (recorded template words around {paths} or a sibling's slot, never a flag's argument), a document/workflow/config never - and make the refusal name each declared path in the gate the slot cannot take, whatever the spelling. Pin the matrix (suite/source/doc/workflow/config x suite-taking/source-taking spelling x ordinary/fix task, plus always-entry paths by position) in one table-driven case, each row red first.",
+        "fixTask": "P148.18-xpz",
+        "commit": "3b2a1512d712",
+        "status": "fixed"
       },
       {
         "id": "P148-R32",
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/audit-task.py:1501 (own from _spelling_reach); _manifest_phases.files_gate_non_suite_paths",
         "issue": "The refusal exempts an always-entry path wherever it appears in the gate, not only inside the always entry; a gate ['sh tools/check.sh', 'pytest tools/check.sh'] for files [tools/check.sh] is no longer named.",
-        "resolution": "Exempt by position: only paths inside the always/shape entries; part of the same redesign.",
-        "fixTask": "P148.18-xpz"
+        "resolution": "fixed in P148.18-xpz (3b2a1512d712): Exempt by position: only paths inside the always/shape entries; part of the same redesign.",
+        "fixTask": "P148.18-xpz",
+        "commit": "3b2a1512d712",
+        "status": "fixed"
       },
       {
         "id": "P148-R33",
@@ -367,9 +373,52 @@
         "file": "tests/_harness.py:1868-1884 and the task's tests.gate",
         "issue": "P148-R2 is not made in the diff, as the executor says: the manifest edit is the orchestrator's. The recorded gate (run 2026-10-29T08:26:12Z) selects tools/sweep-selftests.py, tools/release.py and tools/prove-gates.py only, so the m1/m2 edit in tests/_harness.py in this diff is outside the recorded gate until `python3 tools/sweep-selftests.py tests/_harness.py` is added. I ran that command once in the task tree and it printed '1/1 files ok, 98 cases' (exit not read through a pipe, tail output only).",
         "resolution": "Orchestrator adds `python3 tools/sweep-selftests.py tests/_harness.py` to P148.13-xpz tests.gate and re-records the gate run before close."
+      },
+      {
+        "id": "P148-R37",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_gate_derive.py:437,469 (slot_takes_sources any() over entries; untaken_slot_paths); audit-task.py:2862-2864",
+        "issue": "Whether a slot takes sources is decided once for the whole gate, not per entry or command. Sibling ['npx vitest related src/O.ts --run', 'npx playwright test e2e/o.spec.ts'] with --files src/y.ts derives 'npx playwright test src/y.ts' (red every attempt), refusal None. Sibling ['npx jest --findRelatedTests src/O.ts', 'pytest tests/test_o.py'] with src/y.py,tests/test_y.py gives 'pytest src/y.py tests/test_y.py' where the parent of 04261ee5 gave 'pytest tests/test_y.py' (regression). An '&&' entry hands both commands' paths to the first.",
+        "resolution": "Decide source-taking per command slot; the re-point gives each command only the paths its own slot takes; the refusal judges each command by its own mode; multi-entry and && rows in the matrix, red first."
+      },
+      {
+        "id": "P148-R38",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/_manifest_phases.py:1203 (path_kind via is_suite_path)",
+        "issue": "Every non-test file under a test directory is a suite: tests/conftest.py, e2e/playwright.config.ts, test/setup.ts, __tests__/README.md, tests/fixtures/a.json. A task --files src/a.py,tests/conftest.py under 'pytest {paths}' derives 'pytest tests/conftest.py' (no tests collected) and is not refused. Present before this phase; the new docstrings say a document or config is never handed.",
+        "resolution": "Classify by kind first (document, config, fixture/data) and call a path a suite only by a test mark or test_ prefix, using the directory only for non-config source-extension files; rows for conftest.py, playwright.config.ts, fixtures/*.json."
+      },
+      {
+        "id": "P148-R39",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_gate_derive.py:237 (repointed); command_slots; _program_index",
+        "issue": "The re-point puts paths where the sibling's first path stood, including an option's argument, and drops later option arguments: 'npx jest --config jest.config.js src/Other.test.tsx' + a suite gives 'npx jest --config src/Card.test.tsx'; 'pytest -c setup.cfg tests/test_o.py' gives 'pytest -c tests/test_a.py'; 'npx jest --findRelatedTests src/O.tsx --config jest.config.js' gives '... src/Card.tsx --config' (argument dropped); 'python3 tools/a.py t && python3 tools/b.py u' loses tools/b.py. Each is red on every attempt and not refused. Present before this phase.",
+        "resolution": "Locate the slot per command as the path words that are neither the program nor an option's argument, replace only those, keep option arguments in place; rows for each shape, red first."
+      },
+      {
+        "id": "P148-R40",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/_manifest_io.py:1386 (tracked .claude/.gitignore line comparison)",
+        "issue": "Lines are compared after strip(), so a task's whitespace-only edit (CRLF conversion, reorder, an escaped trailing space) reads as PLUGIN_LINES_ONLY and is silently left out of the commit.",
+        "resolution": "Compare lines removing only a trailing CR; a case for each whitespace edit.",
+        "fixTask": "P148.20-xpz"
+      },
+      {
+        "id": "P148-R41",
+        "severity": "low",
+        "file": "CHANGELOG.md:158; plugins/audit/reference/verbs-in-full.md:368; plugins/audit/commands/init.md:402; plugins/audit/schema/audit-plan.schema.json:1848; PLUGIN-BUILD-GUIDE.md (_gate_derive section)",
+        "issue": "Prose describing the files-derived gate predates the per-path rule.",
+        "resolution": "Rescope each to the rule as finally landed."
+      },
+      {
+        "id": "P148-R42",
+        "severity": "low",
+        "file": "tests/test_stamp_verification.py:2022-2029",
+        "issue": "The rewritten _BUILD_DELAY row says a helper granting a fresh timeout at the spawn 'stays half the delay less one beat interval over sr42's bound however slow the runner'. That holds for the interpreter start, which is the thing this task removes, but not for every slowness: the mutant is caught only because its run keeps beating to within one beat of the cut, and a child starved of CPU for about the whole 'half the delay less one beat' before the cut (a stall of nearly a second inside time.sleep of the beat) leaves its last beat under the bound, so the mutant passes. The row two entries up for _BEAT already says a slower beat 'can let a mutated helper pass', so the file now makes two incompatible statements. This only ever lets the mutant through, never fails a correct helper, and needs a stall near one second at the end of the run, so it is a wording overclaim and not a speed dependence of the kind the task named.",
+        "resolution": "Reword the row to say what is true: the interpreter start enters neither side, and the margin over the bound is half the delay less one beat interval, which only a stall of the child's own beats of about that length can consume (and then only toward passing the mutant). Drop 'however slow the runner'."
       }
     ],
-    "outcome": "[findings: 36 - 0 high, 6 med, 30 low; 29 with a recorded fix commit]"
+    "outcome": "[findings: 42 - 0 high, 9 med, 33 low; 32 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1726,7 +1775,7 @@
     {
       "id": "P148.18-xpz",
       "title": "A derived gate hands its slot only what the slot's runner takes, decided per declared path, and the refusal names every declared path in the gate the slot cannot take",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix P148-R30, P148-R31, P148-R32 (docs/audit/phases/P148.json review.findings) as ONE redesign: the files-derived gate rule has now regressed twice in this phase, so do not patch the cases. The invariant: for each path a task declares, the derived gate's slot receives it only if the slot's runner takes that kind of path - a suite always; a source only when the spelling takes sources (read from the recorded template's own words around the paths slot or a sibling entry's slot, never from an option's argument such as --config or -c); a document, workflow or config file never. The always entries and shape entries keep their own paths by position. The refusal names each declared path that ends up in the slot and is not one the slot takes, whatever the spelling. Behaviour before the files-arm change (commit 04261ee5's parent) is the reference for every row that was right then: a related-tests spelling, recorded or sibling, keeps a source task narrow. Pin the whole matrix (suite/source/doc/workflow/config path x suite-taking/source-taking spelling, recorded and sibling x ordinary/fix task, plus an always entry naming a task file, plus a --config/-c sibling) in one table-driven case; prove each row red against HEAD where HEAD is wrong and against a deliberately weakened rule in the other direction. Edit only declared files. No F/P/BUG ids in code.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -1760,14 +1809,19 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3b2a1512d712",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "ONE RULE, ONE HOME. _manifest_phases.slot_takes(path, takes_sources) decides each declared path: path_kind(path) suite -> always; source -> only when takes_sources; document/workflow/config/other -> never (path_kind: suite by is_suite_path first; workflow by .github/workflows, .circleci, .buildkite dirs or root CI files; document by extension; config by extension, a dotfile, or a config/conf word inside the name, so jest.config.js and .eslintrc.js are configs; source by a module-language extension). takes_sources is _gate_derive.slot_takes_sources(shape, source, build, keep): one reading for a recorded template and a sibling alike, the word directly in front of the slot ({paths}, or the sibling's first non-program path) is --findRelatedTests (any runner) or `related` after vitest (RELATED_SLOT_WORDS); an option's argument (--config x, -c x) and what the slot holds are never evidence. The refusal reads back by position: _gate_derive.slot_paths(entry, ...) gives the paths a written entry hands its slot (none for a build key or an always entry; for a template-filled entry the paths between the template's words before and after {paths}; else every path but a non-suite program) and untaken_slot_paths names each declared path there that slot_takes refuses, whatever the spelling. Callers: audit-task._ordinary_task_gate files arm (and so scope's _rederive_gate) and the gate-only arm (slot_takes(p, False)), _files_gate_refusal (add and batch add). Removed: audit-task._slot_paths, _spelling_reach, _manifest_phases.files_gate_non_suite_paths (its only callers were audit-task and bx11). Re-point keeps the spelling's own paths by position: repointed/repointed_by_runner take keep= (the plan's always entries, carried whole; audit-task._point passes them via _always_entries) and keep a non-suite program where it stands (_program_index; _manifest_phases.command_slots is the same reading; a suite run as the program stays the slot). TESTS: slm1 in gx-block (test_audit_task.py) is one table: 9 spellings (rec-suite, rec-related, rec-k-related, sib-suite, sib-related, sib-vitest-related, sib-config, sib-c, sib-program) x 6 path sets (suite, source, document, workflow, config, mixed) x ordinary/fix, plus always-rec, always-sib, always-suite-sib, program-rec x ordinary/fix; each row asserts basis, the declared paths in the derived gate, no refusal of the derived gate, and the exact paths the refusal names for the gate an unfiltered derivation writes. bx11 rewritten onto untaken_slot_paths. Unit pins: gdk1-gdk3 (test__gate_derive.py), pks1-pks2 (test__manifest_phases.py). MATRIX BEFORE/AFTER (rows wrong of the table, read by running the table's own functions against each tree with a scratch probe): parent of 04261ee5 59 wrong, HEAD 46 wrong, fix 0 wrong; no row right at the parent or at HEAD is wrong now. HEAD wrong rows: rec-related source and mixed (ordinary+fix: wide gate, R30); sib-related and sib-vitest-related document/workflow/config/mixed (ordinary+fix: doc handed and refusal off, R31); sib-config and sib-c source/document/workflow/config/mixed (ordinary+fix: option argument read as source slot, `npx jest --config docs/guide.md`, R31); always-rec, program-rec (refusal exempt by content, R32); always-sib (always entry re-pointed to `sh tests/test_check.py`). Parent wrong rows additionally: every ordinary non-suite row under suite spellings (unfiltered arm) and rec-related/sib-related/sib-vitest-related source fix rows (parent's fix arm was suites-only; the invariant now hands a source to a related slot for a fix task too - the one deliberate change from the parent's fix-task rows); parent ordinary rec-related/sib-related source rows derived the right gate and were right then and stay right. WEAKENED-RULE MUTATIONS (scratch copy, each asserted landed, pycache purged, restored and compared): slot_takes always True -> slm1 red (90 rows), gdk3, pks1; slot_takes_sources True -> slm1 (26), gdk1, gdk3; slot_takes_sources False -> slm1 (12), gdk1, gdk3; `related` without vitest -> slm1 (4 rec-k-related rows), gdk1; config-by-name dropped -> slm1 (12), pks1; slot_paths reading every path -> slm1 (program-rec), gdk3; repointed ignoring keep -> slm1 (always-suite-sib), gdk2; refusal exempting by content -> slm1 (10), gdk3; repoint clobbering the program -> slm1 (8 sib-program rows), gdk2; suite-as-program read as program -> pks2. GATE: `python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__manifest_phases.py tests/test__gate_derive.py` exit 0, last line `3/3 files ok, 1356 cases`, exit read with `; echo $?` and no pipe. Extra, not the gate: tests/test__output_lints.py, test__deps.py, test_derive_phase_gate.py, test__affected_tests.py, test_drive_phase.py exit 0 (5/5 files ok); test_run_test_gate.py and test__manifest_vocab.py exit 0 in an earlier run; ruff exit 0; vermin -t=3.8- exit 0. DEPENDANTS: audit-task.py - still correct: only the private _slot_paths/_spelling_reach went, no other file named them (git grep); the names others use are unchanged. _manifest_phases.py - files_gate_non_suite_paths removed (only callers were audit-task and bx11, both moved); _runs_first_path_as_program and gate_entry_commands unchanged; _affected_tests, _scoped_commit, derive-phase-gate, drive-phase, run-test-gate, _manifest_rules still correct (suites green). _gate_derive.py - CHANGED behaviour for its importers: repointed/repointed_by_runner keep a non-suite program in place and carry keep= entries, so derive-phase-gate's sibling point_shape and _affected_tests now write `python3 tools/run.py <paths>` where they wrote `python3 <paths>`; their suites are green. tests/test_audit_task.py - test_commit_task_work and test__filed_returns read helpers I did not touch; gx-block got one pure-function case (no subprocess). test__manifest_phases.py / test__gate_derive.py - helper names unchanged. STALE PROSE, NOT MY FILES (to re-scope): CHANGELOG.md:158-160 and plugins/audit/reference/verbs-in-full.md:368-370 say a related-tests sibling takes the task's files `whole`/`every file`; plugins/audit/commands/init.md:402-406 and plugins/audit/schema/audit-plan.schema.json:1848 say the same about a sibling only (a recorded related spelling now counts too, and documents, workflows and configs are never handed); PLUGIN-BUILD-GUIDE.md's _gate_derive section is not updated for slot_takes_sources/slot_paths/untaken_slot_paths. LEFT, A SEPARATE DEFECT: repointed still puts the task's paths where the sibling's FIRST path stood, so a sibling `npx jest --config jest.config.js src/Other.test.tsx` writes `npx jest --config src/Card.test.tsx` for a suite (the per-path decision is right; the placement is not); fixing it needs the sibling's declared paths to find the slot, which changes the phase-level derivation too - it should be filed as a finding.",
+        "descriptive": "A derived gate now hands its runner only the declared paths that runner accepts, read the same way for a recorded spelling and a sibling, and the refusal names every untaken path by position, so the related-tests regression, the doc and --config leak, and the always-entry exemption hole are all closed in one rule."
       },
       "startedAt": "2026-10-29T08:40:37Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-29T09:29:45Z",
+      "verifiedBy": [
+        "slm1: one table of every declared-path kind (suite, source, document, workflow, config, mixed) under recorded and sibling spellings that take suites or sources (including -k related, --config and -c over-fire rows), for ordinary and fix tasks, plus always-entry and program rows, asserting basis, the handed paths, no refusal of the derived gate, and by-position naming for an unfiltered gate",
+        "bx11 rewritten onto _gate_derive.untaken_slot_paths: the program is named only when written into the slot",
+        "gdk1-gdk3: slot_takes_sources words, repointed keep/program, untaken_slot_paths by position",
+        "pks1-pks2: path_kind/slot_takes table and command_slots"
+      ],
       "notes": [
         {
           "at": "2026-10-29T07:59:21Z",
@@ -1788,6 +1842,18 @@
         "runId": "2026-10-29T09:29:42Z.20bc13",
         "status": "passed",
         "at": "2026-10-29T09:29:42Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "3b2a1512d712",
+        "at": "2026-10-29T09:29:45Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-29T09:14:51Z",
+        "basis": "`python3 tests/test_audit_task.py --selftest --stage gx-block` in a throwaway tree at HEAD exited 1 with 1 of 2 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - slm1 (house FAIL): SELFTEST FAILED: 1/2 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1844,6 +1910,63 @@
       ],
       "fixes": [
         "P148-R34"
+      ]
+    },
+    {
+      "id": "P148.20-xpz",
+      "title": "A tracked .claude/.gitignore edit that only changes whitespace is a task's edit, not the plugin's",
+      "status": "pending",
+      "description": "Fix P148-R40 (docs/audit/phases/P148.json review.findings): the tracked .claude/.gitignore comparison strips each line, so a whitespace-only edit (CRLF conversion, reorder, escaped trailing space) reads as plugin lines only and is left out of the commit. Compare removing only a trailing CR; the plugin's own lines (with or without a final newline) must still count as the plugin's. Cases for each whitespace edit and the allow case, red first. Edit only declared files. No F/P/BUG ids in code.",
+      "files": [
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "tests/test__manifest_io.py",
+        "tests/test__scoped_commit.py",
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        ".claude/.gitignore",
+        "tests/test__manifest_io.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test__manifest_io.py: Compare lines removing only a trailing CR"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__manifest_io.py tests/test__scoped_commit.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-29T09:37:31Z",
+          "text": "scope: plugins/audit/scripts/manifest/_manifest_io.py, .claude/.gitignore, every path the finding(s) P148-R40 name"
+        },
+        {
+          "at": "2026-10-29T09:37:31Z",
+          "text": "scope: tests/test__manifest_io.py, the suite that tests plugins/audit/scripts/manifest/_manifest_io.py (python: its import closure reaches plugins/audit/scripts/manifest/_manifest_io.py)"
+        },
+        {
+          "at": "2026-10-29T09:37:31Z",
+          "text": "no suite: .claude/.gitignore - 32 test files name it and none is named for it (tests/_harness.py, tests/test__config.py, tests/test__deps.py, tests/test__doctor_hygiene.py, tests/test__impact.py, tests/test__manifest_phases.py and 26 more); name the one that tests it with `scope --files`, none was guessed"
+        }
+      ],
+      "fixes": [
+        "P148-R40"
       ]
     }
   ],
