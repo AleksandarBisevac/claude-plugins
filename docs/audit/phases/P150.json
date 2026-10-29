@@ -22,20 +22,23 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P150-R1",
         "severity": "low",
         "file": "CHANGELOG.md:85-91",
         "issue": "The throwaway entry's last-but-one sentence, 'On Windows such a run used to report the throwaway left behind.', scopes the defect to Windows. The code that landed is not Windows-specific: stamp-verification.py _git(group=True) docstring says subprocess.run's timeout kills only the direct child so the rest went on writing into the throwaway, and _remove_throwaway's docstring says a single --force never removes the lock git worktree add holds on a tree it has not finished. P149.2's own claims block records a killed-build probe leaving the tree 27 times of 30 before the fix on the machine it ran on, not on Windows. The Windows scoping comes from the commit title, not from the diff.",
-        "resolution": "Drop 'On Windows' (say the run used to report the throwaway left behind), or keep it only if the Windows-only observation can be cited; the process-group and double --force fixes apply on every platform.",
-        "fixTask": "P150.2-gzk"
+        "resolution": "fixed in P150.2-gzk (581d5423b3f8): Drop 'On Windows' (say the run used to report the throwaway left behind), or keep it only if the Windows-only observation can be cited; the process-group and double --force fixes apply on every platform.",
+        "fixTask": "P150.2-gzk",
+        "commit": "581d5423b3f8",
+        "status": "fixed"
       }
     ],
-    "outcome": "[findings: 1 - 0 high, 0 med, 1 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 1 - 0 high, 0 med, 1 low; 1 with a recorded fix commit]",
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "CHANGELOG.md's unreleased section is true of every user-visible change landed through P149: the red-first deadline entry restated from the code, and Fixed lines for the throwaway build timeout, confirmed teardowns and derived gates; the one review finding (a platform scope the code does not have) is fixed by P150.2. Gate banner accepted: Prihvati (Recommended)",
   "tasks": [
     {
       "id": "P150.1",
@@ -90,7 +93,7 @@
     {
       "id": "P150.2-gzk",
       "title": "fix P150-R1: The throwaway entry's last-but-one sentence, 'On Windows such a ...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The throwaway entry's last-but-one sentence, 'On Windows such a run used to report the throwaway left behind.', scopes the defect to Windows. The code that landed is not Windows-specific: stamp-verification.py _git(group=True) docstring says subprocess.run's timeout kills only the direct child so the rest went on writing into the throwaway, and _remove_throwaway's docstring says a single --force never removes the lock git worktree add holds on a tree it has not finished. P149.2's own claims block records a killed-build probe leaving the tree 27 times of 30 before the fix on the machine it ran on, not on Windows. The Windows scoping comes from the commit title, not from the diff.\n\nResolution asked: Drop 'On Windows' (say the run used to report the throwaway left behind), or keep it only if the Windows-only observation can be cited; the process-group and double --force fixes apply on every platform.",
       "files": [
         "CHANGELOG.md"
@@ -119,13 +122,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "581d5423b3f8",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "CHANGELOG.md:206 (unreleased section, entry 'A red-first run whose throwaway build times out removes the throwaway.'): 'On Windows such a run used to report the throwaway left behind.' -> 'Such a run used to report the throwaway left behind.' No Windows-only observation exists to cite: the finding records P149.2's killed-build probe (27 of 30 left behind before the fix) as taken on a non-Windows machine, and the code is unconditional - plugins/audit/scripts/governance/stamp-verification.py:3294 calls `git worktree remove --force --force` with no platform branch, and the build/reset git calls pass group=True at :3245 and :3637 with no platform branch. Class sweep: `grep -n Windows CHANGELOG.md` restricted to the unreleased section (lines before 218) leaves three hits, each left because it is true of Windows alone: :97 (Windows command-line length for pathspecs), :130 (a Windows child's output normalisation), :213 (a returned taskkill has only asked for the kill - taskkill is Windows-only). :622's older timed-out-throwaway entry sits in a released section and is history, left. Gates: runsGate own-tests and the brief states the task adds no test, so nothing of its own was run; gates is {} and the orchestrator's recorded run is the evidence. Dependants (8 of 17 shown, all basename matches): tests/test__deps.py, tests/test__output.py, tests/test__panel_settings.py, tests/test__refs.py, tools/check-release-published.py, tools/lints/_deps.py, tools/lints/_output_lints.py, tools/lints/_refs.py - all still correct: the edit only deletes two words from one prose sentence, adds no number (nothing for doc_prose_numbers/prose_number_claims to read), no file basename or path (nothing for _refs), and touches no version heading or the [3.6.0] boundary (nothing for check-release-published or the panel/changelog readers). The unshown 9 dependants were not enumerated by the brief; the same reasoning applies to any reader of headings, numbers or basenames, but those 9 were not inspected.",
+        "descriptive": "The unreleased throwaway-teardown entry no longer scopes a platform-independent fix to Windows."
       },
       "startedAt": "2026-10-29T17:22:30Z",
-      "completedAt": null,
+      "completedAt": "2026-10-29T17:40:00Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -149,16 +152,27 @@
         "runId": "2026-10-29T17:39:08Z.174deb",
         "status": "passed",
         "at": "2026-10-29T17:39:08Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "581d5423b3f8",
+        "at": "2026-10-29T17:40:00Z",
+        "return": "docs/audit/evidence/returns/P150.2-gzk/20261029T172230Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task, expectRedFirst false, tests.add none: a one-sentence CHANGELOG correction carries no test and owes no red",
+        "at": "n/a - no red run made"
       }
     }
   ],
   "request": "bring the 3.7.0 changelog up to date with P149 before the release",
   "openChoices": [],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "482d7bf5-025e-4eb9-acc8-1383e2a9aaa8",
-    "branch": "audit/p150-the-3-7-0-changelog-covers-the",
-    "at": "2026-10-29T17:16:09Z"
-  },
-  "startedAt": "2026-10-29T17:16:09Z"
+  "startedAt": "2026-10-29T17:16:09Z",
+  "testEvidence": {
+    "runId": "2026-10-29T17:53:10Z.b92944",
+    "status": "passed",
+    "at": "2026-10-29T17:53:10Z"
+  }
 }
