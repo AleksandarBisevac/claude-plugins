@@ -21,6 +21,7 @@ asserting a literal, because a literal would keep agreeing after they diverged.
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import hashlib
 import io
 import json
 import os
@@ -4155,8 +4156,16 @@ def _tree_key_cases(check):
     # reader's own function over the same directory. A second tree is measured
     # too, each in a project of its own so the second run is measured and not
     # a repeat of the first's verdict.
+    #
+    # The second tree is reached through a symlink to its real directory, so
+    # realpath and abspath of what `--tree` receives differ on every platform:
+    # on a plain temp tree they agree wherever the temp root is not itself a
+    # link, and a writer hashing abspath would pass there. Where a symlink
+    # cannot be made the tree stays plain and the loss is stated by tk2s.
     keys = []
     shown = []
+    linked = None
+    link_skip = None
     for name in ("one", "two"):
         project = _harness.fixture_root("ev-tk-project-%s-" % (name,))
         tree = _harness.fixture_root("ev-tk-tree-%s-" % (name,))
@@ -4169,6 +4178,15 @@ def _tree_key_cases(check):
                        "phases": [{"id": "P1", "title": "p",
                                    "status": "in_progress",
                                    "testGate": ["chk"], "tasks": []}]}, fh)
+        real = tree
+        if name == "two":
+            link = os.path.join(_harness.fixture_root("ev-tk-link-"), "via-link")
+            try:
+                os.symlink(tree, link, target_is_directory=True)
+                tree = link
+                linked = (os.path.abspath(link), os.path.realpath(link))
+            except (OSError, NotImplementedError, AttributeError) as err:
+                link_skip = "%s: %s" % (type(err).__name__, err)
         lines = []
         code = rtg.main([mpath, "P1", "--project-dir", project, "--record",
                          "--tree", tree], out=lines.append)
@@ -4177,11 +4195,29 @@ def _tree_key_cases(check):
                    ).get("key") if rows else None
         keys.append(written)
         shown.append((name, code, len(rows), written, M.tree_key(tree)))
+        if name == "two" and linked:
+            # The symlink-reached tree is named by where it really is, which
+            # is what a reader of the same directory through any spelling gets.
+            check("tk2l RED-FIRST: a tree passed as a symlink is recorded "
+                  "under the hash of its REAL path - not the hash of the "
+                  "spelling it was passed as, and the two spellings differ "
+                  "here: %r" % ((linked, written),),
+                  linked[0] != linked[1]
+                  and linked[1] == os.path.realpath(real)
+                  and bool(written)
+                  and written == M.tree_key(real)
+                  and written == hashlib.sha1(linked[1].encode("utf-8")
+                                              ).hexdigest()[:12]
+                  and written != hashlib.sha1(linked[0].encode("utf-8")
+                                              ).hexdigest()[:12])
         check("tk2%s RED-FIRST: the key `run-test-gate --record --tree` wrote "
               "into testedState.tree.key is _evidence_io.tree_key of that "
               "same tree: %r" % (name[0], shown[-1]),
               code == rtg.E_OK and len(rows) == 1
               and bool(written) and written == M.tree_key(tree))
+    check("tk2s the symlink case either ran (tk2l) or was skipped for the "
+          "stated reason (no symlink could be made here); skip reason: %r"
+          % (link_skip,), (linked is None) == (link_skip is not None))
     check("tk3 ALLOW: two different trees were recorded under two different "
           "keys, so the key names the tree and not the run: %r" % (keys,),
           len(keys) == 2 and keys[0] and keys[1] and keys[0] != keys[1])

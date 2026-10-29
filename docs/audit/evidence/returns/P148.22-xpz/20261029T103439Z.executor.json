@@ -1,0 +1,26 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__evidence_io.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task (expectRedFirst false), so the helper was not run. By hand: replaced the write site in run-test-gate.py (the line setting res[testedState][tree] to the key) with a sha1 over os.path.abspath(tree), purged __pycache__, ran python3 tests/test__evidence_io.py --selftest -> exit 1, 311/314, FAIL tk2o, tk2l, tk2t (tk2o/tk2t fail on macOS only because /var is a symlink; tk2l fails on every platform). Restored from a copy in one command: cmp identical, git diff on run-test-gate.py empty.",
+    "at": "2026-10-29"
+  },
+  "outcome": {
+    "technical": "Edited only tests/test__evidence_io.py (+import hashlib). In _tree_key_cases the second tree is now passed to run-test-gate --record --tree through an os.symlink in a fixture dir, so abspath != realpath on every platform. New case tk2l: abspath(link) != realpath(link) == realpath(target); written key == M.tree_key(target) == sha1(realpath)[:12] and != sha1(abspath(link))[:12]. New case tk2s: either the symlink ran (tk2l) or was skipped with the OSError/NotImplementedError reason shown in the label. tk2o/tk2t/tk3 unchanged in wording. Gate: python3 tools/sweep-selftests.py tests/test__evidence_io.py exit 0, 314 cases. Dependants (_evidence_io.py, affected.py, sweep-selftests.py, sweep-costs.json, test__doctor_trail.py, test_audit_status.py): still correct - no code or defined name changed; only two cases added inside _tree_key_cases, none of the names used elsewhere (_fs_row, _full_status_cases, _real_two_commits, _cases) were touched; sweep-costs.json per-file cost may drift slightly (5.2s run) but is not a correctness matter.",
+    "descriptive": "The recorded tree key is now pinned against an abspath writer on every platform, via a symlinked --tree."
+  },
+  "testedAdded_note": "n/a",
+  "testsAdded": [
+    "tk2l: tree reached through a symlink must be recorded under the hash of its real path, not its abspath",
+    "tk2s: symlink case ran or was skipped with the stated reason"
+  ],
+  "casesAdded": [
+    "tk2l"
+  ],
+  "claims": "claims:\n1 tests/test__evidence_io.py tk2l label says what it asserts: the compound check compares written key against M.tree_key(real), sha1(realpath) and not sha1(abspath(link))\n2 write site mutated to abspath -> tk2l (and tk2o, tk2t) red, 311/314 -> restored, cmp identical, 314/314 green\n3 n/a \u2014 not a fix of a reported defect in code; tk2o/tk2t are the sibling cases and the symlinked tree feeds tk2t\n4 n/a \u2014 no rule to an agent\n5 n/a \u2014 no property recorded\n6 n/a \u2014 no guard\n7 n/a \u2014 no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:a14d88a31d58552b8838c40e4d1ff72925a4622432c905e27f2382151e4a3114\",\"dirtyDigest\":\"sha256:7eadd7c74b90f970e514ba951aab468c32f7bae827d68dfeaa771c120ba53006\",\"dirtyPaths\":{\"tests/test__evidence_io.py\":\"15735ec8bed53c3d\"},\"head\":\"64baa140\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tests/test__evidence_io.py\"],\"scopeDigest\":\"sha256:47db3ffaf8c1eb62869e5d4660ffa32451c0bd183af2a9da0a95ccec26954601\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

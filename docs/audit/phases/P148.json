@@ -383,24 +383,30 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/_gate_derive.py:437,469 (slot_takes_sources any() over entries; untaken_slot_paths); audit-task.py:2862-2864",
         "issue": "Whether a slot takes sources is decided once for the whole gate, not per entry or command. Sibling ['npx vitest related src/O.ts --run', 'npx playwright test e2e/o.spec.ts'] with --files src/y.ts derives 'npx playwright test src/y.ts' (red every attempt), refusal None. Sibling ['npx jest --findRelatedTests src/O.ts', 'pytest tests/test_o.py'] with src/y.py,tests/test_y.py gives 'pytest src/y.py tests/test_y.py' where the parent of 04261ee5 gave 'pytest tests/test_y.py' (regression). An '&&' entry hands both commands' paths to the first.",
-        "resolution": "Decide source-taking per command slot; the re-point gives each command only the paths its own slot takes; the refusal judges each command by its own mode; multi-entry and && rows in the matrix, red first.",
-        "fixTask": "P148.21-xpz"
+        "resolution": "fixed in P148.21-xpz (64baa14096a9): Decide source-taking per command slot; the re-point gives each command only the paths its own slot takes; the refusal judges each command by its own mode; multi-entry and && rows in the matrix, red first.",
+        "fixTask": "P148.21-xpz",
+        "commit": "64baa14096a9",
+        "status": "fixed"
       },
       {
         "id": "P148-R38",
         "severity": "med",
         "file": "plugins/audit/scripts/manifest/_manifest_phases.py:1203 (path_kind via is_suite_path)",
         "issue": "Every non-test file under a test directory is a suite: tests/conftest.py, e2e/playwright.config.ts, test/setup.ts, __tests__/README.md, tests/fixtures/a.json. A task --files src/a.py,tests/conftest.py under 'pytest {paths}' derives 'pytest tests/conftest.py' (no tests collected) and is not refused. Present before this phase; the new docstrings say a document or config is never handed.",
-        "resolution": "Classify by kind first (document, config, fixture/data) and call a path a suite only by a test mark or test_ prefix, using the directory only for non-config source-extension files; rows for conftest.py, playwright.config.ts, fixtures/*.json.",
-        "fixTask": "P148.21-xpz"
+        "resolution": "fixed in P148.21-xpz (64baa14096a9): Classify by kind first (document, config, fixture/data) and call a path a suite only by a test mark or test_ prefix, using the directory only for non-config source-extension files; rows for conftest.py, playwright.config.ts, fixtures/*.json.",
+        "fixTask": "P148.21-xpz",
+        "commit": "64baa14096a9",
+        "status": "fixed"
       },
       {
         "id": "P148-R39",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/_gate_derive.py:237 (repointed); command_slots; _program_index",
         "issue": "The re-point puts paths where the sibling's first path stood, including an option's argument, and drops later option arguments: 'npx jest --config jest.config.js src/Other.test.tsx' + a suite gives 'npx jest --config src/Card.test.tsx'; 'pytest -c setup.cfg tests/test_o.py' gives 'pytest -c tests/test_a.py'; 'npx jest --findRelatedTests src/O.tsx --config jest.config.js' gives '... src/Card.tsx --config' (argument dropped); 'python3 tools/a.py t && python3 tools/b.py u' loses tools/b.py. Each is red on every attempt and not refused. Present before this phase.",
-        "resolution": "Locate the slot per command as the path words that are neither the program nor an option's argument, replace only those, keep option arguments in place; rows for each shape, red first.",
-        "fixTask": "P148.21-xpz"
+        "resolution": "fixed in P148.21-xpz (64baa14096a9): Locate the slot per command as the path words that are neither the program nor an option's argument, replace only those, keep option arguments in place; rows for each shape, red first.",
+        "fixTask": "P148.21-xpz",
+        "commit": "64baa14096a9",
+        "status": "fixed"
       },
       {
         "id": "P148-R40",
@@ -417,8 +423,10 @@
         "severity": "low",
         "file": "CHANGELOG.md:158; plugins/audit/reference/verbs-in-full.md:368; plugins/audit/commands/init.md:402; plugins/audit/schema/audit-plan.schema.json:1848; PLUGIN-BUILD-GUIDE.md (_gate_derive section)",
         "issue": "Prose describing the files-derived gate predates the per-path rule.",
-        "resolution": "Rescope each to the rule as finally landed.",
-        "fixTask": "P148.21-xpz"
+        "resolution": "fixed in P148.21-xpz (64baa14096a9): Rescope each to the rule as finally landed.",
+        "fixTask": "P148.21-xpz",
+        "commit": "64baa14096a9",
+        "status": "fixed"
       },
       {
         "id": "P148-R42",
@@ -434,9 +442,16 @@
         "issue": "The new tk2o/tk2t cases go red for a write that is not _evidence_io.tree_key only where the fixture tree's abspath differs from its realpath. Both trees come from _harness.fixture_root (a plain temp dir) and nothing symlinks them, so the realpath-to-abspath drift that the enclosing docstring names (_tree_key_cases: 'a realpath policy changed in one') is red on macOS, where /var is a symlink to /private/var, and green on a Linux runner whose temp dir has no symlink. The executor's red (written 205b8cd9dd69 vs tree_key 8f9d4709f093) was a macOS measurement of a local sha1 over os.path.abspath; the claim 'now pinned at the write' is true there and unproved on CI's platform. Other mutations (constant, wrong tree such as project, different slice length, basename) do go red by reading: tk2 equality or tk3 inequality fails.",
         "resolution": "Make one of the two trees a symlink to a real directory (os.symlink in a fixture dir, passed as --tree), so realpath(tree) != abspath(tree) on every platform with symlinks. Skip that tree with a stated reason on a platform that cannot symlink. Then a writer using abspath or no realpath fails tk2 everywhere.",
         "fixTask": "P148.22-xpz"
+      },
+      {
+        "id": "P148-R44",
+        "severity": "med",
+        "file": "tests/test__evidence_io.py:4182-4186,4205-4207",
+        "issue": "The skip path reads as a pass that proved something. tk2s asserts (linked is None) == (link_skip is not None); linked is set only in the same try whose except sets link_skip, so the two are complementary by construction and tk2s cannot fail on either branch. On a machine that refuses os.symlink (an unprivileged Windows account) tk2l is not emitted at all, the abspath-writer hole this task closes is open again there, and the only trace is a green tk2s whose label is the same fixed sentence on both branches ('either ran ... or was skipped'), with the reason buried in a repr at its tail. The label never says SKIPPED HERE and tk2l never appears under its own id. The repo already has the idiom for exactly this: _harness.skip(check, id, mechanism, absent) (tests/_harness.py:444), used for an os.symlink refusal at tests/test__config.py:3033, tests/test__journal_io.py:2105 and tests/test__output.py:1096; it keeps the case id at the front, says SKIPPED HERE, and fails if the skip is taken on a platform that has the mechanism. The executor's claim that tk2s 'stated the reason' is true only of a repr inside a passing label.",
+        "resolution": "Drop tk2s. Where the symlink is refused call _harness.skip(check, \"tk2l\", \"os.symlink is refused here (%s)\" % link_skip, True), as test__config.py:3033 does, so the lost case keeps its id and reads SKIPPED HERE; keep the tk2l check in the else branch."
       }
     ],
-    "outcome": "[findings: 43 - 0 high, 10 med, 33 low; 35 with a recorded fix commit]"
+    "outcome": "[findings: 44 - 0 high, 11 med, 33 low; 39 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2043,7 +2058,7 @@
     {
       "id": "P148.21-xpz",
       "title": "A derived gate's slot is found per command, and each command receives only the declared paths its own runner takes, classified by kind before directory",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix P148-R37, R38, R39, R41 (docs/audit/phases/P148.json review.findings). The previous redesign (3b2a1512) made the per-path decision but still models the slot per GATE: whether it takes sources is one flag for every entry, the slot is wherever the sibling's first path stood (an option's argument included), and a path under a test directory is a suite whatever it is. Finish the model at the right grain: (1) split each gate entry into its commands at the shell's command separators; (2) per command, the program is its own word and the slot is the path words that are neither the program nor an option's argument (an option taking an argument such as --config, -c, --rootdir, --cov-config, and the = forms) - option arguments stay in place, never replaced or dropped; (3) per command, its runner decides whether it takes sources (related-tests words in THAT command); (4) path kind is decided by kind first - document, config (conftest.py, *.config.*, setup files), fixture or data - and a suite only by a test mark or test_ prefix; (5) each command receives only the declared paths its own slot takes, and the refusal judges each command by its own mode. Rows from the review that must hold: the vitest-related plus playwright pair; the jest-related plus pytest pair (pytest gets only tests/test_y.py, as before 04261ee5); the chained entry; --config and -c before and after the slot; the two-program chained entry keeping tools/b.py; conftest.py, playwright.config.ts, fixtures/*.json, __tests__/README.md. Add them to the existing table-driven matrix, each red first against HEAD, and keep every existing row green. Then rescope the prose R41 names to the rule as landed (no number in prose). Edit only declared files. No F/P/BUG ids in code.",
       "files": [
         "plugins/audit/scripts/governance/_gate_derive.py",
@@ -2089,14 +2104,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "64baa14096a9",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "MODEL AT COMMAND GRAIN, ONE READING (_gate_derive): _entry_tokens (shell_words; an unquoted list operator glued to a word split off) -> _command_spans (split at && || ; | & ( )) -> _read_command per simple command: redirections and their file dropped; an option word (-x, --opt=value) and the argument of an option in OPTION_ARGUMENT_WORDS (-c, --config, --rootdir, --cov-config, -k, -p, ...) are never the slot and stay in place; the program is the first positional path when _manifest_phases._runs_first_path_as_program says so, unless path_kind calls it a suite; the slot is the remaining positional path words (a template: its {paths} words); sources = SCRIPT_MODULE_EXTENSIONS when a RELATED_SLOT_WORDS word is said in THAT command at no option-argument position (related only after vitest), else empty. THE ONE PER-PATH DECISION stays _manifest_phases.slot_takes(path, sources): suite always (a related slot only in its runner's language), source only under a related command and in its language, document/workflow/config/fixture never; over path_kind, now KIND BEFORE DIRECTORY: workflow, document, config by name (conftest.py, setup.py, *.config.*/*.conf.*/*.setup.*, setup/globalSetup stems, dotfiles), fixture by folder (fixtures, __mocks__, __snapshots__, testdata ...), config/data extension (a fixture under a test dir), then suite by test mark or test_ prefix, then a test directory only for a source-extension file. is_suite_path untouched (it answers what a runner printed as run). EVERY CALLER USES IT: taken_paths (files arm `pointed`), repointed / point_shape / repointed_by_runner with by_kind (each command handed only what its own slot takes; a command left with none dropped with its separator; an entry left with none dropped; a template filled literally when every {paths} command takes the same paths), slot_reading + untaken_slot_paths (refusal, each command by its own mode, template-aligned per command), slot_takes_sources (basis sentence only). scope re-derivation reaches it through _ordinary_task_gate. Removed: _manifest_phases.command_slots, _gate_derive._program_index/_slot_starts/_related_mode/slot_paths (sole caller was _gate_derive; git grep shows no other). _scoped_runners counts only slot-holding entries. tests.add and --failing-from arms keep handing every path to every slot (by_kind default False): the derived gate must run every case the task authors. audit-task: files arm pointed=_gate_derive.taken_paths, _point(..., by_kind=True), an empty result -> the wide gate, files-no-suite, with the notes; gate-only arm by_kind=True; refusal text per command; docstrings of _point, _files_gate_refusal, _task_gate rescoped. PROSE (R41) rescoped, no number written: CHANGELOG.md Unreleased entry, verbs-in-full.md fix-task paragraph, init.md gateBasis paragraph, schema gateBasis and derived.spelling descriptions, PLUGIN-BUILD-GUIDE.md (_gate_derive section + new per-command paragraph, phaseGate spelling paragraph), _gate_derive resolve_shape docstring and alias comment. TESTS: gdk4, gdk6, gdk5, gdk7 (test__gate_derive.py); pks3 (test__manifest_phases.py) - pks2 removed: it pinned _manifest_phases.command_slots keeping an option's argument as slot ([3, 4] for 'npx jest --config jest.config.js src/a.test.tsx'), the R39 defect itself, and the function moved; its shapes are re-pinned in gdk5. slm1 (test_audit_task.py): _GS_SPELLINGS gains each spelling's expected entry and the row now compares the WHOLE gate (the old measure, paths found in the gate, accepted 'npx jest --config src/Card.test.tsx'); new table _GS_COMMAND_ROWS from every scenario rv18/probe/p.py, p2.py, p3.py print plus the brief's rows; positional row template-own-path. RED AT HEAD (new test files, HEAD's code, shared tree before the fix existed): test__gate_derive 55/58 (gdk4, gdk5, gdk6 FAIL), test__manifest_phases 139/140 (pks3 FAIL), test_audit_task --stage gx-block 1/2 (slm1 FAIL). MUTATIONS, scratch copy of the working tree (anchor asserted to match once, PYTHONPYCACHEPREFIX per run, restored and cmp-equal after): under-fire - option table emptied -> gdk5, slm1; --config dropped -> gdk4, gdk5, slm1; mode decided over the whole entry -> gdk4, gdk6, slm1; mode union over the gate -> slm1; any-language sources -> gdk4, gdk6, slm1; suite before kind -> pks3, slm1; by_kind ignored -> gdk6, slm1; dropped command kept -> gdk6, slm1; template alignment removed -> gdk7, slm1 (survived until gdk7 and row template-own-path were added); program read as slot -> gdk2, gdk5, slm1. over-fire - never sources -> gdk3, gdk4, gdk6, pks1, pks3, slm1; every option takes an argument -> gdk1, gdk4, gdk5, gdk6, m3, rg6, dg* , slm1; no suite by test directory -> pks3, q4, q6, slm1; related mode in every command -> gdk1, gdk3, gdk4, gdk5, gdk6, gdk7, slm1. Unmutated scratch copy: 59/59, 140/140, 2/2. GATE: `python3 tools/sweep-selftests.py tests/test__gate_derive.py tests/test__manifest_phases.py tests/test_audit_task.py tests/test__deps.py tests/test__output_lints.py` exit 0 (read without a pipe), '5/5 files ok, 1787 cases' - run three times, last after the final edit. DEPENDANTS (extra, not the gate): sweep of test__affected_tests, test_derive_phase_gate, test_drive_phase, test_run_test_gate, test__manifest_rules, test__scoped_commit, test__filed_returns, test_repair_tests_add, test__manifest_io, test_validate_manifest, test__manifest_vocab exit 0 '11/11 files ok, 1999 cases'; test_commit_task_work, test__refs, test__output exit 0 '3/3 files ok, 610 cases'. DEPENDANT ANSWERS: _affected_tests.py calls repointed_by_runner without by_kind - still correct: every path still reaches every slot, only option arguments now stay in place and each command of a chain keeps its own program (its suite green). derive-phase-gate.py / derive(): point_shape by_kind default False -> literal fill byte for byte, unchanged; its module docstring line 27 still says repointing replaces every path-shaped word, the runner included - now stale, not my file. drive-phase.py and run-test-gate.py read entry_collector/entry_runner/other names, unchanged. _manifest_phases dependants (_scoped_commit, _manifest_rules, run-test-gate --own, _affected_tests) read is_suite_path and the shape check, both unchanged; command_slots had no caller but _gate_derive. audit-task.py: _point gained a defaulted keyword; the refusal text is read only by slm1's _gs_named, which parses 'hands its runner ... , which'. test_derive_phase_gate imports _cases/_manifest/_selftest from test__gate_derive - unchanged names; test__filed_returns/test_repair_tests_add/test__manifest_rules import _phase/_task/_cases from test__manifest_phases - unchanged; test_commit_task_work imports case helpers from test_audit_task - unchanged; schema, CHANGELOG, init.md, verbs-in-full.md readers (test__manifest_io, test__deps prose lints, test__manifest_vocab) green. LEFT, SAID AS SUCH: (1) an ordinary (non-fix) task still hands every suite to every suite-taking command, so a pytest slot beside a jest slot receives a .test.ts suite too - runner routing is the fix-task arm's alone (_point's documented design), not changed here; (2) row vitest-related+pw-spec's fix half reads the vitest config of the cwd - measured: scratch cwd gives ['npx vitest related src/y.ts e2e/y.spec.ts --run'], the repo cwd gives ['npx vitest related src/y.ts --run', 'npx playwright test e2e/y.spec.ts'] - so that half is unpinned; (3) the plain (non-fix) re-point drops a command or entry with no note in the basis sentence, the runner-aware one notes it; (4) path_scoped_sibling still picks a sibling entry that holds no slot ('python3 tools/a.py t && python3 tools/b.py u'): the files arm then answers wide, a tests.add arm copies that entry unchanged - moved body, not changed; (5) stale prose outside my files: plugins/audit/scripts/governance/derive-phase-gate.py:27 and plugins/audit/scripts/manifest/_manifest_vocab.py:194-197 (files-no-suite comment still says 'a spelling whose slot holds suites alone'). MATRIX ROWS, HEAD -> after (basis, gate, and the paths the refusal names for an unfiltered stand-in; ordinary and fix shown once when equal; every derived gate reads back with refusal None after). Pre-04261ee5 parent for the brief's pinned pair: jest-related+pytest fix gave ['pytest tests/test_y.py'] - after gives exactly that, ordinary too.\nCHANGED:\nc-after (ordinary=fix): HEAD files ['pytest tests/test_a.py -c'] refuses-unfiltered:docs/guide.md -> after files ['pytest tests/test_a.py -c setup.cfg'] refuses-unfiltered:docs/guide.md\nc-before (ordinary=fix): HEAD files ['pytest -c tests/test_a.py'] refuses-unfiltered:docs/guide.md -> after files ['pytest -c setup.cfg tests/test_a.py'] refuses-unfiltered:docs/guide.md\ncfg-related-src (ordinary=fix): HEAD files-no-suite ['test'] refuses-unfiltered:src/Card.tsx -> after files ['npx jest --config jest.config.js --findRelatedTests src/Card.tsx']\ncfg-related-suite (ordinary=fix): HEAD files ['npx jest --config src/Card.test.tsx --findRelatedTests'] -> after files ['npx jest --config jest.config.js --findRelatedTests src/Card.test.tsx']\nchain-programs-no-slot (ordinary=fix): HEAD files ['python3 tools/a.py t && python3 tests/test_x.py u'] -> after files-no-suite ['test']\nchain-related-drop (ordinary=fix): HEAD files ['npx jest --findRelatedTests src/a.ts && pytest'] -> after files ['npx jest --findRelatedTests src/a.ts'] refuses-unfiltered:src/a.ts\nchain-related-suite (ordinary=fix): HEAD files ['npx jest --findRelatedTests src/a.ts tests/test_a.py && pytest'] -> after files ['npx jest --findRelatedTests src/a.ts && pytest tests/test_a.py'] refuses-unfiltered:tests/test_a.py,src/a.ts\nchain-two-programs (ordinary=fix): HEAD files ['python3 tools/a.py tests/test_x.py && python3'] -> after files ['python3 tools/a.py tests/test_x.py && python3 tools/b.py tests/test_x.py']\nconfig-after (ordinary=fix): HEAD files ['npx jest src/Card.test.tsx --config'] refuses-unfiltered:docs/guide.md -> after files ['npx jest src/Card.test.tsx --config jest.config.js'] refuses-unfiltered:docs/guide.md\nconfig-before (ordinary=fix): HEAD files ['npx jest --config src/Card.test.tsx'] refuses-unfiltered:docs/guide.md -> after files ['npx jest --config jest.config.js src/Card.test.tsx'] refuses-unfiltered:docs/guide.md\nconfig-eq (ordinary=fix): HEAD files ['npx jest src/Card.test.tsx'] refuses-unfiltered:docs/guide.md -> after files ['npx jest --config=jest.config.js src/Card.test.tsx'] refuses-unfiltered:docs/guide.md\njest-related+pytest ordinary: HEAD files ['npx jest --findRelatedTests src/y.py tests/test_y.py', 'pytest src/y.py tests/test_y.py'] -> after files ['pytest tests/test_y.py'] refuses-unfiltered:src/y.py,tests/test_y.py; fix: HEAD files ['npx jest --findRelatedTests src/y.py', 'pytest src/y.py tests/test_y.py'] -> after files ['pytest tests/test_y.py'] refuses-unfiltered:src/y.py\npw-config (ordinary=fix): HEAD files ['npx playwright test e2e/playwright.config.ts e2e/y.spec.ts'] -> after files ['npx playwright test e2e/y.spec.ts'] refuses-unfiltered:e2e/playwright.config.ts\nrec-conftest-only (ordinary=fix): HEAD files ['pytest tests/conftest.py'] refuses-unfiltered:src/a.py -> after files-no-suite ['test'] refuses-unfiltered:src/a.py,tests/conftest.py\nrec-conftest (ordinary=fix): HEAD files ['pytest tests/test_a.py tests/conftest.py'] refuses-unfiltered:src/a.py -> after files ['pytest tests/test_a.py'] refuses-unfiltered:src/a.py,tests/conftest.py\nrec-fixture-json (ordinary=fix): HEAD files ['pytest tests/fixtures/a.json'] -> after files-no-suite ['test'] refuses-unfiltered:tests/fixtures/a.json\nrec-setup (ordinary=fix): HEAD files ['npx vitest run test/setup.ts src/a.test.ts'] -> after files ['npx vitest run src/a.test.ts'] refuses-unfiltered:test/setup.ts\nrec-tests-readme (ordinary=fix): HEAD files ['npx jest __tests__/README.md'] -> after files-no-suite ['test'] refuses-unfiltered:__tests__/README.md\nrelated-eq-form (ordinary=fix): HEAD files-no-suite ['test'] refuses-unfiltered:src/a.ts -> after files-no-suite ['test']\nrelated-then-config (ordinary=fix): HEAD files ['npx jest --findRelatedTests src/Card.tsx --config'] refuses-unfiltered:docs/guide.md -> after files ['npx jest --findRelatedTests src/Card.tsx --config jest.config.js'] refuses-unfiltered:docs/guide.md\nsib-c/mixed (ordinary=fix): HEAD files ['pytest -c src/Card.test.tsx'] refuses-unfiltered:src/Card.tsx,docs/guide.md,.github/workflows/ci.yml,jest.config.js -> after files ['pytest -c setup.cfg src/Card.test.tsx'] refuses-unfiltered:src/Card.tsx,docs/guide.md,.github/workflows/ci.yml,jest.config.js\nsib-c/suite (ordinary=fix): HEAD files ['pytest -c src/Card.test.tsx'] -> after files ['pytest -c setup.cfg src/Card.test.tsx']\nsib-config/mixed (ordinary=fix): HEAD files ['npx jest --config src/Card.test.tsx'] refuses-unfiltered:src/Card.tsx,docs/guide.md,.github/workflows/ci.yml,jest.config.js -> after files ['npx jest --config jest.config.js src/Card.test.tsx'] refuses-unfiltered:src/Card.tsx,docs/guide.md,.github/workflows/ci.yml,jest.config.js\nsib-config/suite (ordinary=fix): HEAD files ['npx jest --config src/Card.test.tsx'] -> after files ['npx jest --config jest.config.js src/Card.test.tsx']\nvitest-related+pw-spec ordinary: HEAD files ['npx vitest related src/y.ts e2e/y.spec.ts --run', 'npx playwright test src/y.ts e2e/y.spec.ts'] -> after files ['npx vitest related src/y.ts e2e/y.spec.ts --run', 'npx playwright test e2e/y.spec.ts'] refuses-unfiltered:src/y.ts; fix: HEAD files ['npx vitest related src/y.ts e2e/y.spec.ts --run'] -> after files ['npx vitest related src/y.ts --run', 'npx playwright test e2e/y.spec.ts']\nvitest-related+pw ordinary: HEAD files ['npx vitest related src/y.ts --run', 'npx playwright test src/y.ts'] -> after files ['npx vitest related src/y.ts --run'] refuses-unfiltered:src/y.ts; fix: HEAD files ['npx vitest related src/y.ts --run'] -> after files ['npx vitest related src/y.ts --run']\nUNCHANGED (HEAD == after, ordinary and fix):\nalways-related, always-sib-no-template, app-config-related, npm-related, rec-k-related/config, rec-k-related/document, rec-k-related/mixed, rec-k-related/source, rec-k-related/suite, rec-k-related/workflow, rec-related-then-config, rec-related/config, rec-related/document, rec-related/mixed, rec-related/source, rec-related/suite, rec-related/workflow, rec-suite/config, rec-suite/document, rec-suite/mixed, rec-suite/source, rec-suite/suite, rec-suite/workflow, related-no-vitest, runner-only-program, runner-suites, sib-c/config, sib-c/document, sib-c/source, sib-c/workflow, sib-config/config, sib-config/document, sib-config/source, sib-config/workflow, sib-program/config, sib-program/document, sib-program/mixed, sib-program/source, sib-program/suite, sib-program/workflow, sib-related/config, sib-related/document, sib-related/mixed, sib-related/source, sib-related/suite, sib-related/workflow, sib-suite/config, sib-suite/document, sib-suite/mixed, sib-suite/source, sib-suite/suite, sib-suite/workflow, sib-vitest-related/config, sib-vitest-related/document, sib-vitest-related/mixed, sib-vitest-related/source, sib-vitest-related/suite, sib-vitest-related/workflow, suite-as-program, sweep-harness, vitest-related-doc\n\nPositional rows always-rec, always-sib, always-suite-sib, program-rec: unchanged (green before and after); template-own-path (new): HEAD and after both files ['pytest tools/plugin_hooks.py tests/test_x.py'], refusal names tools/plugin_hooks.py only when written into the slot - it guards the template alignment (mutation above).",
+        "descriptive": "A files-derived gate is now read command by command: each command keeps its program and its options' arguments, takes sources only by its own related-tests word and runner language, is handed only the declared paths its own slot takes, and a conftest, config, setup or fixture file under a test directory is no suite."
       },
       "startedAt": "2026-10-29T09:52:24Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-29T10:34:38Z",
+      "verifiedBy": [
+        "gdk4: per-command source-taking readings (vitest related + playwright, jest related && pytest, -k related, npx related) and the per-command refusal with its allow rows and the language row",
+        "gdk6: each command handed only what its own slot takes, a command or entry left with none dropped, recorded template rebuilt per command and filled byte for byte when uniform",
+        "pks3: path_kind kind before directory (conftest.py, *.config.*, setup files, README under __tests__, fixtures/__mocks__/__snapshots__/data, suite by mark, prefix, or test dir for a source file) and slot_takes' runner-language rows",
+        "gdk5: slot located per command - --config/-c/--cov-config/--rootdir before and after the slot and the = form kept in place, two-program chain keeps tools/b.py, slot-less chain copied whole, program kept, suite-as-program is the slot",
+        "gdk7: a path the recorded template names itself is not the slot, the same path written into it is",
+        "slm1 (existing case, test_audit_task.py): whole-gate comparison per spelling, new _GS_COMMAND_ROWS table from every reviewer-probe scenario and the brief's rows, positional row template-own-path"
+      ],
       "notes": [
         {
           "at": "2026-10-29T09:38:23Z",
@@ -2150,12 +2172,24 @@
         "runId": "2026-10-29T10:34:35Z.df4c88",
         "status": "passed",
         "at": "2026-10-29T10:34:35Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "64baa14096a9",
+        "at": "2026-10-29T10:34:38Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-29T10:27:52Z",
+        "basis": "`python3 tests/test__gate_derive.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 59 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - gdk5 (house FAIL): SELFTEST FAILED: 56/59 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P148.22-xpz",
       "title": "The recorded tree key case tells realpath from abspath on every platform",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fix P148-R43 (docs/audit/phases/P148.json review.findings): tk2o/tk2t compare the written testedState.tree.key with _evidence_io.tree_key over plain temp trees, so a writer hashing abspath instead of realpath passes on Linux (only macOS's /var symlink tells them apart). Reach one tree through a symlink so realpath and abspath differ on every platform (skip with a stated reason only where symlinks cannot be made). Prove red with an abspath writer at the write site in your tree (purge __pycache__ between mutate and restore). Edit only the test file. No F/P/BUG ids in code.",
       "files": [
         "tests/test__evidence_io.py",
@@ -2177,14 +2211,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-29T10:34:39Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -2199,7 +2233,13 @@
       ],
       "fixes": [
         "P148-R43"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-29T10:39:02Z.e5367c",
+        "status": "passed",
+        "at": "2026-10-29T10:39:02Z"
+      }
     }
   ],
   "reviewPerTask": "signals",
