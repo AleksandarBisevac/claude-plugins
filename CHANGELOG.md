@@ -203,7 +203,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   that build and reset the throwaway tree now each run in a process group, as a test run does,
   so a build stopped on its timeout has its group killed and its output drained before the
   removal starts, and the removal forces past the lock `git worktree add` holds on a tree it
-  has not finished building. On Windows such a run used to report the throwaway left behind.
+  has not finished building. Such a run used to report the throwaway left behind.
   A registration whose directory was made without its `.git` file is still refused by git, and
   is still reported left behind.
 - **A timed-out teardown is reported confirmed only when it is.** The red-first helper, the

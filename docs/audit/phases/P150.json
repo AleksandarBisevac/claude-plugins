@@ -29,7 +29,8 @@
         "severity": "low",
         "file": "CHANGELOG.md:85-91",
         "issue": "The throwaway entry's last-but-one sentence, 'On Windows such a run used to report the throwaway left behind.', scopes the defect to Windows. The code that landed is not Windows-specific: stamp-verification.py _git(group=True) docstring says subprocess.run's timeout kills only the direct child so the rest went on writing into the throwaway, and _remove_throwaway's docstring says a single --force never removes the lock git worktree add holds on a tree it has not finished. P149.2's own claims block records a killed-build probe leaving the tree 27 times of 30 before the fix on the machine it ran on, not on Windows. The Windows scoping comes from the commit title, not from the diff.",
-        "resolution": "Drop 'On Windows' (say the run used to report the throwaway left behind), or keep it only if the Windows-only observation can be cited; the process-group and double --force fixes apply on every platform."
+        "resolution": "Drop 'On Windows' (say the run used to report the throwaway left behind), or keep it only if the Windows-only observation can be cited; the process-group and double --force fixes apply on every platform.",
+        "fixTask": "P150.2-gzk"
       }
     ],
     "outcome": "[findings: 1 - 0 high, 0 med, 1 low; 0 with a recorded fix commit]"
@@ -39,7 +40,7 @@
     {
       "id": "P150.1",
       "title": "The unreleased changelog is true of the red-first deadline and lists the Windows teardown and derived-gate fixes",
-      "status": "in_progress",
+      "status": "done",
       "description": "CHANGELOG.md [Unreleased] predates P149's landed changes. Read `git log --no-merges --format='%h %s' 977b133e~30..HEAD -- plugins/audit` restricted to the P149 commits (b7386fe6, aa34ebd4, 70a9023e, 6c0e8686 and the P149.8/P149.9/P149.10 commits - list them with `git log --grep P149 --oneline`) and each commit's diff, and write each line from what landed, not from its title. (1) Rewrite the existing Added entry 'The red-first deadline is sized from what the command costs' so every sentence is true of stamp-verification.py at HEAD: recorded slot-seconds are converted to the wall time the sweep's own schedule gives; the deadline is sized from the wall time the proof's runs need; a proof whose runs cannot fit is refused before any run with a basis naming the need and the deadline; a run left short is not started; what is held back for the fix run is one run's wall time. (2) Add Fixed lines, house style (bold lead sentence, prose after), for the user-visible fixes: a red-first run whose throwaway build times out removes the throwaway (the process group is killed and drained, a locked tree is removed) instead of reporting it left behind; a timed-out teardown in the red-first helper, the task gate runner and the lint probe is reported confirmed only when the kill, the drain to end of pipe and the root's exit all hold; a gate derived at add time names each suite once and includes every suite the task declares, so add no longer refuses the gate it derived. Test-only and tooling changes (fixtures, tests/, tools/) get no line. Merge with existing entries rather than duplicating (the 'A gate derived from a task's files hands each runner only what it takes' Fixed entry may absorb the derived-gate line). No number written into prose (the doc prose lint must stay empty); no F/P/BUG ids. Run the before-you-claim skill. Edit only CHANGELOG.md.",
       "files": [
         "CHANGELOG.md"
@@ -60,19 +61,94 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "722c808f01bb",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "CHANGELOG.md [Unreleased] only. (1) Rewrote the Added entry 'The red-first deadline is sized from what the command costs' against stamp-verification.py at HEAD (sweep_wall/schedule_wall/sweep_jobs: slot-seconds turned into the wall time of the sweep's costliest-first schedule over its workers; sized_deadline: TIMEOUT_PER_COST times proof_need over PROOF_RUNS (the baseline, task and fix runs), longer than the default, capped at MAX_TIMEOUT; fit_problem, called before _at_head, refuses before any run with a basis naming the need and the deadline, and it still applies under --timeout; start_problem guards each _isolated_run; sweep_budget reserve = min(wall, timeout // 2)). (2) The existing Fixed entry 'A gate derived from a task's files hands each runner only what it takes' now also covers the derived-gate fixes: _gate_derive._once dedup in point_shape/repointed/repointed_by_runner, so add no longer refuses its own gate, and audit-task._task_suite_paths, so a tests.add or failing-from gate runs every suite the files declare and the basis names them. (3) Added two Fixed entries. First, the red-first throwaway build/reset git calls each run grouped (stamp-verification.py:3245, :3637, group=True), and the removal is 'worktree remove --force --force' (:3294); the remaining left-behind case (a directory with no .git file) is stated. Second, a teardown is confirmed only through _proc_group.stop_and_drain (kill AND drain-to-EOF AND root exited), used by stamp-verification _run_in, run-test-gate _shell ('teardown: unconfirmed') and drive-phase run_lint_probe ('(not confirmed)'). Test-only commits got no line: P149.1 (tests/test_drive_phase.py only). No gate run: the brief says this task has nothing of its own to run. Verifications, not gates: _deps.doc_prose_numbers() over the default scan set -> 0 findings, exit 0, after the final edit; added lines contain no digit and no F/P/BUG id (grep count 0); python3 tests/test__refs.py --selftest -> exit 0, all cases passed (its path-reference lint reads CHANGELOG.md, and the new text names run-test-gate.py). An earlier wrapper attempt exited 127 only because macOS has no `timeout` binary, so it is not a test result. Dependants: tests/test__deps.py and tools/lints/_deps.py - still correct, the doc prose scan stays empty; tools/lints/_output_lints.py and tests/test__output.py - still correct, CHANGELOG.md keeps its rows (PROSE_SCAN_EXEMPT, _COMMAND_SCAN_SKIP) unchanged and no heading moved; tools/lints/_refs.py and tests/test__refs.py - still correct, its suite passes with the new path mentions; tests/test__panel_settings.py - still correct, its CHANGELOG.md row is a file-name entry and no heading or version line changed; tools/check-release-published.py - still correct, it reads version sections and no version heading was touched.",
+        "descriptive": "The 3.7.0 unreleased changelog now states the red-first wall-time deadline as the code has it, and lists the Windows throwaway-removal, confirmed-teardown and derived-gate fixes."
       },
       "startedAt": "2026-10-29T17:16:09Z",
-      "completedAt": null,
+      "completedAt": "2026-10-29T17:22:27Z",
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-29T17:20:30Z.5e274d",
         "status": "passed",
         "at": "2026-10-29T17:20:30Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "722c808f01bb",
+        "at": "2026-10-29T17:22:27Z",
+        "return": "docs/audit/evidence/returns/P150.1/20261029T171609Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task with expectRedFirst false and no tests.add: a changelog edit has no case to prove red",
+        "at": ""
+      }
+    },
+    {
+      "id": "P150.2-gzk",
+      "title": "fix P150-R1: The throwaway entry's last-but-one sentence, 'On Windows such a ...",
+      "status": "in_progress",
+      "description": "The throwaway entry's last-but-one sentence, 'On Windows such a run used to report the throwaway left behind.', scopes the defect to Windows. The code that landed is not Windows-specific: stamp-verification.py _git(group=True) docstring says subprocess.run's timeout kills only the direct child so the rest went on writing into the throwaway, and _remove_throwaway's docstring says a single --force never removes the lock git worktree add holds on a tree it has not finished. P149.2's own claims block records a killed-build probe leaving the tree 27 times of 30 before the fix on the machine it ran on, not on Windows. The Windows scoping comes from the commit title, not from the diff.\n\nResolution asked: Drop 'On Windows' (say the run used to report the throwaway left behind), or keep it only if the Windows-only observation can be cited; the process-group and double --force fixes apply on every platform.",
+      "files": [
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "phase-no-paths"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-29T17:22:30Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-29T17:22:29Z",
+          "text": "scope: CHANGELOG.md, every path the finding(s) P150-R1 name"
+        },
+        {
+          "at": "2026-10-29T17:22:29Z",
+          "text": "no suite: CHANGELOG.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__deps.py, tests/test__output.py, tests/test__panel_settings.py, tests/test__refs.py, tools/lints/_deps.py, tools/lints/_output_lints.py and 2 more"
+        },
+        {
+          "at": "2026-10-29T17:22:29Z",
+          "text": "gate-only, not tdd: every file P150-R1 names is a document (CHANGELOG.md) with no test of its own, so there is no case to write first and no red to show; the gate the task carries is its check"
+        }
+      ],
+      "fixes": [
+        "P150-R1"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-29T17:39:08Z.174deb",
+        "status": "passed",
+        "at": "2026-10-29T17:39:08Z"
       }
     }
   ],

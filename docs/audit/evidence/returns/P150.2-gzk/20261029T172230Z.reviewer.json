@@ -1,0 +1,15 @@
+{
+ "findings": [],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clause: 'Drop On Windows (say the run used to report the throwaway left behind)'. Diff CHANGELOG.md:206 changes 'On Windows such a run used to report the throwaway left behind.' to 'Such a run used to report the throwaway left behind.' - exactly the resolution asked. The executor's outcome describes this diff accurately; its claim that stamp-verification.py has no platform branch at the double --force removal (:3294) and group=True calls (:3245, :3637) was checked against the tree. The remaining Windows mentions in the unreleased section (:97, :130, :213) each describe a Windows-only mechanism (command-line length, Windows child output, taskkill) and are rightly left. Dependants: the edit adds no number, path, basename or heading, so the lint/readers listed are unaffected; the 9 unshown dependants were not enumerated by the brief or by the executor.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Executor filed not-attempted: gate-only task, expectRedFirst false, tests.add none; a one-sentence prose correction owes no red.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "The task adds no test and the diff touches only CHANGELOG.md prose. tests.gate includes tools/sweep-selftests.py, which runs the whole tree (a whole project), so the question is not asked; I read no individual test selection."
+ },
+ "verdict": "clean",
+ "tasks": []
+}
