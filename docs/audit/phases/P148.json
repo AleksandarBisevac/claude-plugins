@@ -115,9 +115,23 @@
         "file": "tests/test_drive_phase.py:3669-3672",
         "issue": "sv7 can no longer fail, and this diff is what made it so. It compares _evio.tree_key(where) with rtg.tree_key(where), and run-test-gate.py:5128 now binds tree_key = _ev.tree_key, so it compares one function with itself. P131-R39 asked to keep sv7 as the pin until the delegation landed. The file is outside this task's declared files and the executor reported it, so it was not edited. It is not in the gate command, so the inherited-tests question does not reach it.",
         "resolution": "In the next task that may touch tests/test_drive_phase.py, delete sv7 or turn it into an identity check. tk1 in tests/test__evidence_io.py is now the real pin."
+      },
+      {
+        "id": "P148-R14",
+        "severity": "low",
+        "file": "tools/release.py:294-296",
+        "issue": "step_preflight's docstring still says the question is the one `release_permitted` asks, but the body now calls `release_verdict` directly (line 304). The executor's claim that the docstrings were reworded to match leaves this one behind.",
+        "resolution": "Change the docstring to say `release_verdict` asks the open-bug / provisional-phase question."
+      },
+      {
+        "id": "P148-R15",
+        "severity": "low",
+        "file": "docs/audit/phases/P137.json (P137-R30)",
+        "issue": "Answered no-change on the grounds that the filed return cannot be edited and that the mutation table belongs to P148.6. That holds for the record. The finding's second resolution (re-run the mutations so the claim has a basis) is not carried out here, so sc-ua12..sc-ua17 and xs6b are still not shown red by anything this task filed. P148.6's outcome does mention sc-ua and mutations, which is where the proof would live.",
+        "resolution": "No code change owed by this task. Phase sign-off should confirm P148.6's filed mutation table covers those cases."
       }
     ],
-    "outcome": "[findings: 13 - 0 high, 1 med, 12 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 15 - 0 high, 1 med, 14 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -514,7 +528,7 @@
     {
       "id": "P148.7",
       "title": "The task verbs' and status readers' carried lows: a cancelled fix task releases its findings, a files-derived gate hands only suites, skill-default wording, portability grades and their cases",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix the low review findings P138-R9, P138-R10, P138-R11, P138-R16, P138-R17, P142-R49, P144-R1, P147-R7, carried to BUG-29-dau. Each finding's file, issue and resolution is in its phase shard (docs/audit/phases/<phase>.json, review.findings, by id). Read each against the code at HEAD first: lines have moved since it was filed. For each finding either fix it - with a case proven red first where the finding is about behaviour or a missing case - or, where HEAD no longer has the defect or the finding records a past return or plan record that nothing in the tree can change, say so with the evidence. The outcome answers every listed finding by id, one line each: fixed (what changed, which case) or no-change (why, with the line read). Edit only the declared files; a fix that needs another file is reported, not made. No F/P/BUG ids in code, comments or docstrings. No number written into prose.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -545,14 +559,24 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "04261ee5efac",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "FINDINGS. P147-R7 fixed: audit-task.py _release_findings(phase, tids) takes the cancelled task id(s) off every finding of the owning phase that names it as fixTask and carries no commit (a commit-settled finding keeps the pair the tally counts); _locked_cancel calls it for a task cancel and for a phase cancel's cascade; the released entries ride the existing task.cancel/phase.cancel journal row as changes {id, field: fixTask, from, to: null}, the summary names them, --json carries releasedFindings, and the human output prints the freed ids. drive-phase fix_refusal (drive-phase.py:6294) and add --fixes (audit-task.py _fixes refusal) both read only fixTask, so both routes are freed. Case fd9 (fd-block). P142-R49 fixed: _ordinary_task_gate's files arm now points every task at the suite paths among its files only, falling to the wide gate with basis files-no-suite when none is a suite (it was fix-task-only); _files_gate_refusal now asks every task with a files-derived gate, not only fix tasks; scope re-derives a pending task's gate when --files or --tests-add moves and its stored gateBasis is a derivation word (_DERIVED_GATE_BASES; declared/cleared/failing-from-run/absent untouched) via _gate_follows_scope + _rederive_gate, journalled as tests.gate/tests.gateBasis changes. Cases dg3 (rewritten: regression task naming only a source file now gets the wide gate), dg3b, dg4, dg4b (allow: declared gate untouched), dg4c (at7-block). P138-R9 partly fixed: audit-lookup.py skills_lines() names the plan default (meta.defaultSkills), area default and task skill when nothing resolves, and tells an opted-out task it opted out (case co2); _manifest_typos._skills_in_use counts a non-empty meta.defaultSkills as use (case dsv5 in test_audit_task.py, since test__manifest_typos.py is not in this task's files). NOT made: adding the plan-default exit to the unresolved-skills warning text, because tests/test__warning_groups.py:32 SKILLS_BODY pins the whole body byte for byte (wg2) and is outside this task's files; follow-up = change _manifest_typos.py:252 text and SKILLS_BODY together. P138-R10 fixed: case dsv4 (dsv-block) passes a nonexistent manifest positional with --skills from inside another project: exit 2 naming the root, cwd project byte-identical with no journal row; shown red by removing the positional move. P138-R11 no-change: it asks to retarget P138's task gate set, a plan record of a finished task that nothing in the tree changes; this task's own gate does include tests/test_audit_lookup.py, so co1/co2 run in the recorded evidence. P138-R16 fixed: _doctor_policy._scan_sighting(entry, places) names the directory/front-matter mismatch when the scan's SKILL.md sits in a skills directory the resolver read (_skills_dir_read over resolve_skill places) under another directory name; other sightings keep the old sentence. Case dp53c. P138-R17 fixed for the panel: _panel_write._reject_stranded resolves each name through _skill_places.resolve_skill and skips a stranding verdict whose path is not the file a session loads (UNKNOWN, accepted, as doctor grades it); a name that resolves nowhere keeps the scan verdict. Optional _discover seam added for the case. Case dp56 (doctor and panel agree over both copies). audit-status.py portability_block no-change: it scans with scope=_panel_discovery.SCOPE_REPO and reads nothing under a home directory (its docstring and discover call), so the repo copy is the one a clone loads. The descriptive-outcome half of R17 is a past return nothing in the tree changes. P144-R1 fixed: _kept_quoting_cases / kt10 calls M._kept_tree_remedy('P2.1 set aside 1', path with space, single quote and backslash, None) and asserts the remover, both saveFirst commands and the inner submodule push read back the path as one word; red under _shell_word returning text unquoted. Also: audit-status.py docstring now names _output_lints.prose_number_claims() (tools/lints/). RUNS. Gate (sweep over the four suites) exit 0: 4/4 files ok, 1763 cases. Verification only, not gates: sweep over test_drive_phase, test_commit_task_work, test__filed_returns, test__panel_write exit 0 (4/4 files ok); test__manifest_typos, test__warning_groups, test__manifest_rules, test__manifest_vocab, test__doctor_report each ALL PASS; ruff check on the ten files: All checks passed; house_style_violations 0, prose_number_claims 0; layer_violations shows one entry, panel/_panel_state.py, identical in the project tree, not this task's. Running test_audit_status.py bare in my shell showed sl1-sl3 red, the same file is green under the sweep, so that is the session environment and not this change. DEPENDANTS. audit-task.py: tests/test__output.py, PLUGIN-BUILD-GUIDE.md, docs/research/*.md (paths) and hooks journal-writes.py/require-plan.py (basenames) still correct: no path or public name moved; _journal_cancel gained an optional released=() argument and has no caller outside this file; _cancel_task, _allocate_phase_id, _build_phase, _allocate_id unchanged. CHANGED MEANING, not edited because outside the files: plugins/audit/schema/audit-plan.schema.json:1848, _manifest_vocab.py:194-211 comments, commands/init.md:402 and reference/verbs-in-full.md:370 describe files-no-suite as a fix task's word only; it is now any task's. audit-lookup.py: dependants (schema, _clause_coverage, drive-phase, _areas, _filed_returns, audit-task) still correct: compose_executor_brief keeps its shape, only the no-skill sentence is reworded and nothing else reads it (grep 'No skill resolves' finds only audit-lookup.py); new public skills_lines. _manifest_typos.py: _manifest_rules aliases _skills_in_use (now also true for a non-empty plan default), test__manifest_typos 20/20, test__manifest_vocab 67/67, composition.js names only _model_near_miss (untouched), PLUGIN-BUILD-GUIDE unchanged names. _doctor_policy.py: audit-doctor.py, test__doctor_report.py (green), tools/affected.py, PLUGIN-BUILD-GUIDE still correct: check_plan_skills signature unchanged, _scan_sighting private with one caller. _panel_write.py: its importers (close-phase, commit-task-work, derive-phase-gate, full-gate, import-evidence, run-test-gate, audit-task, migrate-json-encoding) still correct: _reject_stranded gained an optional _discover and its one production caller (_panel_write.py:2467) passes none; new imports _skill_places and _claude_home are lower-layer (no new layer violation); test__panel_write 268/268. audit-status.py: docstring-only change, dependants unaffected. Test files: _cases/_selftest/_cli/_success_line_cases names unchanged; test_commit_task_work imports from test_audit_task (green); tools/affected.py reads them by path (unchanged). FOLLOW-UPS: the same-file comparison now exists in _doctor_policy._same_file and _panel_write._one_file; its one home is _skill_places.py, outside these files. The warning-text exit (P138-R9 half) as above.",
+        "descriptive": "A cancelled fix task frees its findings for a new fix task, every task's files-derived gate hands the runner only suites and follows scope edits, the brief and doctor say why a skill does not resolve, the panel's strict refusal grades the copy a session loads, and the kept-tree quoting is pinned on every run."
       },
       "startedAt": "2026-10-29T00:53:30Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-29T01:40:05Z",
+      "verifiedBy": [
+        "fd9: cancel of a fix task clears fixTask on its open finding (journalled on the cancel row), keeps it on a commit-settled one, and a second add --fixes then succeeds",
+        "dg3 (rewritten) and dg3b: a regression task's files arm hands only suite paths to the runner, wide gate when none",
+        "dg4, dg4b, dg4c: scope --tests-add / --files re-derive a pending task's derived gate; a declared gate is left alone",
+        "dsv4: default-skills with a nonexistent manifest positional refuses by its root and leaves the cwd project untouched",
+        "dsv5: a non-empty meta.defaultSkills counts as use of skills, an empty one does not",
+        "co2: the brief's Skills section names the plan default when nothing resolves and tells an opted-out task it opted out",
+        "dp53c: a skill in a read skills directory under another directory name is reported as the directory/front-matter mismatch",
+        "dp56: the panel's strict-tier refusal and doctor grade the same copy of a name held by both tiers",
+        "kt10: kept-tree remover and save-first commands quote a path with a space, quote and backslash on every run"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-29T01:40:02Z.226349",
@@ -564,7 +588,19 @@
           "at": "2026-10-29T01:34:07Z",
           "text": "files widened by PLUGIN-BUILD-GUIDE.md: owed by _deps.map_drift on run 2026-10-29T01:34:06Z.274dba"
         }
-      ]
+      ],
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "04261ee5efac",
+        "at": "2026-10-29T01:40:05Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-29T01:27:39Z",
+        "basis": "`python3 tests/test_audit_task.py --selftest --stage fd-block` in a throwaway tree at HEAD exited 1 with 1 of 9 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - fd9 (house FAIL): SELFTEST FAILED: 8/9 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
     },
     {
       "id": "P148.8",
@@ -598,7 +634,12 @@
       "startedAt": "2026-10-29T00:53:33Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-29T01:41:27Z.679a83",
+        "status": "passed",
+        "at": "2026-10-29T01:41:27Z"
+      }
     },
     {
       "id": "P148.9-xpz",
@@ -648,7 +689,12 @@
       "fixes": [
         "P148-R1"
       ],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-29T01:42:59Z.b785db",
+        "status": "passed",
+        "at": "2026-10-29T01:42:59Z"
+      }
     }
   ],
   "reviewPerTask": "signals",

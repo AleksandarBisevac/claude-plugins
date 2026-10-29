@@ -13,7 +13,7 @@ THE STEPS, IN ORDER, each skipped on a later run once its state file entry
 reads "done":
 
   preflight            the open-bug / provisional-phase question
-                        `release_permitted` asks - built only from this
+                        `release_verdict` asks - built only from this
                         repository's own release-guard hook's predicates
                         (under `.claude/hooks/`), read rather than restated -
                         plus the tag being free, BEFORE any file is touched
@@ -150,10 +150,11 @@ def release_permitted(ctx):
 
     Built ONLY from the guard hook's own `tree_verdict`, loaded by path - the
     decision the hook itself makes, never a second copy of its control flow
-    here. Asked at `preflight` and again immediately before every step that
-    touches a remote: time passes between the two (a CI wait can run for an
-    hour), and a bug filed in that gap must stop the next push rather than let
-    a preflight answer from before the bug existed keep authorising one.
+    here. Asked immediately before every step that touches a remote, after
+    `preflight` asked `release_verdict` for the same answer with its sentence:
+    time passes between the two (a CI wait can run for an hour), and a bug
+    filed in that gap must stop the next push rather than let a preflight
+    answer from before the bug existed keep authorising one.
 
     The session the bypass is armed for is read from `CLAUDE_CODE_SESSION_ID` -
     absent, no bypass is possible, matching the guard hook's own single-session
@@ -295,10 +296,14 @@ def step_preflight(ctx):
     phase question `release_permitted` asks, and that the tag is free.
     Captures the PRE-BUMP version into the state, because `followers` needs
     it after `bump-version` has already overwritten `plugin.json` on a later
-    run."""
-    allowed, refusal = release_permitted(ctx)
+    run.
+
+    Its note is the verdict's own sentence, so a slot that released over an
+    open bug or a held phase says what it released over, and only a plan
+    holding nothing reads as holding nothing."""
+    allowed, verdict = release_verdict(ctx.repo)
     if not allowed:
-        return False, refusal
+        return False, verdict
     rc, out = ctx.run(["git", "rev-parse", "v%s" % (ctx.version,)])
     if rc == 0:
         return False, ("tag v%s already exists - a pushed tag is never moved "
@@ -306,7 +311,7 @@ def step_preflight(ctx):
     with io.open(os.path.join(ctx.repo, PLUGIN_JSON_REL),
                 encoding="utf-8") as fh:
         ctx.state["oldVersion"] = json.load(fh).get("version")
-    return True, "no open bug, no held phase, tag v%s is free" % (ctx.version,)
+    return True, "%s; tag v%s is free" % (verdict, ctx.version)
 
 
 def step_bump_version(ctx):
@@ -413,10 +418,22 @@ def step_followers(ctx):
 
 
 def step_verify_release(ctx):
+    """`verify.sh --release` shows its open-bug row's verdict even when the
+    row passes (`run_noted`), but `ctx.run` captures that output and a pass
+    would keep none of it - so an armed slot releasing over an open bug would be
+    recorded as a bare green. The note carries `release_verdict`'s sentence
+    instead, asked here of the same reader that row runs (`release.py
+    permitted`) rather than cut out of the captured text. Asked after the
+    run, it can refuse what the run passed - a slot that expired, a bug filed
+    meanwhile - and then the step fails, because the pass is no longer the
+    answer that reader gives."""
     rc, out = ctx.run(["sh", "tools/verify.sh", "--release"])
     if rc != 0:
         return False, "tools/verify.sh --release failed: %s" % (excerpt(out),)
-    return True, "tools/verify.sh --release is green"
+    allowed, verdict = release_verdict(ctx.repo)
+    if not allowed:
+        return False, verdict
+    return True, "tools/verify.sh --release is green; %s" % (verdict,)
 
 
 def step_commit(ctx):
@@ -927,6 +944,20 @@ def _workflow_tier_input(text):
     return {"default": keys.get("default"), "options": options}
 
 
+def _read_text(path):
+    """A case's whole-file read, closed by a `with` rather than left to the
+    collector."""
+    with io.open(path, encoding="utf-8") as fh:
+        return fh.read()
+
+
+def _write_text(path, text):
+    """A case's whole-file write, closed - and so flushed - before the next
+    reader of the file runs."""
+    with io.open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+
+
 def _fixture_repo(bugs=None, meta=None, phases=None):
     """A scratch tree carrying just what the steps under test read: the plan
     (for `preflight`), `plugin.json` (for `bump-version`), `CHANGELOG.md` and
@@ -973,7 +1004,7 @@ def _cases(check):
                      state_path=os.path.join(tmp, "state.json"))
         ok_f, detail_f = step_followers(ctx)
         ok_c, detail_c = step_commit(ctx)
-        texts = {n: io.open(os.path.join(folder, n), encoding="utf-8").read()
+        texts = {n: _read_text(os.path.join(folder, n))
                  for n in list(pinned) + list(unpinned)}
         adds = [c for c in runner.calls if c.startswith("git add")]
         staged = adds[0].split(" ") if adds else []
@@ -1575,8 +1606,7 @@ def _cases(check):
     # branch that let an unreadable plan through, or answered in its own words,
     # would not say.
     for how, damage in (
-            ("is not JSON", lambda plan: io.open(
-                plan, "w", encoding="utf-8").write(u"{not json")),
+            ("is not JSON", lambda plan: _write_text(plan, u"{not json")),
             ("is missing", os.remove)):
         tmp = _fixture_repo()
         try:
@@ -1587,11 +1617,11 @@ def _cases(check):
                   code == 1 and said.startswith("refused: ")
                   and "open bug is UNKNOWN" in said
                   and "merged phase is UNKNOWN" in said)
-            # THE SECOND DIRECTION: the refusal is conditional. The guard
-            # lets an armed `#release-with-bugs` slot release over an unread
-            # list exactly as over a read one (its gr18 refuses only without
-            # one), so a verdict refusing here regardless would be a second
-            # rule.
+            # THE SECOND DIRECTION: the refusal is conditional. The guard's
+            # `tree_verdict` lets an armed `#release-with-bugs` slot release
+            # over an unread list exactly as over a read one - its gr72e pins
+            # that pairing; gr18 asserts only the refusal with no slot - so a
+            # verdict refusing here regardless would be a second rule.
             arm_slot(tmp, mine)
             code, said = ask(tmp, mine)
             check("rl21b ...a plan that %s and an armed slot for this session "
@@ -1601,6 +1631,84 @@ def _cases(check):
                   and "UNKNOWN" in said)
         finally:
             remove_tree(tmp)
+
+    # --- a PASSING step says what it released over -----------------------------
+    # `verify.sh --release` prints the armed slot's release-over line beneath
+    # its row, but the pipeline captures that output and a pass kept none of
+    # it; and preflight's note read "no open bug" while a slot released over
+    # one. Each run below is the pipeline in process, under a session whose
+    # slot is armed or not, so the step notes are what the state file records.
+    def pipeline_notes(repo, session, seeded=(), world=None):
+        prior = os.environ.get("CLAUDE_CODE_SESSION_ID")
+        os.environ["CLAUDE_CODE_SESSION_ID"] = session
+        try:
+            state = {"steps": {}, "version": "9.9.9", "oldVersion": "1.0.0"}
+            for name in seeded:
+                mark(state, name, "done", "fixture: pre-seeded done")
+            runner = FakeRunner(_faithful_responses(world or _new_world()))
+            ctx = Context(repo, "9.9.9", push=False, runner=runner,
+                         state=state,
+                         state_path=os.path.join(repo, "state.json"))
+            code, detail = run_pipeline(ctx, out=io.StringIO())
+            notes = dict((name, (entry or {}).get("detail") or "")
+                         for name, entry in ctx.state["steps"].items())
+            return code, detail, notes
+        finally:
+            if prior is None:
+                os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
+            else:
+                os.environ["CLAUDE_CODE_SESSION_ID"] = prior
+
+    tmp = _fixture_repo(bugs=[bug])
+    try:
+        arm_slot(tmp, mine)
+        code, detail, notes = pipeline_notes(tmp, mine)
+        check("rl24 over an open bug with a slot armed for this session, the "
+              "verify-release step's recorded note names the bug it released "
+              "over: %r / %r" % (detail, notes.get("verify-release")),
+              code == 0
+              and notes.get("verify-release", "").count("BUG-4") == 1
+              and "#release-with-bugs" in notes.get("verify-release", ""))
+        check("rl24b ...and preflight's note names it too, never claiming "
+              "the plan holds no open bug: %r" % (notes.get("preflight"),),
+              notes.get("preflight", "").count("BUG-4") == 1
+              and "no open bug" not in notes.get("preflight", ""))
+    finally:
+        remove_tree(tmp)
+
+    # THE OTHER DIRECTION: a note that always named a release-over would read
+    # a bug into a clean plan. Over a plan holding nothing, both notes say so.
+    tmp = _fixture_repo()
+    try:
+        code, detail, notes = pipeline_notes(tmp, mine)
+        check("rl24c over a plan holding nothing, both notes say nothing "
+              "holds the release and neither names a bypass: %r"
+              % ([notes.get("preflight"), notes.get("verify-release")],),
+              code == 0
+              and all("no open bug and no held phase" in notes.get(n, "")
+                      and "#release-with-bugs" not in notes.get(n, "")
+                      for n in ("preflight", "verify-release")))
+    finally:
+        remove_tree(tmp)
+
+    # A verify run that passed is not the verdict NOW: a slot that expired, or
+    # a bug filed, after `verify.sh` asked must stop the step rather than let
+    # its pass stand as an answer the reader no longer gives.
+    tmp = _fixture_repo(bugs=[bug])
+    try:
+        world = _new_world()
+        world["committed"] = True
+        code, detail, notes = pipeline_notes(
+            tmp, other, world=world,
+            seeded=("preflight", "bump-version", "finalize-changelog",
+                    "followers", "commit"))
+        check("rl24d a verify run that passed, over a plan the verdict now "
+              "refuses, fails the verify-release step naming the bug: %r"
+              % (detail,),
+              code == 1 and "BUG-4" in detail
+              and notes.get("verify-release") == detail)
+    finally:
+        remove_tree(tmp)
 
     # ONE DECISION, NOT TWO: `release_verdict` takes the guard's own function
     # and restates none of its control flow. A pin on the source because the
@@ -1625,6 +1733,28 @@ def _cases(check):
           bool(verdict_fn) and "tree_verdict" in named
           and not named & {"read_bugs", "read_held_phases", "bypass_armed",
                            "refusal"})
+
+    # EVERY FILE THIS SCRIPT OPENS IS CLOSED BY A `with`, its cases included:
+    # an `open(...).read()` leaves the handle to the collector, which closes
+    # it at once only on an interpreter that counts references.
+    with_opened = set(id(item.context_expr) for node in ast.walk(own_tree)
+                      if isinstance(node, (ast.With,))
+                      for item in node.items)
+    opens = [node for node in ast.walk(own_tree)
+             if isinstance(node, ast.Call)
+             and ((isinstance(node.func, ast.Name) and node.func.id == "open")
+                  or (isinstance(node.func, ast.Attribute)
+                      and node.func.attr == "open"
+                      and isinstance(node.func.value, ast.Name)
+                      and node.func.value.id == "io"))]
+    unclosed = sorted(node.lineno for node in opens
+                      if id(node) not in with_opened)
+    # An empty walk would pass `not unclosed` having read nothing, so the
+    # opens it did find are part of the verdict.
+    check("rl25 every file release.py opens is opened as a `with` item, so "
+          "no handle is left to the collector: lines %r of %d opens read"
+          % (unclosed, len(opens)),
+          bool(opens) and not unclosed)
 
     # THE STEP'S ANSWER IS PRINTED EVEN WHEN IT PASSES. `run` keeps a passing
     # step's log, so an armed bypass releasing over an open bug said only `ok`.
