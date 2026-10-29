@@ -1,7 +1,7 @@
 {
   "id": "P149",
   "title": "The Windows reds release CI found on the carried low batch",
-  "status": "in_progress",
+  "status": "done",
   "description": "Release-tier CI run 40877191420 on the head that landed P148 failed on Windows only: case ww2 in tests/test_drive_phase.py on both Windows selftest legs (a case P148.1 added, never before run on Windows), and case sr9 in tests/test_stamp_verification.py on the Windows resample leg. Each task finds the cause on Windows rather than relaxing the case.",
   "desiredOutcome": "The release tier is green on every runner, Windows included, at the head 3.7.0 is cut from",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "4e73a02fc87eb5cdce1d3373313c0fa261387127",
   "branch": "audit/p149-the-windows-reds-release-ci-fo",
-  "mergedAt": null,
+  "mergedAt": "2026-10-29T16:40:33Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -958,5 +958,6 @@
     "runId": "2026-10-29T16:38:20Z.f86242",
     "status": "passed",
     "at": "2026-10-29T16:38:20Z"
-  }
+  },
+  "mergedHead": "977b133e2370f9e41bdc24f48bfd2806923ab241"
 }
