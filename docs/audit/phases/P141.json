@@ -29,12 +29,14 @@
         "severity": "low",
         "file": "tests/test_drive_phase.py:1736-1747",
         "issue": "wl3p asserts only the probe's preconditions (same size, v = 2 bytes, mtime put back). It does not assert that a stale bytecode file was ever there to be trusted. wl3/wl4 only go red when the round-0 gate's interpreter actually writes bytecode. Nothing in tools/sweep-selftests.py or tests/_harness.py scrubs PYTHONDONTWRITEBYTECODE (grep found no hit), so a developer or runner that exports it makes the hazard absent. Then wl3/wl4 would pass with the generator switch deleted, and wl3p would not notice.",
-        "resolution": "Add to wl3p (or a sibling case) a direct assertion that no mine bytecode exists after round 0, under src/__pycache__ and under PYTHONPYCACHEPREFIX if set. That goes red on a regression of the generator switch whatever the timing or ambient env, and the mtime probe stays as the end-to-end check.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.1 (d83aeee96039): Add to wl3p (or a sibling case) a direct assertion that no mine bytecode exists after round 0, under src/__pycache__ and under PYTHONPYCACHEPREFIX if set. That goes red on a regression of the generator switch whatever the timing or ambient env, and the mtime probe stays as the end-to-end check.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.1",
+        "commit": "d83aeee96039"
       }
     ],
-    "outcome": "[findings: 1 - 0 high, 0 med, 1 low; 0 with a recorded fix commit]",
+    "outcome": "[findings: 1 - 0 high, 0 med, 1 low; 1 with a recorded fix commit]",
     "readReturns": []
   },
   "summary": "P141: tests/test_drive_phase.py's generated fixture suite (one generator now) turns bytecode writing off, so a same-size rewrite inside one second runs the new code; wl3 forces that rewrite with os.utime and wl3p asserts the probe applied. One low carried to BUG-29-dau.",
