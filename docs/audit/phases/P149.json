@@ -109,36 +109,42 @@
         "severity": "low",
         "file": "PLUGIN-BUILD-GUIDE.md",
         "issue": "The guide's sized_deadline paragraph still says the red-first deadline is the per-cost factor over the recorded slot-seconds; since P149.10 it is the factor over the wall time the proof's runs need, a proof that cannot fit is refused before any run, and the guide's _proc_group section does not name stop_and_drain, the one home of the teardown rule since P149.9 (reported by both executors, outside their files)",
-        "resolution": "Restate both paragraphs from the code as it stands",
-        "fixTask": "P149.11-hwg"
+        "resolution": "fixed in P149.11-hwg (4aa21b1ba794): Restate both paragraphs from the code as it stands",
+        "fixTask": "P149.11-hwg",
+        "commit": "4aa21b1ba794",
+        "status": "fixed"
       },
       {
         "id": "P149-R10",
         "severity": "med",
         "file": "PLUGIN-BUILD-GUIDE.md:4818-4830",
         "issue": "contradicts task clause \"No number written into prose\": the new stop_and_drain paragraph writes cardinalities - \"all three hold\", \"so the three cannot come to disagree\", \"this module's two functions\", \"Two callers still tear down without it\". The last is the one that rots: it is true of the tree today (derive-phase-gate.py:202-203 and run-agent-session.py:444 are the only non-stop_and_drain teardowns) and goes false the day either migrates, while the names beside it stay right. The prose lint passes only because it does not know these shapes (a plain 'the N noun' is author-enforced, per CLAUDE.md).",
-        "resolution": "Delete the numbers and keep the names: 'only when each of these holds: ...', 'so the callers cannot come to disagree', 'this module's tear_down and drain_to_eof', 'Callers that still tear down without it and record no confirmation: derive-phase-gate._spawn ..., run-agent-session.run_session ...'."
+        "resolution": "Delete the numbers and keep the names: 'only when each of these holds: ...', 'so the callers cannot come to disagree', 'this module's tear_down and drain_to_eof', 'Callers that still tear down without it and record no confirmation: derive-phase-gate._spawn ..., run-agent-session.run_session ...'.",
+        "fixTask": "P149.12-hwg"
       },
       {
         "id": "P149-R11",
         "severity": "low",
         "file": "PLUGIN-BUILD-GUIDE.md:4820",
         "issue": "The line starts with \"- and calls the teardown confirmed only when ...\" (the dash is a sentence dash that wrapped to a line start). In CommonMark/GitHub a bullet can interrupt a paragraph, so the page renders the tail of the sentence as a list item and splits the paragraph.",
-        "resolution": "Re-wrap so the dash is not the first character of a line (e.g. put 'full pipe -' at the end of the previous line, as the paragraph above does with 'and')."
+        "resolution": "Re-wrap so the dash is not the first character of a line (e.g. put 'full pipe -' at the end of the previous line, as the paragraph above does with 'and').",
+        "fixTask": "P149.12-hwg"
       },
       {
         "id": "P149-R12",
         "severity": "low",
         "file": "PLUGIN-BUILD-GUIDE.md:4825-4826",
         "issue": "\"each wording an unconfirmed answer its own way\" is not true of drive-phase.run_lint_probe: its docstring (drive-phase.py:8231-8233) says it takes the wording stamp-verification red gives, and its suffix \" (not confirmed)\" (drive-phase.py:8250-8251) is identical to stamp-verification._run_in's (stamp-verification.py:3350-3351). Only run-test-gate (facts[\"teardown\"] = \"unconfirmed\", run-test-gate.py:3150-3151) words it differently. stop_and_drain's own docstring says the same 'its own way', so the guide copies a loose phrase.",
-        "resolution": "Say what is true: run-test-gate records teardown: unconfirmed in its facts, while stamp-verification._run_in and drive-phase.run_lint_probe append '(not confirmed)' to the timeout sentence."
+        "resolution": "Say what is true: run-test-gate records teardown: unconfirmed in its facts, while stamp-verification._run_in and drive-phase.run_lint_probe append '(not confirmed)' to the timeout sentence.",
+        "fixTask": "P149.12-hwg"
       },
       {
         "id": "P149-R13",
         "severity": "low",
         "file": "PLUGIN-BUILD-GUIDE.md:4942-4944",
         "issue": "The run list \"HEAD's own, the task's, the second (--introduces) and the fix run\" is presented as every run the one deadline covers, but red_run also makes a 'task-held' re-run (stamp-verification.py:4333-4344, guarded by start_problem(['task-held'], ...)) when inline-pulled-in code made the task's run green. The task asked that every sentence be true of the code; the enumeration is closed and omits that run.",
-        "resolution": "Add the conditional re-run with the task's run held back to the list, or word it as 'every run red makes' without a closed enumeration."
+        "resolution": "Add the conditional re-run with the task's run held back to the list, or word it as 'every run red makes' without a closed enumeration.",
+        "fixTask": "P149.12-hwg"
       },
       {
         "id": "P149-R14",
@@ -148,7 +154,7 @@
         "resolution": "Accept as inherent to a prose task, or file a task for a case that checks the guide's named functions (stop_and_drain, drain_to_eof, fit_problem, start_problem, sweep_budget) still exist in the code it names."
       }
     ],
-    "outcome": "[findings: 14 - 0 high, 3 med, 11 low; 8 with a recorded fix commit]"
+    "outcome": "[findings: 14 - 0 high, 3 med, 11 low; 9 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -804,8 +810,72 @@
     {
       "id": "P149.11-hwg",
       "title": "The build guide states the red-first deadline and the teardown helper as the code now has them",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix review finding P149-R9 (docs/audit/phases/P149.json review.findings). PLUGIN-BUILD-GUIDE.md describes two things the code no longer does. (1) The paragraph on stamp-verification.py's sized_deadline says the red-first deadline is a per-cost factor over the recorded slot-seconds; the code now converts recorded slot-seconds to the wall time the sweep's own schedule gives, sizes the deadline from the wall time the proof's runs need, refuses a proof that cannot fit before any run with a basis naming the need and the deadline, and does not start a run left short. (2) The _proc_group section names neither drain_to_eof nor stop_and_drain, the one function every timed-out teardown now goes through (kill confirmed, drain reached the end of the pipe, root exited). Read both from the code at HEAD and restate each paragraph so every sentence is true of it; name the functions, not line numbers. Run the before-you-claim skill. No number written into prose (the doc prose lint must stay empty); no F/P/BUG ids. Edit only the declared file.",
+      "files": [
+        "PLUGIN-BUILD-GUIDE.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__deps.py tests/test__output_lints.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "4aa21b1ba794",
+      "outcome": {
+        "technical": "Edited only PLUGIN-BUILD-GUIDE.md, rewriting two paragraphs from HEAD's code. (1) The deadline paragraph under stamp-verification.py red now says: cost-table figures are slot-seconds; sweep_wall reads one run's wall time as the busiest slot of the sweep's costliest-first schedule (schedule_wall) over sweep_jobs' workers; proof_need is that wall time for each run PROOF_RUNS names; sized_deadline sets TIMEOUT_PER_COST times the need when that exceeds DEFAULT_TIMEOUT, capped at MAX_TIMEOUT; sweep_budget holds the fix run's wall time back, never more than half the deadline; fit_problem refuses before any run, --timeout included and before the throwaway is built, with a basis naming the need, per-run wall time, how it was read and the deadline; start_problem refuses any run started short (the baseline's check also counts the task run); a command with unmeasured wall time is checked by neither. Read from stamp-verification.py: sweep_wall, schedule_wall, sweep_jobs, proof_need, fit_problem, start_problem, sized_deadline, sweep_budget, and the call sites in red near the fit_problem/start_problem calls. (2) The _proc_group section now names drain_to_eof (whether the read reached the pipe's EOF within GRACE_SECONDS) and adds a paragraph on stop_and_drain: tear down, then drain, confirmed only when the kill is confirmed, the drain reached EOF and the root exited; callers run-test-gate._shell (which passes its own _tear_down/_drain_to_eof aliases), stamp-verification._run_in and drive-phase.run_lint_probe, on timeout and interrupt. The task text says every timed-out teardown goes through stop_and_drain, and the code does not bear that out: derive-phase-gate._spawn still calls tear_down then drain on a timeout, and run-agent-session.run_session calls tear_down on an interrupt, and neither records confirmation. The guide states this as it is, and I left both files alone because they are outside my scope. Checks: _deps.doc_prose_numbers(doc_paths=[PLUGIN-BUILD-GUIDE.md]) returned 0 findings (exit 0). The same lint on a scratch copy with a planted 'its 17 cases' line returned 1 finding, so it does scan this file. Grepping the added lines for F/P/BUG ids returned no hits (grep exit 1). Gates: nothing of my own to run (runsGate own-tests, no tests.add); I did not run the task gate (tools/sweep-selftests.py tests/test__deps.py tests/test__output_lints.py), and the orchestrator's recorded run is the evidence. Dependants, all still correct: tests/test__affected_tests.py reads only the guide line starting '_affected_tests.py ', which is unchanged; tests/test__deps.py gp1/gp2 check the guide's path, and map_drift reads tree/map fences, where I added none; tests/test__doctor_trail.py rh11 slices the paragraph starting '**It grades each copy's own age', which is unchanged; tests/test__help.py mentions the guide's map fence only in prose, unchanged; plugins/audit/scripts/status/_doctor_hygiene.py and the two evals case.yaml files mention the guide in comments about tree lines and sections, where I added none; .claude/skills/before-you-claim/evals/evals.json quotes an old guide line as an eval prompt and does not read the file. Other files that were modified before I started (docs/audit/audit-plan.json, P149.json, journal) are the orchestrator's, not mine.",
+        "descriptive": "PLUGIN-BUILD-GUIDE.md now describes the red-first deadline (sized from wall time, refused before any run when the proof cannot fit, no run started short) and the stop_and_drain teardown rule as the code has them"
+      },
+      "startedAt": "2026-10-29T16:05:54Z",
+      "completedAt": "2026-10-29T16:15:54Z",
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-29T16:05:52Z",
+          "text": "scope: PLUGIN-BUILD-GUIDE.md, every path the finding(s) P149-R9 name"
+        },
+        {
+          "at": "2026-10-29T16:05:52Z",
+          "text": "no suite: PLUGIN-BUILD-GUIDE.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__affected_tests.py, tests/test__deps.py, tests/test__doctor_trail.py, tests/test__output.py, tests/test__refs.py, tests/test_drive_phase.py and 6 more"
+        }
+      ],
+      "fixes": [
+        "P149-R9"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-29T16:13:30Z.701cfa",
+        "status": "passed",
+        "at": "2026-10-29T16:13:30Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "4aa21b1ba794",
+        "at": "2026-10-29T16:15:54Z",
+        "return": "docs/audit/evidence/returns/P149.11-hwg/20261029T160554Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only documentation task with expectRedFirst false and tests.add none: no test was added, so no red is owed",
+        "at": ""
+      }
+    },
+    {
+      "id": "P149.12-hwg",
+      "title": "The build guide's teardown and deadline paragraphs name what they describe instead of counting it, and render as one paragraph",
+      "status": "in_progress",
+      "description": "Fix review findings P149-R10, P149-R11, P149-R12, P149-R13 on P149.11's paragraphs in PLUGIN-BUILD-GUIDE.md (each finding's file, issue and resolution is in docs/audit/phases/P149.json review.findings, by id). R10: delete every count the new paragraphs write ('all three hold', 'the three', 'two functions', 'Two callers still tear down without it') - name the conditions, the functions and the callers instead of counting them, so the text cannot go stale when a caller migrates. R11: no line in the paragraph may start with '- ' where it is a sentence continuation (CommonMark renders it as a bullet); rewrap. R12: state truthfully which readers word an unconfirmed teardown how (run_lint_probe and _run_in share the '(not confirmed)' suffix; run-test-gate words it its own way), read from the code at HEAD. R13: the list of runs the deadline covers includes the conditional task-held re-run red makes; read it from stamp-verification.py's red and state it. Run the before-you-claim skill. No number written into prose; no F/P/BUG ids. Edit only the declared file.",
       "files": [
         "PLUGIN-BUILD-GUIDE.md",
         "PLUGIN-BUILD-GUIDE.md"
@@ -831,27 +901,30 @@
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-29T16:05:54Z",
+      "startedAt": "2026-10-29T16:16:13Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
         {
-          "at": "2026-10-29T16:05:52Z",
-          "text": "scope: PLUGIN-BUILD-GUIDE.md, every path the finding(s) P149-R9 name"
+          "at": "2026-10-29T16:16:06Z",
+          "text": "scope: PLUGIN-BUILD-GUIDE.md, every path the finding(s) P149-R10, P149-R11, P149-R12, P149-R13 name"
         },
         {
-          "at": "2026-10-29T16:05:52Z",
+          "at": "2026-10-29T16:16:06Z",
           "text": "no suite: PLUGIN-BUILD-GUIDE.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__affected_tests.py, tests/test__deps.py, tests/test__doctor_trail.py, tests/test__output.py, tests/test__refs.py, tests/test_drive_phase.py and 6 more"
         }
       ],
       "fixes": [
-        "P149-R9"
+        "P149-R10",
+        "P149-R11",
+        "P149-R12",
+        "P149-R13"
       ],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-29T16:13:30Z.701cfa",
+        "runId": "2026-10-29T16:23:31Z.c0ce6a",
         "status": "passed",
-        "at": "2026-10-29T16:13:30Z"
+        "at": "2026-10-29T16:23:31Z"
       }
     }
   ],

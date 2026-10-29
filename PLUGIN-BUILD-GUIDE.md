@@ -4816,17 +4816,21 @@ and restore handlers that raise `KeyboardInterrupt` naming the signal. What it c
 SIGKILL, which no handler sees.
 
 **Whether a timed-out child's teardown is confirmed has one home: `stop_and_drain`.** It tears the
-group down, then drains - in that order, because a timed-out child is often blocked on a full pipe
-- and calls the teardown confirmed only when all three hold: `tear_down` confirmed the kill,
-`drain_to_eof` reached the end of the pipe, and the root has exited. None stands in for another;
-on Windows a `taskkill` that returned has only asked for the kill. `run-test-gate._shell`,
-`stamp-verification._run_in` (the runs `red` makes) and `drive-phase.run_lint_probe` call it on a
-timeout and on an interrupt alike, each wording an unconfirmed answer its own way, so the three
-cannot come to disagree about what confirmed means. Its `tear` and `drain_eof` seams default to
-this module's two functions, looked up when it is called, so a case swapping either name here
-reaches every caller that passes neither; `run-test-gate` passes its own aliases of them
-(`_tear_down`, `_drain_to_eof`), so its cases swap those. Two callers still tear down without it and record no confirmation at
-all: `derive-phase-gate._spawn` calls `tear_down` then `drain` on a timeout, and
+group down, then drains - in that order, because a timed-out child is often blocked on a full
+pipe - and calls the teardown confirmed only when each of these holds: `tear_down` confirmed the
+kill, `drain_to_eof` reached the end of the pipe, and the root has exited. None stands in for
+another; on Windows a `taskkill` that returned has only asked for the kill.
+`run-test-gate._shell`, `stamp-verification._run_in` (the runs `red` makes) and
+`drive-phase.run_lint_probe` call it on a timeout and on an interrupt alike, so its callers cannot
+come to disagree about what confirmed means. What is theirs is how a timeout whose teardown was
+not confirmed is worded: `run-test-gate._shell` records `teardown: unconfirmed` in the step's
+facts, while `stamp-verification._run_in` and `drive-phase.run_lint_probe` end their timeout
+sentence with `(not confirmed)`, the lint probe taking the wording `red` gives. Its `tear` and
+`drain_eof` seams default to this module's `tear_down` and `drain_to_eof`, looked up when it is
+called, so a case swapping either name here reaches every caller that passes neither;
+`run-test-gate` passes its own aliases of them (`_tear_down`, `_drain_to_eof`), so its cases
+swap those. Callers that still tear down without it record no confirmation at all:
+`derive-phase-gate._spawn` calls `tear_down` then `drain` on a timeout, and
 `run-agent-session.run_session` calls `tear_down` on an interrupt. Its cases are
 in `tests/test__proc_group.py`, and `run-test-gate.py`'s names are this module's
 objects.
@@ -4940,9 +4944,11 @@ refused before anything is built, because it would run the shared files and grad
 `run-test-gate.py` and `red` share: the child starts a session of its own, a timeout or an
 interrupt tears the whole group down, and SIGINT/SIGTERM raise so the `finally` runs.
 ONE deadline, `--timeout`, starts before anything runs and covers every git call that builds or
-reads the throwaway and every run - HEAD's own, the task's, the second (`--introduces`) and the fix
-run - each getting what the earlier ones left, except that a sweep command holds the fix run's wall
-time back from the runs before it (`sweep_budget`, never more than half the deadline). A figure in
+reads the throwaway and every run - HEAD's own, the task's, the task's again with what it pulled
+in held back (made only when its run was green with that code in), the second (`--introduces`)
+and the fix run - each getting what the earlier ones left, except that a sweep command holds the
+fix run's wall time back from the runs before it (`sweep_budget`, never more than half the
+deadline). A figure in
 `.github/sweep-costs.json` is slot-seconds, not wall time: the sweep runs every block of a staged
 suite and every other file as jobs side by side, costliest first onto whichever slot frees next. So
 `sweep_wall` reads one run's wall time as the busiest slot of that same schedule (`schedule_wall`)
@@ -4962,7 +4968,7 @@ started and the basis names the time left. A run started with less than it needs
 want of time, and that timeout would say nothing about the task. A command whose wall time nothing
 measured is checked by neither. At most one run can time out, because each later run is made only
 when the one before it finished. What follows the
-deadline is bounded and summed in `TEARDOWN_MARGIN` - one teardown and the removal's two git
+deadline is bounded and summed in `TEARDOWN_MARGIN` - one teardown and the removal's git
 calls, each capped at `REMOVE_GIT_TIMEOUT` - and `--timeout` is refused above `MAX_TIMEOUT`, the
 host's limit less that margin, so the helper's own deadline and cleanup finish before the host
 kills it. SIGKILL cannot be caught; a throwaway left

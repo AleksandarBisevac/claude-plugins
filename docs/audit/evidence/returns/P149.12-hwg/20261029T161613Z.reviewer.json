@@ -1,0 +1,19 @@
+{
+ "findings": [],
+ "preExisting": [
+  {"id": 1, "severity": "low", "file": "plugins/audit/scripts/governance/_proc_group.py:278-279",
+   "issue": "stop_and_drain's docstring still says every reader 'words the answer its own way', the loose phrase the guide copied and the diff corrected. It is untrue of drive-phase.run_lint_probe, which shares _run_in's '(not confirmed)' suffix. Outside this task's declared file.",
+   "resolution": "Reword to the same split the guide now states: run-test-gate records teardown: unconfirmed, the other two end the timeout sentence with '(not confirmed)'."}
+ ],
+ "intent": {
+  "answer": "matches",
+  "note": "R10: the diff deletes 'all three hold', 'the three', 'two functions' and 'Two callers still tear down without it', replacing them with 'each of these holds', 'its callers', 'this module's tear_down and drain_to_eof' and 'Callers that still tear down without it'. derive-phase-gate._spawn (derive-phase-gate.py:202-203, tear_down then drain) and run-agent-session.run_session (run-agent-session.py:444, tear_down) are still named, and they are the only non-stop_and_drain teardowns in scripts/ per grep. R11: an awk scan of lines 4818-4995 for list-shaped line starts printed nothing, and the 'full pipe -' break is at a line end. R12: run-test-gate.py:3150-3151 sets facts teardown unconfirmed. stamp-verification.py:3349-3351 and drive-phase.py:8248-8251 both append ' (not confirmed)'. drive-phase.py:8230-8232 takes red's wording. The guide now says exactly this. R13: stamp-verification.py:4331-4344 makes the 'task-held' re-run only when the task's run had no problem, code was pulled in, and classify_run is V_GREEN. The guide's list now includes it with that condition. The extra edit 'removal's two git calls' to 'removal's git calls' removes a count copied from the literal 2 in TEARDOWN_MARGIN (stamp-verification.py:659). The seam-default sentence matches _proc_group.py:285-286, and the three-condition rule matches line 289. _deps.doc_prose_numbers() returns no entry for PLUGIN-BUILD-GUIDE.md. The claim describes the diff accurately. Only PLUGIN-BUILD-GUIDE.md changed, and no heading, tree line or path was added, removed or renamed, so the listed dependants (tests/test__deps.py and the other readers keyed on guide structure) are unaffected.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Gate-only prose task with no tests.add entry. The executor filed not-attempted with that basis, and it holds.",
+  "inheritedTests": "flagged",
+  "inheritedTestsBasis": "Read the gate command 'python3 tools/sweep-selftests.py tests/test__deps.py tests/test__output_lints.py'. These suites assert the guide's structure (enumeration, tree lines, prose-number shapes), not the truth of the stop_and_drain or deadline paragraphs. Judged from reading, both would still pass if those paragraphs were deleted or made false (shape: assertions the paragraphs' claims never reach), e.g. around tests/test__deps.py:484, the doc_prose_numbers cases. This is inherent to a prose task and matches the open P149-R14."
+ },
+ "verdict": "clean",
+ "tasks": []
+}
