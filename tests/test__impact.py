@@ -62,9 +62,15 @@ _TRACKED = {
     "tools/run.sh": "#!/bin/sh\npython3 - <<'EOF'\nimport refund\nprint(refund._round_down(3))\nEOF\n",
     # A private name of its own, sharing the module's spelling: a homonym.
     "notes/own.py": "def _round_down(x):\n    return x\n",
+    # A CI step naming the path and a private name with it: code that reaches
+    # the module, so the private name is that step's use of it.
     ".github/workflows/ci.yml": "jobs:\n  t:\n    steps:\n"
-                                "      - run: python3 pkg/refund.py --selftest\n",
-    "docs/guide.md": "Run it:\n\n```sh\npython3 refund.py --check\n```\n",
+                                "      - run: python3 pkg/refund.py --selftest\n"
+                                "      - run: python3 pkg/refund.py --only _round_down\n",
+    # A document that names the module AND one of its private names: prose
+    # describing the module, not a caller of the name.
+    "docs/guide.md": "Run it:\n\n```sh\npython3 refund.py --check\n```\n\n"
+                     "`_round_down` truncates.\n",
     "pkg/caller.py": "def go(order):\n    return split_refund(order, 2)\n",
     # One character off every reference above: a longer basename, a longer
     # module name in an import, a defined name with a suffix.
@@ -161,10 +167,16 @@ def _run_cases(check, root):
           and "Ledger" not in names and "_never_called_elsewhere" not in names
           and refund["defined"] == 4)
     check("im3b a private name (leading underscore) counts only in files that "
-          "also reference the module: the heredoc importing it is listed, the "
-          "file defining a _round_down of its own is not: %r"
-          % (names.get("_round_down"),),
-          names.get("_round_down") == ["tools/run.sh"])
+          "also reference the module: the heredoc importing it and the CI step "
+          "naming its path are listed, the file defining a _round_down of its "
+          "own is not: %r" % (names.get("_round_down"),),
+          names.get("_round_down") == [".github/workflows/ci.yml", "tools/run.sh"])
+    check("im3c a prose file that references the module is still its dependant "
+          "but is no user of a private name it mentions - a document describing "
+          "the module names its internals without calling them: %r / %r"
+          % (names.get("_round_down"), kinds.get("docs/guide.md")),
+          "docs/guide.md" not in (names.get("_round_down") or [])
+          and kinds.get("docs/guide.md") == "basename")
 
     capped = M.dependants(root, ["pkg/refund.py"], cap=2)[0]
     text = "\n".join(M.render([capped]))

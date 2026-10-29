@@ -2588,6 +2588,18 @@ def _attempt_cases(check, repos):
           and ".claude/.gitignore" in text2
           and ".claude/audit.config.json" in text2
           and "plugin-owned" in text2)
+    # A REFUSAL STILL SAYS WHAT IT LEFT OUT. The ignore file is tracked in many
+    # projects, so the close the operator retries after removing the ordinary
+    # stray will leave the plugin's paths uncommitted; the refusal is where
+    # they first read that, not only the commit that follows it.
+    owned_lines = [ln for ln in text.splitlines()
+                   if ln.startswith("  degraded: plugin-owned")]
+    check("ctw-at19 the refusal over an ordinary stray also prints, on its own "
+          "line, the plugin-owned paths that would be left out - the ignore "
+          "file and the configuration file each named: %r" % (owned_lines,),
+          code == 1 and len(owned_lines) == 1
+          and ".claude/.gitignore" in owned_lines[0]
+          and ".claude/audit.config.json" in owned_lines[0])
 
     # The a2 state: the ignore line had been reverted, so the restore point
     # itself is an untracked file git lists - and is named, not refused.
@@ -2641,16 +2653,21 @@ def _attempt_cases(check, repos):
 
     # The table is the writers' as well as the check's: what the restore-point
     # writer creates - the directory and the ignore file it adds a line to - is
-    # a row of it, so a rename in one place cannot leave the other behind.
+    # a row of it, so a rename in one place cannot leave the other behind. The
+    # configuration file's row is named here too: `ctw-at7` reaches it only
+    # through the close its edit would refuse, and this case says which row of
+    # the table went missing.
     fx = repos.make()
     backups, _ignored = _mio.ensure_backup_dir(fx["manifest"])
     owned = _mio.plugin_owned_under(os.path.join(fx["root"], ".claude"))
     paths = [p for p, _why in owned]
-    check("ctw-at9 the directory the restore-point writer creates and the "
-          "ignore file it appends to are rows of the plugin-owned table the "
-          "commit check reads, each with a reason: %r" % (owned,),
+    check("ctw-at9 the directory the restore-point writer creates, the "
+          "ignore file it appends to and the configuration file are rows of "
+          "the plugin-owned table the commit check reads, each with a reason: "
+          "%r" % (owned,),
           backups in paths
           and os.path.join(fx["root"], ".claude", ".gitignore") in paths
+          and os.path.join(fx["root"], ".claude", _mio.CONFIG_NAME) in paths
           and all(isinstance(why, str) and why for _p, why in owned))
 
 

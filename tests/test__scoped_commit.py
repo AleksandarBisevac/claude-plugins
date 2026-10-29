@@ -494,6 +494,32 @@ def _calls_of(source, attr):
                 and n.func.attr == attr])
 
 
+# The tracked-or-not question, under its private name and the public one it
+# must not carry.
+TRACKING_NAMES = ("_tracking", "tracking")
+
+
+def _callers_of(source, names):
+    """The function each call of one of `names` (a bare name or an attribute)
+    sits in, in source order; `<module>` for a call outside every function."""
+    import ast
+    found = []
+
+    def visit(node, where):
+        for child in ast.iter_child_nodes(node):
+            inner = child.name if isinstance(
+                child, (ast.FunctionDef, ast.AsyncFunctionDef)) else where
+            if isinstance(child, ast.Call):
+                func = child.func
+                called = func.attr if isinstance(func, ast.Attribute) else \
+                    getattr(func, "id", None)
+                if called in names:
+                    found.append(where)
+            visit(child, inner)
+    visit(ast.parse(source), "<module>")
+    return found
+
+
 def _directions_of(source, name):
     """For each call of `name` (a bare name or an attribute), the last name of
     its third argument - `UNKNOWN_REFUSES` for `_scoped_commit.UNKNOWN_REFUSES`
@@ -517,20 +543,36 @@ def _directions_of(source, name):
 # WHAT A READER MAY DO WITH THE ANSWER. The names above catch the primitives
 # that were found in a reader's own skip list, and nothing else: a reader that
 # post-filters `changes["during"]` with a skip of its own names none of them.
-# So the second half of the scan is on the SHAPE of the use, and reads the
-# answer by key only - `R["key"]`, or `R is None` - which leaves a reader no
-# way to rebuild it (`dict(R)`, `R.get`, iterating it, handing it on). The
-# lists that decide a refusal (`UNDECLARED_KEYS`) may then be narrowed by a
-# membership test against a value the reader computes (`p in recorded`) and by
-# nothing else: any other condition on them - a prefix, a call, a literal or
-# upper-case constant to test against - is a rule about which paths count,
-# which is the shared function's alone. `covered` is outside that set on
-# purpose: it is work in flight, and the close narrows it to its own task's
-# files.
+# So the second half of the scan is on the SHAPE of the use. The answer is read
+# by key only - `R["key"]`, or `R is None` - so `dict(R)`, `R.get`, iterating
+# it or handing it on are named. A list read off it by a key in
+# `UNDECLARED_KEYS` is followed: a name assigned from any expression holding
+# such a read, or another followed name - through a call, a tuple, an `or` -
+# is followed too. Such a list may be narrowed only by a membership test
+# against a lower-case name the reader binds in the same function from
+# something other than a literal (`p in recorded`), or a by-key read of one;
+# any other condition on it - a prefix, a call, an attribute, a literal, an
+# upper-case or module-level list - is a rule about which paths count, which
+# is the shared function's alone. A followed list handed as an argument to a
+# call is named unless the callee only presents it (`PRESENTATION_CALLS`) or
+# is a function of the same file, which is then scanned with that parameter
+# followed. A loop over one is named when it skips with `continue` or holds a
+# branch, on any condition but that membership test, that uses the loop
+# variable.
+#
+# WHAT IT CANNOT SEE: a followed list narrowed in place by its own methods
+# (`during.remove(p)`) or by a slice, a helper reached through another
+# module's attribute is named rather than followed, and anything a reader
+# does by a route the AST does not show (`getattr`, `exec`). `covered` is
+# outside the followed set on purpose: it is work in flight, and the close
+# narrows it to its own task's files.
 RESULT_KEYS = ("during", "predates", "undated", "strays", "covered", "mixed",
                "pluginOwned", "basis")
 UNDECLARED_KEYS = ("during", "predates", "undated", "strays", "mixed",
                    "pluginOwned")
+# Callees a followed list may be handed to: each counts, orders, copies or
+# prints it, and none chooses which paths count.
+PRESENTATION_CALLS = ("len", "sorted", "set", "list", "tuple", "str", "join")
 
 
 def _key_of(node):
@@ -551,30 +593,186 @@ def _asks(node):
             and node.func.attr == "undeclared_changes")
 
 
-def _only_membership(cond):
-    """True for `x in y` / `x not in y` where `y` is not a literal and not an
-    upper-case name - a test against what the reader computed, not against a
-    list the reader wrote."""
+def _target_names(node):
+    """The names an assignment target binds, through tuples and starred
+    elements."""
+    import ast
+    if isinstance(node, ast.Name):
+        return [node.id]
+    if isinstance(node, (ast.Tuple, ast.List)):
+        return [n for elt in node.elts for n in _target_names(elt)]
+    if isinstance(node, ast.Starred):
+        return _target_names(node.value)
+    return []
+
+
+def _assigned_values(fn, name):
+    """Every value `name` is assigned from in `fn`."""
+    import ast
+    values = []
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Assign) and any(
+                name in _target_names(t) for t in node.targets):
+            values.append(node.value)
+        elif isinstance(node, ast.AugAssign) and name in _target_names(node.target):
+            values.append(node.value)
+    return values
+
+
+def _only_membership(cond, fn):
+    """True for `x in y` / `x not in y` where `y` - or the name a by-key read
+    `y[...]` is taken from - is a lower-case name `fn` binds, and never from a
+    literal: a test against what the reader computed there, not against a
+    list it wrote, a module's list or a call's answer."""
     import ast
     if not (isinstance(cond, ast.Compare) and len(cond.ops) == 1
             and isinstance(cond.ops[0], (ast.In, ast.NotIn))):
         return False
-    other = cond.comparators[0]
-    if isinstance(other, (ast.Constant, ast.List, ast.Tuple, ast.Set, ast.Dict)):
+    root = cond.comparators[0]
+    while isinstance(root, ast.Subscript) and _key_of(root) is not None:
+        root = root.value
+    if not (isinstance(root, ast.Name) and root.id == root.id.lower()):
         return False
-    return not (isinstance(other, ast.Name) and other.id.isupper())
+    values = _assigned_values(fn, root.id)
+    literals = (ast.Constant, ast.List, ast.Tuple, ast.Set, ast.Dict)
+    return bool(values) and not any(isinstance(v, literals) for v in values)
+
+
+def _callee(func):
+    import ast
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    return func.id if isinstance(func, ast.Name) else None
+
+
+def _scan_function(fn, names, seed, defs, seen):
+    """The violations in `fn`, where `names` hold the answer itself and `seed`
+    the names already followed as an undeclared list (a helper's parameter);
+    each same-file helper handed a followed list is scanned once per
+    parameter, through `seen`."""
+    import ast
+    found = set()
+
+    def list_read(node, followed):
+        if isinstance(node, ast.Subscript) \
+                and isinstance(node.value, ast.Name) \
+                and node.value.id in names \
+                and _key_of(node) in UNDECLARED_KEYS:
+            return True
+        return isinstance(node, ast.Name) and node.id in followed
+
+    def reads(expr, followed):
+        return any(list_read(n, followed) for n in ast.walk(expr))
+
+    def carries(arg, followed):
+        """Whether an argument IS a followed list, not merely mentions one."""
+        if list_read(arg, followed):
+            return True
+        if isinstance(arg, ast.Starred):
+            return carries(arg.value, followed)
+        if isinstance(arg, ast.BoolOp):
+            return any(carries(v, followed) for v in arg.values)
+        if isinstance(arg, ast.IfExp):
+            return carries(arg.body, followed) or carries(arg.orelse, followed)
+        return False
+
+    followed = set(seed)
+    grew = True
+    while grew:
+        grew = False
+        for node in ast.walk(fn):
+            if isinstance(node, ast.Assign):
+                targets = node.targets
+            elif isinstance(node, ast.AugAssign):
+                targets = [node.target]
+            else:
+                continue
+            if not reads(node.value, followed):
+                continue
+            for name in [n for t in targets for n in _target_names(t)]:
+                if name not in followed:
+                    followed.add(name)
+                    grew = True
+
+    parents = {}
+    for node in ast.walk(fn):
+        for child in ast.iter_child_nodes(node):
+            parents[child] = node
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Name) and node.id in names \
+                and isinstance(node.ctx, ast.Load):
+            up = parents.get(node)
+            by_key = (isinstance(up, ast.Subscript) and up.value is node
+                      and _key_of(up) in RESULT_KEYS)
+            is_none = (isinstance(up, ast.Compare) and up.left is node
+                       and all(isinstance(o, (ast.Is, ast.IsNot))
+                               for o in up.ops)
+                       and all(isinstance(c, ast.Constant)
+                               and c.value is None for c in up.comparators))
+            if not (by_key or is_none):
+                found.add("line %d: the answer `%s` is used other than by "
+                          "key" % (node.lineno, node.id))
+        if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp,
+                             ast.DictComp)):
+            for gen in node.generators:
+                if reads(gen.iter, followed) and not all(
+                        _only_membership(c, fn) for c in gen.ifs):
+                    found.add("line %d: an undeclared list is narrowed by "
+                              "a rule of the reader's own" % (node.lineno,))
+        if isinstance(node, ast.For) and reads(node.iter, followed):
+            loop_names = set(_target_names(node.target))
+            body = [n for stmt in node.body for n in ast.walk(stmt)]
+            if any(isinstance(n, ast.Continue) for n in body):
+                found.add("line %d: an undeclared list is skipped through by "
+                          "the reader" % (node.lineno,))
+            if any(isinstance(n, ast.If) and not _only_membership(n.test, fn)
+                   and any(isinstance(m, ast.Name) and m.id in loop_names
+                           for branch in n.body + n.orelse
+                           for m in ast.walk(branch))
+                   for n in body):
+                found.add("line %d: an undeclared list is filtered by a "
+                          "branch in the reader's loop" % (node.lineno,))
+        if isinstance(node, ast.Call) and not _asks(node):
+            callee = _callee(node.func)
+            handed = [(i, a) for i, a in enumerate(node.args)
+                      if carries(a, followed)]
+            handed += [(kw.arg, kw.value) for kw in node.keywords
+                       if kw.arg is not None and carries(kw.value, followed)]
+            if not handed or callee in PRESENTATION_CALLS:
+                continue
+            helper = defs.get(callee) if isinstance(node.func, ast.Name) else None
+            if helper is None:
+                found.add("line %d: an undeclared list is handed to `%s`, "
+                          "which the scan does not follow"
+                          % (node.lineno, callee))
+                continue
+            params = [a.arg for a in helper.args.args]
+            for where, _arg in handed:
+                param = params[where] if isinstance(where, int) \
+                    and where < len(params) else where
+                if param not in params:
+                    found.add("line %d: an undeclared list is handed to `%s` "
+                              "past its named parameters" % (node.lineno, callee))
+                elif (callee, param) not in seen:
+                    seen.add((callee, param))
+                    found |= _scan_function(helper, set(), {param}, defs, seen)
+    return found
 
 
 def result_scan(source):
     """`{"bound": n, "violations": [...]}` over every function in `source` that
-    asks `undeclared_changes`: `bound` is how many answers were taken into a
-    name (so a scan that reached nothing reads as nothing, not as clean), and
-    each violation names a use of the answer other than by key, an ask whose
-    answer is not bound to a name, or a narrowing of an undeclared list by
-    anything but a membership test."""
+    asks `undeclared_changes`, and every same-file helper it hands an
+    undeclared list to: `bound` is how many answers were taken into a name (so
+    a scan that reached nothing reads as nothing, not as clean), and each
+    violation names a use of the answer other than by key, an ask whose answer
+    is not bound to a name, or a narrowing of an undeclared list by anything
+    but a membership test against a value the function computed."""
     import ast
-    bound, found = 0, set()
-    for fn in ast.walk(ast.parse(source)):
+    tree = ast.parse(source)
+    defs = dict((n.name, n) for n in tree.body
+                if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)))
+    bound, found, seen = 0, set(), set()
+    for fn in ast.walk(tree):
         if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         asked = [n for n in ast.walk(fn) if _asks(n)]
@@ -594,56 +792,7 @@ def result_scan(source):
             if not any(node is t for t in took):
                 found.add("line %d: the answer is not bound to a name"
                           % (node.lineno,))
-        parents = {}
-        for node in ast.walk(fn):
-            for child in ast.iter_child_nodes(node):
-                parents[child] = node
-
-        def list_read(node, tainted):
-            if isinstance(node, ast.Subscript) \
-                    and isinstance(node.value, ast.Name) \
-                    and node.value.id in names \
-                    and _key_of(node) in UNDECLARED_KEYS:
-                return True
-            return isinstance(node, ast.Name) and node.id in tainted
-
-        tainted = set()
-        for node in ast.walk(fn):
-            if isinstance(node, ast.Assign) and len(node.targets) == 1 \
-                    and isinstance(node.targets[0], ast.Name) \
-                    and list_read(node.value, ()):
-                tainted.add(node.targets[0].id)
-        for node in ast.walk(fn):
-            if isinstance(node, ast.Name) and node.id in names \
-                    and isinstance(node.ctx, ast.Load):
-                up = parents.get(node)
-                by_key = (isinstance(up, ast.Subscript) and up.value is node
-                          and _key_of(up) in RESULT_KEYS)
-                is_none = (isinstance(up, ast.Compare) and up.left is node
-                           and all(isinstance(o, (ast.Is, ast.IsNot))
-                                   for o in up.ops)
-                           and all(isinstance(c, ast.Constant)
-                                   and c.value is None for c in up.comparators))
-                if not (by_key or is_none):
-                    found.add("line %d: the answer `%s` is used other than by "
-                              "key" % (node.lineno, node.id))
-            if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp,
-                                 ast.DictComp)):
-                for gen in node.generators:
-                    if list_read(gen.iter, tainted) and not all(
-                            _only_membership(c) for c in gen.ifs):
-                        found.add("line %d: an undeclared list is narrowed by "
-                                  "a rule of the reader's own" % (node.lineno,))
-            if isinstance(node, ast.For) and list_read(node.iter, tainted) \
-                    and any(isinstance(n, ast.Continue)
-                            for stmt in node.body for n in ast.walk(stmt)):
-                found.add("line %d: an undeclared list is skipped through by "
-                          "the reader" % (node.lineno,))
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) \
-                    and node.func.id == "filter" \
-                    and any(list_read(a, tainted) for a in node.args):
-                found.add("line %d: an undeclared list goes through filter()"
-                          % (node.lineno,))
+        found |= _scan_function(fn, names, set(), defs, seen)
     return {"bound": bound, "violations": sorted(found)}
 
 
@@ -720,6 +869,30 @@ def _readers_share_the_question_cases(check):
           and bare != sources["drive-phase.py"]
           and _directions_of(bare, "plugin_owned_rels") == ["-"])
 
+    # WHAT AN UNKNOWN MEANS IS DECIDED IN ONE PLACE. The tracked-or-not answer
+    # carries no direction, so a reader asking it directly would pick a side by
+    # omission - the shape the required argument above removed. It is private,
+    # and asked only by `plugin_owned_rels`; the walk is shown to see a third
+    # caller planted in a reader.
+    asking = []
+    for dirpath, _dirs, files in os.walk(_output.SCRIPTS_DIR):
+        for name in sorted(files):
+            if name.endswith(".py"):
+                with io.open(os.path.join(dirpath, name), encoding="utf-8") as fh:
+                    asking.extend((name, fn) for fn in
+                                  _callers_of(fh.read(), TRACKING_NAMES))
+    planted = sources["drive-phase.py"] + (
+        "\n\ndef _decides(root, rel):\n"
+        "    return _scoped_commit._tracking(root, rel) == 'unknown'\n")
+    check("sc-ua20 under scripts/, the tracked-or-not question is private to "
+          "`_scoped_commit` and asked only by `plugin_owned_rels`; a third "
+          "caller planted in a reader is seen: %r / %r"
+          % (asking, _callers_of(planted, TRACKING_NAMES)),
+          asking == [("_scoped_commit.py", "plugin_owned_rels")]
+          and callable(getattr(M, "_tracking", None))
+          and not hasattr(M, "tracking")
+          and _callers_of(planted, TRACKING_NAMES) == ["_decides"])
+
     # THE SCAN MUST BE ABLE TO FAIL, in both directions: a reader that computes
     # the list itself is named, and the shared spelling is not.
     own = ("def f(project):\n    for p, w in _mio.plugin_owned_under(project):\n"
@@ -780,8 +953,8 @@ def _readers_share_the_question_cases(check):
                                   'if p not in SKIP_LIST]')
     through = real.replace(anchor, 'during = list(filter(lambda p: p, '
                                    'strays["during"]))')
-    allowed = real.replace(anchor, 'during = [p for p in strays["during"] '
-                                   'if p not in mine_elsewhere]')
+    allowed = real.replace(anchor, _BOUND_ELSEWHERE + 'during = [p for p in '
+                                   'strays["during"] if p not in mine_elsewhere]')
     landed = real.count(anchor) == 1 and all(
         text != real for text in (own_skip, rebuilt, listed, through, allowed))
     old = reader_violations(own_skip)
@@ -799,6 +972,72 @@ def _readers_share_the_question_cases(check):
           and all(len(new[k]) >= 1 for k in
                   ("own_skip", "rebuilt", "listed", "through"))
           and new["allowed"] == [])
+    _scan_hole_cases(check, real, anchor)
+
+
+# A set the reader computes in its own function, for the membership test the
+# scan allows - the line it is bound on, then the indentation of the next.
+_BOUND_ELSEWHERE = ("mine_elsewhere = set(owned_rels(manifest, project, "
+                    "git_root, task))\n    ")
+# A same-file helper a mutation hands the list to, appended to the module.
+_NARROWING_HELPER = ("\n\ndef _keep_mine(paths):\n    return [p for p in paths "
+                     "if not p.startswith(\".claude/\")]\n")
+_PRESENTING_HELPER = ("\n\ndef _as_listed(paths):\n    return sorted(paths)\n")
+
+
+def _scan_hole_cases(check, real, anchor):
+    """Each route by which a reader could narrow an undeclared list with a rule
+    of its own while naming no retired primitive and testing no literal: the
+    list handed to a call (directly, or after a plain read), to a helper in
+    the same file that narrows it, through a tuple or an `or`, filtered in a
+    loop with an else branch, or tested against a list the reader did not
+    compute in that function. The allow half keeps what a reader legitimately
+    does - present the list, hand it to a helper that only presents it, test
+    membership in a set it computed - so a scan that flags every call goes red
+    there."""
+    holes = {
+        "call_wrapped": 'during = _drop_config(strays["during"])',
+        "rewrapped": 'during = strays["during"]\n    during = _drop_config(during)',
+        "helper": 'during = _keep_mine(strays["during"])',
+        "attribute": ('during = [p for p in strays["during"] '
+                      'if p not in _mio.SKIP]'),
+        "called": ('during = [p for p in strays["during"] '
+                   'if p not in _skiplist()]'),
+        "unbound": ('during = [p for p in strays["during"] '
+                    'if p not in skip_list]'),
+        "else_append": ('during = []\n    for p in strays["during"]:\n'
+                        '        if p.startswith(".claude/"):\n'
+                        '            pass\n        else:\n'
+                        '            during.append(p)'),
+        "unpacked": ('during, _held = (strays["during"] or []), None\n'
+                     '    during = [p for p in during '
+                     'if not p.startswith(".claude/")]'),
+    }
+    allows = {
+        "presented": 'during = sorted(strays["during"])',
+        "helper_ok": 'during = _as_listed(strays["during"])',
+        "bound": (_BOUND_ELSEWHERE + 'during = [p for p in strays["during"] '
+                  'if p not in mine_elsewhere]'),
+    }
+    tails = {"helper": _NARROWING_HELPER, "helper_ok": _PRESENTING_HELPER}
+    texts = dict((label, real.replace(anchor, line) + tails.get(label, ""))
+                 for label, line in list(holes.items()) + list(allows.items()))
+    landed = real.count(anchor) == 1 and all(t != real for t in texts.values())
+    seen = dict((label, result_scan(text)["violations"])
+                for label, text in texts.items())
+    check("sc-ua18 the shape scan names every route a reader could narrow an "
+          "undeclared list by - handed to a call, to a same-file helper that "
+          "narrows it, through a tuple or an `or`, filtered in a loop's else "
+          "branch, tested against an attribute, a call or a list not computed "
+          "in the function (mutations landed: %s): %r" % (landed, seen),
+          landed and all(len(seen[k]) >= 1 for k in holes)
+          and any("narrowed" in v for v in seen["helper"]))
+    check("sc-ua19 ALLOW: a list handed to a presentation builtin, to a "
+          "same-file helper that only presents it, or tested against a set the "
+          "reader computed in the function is no violation, so a scan that "
+          "flags every call or every helper goes red here: %r"
+          % (dict((k, seen[k]) for k in allows),),
+          landed and all(seen[k] == [] for k in allows))
 
 
 # --- the span an attempt's commits are read over -------------------------------

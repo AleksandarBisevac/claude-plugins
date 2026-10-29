@@ -22,8 +22,9 @@ reported under the strongest kind among its lines, in that order, and prose
 files come last within a kind, so a cap keeps the callers. A Python file's top-level
 `def`/`class` names are searched as whole words too, and a name is reported with
 the tracked files that name it - for a name with a leading underscore, only the
-files that also reference the module, since a private name said elsewhere is
-nearly always that file's own. The declared file itself is never its own
+files that also reference the module and are not prose (`DOC_EXTS`), since a
+private name said elsewhere is nearly always that file's own, and a document
+naming the module's internals describes them rather than calls them. The declared file itself is never its own
 dependant, and `exclude` drops whole directories (the plan's own state names
 every file it indexes and reads none of them).
 
@@ -315,8 +316,10 @@ def _names_argv(names, pcre):
 def _name_users(root, path, names, referrers, exclude, cap, git, pcre):
     """`(symbols, error, pcre)` - per defined name, the tracked files naming it.
     A name with a leading underscore is private by Python's convention, so a
-    file naming one counts only when it also references the module; any other
-    file saying `_write` has a `_write` of its own. `pcre` comes back False once
+    file naming one counts only when it is in `referrers` - the code files that
+    reference the module; any other file saying `_write` has a `_write` of its
+    own, and a document beside the module describes the name rather than calls
+    it. `pcre` comes back False once
     git has refused the PCRE form, so the caller stops offering it."""
     if not names:
         return [], None, pcre
@@ -352,7 +355,7 @@ def _file_dependants(root, path, cap, exclude, git, pcre):
     if path.endswith(".py"):
         names, names_error = _read_names(root, path)
         result["defined"] = len(names)
-        referrers = set(r["file"] for r in refs)
+        referrers = set(r["file"] for r in refs if not is_doc(r["file"]))
         symbols, grep_error, pcre = _name_users(root, path, names, referrers,
                                                 exclude, cap, git, pcre)
         result["symbols"] = symbols

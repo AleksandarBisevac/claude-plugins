@@ -1150,9 +1150,9 @@ STORED_UNKNOWN = "unknown"
 
 def tree_key(tree):
     """A short, stable name for a measured tree that is not the project - never
-    its path, which names a machine, and a row is committed. The spelling
-    `run-test-gate` records as `testedState.tree.key`; a case holds the two to
-    one answer."""
+    its path, which names a machine, and a row is committed. The only
+    spelling: `run-test-gate` writes `testedState.tree.key` through this
+    function, and the stored-verdict comparison reads it back through it."""
     return hashlib.sha1(os.path.realpath(tree).encode("utf-8")).hexdigest()[:12]
 
 

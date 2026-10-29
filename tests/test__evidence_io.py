@@ -4136,9 +4136,23 @@ def _runnable_full_gate_cases(check):
         _harness.remove_tree(root_o)
 
 
+def _tree_key_cases(check):
+    """The name a measured tree is recorded under has one definition: the gate
+    runner writes `testedState.tree.key` with it and the stored-verdict
+    comparison reads it back with it. Two spellings held equal by a case agree
+    only on what the case happens to try - a realpath policy changed in one
+    makes every stored verdict from another tree read as moved."""
+    rtg = _loader.load_script("run-test-gate.py", "ev_tree_key_rtg", cache=False)
+    check("tk1 run-test-gate names a measured tree through _evidence_io.tree_key "
+          "itself, not a copy of it: %r"
+          % ((getattr(rtg, "tree_key", None), M.tree_key),),
+          getattr(rtg, "tree_key", None) is M.tree_key)
+
+
 def _selftest():
     def body(check):
         _cases(check)
+        _tree_key_cases(check)
         _banner_cases(check)
         _project_config_cases(check)
         _moment_reader_cases(check)

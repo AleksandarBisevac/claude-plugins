@@ -102,7 +102,6 @@ Exit codes:
 """
 import argparse
 import ast
-import hashlib
 import json
 import os
 import re
@@ -5123,10 +5122,10 @@ def success_line(lines):
                                 "; ".join([""] + records) if records else "")
 
 
-def tree_key(tree):
-    """A short, stable name for a measured tree that is not the project - never
-    its path, which names a machine and this row is committed."""
-    return hashlib.sha1(os.path.realpath(tree).encode("utf-8")).hexdigest()[:12]
+# The name `testedState.tree.key` is written under is `_evidence_io`'s, the one a
+# stored verdict is compared on: a second spelling here would agree with it only
+# until one of them changed. The name stays on this module for its readers.
+tree_key = _ev.tree_key
 
 
 def tree_of(args, project):
@@ -5540,7 +5539,7 @@ def main(argv, out=print):
         res[_ev.REUSE_KEY] = identity["key"]
         res["reuseBasis"] = identity["basis"]
         if tree is not None and isinstance(res.get("testedState"), dict):
-            res["testedState"]["tree"] = {"key": tree_key(tree)}
+            res["testedState"]["tree"] = {"key": _ev.tree_key(tree)}
         # PHASE-SCOPE ONLY, and asked of THIS run's own steps - a task-scope
         # run is narrowed by its own `tests.gate`, whose rules are
         # `_invariants`' and not `meta.phaseGate`'s, so neither claim is one

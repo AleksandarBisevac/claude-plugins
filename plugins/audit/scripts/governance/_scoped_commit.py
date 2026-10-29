@@ -1186,7 +1186,7 @@ def plugin_owned_rels(project, git_root, when_unknown):
             seen.add(rel)
             name = os.path.relpath(path, claude).replace("\\", "/")
             if name in _mio.PLUGIN_OWNED_WHILE_UNTRACKED:
-                state = tracking(git_root, rel)
+                state = _tracking(git_root, rel)
                 if state == TRACKED or (state == UNKNOWN
                                         and when_unknown == UNKNOWN_REFUSES):
                     continue
@@ -1194,11 +1194,13 @@ def plugin_owned_rels(project, git_root, when_unknown):
     return rows
 
 
-def tracking(git_root, rel):
+def _tracking(git_root, rel):
     """`TRACKED`, `UNTRACKED` or `UNKNOWN` - whether git's index holds `rel`;
     `UNKNOWN` when the path cannot be spelled as a pathspec or `git ls-files`
     exits non-zero or could not be run. What an unknown means is the
-    reader's, not this function's (`plugin_owned_rels`).
+    reader's, not this function's, so it is private and `plugin_owned_rels`,
+    which takes the reader's side as an argument, is its one caller -
+    `tests/test__scoped_commit.py` walks `scripts/` for any other.
 
     `rel` is spelled from the checkout's top, so it goes through
     `plan_to_git` as an entry of a project that IS the top: the pathspec is the

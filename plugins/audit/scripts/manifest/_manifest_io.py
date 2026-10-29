@@ -1345,9 +1345,8 @@ CONFIG_NAME = "audit.config.json"
 # leaves them out of the commit instead of refusing the close for them. A path
 # the plugin starts writing under `.claude/` belongs here, beside the writer
 # that creates it; the check reads the table and has no list of its own. Nothing
-# forces a new writer to add its row: the `ctw-at9` case pins the restore-point
-# writer's paths only, and the panel's own files stay out because git
-# ignores them.
+# forces a new writer to add its row: the `ctw-at9` case pins the rows below by
+# name and no more, and the panel's own files stay out because git ignores them.
 PLUGIN_OWNED_IN_CLAUDE = (
     (BACKUP_DIR_NAME, "a restore point the plugin parked before a layout change"),
     (GITIGNORE_NAME, "the ignore lines the plugin adds for its restore points "
