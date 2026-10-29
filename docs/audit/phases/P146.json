@@ -29,21 +29,25 @@
         "severity": "low",
         "file": "tests/test_usage_ledger.py (lf4)",
         "issue": "lf4 failed once on windows cp1252 2 of run 40765135807 (written=1 spent=0.75s of a 3.0s wait) and passed on the rerun: a wall-clock threshold on a loaded runner.",
-        "resolution": "Judge lf4 by whether append_rows waited on the lock at all (an injected clock or a counted wait), not by elapsed seconds.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.4 (6bb76efba90b): Judge lf4 by whether append_rows waited on the lock at all (an injected clock or a counted wait), not by elapsed seconds.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.4",
+        "commit": "6bb76efba90b"
       },
       {
         "id": "P146-R2",
         "severity": "low",
         "file": "tests/test_integrate_task.py:377-379",
         "issue": "The closure probe runs with check=True and capture_output=True, so when the fresh interpreter fails (import error in _deps, a timeout on a loaded windows runner) the raised CalledProcessError prints only the exit status; the child's stderr, the one thing that names the cause, is captured and dropped. This is the same class of remote-only, hard-to-diagnose failure the task is fixing (a CI-only raise in block itf).",
-        "resolution": "Run without check=True, and on a non-zero returncode raise RuntimeError carrying done.stderr.decode('utf-8', 'replace') (and the returncode), as the 'lacks wanted' branch already does for an empty probe.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.4 (6bb76efba90b): Run without check=True, and on a non-zero returncode raise RuntimeError carrying done.stderr.decode('utf-8', 'replace') (and the returncode), as the 'lacks wanted' branch already does for an empty probe.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.4",
+        "commit": "6bb76efba90b"
       }
     ],
-    "outcome": "[findings: 2 - 0 high, 0 med, 2 low; 0 with a recorded fix commit]",
+    "outcome": "[findings: 2 - 0 high, 0 med, 2 low; 2 with a recorded fix commit]",
     "readReturns": []
   },
   "summary": "P146 keeps the integrate suite's map-owner fixture inside the fixture hang bound on a loaded windows runner: it seeds the module-map recipe's own import closure instead of all of the plugin's scripts and lints, so the base commit is a handful of files on every OS and the cases still run the real recipe. The two low findings are carried to BUG-29-dau.",
