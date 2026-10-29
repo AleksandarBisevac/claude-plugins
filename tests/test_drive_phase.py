@@ -6561,6 +6561,35 @@ def _probe_direct(M, root, mpath, state, head, **pinned):
     return result, ctx["did"], calls, seconds
 
 
+def _probe_drain_reads(M, root):
+    """`((why, asked), (why, asked))` of `run_lint_probe` timing out a sleeping
+    child twice: the kill reporting confirmed each time, the drain reporting
+    first that it did NOT reach the end of the pipe, then that it did. The real
+    teardown and drain run under both stubs, so no child outlives a call;
+    `asked` counts the drain calls the reader made."""
+    group = M._proc_group
+    real_tear, real_drain = group.tear_down, group.drain_to_eof
+    command = '"%s" -c "import time; time.sleep(30)"' % (sys.executable,)
+    out = []
+    for complete in (False, True):
+        asked = []
+
+        def tear(proc):
+            real_tear(proc)
+            return True
+
+        def drain(proc, complete=complete, asked=asked):
+            asked.append(1)
+            return real_drain(proc)[0], complete
+        group.tear_down, group.drain_to_eof = tear, drain
+        try:
+            _code, _text, why = M.run_lint_probe(root, command, 1)
+        finally:
+            group.tear_down, group.drain_to_eof = real_tear, real_drain
+        out.append((why, len(asked)))
+    return out[0], out[1]
+
+
 def _lint_probe_cases(check):
     """At sign-off the lint probe the plan names runs over the files the phase
     changed: the rows of a lint the phase touched, both directions; none when it
@@ -6701,6 +6730,20 @@ def _lint_probe_cases(check):
           isinstance(hung, tuple) and hung[0] == 1
           and "timed out" in hung_text and "2 s" in hung_text
           and seconds < 30)
+
+    # A kill that reports success is half the confirmation: a drain that ran
+    # out of time means a process still holds the pipe. lp9b fails a reader
+    # judging from the kill alone, lp9c one that calls every stop unconfirmed.
+    no_eof, at_eof = _probe_drain_reads(M, root)
+    unconfirmed = "its process group was torn down (not confirmed)"
+    check("lp9b a timed-out probe whose kill reports confirmed while its drain "
+          "did NOT reach the end of the pipe is said torn down not confirmed, "
+          "the red-first run's wording - the drain asked once: %r" % (no_eof,),
+          (no_eof[0] or "").endswith(unconfirmed) and no_eof[1] == 1)
+    check("lp9c ...and the same kill with a drain that reached the end of the "
+          "pipe is said torn down, confirmed: %r" % (at_eof,),
+          (at_eof[0] or "").endswith("its process group was torn down")
+          and at_eof[1] == 1)
 
     # A file another session had already modified keeps its two status letters
     # whatever the probe does to it, so only its bytes can say it moved. The

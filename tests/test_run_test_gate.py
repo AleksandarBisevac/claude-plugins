@@ -1477,6 +1477,34 @@ def _step(python, script, *args):
     return " ".join('"%s"' % (part,) for part in (python, script) + args)
 
 
+def _drain_read_cases(M, root):
+    """`((facts, asked), (facts, asked))` of `_shell` timing out a sleeping
+    child twice: the kill reporting confirmed each time, the drain reporting
+    first that it did NOT reach the end of the pipe, then that it did. The real
+    teardown and drain run under both stubs, so no child outlives a call;
+    `asked` counts the drain calls the reader made."""
+    real_tear, real_drain = M._tear_down, M._drain_to_eof
+    command = _step(sys.executable, "-c", "import time; time.sleep(30)")
+    out = []
+    for complete in (False, True):
+        asked = []
+
+        def tear(proc):
+            real_tear(proc)
+            return True
+
+        def drain(proc, complete=complete, asked=asked):
+            asked.append(1)
+            return real_drain(proc)[0], complete
+        M._tear_down, M._drain_to_eof = tear, drain
+        try:
+            _code, _text, facts = M._shell(root, command, timeout=1)
+        finally:
+            M._tear_down, M._drain_to_eof = real_tear, real_drain
+        out.append((facts, len(asked)))
+    return out[0], out[1]
+
+
 def _on_legacy_codec(run):
     """`run()`'s result, with every child it spawns writing through a cp1252
     stdout, and the caller's `PYTHONIOENCODING` restored afterwards.
@@ -3754,6 +3782,23 @@ def _cases(check):
           "as an unconditional pass: read=%r running=%r"
           % (live_read, still_running),
           live_read is False and still_running is True)
+
+    # A kill that reports success is half the confirmation: on Windows
+    # `taskkill` returning only asked for the kill, and a drain that ran out of
+    # time means a process still holds the pipe. The real teardown and drain
+    # run underneath, so the child is gone whichever answer is forced; only
+    # what each reports is swapped. lc10e fails a reader judging from the kill
+    # alone, lc10f one that calls every timed-out teardown unconfirmed.
+    lc10e, lc10f = _drain_read_cases(M, treeroot)
+    check("lc10e a timed-out step whose kill reports confirmed while its drain "
+          "did NOT reach the end of the pipe records the teardown `unconfirmed` "
+          "- the drain was asked once: %r" % (lc10e,),
+          lc10e[0].get("outcome") == M.TIMED_OUT
+          and lc10e[0].get("teardown") == "unconfirmed" and lc10e[1] == 1)
+    check("lc10f ...and the same kill with a drain that reached the end of the "
+          "pipe records no teardown fact, the clean stop: %r" % (lc10f,),
+          lc10f[0].get("outcome") == M.TIMED_OUT
+          and "teardown" not in lc10f[0] and lc10f[1] == 1)
 
     # --- the real runner's other two answers -------------------------------
     code, text, facts = M._shell(os.path.join(tmp, "no-such-dir"), "true")

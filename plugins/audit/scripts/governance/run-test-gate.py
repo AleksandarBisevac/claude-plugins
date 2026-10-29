@@ -3026,6 +3026,7 @@ def _spawn_kwargs():
 shares_our_group = _proc_group.shares_our_group
 _tear_down = _proc_group.tear_down
 _drain = _proc_group.drain
+_drain_to_eof = _proc_group.drain_to_eof
 
 
 # Characters after which an appended argument would not land on the command
@@ -3125,6 +3126,13 @@ def _shell(project, command, timeout=None):
     of the two no-verdict outcomes happened, the bound that was hit, and whether
     the teardown could be confirmed. `{}` for a step that simply ran and finished,
     which is the overwhelming majority and pays nothing for the rest.
+
+    A timed-out step's teardown is confirmed only when `_tear_down` confirmed
+    it, the drain reached the end of the pipe (`_drain_to_eof`), AND the root
+    has exited - the reading `stamp-verification.py red` takes. On Windows a
+    `taskkill` that succeeded only asked for the kill, so the kill's answer
+    alone confirms nothing; a drain that ran out of time means a process still
+    holds the pipe, and that is `unconfirmed`.
     """
     timeout = DEFAULT_TIMEOUT_SECONDS if timeout is None else timeout
     argv, env, refusal = _proc_group.shell_invocation(command)
@@ -3139,7 +3147,8 @@ def _shell(project, command, timeout=None):
         return proc.returncode, (out or b"").decode("utf-8", "replace"), {}
     except subprocess.TimeoutExpired:
         confirmed = _tear_down(proc)
-        text = _drain(proc)
+        text, complete = _drain_to_eof(proc)
+        confirmed = confirmed and complete and proc.poll() is not None
         facts = {"outcome": TIMED_OUT, "timeoutSeconds": timeout}
         if not confirmed:
             facts["teardown"] = "unconfirmed"

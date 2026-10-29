@@ -8225,7 +8225,12 @@ def run_lint_probe(project, command, timeout):
     project, its whole process tree stopped at `timeout` seconds; `(exit, text,
     why)` when it timed out or could not be started, `why` saying which and the
     exit `run-test-gate.py` records for the same two (the killed tree's own,
-    else 124; 127) - a code for the `--verbose` log, never a verdict."""
+    else 124; 127) - a code for the `--verbose` log, never a verdict.
+
+    A timed-out probe's teardown is said confirmed only when `tear_down`
+    confirmed it, the drain reached the end of the pipe (`drain_to_eof`), AND
+    the root has exited - the reading `stamp-verification.py red` takes, and
+    its wording when one is missing."""
     argv, env, refusal = _proc_group.shell_invocation(command)
     if argv is None:
         return 127, "", "could not be started: %s" % (refusal,)
@@ -8239,15 +8244,17 @@ def run_lint_probe(project, command, timeout):
         out, _err = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
         confirmed = _proc_group.tear_down(proc)
-        text = _verb_text(_proc_group.drain(proc).encode("utf-8"))
+        drained, complete = _proc_group.drain_to_eof(proc)
+        confirmed = confirmed and complete and proc.poll() is not None
+        text = _verb_text(drained.encode("utf-8"))
         code = proc.returncode if proc.returncode is not None else 124
         return code, text, (
             "timed out after %d s (SIGNOFF_STEP_SECONDS, the bound of a sign-off "
-            "step) and was stopped%s" % (
-                timeout, "" if confirmed else ", its teardown unconfirmed"))
+            "step) and its process group was torn down%s" % (
+                timeout, "" if confirmed else " (not confirmed)"))
     except BaseException:
         _proc_group.tear_down(proc)
-        _proc_group.drain(proc)
+        _proc_group.drain_to_eof(proc)
         raise
     return proc.returncode, _verb_text(out), None
 
