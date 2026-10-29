@@ -79,21 +79,25 @@
         "severity": "low",
         "file": "CHANGELOG.md",
         "issue": "The half-deadline clause was appended to an existing line in the Unreleased section, leaving one line past the file's usual wrap width.",
-        "resolution": "Rewrap so the sentence about the basis naming the deadline starts a new line.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.5 (8e46457ccc23): Rewrap so the sentence about the basis naming the deadline starts a new line.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.5",
+        "commit": "8e46457ccc23"
       },
       {
         "id": "P147-R7",
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/audit-task.py",
         "issue": "Cancelling a fix task leaves each finding it fixes bound to it (fixTask still set), so the triage keeps offering fix while add --fixes and the drive's --answer fix both refuse those findings as already naming a fix task; the only way out is a plain task plus resolve-finding.",
-        "resolution": "Cancel of a fix task releases its findings' fixTask (journalled), or cancel refuses a fix task and names the route; a case pins that a cancelled fix task's finding can be handed to a new add --fixes.",
-        "status": "carried",
-        "carriedTo": "BUG-29-dau"
+        "resolution": "fixed in P148.7 (04261ee5efac): Cancel of a fix task releases its findings' fixTask (journalled), or cancel refuses a fix task and names the route; a case pins that a cancelled fix task's finding can be handed to a new add --fixes.",
+        "status": "fixed",
+        "carriedTo": "BUG-29-dau",
+        "fixTask": "P148.7",
+        "commit": "04261ee5efac"
       }
     ],
-    "outcome": "[findings: 7 - 0 high, 1 med, 6 low; 5 with a recorded fix commit]",
+    "outcome": "[findings: 7 - 0 high, 1 med, 6 low; 7 with a recorded fix commit]",
     "readReturns": []
   },
   "summary": "CHANGELOG Unreleased describes every user-visible plugin change since 3.6.0, each sentence checked against the code by two reviews; five findings fixed in P147.7, two lows carried to the 3.8.0 batch Gate banner accepted: The phase changed only CHANGELOG.md; no suite is named after it, and the prose-number suites that read it (test__deps, test__output_lints) ran green in the phase's full sweep",
