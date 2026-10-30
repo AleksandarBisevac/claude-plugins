@@ -77,19 +77,18 @@ concurrency:
 # each now runs, as those steps were measured in runs 38902667892 and 38929591548
 # (ci/p125, every job green); each is replaced by the first measured run of its job:
 #   e2e      - that run's windows e2e cell, whose steps it runs (run 38902667892)
-#   lint     - the lint job plus the ubuntu e2e cell (run 38929591548)
-#   manifests - the manifest job without its three browser steps, plus the plugin
-#              validation job (runs 38929591548 and 38902667892)
+#   lint     - the lint + e2e job's longest finished run, 1m50s (run 40774503871),
+#              plus the longest verify, node and install steps of the manifests job
+#              it absorbed, 38s, 5s and 5s (runs 40761628365 to 41070108164)
 #   browser-panel / browser-report - the screenshot step, and the two interactive
-#              steps, of that manifest job, plus its node setup (run 38929591548)
+#              steps, of that run's manifest job, plus its node setup (run 38929591548)
 #   verified - checkout, setup-python and two API reads (no run yet)
 # The resample figure is measured: its first finished run, run 40715565769 (f06f113f,
 # success), took 22m00s, past half the bound of 40 its estimate had set, so the bound
 # moved to twice the measurement.
 #   longest selftests: 13m35s (estimate, the heaviest of four parts, run 40715565769's windows cells)
 #   longest e2e: 1m41s (estimate, run 38902667892)
-#   longest lint: 1m36s (estimate, run 38929591548)
-#   longest manifests: 1m36s (estimate, runs 38929591548 + 38902667892)
+#   longest lint: 2m38s (estimate, runs 40761628365 to 41070108164)
 #   longest browser-panel: 6m24s (estimate, run 38929591548)
 #   longest browser-report: 7m19s (estimate, run 38929591548)
 #   longest verified: 0m30s (estimate, no run yet)
@@ -224,11 +223,26 @@ jobs:
         shell: bash
         run: sh tools/verify.sh --only runner,e2e
 
+  # THE STATIC CHECKS ARE ONE JOB - lint, the runner's cases, e2e, and the manifests,
+  # js and plugin slices - because GitHub runs at most twenty of this account's jobs
+  # at once and holds the rest until a running job finishes. Measured, not documented:
+  # in each release-tier run from 40761628365 to 41070108164 (twenty-two jobs each)
+  # exactly two jobs started late, each one to four seconds after the first and the
+  # second job to finish, and in six of those seven runs a held job was a Windows
+  # sweep cell, the critical path, so its wait landed on the run's wall. Re-derive
+  # it from any run with
+  #   gh run view <id> --json jobs --jq '.jobs[] | [.name, .startedAt, .completedAt]'
+  # Merged, a per-run run asks for no more jobs than the cap, so none should be held -
+  # a prediction until a per-run run of this shape is measured; a release-tier run
+  # holds one job, and the resample job outlasts it. A job added to this file (a
+  # slice split into its own job, a new leg or shard) is held behind the cap unless
+  # another merges. Nothing checks the job count against the cap: tools/gate-parity.py
+  # does not count jobs, so keeping it is the author's.
   lint:
-    name: lint + e2e (linux)
+    name: lint + manifests + e2e (linux)
     needs: verified
     if: ${{ !cancelled() && needs.verified.outputs.run == '' }}
-    timeout-minutes: 5
+    timeout-minutes: 6
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
@@ -251,21 +265,6 @@ jobs:
             3.12
       - name: Install pinned lint tools (dev/CI-only, not a runtime dependency)
         run: pip install ruff==0.16.2 vermin==1.8.0
-      - name: verify slices
-        shell: bash
-        run: sh tools/verify.sh --only lint,runner,e2e
-
-  manifests:
-    name: manifests + js + plugin
-    needs: verified
-    if: ${{ !cancelled() && needs.verified.outputs.run == '' }}
-    timeout-minutes: 5
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
       - uses: actions/setup-node@v5
         with:
           node-version: 20
@@ -275,7 +274,7 @@ jobs:
           npm install -g @anthropic-ai/claude-code
       - name: verify slices
         shell: bash
-        run: sh tools/verify.sh --only manifests,js,plugin
+        run: sh tools/verify.sh --only lint,runner,e2e,manifests,js,plugin
 
   # The two browser gates are two jobs, so neither waits for the other. One install
   # and one pin: playwright is a devDependency that `npm ci` installs from the

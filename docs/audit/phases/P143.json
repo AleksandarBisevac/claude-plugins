@@ -122,8 +122,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/_scoped_commit.py:250-258; plugins/audit/scripts/manifest/audit-task.py:5443-5447",
         "issue": "contradicts task clause \"keep behaviour identical\": _phase_entry used `rev-parse --verify -q HEAD` and now uses head_sha, whose _ask_head runs plain `git rev-parse HEAD`. On an unborn branch with a root entry named HEAD, git exits 0 and prints the literal string \"HEAD\". On macOS's case-insensitive filesystem a `head` or `Head` file or directory has the same effect. `--verify -q` exits 1 in that case. head_sha returns \"HEAD\" even though its docstring says it returns 'the commit HEAD names, or None'. `start` then skips the 'has no commit yet ... commit first' refusal and returns state cut with baseRef \"HEAD\". The memo cannot catch this: _files_head returns None for an unborn branch, so the answer comes straight from git. Reproduced in scratchpad/p14310/rev/headfile2.sh (unborn plus `head` file: plain exit 0 'HEAD'; plus `Head` directory: exit 0 'HEAD'; with nothing there: exit 128) and in rev/probe_head.py case 11 (head_sha='HEAD', --verify=None). The existing case pe6 (tests/test_audit_task.py:9682) builds an unborn repo with no such entry, so it stays green.",
-        "resolution": "Have _ask_head ask `git rev-parse --verify -q HEAD`, and have head_sha return None unless the answer matches _OBJECT_NAME. That also makes drive-phase.git_head stricter in the same edge, where it is already pre-existing. Add an sc-hd case with an unborn repo holding a `head` directory, asserting None, and confirm it is red against the plain spelling.",
-        "fixTask": "P143.11-z9j"
+        "resolution": "fixed in P143.11-z9j (22ebe4788887): Have _ask_head ask `git rev-parse --verify -q HEAD`, and have head_sha return None unless the answer matches _OBJECT_NAME. That also makes drive-phase.git_head stricter in the same edge, where it is already pre-existing. Add an sc-hd case with an unborn repo holding a `head` directory, asserting None, and confirm it is red against the plain spelling.",
+        "fixTask": "P143.11-z9j",
+        "commit": "22ebe4788887",
+        "status": "fixed"
       },
       {
         "id": "P143-R14",
@@ -138,9 +140,16 @@
         "file": "plugins/audit/scripts/governance/_scoped_commit.py:1396-1446",
         "issue": "The _tracking docstring claims 'the same answer one listing each would give', and two shapes break it. (a) A trailing-slash spec naming a gitlink: `sm/` against a submodule `sm` is tracked when asked alone and untracked when batched, because _spec_holds requires `path.startswith('sm/')` and git lists `sm`. (b) GIT_ICASE_PATHSPECS=1 in the environment: `Docs`, `DOCS/x.txt` and `.Claude/a.json` are tracked when asked alone and untracked when batched. Both come from rev/probe_head.py section 13. The one caller, plugin_owned_rels, asks only CONFIG_NAME and GITIGNORE_NAME as fixed lower-case file paths, so neither shape is reachable today. The claim is still wider than the code.",
         "resolution": "Have _plain_pathspec refuse a spec ending in '/' and refuse batching whenever GIT_ICASE_PATHSPECS is set, so those are asked alone. Alternatively, narrow the docstring to the shapes the matcher reproduces."
+      },
+      {
+        "id": "P143-R16",
+        "severity": "low",
+        "file": ".github/workflows/ci.yml:226-233",
+        "issue": "The new cap comment says 'in six of those seven runs a held job was a Windows sweep cell' and 'Measured, not documented'. Both are wrong. Re-derived with `gh run view <id> --json jobs` (first attempts; 40765135807 read through `gh api .../runs/40765135807/attempts/1/jobs` because attempt 2 is a rerun), the held jobs are: 40761628365 windows plain 3+4; 40765135807 linux plain 2 + linux stress 1; 40774503871 windows cp1252 4 + plain 2; 40877191420 windows plain 3 + linux stress 1; 40913965771 windows plain 1+4; 40946289828 linux plain 3 + lint; 41070108164 windows plain 2+4. That is five of seven runs, not six. GitHub also documents a 20-concurrent-job limit for its Free plan, so the limit is documented as well as measured. The executor's outcome repeats the 6-of-7 figure.",
+        "resolution": "Change it to 'in five of those seven runs', or drop the count and keep the re-derive command, which is already beside it. Change 'Measured, not documented' to 'Measured, and matching GitHub's documented Free-plan limit'."
       }
     ],
-    "outcome": "[findings: 15 - 0 high, 6 med, 9 low; 2 with a recorded fix commit]"
+    "outcome": "[findings: 16 - 0 high, 6 med, 10 low; 3 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -851,7 +860,7 @@
     {
       "id": "P143.11-z9j",
       "title": "fix P143-R13: contradicts task clause \"keep behaviour identical\": _phase_entr...",
-      "status": "in_progress",
+      "status": "done",
       "description": "contradicts task clause \"keep behaviour identical\": _phase_entry used `rev-parse --verify -q HEAD` and now uses head_sha, whose _ask_head runs plain `git rev-parse HEAD`. On an unborn branch with a root entry named HEAD, git exits 0 and prints the literal string \"HEAD\". On macOS's case-insensitive filesystem a `head` or `Head` file or directory has the same effect. `--verify -q` exits 1 in that case. head_sha returns \"HEAD\" even though its docstring says it returns 'the commit HEAD names, or None'. `start` then skips the 'has no commit yet ... commit first' refusal and returns state cut with baseRef \"HEAD\". The memo cannot catch this: _files_head returns None for an unborn branch, so the answer comes straight from git. Reproduced in scratchpad/p14310/rev/headfile2.sh (unborn plus `head` file: plain exit 0 'HEAD'; plus `Head` directory: exit 0 'HEAD'; with nothing there: exit 128) and in rev/probe_head.py case 11 (head_sha='HEAD', --verify=None). The existing case pe6 (tests/test_audit_task.py:9682) builds an unborn repo with no such entry, so it stays green.\n\nResolution asked: Have _ask_head ask `git rev-parse --verify -q HEAD`, and have head_sha return None unless the answer matches _OBJECT_NAME. That also makes drive-phase.git_head stricter in the same edge, where it is already pre-existing. Add an sc-hd case with an unborn repo holding a `head` directory, asserting None, and confirm it is red against the plain spelling.",
       "files": [
         "plugins/audit/scripts/governance/_scoped_commit.py",
@@ -877,14 +886,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "22ebe4788887",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_scoped_commit.py: _ask_head now runs `git rev-parse --verify -q HEAD` (plain rev-parse reads HEAD as a path on an unborn branch whose root holds a `HEAD` entry, or `head` on a case-folding filesystem, and exits 0 printing the word); head_sha returns None unless git's answer matches _OBJECT_NAME. Docstrings of both say so. audit-task.py NOT changed: _phase_entry's `if not head` refusal is restored by head_sha returning None (pe6b), and _examined_head already filtered by _SHA_SHAPE, so it answered None for 'HEAD' before and after. Tests: test__scoped_commit.py gains _plain_rev_parse and _unborn_head_entry_cases (sc-hd10..13, called from the sc-hd block); test_audit_task.py gains pe6b in _record_cases (at7-block). Runs: test__scoped_commit.py --selftest at base 77/80 exit 1 (sc-hd10/11/12 FAIL), fixed 81/81 exit 0; test_audit_task.py --stage at7-block 244/244 exit 0; gate `python3 tools/sweep-selftests.py tests/test__scoped_commit.py tests/test_audit_task.py` exit 0, '2/2 files ok, 1247 cases'; test_drive_phase.py --stage sb-block (gh1, drive-phase.git_head) 7/7 exit 0; ruff exit 0; vermin -t=3.8- exit 0. Mutation probe: the plan gate refused probe/mutations.py in the worktree VERBATIM except the plan path: '[require-plan] probe/mutations.py is outside task P143.11-z9j, the task this worktree is bound to (plan: <checkout>): no task of this plan declares it for this one. Only that task's files are open here.' so it lives at <scratchpad>/p14311/probe/mutations.py with output mutations.out beside it (exit 0): M1 drop --verify -> only sc-hd11 red (80/81); M2 drop shape check -> only sc-hd12 red (80/81); M3 both (base code) -> sc-hd10/11/12 red 78/81 and pe6b red at7-block 243/244, sc-hd13 green; M4 shape check refuses all -> sc-hd1 red, suite 68/71 exit 1 (block aborts after sc-hd1, so sc-hd13 does not print); anchors asserted count==1, __pycache__ purged per run, restore sha256 3479a16d... before == after, restored tree 81/81. Dependants: drive-phase.git_head - stricter only on an unborn branch with a HEAD entry (was 'HEAD', now None), gh1 green; audit-task._phase_entry - refusal restored; audit-task._examined_head - unchanged (already shape-filtered; plain and --verify agree on a born repo, sc-hd13 and a manual probe both printed the sha with a HEAD directory present); close-phase, commit-task-work, _live_copy, test_commit_task_work - import _scoped_commit but call no head_sha/_ask_head (grep), unchanged; test__scoped_commit _counted_asks wraps _ask_head - signature unchanged, sc-hd1..9 green; test_drive_phase gh1 wraps _ask_head - green; tools/affected.py, tools/sweep-selftests.py, .github/sweep-costs.json, CHANGELOG.md, docs/research - path references, files unchanged in name; costs grow by a few git inits, not re-recorded; test_commit_task_work/_filed_returns names from test_audit_task.py (_attempt_cases, _close_evidence_cases, _held_cases, _remedies_pass) untouched. Class left, outside files: plain `rev-parse HEAD` on exit code alone also at status/audit-lookup.py:1442 (_head, brief's head) and status/_doctor_setup.py:599 (installed copy's commit) - both can see an unborn branch and would echo 'HEAD'; the other hits (_scoped_commit.py:743/871 after a commit, stamp-verification.py:4315, drive-phase.py:2506/5341 task trees, integrate-task.py:409/582, hooks/guard-history-rewrite.py:1741 compares against recorded shas) run where a commit exists or treat a non-sha as no match. Suggest a Faults entry for the two.",
+        "descriptive": "head_sha no longer reports the literal word HEAD as a commit on an unborn branch whose tree holds a HEAD/head entry, so `start` again refuses with 'no commit yet'"
       },
       "startedAt": "2026-10-30T18:28:24Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-30T19:02:17Z",
+      "verifiedBy": [
+        "sc-hd10: unborn repo with a HEAD directory and one with a head file - head_sha None for both, fixture shown to make plain rev-parse echo 'HEAD', nothing memoised",
+        "sc-hd11: _ask_head answers None in the HEAD-directory tree (the --verify half alone)",
+        "sc-hd12: head_sha is None for asker answers 'HEAD', '', an abbreviation, forty non-hex letters (the shape half alone)",
+        "sc-hd13: second direction - once that tree has a commit, head_sha is the commit",
+        "pe6b (test_audit_task.py): start in an unborn repo holding a HEAD directory refuses with 'no commit yet', task pending, no branch, no baseRef"
+      ],
       "notes": [
         {
           "at": "2026-10-30T18:28:23Z",
@@ -907,6 +922,18 @@
         "runId": "2026-10-30T19:02:13Z.96fc8e",
         "status": "passed",
         "at": "2026-10-30T19:02:13Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "22ebe4788887",
+        "at": "2026-10-30T19:02:17Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-30T18:42:12Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__scoped_commit.py tests/test_audit_task.py` in a throwaway tree at HEAD exited 1 with 4 of 1166 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sc-hd10 (house FAIL), sc-hd11 (house FAIL), sc-hd12 (house FAIL), pe6b (house FAIL): SELFTEST FAILED: 1165/1166 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
