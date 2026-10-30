@@ -1746,7 +1746,8 @@
       "P149.11-hwg",
       "P149.12-hwg",
       "P143.1-6yq",
-      "P143.7-z9j"
+      "P143.7-z9j",
+      "P143.9-z9j"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -3748,7 +3749,8 @@
       "P142.20-6yq",
       "P148.5",
       "P149.1",
-      "P143.7-z9j"
+      "P143.7-z9j",
+      "P143.10-z9j"
     ],
     "plugins/audit/scripts/git/close-phase.py": [
       "P18.3",
@@ -4087,7 +4089,8 @@
       "P142.30-6yq",
       "P142.39-6yq",
       "P148.6",
-      "P148.16-xpz"
+      "P148.16-xpz",
+      "P143.10-z9j"
     ],
     "plugins/audit/scripts/governance/_tree_stamp.py": [
       "P43.4",
@@ -4104,7 +4107,8 @@
       "P130.40-ywo",
       "P131.1",
       "P131.2",
-      "P142.1"
+      "P142.1",
+      "P143.10-z9j"
     ],
     "plugins/audit/scripts/governance/audit-journal.py": [
       "BF1.1",
@@ -4932,7 +4936,8 @@
       "P148.18-xpz",
       "P148.21-xpz",
       "P149.5-hwg",
-      "P149.7-hwg"
+      "P149.7-hwg",
+      "P143.10-z9j"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -5913,7 +5918,8 @@
       "P130.8",
       "P130.12-ywo",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P143.10-z9j"
     ],
     "plugins/audit/templates/audit-plan.starter.json": [
       "P1.5"
@@ -10280,7 +10286,8 @@
       "P149.6-hwg",
       "P149.8-hwg",
       "P149.9-hwg",
-      "P143.7-z9j"
+      "P143.7-z9j",
+      "P143.10-z9j"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -10680,7 +10687,8 @@
       "P130.5",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P143.10-z9j"
     ],
     "plugins/audit/scripts/usage/_usage_coverage.py": [
       "P122.8-z4y",
@@ -11670,7 +11678,8 @@
       "P142.39-6yq",
       "P148.6",
       "P148.16-xpz",
-      "P148.20-xpz"
+      "P148.20-xpz",
+      "P143.10-z9j"
     ],
     "tests/test__status_facts.py": [
       "P131.1",
@@ -11684,7 +11693,8 @@
       "P131.1"
     ],
     "tests/test__tree_stamp.py": [
-      "P131.1"
+      "P131.1",
+      "P143.10-z9j"
     ],
     "tests/test__ui_theme.py": [
       "P131.1",
@@ -11911,7 +11921,8 @@
       "P149.8-hwg",
       "P149.9-hwg",
       "P143.7-z9j",
-      "P143.8-z9j"
+      "P143.8-z9j",
+      "P143.10-z9j"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"

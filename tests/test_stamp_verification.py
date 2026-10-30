@@ -6639,6 +6639,7 @@ STAGES = (
     ("swc-block", "_sweep_cases"),
     ("swd-block", "_sweep_deadline_cases"),
     ("swt-wall", "_wall_cases"),
+    ("swp-platform", "_platform_cases"),
     ("swn-block", "_sweep_new_suite_cases"),
 )
 
@@ -6775,14 +6776,17 @@ _SWEEP_RED = ("sweep: 2 files, 8 workers\n"
 _COSTS_REL = ".github/sweep-costs.json"
 
 
-def _sweep_repo(prefix, wt_test, costs=None, sweep=None):
+def _sweep_repo(prefix, wt_test, costs=None, sweep=None, platform=None):
     """`_red_repo` with the stand-in sweep (`sweep`, or the quick one) and a cost
     table COMMITTED at HEAD, so the throwaway holds them; `costs=None` leaves the
-    table out."""
+    table out. The table says it was recorded here (`sys.platform`) unless
+    `platform` names another machine, since a figure is read as this host's
+    time only when it was taken on this host's platform."""
     root, man = _red_repo(prefix, wt_test)
     extra = {"tools/sweep-selftests.py": sweep or _FAKE_SWEEP}
     if costs is not None:
-        extra[_COSTS_REL] = json.dumps({"costs": costs})
+        extra[_COSTS_REL] = json.dumps({"costs": costs, "workers": 1,
+                                        "platform": platform or sys.platform})
     paths = sorted(extra)
     for rel in paths:
         dst = os.path.join(root, *rel.split("/"))
@@ -7047,7 +7051,11 @@ def _sweep_deadline_cases(check):
     sweep_mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(sweep_mod)
     table, table_problem = sweep_mod.load_costs(sweep_mod.COSTS_PATH)
-    ours, ours_problem = M.load_sweep_costs(_output.REPO_ROOT)
+    # Asked as a host of the platform the table was recorded on, which it
+    # names (`_platform_cases` holds that it is windows), so the reading is
+    # compared figure for figure rather than refused as another machine's.
+    loaded, loaded_e = _called("load_sweep_costs", _output.REPO_ROOT, host="win32")
+    ours, ours_problem = loaded or ({}, loaded_e)
     mine = {"tests/x.py": 41.0}
     one_cmd = [py] + sweep + ["tests/x.py"]
     one, one_error = _called("sweep_wall", one_cmd, mine)
@@ -7314,6 +7322,118 @@ def _wall_cases(check):
           and code_f == M.E_PROVED and block_f.get("status") == "proved"
           and sorted(seen_f) == ["baseline", "fix", "task"]
           and round(seen_f["fix"] - seen_f["task"], 3) == 7)
+
+
+# --- a figure is this host's time only when it was taken on this host's platform --
+# The table is recorded on the CI runner that binds, and its figures are that
+# machine's slot-seconds; a host of another platform reading them as its own
+# time sizes a deadline - and refuses a proof before it starts - from seconds
+# nobody measured here. The fixture tables name their platform, and every case
+# names the host it asks as, so no reading depends on the machine running it.
+_FOREIGN = "macos-14" if sys.platform == "win32" else "windows-2025"
+
+
+def _costs_root(doc):
+    """A scratch root holding `doc` as its cost table; the caller removes it."""
+    root = tempfile.mkdtemp(prefix="stamp-swp-table-")
+    dst = os.path.join(root, *_COSTS_REL.split("/"))
+    os.makedirs(os.path.dirname(dst))
+    _write(dst, json.dumps(doc))
+    return root
+
+
+def _platform_cases(check):
+    py = sys.executable
+    sweep = [py, "tools/sweep-selftests.py"]
+    names = ("windows-2025", "windows-latest", "win32", "macos-14", "darwin",
+             "ubuntu-24.04", "linux", "plan9", "", None)
+    families = [_called("platform_family", n)[0] for n in names]
+    check("swp1 a recorded platform is read as the host family it names - a CI "
+          "runner's label and sys.platform's spelling alike - and a name that "
+          "names no known family reads as none, never as this host's: %r"
+          % (list(zip(names, families)),),
+          families == ["win32", "win32", "win32", "darwin", "darwin",
+                       "linux", "linux", None, None, None])
+
+    costs = {"tests/big.py": 5000.0, "tests/a.py": 30.0}
+    windows = {"platform": "windows-2025", "workers": 4, "costs": costs}
+    roots = [_costs_root(windows), _costs_root({"workers": 4, "costs": costs})]
+    try:
+        there = _called("load_sweep_costs", roots[0], host="darwin")
+        home = _called("load_sweep_costs", roots[0], host="win32")
+        unnamed = _called("load_sweep_costs", roots[1], host="win32")
+    finally:
+        for root in roots:
+            _harness.remove_tree(root)
+    there_v, home_v, unnamed_v = [r[0] or ({}, r[1]) for r in (there, home, unnamed)]
+    cmd = sweep + ["tests/big.py"]
+    sized_there = M.sized_deadline(cmd, there_v[0], there_v[1], None, 20)
+    sized_home = M.sized_deadline(cmd, home_v[0], home_v[1], None, 20)
+    clause_there = M.deadline_clause(sized_there)
+    clause_unnamed = M.deadline_clause(
+        M.sized_deadline(cmd, unnamed_v[0], unnamed_v[1], None, 20))
+    # Two names that both read as no family are not one platform.
+    unknown, unknown_e = _called("foreign_table_problem", {"platform": "plan9"},
+                                 "plan9")
+    # The red direction is a windows table on a darwin host; the other is the
+    # same table on a windows host, which must still be sized from its figure
+    # and refused when it cannot fit - a reader that dropped every table would
+    # turn that half red.
+    check("swp2 a windows-recorded table on a darwin host is not read as this "
+          "host's time: no figure is taken, the deadline is the default, no "
+          "proof is refused on the other machine's need, and the clause names "
+          "the platform and workers it was recorded on and this host; on a "
+          "windows host the same table is sized from its figure as before, and "
+          "a table naming no platform says so: %r"
+          % ((there, home, unnamed, sized_there, clause_there, sized_home,
+              clause_unnamed, unknown, unknown_e),),
+          there_v[0] == {} and sized_there["seconds"] == 20
+          and sized_there.get("need") is None
+          and M.fit_problem(sized_there) is None
+          and "windows-2025" in clause_there and "4 workers" in clause_there
+          and "darwin" in clause_there and "not this host's" in clause_there
+          and home_v[1] is None and home_v[0] == costs
+          and sized_home["seconds"] == M.MAX_TIMEOUT
+          and M.fit_problem(sized_home) is not None
+          and unnamed_v[0] == {} and "names no platform" in clause_unnamed
+          and unknown_e is None and unknown is not None)
+
+    wt = _red_test("import mine", "mine.v == 2")
+    root, man = _sweep_repo("stamp-swp-foreign-", wt, platform=_FOREIGN,
+                            costs={"tests/test_mine.py": float(M.MAX_TIMEOUT)})
+    code, got, seen = _spied_red(root, man, sweep + ["tests/test_mine.py"])
+    block = got.get("redFirst") or {}
+    basis = block.get("basis") or ""
+    check("swp3 end to end, a proof whose suite another platform's table times "
+          "past the cap is not refused on that figure: every run is made, the "
+          "red is proved, and the basis says the figures are %s's and not this "
+          "host's: %r" % (_FOREIGN, (code, sorted(seen), basis[-420:])),
+          code == M.E_PROVED and block.get("status") == "proved"
+          and sorted(seen) == ["baseline", "fix", "task"]
+          and _FOREIGN in basis and "not this host's" in basis
+          and "no run was started" not in basis)
+
+    with io.open(os.path.join(_output.REPO_ROOT, *_COSTS_REL.split("/")),
+                 encoding="utf-8") as fh:
+        doc = json.load(fh)
+    drive = "tests/test_drive_phase.py"
+    committed = []
+    for host in ("win32", "darwin"):
+        loaded = _called("load_sweep_costs", _output.REPO_ROOT, host=host)
+        table, problem = loaded[0] or ({}, loaded[1])
+        sized = M.sized_deadline(sweep + [drive], table, problem, None, 20)
+        committed.append((host, drive in table, sized.get("need"),
+                          M.deadline_clause(sized)[:200]))
+    check("swp4 the committed table is kept as CI's: it was recorded on windows, "
+          "the platform that binds, with its workers named, a windows host sizes "
+          "%s from its figure, and a darwin host is told the figure is "
+          "another platform's rather than handed it as its own time: %r"
+          % (drive, (doc.get("platform"), doc.get("workers"), committed)),
+          _called("platform_family", doc.get("platform"))[0] == "win32"
+          and isinstance(doc.get("workers"), int)
+          and committed[0][1] and committed[0][2] is not None
+          and not committed[1][1] and committed[1][2] is None
+          and "not this host's" in committed[1][3])
 
 
 # --- a brand-new suite under the sweep's own grading -------------------------

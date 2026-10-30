@@ -606,7 +606,7 @@
     {
       "id": "P143.8-z9j",
       "title": "The full sweep finishes under four minutes on a quiet machine: the critical path is measured and its heaviest suites are cut or staged",
-      "status": "in_progress",
+      "status": "done",
       "description": "The full sweep still takes about 315 s on a quiet machine after the git-place memo (two runs 26 min apart, base 350 s); the target is under 240 s. Measure the critical path first: the longest single jobs and blocks in a loud sweep, and the slot-seconds per suite, then cut the heaviest suites or split them into staged blocks so the sweep's slots stay busy to the end. Take timings only with 1-, 5- and 15-minute load all low and no other sweep, playwright, build or agent session running; repeat twice with a gap and report the spread. If 240 s stays out of reach, name the remaining critical path with numbers and do not claim the target. Never re-record .github/sweep-costs.json from darwin: the table is windows figures, re-recorded from a CI log.",
       "files": [
         "tools/sweep-selftests.py",
@@ -638,14 +638,17 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8a851bf27104",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "MEASURED FIRST. Darwin full sweep at d1a877b7, from P143.7's quiet3 log: slot-seconds summed 2481, /8 workers = 310 s, against 316 s wall. So the sweep is throughput-bound with no tail; staging cannot move darwin wall, only CPU cuts can. Windows CI run 41070108164: each of the 8 shard cells keeps its 4 slots 90-99% busy (slot-sum/4 over the sweep step's wall), so Windows is throughput-bound too. Heaviest suites in slot-seconds, darwin (quiet3) / windows (.github/sweep-costs.json): test_drive_phase 860/2688, test_audit_task 211/629, test_stamp_verification 156/462, test_commit_task_work 143/665, test__deps 116/310, test_close_phase 107/470, check-committed-pii 86/144. A spawn-attribution shim (scratchpad/p1438/shim/usercustomize.py) over the drive suite (darwin, loaded) counted 40302 child processes and 759 s of spawn wall, about 84% of the suite's slot-seconds. By the module that made them: drive-phase.py 9473 spawns/162 s (carry_git, git_head), _scoped_commit.py 7258/122 s, _tree_stamp.py 5119/84 s, _harness.py fixture git 1377/50 s, _worktrees.py 2798/49 s, test_drive_phase.py itself 428/37 s, integrate-task.py 2125/34 s, audit-task.py 2142/33 s, run-test-gate.py 1101/29 s, stamp-verification.py 1261/25 s, _commit_trail.py 1484/24 s, _config.py 1468/22 s. CUT MADE, in tests/test_drive_phase.py only: _repo now copies a per-process template, one committed repository per distinct set of files keyed on the files themselves (_repo_files), so a fixture no longer starts its own git init, add and commit. _build_repo is the old build path. The new `fresh` flag builds in place and only fx2 uses it. New cases fx2 and fx3 are added in _template_cases, called from the end of _stage_cases (sb-block). Deterministic effect from the shim: fixture git init/add/commit spawns went from 398/704/783 to 188/494/574, and all drive-suite spawns from 41307 to 40302 (-2.4%). The saving is bounded by per-process dedup, because each of the 121 blocks is its own process and a cross-process cache would write outside the sweep's watched scratch. Drive suite slot-seconds: 859.7 before (P143.7 quiet3), 839.9 and 844.3 after (q1, q2). A loaded side-by-side drive-suite-alone run gave 900.7 s new against 918.7 s HEAD export. FULL SWEEP, quiet, on this tree: q1 started 15:46:46Z with load 2.46/2.53/3.32 and took real 325.08 s (user 1203, sys 941). q2 started 16:13:19Z, 21 min after q1 ended, with load 2.40/2.48/3.32 and took real 327.49 s (user 1206, sys 946). Both were 193/193 files ok with 17654 cases. Spread 325.1-327.5 s, against P143.7's quiet 314.7/315.9 s from a different session. THE 240 s TARGET IS NOT MET and is not claimed. q1's meta says quiet-at-start=no only because my detector matched other sessions' idle `until pgrep` waiter shells by command text. The loads at start met the thresholds, and every process sampled during both runs was a child of my own sweep: nested sweeps, prove-gates and measure-affected selftests, and gate-parity's verify.sh --list. Logs are in scratchpad/p1438/q1.* and q2.*. REMAINING CRITICAL PATH, with numbers: 240 s at 8 slots needs about 1920 slot-seconds, against about 2500 now (-23%). The levers are product git calls outside this task's files: _scoped_commit, _tree_stamp, carry_git/git_head in drive-phase.py, _worktrees._git, audit-task._git_answer, _config._ask_rev_parse, and per-verb `git config` reads (usage_ledger.resolve_author and _panel_viewer._git_config_origins, 662 each in the drive suite). The sweep also ran at 6.6 of 10 cores of CPU (2152 s CPU over 327 s), so the 'all cores but two' worker policy leaves throughput unused; that is a policy question, not measured further here. DECLINED, with numbers: (1) test__manifest_io _plan_write_sites re-walks nested ASTs. That is 0.77 s of walk and 0.91 s of parse on darwin under load, so a single pass saves about 0.5 s a run. Its 132.5 s on windows (4.4 s darwin) is not explained by anything darwin can measure. The suspect is _machine_paths realpath, with 3447 calls in the suite, which is product code. The owner can profile it on Windows with: `python -m cProfile -o mio.prof tests/test__manifest_io.py --selftest` then `python -c \"import pstats; pstats.Stats('mio.prof').sort_stats('tottime').print_stats(25)\"`. The same shape, about 20-30 s on windows against 0.1-1.6 s on darwin, also shows in test__affected_tests, test__machine_paths, test_gen_demo_manifest, test__impact and test_require_plan. (2) test_integrate_task: 357 spawns in 4.5 s darwin, almost all from integrate-task.py and _worktrees; its fixture build (_world) is 1.6 s. Not cut. The drive suite's al-block also runs it whole under an ASCII locale (6.8 s darwin; windows suite figure 26.6 s). That run is the only cross-platform hold on that locale, so it was left. (3) tools/sweep-selftests.py: per-block process overhead is 0.2-0.3 s (smallest block, both platforms), so merging blocks saves little. Not changed. (4) Snapshot-and-restore of drive states (e.g. _ar_at_decision, 45.8 of ar18's 66.2 s) was rejected because it is unsafe. Paths are embedded in worktree links and in hash-chained journal rows, and a same-path restore would destroy sibling fixtures a case still reads. Checks: ruff and vermin -t=3.8- are clean on tests/test_drive_phase.py. sb-block --stage run gave 6/6. The full drive suite passed with 678 cases (676+2) in every run (A/B, shim, q1, q2). DEPENDANTS: .github/sweep-costs.json is unchanged and its dependants are still correct. The drive suite's darwin slot-seconds moved about -2.3% (860 -> 840/844); the windows entries are not re-recorded from darwin, and I expect the blocks that build many _repo fixtures to drop slightly at the next CI re-record. tools/sweep-selftests.py is unchanged, so its dependants still hold. tests/test_drive_phase.py: _repo keeps its return shape and gains only a keyword `fresh=False`. No other file imports the suite; grep found only path strings in test__runner_output.py, test_run_test_gate.py, tools/affected.py, ci.yml and PLUGIN-BUILD-GUIDE.md, none of which describe _repo. The names others use (_counting, _follower_cases, _git_said, _head) are untouched. tests/test_integrate_task.py and tests/test__manifest_io.py are unchanged; their dependants (test_commit_task_work, test_gen_demo_manifest, the sweep) are unaffected.",
+        "descriptive": "The full sweep stays at about 326 s on a quiet machine (two runs, 21 min apart, spread 2.4 s); the 240 s target is not met. The drive suite's fixtures are now copied from per-process templates (about -2.4% of its processes), and the remaining critical path is named with numbers: product git calls outside this task's files."
       },
       "startedAt": "2026-10-30T14:52:20Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-30T16:26:06Z",
+      "verifiedBy": [
+        "fx2: a fixture copied from its template commits the same tree as one built from scratch with the same arguments, is clean, and differs from a fixture with other arguments",
+        "fx3: a write and a commit in one copy reach neither a sibling copied before it nor one copied after it from the same template"
+      ],
       "reviewPerTask": "signals",
       "notes": [
         {
@@ -657,19 +660,31 @@
         "runId": "2026-10-30T16:22:32Z.58a4cb",
         "status": "passed",
         "at": "2026-10-30T16:22:32Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8a851bf27104",
+        "at": "2026-10-30T16:26:06Z",
+        "return": "docs/audit/evidence/returns/P143.8-z9j/20261030T145220Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "tests.mode is regression with expectRedFirst false, and the brief says this task adds no test of its own to run. The new cases fx2 and fx3 hold the new template-copy fixture, which has no pre-fix behaviour to go red against. Instead, each was proven able to fail by a mutation probe run in a scratch git-archive export, never in the shared tree: scratchpad/p1438/probe/mutations.py with its output in mutations.out. Its baseline was green (sb-block 6/6). Results: M1, the template key ignores the gate -> fx2 red. M2, every fixture is the template directory itself -> fx3 red. M3, the copy hard-links the files -> fx3 red. M4, the copy leaves .git behind -> fx1, fx2 and sb-block red. M5, a fresh build commits different bytes than its copy -> fx2 red. 5/5 rows red, each anchor asserted to land once, __pycache__ purged, file restored and its sha256 checked in finally.",
+        "at": "2026-10-30, between 15:12Z and 15:15Z, from the probe's run in the scratch export"
       }
     },
     {
       "id": "P143.9-z9j",
       "title": "The red-first deadline reads the cost table for the platform it was recorded on, not as this host's wall time",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The red-first helper sizes its deadline from .github/sweep-costs.json, whose figures are windows-2025 slot-seconds at 4 workers; read on a darwin host with more workers they are taken as this host's wall time, so a proof naming tests/test_drive_phase.py needs 1011 s against a 565 s deadline and is refused (could-not-prove) where the darwin figure fit at 324 s. The reader must take the table's platform and workers into account: compare the recorded platform with the host, and when they differ either scale by a measured ratio that is recorded beside the table, or say that the figure is another platform's and size from a basis that holds here - never treat another platform's seconds as this host's. A case with a windows-recorded table on a darwin host is the red one.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
         "tests/test_stamp_verification.py",
         ".github/sweep-costs.json",
         "plugins/audit/scripts/governance/stamp-verification.py",
-        "tests/test_stamp_verification.py"
+        "tests/test_stamp_verification.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -691,14 +706,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-30T16:26:07Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -717,7 +732,57 @@
       ],
       "fixes": [
         "P143-R10"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-30T16:46:34Z.c771ae",
+        "status": "passed",
+        "at": "2026-10-30T16:46:34Z"
+      }
+    },
+    {
+      "id": "P143.10-z9j",
+      "title": "The full sweep finishes under four minutes on a quiet machine: the product's own git calls on the drive path are memoised or batched",
+      "status": "pending",
+      "description": "P143.8 measured the darwin sweep throughput-bound (about 2500 slot-seconds over 8 workers, 325/327 s quiet) and Windows CI shards 90-99% busy, so only less work moves wall time; 240 s needs about 1920 slot-seconds (-23%). A spawn shim over the drive suite attributed about 84% of its slot-seconds to child processes, most from product code: drive-phase.py carry_git/git_head, _scoped_commit, _tree_stamp, _worktrees._git, audit-task._git_answer, and per-verb git config reads (usage_ledger.resolve_author, _panel_viewer._git_config_origins). Cut those calls in the product (memo bound to a witness, as _config.git_place does, or one batched call), keep behaviour identical, re-measure the full sweep quiet twice 20+ minutes apart with the spread, and state the result against 240 s with its numbers. Never re-record .github/sweep-costs.json from darwin.",
+      "files": [
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/scripts/governance/_tree_stamp.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/git/_worktrees.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/scripts/panel/_panel_viewer.py",
+        "tests/test__scoped_commit.py",
+        "tests/test__tree_stamp.py",
+        "tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__scoped_commit.py tests/test__tree_stamp.py tests/test__worktrees.py tests/test_audit_task.py tests/test_usage_ledger.py tests/test__panel_viewer.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P143.8-z9j"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "reviewPerTask": "signals",

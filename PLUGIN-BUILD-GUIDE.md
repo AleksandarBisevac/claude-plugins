@@ -4963,7 +4963,11 @@ task's run and the fix run. `--timeout` is the deadline when given; when not, it
 `DEFAULT_TIMEOUT`, or, for a sweep command naming suites the table times, `TIMEOUT_PER_COST` - the
 allowance the sweep gives a job over its figure before calling it hung - times that need, when that
 is more, up to `MAX_TIMEOUT` (`sized_deadline`); the basis names the deadline and which of those it
-came from. **A proof that cannot fit is refused before any run**: when the need is more than the
+came from. The table times a suite for this host only when the `platform` it names is this host's
+(`foreign_table_problem`, read through `platform_family`): no ratio between platforms is recorded,
+so a table taken on another platform - the committed one is CI's windows runner's - or one naming
+none is read as no table at all, the deadline is the default, and the basis says whose seconds
+they were. **A proof that cannot fit is refused before any run**: when the need is more than the
 deadline, `--timeout` included, `fit_problem` starts nothing - the throwaway is not built either - and its
 basis names the need, the wall time one run takes, how that was read, and the deadline. **And no
 run is started short**: before each one, `start_problem` asks whether the time left - for the runs

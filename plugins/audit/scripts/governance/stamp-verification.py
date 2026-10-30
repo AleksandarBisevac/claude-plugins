@@ -3873,11 +3873,61 @@ def _is_figure(value):
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
-def load_sweep_table(root):
+# A FIGURE IS THIS HOST'S TIME ONLY WHEN IT WAS TAKEN ON THIS HOST'S PLATFORM.
+# The table is recorded where the timings bind - the CI runner it names under
+# `platform`, at the workers it names under `workers` - and a host of another
+# platform runs the same suite in a different time, so a figure read here as
+# this host's seconds sized the deadline, and refused a proof before it
+# started, from a measurement nobody made here. No ratio between platforms is
+# recorded beside the table, so none is applied: a table from another
+# platform, or one naming none, is a table this host cannot read its time
+# from, said as that, and the deadline is sized as for any command the table
+# does not time. The workers need no such test - a figure is slot-seconds, and
+# a run's wall time is read over the workers the command gives
+# (`sweep_wall`) - so they are named in the sentence, not compared.
+_PLATFORM_FAMILIES = (("windows", "win32"), ("win32", "win32"),
+                      ("macos", "darwin"), ("darwin", "darwin"),
+                      ("ubuntu", "linux"), ("linux", "linux"))
+
+
+def platform_family(name):
+    """The `sys.platform` a recorded platform name stands for - a CI runner's
+    label (`windows-2025`, `macos-14`, `ubuntu-24.04`) or `sys.platform`'s own
+    spelling - or None for a name that names no family this reads."""
+    word = str(name or "").strip().lower()
+    for prefix, family in _PLATFORM_FAMILIES:
+        if word == prefix or word.startswith(prefix + "-"):
+            return family
+    return None
+
+
+def foreign_table_problem(doc, host=None):
+    """Why the table's figures are not this host's time, or None when the
+    platform it was recorded on is this host's (`sys.platform` when `host` is
+    None). The sentence names what was recorded and where this host is."""
+    host = host if host is not None else sys.platform
+    recorded = doc.get("platform")
+    workers = doc.get("workers")
+    at = (" at %s worker%s" % (workers, "" if workers == 1 else "s")
+          if _is_figure(workers) else "")
+    if not recorded:
+        return ("%s names no platform it was recorded on, so none of its figures "
+                "is read as this host's (%s) time" % (SWEEP_COSTS_REL, host))
+    here = platform_family(host)
+    if here is not None and platform_family(recorded) == here:
+        return None
+    return ("%s holds %s's slot-seconds%s, not this host's (%s): no ratio between "
+            "the two is recorded, so none of its figures is read as this host's "
+            "time" % (SWEEP_COSTS_REL, recorded, at, host))
+
+
+def load_sweep_table(root, host=None):
     """`({path: slot-seconds}, {path: {block: slot-seconds}}, problem)` off the
     project's cost table; problem is None when it was read, else the sentence
-    saying why nothing was. A table with no `blocks` object has none to give -
-    every suite is then one job, as a file the sweep runs whole is."""
+    saying why nothing was - a table recorded on another platform than `host`
+    (`foreign_table_problem`) included. A table with no `blocks` object has
+    none to give - every suite is then one job, as a file the sweep runs whole
+    is."""
     path = os.path.join(root, *SWEEP_COSTS_REL.split("/"))
     try:
         with open(path, encoding="utf-8") as fh:
@@ -3886,6 +3936,9 @@ def load_sweep_table(root):
     except (OSError, ValueError, AttributeError) as exc:
         return {}, {}, "no cost table read from %s (%s)" % (SWEEP_COSTS_REL,
                                                             type(exc).__name__)
+    foreign = foreign_table_problem(doc, host)
+    if foreign is not None:
+        return {}, {}, foreign
     if not isinstance(costs, dict) or not all(_is_figure(v) for v in costs.values()):
         return {}, {}, "%s carries no `costs` object of numbers" % (SWEEP_COSTS_REL,)
     if not isinstance(blocks, dict) or not all(
@@ -3896,9 +3949,9 @@ def load_sweep_table(root):
     return costs, blocks, None
 
 
-def load_sweep_costs(root):
+def load_sweep_costs(root, host=None):
     """`({path: slot-seconds}, problem)` - `load_sweep_table` without the blocks."""
-    costs, _blocks, problem = load_sweep_table(root)
+    costs, _blocks, problem = load_sweep_table(root, host)
     return costs, problem
 
 
