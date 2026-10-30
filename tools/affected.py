@@ -12,6 +12,8 @@ Which checks a change actually needs — and, when it cannot tell, all of them.
                                        # records, {paths} filled in
     tools/affected.py --list-all      # every suite file, one per line,
                                        # nothing executed -- .listing.all
+    tools/affected.py --list-scanners # every suite and tool that walks the
+                                       # whole tree, one per line
 
 HOW OFTEN THIS SELECTION IS WRONG is not decided here: `tools/measure-affected-miss.py` plants
 a fault in the files of recent commits and counts the red suites this file did not select.
@@ -39,6 +41,19 @@ paths and version pins. Editing one file can turn those red without touching the
 so any `.py` change selects every suite and tool that calls one of the shared tree
 walks (`reach_graph()` reads which do). That is not caution, it is a measured fact:
 this repo has gone red exactly that way.
+
+...AND WHERE THEY RUN. That widening holds for the narrowed run this file prints for
+`verify.sh --affected`, and as `--json` for the miss measurement. It does NOT hold for
+`--list-related`, which is the listing a task's gate reads: there a scanner is
+selected only when it imports or runs a changed file, like any other suite, and the
+rest are left to the gates that run every one of them - the phase gate, whose
+`selftests` is the unscoped sweep in this plan, and verify.sh's per-run tier, which
+CI runs on a push to `main`, a pull request and a dispatched run. A task pays for the
+files it can reach; a whole-tree scan is paid once per phase and once per CI run. The
+cost of that is a scanner a task turned red surfacing at sign-off instead of in the
+task. That every phase still to sign off carries the unscoped sweep is read off the
+plan by `tests/test__affected_tests.py`, and that the per-run tier does by this
+file's own cases.
 
 WHAT A SUITE REACHES is read the same way, off the code rather than a list: what it
 imports, what it loads or resolves through `_loader` or the hooks' resolver, what a
@@ -118,6 +133,10 @@ VITEST = "npx vitest run"
 # disagree. The documents that describe the sweep select it too (the sweep-document
 # branch), which is a widening this file is allowed.
 PARITY = "python3 tools/gate-parity.py"
+
+# The sweep with no path: what the phase gate's `selftests` and verify.sh's per-run
+# tier run, and so what runs the tree scanners a task's listing leaves out.
+SWEEP = "python3 tools/sweep-selftests.py"
 
 # The workflow, and the tools whose OWN cases read it: the slice rule (gate-parity),
 # the sweep's deadline against the selftests job's bound (tt5), the rendered-artifact
@@ -673,14 +692,16 @@ def _all_suite_paths():
     return [_suite_path(name) for name in names]
 
 
-def _related_suite_paths(paths):
+def _related_suite_paths(paths, graph=None):
     """The suite paths `--list-related` prints for `paths` -- the SAME
-    selection `select()` already derives (importers' suites, every
-    tree-scanning suite once any `.py` changed), widened to the full listing
-    the moment `select()` cannot narrow (an unrecognised path, or any other
-    `full` trigger). One path per line, never executed -- the contract
-    `meta.phaseGate.derived.listing.related` holds."""
-    suites, _gates, _reasons, full = select(paths)
+    selection `select()` already derives (the suites that import or run each
+    path), widened to the full listing the moment `select()` cannot narrow (an
+    unrecognised path, or any other `full` trigger). One path per line, never
+    executed -- the contract `meta.phaseGate.derived.listing.related` holds.
+
+    WITHOUT THE TREE SCANNERS: this is the listing a task's gate reads, and the
+    gates that run every scanner are the phase gate and the per-run sweep."""
+    suites, _gates, _reasons, full = select(paths, graph, scanners=False)
     if full:
         return _all_suite_paths()
     return sorted(_suite_path(s) for s in suites)
@@ -705,11 +726,13 @@ def _once(gates):
     return out
 
 
-def select(paths, graph=None):
+def select(paths, graph=None, scanners=True):
     """What to run, and why. Returns (suites, gates, reasons, full).
 
     `graph` is `reach_graph()`'s answer, for a caller asking many questions of one
-    tree; absent, it is built here when a `.py` is among the paths."""
+    tree; absent, it is built here when a `.py` is among the paths. `scanners`
+    False leaves out the suites and tools that walk the whole tree unless an edge
+    reaches them - the task's listing; the reason says where they run instead."""
     suites = set()
     gates = []
     reasons = []
@@ -926,7 +949,7 @@ def select(paths, graph=None):
         reasons.append("%s - UNRECOGNISED, so the full set is selected rather "
                        "than a guess" % (posix,))
 
-    if touched_py:
+    if touched_py and scanners:
         for rel in graph["scanners"]:
             if _is_suite(rel):
                 suites.add(rel[len(TESTS) + 1:])
@@ -935,6 +958,12 @@ def select(paths, graph=None):
         reasons.append("a .py changed, so every suite and tool that walks the tree "
                        "through a shared walk is included - editing one file turns "
                        "those red without touching them")
+    elif touched_py:
+        reasons.append("a .py changed; the suites and tools that walk the whole "
+                       "tree are left out unless they reach it by an edge - `%s`, "
+                       "the phase gate's sweep and verify.sh's per-run tier, runs "
+                       "every one of them (`--list-scanners` prints them)" % (SWEEP,))
+    if touched_py:
         if graph["broken"]:
             # A file the graph could not parse is a file whose edges it does not
             # know, so what reaches through it is unknown too.
@@ -955,11 +984,12 @@ def select(paths, graph=None):
 
 # --- the CLI entry point -------------------------------------------------------
 def main(argv):
-    # THE TWO LISTING MODES FIRST, and returned from before anything below
-    # touches git or the `--json`/`--base` flags: both are the contract
+    # THE LISTING MODES FIRST, and returned from before anything below
+    # touches git or the `--json`/`--base` flags: two are the contract
     # `derive-phase-gate.py`'s `meta.phaseGate.derived.listing` reads --
-    # one suite path per line, nothing executed -- and neither asks what
-    # changed, so neither needs `changed_files()` or a git repo at all.
+    # one suite path per line, nothing executed -- the third prints the tree
+    # scanners the same way, and none asks what changed, so none needs
+    # `changed_files()` or a git repo at all.
     if "--list-all" in argv:
         for path in _all_suite_paths():
             print(path)
@@ -967,6 +997,10 @@ def main(argv):
     if "--list-related" in argv:
         i = argv.index("--list-related")
         for path in _related_suite_paths(argv[i + 1:]):
+            print(path)
+        return 0
+    if "--list-scanners" in argv:
+        for path in reach_graph()["scanners"]:
             print(path)
         return 0
 
@@ -1461,17 +1495,71 @@ def _cases(check):
     # every suite through the harness, and its listing IS the full one.
     narrow = "plugins/audit/scripts/governance/record-outside-run.py"
     related_lines, related_exit = _run_lines(["--list-related", narrow])
-    expected_related = sorted(_suite_path(s) for s in select([narrow], graph)[0])
-    scanner_suites = [rel for rel in graph["scanners"] if _is_suite(rel)]
-    check("a16 `--list-related` with a scripts/ module prints the suites that "
-          "import or run it plus every suite that walks the tree, one path per "
-          "line, and runs no suite -- the EXIT CODE is 0 and nothing but paths "
-          "came out: %r" % (related_lines,),
+    scanner_suites = [_suite_path(rel[len(TESTS) + 1:])
+                      for rel in graph["scanners"] if _is_suite(rel)]
+    scanner_tools = [rel for rel in graph["scanners"] if not _is_suite(rel)]
+    reached_suites = set(_suite_path(s) for s in _reached_selection(graph, narrow)[0])
+    pushed = select([narrow], graph)
+    pushed_paths = set(_suite_path(s) for s in pushed[0])
+    check("a16 `--list-related` with a scripts/ module prints the suites the "
+          "narrowed run selects for it, less the tree scanners nothing reaches it "
+          "through, one path per line, and runs no suite -- the EXIT CODE is 0 and "
+          "nothing but paths came out: %r" % (related_lines,),
           related_exit == 0
-          and sorted(related_lines) == expected_related
-          and scanner_suites
-          and all(s in related_lines for s in scanner_suites)
+          and set(related_lines) == (pushed_paths
+                                     - (set(scanner_suites) - reached_suites))
           and _suite_path("test_record_outside_run.py") in related_lines)
+
+    # --- the tree scanners: once per phase and on push, never in a task's gate ---
+    # The listing above is what a task's gate reads; the narrowed run below is what
+    # `verify.sh --affected` and the miss measurement read, and it keeps every
+    # scanner. A scanner that imports or runs the module by an edge is selected
+    # for that edge like any other suite, so only the rest - the ones the blanket
+    # rule alone brought in - must be gone, and there have to be some.
+    reaching = reached_suites & set(scanner_suites)
+    blanket = sorted(set(scanner_suites) - reaching)
+    in_listing = sorted(s for s in blanket if s in related_lines)
+    pushed_gates = set(pushed[1])
+    check("a16b A TASK CHANGING ONE .py SELECTS NO TREE SCANNER for being one: the "
+          "listing a task's gate reads names none that reach the module by no "
+          "edge, while the narrowed run `verify.sh --affected` takes still names "
+          "every one - so the two readings are told apart, and dropping the "
+          "scanners everywhere is red here too. Blanket scanners in the listing "
+          "%r; scanners reaching the fixture by an edge %r; suites %d and tools %d "
+          "derived" % (in_listing, sorted(reaching), len(scanner_suites),
+                       len(scanner_tools)),
+          blanket and scanner_tools and not in_listing
+          and set(scanner_suites) <= pushed_paths
+          and all(TOOL_SELFTEST % (t,) in pushed_gates for t in scanner_tools))
+
+    def _tool_module(name, filename):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            name, os.path.join(REPO, "tools", filename))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    swept = set(_tool_module("affected_sweep", "sweep-selftests.py").sweep_files(REPO))
+    tiers, tier_problem = _tool_module("affected_parity",
+                                       "gate-parity.py").verify_list(REPO)
+    per_run = [step for name in (tiers or {}).get("order", ())
+               if tiers["tiers"][name] == "per-run"
+               for step in tiers["commands"][name]]
+    scanner_lines, scanner_exit = _run_lines(["--list-scanners"])
+    check("a16c ...AND EVERY SCANNER STILL RUNS: the phase listing (`--list-all`) "
+          "carries every scanner suite, the unscoped sweep - the phase gate's "
+          "`selftests` and verify.sh's per-run tier - runs every scanner, suite "
+          "or tool, and `--list-scanners` prints exactly the derived set. Missing "
+          "from the full listing %r; not swept %r; per-run unscoped sweep %r (%s); "
+          "--list-scanners exit %r"
+          % (sorted(set(scanner_suites) - set(_all_suite_paths())),
+             sorted(set(graph["scanners"]) - swept), SWEEP in per_run,
+             tier_problem or "listed", scanner_exit),
+          set(scanner_suites) <= set(_all_suite_paths())
+          and set(graph["scanners"]) <= swept
+          and tiers is not None and SWEEP in per_run
+          and scanner_exit == 0 and scanner_lines == graph["scanners"])
 
     unknown_lines, unknown_exit = _run_lines(
         ["--list-related", "some/unknown/place.xyz"])

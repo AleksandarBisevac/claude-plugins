@@ -525,6 +525,21 @@ these, and `tests/test_derive_phase_gate.py` reads them off this list:
 each file by the rules a whole sweep applies, and refuses a path it does not sweep, naming it — so
 a listing that drifts from the sweep fails by name instead of quietly running something else.
 
+**The suites and tools that walk the whole tree run once per phase and in CI, never in a task's
+gate.** A change to any `.py` can turn them red, so `tools/affected.py`'s narrowed run
+(what `verify.sh --affected` and the miss measurement below read) selects every one of them for
+any `.py` change. Its `--list-related` - the listing a task's gate reads - does not: there a
+scanner joins only when it imports or runs a changed file, like any other suite. The rest run in
+the unscoped sweep, `python3 tools/sweep-selftests.py`: this plan's `selftests` key, in the gate
+of every phase still to sign off, and the `selftests` slice of `verify.sh`'s per-run tier, which
+CI runs on a push to `main`, on a pull request and on a dispatched run. So a scanner a task turns
+red surfaces at sign-off, not in the task. Print the set with
+`python3 tools/affected.py --list-scanners`. The split is held by cases rather than by this
+paragraph: `tools/affected.py --selftest` checks the listing leaves them out while the narrowed
+run, the full listing and the per-run tier keep them, and `tests/test__affected_tests.py` checks
+the same listing read through the task gate's selection and that every phase still to sign off
+runs the unscoped sweep.
+
 **How often that selection leaves out a suite that goes red is a measurement, and it has a
 tool.** `python3 tools/measure-affected-miss.py` takes the recent task commits, plants an
 import-time `raise` and then a house-style violation in the Python each one changed, in a

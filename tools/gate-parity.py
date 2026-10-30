@@ -591,6 +591,7 @@ def failmode_table_drift(repo=None):
 VERIFY_LIST_TIMEOUT = 60
 _SLICE_LINE = re.compile(r"^  ([a-z0-9][a-z0-9-]*) \((per-run|release)\)$")
 _STEP_LINE = re.compile(r"^    (\S.*)$")
+_COMMAND_LINE = re.compile(r"^        (\S.*)$")
 # The terms a job's `if:` may be made of and still be PROVED to run on every run: the
 # two the workflow puts on its jobs (not cancelled, and no earlier run verified the
 # commit) and, for the release-tier job, the tier input. They are compared as whole
@@ -610,10 +611,11 @@ def _output_tail(text, lines=6):
 
 
 def parse_verify_list(text):
-    """{"order", "tiers", "steps"} read off `verify.sh --list`, or None when the
-    text holds no slice: a list that printed nothing must not read as a runner
-    with no slices to hold a workflow to."""
-    order, tiers, steps = [], {}, {}
+    """{"order", "tiers", "steps", "commands"} read off `verify.sh --list`, or
+    None when the text holds no slice: a list that printed nothing must not read
+    as a runner with no slices to hold a workflow to. `steps` are each slice's
+    step labels, `commands` the command printed under each label."""
+    order, tiers, steps, commands = [], {}, {}, {}
     current = None
     for line in text.splitlines():
         got = _SLICE_LINE.match(line)
@@ -622,13 +624,20 @@ def parse_verify_list(text):
             order.append(current)
             tiers[current] = got.group(2)
             steps[current] = []
+            commands[current] = []
+            continue
+        if current is None:
             continue
         step = _STEP_LINE.match(line)
-        if step and current is not None:
+        if step:
             steps[current].append(step.group(1))
+            continue
+        command = _COMMAND_LINE.match(line)
+        if command:
+            commands[current].append(command.group(1))
     if not order:
         return None
-    return {"order": order, "tiers": tiers, "steps": steps}
+    return {"order": order, "tiers": tiers, "steps": steps, "commands": commands}
 
 
 def verify_list(repo=None):
@@ -2503,6 +2512,17 @@ def _verify_slice_run_cases(check):
               and "release" in listed["tiers"].values())
         if listed is None:
             return
+        unpaired = [(name, len(listed["steps"][name]), len(listed["commands"][name]))
+                    for name in listed["order"]
+                    if len(listed["commands"][name]) != len(listed["steps"][name])]
+        check("svr2b `--list` prints one command under each step label, and the "
+              "parse reads it apart from the label - the sweep's own command is "
+              "what says a slice runs it unscoped (slices whose counts differ: %r; "
+              "the selftests slice reads %r)"
+              % (unpaired, listed["commands"].get("selftests")),
+              unpaired == []
+              and listed["commands"].get("selftests") == [
+                  "python3 tools/sweep-selftests.py"])
         drift = []
         for name in listed["order"]:
             code, out, left = run_verify(shell, root, ["--only", name])

@@ -2,9 +2,11 @@
 """
 The cases for `_affected_tests.py` -- which suites a task's change can break.
 
-Every case builds its `facts` BY HAND: the module is pure, so a related
+Every case but two builds its `facts` BY HAND: the module is pure, so a related
 listing's answer, the Python sources and the tree's suite files are dicts and
-strings here, never a subprocess or a checkout. `af`-prefixed cases.
+strings here, never a subprocess or a checkout. The two are `_dogfood_cases`,
+whose claim is about this repository's own listing and plan, so they read
+both. `af`-prefixed cases.
 
 The four headline cases are the four ways the selection has to be right: a
 recorded listing naming the test a move broke (the testbed's own regression),
@@ -337,6 +339,8 @@ def _cases(check):
           % ([answered["widen"]] + [r["widen"] for r in read],),
           answered["widen"] is None and all(r["widen"] is None for r in read))
 
+    _dogfood_cases(check)
+
     # ARMS carries machine ids, not human labels, so the guide's wording for
     # each id is mapped here; an arm with no entry fails by name rather than
     # being skipped, and a guide phrase with no arm behind it fails too.
@@ -355,6 +359,94 @@ def _cases(check):
           "(tree lines %d, documented %r, ARMS %r, unmapped %r)"
           % (len(lines), documented, wanted, unmapped),
           not unmapped and documented == wanted)
+
+
+def _tool_module(name, filename):
+    """A `tools/` script as a module, loaded by path: its name is no identifier."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        name, os.path.join(_output.REPO_ROOT, "tools", filename))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _dogfood_cases(check):
+    """THE ONE PLACE THIS SUITE READS THE REPOSITORY rather than hand-built facts.
+
+    The claim is about this repository's configuration, not the module's logic:
+    the related listing its plan records is what a task's gate reads, and the
+    suites that walk the whole tree are left out of it because the phase gate
+    runs them. Hand-built facts would say only what the fixture was written to
+    say, so the listing is asked of `tools/affected.py` itself and the phase gate
+    is read off the plan."""
+    import contextlib
+    import io
+    import _manifest_io
+
+    plan = _manifest_io.load_manifest(
+        os.path.join(_output.REPO_ROOT, "docs", "audit", "audit-plan.json"))
+    meta = plan.get("meta") or {}
+    derived = (meta.get("phaseGate") or {}).get("derived") or {}
+    template = M.listing_templates(meta).get("related") or ""
+    selector = _tool_module("dogfood_affected", "affected.py")
+    leaf = "plugins/audit/scripts/governance/record-outside-run.py"
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        listed_exit = selector.main(["--list-related", leaf])
+    listed = [ln.strip() for ln in out.getvalue().splitlines() if ln.strip()]
+    graph = selector.reach_graph()
+    scanners = graph["scanners"]
+    scanner_suites = [s for s in scanners if s.startswith("tests/")]
+    sources = {}
+    for top in ("plugins", "tests", "tools", os.path.join(".claude", "hooks")):
+        for rel, path in _output.py_files(os.path.join(_output.REPO_ROOT, top)):
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                sources["%s/%s" % (top.replace(os.sep, "/"), rel)] = fh.read()
+    facts = {"versionAnswer": (derived.get("verifiedOn") or {}).get("answer"),
+             "pySources": sources,
+             "related": {"command": template.replace("{paths}", leaf),
+                         "exit": listed_exit, "paths": listed}}
+    res = M.select([leaf], meta, facts)
+    picked = [s["path"] for s in res["suites"]]
+    # A scanner that imports or runs the module is selected for that edge like
+    # any other suite; the ones left are those only the blanket rule brought in,
+    # and there must be some or the case could not tell the two rules apart.
+    by_edge = set(selector.reached_by(graph, leaf)) | set(
+        s["path"] for s in res["suites"] if s["arm"] == "python")
+    blanket = sorted(set(scanner_suites) - by_edge)
+    check("af27 THE PER-TASK SELECTION EXCLUDES THE TREE SCANNERS: this plan's "
+          "related listing for one changed module, read through select(), "
+          "names the module's own suite and no suite that walks the whole tree "
+          "unless it reaches the module by an edge. Blanket scanners selected %r "
+          "of %d; selected %r; widen %r"
+          % (sorted(set(picked) & set(blanket)), len(blanket), picked,
+             res["widen"]),
+          "tools/affected.py --list-related" in template and listed_exit == 0
+          and blanket and res["widen"] is None
+          and "tests/test_record_outside_run.py" in picked
+          and not set(picked) & set(blanket))
+
+    # The phase gate's half: every phase still to sign off carries an entry whose
+    # command is the plan's own path-scoped spelling with the paths taken out - the
+    # unscoped sweep - and that sweep runs every scanner, suite or tool.
+    unscoped = [w for w in (M._words(derived.get("spelling")) or [])
+                if w != "{paths}"]
+    build = meta.get("buildCommands") or {}
+    live = [p for p in plan.get("phases") or []
+            if isinstance(p, dict) and p.get("status") not in _manifest_io.TERMINAL]
+    without = [p.get("id") for p in live
+               if not any(M._words(build.get(e, e)) == unscoped
+                          for e in _manifest_io.gate_entries(p)[0])]
+    swept = set(_tool_module("dogfood_sweep", "sweep-selftests.py")
+                .sweep_files(_output.REPO_ROOT))
+    check("af28 ...AND THE PHASE GATE KEEPS THEM: every phase still to sign off "
+          "runs the unscoped sweep %r, and the sweep runs every scanner. Phases "
+          "without it %r of %d; scanners not swept %r"
+          % (" ".join(unscoped), without, len(live),
+             sorted(set(scanners) - swept)),
+          unscoped and live and not without and scanners
+          and set(scanners) <= swept)
 
 
 def _selftest():

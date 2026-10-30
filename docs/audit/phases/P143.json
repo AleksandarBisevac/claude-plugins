@@ -70,7 +70,7 @@
     {
       "id": "P143.1-6yq",
       "title": "A task's gate is the affected selection, and no derived step re-runs what a declared key already runs in full",
-      "status": "in_progress",
+      "status": "done",
       "description": "run-test-gate.py measures a task's declared non-suite entries plus the suites the selection names for its changed paths; an unrecognised path class widens to the phase gate and says so. A declared key whose command is the unscoped sweep (the dogfood plan's selftests) counts as already wide for the Python arm, so no affected/python or affected/related step is added beside it: today such steps re-run suites the key already ran. The recorded row commits with no override. Acceptance: (1) a task gate holding the full-sweep key adds no affected/python or affected/related step; (2) a narrow declared gate gets the affected suites for its changed paths and none for an unchanged tree; (3) an unrecognised path widens to the phase gate, saying so; (4) the green row commits without override; (5) the selection is used only after the miss-rate task's result is recorded with zero misses, or with each miss's path class widened to the full set.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -115,14 +115,21 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c57e3f3c72c4",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "WHAT CHANGED. plugins/audit/scripts/governance/_affected_tests.py: (1) new left_to_run(steps, suites, task_entries, build) -> (steps, suites, lines). A step whose command, with its suite-path words taken out (shlex), equals a declared entry's command (resolved through meta.buildCommands) is left out and said, naming the entry and its command; a command that does not split is never read as covered; the runner premise (unscoped call runs every suite a scoped call runs; a testpaths-style config breaks it) is stated in its docstring. (2) select() widens on two new reasons: 'unrecognised' - a changed path no arm read (the related listing answered for every changed path; .py read by the graph; prose; a suite the own gate names; app source an e2e arm took); 'test support' - a changed path under a test directory (_manifest_phases.is_suite_path) that no arm selected and the own gate does not name. run-test-gate.py affected_steps: after entries_for, calls left_to_run with the task gate's entry names and buildCommands; info.suites/lines follow, so the printed lines say what was left out. ACCEPTANCE (5): no re-measurement after P143.4 was recorded (P143.4's outcome has per-case evidence only; F809 in quality-gates-internal/PLAN.md still Open). I ran `python3 tools/measure-affected-miss.py --rev 18c7d5e1 --commits 26 --selector <scratchpad>/p1431/affected-18c7d5e1.py --ci-since 2026-10-20 --json` (selector = tools/affected.py at 18c7d5e1, sha256 533bcb33...230ad), 04:58-09:22Z on a loaded machine, exit 0. Rendered headline verbatim: 'misses 1 of 22 commits (mutation); 1 of 9 runs (CI), 3 platform-only red(s) set apart, 2 run(s) set apart (1 named no suite, 1 unread)'. Misses verbatim: 'MISS  f6656f8ff  raise  tests/_harness.py  (changed: tests/_harness.py, tools/prove-gates.py, tools/release.py, tools/sweep-selftests.py)' and 'MISS  CI run 40715565769 (ci f06f113f7)  tests/test_audit_status.py'. NOT ZERO, so the acceptance's alternative was applied per path class: (a) test support - tools/affected.py --json tests/_harness.py gives the reason 'tests/_harness.py - its own cases' but neither suites nor gates name tests/_harness.py itself; the class (a changed file under a test dir no arm selected) now widens to the phase gate in _affected_tests.select (af26). (b) plan records - f06f113f is a sign-off commit changing only docs/audit/ records; gh shows test_audit_status kt5-kt9 failing only on 'linux, stress 3' and windows legs while 'linux plain 3' succeeded, so this reads as an environment red the CI half counts as an upper bound. Its path class cannot reach a task's selection: _invariants.record_rels' docstring (the one record set) says audit-task refuses records as a task's files, and run-test-gate.task_changed_paths leaves them out of a member tree's changes, so there is nothing for a task gate to widen; nothing was changed for it. The measurement's per-commit lines are in <scratchpad>/p1431/miss.json. LIVE DOGFOOD: affected_steps in-process for P143.1 on the project tree: gate [selftests,...] -> steps [] (the related step left out with the selftests line); a narrow gate 'python3 tools/sweep-selftests.py tests/test__affected_tests.py' -> the related step joins, widen None (the support rule does not fire on a changed test the listing names). TESTS: tests/test__affected_tests.py 31/31 (new af22, af23 x3, af24, af24b, af25, af26, af26b; af15 now carries a widen and still passes); tests/test_run_test_gate.py 578 cases, new as-block as1-as5. Mutation probe (scratch export of HEAD + my files, never the shared tree; <scratchpad>/p1431/mutate.py): 9 rows - never drop, always drop, runner-words-only compare, no unread widening, listing does not read, own gate does not read, gate never filters, no support widening, support ignores picked - each turned its named cases red; baseline and restored FAIL []; exit 0. GATES RUN: own command exit 0 (2/2 files, 609 cases); dependants sweep test_drive_phase, test_commit_task_work, test_audit_task, test_stamp_verification, test__affected_tests, test_run_test_gate, test__gate_derive, test_derive_phase_gate, test__filed_returns, test__deps exit 0 (10/10, 3495 cases); test__status_facts, test_audit_lookup, test__evidence_io, test_gen_demo_manifest, test__refs, test_full_gate, test__verdict_binding, test__output_lints, test__deps exit 0 (9/9, 1587); test__deps + test__affected_tests after the last guide edit exit 0 (2/2, 285); ruff exit 0; vermin no violations; prose_number_claims and house_style_violations report nothing on the changed files. OUTSIDE FILES (plan gate allowed both edits): tests/test_commit_task_work.py - ctw86's fixture spelling 'true {paths}' beside the shared fixture's test='true' made the declared narrow gate the unscoped call of the spelling, so the new rule correctly dropped the derived step and ctw86 (which asserts one exists) went red in the first dependants sweep (exit 1, 3/4 files); the spelling is now 'true -- {paths}' with a comment, and ctw86 is green. PLUGIN-BUILD-GUIDE.md - the _affected_tests section's widen list and its 'adds nothing' sentence now name the unread-path, test-support and left_to_run rules. commit-task-work may refuse both paths as undeclared; widen the task's files or carry them. DEPENDANTS: run-test-gate.py -> docs/examples/azure-pipelines.yml, tools/check-example-ledgers.py, docs/handbook.html, hooks/_config.py, both schemas, _config_rules.py: still correct, the CLI, flags, row shape and step-name prefix are unchanged; PLUGIN-BUILD-GUIDE.md changed (above); names used elsewhere (_declared_by, _extension, _git_text, _jest_failure_name) untouched. _affected_tests.py -> run-test-gate (changed, calls left_to_run), audit-task (uses _is_loader/_python_arm, unchanged; test_audit_task 1165 green), test__gate_derive and test_derive_phase_gate (call select/entries_for; green), test__filed_returns (green), PLUGIN-BUILD-GUIDE.md (tree line's arm list unchanged, the guide case passes). _gate_derive.py: not changed. tests/test_run_test_gate.py -> test_commit_task_work imports its helpers (unchanged; green after the ctw86 fixture fix); .github/sweep-costs.json has no figure for the new as-block, which the sweep weighs by its suite's figure over its blocks (still correct); tools/affected.py, tools/verify.sh, phase-signoff.md, test__locks, test__proc_group: still correct, nothing they read changed. tests/test__affected_tests.py -> sweep-costs (same path), test__gate_derive (path; green). FINDINGS, not fixed: (i) tools/affected.py's --json reason for a changed tests/_harness.py says 'its own cases' but names no gate for them - the selector-side half of the measured miss; the task gate now widens for it, the selector still owes it. (ii) PLUGIN-BUILD-GUIDE.md's same paragraph says select 'walks five arms' including meta.coupling, while ARMS holds four and af15 pins that coupling is not read. (iii) e2eChanged/e2e-widening count app source as read, so with no related listing a .ts change in a project with unit tests and e2e specs selects only e2e specs (existing af12/af13 behaviour, kept).",
+        "descriptive": "A task gate holding the full-sweep key no longer re-runs the affected suites beside it; a path no arm reads, or a changed test-support file, widens to the phase gate and says so; the re-measurement found 1 mutation miss (tests/_harness.py) and 1 CI miss, and the harness class now widens"
       },
       "startedAt": "2026-10-30T04:55:30Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-30T10:32:29Z",
+      "verifiedBy": [
+        "test__affected_tests af22: a key whose command is the spelling's unscoped call drops the affected/related and affected/python steps and names the key",
+        "test__affected_tests af23: the same runner scoped to a path, with an option, or an unrelated key keeps every step (over-fire direction)",
+        "test__affected_tests af24/af24b: a path no arm reads widens to the phase gate naming it, also beside a Python change",
+        "test__affected_tests af25: a path the listing answered for, a graphed .py, prose and an own-gate suite do not widen (over-fire direction)",
+        "test__affected_tests af26/af26b: a changed test-support file no arm selected (the harness, the measured miss) widens; a changed suite an arm selected does not",
+        "test_run_test_gate as1-as5: end to end - unchanged tree adds nothing; full-sweep key adds no affected step and says why; narrow gate records related and python steps; both green rows bind with no override; an unread path widens recorded as affected/phase-gate steps"
+      ],
       "movedFrom": {
         "id": "P142.4",
         "phase": "P142",
@@ -139,12 +146,24 @@
         "runId": "2026-10-30T10:32:19Z.a3c93e",
         "status": "passed",
         "at": "2026-10-30T10:32:19Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c57e3f3c72c4",
+        "at": "2026-10-30T10:32:29Z",
+        "return": "docs/audit/evidence/returns/P143.1-6yq/20261030T045530Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-30T09:31:44Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__affected_tests.py tests/test_run_test_gate.py` in a throwaway tree at HEAD: no run was started: the baseline, task and fix runs need about 585s of wall time - 195s each, the sweep's costliest-first schedule of the recorded 195s slot-seconds of tests/test__affected_tests.py, tests/test_run_test_gate.py in .github/sweep-costs.json over 8 workers (all cores but two) - and the deadline is 565s, so a run started inside it could not finish and its timeout would be the deadline's, not the task's; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 565s, 3 times the 585s of wall time the baseline, task and fix runs need, 195s each - the sweep's costliest-first schedule of the recorded 195s slot-seconds of tests/test__affected_tests.py, tests/test_run_test_gate.py in .github/sweep-costs.json over 8 workers (all cores but two), capped at the 565s the host's Bash limit leaves; fix run: held back 195s of the deadline, the wall time one run takes - the sweep's costliest-first schedule of the recorded 195s slot-seconds of tests/test__affected_tests.py, tests/test_run_test_gate.py in .github/sweep-costs.json over 8 workers (all cores but two)",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P143.2-6yq",
       "title": "Whole-tree scanners run once per phase and on push, never in a task's gate",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The suites that lint the whole tree (TREE_SCANNERS in tools/affected.py) leave the per-task selection: a .py change no longer pulls them into a task's gate. The phase gate and verify.sh's per-run tier keep every one of them, so CI and sign-off still run them. Acceptance: (1) a task changing one .py selects no tree scanner; (2) the phase gate and verify.sh's per-run tier include every tree scanner; (3) tools/gate-parity.py is green; (4) CONTRIBUTING.md says where the scanners run.",
       "files": [
         "tools/affected.py",
@@ -185,20 +204,26 @@
       "dependsOn": [
         "P143.1-6yq"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-30T10:32:31Z",
       "completedAt": null,
       "verifiedBy": [],
       "movedFrom": {
         "id": "P142.5",
         "phase": "P142",
         "at": "2026-10-27T21:21:16Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-30T12:52:26Z.c64cb6",
+        "status": "passed",
+        "at": "2026-10-30T12:52:26Z"
       }
     },
     {
@@ -391,7 +416,7 @@
     {
       "id": "P143.7-z9j",
       "title": "The sweep finishes under four minutes on a quiet machine: production git calls are memoised or batched, and the timings are taken quiet",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The previous task moved the drive suite's verbs in-process (child CPU of a full sweep down about 22-24 percent, longest job from about 304 s to about 94 s), but a full `time python3 tools/sweep-selftests.py` still took 378-502 s on a loaded machine, against the target of under 240 s. Its profile of the heaviest drive block (ar-block) counted 10104 child processes, 101.7 s of its 109.9 s wall in children, nearly all git from production code: `git rev-parse` 3713 calls (32.5 s), `ls-files` 1648 (15.1 s), `diff` 1068 (10.4 s), `status` 722 (7.8 s). Named callers: `_config.checkout_top` (rev-parse per call), integrate-task.py `refresh_records`, drive-phase.py `carry_git` / `carry_commit` / `tree_undescribed`, `_worktrees.admin_dir`, `_locks.lock_dir`.\n\nDo:\n1. Measure first (choosing-what-to-optimize): rank the callers by the git time they cause across a whole sweep, not one block, and say which ones pay.\n2. Cut the calls that pay: one shared, explicitly invalidated memo for answers that cannot change within one process (a checkout's top level, its git dir, a worktree's admin dir), or a batched call where one git invocation can answer several questions. One mechanism shared by every caller, not a per-caller cache; a cached answer must never outlive a change that can alter it (a worktree added or removed, a checkout moved), and the case for that is red-first.\n3. If the target still needs it, cut the next-heaviest suites' wall (test_audit_task, test_commit_task_work, test_stamp_verification, test__deps, test_close_phase) by the same rule, measured.\n4. The in-process runner the previous task added to tests/test_drive_phase.py (`_run_in_process`) gets a case: a stub script that sets an environment variable, changes cwd, calls sys.exit('x') and sys.exit(3) - assert environment, cwd, argv and exit statuses after. State in the runner's comment that lock-holder liveness is not exercised in-process, or route cases relying on a dead verb's pid through `_needs_process`.\n5. Timings: `time python3 tools/sweep-selftests.py` twice, at least 20 minutes apart, on a QUIET machine (no Playwright, sweep or browser gate anywhere; print `uptime` beside each). Under 240 s both times is the target; if the machine cannot be made quiet, say so and do not claim it. Re-record .github/sweep-costs.json from the quiet runs (`--record-costs`), not by scaling.\n\nWho depends on these files: every hook and script that resolves the checkout through _config; integrate-task.py and drive-phase.py are the drive's write path (tests/test_drive_phase.py, tests/test_integrate_task.py, tests/test_commit_task_work.py); _locks is read by every guard. Answer each in the outcome. Deliver scratchpad/probe/mutations.py (mutations3 engine), one row per memo whose invalidation it removes, each expected red. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -426,14 +451,14 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-30T10:32:34Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -452,7 +477,8 @@
       ],
       "fixes": [
         "P143-R1"
-      ]
+      ],
+      "reviewPerTask": "signals"
     }
   ],
   "reviewPerTask": "signals",
