@@ -221,6 +221,8 @@ def _cases(check):
     _earlier_attempt_cases(check, tmp)
     _undeclared_changes_cases(check, tmp, outside)
     _readers_share_the_question_cases(check)
+    _harness.stage(check, "sc-hd", lambda c: _head_memo_cases(c, tmp))
+    _harness.stage(check, "sc-tb", lambda c: _tracking_batch_cases(c, tmp))
 
 
 # --- which paths an attempt changed that no task declares ----------------------
@@ -1710,6 +1712,211 @@ def _review2_cases(check, tmp):
           "line's zero id is as long as the repository's object ids, and a "
           "sha1-length one is 'malformed index info' there: %r" % (why_back,),
           why == "" and why_back == "" and _git(repo, "ls-files", "-s") == found)
+
+
+# --- HEAD, asked again only once a ref moved -----------------------------------
+# Every case compares `head_sha` with git asked fresh, AFTER the move it is about,
+# so a memo that never lets go of an answer goes red on the first move; `sc-hd1`
+# is the other direction, a memo that is never used.
+def _counted_asks():
+    """`(asks, restore)` - every `rev-parse HEAD` `head_sha` sends to git from
+    here on is appended to `asks`; `restore()` puts the real asker back."""
+    real, asks = M._ask_head, []
+
+    def counted(git_root):
+        asks.append(git_root)
+        return real(git_root)
+    M._ask_head = counted
+
+    def restore():
+        M._ask_head = real
+    return asks, restore
+
+
+def _fresh_head(repo):
+    return _git(repo, "rev-parse", "HEAD").strip()
+
+
+def _commit_one(repo, name):
+    _write(os.path.join(repo, "keep", name), name + "\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", name)
+
+
+def _head_memo_cases(check, tmp):
+    repo = _repo(tmp, "head-memo")
+    M.forget_heads()
+    asks, restore = _counted_asks()
+    try:
+        first = [M.head_sha(repo) for _ in range(3)]
+        check("sc-hd1 asked three times with no ref moving, HEAD is git's answer "
+              "every time and git is asked once: %r" % ((first, len(asks)),),
+              first == [_fresh_head(repo)] * 3 and len(asks) == 1)
+        _commit_one(repo, "b.txt")
+        moved = M.head_sha(repo)
+        check("sc-hd2 a commit on the branch between two asks - made by this "
+              "process's own git - is seen, and git is asked again: %r"
+              % ((moved, first[0], len(asks)),),
+              moved == _fresh_head(repo) and moved != first[0] and len(asks) == 2)
+        base = _git(repo, "rev-parse", "--abbrev-ref", "HEAD").strip()
+        _git(repo, "switch", "-q", "-c", "side", first[0])
+        side = M.head_sha(repo)
+        _git(repo, "switch", "-q", base)
+        back = M.head_sha(repo)
+        check("sc-hd3 switching to a branch at another commit, and back, moves "
+              "the answer both times: %r" % ((side, back),),
+              side == first[0] and back == moved == _fresh_head(repo))
+        _git(repo, "checkout", "-q", "--detach", first[0])
+        detached = M.head_sha(repo)
+        _git(repo, "switch", "-q", base)
+        check("sc-hd4 a detached HEAD names its own commit, and re-attaching "
+              "names the branch's again: %r" % ((detached, M.head_sha(repo)),),
+              detached == first[0] and M.head_sha(repo) == moved)
+        _git(repo, "pack-refs", "--all")
+        packed = M.head_sha(repo)
+        _git(repo, "update-ref", "refs/heads/" + base, first[0])
+        _git(repo, "pack-refs", "--all")
+        loose_gone = not os.path.exists(os.path.join(repo, ".git", "refs",
+                                                     "heads", base))
+        repacked = M.head_sha(repo)
+        _commit_one(repo, "d.txt")
+        outranks = M.head_sha(repo)
+        check("sc-hd5 with the branch only in packed-refs, a move written there "
+              "and nowhere else is seen, and a commit after it - a loose file "
+              "that outranks the packed line - is seen too: %r"
+              % ((packed, repacked, loose_gone, outranks),),
+              packed == moved and loose_gone and repacked == first[0]
+              and outranks not in (first[0], moved)
+              and outranks == _fresh_head(repo))
+        tree = os.path.join(tmp, "head-memo-tree")
+        _git(repo, "worktree", "add", "-q", "-b", "wt", tree, moved)
+        _commit_one(tree, "c.txt")
+        pair = (M.head_sha(tree), M.head_sha(repo))
+        kept = [k for k in M._HEADS if k[0] == os.path.realpath(tree)]
+        check("sc-hd6 a linked worktree's HEAD is its own: a commit there moves "
+              "its answer and not the main tree's, and its answer is kept "
+              "against its own git dir rather than the common one: %r"
+              % ((pair, kept),),
+              pair == (_fresh_head(tree), outranks) and pair[0] != moved
+              and len(kept) == 1 and kept[0][1] != kept[0][2])
+        unborn = _unborn(tmp, "head-memo-unborn")
+        none_yet = M.head_sha(unborn)
+        _git(unborn, "config", "user.email", "fixture@example.com")
+        _git(unborn, "config", "user.name", "Fixture")
+        _git(unborn, "config", "commit.gpgsign", "false")
+        _commit_one(unborn, "first.txt")
+        check("sc-hd7 an unborn branch is None, and its first commit is then the "
+              "answer: %r" % ((none_yet, M.head_sha(unborn)),),
+              none_yet is None and M.head_sha(unborn) == _fresh_head(unborn))
+        _submodule_head_cases(check, tmp, repo)
+        _reftable_cases(check, tmp)
+    finally:
+        restore()
+        M.forget_heads()
+
+
+def _submodule_head_cases(check, tmp, repo):
+    """A submodule's `.git` is a `gitdir:` file naming its own full git dir."""
+    inner = _repo(tmp, "head-memo-inner")
+    _git(repo, "-c", "protocol.file.allow=always", "submodule", "add", "-q",
+         inner, "sub")
+    sub = os.path.join(repo, "sub")
+    for key, value in (("user.email", "fixture@example.com"),
+                       ("user.name", "Fixture"), ("commit.gpgsign", "false")):
+        _git(sub, "config", key, value)
+    was = M.head_sha(sub)
+    _commit_one(sub, "inside.txt")
+    now = M.head_sha(sub)
+    kept = [k for k in M._HEADS if k[0] == os.path.realpath(sub)]
+    check("sc-hd9 a submodule's HEAD follows a commit made inside it, and is "
+          "kept against the git dir its `gitdir:` file names: %r"
+          % ((was, now, kept),),
+          was == _fresh_head(inner) and now == _fresh_head(sub) and now != was
+          and len(kept) == 1 and kept[0][1] == kept[0][2]
+          and kept[0][1] != os.path.realpath(os.path.join(sub, ".git")))
+
+
+def _reftable_cases(check, tmp):
+    """A ref store that is not files keeps nothing; skipped where this git
+    cannot make one."""
+    repo = os.path.join(tmp, "head-memo-reftable")
+    made = subprocess.run(["git", "init", "-q", "--ref-format=reftable", repo],
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if made.returncode != 0:
+        _harness.skip(check, "sc-hd8 a reftable store's HEAD is asked every time",
+                      "this git cannot make a reftable repository", True)
+        return
+    for key, value in (("user.email", "fixture@example.com"),
+                       ("user.name", "Fixture"), ("commit.gpgsign", "false")):
+        _git(repo, "config", key, value)
+    _commit_one(repo, "one.txt")
+    one = M.head_sha(repo)
+    _commit_one(repo, "two.txt")
+    two = M.head_sha(repo)
+    kept = [k for k in M._HEADS if k[0] == os.path.realpath(repo)]
+    check("sc-hd8 a reftable store's HEAD follows each commit and nothing is "
+          "kept for it: %r" % ((one, two, kept),),
+          one != two and two == _fresh_head(repo) and kept == [])
+
+
+# --- whether git tracks each plugin-owned row, in one listing ------------------
+# The batched answer is compared with git asked once per path, by the test, so a
+# matching rule that drifts from git's own pathspec reading goes red.
+def _alone(repo, spec):
+    done = subprocess.run(["git", "-C", repo, "ls-files", "-z", "--", spec],
+                          stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    if done.returncode != 0:
+        return M.UNKNOWN
+    return M.TRACKED if done.stdout else M.UNTRACKED
+
+
+def _tracking_batch_cases(check, tmp):
+    repo = _repo(tmp, "tracking-batch")
+    for rel in ("docs/x.txt", "docs-old/y.txt", ".claude/audit.config.json"):
+        _write(os.path.join(repo, *rel.split("/")), "t\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "tracked")
+    _write(os.path.join(repo, ".claude", ".gitignore"), "state/\n")
+    rels = [".claude/audit.config.json", ".claude/.gitignore", "docs", "doc",
+            "docs/", "keep/a.txt", "missing.txt", "keep/*.txt"]
+    real, listings = M.run_git, []
+
+    def counted(git_root, args, *rest, **kwargs):
+        if list(args[:1]) == ["ls-files"]:
+            listings.append(list(args))
+        return real(git_root, args, *rest, **kwargs)
+    M.run_git = counted
+    try:
+        got = M._tracking(repo, rels)
+    finally:
+        M.run_git = real
+    want = dict((rel, _alone(repo, rel)) for rel in rels)
+    check("sc-tb1 one listing answers each plain path as git asked about it "
+          "alone does - a directory by what lies under it, a prefix that is "
+          "not a directory as nothing - and a wildcard is asked alone: %r"
+          % ((got, want, listings),),
+          got == want and len(listings) == 2
+          and listings[1][3:] == ["keep/*.txt"] and len(listings[0]) > 4)
+    # A listing git refuses, stood in by a runner that refuses every listing
+    # naming one path, so the refusal lands on the shared listing and then on
+    # that path's own.
+    refused = "missing.txt"
+
+    def refusing(git_root, args, *rest, **kwargs):
+        if list(args[:1]) == ["ls-files"] and refused in args:
+            return 128, "", "fatal: refused (fixture)"
+        return real(git_root, args, *rest, **kwargs)
+    mixed = [".claude/audit.config.json", refused, ".claude/.gitignore"]
+    M.run_git = refusing
+    try:
+        got = M._tracking(repo, mixed)
+    finally:
+        M.run_git = real
+    check("sc-tb2 a shared listing git refuses is asked path by path: the "
+          "refused path is the one unknown and the others keep git's answers: %r"
+          % (got,),
+          got == {".claude/audit.config.json": M.TRACKED, refused: M.UNKNOWN,
+                  ".claude/.gitignore": M.UNTRACKED})
 
 
 def _selftest():

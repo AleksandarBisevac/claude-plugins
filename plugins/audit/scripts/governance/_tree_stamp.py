@@ -403,6 +403,11 @@ def tested_state(project, owns, before, excluded=None, dirty_excluded=None):
 #     applied by git. Those paths are the only ones whose BYTES are read, so the
 #     cost is the size of the diff and not the size of the repository.
 #
+# THE TWO ARE ASKED AS ONE LISTING, `-t` telling them apart (`_LISTED`): git
+# tags every line with the list it came from, and a cached entry keeps the very
+# `ls-files -s` spelling behind its tag, so one process reads both halves at one
+# moment. A tag this file does not know is a refusal, never a line skipped.
+#
 # AND BOTH ARE ASKED WITH `-z`. Git QUOTES a path it will not print raw - a
 # control byte, a quote, and under the default `core.quotePath` every non-ASCII
 # byte as an octal escape - so a reader of the unseparated output needs an
@@ -427,6 +432,12 @@ CONTENT_READ_LIMIT = 4000
 # the payload would otherwise be free to collide with this one, and a collision
 # here is a verdict repeated over a tree it was never taken on.
 IDENTITY_VERSION = 1
+
+# `ls-files -t`'s tags, by the half of `_content_reading` each line belongs to:
+# the index (a cached entry, a skip-worktree one, a stage of an unmerged one)
+# and what differs from it (modified, removed, untracked and not ignored).
+_LISTED = {"H": "index", "S": "index", "M": "index",
+           "C": "differing", "R": "differing", "?": "differing"}
 
 
 def _git_fields(project, args):
@@ -474,14 +485,31 @@ def _content_reading(project, excluded):
     identity.
     """
     drop = _outside(excluded)
-    index = _git_fields(project, ("ls-files", "-s", "-z"))
-    differing = _git_fields(project, ("ls-files", "-z", "--modified",
-                                      "--deleted", "--others",
-                                      "--exclude-standard"))
-    if index is None or differing is None:
+    listed = _git_fields(project, ("ls-files", "-z", "-t", "-s", "--cached",
+                                   "--modified", "--deleted", "--others",
+                                   "--exclude-standard"))
+    if listed is None:
         return None, ("git would not list this tree, so its content is not "
                       "established and nothing measured on it can be repeated")
-    # Both listings print from their cwd, the project - said so to the pair.
+    index, differing = [], []
+    for line in listed:
+        half = _LISTED.get(line[:1]) if line[1:2] == " " else None
+        if half is None:
+            return None, ("git printed a listing line with no tag this file "
+                          "reads (%r), so this tree was not read whole"
+                          % (line[:60],))
+        if half == "index":
+            index.append(line[2:])
+            continue
+        if line[:1] == "?":
+            differing.append(line[2:])
+            continue
+        _stage, sep, path = line[2:].partition("\t")
+        if not sep:
+            return None, ("git printed a differing entry with no path in it "
+                          "(%r), so this tree was not read whole" % (line[:60],))
+        differing.append(path)
+    # The listing prints from its cwd, the project - said so to the pair.
     hc = _loader.load_hooks_config(modname="audit__config")
 
     def spelled(path):

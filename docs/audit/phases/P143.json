@@ -97,8 +97,10 @@
         "severity": "med",
         "file": ".github/sweep-costs.json:1-541 (the figures) x plugins/audit/scripts/governance/stamp-verification.py:3975-4031 (sweep_wall, proof_need, fit_problem)",
         "issue": "The re-recorded table changes how a dependant behaves, not just how much time it holds back. stamp-verification.py's `red` reads the same table to size a sweep-shaped red-first command, and fit_problem() refuses to start any run when 3 x the schedule wall exceeds the deadline (capped at MAX_TIMEOUT 565). I computed it with the module's own sized_deadline/fit_problem, on this 10-core host (8 workers), for `python3 tools/sweep-selftests.py tests/test_drive_phase.py`. With the darwin table at HEAD, need is 324 s and the command fits. With the new Windows table, need is 1011 s against a 565 s deadline, so it REFUSES ('no run was started'). Other suites also grew several-fold: test__worktrees need 123 -> 492, test__manifest_io 15 -> 399. They still fit, but close to the cap. So on the developer's machine, a red-first proof naming the drive's suite now ends in could-not-prove, because Windows figures are being read as darwin wall time. The executor's dependant answer ('holds back more time') understates this.",
-        "resolution": "This table is right for CI, which binds on Windows, so keep it. Fix the reader in a follow-up task on stamp-verification.py: have sweep_wall compare the table's `platform` with the host and not treat another platform's figures as this host's wall time. Either scale them, or count the need as unmeasured, with the basis naming the platform mismatch, so fit_problem does not refuse on borrowed figures. Add a case that goes red when a windows-recorded table refuses a darwin proof. Until then, correct the dependant answer in the return to say that the drive suite's sweep-shaped red-first proof now refuses on this host.",
-        "fixTask": "P143.9-z9j"
+        "resolution": "fixed in P143.9-z9j (9aeecd5a2c27): This table is right for CI, which binds on Windows, so keep it. Fix the reader in a follow-up task on stamp-verification.py: have sweep_wall compare the table's `platform` with the host and not treat another platform's figures as this host's wall time. Either scale them, or count the need as unmeasured, with the basis naming the platform mismatch, so fit_problem does not refuse on borrowed figures. Add a case that goes red when a windows-recorded table refuses a darwin proof. Until then, correct the dependant answer in the return to say that the drive suite's sweep-shaped red-first proof now refuses on this host.",
+        "fixTask": "P143.9-z9j",
+        "commit": "9aeecd5a2c27",
+        "status": "fixed"
       },
       {
         "id": "P143-R11",
@@ -113,9 +115,30 @@
         "file": "tests/test_drive_phase.py:15306-15334",
         "issue": "fx2 and fx3 check that a copy is correct. Nothing checks that the copy (the task's only cut) actually happens. If _repo built every fixture fresh, or if _REPO_TEMPLATES never returned a hit (a mutation that drops the cache), fx2 and fx3 would both stay green. That makes the saving silently revertible. The executor's probe rows M1-M5 all mutate correctness, never whether the template is reused.",
         "resolution": "Add a case that calls _repo twice with the same arguments and asserts that the second call did not grow _REPO_TEMPLATES (or did not run `git init`, e.g. through the suite's existing counting shim). Prove it red by mutating `_REPO_TEMPLATES[files] = template` away."
+      },
+      {
+        "id": "P143-R13",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_scoped_commit.py:250-258; plugins/audit/scripts/manifest/audit-task.py:5443-5447",
+        "issue": "contradicts task clause \"keep behaviour identical\": _phase_entry used `rev-parse --verify -q HEAD` and now uses head_sha, whose _ask_head runs plain `git rev-parse HEAD`. On an unborn branch with a root entry named HEAD, git exits 0 and prints the literal string \"HEAD\". On macOS's case-insensitive filesystem a `head` or `Head` file or directory has the same effect. `--verify -q` exits 1 in that case. head_sha returns \"HEAD\" even though its docstring says it returns 'the commit HEAD names, or None'. `start` then skips the 'has no commit yet ... commit first' refusal and returns state cut with baseRef \"HEAD\". The memo cannot catch this: _files_head returns None for an unborn branch, so the answer comes straight from git. Reproduced in scratchpad/p14310/rev/headfile2.sh (unborn plus `head` file: plain exit 0 'HEAD'; plus `Head` directory: exit 0 'HEAD'; with nothing there: exit 128) and in rev/probe_head.py case 11 (head_sha='HEAD', --verify=None). The existing case pe6 (tests/test_audit_task.py:9682) builds an unborn repo with no such entry, so it stays green.",
+        "resolution": "Have _ask_head ask `git rev-parse --verify -q HEAD`, and have head_sha return None unless the answer matches _OBJECT_NAME. That also makes drive-phase.git_head stricter in the same edge, where it is already pre-existing. Add an sc-hd case with an unborn repo holding a `head` directory, asserting None, and confirm it is red against the plain spelling."
+      },
+      {
+        "id": "P143-R14",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_scoped_commit.py:163-172,239-246",
+        "issue": "_ref_file returns b\"\" both for a missing file and for an existing zero-length file, so a zero-length loose ref counts as 'no loose file' and packed-refs answers. Git refuses that ref as broken; this is the empty-ref-after-power-loss state. Once a process has memoised the packed answer, head_sha keeps returning that commit while git returns nothing. Probe case 3 in rev/probe_head.py: head_sha='4e7928d2...', git=None. Git never writes this state itself (it uses lock-and-rename), so it needs a corrupt repository.",
+        "resolution": "Tell missing apart from empty. Have _ref_file return b\"\" only on FileNotFoundError/NotADirectoryError and None for an existing empty file, so _files_head returns None and git is asked."
+      },
+      {
+        "id": "P143-R15",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_scoped_commit.py:1396-1446",
+        "issue": "The _tracking docstring claims 'the same answer one listing each would give', and two shapes break it. (a) A trailing-slash spec naming a gitlink: `sm/` against a submodule `sm` is tracked when asked alone and untracked when batched, because _spec_holds requires `path.startswith('sm/')` and git lists `sm`. (b) GIT_ICASE_PATHSPECS=1 in the environment: `Docs`, `DOCS/x.txt` and `.Claude/a.json` are tracked when asked alone and untracked when batched. Both come from rev/probe_head.py section 13. The one caller, plugin_owned_rels, asks only CONFIG_NAME and GITIGNORE_NAME as fixed lower-case file paths, so neither shape is reachable today. The claim is still wider than the code.",
+        "resolution": "Have _plain_pathspec refuse a spec ending in '/' and refuse batching whenever GIT_ICASE_PATHSPECS is set, so those are asked alone. Alternatively, narrow the docstring to the shapes the matcher reproduces."
       }
     ],
-    "outcome": "[findings: 12 - 0 high, 5 med, 7 low; 1 with a recorded fix commit]"
+    "outcome": "[findings: 15 - 0 high, 6 med, 9 low; 2 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -676,7 +699,7 @@
     {
       "id": "P143.9-z9j",
       "title": "The red-first deadline reads the cost table for the platform it was recorded on, not as this host's wall time",
-      "status": "in_progress",
+      "status": "done",
       "description": "The red-first helper sizes its deadline from .github/sweep-costs.json, whose figures are windows-2025 slot-seconds at 4 workers; read on a darwin host with more workers they are taken as this host's wall time, so a proof naming tests/test_drive_phase.py needs 1011 s against a 565 s deadline and is refused (could-not-prove) where the darwin figure fit at 324 s. The reader must take the table's platform and workers into account: compare the recorded platform with the host, and when they differ either scale by a measured ratio that is recorded beside the table, or say that the figure is another platform's and size from a basis that holds here - never treat another platform's seconds as this host's. A case with a windows-recorded table on a darwin host is the red one.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -708,14 +731,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9aeecd5a2c27",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "stamp-verification.py: load_sweep_table(root, host=None) now refuses a cost table whose recorded `platform` is not this host's family, via new foreign_table_problem(doc, host) and platform_family(name) (CI labels windows-*/macos-*/ubuntu-* and sys.platform spellings -> win32/darwin/linux, unknown -> None, two unknowns never match). The refusal is the loader's `problem`, so sized_deadline and sweep_budget take their existing unread-table path: the deadline is the default, need=None so fit_problem never refuses on another machine's seconds, nothing is held back for the fix run, and the basis says `.github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time`. A table naming no platform says it names none. No ratio is applied because none is recorded beside the table; workers are named in that sentence but not compared, since figures are slot-seconds read over the command's own workers (sweep_wall). load_sweep_costs gains the same optional host. .github/sweep-costs.json left unchanged (still windows-2025, 4 workers; not re-recorded). tests/test_stamp_verification.py: new block swp-platform (_platform_cases, cases swp1-swp4); _sweep_repo fixture tables now name sys.platform and workers 1 (and take platform= for a foreign one) so the existing end-to-end cases still read their figures as this host's; swd5 asks load_sweep_costs with host=\"win32\" through _called. Red on current code before the fix: `python3 tests/test_stamp_verification.py --selftest --stage swp-platform --stage swd-block` exit 1, 6/11 passed, FAIL swp1-swp4 and swd5 (swp3: `no run was started` refusal on the foreign figure). After: same blocks plus swt-wall exit 0, 17/17. Gate `python3 tools/sweep-selftests.py tests/test_stamp_verification.py` exit 0, `1/1 files ok, 356 cases`. ruff check on both .py files exit 0; vermin -t=3.8- exit 0; prose_number_claims, house_style_violations, path_preamble_violations, depth_sensitive_paths, doc_prose_numbers report nothing for the touched files. Mutation probe <scratchpad>/probe/mutations.py (output beside it in <scratchpad>/probe/mutations.out; it lives in the scratchpad because this brief gave no worktree): 6 rows, each anchor asserted to occur once and landed, __pycache__ purged, restored in finally with sha256 checked equal (860e24f6...). Results: m1 foreign check never fires -> KILLED (swp2-4); m2 always fires (over-fire) -> KILLED (swd1, swd2, swd5, swt4-6, swp2, swp4); m3 no-platform read as host's -> KILLED (swp2); m4 two unknown names match -> KILLED (swp2); m5 CI labels unread -> KILLED (swp1, swp2, swp4, swd5); m6 host argument ignored -> KILLED (swd5, swp2, swp4). Outside files scope: PLUGIN-BUILD-GUIDE.md section on the red-first deadline amended with the platform condition (the plan gate allowed the edit). Dependants: .github/workflows/ci.yml unchanged and still correct (records with --platform windows-2025, read as win32, so Windows legs size as before); tools/sweep-selftests.py unchanged - its own per-file timeouts still read the windows figures on any host, which is the same class but in a generous direction on a faster host, and not in this task's files; CHANGELOG.md not edited (its top section is the released 3.7.0, no Unreleased section to add to); CLAUDE.md and CONTRIBUTING.md describe recording and sharding, not the red-first deadline, still correct; tools/affected.py refers by path, still correct; drive-phase.py, run-test-gate.py, schema, _output, _proc_group, _runner_output do not call load_sweep_table (its only caller is red in this module), still correct; tests/test__filed_returns.py uses _crlf_cases, untouched.",
+        "descriptive": "The red-first deadline no longer reads the windows CI cost table as a darwin or linux host's own seconds; it says whose seconds they are and uses the default, while Windows hosts size from the table as before."
       },
       "startedAt": "2026-10-30T16:26:07Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-30T16:46:52Z",
+      "verifiedBy": [
+        "swp1: recorded platform names (CI runner labels and sys.platform spellings) map to their host family, unknown names to none",
+        "swp2: a windows-2025 table on a darwin host gives no figures, the default deadline, no fit refusal, and a clause naming platform, workers and host; the same table on a win32 host is sized and capped as before; a table naming no platform says so; two unknown names are not one platform",
+        "swp3: end to end, a proof whose suite another platform's table times past the cap runs all three runs and is proved, with the basis naming the foreign platform",
+        "swp4: the committed .github/sweep-costs.json is kept as CI's - recorded on windows with integer workers - sized from its figure for tests/test_drive_phase.py on a win32 host and told as another platform's on a darwin host"
+      ],
       "notes": [
         {
           "at": "2026-10-30T14:52:26Z",
@@ -738,12 +766,24 @@
         "runId": "2026-10-30T16:46:34Z.c771ae",
         "status": "passed",
         "at": "2026-10-30T16:46:34Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "9aeecd5a2c27",
+        "at": "2026-10-30T16:46:52Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-30T16:37:43Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_stamp_verification.py` in a throwaway tree at HEAD exited 1 with 5 of 356 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - swd5 (house FAIL), swp1 (house FAIL), swp2 (house FAIL), swp3 (house FAIL), swp4 (house FAIL): SELFTEST FAILED: 351/356 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 522s, 3 times the 174s of wall time the baseline, task and fix runs need, 58s each - the sweep's costliest-first schedule of the recorded 463s slot-seconds of tests/test_stamp_verification.py in .github/sweep-costs.json over 8 workers (all cores but two); fix run: held back 58s of the deadline, the wall time one run takes - the sweep's costliest-first schedule of the recorded 463s slot-seconds of tests/test_stamp_verification.py in .github/sweep-costs.json over 8 workers (all cores but two)",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P143.10-z9j",
       "title": "The full sweep finishes under four minutes on a quiet machine: the product's own git calls on the drive path are memoised or batched",
-      "status": "pending",
+      "status": "in_progress",
       "description": "P143.8 measured the darwin sweep throughput-bound (about 2500 slot-seconds over 8 workers, 325/327 s quiet) and Windows CI shards 90-99% busy, so only less work moves wall time; 240 s needs about 1920 slot-seconds (-23%). A spawn shim over the drive suite attributed about 84% of its slot-seconds to child processes, most from product code: drive-phase.py carry_git/git_head, _scoped_commit, _tree_stamp, _worktrees._git, audit-task._git_answer, and per-verb git config reads (usage_ledger.resolve_author, _panel_viewer._git_config_origins). Cut those calls in the product (memo bound to a witness, as _config.git_place does, or one batched call), keep behaviour identical, re-measure the full sweep quiet twice 20+ minutes apart with the spread, and state the result against 240 s with its numbers. Never re-record .github/sweep-costs.json from darwin.",
       "files": [
         "plugins/audit/scripts/governance/_scoped_commit.py",
@@ -773,16 +813,22 @@
       "dependsOn": [
         "P143.8-z9j"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-30T16:46:54Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-30T18:19:26Z.014c66",
+        "status": "passed",
+        "at": "2026-10-30T18:19:26Z"
+      }
     }
   ],
   "reviewPerTask": "signals",

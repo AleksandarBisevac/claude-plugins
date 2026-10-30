@@ -5415,8 +5415,8 @@ def _phase_entry(git_root, meta, phase):
     worktree refused for not standing on the parent, where it cannot stand.
     """
     pid = phase.get("id")
-    code, _top = _git_answer(git_root, "rev-parse", "--show-toplevel")
-    if code != 0:
+    hc = _loader.load_hooks_config(modname="audit__config")
+    if hc.git_place(git_root, ["--show-toplevel"])[0] is None:
         return {"state": "none", "refusal": None}
     here = _id_shape.current_branch(git_root)
     recorded = phase.get("branch")
@@ -5440,8 +5440,8 @@ def _phase_entry(git_root, meta, phase):
         return {"state": "refused", "refusal": (
             "[audit-task] HEAD is detached, so there is no branch for phase %s to "
             "fork from -- `git switch %s`, then start again" % (pid, parent))}
-    code, head = _git_answer(git_root, "rev-parse", "--verify", "-q", "HEAD")
-    if code != 0 or not head:
+    head = _scoped_commit.head_sha(git_root)
+    if not head:
         return {"state": "refused", "refusal": (
             "[audit-task] %s has no commit yet, so phase %s has no base to fork "
             "from -- commit first, then start again" % (here, pid))}
@@ -6831,8 +6831,8 @@ def _examined_head(git_root):
     than refused: a project outside git runs this plugin (a phase there runs with
     no branch), and refusing would leave it no way to record the answer at all.
     """
-    code, head = _git_answer(git_root, "rev-parse", "HEAD")
-    return head if code == 0 and _SHA_SHAPE.match(head or "") else None
+    head = _scoped_commit.head_sha(git_root)
+    return head if _SHA_SHAPE.match(head or "") else None
 
 
 def _start_head(project, config, task):

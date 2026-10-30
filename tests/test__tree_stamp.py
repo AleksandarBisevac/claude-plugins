@@ -38,6 +38,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
 import os
+import subprocess
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -655,6 +656,7 @@ def _cases(check):
     _harness.stage(check, "tss", _scope_cases)
     _harness.stage(check, "tsd", _recorder_dirty_cases)
     _harness.stage(check, "tsn", _nested_recorder_cases)
+    _harness.stage(check, "tso", _one_listing_cases)
 
 
 NESTED_RECORDER_CLAUSE = ("nested project - recorder rows leave dirty_digest "
@@ -834,6 +836,83 @@ def _scope_cases(check):
     else:
         _harness.skip(check, "tss5 a path on disk whose bytes cannot be read",
                       "os.symlink is not usable here", not made)
+
+
+# --- both halves of the content reading come from one listing -----------------
+def _two_listings(root):
+    """The index and the differing paths as two separate `ls-files` calls read
+    them - the reading `_content_reading` gives, asked the long way by the test."""
+    def fields(*args):
+        out = _harness.git(root, *args, prefix=("git",))
+        return [f for f in out.split("\0") if f]
+    tracked = sorted([path, head] for head, _sep, path in
+                     (e.partition("\t") for e in fields("ls-files", "-s", "-z")))
+    differing = sorted(set(fields("ls-files", "-z", "--modified", "--deleted",
+                                  "--others", "--exclude-standard")))
+    return tracked, differing
+
+
+def _one_listing_cases(check):
+    """Every shape the two halves tell apart: modified, deleted, staged then
+    edited again, untracked, ignored, skip-worktree with its file gone,
+    assume-unchanged with its file edited, intent-to-add, the three stages of a
+    conflict, and names with a tab and a non-ASCII letter in them."""
+    root = _seeded_repo("tree-stamp-one-listing-")
+    _write(os.path.join(root, ".gitignore"), "ign*\n")
+    for name in ("del.txt", "skip.txt", "assumed.txt", "tab\there.txt",
+                 "n\u00e4me.txt", "conflict.txt"):
+        _write(os.path.join(root, name), "base\n")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "shapes")
+    base = subprocess.run(["git", "-C", root, "rev-parse", "--abbrev-ref", "HEAD"],
+                          stdout=subprocess.PIPE).stdout.decode().strip()
+    _git(root, "switch", "-q", "-c", "other")
+    _write(os.path.join(root, "conflict.txt"), "other\n")
+    _git(root, "commit", "-q", "-am", "other")
+    _git(root, "switch", "-q", base)
+    _write(os.path.join(root, "conflict.txt"), "mine\n")
+    _git(root, "commit", "-q", "-am", "mine")
+    subprocess.run(["git", "-C", root, "-c", "user.email=f@example.invalid",
+                    "-c", "user.name=f", "merge", "-q", "other"],
+                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    _write(os.path.join(root, "src", "mine.py"), "v = 2\n")
+    _write(os.path.join(root, "src", "theirs.py"), "w = 2\n")
+    _git(root, "add", "src/theirs.py")
+    _write(os.path.join(root, "src", "theirs.py"), "w = 3\n")
+    os.remove(os.path.join(root, "del.txt"))
+    _write(os.path.join(root, "new.txt"), "new\n")
+    _write(os.path.join(root, "ign1"), "ignored\n")
+    _git(root, "update-index", "--skip-worktree", "skip.txt")
+    os.remove(os.path.join(root, "skip.txt"))
+    _git(root, "update-index", "--assume-unchanged", "assumed.txt")
+    _write(os.path.join(root, "assumed.txt"), "edited\n")
+    _write(os.path.join(root, "ita.txt"), "intent\n")
+    _git(root, "add", "-N", "ita.txt")
+    reading, problem = M._content_reading(root, None)
+    tracked, differing = _two_listings(root)
+    got = (sorted(reading["tracked"]) if reading else None,
+           [p for p, _d in reading["current"]] if reading else None)
+    stages = len([t for t in tracked if t[0] == "conflict.txt"])
+    check("tso1 one tagged listing reads the index and the differing paths "
+          "exactly as the two listings asked apart do, across every shape "
+          "(%d tracked entries, %d differing, %d conflict stages): %r"
+          % (len(tracked), len(differing), stages, (problem, got, differing)),
+          problem is None and got == (tracked, differing) and stages == 3
+          and "new.txt" in differing and "ign1" not in differing
+          and "skip.txt" not in differing and "assumed.txt" not in differing)
+    real = M._git_fields
+
+    def untagged(project, args):
+        lines = real(project, args)
+        return None if lines is None else lines + ["K killed.txt"]
+    M._git_fields = untagged
+    try:
+        refused = M._content_reading(root, None)
+    finally:
+        M._git_fields = real
+    check("tso2 a listing line under a tag this file does not read refuses the "
+          "reading rather than dropping the line: %r" % (refused,),
+          refused[0] is None and "K killed.txt" in (refused[1] or ""))
 
 
 def _selftest():

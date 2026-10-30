@@ -131,6 +131,154 @@ def lines(text):
             if ln.strip()]
 
 
+# --- the commit HEAD names, asked again only when a ref moved ------------------
+# A drive or a start asks for HEAD many times in one process, and most answers
+# are the one before: nothing between them moved a ref. So git's answer is kept
+# beside the commit the ref FILES name, and reused while those files still name
+# it - `_config.git_place`'s shape, a memo bound to the disk facts it rests on,
+# re-read on every call, so a commit this process made itself is seen as surely
+# as one another process made.
+#
+# WHAT THE FILES ARE. `HEAD` in the tree's own git dir names either a commit (a
+# detached HEAD) or a branch under `refs/heads/`; that branch's loose file in
+# the common dir outranks any line of `packed-refs`, which answers only when
+# there is no loose file. They are read as BYTES, never stat'ed - git replaces
+# each by renaming a new file in - and the reading is checked against git once
+# before anything is kept: an answer is kept only when git named the very commit
+# the files name, which is what shows git reads these files at all.
+#
+# NOTHING IS KEPT where the files are not the whole story: a `reftable/` store,
+# a HEAD naming anything but a commit or a branch under `refs/heads/`, a loose
+# ref that is itself symbolic, a file holding anything but one object name, or
+# a tree whose `.git` entry does not lead back to the common dir git named
+# (`_own_git_dir`). Those are asked every time, as they always were.
+#
+# MODULE STATE, deliberately, for `_config._STANDING`'s reason: the callers in
+# one process share the answers. `forget_heads()` empties it for a case that
+# compares the memo with git asked fresh.
+_HEADS = {}
+_OBJECT_NAME = re.compile(r"\A(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
+
+
+def _ref_file(path):
+    """The bytes of one ref file, b"" when there is none, None when it cannot be
+    read for any other reason."""
+    try:
+        with open(path, "rb") as fh:
+            return fh.read()
+    except (FileNotFoundError, NotADirectoryError):
+        return b""
+    except OSError:
+        return None
+
+
+def _packed_name(packed, ref):
+    """The object name `packed-refs` bytes give `ref`, or None - a line it cannot
+    read included, since a reading that skips a line is not the files' answer."""
+    want = ref.encode("utf-8")
+    for line in packed.splitlines():
+        if not line or line.startswith(b"#") or line.startswith(b"^"):
+            continue
+        name, sep, named = line.partition(b" ")
+        if not sep:
+            return None
+        if named == want:
+            return name.decode("ascii", "replace")
+    return None
+
+
+def _own_git_dir(top, common):
+    """The git dir holding `top`'s own HEAD, read off its `.git` entry and
+    checked against the common dir git named: the common dir itself for a
+    `.git` directory or a `gitdir:` file naming it (a submodule's), the
+    directory a `gitdir:` file names when that directory's `commondir` leads
+    back to it (a linked worktree's). None when the entry says anything else - a
+    tree git places by configuration rather than by its `.git` entry included."""
+    dot = os.path.join(top, ".git")
+    if os.path.isdir(dot):
+        return common if os.path.realpath(dot) == common else None
+    text = (_ref_file(dot) or b"").decode("utf-8", "replace").strip()
+    if not text.startswith("gitdir: "):
+        return None
+    own = os.path.realpath(os.path.join(top, text[len("gitdir: "):]))
+    if own == common:
+        return own
+    back = (_ref_file(os.path.join(own, "commondir")) or b"").decode(
+        "utf-8", "replace").strip()
+    if not back or os.path.realpath(os.path.join(own, back)) != common:
+        return None
+    return own
+
+
+def _files_head(git_root):
+    """`(key, named)` - where HEAD's files for `git_root` live, and the commit
+    they name; None when the files are not the whole answer (the block above)."""
+    # Two place questions rather than one, each under the key the lock
+    # directory (`_locks.lock_dir`) and a tree's top (`_worktrees`,
+    # `checkout_top`) are already asked by: in a process that asked those for
+    # the same directory, neither costs git a question.
+    hc = _loader.load_hooks_config(modname="audit__config")
+    top = (hc.git_place(git_root, ["--show-toplevel"])[0] or [""])[0]
+    common = (hc.git_place(git_root, ["--git-common-dir"])[0] or [""])[0]
+    if not top or not common:
+        return None
+    common = os.path.realpath(os.path.join(str(git_root), common))
+    git_dir = _own_git_dir(top, common)
+    if git_dir is None or os.path.lexists(os.path.join(common, "reftable")):
+        return None
+    head = _ref_file(os.path.join(git_dir, "HEAD"))
+    if not head:
+        return None
+    text = head.decode("utf-8", "replace").strip()
+    key = (os.path.realpath(str(git_root)), git_dir, common)
+    if _OBJECT_NAME.match(text):
+        return key, text
+    ref = text[len("ref: "):] if text.startswith("ref: refs/heads/") else ""
+    if not ref or ".." in ref.split("/") or ref.endswith("/"):
+        return None
+    loose = _ref_file(os.path.join(common, *ref.split("/")))
+    if loose is None:
+        return None
+    if loose:
+        named = loose.decode("utf-8", "replace").strip()
+        return (key, named) if _OBJECT_NAME.match(named) else None
+    packed = _ref_file(os.path.join(common, "packed-refs"))
+    named = _packed_name(packed, ref) if packed else None
+    return (key, named) if named and _OBJECT_NAME.match(named) else None
+
+
+def _ask_head(git_root):
+    """`git rev-parse HEAD` in `git_root`, asked of git: the commit, or None."""
+    try:
+        done = subprocess.run(["git", "-C", str(git_root), "rev-parse", "HEAD"],
+                              capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return done.stdout.strip() if done.returncode == 0 else None
+
+
+def head_sha(git_root):
+    """The commit HEAD names in `git_root`, or None when git will not say -
+    git's own answer, reused while the ref files still name it (the block
+    above)."""
+    files = _files_head(git_root)
+    if files is not None and _HEADS.get(files[0]) == files[1]:
+        return files[1]
+    sha = _ask_head(git_root)
+    if files is not None:
+        if sha is not None and sha == files[1]:
+            _HEADS[files[0]] = sha
+        else:
+            _HEADS.pop(files[0], None)
+    return sha
+
+
+def forget_heads():
+    """Drop every kept HEAD answer; nothing needs it for correctness."""
+    _HEADS.clear()
+
+
 # --- what may be staged, and what already is ----------------------------------
 def under_any(path, allowed):
     """True when `path` is under ANY of `allowed`. The list form of `_under`.
@@ -1182,7 +1330,7 @@ def plugin_owned_rels(project, git_root, when_unknown):
     if when_unknown not in (UNKNOWN_REFUSES, UNKNOWN_PROTECTS):
         raise ValueError("when_unknown must be %r or %r, not %r"
                          % (UNKNOWN_REFUSES, UNKNOWN_PROTECTS, when_unknown))
-    rows, seen = [], set()
+    placed, seen = [], set()
     for base in (project, git_root):
         claude = os.path.join(base, ".claude")
         for path, why in _mio.plugin_owned_under(claude):
@@ -1192,14 +1340,19 @@ def plugin_owned_rels(project, git_root, when_unknown):
             seen.add(rel)
             name = os.path.relpath(path, claude).replace("\\", "/")
             by_lines = name in _mio.PLUGIN_OWNED_WHILE_ONLY_ITS_LINES
-            if by_lines or name in _mio.PLUGIN_OWNED_WHILE_UNTRACKED:
-                state = _tracking(git_root, rel)
-                if state == TRACKED and by_lines:
-                    state = _ignore_edit(git_root, rel)
-                if state in (TRACKED, FOREIGN_LINES) or (
-                        state == UNKNOWN and when_unknown == UNKNOWN_REFUSES):
-                    continue
-            rows.append((rel, why))
+            asks = by_lines or name in _mio.PLUGIN_OWNED_WHILE_UNTRACKED
+            placed.append((rel, why, by_lines, asks))
+    states = _tracking(git_root, [rel for rel, _w, _b, asks in placed if asks])
+    rows = []
+    for rel, why, by_lines, asks in placed:
+        if asks:
+            state = states[rel]
+            if state == TRACKED and by_lines:
+                state = _ignore_edit(git_root, rel)
+            if state in (TRACKED, FOREIGN_LINES) or (
+                    state == UNKNOWN and when_unknown == UNKNOWN_REFUSES):
+                continue
+        rows.append((rel, why))
     return rows
 
 
@@ -1228,25 +1381,66 @@ def _ignore_edit(git_root, rel):
             else FOREIGN_LINES)
 
 
-def _tracking(git_root, rel):
-    """`TRACKED`, `UNTRACKED` or `UNKNOWN` - whether git's index holds `rel`;
-    `UNKNOWN` when the path cannot be spelled as a pathspec or `git ls-files`
-    exits non-zero or could not be run. What an unknown means is the
-    reader's, not this function's, so it is private and `plugin_owned_rels`,
+def _tracking(git_root, rels):
+    """`{rel: TRACKED | UNTRACKED | UNKNOWN}` - whether git's index holds each of
+    `rels`; `UNKNOWN` for one that cannot be spelled as a pathspec, or when
+    `git ls-files` exits non-zero or could not be run. What an unknown means is
+    the reader's, not this function's, so it is private and `plugin_owned_rels`,
     which takes the reader's side as an argument, is its one caller -
     `tests/test__scoped_commit.py` walks `scripts/` for any other.
 
-    `rel` is spelled from the checkout's top, so it goes through
+    Each `rel` is spelled from the checkout's top, so it goes through
     `plan_to_git` as an entry of a project that IS the top: the pathspec is the
-    one every other listing here is asked with."""
+    one every other listing here is asked with.
+
+    ONE LISTING FOR ALL OF THEM, and the same answer one listing each would give.
+    A plain pathspec matches a listed path that is it or lies under it, so the
+    paths git lists are matched back to each pathspec by that rule here; a
+    pathspec git could read or print another way (`_plain_pathspec`) is asked
+    alone. When the shared listing is refused, each
+    pathspec is asked alone, so one that git rejects - outside the repository,
+    say - leaves the others answered as they would have been."""
     hc = _loader.load_hooks_config(modname="audit__config")
-    spec = hc.plan_to_git(rel, git_root, git_root)
-    if spec is None:
-        return UNKNOWN
-    code, out, _err = run_git(git_root, ["ls-files", "-z", "--", spec])
-    if code != 0:
-        return UNKNOWN
-    return TRACKED if out else UNTRACKED
+    specs = dict((rel, hc.plan_to_git(rel, git_root, git_root)) for rel in rels)
+    asked = sorted(set(spec for spec in specs.values() if spec is not None))
+    shared = [spec for spec in asked if _plain_pathspec(spec)]
+    if len(shared) < 2:
+        shared = []
+    queue = ([shared] if shared else []) + [[spec] for spec in asked
+                                            if spec not in shared]
+    answers = {}
+    while queue:
+        group = queue.pop(0)
+        code, out, _err = run_git(git_root, ["ls-files", "-z", "--"] + group)
+        if code != 0:
+            if len(group) > 1:
+                queue.extend([spec] for spec in group)
+            continue
+        listed = [p for p in out.split("\0") if p]
+        for spec in group:
+            answers[spec] = (bool(listed) if len(group) == 1
+                             else any(_spec_holds(spec, p) for p in listed))
+    return dict((rel, UNKNOWN if spec not in answers
+                 else TRACKED if answers[spec] else UNTRACKED)
+                for rel, spec in specs.items())
+
+
+def _plain_pathspec(spec):
+    """Whether git reads `spec` as the literal path it spells and prints it back
+    the same way: no wildcard, no magic prefix, no empty, `.` or `..` segment, no
+    backslash, and ASCII only - git may print a non-ASCII name in another
+    Unicode form than it was asked in (`core.precomposeUnicode`)."""
+    if (not spec or not spec.isascii() or spec.startswith((":", "/"))
+            or any(c in spec for c in "*?[]\\")):
+        return False
+    return all(part not in ("", ".", "..") for part in spec.rstrip("/").split("/"))
+
+
+def _spec_holds(spec, path):
+    """Whether a plain pathspec matches a path git listed: the path itself, or
+    one under it."""
+    bare = spec.rstrip("/")
+    return (path == spec and not spec.endswith("/")) or path.startswith(bare + "/")
 
 
 def split_plugin_owned(paths, owned):

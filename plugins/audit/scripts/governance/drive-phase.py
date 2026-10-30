@@ -6594,14 +6594,9 @@ def signed_off(phase):
 
 
 def git_head(ctx):
-    """The commit HEAD names in the project's repository, or None."""
-    try:
-        done = subprocess.run(["git", "-C", ctx["gitRoot"], "rev-parse", "HEAD"],
-                              capture_output=True, text=True, encoding="utf-8",
-                              errors="replace", timeout=60)
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return done.stdout.strip() if done.returncode == 0 else None
+    """The commit HEAD names in the project's repository, or None - asked of git
+    again only once a ref has moved (`_scoped_commit.head_sha`)."""
+    return _scoped_commit.head_sha(ctx["gitRoot"])
 
 
 def owed_tasks(ctx, phase):

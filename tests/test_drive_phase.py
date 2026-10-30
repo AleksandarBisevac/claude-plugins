@@ -15301,6 +15301,7 @@ def _stage_cases(check):
           said == {"user.email": "fixture@example.com", "user.name": "Fixture",
                    "commit.gpgsign": "false"})
     _template_cases(check)
+    _git_head_cases(check)
 
 
 def _template_cases(check):
@@ -15331,6 +15332,42 @@ def _template_cases(check):
           "before it nor one copied after it from the same template: %r"
           % (seen,),
           seen == [(True, b"v0\n", "", True)] * 2)
+
+
+
+def _git_head_cases(check):
+    """The driver's HEAD is git's, asked again once a ref moved: a commit made
+    between two asks in one process is the next answer, and asks with nothing
+    moving between them send git one question."""
+    M, why = _load("drive_phase_git_head")
+    if M is None:
+        check("gh1 the driver's HEAD follows a commit made between two asks "
+              "(%s)" % (why,), False)
+        return
+    root, _m = _repo("git-head", task_ids=TASKS[:1])
+    ctx = {"gitRoot": root}
+    shared, asks = M._scoped_commit, []
+    real = shared._ask_head
+
+    def counted(git_root):
+        asks.append(git_root)
+        return real(git_root)
+    shared.forget_heads()
+    shared._ask_head = counted
+    try:
+        before = [M.git_head(ctx) for _ in range(3)]
+        _write_lf(os.path.join(root, "src", "f1.txt"), "moved on\n")
+        _harness.git(root, "commit", "-qam", "moves HEAD")
+        after = M.git_head(ctx)
+    finally:
+        shared._ask_head = real
+        shared.forget_heads()
+    fresh = _git_out(root, "rev-parse", "HEAD").strip()
+    check("gh1 the driver's HEAD follows a commit made between two asks, and "
+          "three asks with nothing moving send git one question: %r"
+          % ((before, after, fresh, len(asks)),),
+          before == [before[0]] * 3 and before[0] and after == fresh
+          and after != before[0] and len(asks) == 2)
 
 
 if __name__ == "__main__":
