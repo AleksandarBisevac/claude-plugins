@@ -24,7 +24,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P143-R1",
@@ -41,28 +41,36 @@
         "severity": "low",
         "file": "tests/test_drive_phase.py:280-590 (_run_in_process, _restore_environ, _exit_status, _child_codec, _needs_process)",
         "issue": "The new runner is shared by almost every case in the suite, yet the five-row probe mutates the verbs and the sitecustomize fallback, never the runner itself. Nothing shown goes red if _restore_environ stops removing a verb's added variables (the lock token it hands children), if cwd or sys.argv are not restored, or if _exit_status maps a non-int exit code to 0. Process-global state leaking from one verb into the next is the one defect class in-process execution adds, and tests.add is none. Related fidelity gap: in-process the lock holder pid recorded by _locks._holder_pid is the live test process (and _locks.py:577 treats pid == getpid() as ours), so a case that depends on a lock left by a verb that died being read as holder-gone cannot be shown through an in-process verb. No row shows such a case still spawns a process.",
-        "resolution": "Add a small case in the suite (and a probe row each) that runs a stub script through _run_in_process which sets an environment variable, changes cwd, calls sys.exit('x') and sys.exit(3), and assert the environment, cwd, argv and exit codes after; and add a probe row that makes the runner leak the environment. For the pid point, either grep the converted cases for ones that rely on a verb's own pid being dead and route them through _needs_process, or state in the runner comment that holder-liveness is not exercised in-process."
+        "resolution": "Add a small case in the suite (and a probe row each) that runs a stub script through _run_in_process which sets an environment variable, changes cwd, calls sys.exit('x') and sys.exit(3), and assert the environment, cwd, argv and exit codes after; and add a probe row that makes the runner leak the environment. For the pid point, either grep the converted cases for ones that rely on a verb's own pid being dead and route them through _needs_process, or state in the runner comment that holder-liveness is not exercised in-process.",
+        "status": "carried",
+        "carriedTo": "BUG-31-z9j"
       },
       {
         "id": "P143-R3",
         "severity": "low",
         "file": ".github/sweep-costs.json:46-284",
         "issue": "The task said to re-record the figures the executor measured. The 120 block figures were not recorded by --record-costs; they were derived by scaling the darwin block seconds of one loaded run (run2, load 10-24) by 4913.6/2080.0, the old windows-latest suite figure over the darwin seconds of the baseline run (load 20-26). The three new blocks (ar5/ar9/ar18) and the suite figure 2665.5 therefore rest on two runs taken under different machine loads. These figures set per-block hang-detector timeouts and shard balance in CI, so an under-estimate on windows shows up as a spurious timeout and an over-estimate only as a slack deadline. It is disclosed in the platform note, and swd7 and bk5/tt5 are green.",
-        "resolution": "Re-record from a quiet darwin run (and a windows CI log via --costs-from-log) when the follow-up task takes its quiet-machine timings; until then leave the note as written."
+        "resolution": "Re-record from a quiet darwin run (and a windows CI log via --costs-from-log) when the follow-up task takes its quiet-machine timings; until then leave the note as written.",
+        "status": "carried",
+        "carriedTo": "BUG-31-z9j"
       },
       {
         "id": "P143-R4",
         "severity": "low",
         "file": "scratchpad/p1435/probe/mutations.py (not in the tree)",
         "issue": "The task asked for the mutations3 probe to be delivered as scratchpad/probe/mutations.py; it exists only at <scratchpad>/p1435/probe/mutations.py (6411 bytes) because the plan gate refused the path in the task tree. The red evidence (5 rows, ALL ROWS RED 04:39:16Z) therefore cannot be re-run from the commit.",
-        "resolution": "Have the orchestrator carry the file with the phase record, or record its path and digest in the task's notes; no code change."
+        "resolution": "Have the orchestrator carry the file with the phase record, or record its path and digest in the task's notes; no code change.",
+        "status": "carried",
+        "carriedTo": "BUG-31-z9j"
       },
       {
         "id": "P143-R5",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_affected_tests.py:337-347, plugins/audit/scripts/governance/run-test-gate.py:2644-2649",
         "issue": "The new test-support widening ignores a declared entry that is the unscoped sweep. select() returns `widen` for any changed file under a test directory that no arm picked, whatever the task's gate holds, so affected_steps never reaches left_to_run and instead adds every phase-gate entry the task did not declare as `affected/phase-gate:` steps. With a gate of [selftests] (or [selftests, lint]) in the dogfood plan, a change to tests/_harness.py now pulls validate, plugin-validate, gate, report, shots, interactive and vitest into the task run, browser gates included. But the reason for this widening is that every suite may depend on the support file, and `selftests` (python3 tools/sweep-selftests.py, the spelling with {paths} removed) already runs every suite. This works against the description's 'counts as already wide for the Python arm' and the phase outcome that whole-tree scanners run once per phase. It costs time but is not a correctness gap: the widened run is a superset.",
-        "resolution": "Treat the test-support widen as satisfied when a declared entry is the derived spelling with `{paths}` removed. That is the same word comparison left_to_run makes. Either have select() report support as its own reason (e.g. `widenSuites`) that affected_steps checks against the declared entries before adding the phase gate, or make the check in affected_steps. Add a case: gate [selftests] with only tests/_harness.py changed adds no phase-gate step and says which key covers it. Keep the case where a narrow path-scoped gate with the same change still widens."
+        "resolution": "Treat the test-support widen as satisfied when a declared entry is the derived spelling with `{paths}` removed. That is the same word comparison left_to_run makes. Either have select() report support as its own reason (e.g. `widenSuites`) that affected_steps checks against the declared entries before adding the phase gate, or make the check in affected_steps. Add a case: gate [selftests] with only tests/_harness.py changed adds no phase-gate step and says which key covers it. Keep the case where a narrow path-scoped gate with the same change still widens.",
+        "status": "carried",
+        "carriedTo": "BUG-31-z9j"
       },
       {
         "id": "P143-R6",
@@ -89,14 +97,18 @@
         "severity": "low",
         "file": "plugins/audit/hooks/_config.py:856-864 (git_place)",
         "issue": "Suppose the combined `--show-toplevel` + fields question is refused and a repository stands above. git_place then asks a second time for the fields alone, whatever the refusal was, including a TimeoutExpired or a failure to start git. That doubles the worst-case wait. A hook path that asks a field list without --show-toplevel (`_shares_repository` and `path_tree` ask `--git-common-dir` alone) can now spend 5 s + 5 s, which equals the 10 s timeout hooks.json gives every hook. A killed guard lets the call through. In _worktrees the wait goes from 60 s to 120 s.",
-        "resolution": "Retry the fields-alone question only when the first refusal is git's bare/no-work-tree refusal: the reason line names a work tree, or a separate rev-parse --is-bare-repository says so. Do not retry on a timeout or an exception. Or hand the second ask whatever is left of the first one's timeout. Add a case with a stub `_ask_rev_parse` that times out and assert that it was called once."
+        "resolution": "Retry the fields-alone question only when the first refusal is git's bare/no-work-tree refusal: the reason line names a work tree, or a separate rev-parse --is-bare-repository says so. Do not retry on a timeout or an exception. Or hand the second ask whatever is left of the first one's timeout. Add a case with a stub `_ask_rev_parse` that times out and assert that it was called once.",
+        "status": "carried",
+        "carriedTo": "BUG-31-z9j"
       },
       {
         "id": "P143-R9",
         "severity": "low",
         "file": "plugins/audit/hooks/_config.py:780-787 (_standing_witness) vs :790-805 (_no_repository_above)",
         "issue": "The two witnesses check different things. A kept refusal is dropped when a bare-repository shape (HEAD + objects + refs) appears on the way up. A kept answer only checks for `.git` entries between the directory and its top (_inside_known_tree) and the identity of top/.git. So a kept answer survives two kinds of change. (a) A bare repository initialised in a directory between the asked directory and its top: git would then refuse or answer the bare repo, but the memo still hands back the old top. (b) A config-only change under an unchanged `.git` directory, such as `core.worktree` or `core.bare` set after the answer was kept. A directory's inode does not move when .git/config is edited. Both are rare, and a hook is one process per call. The drive process is long-lived, though, and the block comment says the witness covers 'a repository initialised between the directory and the top it had' without that limit.",
-        "resolution": "Have the answer witness walk with the same predicate as _no_repository_above, so the bare shape counts too. When top/.git is a directory, add .git/config's (st_ino, st_size, st_mtime_ns) to its identity. Otherwise state both limits in the block comment above _STANDING_FIELDS. Do not add GIT_CONFIG_COUNT to _DISCOVERY_ENV: the sweep runner sets it for every child, which would turn the memo off under test."
+        "resolution": "Have the answer witness walk with the same predicate as _no_repository_above, so the bare shape counts too. When top/.git is a directory, add .git/config's (st_ino, st_size, st_mtime_ns) to its identity. Otherwise state both limits in the block comment above _STANDING_FIELDS. Do not add GIT_CONFIG_COUNT to _DISCOVERY_ENV: the sweep runner sets it for every child, which would turn the memo off under test.",
+        "status": "carried",
+        "carriedTo": "BUG-31-z9j"
       },
       {
         "id": "P143-R10",
@@ -123,7 +135,9 @@
         "severity": "low",
         "file": "tests/test_drive_phase.py:15306-15334",
         "issue": "fx2 and fx3 check that a copy is correct. Nothing checks that the copy (the task's only cut) actually happens. If _repo built every fixture fresh, or if _REPO_TEMPLATES never returned a hit (a mutation that drops the cache), fx2 and fx3 would both stay green. That makes the saving silently revertible. The executor's probe rows M1-M5 all mutate correctness, never whether the template is reused.",
-        "resolution": "Add a case that calls _repo twice with the same arguments and asserts that the second call did not grow _REPO_TEMPLATES (or did not run `git init`, e.g. through the suite's existing counting shim). Prove it red by mutating `_REPO_TEMPLATES[files] = template` away."
+        "resolution": "Add a case that calls _repo twice with the same arguments and asserts that the second call did not grow _REPO_TEMPLATES (or did not run `git init`, e.g. through the suite's existing counting shim). Prove it red by mutating `_REPO_TEMPLATES[files] = template` away.",
+        "status": "carried",
+        "carriedTo": "BUG-31-z9j"
       },
       {
         "id": "P143-R13",
@@ -140,21 +154,27 @@
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_scoped_commit.py:163-172,239-246",
         "issue": "_ref_file returns b\"\" both for a missing file and for an existing zero-length file, so a zero-length loose ref counts as 'no loose file' and packed-refs answers. Git refuses that ref as broken; this is the empty-ref-after-power-loss state. Once a process has memoised the packed answer, head_sha keeps returning that commit while git returns nothing. Probe case 3 in rev/probe_head.py: head_sha='4e7928d2...', git=None. Git never writes this state itself (it uses lock-and-rename), so it needs a corrupt repository.",
-        "resolution": "Tell missing apart from empty. Have _ref_file return b\"\" only on FileNotFoundError/NotADirectoryError and None for an existing empty file, so _files_head returns None and git is asked."
+        "resolution": "Tell missing apart from empty. Have _ref_file return b\"\" only on FileNotFoundError/NotADirectoryError and None for an existing empty file, so _files_head returns None and git is asked.",
+        "status": "carried",
+        "carriedTo": "BUG-31-z9j"
       },
       {
         "id": "P143-R15",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_scoped_commit.py:1396-1446",
         "issue": "The _tracking docstring claims 'the same answer one listing each would give', and two shapes break it. (a) A trailing-slash spec naming a gitlink: `sm/` against a submodule `sm` is tracked when asked alone and untracked when batched, because _spec_holds requires `path.startswith('sm/')` and git lists `sm`. (b) GIT_ICASE_PATHSPECS=1 in the environment: `Docs`, `DOCS/x.txt` and `.Claude/a.json` are tracked when asked alone and untracked when batched. Both come from rev/probe_head.py section 13. The one caller, plugin_owned_rels, asks only CONFIG_NAME and GITIGNORE_NAME as fixed lower-case file paths, so neither shape is reachable today. The claim is still wider than the code.",
-        "resolution": "Have _plain_pathspec refuse a spec ending in '/' and refuse batching whenever GIT_ICASE_PATHSPECS is set, so those are asked alone. Alternatively, narrow the docstring to the shapes the matcher reproduces."
+        "resolution": "Have _plain_pathspec refuse a spec ending in '/' and refuse batching whenever GIT_ICASE_PATHSPECS is set, so those are asked alone. Alternatively, narrow the docstring to the shapes the matcher reproduces.",
+        "status": "carried",
+        "carriedTo": "BUG-31-z9j"
       },
       {
         "id": "P143-R16",
         "severity": "low",
         "file": ".github/workflows/ci.yml:226-233",
         "issue": "The new cap comment says 'in six of those seven runs a held job was a Windows sweep cell' and 'Measured, not documented'. Both are wrong. Re-derived with `gh run view <id> --json jobs` (first attempts; 40765135807 read through `gh api .../runs/40765135807/attempts/1/jobs` because attempt 2 is a rerun), the held jobs are: 40761628365 windows plain 3+4; 40765135807 linux plain 2 + linux stress 1; 40774503871 windows cp1252 4 + plain 2; 40877191420 windows plain 3 + linux stress 1; 40913965771 windows plain 1+4; 40946289828 linux plain 3 + lint; 41070108164 windows plain 2+4. That is five of seven runs, not six. GitHub also documents a 20-concurrent-job limit for its Free plan, so the limit is documented as well as measured. The executor's outcome repeats the 6-of-7 figure.",
-        "resolution": "Change it to 'in five of those seven runs', or drop the count and keep the re-derive command, which is already beside it. Change 'Measured, not documented' to 'Measured, and matching GitHub's documented Free-plan limit'."
+        "resolution": "Change it to 'in five of those seven runs', or drop the count and keep the re-derive command, which is already beside it. Change 'Measured, not documented' to 'Measured, and matching GitHub's documented Free-plan limit'.",
+        "status": "carried",
+        "carriedTo": "BUG-31-z9j"
       },
       {
         "id": "P143-R17",
@@ -181,34 +201,43 @@
         "severity": "low",
         "file": "tests/test_drive_phase.py:6595-6604",
         "issue": "hr3's precondition checks that the two tied rows share one ts and come from two files in a given order (`tied[0][1] < tied[1][1]`), but it does not check WHICH row is in the first file. The executor's outcome says the case asserts 'the reopen's file first', and the test checks less than that. If the drive fixture's session env changed so the confirmation landed in drive-fixture-session.jsonl and the reopen in ffffffffffffffff.jsonl, the precondition would still hold, and hr3 would pass on the old replay too. It would no longer guard the regression. hr4 still covers the shape deterministically.",
-        "resolution": "Include the action in `tied` (e.g. `(ts, _file, action)`) and assert `tied[0][2] == M.TASK_REOPEN and tied[1][2] == M.RISK_CONFIRMED`."
+        "resolution": "Include the action in `tied` (e.g. `(ts, _file, action)`) and assert `tied[0][2] == M.TASK_REOPEN and tied[1][2] == M.RISK_CONFIRMED`.",
+        "status": "carried",
+        "carriedTo": "BUG-31-z9j"
       },
       {
         "id": "P143-R20",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:7890-7898",
         "issue": "This diff rewrote standing_review_fix's not-carried wording into three branches. Only the tie branch (len(reasons) > 1) has a case (hr10). The single-human-reopen branch ('a re-open for ...') and the no-reopen branch ('absent from the journal') have no case anywhere in tests/ (grep for 're-open for', 'absent from the journal' and 'not the drive's hand-back' over tests/*.py finds nothing). Rewritten lines with no case can break silently.",
-        "resolution": "Add two cases in _same_moment_handback_cases. First, a human re-open a second AFTER the hand-back: fix is None and spent contains \"a re-open for 'the human wants\". Second, a journal with no re-open of P1.1: spent contains 'absent from the journal'."
+        "resolution": "Add two cases in _same_moment_handback_cases. First, a human re-open a second AFTER the hand-back: fix is None and spent contains \"a re-open for 'the human wants\". Second, a journal with no re-open of P1.1: spent contains 'absent from the journal'.",
+        "status": "carried",
+        "carriedTo": "BUG-31-z9j"
       },
       {
         "id": "P143-R21",
         "severity": "med",
         "file": "tests/test__tree_stamp.py",
         "issue": "CI run 41118921523 at 8a242ad6: selftests (windows, plain 2) and (windows, cp1252 2) fail tests/test__tree_stamp.py 60/61: block tso (added by P143.10-z9j for the merged ls-files -t listing) raises while building its cases, OSError [Errno 22] Invalid argument on a fixture path 'tab\\there.txt' - a file name holding a tab, which Windows cannot create.",
-        "resolution": "Build the tab-named fixture only where the filesystem accepts it and say so when it is skipped (or reach the quoted-path branch with a name Windows can hold); the block's other cases must still run on Windows.",
-        "fixTask": "P143.16-z9j"
+        "resolution": "fixed in P143.16-z9j (c6501ea001af): Build the tab-named fixture only where the filesystem accepts it and say so when it is skipped (or reach the quoted-path branch with a name Windows can hold); the block's other cases must still run on Windows.",
+        "fixTask": "P143.16-z9j",
+        "commit": "c6501ea001af",
+        "status": "fixed"
       },
       {
         "id": "P143-R22",
         "severity": "low",
         "file": "tests/test__tree_stamp.py:58-73,965-970",
         "issue": "The tab name is skipped on ANY OSError for that name, and the error is not kept: _write_shapes appends only the name, so the SKIPPED line says 'this filesystem refused to create a file named' with no errno. On a filesystem where the write fails for an unrelated reason (EACCES, ENOSPC) the case would skip with a reason that is not shown to be true. The `absent` argument to _harness.skip is bool(tab_refused), which is always true inside that branch, so the skip's own grading cannot ever fire.",
-        "resolution": "Have _write_shapes return (name, exc) pairs, or record the errno, and put it in the skip mechanism text (for example 'refused with [Errno 22] Invalid argument'). Optionally narrow the absorbed set to the errnos Windows raises for the name. That needs a Windows run, so printing the error is the safe step."
+        "resolution": "Have _write_shapes return (name, exc) pairs, or record the errno, and put it in the skip mechanism text (for example 'refused with [Errno 22] Invalid argument'). Optionally narrow the absorbed set to the errnos Windows raises for the name. That needs a Windows run, so printing the error is the safe step.",
+        "status": "carried",
+        "carriedTo": "BUG-31-z9j"
       }
     ],
-    "outcome": "[findings: 22 - 0 high, 8 med, 14 low; 8 with a recorded fix commit]"
+    "outcome": "[findings: 22 - 0 high, 8 med, 14 low; 9 with a recorded fix commit]",
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "Delivered: the task gate is the affected selection; whole-tree scanners run once per phase; in-process drive verbs; git place and HEAD memos bound to witnesses; cost table recorded on windows-2025 CI and read per platform by the red-first deadline; manifests merged into the lint job inside GitHub's 20-job cap; same-second journal ties settled in the safe direction. Release-tier CI green on c6501ea0 (run 41140529141). NOT MET, with numbers: the full sweep is 325-327 s quiet on darwin against 240 s (P143.8, P143.10; per-call git cuts gave about 2% each, the sweep is throughput-bound and about 84% of the drive suite is process spawn) - carried to a speed phase the owner approved 2026-10-30 (test decisions directly, real git only for the git contract); CI is about 9.9 min and 106 runner-minutes against 8 and 55 - wall carried to P151 (Windows on five parts, per-run cp1252 leg shortened by owner decision), runner-minutes depend on the speed phase. Lows carried to BUG-31-z9j. Per-task reviewer answers continued over: P143.5-6yq intent diverges: Owner, 2026-10-29: \"Bez pitanja, uzimaj preporučenu opciju.\" Recommended: keep P143.5's in-process verbs (child CPU down 22-24 percent, longest job 304 s to about 94 s); the unmet under-four-minutes target is the med finding, fixed by a follow-up task in this phase that cuts the production git calls the profile names.; P143.7-z9j intent diverges: Owner, 2026-10-29: \"Bez pitanja, uzimaj preporučenu opciju.\" Recommended: continue - P143.7 landed a measured 10 percent cut (350 s -> 315 s, two runs 26 min apart); the unmet 240 s target and the darwin-recorded cost table go to a follow-up task in this phase.; P143.3-6yq intent diverges: Owner, 2026-10-29: \"Bez pitanja, uzimaj preporučenu opciju.\" Recommended: continue - P143.3 landed a Windows-measured cost table and CI-shape checks; the manifest-validation split was rightly not made (49 s job, off the 581 s critical path); the red-first deadline reading the Windows table as host time goes to its own task, and the CI targets follow the sweep-CPU task.; P143.10-z9j intent diverges: Owner: 'Bez pitanja, uzimaj preporučenu opciju.' The divergence is the unmet 240 s target and the uncut call sites; both are recorded and carried to a follow-up.; P143.12-z9j intent diverges: Owner: 'Bez pitanja, uzimaj preporučenu opciju.' The merge is measured to fit the 20-job cap; the unmet targets are recorded at sign-off with their numbers and carried to follow-ups.",
   "tasks": [
     {
       "id": "P143.1-6yq",
@@ -1226,7 +1255,7 @@
     {
       "id": "P143.16-z9j",
       "title": "fix P143-R21: CI run 41118921523 at 8a242ad6: selftests (windows, plain 2) an...",
-      "status": "in_progress",
+      "status": "done",
       "description": "CI run 41118921523 at 8a242ad6: selftests (windows, plain 2) and (windows, cp1252 2) fail tests/test__tree_stamp.py 60/61: block tso (added by P143.10-z9j for the merged ls-files -t listing) raises while building its cases, OSError [Errno 22] Invalid argument on a fixture path 'tab\\there.txt' - a file name holding a tab, which Windows cannot create.\n\nResolution asked: Build the tab-named fixture only where the filesystem accepts it and say so when it is skipped (or reach the quoted-path branch with a name Windows can hold); the block's other cases must still run on Windows.",
       "files": [
         "tests/test__tree_stamp.py"
@@ -1249,14 +1278,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c6501ea001af",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tests/test__tree_stamp.py only. The tso block's shape files are now written by _write_shapes(root, write) over SHAPE_NAMES; an OSError on TAB_NAME ('tab\\there.txt') is recorded and returned, and an OSError on any other name re-raises. The tab file is also edited after the commit when it exists, so it sits in both the index half and the differing half of the listing (the differing-half partition at _tree_stamp.py:507 was not reached by a tab name before). New cases: tso3 asserts the tab path appears exactly once in the reading's tracked paths and once in its current paths, or, where the filesystem refused the name, reports it by name through _harness.skip ('tso3 ... SKIPPED HERE - this filesystem refused to create a file named ...'); tso4 runs the builder against a writer refusing the tab name with OSError(EINVAL) and asserts every other shape is built and only the tab name is returned; tso5 is the over-fire twin, where a refusal of 'n\\u00e4me.txt' must raise. Added `import errno`. Chose the skip-by-name route over a substitute name: the tab is the only byte that tells a split at the entry's first tab from a later one, and every other byte git quotes (control bytes, double quote, backslash) is also unusable in an NTFS name, so no Windows-legal name reaches the same branch. Gate: `python3 tools/sweep-selftests.py tests/test__tree_stamp.py` exit 0, 65 cases (was 61). Extra, not gates: `ruff check tests/test__tree_stamp.py` exit 0; `vermin -t=3.8- --no-tips --violations tests/test__tree_stamp.py` exit 0. Windows-name sweep of the P143 additions to tests/test__tree_stamp.py and tests/test__scoped_commit.py (`git diff main..HEAD` added lines grepped for tab/newline escapes, <>:\"|?*, \\u/\\x escapes, trailing dot/space, CON/PRN/AUX/NUL/COMn/LPTn, plus every _write/os.path.join/_commit_one/_repo/_unborn name): the tab name is the only Windows-illegal name. Left as is, each legal on NTFS: 'n\\u00e4me.txt' (NTFS stores Unicode); test__scoped_commit.py's keep/{b,c,d,first,inside,one,two}.txt, the `HEAD` directory and `head` file (separate unborn repos; the case-folding collision is the case's design), docs/x.txt, docs-old/y.txt, .claude/audit.config.json, .claude/.gitignore, missing.txt (never created), and 'keep/*.txt', which is a pathspec handed to git, never a file created. Dependants: plugins/audit/scripts/governance/_tree_stamp.py unchanged and still correct, now probed by a tab name in both listing halves; tests/test_stamp_verification.py defines its own _seeded_repo/_recorder_dirty_cases/_cases/_git (lines 78, 536) and imports nothing from this file, so unaffected; .github/sweep-costs.json keys this file by path (line 437) and no stage was added or renamed, so its block costing is unchanged. Windows itself not run here; the orchestrator's Windows CI is the verdict for that platform.",
+        "descriptive": "The tso block no longer dies on Windows: the tab-named fixture is built only where the filesystem accepts it, and its case says by name when it is skipped."
       },
       "startedAt": "2026-10-30T22:43:12Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-30T22:48:21Z",
+      "verifiedBy": [
+        "tso3: a tab-named path is read whole in both the index half and the differing half of the one listing, or reported SKIPPED by name where the filesystem refuses the name",
+        "tso4: the shape builder, given a filesystem refusing the tab name, still builds every other shape and names only the tab name as refused",
+        "tso5: the over-fire twin - a refusal of any other shape name raises rather than narrowing the fixture"
+      ],
       "notes": [
         {
           "at": "2026-10-30T22:43:10Z",
@@ -1275,14 +1308,25 @@
         "runId": "2026-10-30T22:47:18Z.8a5311",
         "status": "passed",
         "at": "2026-10-30T22:47:18Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c6501ea001af",
+        "at": "2026-10-30T22:48:21Z",
+        "return": "docs/audit/evidence/returns/P143.16-z9j/20261030T224312Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression mode with expectRedFirst false, and the change is test-only: the defect lived in the test fixture, not in _tree_stamp.py, so HEAD's code with the new test file is green on this (tab-accepting) filesystem and no product state turns the new cases red. The cases were instead proven able to fail by a mutation probe over throwaway `git archive HEAD` exports carrying the new test file (scratchpad probe/mutations.py; the shared tree was never mutated): unmutated 65/65 exit 0; builder swallowing every OSError -> FAIL tso5, 64/65 exit 1; builder catching nothing -> 'FAIL tso RAISED WHILE ITS CASES WERE BEING BUILT ... OSError: [Errno 22] Invalid argument', 60/61 exit 1 (the CI failure reproduced); _tree_stamp.py index entry split with rpartition -> FAIL tso1 and tso3, 63/65 exit 1; differing entry split with rpartition -> FAIL tso1 and tso3, 63/65 exit 1; real fixture written through a tab-refusing writer (Windows simulated) -> 'PASS tso3 a name holding a tab is read whole in both halves SKIPPED HERE - this filesystem refused to create a file named ...', tso1/tso2/tso4/tso5 all run, 65/65 exit 0.",
+        "at": "2026-10-30, mutation probe run before submit; no red-first helper run"
       }
     }
   ],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "4331b4e9-59c2-4a61-9004-3102aba69ea2",
-    "branch": "audit/p143-the-affected-selection-as-the",
-    "at": "2026-10-30T03:10:21Z"
-  },
-  "startedAt": "2026-10-30T03:10:21Z"
+  "startedAt": "2026-10-30T03:10:21Z",
+  "testEvidence": {
+    "runId": "2026-10-30T23:17:09Z.7de6c3",
+    "status": "passed",
+    "at": "2026-10-30T23:17:09Z"
+  }
 }
