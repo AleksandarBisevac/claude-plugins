@@ -1003,6 +1003,65 @@ def shard_matrix_drift(text):
     return findings
 
 
+# THE MANIFEST-VALIDATION WORK, each piece found by a word its command or label
+# carries in `verify.sh --list` rather than by a slice's name, so moving a piece
+# into a slice of its own changes what is read and not whether it is read. A
+# piece the runner's list no longer carries maps to no slice, which the case
+# reading this reports rather than passing over.
+MANIFEST_WORK = (("validator", "validate-manifest.py"),
+                 ("sharded layout", "sharded_layout_intact"),
+                 ("doctor", "audit-doctor.py"),
+                 ("report smoke", "status_gate_and_render"),
+                 ("rendered artifacts", "check-rendered-artifacts.py"))
+
+
+def manifest_work_slices(listed):
+    """[(piece, [slice, ...])] in MANIFEST_WORK's order - the slices of a parsed
+    `verify.sh --list` whose printed commands run each piece; [] for a piece
+    no slice runs."""
+    return [(piece, [name for name in listed["order"]
+                     if any(word in c for c in listed["commands"][name])])
+            for piece, word in MANIFEST_WORK]
+
+
+def per_run_named(text, listed_tiers):
+    """{slice: [job, ...]} for every slice a per-run job of the workflow runs -
+    a call with no `--only` runs every per-run slice `listed_tiers` holds - or
+    None when the workflow's jobs could not be read."""
+    got = job_slices(text)
+    if got["problem"] is not None:
+        return None
+    every = sorted(n for n, t in listed_tiers.items() if t == "per-run")
+    named = {}
+    for job in got["jobs"]:
+        if job["tier"] != "per-run":
+            continue
+        for run in job["runs"]:
+            for name in (every if run["slices"] is None else run["slices"]):
+                named.setdefault(name, set()).add(job["job"])
+    return dict((n, sorted(j)) for n, j in named.items())
+
+
+def family_shard_parts(text, family):
+    """{slice: sorted [(part, total)]} for the sharded runs of the matrix cells
+    whose `os` starts with `family`, or None when the workflow's jobs could not
+    be read. A cell with no `os` belongs to no family."""
+    got = job_slices(text)
+    if got["problem"] is not None:
+        return None
+    parts = {}
+    for job in got["jobs"]:
+        for run in job["runs"]:
+            if run["shard"] is None or not str(run["cell"].get("os", "")
+                                               ).startswith(family):
+                continue
+            spec = re.match(r"^([0-9]+)/([0-9]+)$", run["shard"])
+            key = (int(spec.group(1)), int(spec.group(2))) if spec else run["shard"]
+            for name in (run["slices"] or ["<per-run>"]):
+                parts.setdefault(name, set()).add(key)
+    return dict((n, sorted(p, key=str)) for n, p in parts.items())
+
+
 def render_slices(listed, text, stream=None):
     """`--list`: each slice the runner lists, its tier, and the jobs that run it.
     Returns the number of slices printed."""
@@ -2439,6 +2498,107 @@ def _slice_cases(check):
           and "3 slice(s)" in buf.getvalue())
 
 
+_CI_SHAPE_CLAUSE = ("every slice a per-run job of ci.yml runs is one `verify.sh "
+                    "--list` prints, each piece of the manifest-validation work is "
+                    "run by one of them, and the Windows sweep cells run parts "
+                    "1..4 of 4 of each slice")
+WINDOWS_SHARDS = 4
+
+
+def _ci_shape_findings(text, listed):
+    """[(subject, why)] for the live claim the ci-shape cases make, over a
+    workflow `text` and a parsed `verify.sh --list`."""
+    named = per_run_named(text, listed["tiers"])
+    windows = family_shard_parts(text, "windows")
+    if named is None or windows is None:
+        return [("ci.yml", "its jobs could not be read")]
+    out = [(name, "a per-run job (%s) runs it and `verify.sh --list` does not "
+            "print it" % (", ".join(jobs),))
+           for name, jobs in sorted(named.items()) if name not in listed["tiers"]]
+    for piece, slices in manifest_work_slices(listed):
+        if not slices:
+            out.append((piece, "no slice `verify.sh --list` prints runs it"))
+        elif not [s for s in slices if s in named]:
+            out.append((piece, "run only by slice(s) %s, which no per-run job "
+                        "runs" % (", ".join(slices),)))
+    want = set((i, WINDOWS_SHARDS) for i in range(1, WINDOWS_SHARDS + 1))
+    if not windows:
+        out.append(("windows", "no sharded sweep cell runs on a windows runner"))
+    for name, parts in sorted(windows.items()):
+        if set(parts) != want:
+            out.append(("windows %s" % (name,), "its cells run parts %r, not "
+                        "1..%d of %d" % (parts, WINDOWS_SHARDS, WINDOWS_SHARDS)))
+    return out
+
+
+def _ci_shape_cases(check):
+    listed, problem = verify_list()
+    try:
+        with io.open(os.path.join(REPO, CI_REL), encoding="utf-8") as fh:
+            text = fh.read()
+    except (IOError, OSError, UnicodeDecodeError) as exc:
+        text, problem = None, problem or "ci.yml could not be read: %s" % (exc,)
+    if listed is None or text is None:
+        check("sv13 %s (the runner's list or the workflow could not be read, so "
+              "nothing was compared: %r)" % (_CI_SHAPE_CLAUSE, problem), False)
+        return
+    work = manifest_work_slices(listed)
+    windows = family_shard_parts(text, "windows")
+    live = _ci_shape_findings(text, listed)
+    check("sv13 %s (THE LIVE CLAIM, over the real ci.yml and `verify.sh --list`: "
+          "the work is run by %r, the windows cells run %r, and the findings "
+          "are %r)" % (_CI_SHAPE_CLAUSE, work, windows, live),
+          live == [] and all(slices for _p, slices in work)
+          and len(work) == len(MANIFEST_WORK) and bool(windows)
+          and "selftests" in windows)
+
+    # A per-run job naming a manifest slice the runner does not list, and a
+    # workflow from which the manifest job's slice has gone: the first is named
+    # by its slice, the second by every piece of the work it carried.
+    calls = re.findall(r"--only (\S*manifests\S*)", text)
+    unlisted = _ci_shape_findings(
+        text.replace(calls[0], calls[0].replace("manifests",
+                                                "manifests,manifests-doctor"), 1)
+        if calls else text, listed)
+    without = (text.replace(calls[0], calls[0].replace("manifests,", "").replace(
+        ",manifests", ""), 1) if calls else text)
+    dropped = _ci_shape_findings(without, listed)
+    # ...and moved to the release-tier job alone, which an ordinary run skips.
+    moved = without.replace("--only resample", "--only resample,manifests", 1)
+    released = _ci_shape_findings(moved, listed)
+    check("sv14 %s (a per-run job naming `manifests-doctor`, which the list does "
+          "not print, is named; and the manifest job's slice dropped from it, or "
+          "left only to the release-tier job, leaves every piece of the work "
+          "named as unrun: %r / %r / %r)"
+          % (_CI_SHAPE_CLAUSE, unlisted, dropped, released),
+          len(calls) == 1 and moved != without
+          and [s for s, _w in unlisted] == ["manifests-doctor"]
+          and sorted(s for s, _w in dropped)
+          == sorted(p for p, _w in MANIFEST_WORK)
+          and sorted(s for s, _w in released)
+          == sorted(p for p, _w in MANIFEST_WORK))
+
+    # The windows cells held to four parts: the matrix narrowed to three parts
+    # of three, and an exclude dropping part 4 on windows alone, are each named
+    # by the windows slice they leave short - shard_matrix_drift accepts the
+    # first, since three of three is complete.
+    three = text.replace("shard: [1, 2, 3, 4]", "shard: [1, 2, 3]").replace(
+        "--shard ${{ matrix.shard }}/4", "--shard ${{ matrix.shard }}/3")
+    holed = text.replace(
+        "        exclude:\n",
+        "        exclude:\n          - os: windows-2025\n            shard: 4\n", 1)
+    narrowed, excluded = (_ci_shape_findings(three, listed),
+                          _ci_shape_findings(holed, listed))
+    check("sv15 %s (the matrix narrowed to three parts of three, and an exclude "
+          "dropping part 4 on windows, are each named by a windows slice: "
+          "%r / %r)" % (_CI_SHAPE_CLAUSE, narrowed, excluded),
+          three != text and holed != text
+          and shard_matrix_drift(three) == []
+          and narrowed and all(s.startswith("windows ") for s, _w in narrowed)
+          and "windows selftests" in [s for s, _w in narrowed]
+          and "windows selftests" in [s for s, _w in excluded])
+
+
 def _verify_stub_bin(root):
     """A bin directory whose interpreters and tools answer at once and record
     nothing, so verify.sh's own control flow is what runs: every slice, every
@@ -3257,6 +3417,7 @@ def _cases(check):
 
     _verify_cleanup_cases(check)
     _slice_cases(check)
+    _ci_shape_cases(check)
     _verify_slice_run_cases(check)
     _runner_image_cases(check)
     _lint_dir_cases(check)

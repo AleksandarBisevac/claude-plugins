@@ -31,8 +31,10 @@
         "severity": "med",
         "file": ".github/sweep-costs.json:1; tests/test_drive_phase.py (whole task)",
         "issue": "contradicts task clause: \"`time python3 tools/sweep-selftests.py` must finish in under 240 s wall on the owner's machine, twice, at least 20 minutes apart, on a quiet machine\" (and the title, 'The sweep finishes under four minutes'). The diff does not meet it: the executor's own runs are 378.4 s and 492.3 s wall on a loaded machine (load 10-49), 519.5 s before, and its estimate for a quiet machine is 280-300 s. The task's own fallback clause ('If 240 s is still out of reach, say what the remaining critical path is ... and do not close the task as met') applies, and the executor does follow it: it does not claim the target and names the critical path (production git calls, measured as 10104 child processes in ar-block; other suites). So the report is honest, but the task as titled is NOT met and must not be closed as met.",
-        "resolution": "Close this task as partial (the in-process conversion and the split of ar-block), not as meeting 240 s. File a follow-up task that (a) memoises or batches the production git calls the profile named (_config.checkout_top / rev-parse per call, integrate-task refresh_records, drive-phase carry_git/tree_undescribed, _worktrees.admin_dir, _locks.lock_dir) and/or cuts the next-heaviest suites (test_audit_task, test_commit_task_work, test_stamp_verification, test__deps, test_close_phase), and (b) owns the two timed quiet-machine runs 20 minutes apart, since none of the five timed runs here was quiet.",
-        "fixTask": "P143.7-z9j"
+        "resolution": "fixed in P143.7-z9j (d1a877b79e51): Close this task as partial (the in-process conversion and the split of ar-block), not as meeting 240 s. File a follow-up task that (a) memoises or batches the production git calls the profile named (_config.checkout_top / rev-parse per call, integrate-task refresh_records, drive-phase carry_git/tree_undescribed, _worktrees.admin_dir, _locks.lock_dir) and/or cuts the next-heaviest suites (test_audit_task, test_commit_task_work, test_stamp_verification, test__deps, test_close_phase), and (b) owns the two timed quiet-machine runs 20 minutes apart, since none of the five timed runs here was quiet.",
+        "fixTask": "P143.7-z9j",
+        "commit": "d1a877b79e51",
+        "status": "fixed"
       },
       {
         "id": "P143-R2",
@@ -89,9 +91,23 @@
         "file": "plugins/audit/hooks/_config.py:780-787 (_standing_witness) vs :790-805 (_no_repository_above)",
         "issue": "The two witnesses check different things. A kept refusal is dropped when a bare-repository shape (HEAD + objects + refs) appears on the way up. A kept answer only checks for `.git` entries between the directory and its top (_inside_known_tree) and the identity of top/.git. So a kept answer survives two kinds of change. (a) A bare repository initialised in a directory between the asked directory and its top: git would then refuse or answer the bare repo, but the memo still hands back the old top. (b) A config-only change under an unchanged `.git` directory, such as `core.worktree` or `core.bare` set after the answer was kept. A directory's inode does not move when .git/config is edited. Both are rare, and a hook is one process per call. The drive process is long-lived, though, and the block comment says the witness covers 'a repository initialised between the directory and the top it had' without that limit.",
         "resolution": "Have the answer witness walk with the same predicate as _no_repository_above, so the bare shape counts too. When top/.git is a directory, add .git/config's (st_ino, st_size, st_mtime_ns) to its identity. Otherwise state both limits in the block comment above _STANDING_FIELDS. Do not add GIT_CONFIG_COUNT to _DISCOVERY_ENV: the sweep runner sets it for every child, which would turn the memo off under test."
+      },
+      {
+        "id": "P143-R10",
+        "severity": "med",
+        "file": ".github/sweep-costs.json:1-541 (the figures) x plugins/audit/scripts/governance/stamp-verification.py:3975-4031 (sweep_wall, proof_need, fit_problem)",
+        "issue": "The re-recorded table changes how a dependant behaves, not just how much time it holds back. stamp-verification.py's `red` reads the same table to size a sweep-shaped red-first command, and fit_problem() refuses to start any run when 3 x the schedule wall exceeds the deadline (capped at MAX_TIMEOUT 565). I computed it with the module's own sized_deadline/fit_problem, on this 10-core host (8 workers), for `python3 tools/sweep-selftests.py tests/test_drive_phase.py`. With the darwin table at HEAD, need is 324 s and the command fits. With the new Windows table, need is 1011 s against a 565 s deadline, so it REFUSES ('no run was started'). Other suites also grew several-fold: test__worktrees need 123 -> 492, test__manifest_io 15 -> 399. They still fit, but close to the cap. So on the developer's machine, a red-first proof naming the drive's suite now ends in could-not-prove, because Windows figures are being read as darwin wall time. The executor's dependant answer ('holds back more time') understates this.",
+        "resolution": "This table is right for CI, which binds on Windows, so keep it. Fix the reader in a follow-up task on stamp-verification.py: have sweep_wall compare the table's `platform` with the host and not treat another platform's figures as this host's wall time. Either scale them, or count the need as unmeasured, with the basis naming the platform mismatch, so fit_problem does not refuse on borrowed figures. Add a case that goes red when a windows-recorded table refuses a darwin proof. Until then, correct the dependant answer in the return to say that the drive suite's sweep-shaped red-first proof now refuses on this host."
+      },
+      {
+        "id": "P143-R11",
+        "severity": "med",
+        "file": "tools/verify.sh (unchanged), .github/workflows/ci.yml:263-278 (manifests job, unchanged); CI run 41070108164",
+        "issue": "contradicts task clause 'Split the serial manifest-validation job ... into verify.sh slices that run as parallel jobs' and acceptance (1) 'the median wall of at least five per-run CI runs is at most 8 minutes and their median runner-minutes at most 55'. The split was not made: verify.sh is untouched. Acceptance (1) is not met. One run exists at d1a877b7 (41070108164, release-tier workflow_dispatch, success). I measured its per-run jobs, resample excluded, with `gh run view --json jobs`: wall 9.9 min (14:14:32 -> 14:24:27) and 106.3 runner-minutes (117 if billed per started minute). The 8 Windows selftests cells alone sum to 66.6 min (cp1252 leg 34.8), the linux cells to 23.0, and linux stress to 11.6. The critical path is selftests (windows, cp1252 4) at 581 s. Two Windows plain cells started late (14:15:23 and 14:16:07), which looks like a concurrent-job cap. One run is also not the five-run median the clause asks for. For comparison, the previous dispatch at c185b4cb (40946289828) was 14.1 min and 146.7 runner-minutes, so this is an improvement but not the target.",
+        "resolution": "Do not close the task as meeting its acceptance. The executor's case against the split holds: the manifests+js+plugin job ran 49 s, off a 581 s critical path, and each extra job adds about 12 s of setup plus a queue slot. The owner should amend the clause rather than force the split. Neither target can be met by job shape. Rebalanced on the new table, a Windows cell is about 498 s of sweep plus about 60 s of setup, which is still over 8 min. 55 runner-minutes is below the 66.6 the Windows cells take alone. Meeting them needs a follow-up that cuts the Windows sweep's CPU (test_drive_phase 2688, test_commit_task_work 665, test_audit_task 629, test_close_phase 470 and test_stamp_verification 462 slot-seconds), or an owner decision to drop legs (the Windows cp1252 leg is 34.8 runner-minutes). After that, take at least five per-run runs at the rebalanced table to measure the median."
       }
     ],
-    "outcome": "[findings: 9 - 0 high, 3 med, 6 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 11 - 0 high, 5 med, 6 low; 1 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -276,7 +292,7 @@
     {
       "id": "P143.3-6yq",
       "title": "CI runs under eight minutes and 55 runner-minutes: the manifest-validation chain in parallel and Windows on four shards",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Split the serial manifest-validation job (validator, shards, doctor, report smoke, rendered artifacts) into verify.sh slices that run as parallel jobs, move Windows to four shards, and re-record .github/sweep-costs.json from the new CI logs with --costs-from-log. Acceptance: (1) the median wall of at least five per-run CI runs is at most 8 minutes and their median runner-minutes at most 55, measured with the command in the plan; (2) the manifest-validation work finishes within 5 minutes; (3) shard_matrix_drift and gate-parity are green; (4) the cost table's recorded date is after this change.",
       "files": [
         ".github/workflows/ci.yml",
@@ -315,20 +331,32 @@
       "dependsOn": [
         "P143.2-6yq"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-30T14:13:44Z",
       "completedAt": null,
       "verifiedBy": [],
       "movedFrom": {
         "id": "P142.7",
         "phase": "P142",
         "at": "2026-10-27T21:21:17Z"
+      },
+      "reviewPerTask": "signals",
+      "notes": [
+        {
+          "at": "2026-10-30T14:14:06Z",
+          "text": "Carries review finding P143-R6 (med): .github/sweep-costs.json was re-recorded on darwin with 8 workers by P143.7-z9j, while tools/sweep-selftests.py states the table is recorded from windows because that platform binds, and the windows-to-darwin ratios are uneven (test__manifest_io 129.8 -> 4.4, test_integrate_task 123.4 -> 6.4, most suites about 3x). Re-record the table from a windows CI log with --costs-from-log (measured, not scaled) once a CI run of the phase exists, so the windows shard split and the ci.yml time bounds rest on windows figures; the CI wall-time outcome is measured after that."
+        }
+      ],
+      "testEvidence": {
+        "runId": "2026-10-30T14:46:01Z.4afb5a",
+        "status": "passed",
+        "at": "2026-10-30T14:46:01Z"
       }
     },
     {
@@ -463,7 +491,7 @@
     {
       "id": "P143.7-z9j",
       "title": "The sweep finishes under four minutes on a quiet machine: production git calls are memoised or batched, and the timings are taken quiet",
-      "status": "in_progress",
+      "status": "done",
       "description": "The previous task moved the drive suite's verbs in-process (child CPU of a full sweep down about 22-24 percent, longest job from about 304 s to about 94 s), but a full `time python3 tools/sweep-selftests.py` still took 378-502 s on a loaded machine, against the target of under 240 s. Its profile of the heaviest drive block (ar-block) counted 10104 child processes, 101.7 s of its 109.9 s wall in children, nearly all git from production code: `git rev-parse` 3713 calls (32.5 s), `ls-files` 1648 (15.1 s), `diff` 1068 (10.4 s), `status` 722 (7.8 s). Named callers: `_config.checkout_top` (rev-parse per call), integrate-task.py `refresh_records`, drive-phase.py `carry_git` / `carry_commit` / `tree_undescribed`, `_worktrees.admin_dir`, `_locks.lock_dir`.\n\nDo:\n1. Measure first (choosing-what-to-optimize): rank the callers by the git time they cause across a whole sweep, not one block, and say which ones pay.\n2. Cut the calls that pay: one shared, explicitly invalidated memo for answers that cannot change within one process (a checkout's top level, its git dir, a worktree's admin dir), or a batched call where one git invocation can answer several questions. One mechanism shared by every caller, not a per-caller cache; a cached answer must never outlive a change that can alter it (a worktree added or removed, a checkout moved), and the case for that is red-first.\n3. If the target still needs it, cut the next-heaviest suites' wall (test_audit_task, test_commit_task_work, test_stamp_verification, test__deps, test_close_phase) by the same rule, measured.\n4. The in-process runner the previous task added to tests/test_drive_phase.py (`_run_in_process`) gets a case: a stub script that sets an environment variable, changes cwd, calls sys.exit('x') and sys.exit(3) - assert environment, cwd, argv and exit statuses after. State in the runner's comment that lock-holder liveness is not exercised in-process, or route cases relying on a dead verb's pid through `_needs_process`.\n5. Timings: `time python3 tools/sweep-selftests.py` twice, at least 20 minutes apart, on a QUIET machine (no Playwright, sweep or browser gate anywhere; print `uptime` beside each). Under 240 s both times is the target; if the machine cannot be made quiet, say so and do not claim it. Re-record .github/sweep-costs.json from the quiet runs (`--record-costs`), not by scaling.\n\nWho depends on these files: every hook and script that resolves the checkout through _config; integrate-task.py and drive-phase.py are the drive's write path (tests/test_drive_phase.py, tests/test_integrate_task.py, tests/test_commit_task_work.py); _locks is read by every guard. Answer each in the outcome. Deliver scratchpad/probe/mutations.py (mutations3 engine), one row per memo whose invalidation it removes, each expected red. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -502,14 +530,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d1a877b79e51",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "MEASURED FIRST. A git-call profiler (usercustomize shim on PYTHONPATH that logs every git child with its Python caller chain) over a whole base sweep counted 105954 git calls. Place questions (rev-parse --git-common-dir/--show-toplevel/--git-dir) made up about a quarter of git child-time. Ranked by site: _locks.lock_dir 14351 calls (190.8 s child-wall, loaded), _config.checkout_top 4356 (59.7 s), _worktrees.tree_root 3381 (46.7 s), _worktrees.admin_dir 2960 (39.9 s). Almost all were repeats within one process. The drive-phase carry path (carry_git: ls-files/diff/status/update-index on a scratch index) asks things that change between calls, so it is not memoisable.\n\nCHANGE. (1) hooks/_config.py: one shared place memo behind the one door git_place(cwd, fields, timeout) -> (answers, why), with _git_rev_parse as its answers-only wrapper and _ask_rev_parse as the raw process. Only place fields are kept, keyed by (cwd, realpath, fields). Each answer is stored beside a witness that is re-read from disk before every reuse: the identity of the top's .git entry (a dir by dev/ino; a gitfile by dev/ino/size/mtime_ns) plus no .git between the directory and its top (_inside_known_tree). A refusal is kept only while no repository (a .git entry or a bare HEAD/objects/refs dir) stands anywhere above. An environment steering discovery (GIT_DIR, GIT_WORK_TREE, GIT_COMMON_DIR, GIT_CEILING_DIRECTORIES, GIT_DISCOVERY_ACROSS_FILESYSTEM) bypasses the memo. A bare repository falls back to asking for the fields alone. forget_git_standing() clears the memo. (2) _locks.lock_dir and _worktrees.admin_dir/tree_root (new _place helper) ask through _loader.load_hooks_config().git_place. _worktrees still asks an injected runner, or a _git a test replaced, and still asks a cwd of None the old way. Both modules gain a _loader import edge, and PLUGIN-BUILD-GUIDE.md's generated module map is updated by those two lines (test__deps g1). (3) integrate-task.refresh_records: the two ls-files listings are one `ls-files -z -c -o --exclude-standard` (same union, checked on a fixture with a tracked-but-ignored file). (4) tests/test_drive_phase.py: new ip-block with ip1-ip3 (stub script sets an env var, chdirs, sys.exit('x')/3/0; checks argv, cwd, env and status, and that nothing outlives the run). The runner comment now states that lock-holder liveness is not exercised in-process: the holder pid is the suite's own. (5) tests/test__config.py (outside the declared files; the plan gate allowed the Edit): st1-st7 compare every memo answer with git asked fresh. They cover: a reuse starts no process; a worktree re-added at the same path under another admin dir; a repo initialised below the old top; a checkout moved away; a kept refusal plus a later git init; a bare repo; GIT_DIR. (6) .github/sweep-costs.json re-recorded with --record-costs from quiet run 3.\n\nEFFECT. Re-profiled whole sweep: git calls 105954 -> 84549. lock_dir 14351->2105, checkout_top 4356->451, tree_root 3381->787, admin_dir 2960->650, refresh_records 1448->1267. QUIET TIMINGS: same command `python3 tools/sweep-selftests.py`, /usr/bin/time -p. Each run started only when 1-min load < 4 and no other sweep, playwright or measure-affected process was running, and a sampler every 15 s saw none during the run. After: 314.68 s at 13:01:08Z (start load 3.69), 315.91 s at 13:27:15Z (start load 2.58); 26 min gap, 1.2 s spread; CPU user+sys 2122.0 / 2127.6 s. Base c57e3f3c, same conditions in a scratch worktree (since removed): 350.40 s at 13:08:58Z (load 3.40), 351.45 s at 13:34:02Z (load 3.99); CPU 2380.6 / 2381.6 s. So -36 s wall (-10%) and -255 s CPU (-11%). test_drive_phase slot-seconds 1050 -> 858. NOT under 240 s on either run; the target is not claimed. Step 3 was not done: after this change the rest of the sweep's git time sits in callers outside this task's files (_scoped_commit, _tree_stamp, _commit_trail, fixtures).\n\nGATES. Brief gate `python3 tools/sweep-selftests.py tests/test_drive_phase.py` exit 0, 676 cases. Full sweep green three times: 193/193 files, 17644 cases (quiet2, quiet3, plus a loaded run). Re-checked after recording costs: test_stamp_verification, tools/sweep-selftests.py, tools/gate-parity.py, test__runner_output, test_run_test_gate all ok; `python3 tools/gate-parity.py` exit 0. `bench-hooks.py --gate` exit 0. ruff and vermin clean on all changed .py. bench-hooks h6 failed only under the profiling shim, which injects imports; it passes in every unprofiled run.\n\nDEPENDANTS. _config (71 importers, every hook): same answers, now from a per-process memo; a hook is one process per call, so it barely changes; test__config 370/370, all guard suites green. _worktrees (28 importers): admin_dir/tree_root give the same answers; injected runners and replaced _git are honoured (test_audit_task ff14 and test_panel_server fh1 counting spies green). _locks (40 importers, read by every guard): lock_dir gives the same directory and now decodes surrogateescape instead of replace; test__locks and test_audit_lock green. integrate-task (drive write path; test_integrate_task 35, test_drive_phase, test_commit_task_work green): its names used elsewhere are untouched, and its _deps exemption row still applies. drive-phase.py: not changed; it reaches the memo through _worktrees and _locks. test_drive_phase: one STAGES row added before sb-block; sb1 is green. test_stamp_verification: not changed.\n\nCONSEQUENCE TO PUBLISH. The cost table was windows-latest (scaled), 4 workers. The re-record as ordered makes it darwin, 8 workers: test_drive_phase 2665.5 -> 858.1, ar18-block 196.8 -> 70.9. CI's windows shards are now balanced on darwin proportions, and each windows job's timeout falls to the 300 s floor. The largest windows figure was 196.8 s, still under the floor. Revert that one file if the windows table must stand.\n\nNOT DONE IN-TREE: the probe could not go at probe/mutations.py in the tree. The plan gate refused the Write verbatim: \"[require-plan] probe/mutations.py is outside task P143.7-z9j, the task this worktree is bound to ... no task of this plan declares it for this one.\" It lives at scratchpad/p1437/probe/mutations.py instead, as the brief named.",
+        "descriptive": "One shared, disk-validated, per-process memo for where a checkout stands removes about 20% of the sweep's git calls and about 10% of its quiet wall time (350 s -> 315 s). The 240 s target is not met; closed as partial."
       },
       "startedAt": "2026-10-30T10:32:34Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-30T14:13:19Z",
+      "verifiedBy": [
+        "tests/test_drive_phase.py ip-block: the in-process runner restores cwd, argv, environment and sys.path after a stub that sets an env var, chdirs and exits via sys.exit('x'), sys.exit(3) and sys.exit(0); the stub sees its argv, the handed environment and its new cwd; statuses are 1 with 'x' on stderr, 3 and 0",
+        "tests/test__config.py st1-st7: the place memo against git asked fresh - no process on reuse; a worktree re-added under a new admin dir; a repo initialised below the old top; a checkout moved away; a kept refusal plus a later git init; a bare repo; GIT_DIR"
+      ],
       "notes": [
         {
           "at": "2026-10-30T04:56:29Z",
@@ -536,7 +567,62 @@
         "runId": "2026-10-30T14:13:15Z.7dde1f",
         "status": "passed",
         "at": "2026-10-30T14:13:15Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "d1a877b79e51",
+        "at": "2026-10-30T14:13:19Z",
+        "return": "docs/audit/evidence/returns/P143.7-z9j/20261030T103234Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task with tests.expectRedFirst false. The tests.add case (ip1-ip3) locks the existing in-process runner _run_in_process, whose code HEAD already holds unchanged, so no red against HEAD is owed or possible. Each new case was instead shown red by mutation in a scratch copy: scratchpad/p1437/probe/mutations.py, 12 rows, every row RED, run at 2026-10-30T13:48:46Z, output in scratchpad/p1437/probe/mutations.out",
+        "at": "2026-10-30T13:48:46Z"
       }
+    },
+    {
+      "id": "P143.8-z9j",
+      "title": "The full sweep finishes under four minutes on a quiet machine: the critical path is measured and its heaviest suites are cut or staged",
+      "status": "pending",
+      "description": "The full sweep still takes about 315 s on a quiet machine after the git-place memo (two runs 26 min apart, base 350 s); the target is under 240 s. Measure the critical path first: the longest single jobs and blocks in a loud sweep, and the slot-seconds per suite, then cut the heaviest suites or split them into staged blocks so the sweep's slots stay busy to the end. Take timings only with 1-, 5- and 15-minute load all low and no other sweep, playwright, build or agent session running; repeat twice with a gap and report the spread. If 240 s stays out of reach, name the remaining critical path with numbers and do not claim the target. Never re-record .github/sweep-costs.json from darwin: the table is windows figures, re-recorded from a CI log.",
+      "files": [
+        "tools/sweep-selftests.py",
+        "tests/test_drive_phase.py",
+        "tests/test_integrate_task.py",
+        "tests/test__manifest_io.py",
+        ".github/sweep-costs.json"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_integrate_task.py tests/test__manifest_io.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim",
+        "choosing-what-to-optimize"
+      ],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P143.3-6yq"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "reviewPerTask": "signals",

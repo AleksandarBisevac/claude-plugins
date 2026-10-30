@@ -8369,7 +8369,8 @@
       "P144.8-ttw",
       "P145.1",
       "P148.3",
-      "P148.13-xpz"
+      "P148.13-xpz",
+      "P143.8-z9j"
     ],
     "tools/ui-tests/evidence-badge.test.mjs": [
       "P32.7",
@@ -10927,7 +10928,8 @@
       "P144.5-ttw",
       "P144.4-ttw",
       "P148.3",
-      "P143.7-z9j"
+      "P143.7-z9j",
+      "P143.8-z9j"
     ],
     "docs/audit/phases/P127.json": [
       "P127.8-bgr"
@@ -11516,7 +11518,8 @@
       "P131.1",
       "P131.2",
       "P148.16-xpz",
-      "P148.20-xpz"
+      "P148.20-xpz",
+      "P143.8-z9j"
     ],
     "tests/test__manifest_merge.py": [
       "P131.1"
@@ -11905,7 +11908,8 @@
       "P149.6-hwg",
       "P149.8-hwg",
       "P149.9-hwg",
-      "P143.7-z9j"
+      "P143.7-z9j",
+      "P143.8-z9j"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -11956,7 +11960,8 @@
     "tests/test_integrate_task.py": [
       "P131.1",
       "P146.1",
-      "P148.4"
+      "P148.4",
+      "P143.8-z9j"
     ],
     "tests/test_journal_writes.py": [
       "P131.1",

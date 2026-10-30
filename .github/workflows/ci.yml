@@ -149,10 +149,13 @@ jobs:
   # timeout to its CI deadline, so a hung file is named before this job's bound
   # cancels it with nothing named. Re-record the table from the windows cells' logs,
   # the platform that binds; every cell's log prints its blocks' seconds, so take all
-  # of them:
-  #   gh run view <id> --job <windows cell> --log > <saved log>   # each windows cell
+  # of them. `--platform` names the image the cells ran on and `--workers` the slots
+  # each cell's `budget:` line printed; without `--workers` the table records none.
+  # `gh run view --log` refuses while any job of the run is still going (the release
+  # tier's resample job outlasts the cells), and the API hands out a finished job's log:
+  #   gh api repos/<owner>/<repo>/actions/jobs/<windows cell>/logs > <saved log>
   #   python tools/sweep-selftests.py --costs-from-log <saved logs, concatenated> \
-  #       --platform windows-latest --record-costs .github/sweep-costs.json
+  #       --platform windows-2025 --workers <slots> --record-costs .github/sweep-costs.json
   #
   # `selftests-stress` asks a legacy code page AND a spaced, linked TMPDIR in one
   # execution, posix only: symlinks need a privilege the Windows runner does not grant,
