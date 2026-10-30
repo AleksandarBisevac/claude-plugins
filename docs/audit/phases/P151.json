@@ -1,0 +1,73 @@
+{
+  "id": "P151",
+  "title": "CI finishes under eight minutes wall inside GitHub's concurrent-job cap",
+  "status": "pending",
+  "description": "Carried out of P143, whose drive answered only sign-off after its reviews and would not run a task added by hand: the Windows sweep on five parts per leg runs as its own phase after P143 lands.",
+  "desiredOutcome": "A per-run CI run on main finishes under eight minutes wall with no job held by the concurrent-job cap, measured on GitHub, with gate-parity green.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P151.1-z9j",
+      "title": "CI finishes under eight minutes wall: the Windows sweep runs on five parts per leg inside GitHub's 20-concurrent-job cap",
+      "status": "pending",
+      "description": "P143.12 measured GitHub's 20-concurrent-job cap over seven release-tier runs and merged the manifests job into lint so a per-run run holds no job. Its arithmetic from run 41070108164 and .github/sweep-costs.json (7978 slot-seconds): Windows on four parts per leg is ~521 s per cell (~8.7 min); five parts per leg is 7978/20 = ~399 s + ~22 s job overhead = ~421 s (~7.0 min), with the Linux legs on two parts each to stay at or under the cap (10 Windows + 4 Linux + e2e + lint + 2 browser = 18 jobs), making browser (report) at ~429 s the critical path (~7.2 min). That needs tools/gate-parity.py: WINDOWS_SHARDS and its cases sv13 and sv15, and shard_matrix_drift's every-part-on-every-runner rule for a per-family part count. Make the change, keep gate-parity green both ways, and state the predicted wall and runner-minutes with the arithmetic; the orchestrator dispatches CI and records the measured figures. Runner-minutes stay near 106 against 55: that target needs sweep CPU cuts and is not this task's.",
+      "files": [
+        "tools/gate-parity.py",
+        ".github/workflows/ci.yml"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/gate-parity.py",
+          "python3 tools/gate-parity.py --selftest"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P143.12-z9j"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "movedFrom": {
+        "id": "P143.13-z9j",
+        "phase": "P143",
+        "at": "2026-10-30T19:04:24Z"
+      }
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 {
   "id": "P143",
   "title": "The affected selection as the task gate",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "A task's gate is the affected selection, after a re-measurement shows 0 misses over at least 20 commits; whole-tree scanners run once per phase and on push; CI stays inside its wall-time bound",
   "testGate": [
@@ -20,7 +20,7 @@
   ],
   "baseRef": "c185b4cb28ef03f4d4d043e6f802ed08879ab187",
   "branch": "audit/p143-the-affected-selection-as-the",
-  "mergedAt": null,
+  "mergedAt": "2026-10-30T23:20:00Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -1328,5 +1328,6 @@
     "runId": "2026-10-30T23:17:09Z.7de6c3",
     "status": "passed",
     "at": "2026-10-30T23:17:09Z"
-  }
+  },
+  "mergedHead": "1f7c3229c72f86adf0af0b1d62f947d6077224f6"
 }

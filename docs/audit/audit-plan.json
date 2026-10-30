@@ -926,7 +926,7 @@
     {
       "id": "P143",
       "title": "The affected selection as the task gate",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P143.json"
     },
     {
@@ -970,6 +970,12 @@
       "title": "The 3.7.0 changelog covers the Windows fixes",
       "status": "done",
       "shard": "phases/P150.json"
+    },
+    {
+      "id": "P151",
+      "title": "CI finishes under eight minutes wall inside GitHub's concurrent-job cap",
+      "status": "pending",
+      "shard": "phases/P151.json"
     }
   ],
   "fileIndex": {
@@ -1071,6 +1077,7 @@
       "P144.5-ttw",
       "P144.8-ttw",
       "P143.12-z9j",
+      "P151.1-z9j",
       "P143.15-z9j"
     ],
     ".gitignore": [
@@ -8214,7 +8221,8 @@
       "P144.5-ttw",
       "P144.8-ttw",
       "P148.3",
-      "P148.25-xpz"
+      "P148.25-xpz",
+      "P151.1-z9j"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -12888,6 +12896,22 @@
       "files": [],
       "taskId": "P142.15-6yq",
       "fixedIn": "9902993fe59d",
+      "notes": null
+    },
+    {
+      "id": "BUG-31-z9j",
+      "title": "P143 low review findings carried to the 3.8.0 low batch",
+      "status": "open",
+      "severity": "low",
+      "reportedAt": "2026-10-30T19:02:54Z",
+      "reportedBy": "orchestrator",
+      "description": "D9: the low findings P143's per-task reviews left open go into one cleanup task of this release's low batch. Each finding in P143.json review.findings carries its file, issue and resolution.",
+      "repro": "python3 -c \"import json;d=json.load(open('docs/audit/phases/P143.json'));print([f['id'] for f in d['review']['findings'] if f.get('severity')=='low' and not f.get('fixTask')])\"",
+      "expected": "Every listed low finding is fixed or closed with a recorded reason before 3.8.0 ships",
+      "actual": "The listed low findings are open",
+      "files": [],
+      "taskId": null,
+      "fixedIn": null,
       "notes": null
     }
   ],
