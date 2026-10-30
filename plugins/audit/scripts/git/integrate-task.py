@@ -590,9 +590,12 @@ def refresh_records(manifest, phase, task, manifest_path, project, git_root):
                               % (task_id,))
         wanted = _nul_list(_git_ok(git_root, ["ls-tree", "-r", "-z", "--name-only",
                                               head, "--"] + records))
-        held = set(_nul_list(_git_ok(tree, ["ls-files", "-z", "--"] + records)))
-        held |= set(_nul_list(_git_ok(tree, ["ls-files", "-o", "--exclude-standard",
-                                             "-z", "--"] + records)))
+        # One listing for both halves: `-c` lists what the index holds whatever
+        # the ignore rules say, `-o --exclude-standard` the untracked files they
+        # do not ignore, and a path is never both.
+        held = set(_nul_list(_git_ok(tree, ["ls-files", "-z", "-c", "-o",
+                                            "--exclude-standard", "--"]
+                                     + records)))
         if wanted:
             _git_ok(tree, ["checkout", head, "--"] + wanted)
         gone = sorted(p for p in held - set(wanted)

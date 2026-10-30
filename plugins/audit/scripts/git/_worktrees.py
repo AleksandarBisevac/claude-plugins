@@ -71,6 +71,8 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _loader  # noqa: E402  (load_hooks_config: the one place answers are asked)
+
 # The three answers `merged_into` gives. Named constants rather than bare strings
 # because two of them are substrings of each other -- `"contained" in
 # "not-contained"` is True -- and a caller comparing with `in` would read a refusal
@@ -124,8 +126,7 @@ def admin_dir(tree_path, run=None):
     always the basename of the worktree (git disambiguates a collision by appending),
     and composing it would silently point at another worktree's record.
     """
-    fn = _runner(run)
-    code, out, _ = fn(tree_path, ["rev-parse", "--git-dir"])
+    code, out, _ = _place(tree_path, "--git-dir", run)
     if code != 0:
         return ""
     path = (out or "").strip()
@@ -301,11 +302,33 @@ def _git(git_root, args, timeout=60):
             out.stderr.decode("utf-8", "replace"))
 
 
+_REAL_GIT = _git
+
+
 def _runner(run):
     """The injected runner, or the real one. One line, named, because every public
     function below takes `run=None` and repeating the conditional is where one of
     them would eventually get it backwards."""
     return run if run is not None else _git
+
+
+def _place(cwd, field, run):
+    """`(code, out, err)` of `git -C <cwd> rev-parse <field>`, for a field that
+    names a place. With the real runner and a directory named, the answer
+    comes through `_config`'s place memo, which every caller in this process
+    shares and which re-checks a kept answer against the disk before reusing
+    it; a runner a caller injected, a `_git` a case replaced, or no directory
+    (the process's own, which `_git` asks without `-C`) is asked as before. A
+    refusal comes back as a non-zero code beside git's own first line of
+    stderr."""
+    fn = _runner(run)
+    if fn is not _REAL_GIT or not cwd:
+        return fn(cwd, ["rev-parse", field])
+    got, why = _loader.load_hooks_config(modname="audit__config").git_place(
+        cwd, [field], timeout=60)
+    if got is None:
+        return 128, "", why
+    return 0, got[0] + "\n", ""
 
 
 # --- parsing (pure) --------------------------------------------------------------
@@ -585,9 +608,8 @@ def tree_root(cwd, run=None):
     on every machine without git, and a divergence nobody can verify is the
     advisory people learn to scroll past.
     """
-    fn = _runner(run)
     asked = "git -C %s rev-parse --show-toplevel" % (cwd,)
-    code, out, err = fn(cwd, ["rev-parse", "--show-toplevel"])
+    code, out, err = _place(cwd, "--show-toplevel", run)
     if code != 0:
         return {"root": None,
                 "basis": "%s could not be asked: %s"

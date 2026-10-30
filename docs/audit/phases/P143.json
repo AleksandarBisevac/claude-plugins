@@ -61,9 +61,37 @@
         "file": "plugins/audit/scripts/governance/_affected_tests.py:337-347, plugins/audit/scripts/governance/run-test-gate.py:2644-2649",
         "issue": "The new test-support widening ignores a declared entry that is the unscoped sweep. select() returns `widen` for any changed file under a test directory that no arm picked, whatever the task's gate holds, so affected_steps never reaches left_to_run and instead adds every phase-gate entry the task did not declare as `affected/phase-gate:` steps. With a gate of [selftests] (or [selftests, lint]) in the dogfood plan, a change to tests/_harness.py now pulls validate, plugin-validate, gate, report, shots, interactive and vitest into the task run, browser gates included. But the reason for this widening is that every suite may depend on the support file, and `selftests` (python3 tools/sweep-selftests.py, the spelling with {paths} removed) already runs every suite. This works against the description's 'counts as already wide for the Python arm' and the phase outcome that whole-tree scanners run once per phase. It costs time but is not a correctness gap: the widened run is a superset.",
         "resolution": "Treat the test-support widen as satisfied when a declared entry is the derived spelling with `{paths}` removed. That is the same word comparison left_to_run makes. Either have select() report support as its own reason (e.g. `widenSuites`) that affected_steps checks against the declared entries before adding the phase gate, or make the check in affected_steps. Add a case: gate [selftests] with only tests/_harness.py changed adds no phase-gate step and says which key covers it. Keep the case where a narrow path-scoped gate with the same change still widens."
+      },
+      {
+        "id": "P143-R6",
+        "severity": "med",
+        "file": ".github/sweep-costs.json:540-541 (and every figure above it); readers tools/sweep-selftests.py:196-208, :1567-1572 and .github/workflows/ci.yml:60-75",
+        "issue": "The cost table now says platform 'darwin' with 8 workers, where it used to hold windows-latest figures for 4 workers. Two things read it: CI's windows shard split and each job's hang-detector timeout. tools/sweep-selftests.py:206-208 and :1567-1572 still say the table 'is recorded from windows because that platform binds ... a darwin figure under-states a windows one'. The windows-to-darwin ratio is not even, and the split assumes it is. test__manifest_io went from 129.8 to 4.4 (about 30x), test__machine_paths from 32.2 to 0.2, test_integrate_task from 123.4 to 6.4, while most suites moved by about 3x. So the windows shards are now balanced on proportions that do not hold on windows. The ci.yml selftests bound estimate is also derived from this table. The phase outcome 'CI stays inside its wall-time bound' was never measured after the change. The executor did disclose this under CONSEQUENCE TO PUBLISH, and the task told it to re-record from the quiet runs.",
+        "resolution": "Before this lands, push the tree to a ci/ branch, dispatch CI, and read each windows selftests cell's longest line and wall time. Then re-record the table from those windows logs with `python3 tools/sweep-selftests.py --costs-from-log <logs> --platform win32 --record-costs .github/sweep-costs.json`. These are still measured figures, not scaled ones, and they keep the windows-binding design the runner documents. If the darwin table is to stay, rewrite the two comments in tools/sweep-selftests.py and the ci.yml estimate so they say what the table now is."
+      },
+      {
+        "id": "P143-R7",
+        "severity": "med",
+        "file": "tests/test__config.py:3070-3216 (st1-st7, outside the declared files); task tests.gate",
+        "issue": "The memo's correctness cases (st1-st7) are in tests/test__config.py. That file is not among the task's declared files, and no tests.gate command selects it. The only gate is `python3 tools/sweep-selftests.py tests/test_drive_phase.py`, so the recorded gate run (2026-10-30T13:55:12Z.969e51, passed) shows nothing about the memo, test__locks, test__worktrees or test_integrate_task. The executor's 'full sweep green three times' and 'test__config 370/370' claims carry a stamp that `stamp-verification.py compare` grades stale (exit 1): head moved from c57e3f3c to abeac86b. The scopeDigest still agrees, but that digest does not cover tests/test__config.py. I ran `python3 tests/test__config.py --selftest` once in the task tree: exit 0, 370/370, st1-st7 PASS.",
+        "resolution": "Add tests/test__config.py to the task's files and list st1-st7 in tests.add. Add a gate command that selects the suites guarding the changed modules: `python3 tools/sweep-selftests.py tests/test__config.py tests/test__locks.py tests/test__worktrees.py tests/test_integrate_task.py tests/test_drive_phase.py`. Re-run the gate on the current tree so the claim carries a current stamp."
+      },
+      {
+        "id": "P143-R8",
+        "severity": "low",
+        "file": "plugins/audit/hooks/_config.py:856-864 (git_place)",
+        "issue": "Suppose the combined `--show-toplevel` + fields question is refused and a repository stands above. git_place then asks a second time for the fields alone, whatever the refusal was, including a TimeoutExpired or a failure to start git. That doubles the worst-case wait. A hook path that asks a field list without --show-toplevel (`_shares_repository` and `path_tree` ask `--git-common-dir` alone) can now spend 5 s + 5 s, which equals the 10 s timeout hooks.json gives every hook. A killed guard lets the call through. In _worktrees the wait goes from 60 s to 120 s.",
+        "resolution": "Retry the fields-alone question only when the first refusal is git's bare/no-work-tree refusal: the reason line names a work tree, or a separate rev-parse --is-bare-repository says so. Do not retry on a timeout or an exception. Or hand the second ask whatever is left of the first one's timeout. Add a case with a stub `_ask_rev_parse` that times out and assert that it was called once."
+      },
+      {
+        "id": "P143-R9",
+        "severity": "low",
+        "file": "plugins/audit/hooks/_config.py:780-787 (_standing_witness) vs :790-805 (_no_repository_above)",
+        "issue": "The two witnesses check different things. A kept refusal is dropped when a bare-repository shape (HEAD + objects + refs) appears on the way up. A kept answer only checks for `.git` entries between the directory and its top (_inside_known_tree) and the identity of top/.git. So a kept answer survives two kinds of change. (a) A bare repository initialised in a directory between the asked directory and its top: git would then refuse or answer the bare repo, but the memo still hands back the old top. (b) A config-only change under an unchanged `.git` directory, such as `core.worktree` or `core.bare` set after the answer was kept. A directory's inode does not move when .git/config is edited. Both are rare, and a hook is one process per call. The drive process is long-lived, though, and the block comment says the witness covers 'a repository initialised between the directory and the top it had' without that limit.",
+        "resolution": "Have the answer witness walk with the same predicate as _no_repository_above, so the bare shape counts too. When top/.git is a directory, add .git/config's (st_ino, st_size, st_mtime_ns) to its identity. Otherwise state both limits in the block comment above _STANDING_FIELDS. Do not add GIT_CONFIG_COUNT to _DISCOVERY_ENV: the sweep runner sets it for every child, which would turn the memo off under test."
       }
     ],
-    "outcome": "[findings: 5 - 0 high, 1 med, 4 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 9 - 0 high, 3 med, 6 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -163,7 +191,7 @@
     {
       "id": "P143.2-6yq",
       "title": "Whole-tree scanners run once per phase and on push, never in a task's gate",
-      "status": "in_progress",
+      "status": "done",
       "description": "The suites that lint the whole tree (TREE_SCANNERS in tools/affected.py) leave the per-task selection: a .py change no longer pulls them into a task's gate. The phase gate and verify.sh's per-run tier keep every one of them, so CI and sign-off still run them. Acceptance: (1) a task changing one .py selects no tree scanner; (2) the phase gate and verify.sh's per-run tier include every tree scanner; (3) tools/gate-parity.py is green; (4) CONTRIBUTING.md says where the scanners run.",
       "files": [
         "tools/affected.py",
@@ -206,14 +234,21 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "abeac86b6744",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/affected.py: select(paths, graph=None, scanners=True). scanners=False leaves out graph['scanners'] (the tree scanners derived from the shared walks) unless an edge reaches them. It prints a reason naming SWEEP = 'python3 tools/sweep-selftests.py' and --list-scanners. A broken parse still widens to full either way. _related_suite_paths(paths, graph=None), the --list-related listing a task's gate reads through meta.phaseGate.derived.listing.related, now calls select(..., scanners=False). The default narrowed run is unchanged: plain output for verify.sh --affected and --json for measure-affected-miss.py, scanners still included. New CLI mode --list-scanners prints the derived set one per line. Docstring has a new '...AND WHERE THEY RUN' paragraph, and the main() comment now covers three listing modes. Cases: a16 rewritten (listing == narrowed run minus the scanners no edge reaches); a16b and a16c added. tools/gate-parity.py: parse_verify_list now also returns 'commands' per slice (the 8-space command line under each label, via _COMMAND_LINE); existing keys unchanged; new case svr2b. tests/test__affected_tests.py: _tool_module + _dogfood_cases with af27/af28; the module docstring says these two read the repository. CONTRIBUTING.md: a paragraph in 'A task gate that runs what the change can break' says where the scanners run, points at --list-scanners and names the cases that hold it. tools/verify.sh and plugins/audit/scripts/governance/_affected_tests.py: NOT changed. The per-run tier's selftests slice already runs the unscoped sweep, and _affected_tests reads the related listing, which is now narrower. Measured: --list-related for record-outside-run.py went from 25 lines to 9 (`python3 tools/affected.py --list-related plugins/audit/scripts/governance/record-outside-run.py | wc -l`, one run each). Runs: the sweep subset in gates exit 0, 13/13 files ok, 1784 cases; tools/gate-parity.py exit 0; ruff exit 0; vermin exit 0. Mutation probe (could not live at probe/mutations.py in the tree: require-plan refused that path as outside the task) at <scratchpad>/p1432/probe/mutations.py, output beside it in mutations.out: six rows, each asserts its mutation landed, purges __pycache__ and restores in finally. Every row RED and restored: listing keeps blanket scanners -> a16, a16b, af27; scanners dropped everywhere (over-fire) -> a16b (also a15, a18b); listing drops edge-reached scanners (over-narrow) -> a16; --list-scanners one short -> a16c; parse reads no commands -> a16c, svr2b; sweep stops walking tools/ -> a16c, af28. DEPENDANTS. tools/affected.py: sweep-costs.json is unchanged, but this suite and test__affected_tests now cost more (affected adds a graph build for --list-scanners plus loads of sweep-selftests and gate-parity; test__affected_tests went from hand-built facts to two graph builds, 33 cases in 30.0s under a loaded 8-worker sweep, about 17s alone, measured once each). The cost table belongs to P143.7 and was not re-recorded. test__gate_derive, test__refs, test_derive_phase_gate, bench-hooks, lints/_refs.py (via test__refs), prove-gates and measure-affected-miss are all green. The last still reads the default --json selection, so its misses still count the scanners. verify.sh: --affected reads the default output, unchanged; gate-parity's affected_dispatch is green. gate-parity.py: parse_verify_list only gains a key; ci.yml, _areas.py, test_audit_task, bench-hooks, _output_lints and measure-affected-miss read no changed key, and affected.py is now a new reader of 'commands'. CONTRIBUTING.md: test__deps (prose numbers), test__output_lints, test__refs and test_derive_phase_gate (reads the listing lines, unchanged) are green. a20g still finds affected among the CONTRIBUTING command stems. _affected_tests.py is unchanged, so run-test-gate (test_run_test_gate 578 cases green), audit-task, test__gate_derive, test_derive_phase_gate, PLUGIN-BUILD-GUIDE and test__filed_returns are untouched. tests/test__affected_tests.py: test__gate_derive is green. For the plan: (a) test__affected_tests.py now calls _output.py_files, so it is itself a derived tree scanner (it appears in --list-scanners). (b) derive-phase-gate.py runs the same listing.related for a phase's importer arm. This plan sets no meta.phaseGate.mode, so the phase gate is testGate (selftests). If a derived phase gate is ever enforced, it will not carry the blanket scanners unless meta.phaseGate.always or the wide gate does. (c) The miss measurement measures the narrowed run with scanners, not the task listing; a scanner red that a task listing leaves out is deferred to sign-off by design, not counted as a miss. TDD note: I read affected.py's select()/reach_graph() and _affected_tests.select() before writing the cases, because I needed the API the cases call.",
+        "descriptive": "A task's gate no longer pulls in every whole-tree scanner for any .py change. Those suites and tools run in the phase gate's unscoped sweep and verify.sh's per-run tier, and cases keep that true."
       },
       "startedAt": "2026-10-30T10:32:31Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-30T12:52:30Z",
+      "verifiedBy": [
+        "tools/affected.py a16b: the --list-related listing for one changed module names no tree scanner that reaches it by no edge, while the narrowed run (verify.sh --affected) still names every scanner suite and tool",
+        "tools/affected.py a16c: --list-all carries every scanner suite, the sweep's file set holds every scanner, verify.sh --list's per-run tier runs `python3 tools/sweep-selftests.py` unscoped, and --list-scanners prints exactly the derived set",
+        "tools/affected.py a16 (rewritten): the listing equals the narrowed run less the scanners no edge reaches",
+        "tests/test__affected_tests.py af27: this plan's related listing for record-outside-run.py, read through _affected_tests.select(), names its own suite and no blanket scanner",
+        "tests/test__affected_tests.py af28: every phase still to sign off has a gate entry resolving to the plan's spelling with {paths} removed (the unscoped sweep), and the sweep runs every scanner",
+        "tools/gate-parity.py svr2b: verify.sh --list prints one command per step label and the parse reads the selftests slice's command as the unscoped sweep"
+      ],
       "movedFrom": {
         "id": "P142.5",
         "phase": "P142",
@@ -224,6 +259,18 @@
         "runId": "2026-10-30T12:52:26Z.c64cb6",
         "status": "passed",
         "at": "2026-10-30T12:52:26Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "abeac86b6744",
+        "at": "2026-10-30T12:52:30Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-30T12:35:41Z",
+        "basis": "`python3 tools/sweep-selftests.py tools/affected.py tests/test__affected_tests.py` in a throwaway tree at HEAD exited 1 with 3 of 27 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code, the task's run with its inline suite tools/affected.py laid over as HEAD's copy plus its 3 test hunk(s), 9 other hunk(s) held at HEAD, and pulled in for the names its test hunks reference: SWEEP = \"python3 tools/sweep-selftests.py\" (line 139)), each passing with the working tree's implementation - af27 (house FAIL): SELFTEST FAILED: 24/27 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - 3 times the 78s of wall time the baseline, task and fix runs need, 26s each - the sweep's costliest-first schedule of the recorded 26s slot-seconds of tests/test__affected_tests.py, tools/affected.py in .github/sweep-costs.json over 8 workers (all cores but two) - is only 234s; fix run: held back 26s of the deadline, the wall time one run takes - the sweep's costliest-first schedule of the recorded 26s slot-seconds of tests/test__affected_tests.py, tools/affected.py in .github/sweep-costs.json over 8 workers (all cores but two)",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -428,7 +475,9 @@
         ".github/sweep-costs.json",
         ".github/sweep-costs.json",
         "tests/test_drive_phase.py",
-        "tests/test_stamp_verification.py"
+        "tests/test_stamp_verification.py",
+        "tests/test__config.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "regression",
@@ -437,7 +486,7 @@
         ],
         "expectRedFirst": false,
         "gate": [
-          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__config.py tests/test__locks.py tests/test__worktrees.py tests/test_integrate_task.py"
         ],
         "gateBasis": "declared"
       },
@@ -473,12 +522,21 @@
         {
           "at": "2026-10-30T04:56:29Z",
           "text": "no test runner in this task's gate for the test P143-R1 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test_drive_phase.py'], derived as from --gate; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        },
+        {
+          "at": "2026-10-30T14:08:07Z",
+          "text": "files widened by PLUGIN-BUILD-GUIDE.md: written byte for byte at integration by `python3 tools/lints/_deps.py --write-map` (_deps.map_drift)"
         }
       ],
       "fixes": [
         "P143-R1"
       ],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-30T14:13:15Z.7dde1f",
+        "status": "passed",
+        "at": "2026-10-30T14:13:15Z"
+      }
     }
   ],
   "reviewPerTask": "signals",

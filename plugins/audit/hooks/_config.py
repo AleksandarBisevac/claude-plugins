@@ -722,8 +722,164 @@ def _same_dir(a, b):
         return False
 
 
-def _git_rev_parse(cwd, fields):
-    """`git rev-parse` answers for `cwd`, one string per field, or None.
+# --- where a checkout stands, asked once per process ----------------------------
+# A drive asks one directory for its checkout's top, its git dir and its common
+# dir over and over in one process - every lock taken, read or given back,
+# every stamp, every worktree record - and each answer was a `git rev-parse`
+# process of its own. Those answers name a PLACE, and git derives a place from
+# nothing but the disk: walking up from the directory asked about, the first
+# directory holding a `.git` entry is the top, and that entry (a directory, or a
+# file naming a linked worktree's admin directory) names the rest. So the answer
+# is kept here once per process, beside the facts it rests on - the directory
+# the walk stopped at and the identity of the `.git` entry there - and those
+# facts are read again from the disk before every reuse. An answer whose facts
+# moved is dropped and git is asked again: a worktree removed, or removed and
+# added again at the same path (its `.git` file is written anew), a checkout
+# moved or deleted, a repository initialised between the directory and the top
+# it had. That check, not a caller remembering to forget, is what keeps an answer
+# from outliving the change: most of those changes are made by another process,
+# or by a git this process started, and nothing here could be told of them.
+#
+# ONLY A FIELD THAT NAMES A PLACE IS KEPT (`_STANDING_FIELDS`); one naming a
+# commit or a state changes under the same `.git` and is always asked. A refusal
+# is kept only while no repository stands anywhere above the directory, since a
+# `git init` on the way up turns it into an answer. An environment that
+# steers discovery itself (`_DISCOVERY_ENV`) is never answered from here, since
+# the walk the check repeats is then not the one git makes. A top that is not an
+# ancestor of the directory asked about (`core.worktree`) keeps nothing, for the
+# same reason.
+#
+# MODULE STATE, deliberately: the point is that the callers in one process
+# share the answers. Every scripts-side caller reaches one copy through
+# `_loader.load_hooks_config()`, which caches the module it loads by path; a
+# process that also imports `_config` by name holds a second copy with a memo
+# of its own, which costs a repeated question and never a wrong answer.
+_STANDING_FIELDS = frozenset(("--show-toplevel", "--git-dir", "--git-common-dir",
+                              "--absolute-git-dir"))
+_DISCOVERY_ENV = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR",
+                  "GIT_CEILING_DIRECTORIES", "GIT_DISCOVERY_ACROSS_FILESYSTEM")
+_STANDING = {}
+
+
+def _dot_git_identity(top):
+    """What the `.git` entry at `top` is, as a value that changes when the entry
+    is replaced: a directory by device and inode, a file (a linked worktree's or
+    a submodule's) by those and its size and modification time, since `git
+    worktree add` at a path once removed writes a new file there. None when
+    there is no entry."""
+    import stat
+    try:
+        st = os.lstat(os.path.join(top, ".git"))
+    except OSError:
+        return None
+    if stat.S_ISDIR(st.st_mode):
+        return ("dir", st.st_dev, st.st_ino)
+    return ("file", st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns)
+
+
+def _standing_witness(real, top):
+    """The disk facts a place answer for the resolved directory `real` rests on,
+    when git named `top` as its top: the identity of `top`'s `.git` entry, with
+    no `.git` entry between `real` and `top` (`_inside_known_tree`). None when
+    `real` does not lie under `top` that way, or `top` holds no `.git`."""
+    if not _inside_known_tree(real, top):
+        return None
+    return _dot_git_identity(top)
+
+
+def _no_repository_above(real):
+    """True when no directory from `real` up to the root holds a `.git` entry
+    or is itself a git directory (a bare repository: `HEAD`, `objects` and
+    `refs`, the shape git's own discovery checks), so discovery from `real`
+    finds no repository and a second question would be refused like the
+    first."""
+    at = real
+    while True:
+        if (os.path.lexists(os.path.join(at, ".git"))
+                or (os.path.isfile(os.path.join(at, "HEAD"))
+                    and os.path.isdir(os.path.join(at, "objects"))
+                    and os.path.isdir(os.path.join(at, "refs")))):
+            return False
+        parent = os.path.dirname(at)
+        if parent == at:
+            return True
+        at = parent
+
+
+def forget_git_standing():
+    """Drop every kept place answer. Nothing needs it for correctness - every
+    reuse is checked against the disk first - but a case comparing the memo
+    with git asked fresh starts from an empty one."""
+    _STANDING.clear()
+
+
+def _git_rev_parse(cwd, fields, timeout=5):
+    """`git rev-parse` answers for `cwd`, one string per field, or None - the
+    one door every caller in `_config` asks through (`git_place`, without the
+    reason a refusal gives)."""
+    return git_place(cwd, fields, timeout)[0]
+
+
+def git_place(cwd, fields, timeout=5):
+    """`(answers, why)` - `git rev-parse` answers for `cwd`, one string per
+    field, or None beside git's own reason for refusing - answered from this
+    process's memo when every field names a place and the facts the kept answer
+    rests on still hold (the block above).
+
+    A field list that is not all place fields, or an environment steering
+    discovery, goes to git every time. Otherwise a kept answer is reused when
+    its witness still holds; when not, git is asked for the fields with
+    `--show-toplevel` beside them (the top is the witness's anchor) - and, only
+    when that combined question is refused while a repository stands somewhere
+    above (`_no_repository_above`), asked again for the fields alone, as a bare
+    repository answers a git dir but no top; that second answer is not kept. A
+    refusal with no repository anywhere above is kept, with that absence as its
+    witness: it holds until a repository appears on the way up."""
+    fields = list(fields)
+    why = []
+    if (not fields or any(f not in _STANDING_FIELDS for f in fields)
+            or any(os.environ.get(name) for name in _DISCOVERY_ENV)):
+        return _ask_rev_parse(cwd, fields, timeout, why), _why(why)
+    try:
+        real = os.path.realpath(str(cwd))
+    except Exception:
+        return _ask_rev_parse(cwd, fields, timeout, why), _why(why)
+    key = (str(cwd), real, tuple(fields))
+    held = _STANDING.get(key)
+    if held is not None:
+        if held[0] is None and _no_repository_above(real):
+            return None, held[2]
+        if held[0] is not None and _standing_witness(real, held[0]) == held[1]:
+            return list(held[2]), ""
+        _STANDING.pop(key, None)
+    asked = fields if "--show-toplevel" in fields else ["--show-toplevel"] + fields
+    got = _ask_rev_parse(cwd, asked, timeout, why)
+    if got is None:
+        if _no_repository_above(real):
+            _STANDING[key] = (None, None, _why(why))
+            return None, _why(why)
+        if asked is fields:
+            return None, _why(why)
+        del why[:]
+        return _ask_rev_parse(cwd, fields, timeout, why), _why(why)
+    answer = got[len(asked) - len(fields):]
+    top = _resolved(got[asked.index("--show-toplevel")])
+    witness = _standing_witness(real, top)
+    if witness is not None:
+        _STANDING[key] = (top, witness, list(answer))
+    return list(answer), ""
+
+
+def _why(reasons):
+    """The first reason `_ask_rev_parse` gave for a refusal, or ''."""
+    return reasons[0] if reasons else ""
+
+
+def _ask_rev_parse(cwd, fields, timeout=5, why=None):
+    """`git rev-parse` answers for `cwd`, one string per field, or None - asked
+    of git, every time. A refusal's reason - the first line git wrote on
+    stderr, or why it could not be run - is appended to `why` when it is a
+    list.
 
     A LIST of fields because `rev-parse` answers several questions in one process,
     and the caller pays for processes rather than for questions.
@@ -744,16 +900,24 @@ def _git_rev_parse(cwd, fields):
     on every matching tool call and most of them never ask git anything - the same
     budget that made `guard-bash-writes` import it inside `_git_dirty`."""
     import subprocess
+    said = why if why is not None else []
     try:
         out = subprocess.run(["git", "-C", str(cwd), "rev-parse"] + list(fields),
-                             capture_output=True, timeout=5, text=True,
+                             capture_output=True, timeout=timeout, text=True,
                              encoding="utf-8", errors="surrogateescape")
-    except Exception:
+    except Exception as exc:
+        said.append("%s" % (exc,))
         return None
     if out.returncode != 0:
+        said.append((out.stderr or "").strip().split("\n")[0]
+                    or "git rev-parse exited %d" % (out.returncode,))
         return None
     lines = [ln.strip() for ln in out.stdout.splitlines()]
-    return lines if len(lines) == len(fields) else None
+    if len(lines) != len(fields):
+        said.append("git rev-parse answered %d line(s) for %d field(s)"
+                    % (len(lines), len(fields)))
+        return None
+    return lines
 
 
 def _shares_repository(cwd, common_dir, watching, ours=None):
@@ -785,7 +949,8 @@ def _shares_repository(cwd, common_dir, watching, ours=None):
     the agreement is pinned by a case (`w9` in `test__config.py`) instead of
     asserted in a comment.
 
-    It costs the second `git rev-parse` of the pass, and only ever runs once the
+    It costs at most the second `git rev-parse` of the pass (none when the place
+    memo above already holds the answer), and only ever runs once the
     trees have already been established to differ.
 
     `ours` LETS A CALLER THAT ALREADY ASKED HAND THE ANSWER IN, rather than

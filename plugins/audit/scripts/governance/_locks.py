@@ -121,6 +121,8 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _loader  # noqa: E402  (load_hooks_config: the one place answers are asked)
+
 STALE_MINUTES = 60          # only consulted when liveness is unknowable
 # How long a LIVE holder is waited out before the refusal is printed, and how
 # often the name is re-asked inside that window. The bound covers a lock taken
@@ -374,14 +376,16 @@ def lock_dir(project):
 
     The shared git dir, so the locks span every worktree of one clone and never
     show up in `git status`. None when this is not a git repo.
+
+    Asked through `_config`'s place memo, which every lock taken, read and
+    given back in one process shares, and which re-checks a kept answer against
+    the disk before reusing it - so a clone moved or a worktree re-added never
+    hands back the old directory.
     """
     try:
-        out = subprocess.run(["git", "-C", project, "rev-parse", "--git-common-dir"],
-                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                             timeout=15)
-        if out.returncode != 0:
-            return None
-        common = out.stdout.decode("utf-8", "replace").strip()
+        got, _why = _loader.load_hooks_config(modname="audit__config").git_place(
+            project, ["--git-common-dir"], timeout=15)
+        common = (got or [""])[0]
         if not common:
             return None
         if not os.path.isabs(common):

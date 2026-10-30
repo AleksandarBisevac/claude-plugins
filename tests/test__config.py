@@ -3067,10 +3067,159 @@ def _git_path_pair_cases(check):
           and tops[2] is None)
 
 
+PLACE_FIELDS = (["--show-toplevel"], ["--git-dir"], ["--git-common-dir"],
+                ["--show-toplevel", "--git-common-dir"])
+
+
+def _git_standing_cases(check):
+    """The place memo behind `_git_rev_parse`: a kept answer is handed back
+    with no process, and never once the disk it rests on has changed.
+
+    Every answer the memo gives is compared with git asked fresh through
+    `_ask_rev_parse` - a second, independent computation - so a memo that
+    agreed only with itself cannot pass. Each change case first shows that
+    git's own answer moved, since a change git does not see cannot tell a
+    stale memo from a fresh one."""
+    root = Path(os.path.realpath(_harness.fixture_root("cfg-standing-")))
+    fresh = M._ask_rev_parse
+    calls = []
+
+    def counting(cwd, fields, timeout=5, why=None):
+        calls.append((str(cwd), tuple(fields)))
+        return fresh(cwd, fields, timeout, why)
+
+    def git(cwd, *argv):
+        return _harness.git(str(cwd) if cwd is not None else None, *argv)
+
+    def disagree(places):
+        """Every (place, fields) whose memo answer is not git's fresh one."""
+        return [(str(p), f, M._git_rev_parse(p, f), fresh(p, f))
+                for p in places for f in PLACE_FIELDS
+                if M._git_rev_parse(p, f) != fresh(p, f)]
+    try:
+        M.forget_git_standing()
+        repo = root / "repo"
+        (repo / "a" / "b").mkdir(parents=True)
+        git(None, "init", "-q", str(repo))
+        git(repo, "commit", "-q", "--allow-empty", "-m", "base")
+        trees = root / "trees"
+        trees.mkdir()
+        wt = trees / "w"
+        git(repo, "worktree", "add", "-q", "--detach", str(wt))
+        places = [repo, repo / "a" / "b", wt]
+        first = disagree(places)
+        M._ask_rev_parse = counting
+        try:
+            again = [M._git_rev_parse(p, f) for p in places for f in PLACE_FIELDS]
+        finally:
+            M._ask_rev_parse = fresh
+        check("st1 a place answer is git's own for a checkout, a directory in it "
+              "and a linked worktree, and asked again it starts no process: %r"
+              % ((first, calls),),
+              first == [] and calls == []
+              and again == [fresh(p, f) for p in places for f in PLACE_FIELDS])
+
+        # A worktree removed and added again at the same path, under another
+        # admin directory: `other/w` is added first, so the second add at
+        # `trees/w` gets a suffixed admin name, and once both are gone the
+        # third add at `trees/w` gets the plain one.
+        other = root / "other"
+        other.mkdir()
+        git(repo, "worktree", "remove", "--force", str(wt))
+        git(repo, "worktree", "add", "-q", "--detach", str(other / "w"))
+        git(repo, "worktree", "add", "-q", "--detach", str(wt))
+        before = fresh(wt, ["--git-dir"])
+        held = M._git_rev_parse(wt, ["--git-dir"])
+        git(repo, "worktree", "remove", "--force", str(wt))
+        git(repo, "worktree", "remove", "--force", str(other / "w"))
+        git(repo, "worktree", "add", "-q", "--detach", str(wt))
+        after = fresh(wt, ["--git-dir"])
+        check("st2 a worktree removed and added again at the same path is "
+              "answered with its new admin directory, never the kept one: %r"
+              % ((before, held, after, M._git_rev_parse(wt, ["--git-dir"])),),
+              before is not None and after is not None and before != after
+              and held == before
+              and M._git_rev_parse(wt, ["--git-dir"]) == after)
+
+        deep = repo / "n" / "deep"
+        deep.mkdir(parents=True)
+        kept = M._git_rev_parse(deep, ["--show-toplevel"])
+        git(None, "init", "-q", str(repo / "n"))
+        check("st3 a repository initialised between a directory and the top it "
+              "had becomes its top: %r"
+              % ((kept, disagree([deep]), fresh(deep, ["--show-toplevel"])),),
+              kept == fresh(repo, ["--show-toplevel"])
+              and fresh(deep, ["--show-toplevel"]) != kept
+              and disagree([deep]) == [])
+
+        moved = root / "moved"
+        git(None, "init", "-q", str(moved))
+        (moved / "sub").mkdir()
+        was = M._git_rev_parse(moved / "sub", ["--show-toplevel"])
+        os.rename(str(moved), str(root / "moved-away"))
+        (moved / "sub").mkdir(parents=True)
+        check("st4 a checkout moved away leaves its old directory answered as "
+              "git answers it now - no repository - not as the kept top: %r"
+              % ((was, M._git_rev_parse(moved / "sub", ["--show-toplevel"])),),
+              was is not None
+              and fresh(moved / "sub", ["--show-toplevel"]) is None
+              and M._git_rev_parse(moved / "sub", ["--show-toplevel"]) is None)
+
+        plain = root / "plain"
+        plain.mkdir()
+        refused = M.git_place(plain, ["--git-common-dir"])
+        del calls[:]
+        M._ask_rev_parse = counting
+        try:
+            refused_again = M.git_place(plain, ["--git-common-dir"])
+        finally:
+            M._ask_rev_parse = fresh
+        check("st7 a refusal with no repository anywhere above is kept: asked "
+              "again it starts no process and gives git's own reason again: %r"
+              % ((refused, refused_again, calls),),
+              refused[0] is None and refused == refused_again and calls == []
+              and bool(refused[1]))
+        refused = refused[0]
+        git(None, "init", "-q", str(plain))
+        bare = root / "bare.git"
+        git(None, "init", "-q", "--bare", str(bare))
+        check("st5 a kept refusal does not outlive a repository initialised "
+              "where it was refused, and a bare repository's git dir, which has "
+              "no top, "
+              "is answered as git answers it: %r"
+              % ((refused, disagree([plain]),
+                  M._git_rev_parse(bare, ["--git-dir"])),),
+              refused is None and disagree([plain]) == []
+              and M._git_rev_parse(bare, ["--git-dir"]) is not None
+              and M._git_rev_parse(bare, ["--git-dir"])
+              == fresh(bare, ["--git-dir"]))
+
+        mine = M._git_rev_parse(repo, ["--git-dir"])
+        held_env = os.environ.get("GIT_DIR")
+        os.environ["GIT_DIR"] = str(bare)
+        try:
+            steered = (M._git_rev_parse(repo, ["--git-dir"]),
+                       fresh(repo, ["--git-dir"]))
+        finally:
+            if held_env is None:
+                os.environ.pop("GIT_DIR", None)
+            else:
+                os.environ["GIT_DIR"] = held_env
+        check("st6 an environment that steers discovery is answered by git, not "
+              "by the answer kept without it: %r" % ((mine, steered),),
+              mine is not None and steered[1] != mine
+              and steered[0] == steered[1])
+    finally:
+        M._ask_rev_parse = fresh
+        M.forget_git_standing()
+        _harness.remove_tree(str(root))
+
+
 def _all_cases(check):
     _cases(check)
     _shared_payload_cases(check)
     _git_path_pair_cases(check)
+    _git_standing_cases(check)
 
 
 def _selftest():

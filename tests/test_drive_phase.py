@@ -293,6 +293,16 @@ def _windows_stdout():
 # routed here at all: `ds9` and `ds9w` read the command line's exit status, the
 # CRLF brief case the bytes its stdout pipe carries, and the ASCII-locale block
 # what a child under a pinned locale prints.
+#
+# LOCK-HOLDER LIVENESS IS NOT EXERCISED IN-PROCESS. A verb that takes a lock for
+# its own write records `os.getpid()` as the holder, and in here that is this
+# suite's own pid, which outlives the verb: a lock a verb run here left behind
+# reads as "held by this process" to the next verb run here, never as a holder
+# that died. So no case here may rely on a verb's pid being dead once the verb
+# returns; a case that needs a dead holder starts that verb as a process
+# (`_needs_process`), or writes the lock record itself. Nothing checks a case
+# for this: a case that relied on it would read re-entry where a process of its
+# own reads a dead holder, and nothing here tells the two apart.
 def _needs_process(module=None):
     """True when a verb has to run as a process for the case to mean anything:
     a fixture planted a `sitecustomize` on `PYTHONPATH` (a pinned clock, a
@@ -13223,6 +13233,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("bb-block", "_base_red_drive_cases"),
           ("tcc-block", "_committed_close_cases"),
           ("oc-block", "_own_commit_cases"),
+          ("ip-block", "_in_process_runner_cases"),
           ("sb-block", "_stage_cases"))
 
 
@@ -15143,6 +15154,55 @@ def _own_commit_cases(check):
     check("oc12 the attempt's start moment is read off the row its start head is: "
           "for each attempt both readers pick the same row, or none: %r" % (picked,),
           picked == [(1, 1, 1), (2, 5, 5), (3, 6, 6), (4, None, None)])
+
+
+_IN_PROCESS_STUB = (
+    "import os, sys\n"
+    "os.environ['AUDIT_IP_PROBE'] = 'set by the stub'\n"
+    "os.chdir(%r)\n"
+    "print('argv=%%s cwd=%%s given=%%s' %% (sys.argv[1:], os.getcwd(),\n"
+    "                                     os.environ.get('AUDIT_IP_GIVEN')))\n"
+    "sys.exit(int(sys.argv[1]) if sys.argv[1].isdigit() else sys.argv[1])\n")
+
+
+def _in_process_runner_cases(check):
+    """`_run_in_process` gives a script the argv, working directory and
+    environment a process of its own would see, reads `sys.exit` the way the
+    interpreter turns it into a status, and leaves none of the script's own
+    changes behind in this interpreter."""
+    where = os.path.realpath(_harness.fixture_root("drive-in-process-"))
+    try:
+        away = os.path.join(where, "elsewhere")
+        os.mkdir(away)
+        stub = os.path.join(where, "stub.py")
+        with open(stub, "w", encoding="utf-8") as fh:
+            fh.write(_IN_PROCESS_STUB % (away,))
+        before = (os.getcwd(), list(sys.argv), dict(os.environ), list(sys.path))
+        runs, leaked = [], []
+        names = ("cwd", "argv", "environment", "import path")
+        for arg in ("x", "3", "0"):
+            code, out, err = _run_in_process(stub, [arg, "--flag"], where,
+                                             env={"AUDIT_IP_GIVEN": "handed"})
+            runs.append((code, _as_text(out), _as_text(err)))
+            after = (os.getcwd(), list(sys.argv), dict(os.environ), list(sys.path))
+            leaked.extend("%s after sys.exit(%r)" % (name, arg)
+                          for name, b, a in zip(names, before, after) if b != a)
+        check("ip1 a script run in this process changes no cwd, argv, "
+              "environment or import path that outlives it, whichever way it "
+              "exits: %r" % (leaked,),
+              leaked == [] and "AUDIT_IP_PROBE" not in os.environ
+              and "AUDIT_IP_GIVEN" not in os.environ)
+        check("ip2 the script saw its own argv, the environment it was handed "
+              "and the cwd it moved to: %r" % ([r[1] for r in runs],),
+              [r[1] for r in runs] == [
+                  "argv=%r cwd=%s given=handed\n" % ([a, "--flag"], away)
+                  for a in ("x", "3", "0")])
+        check("ip3 sys.exit('x') is status 1 with 'x' on stderr, sys.exit(3) is "
+              "3, sys.exit(0) is 0 with nothing on stderr: %r"
+              % ([(r[0], r[2]) for r in runs],),
+              [(r[0], r[2]) for r in runs] == [(1, "x\n"), (3, ""), (0, "")])
+    finally:
+        _harness.remove_tree(where)
 
 
 def _stage_cases(check):

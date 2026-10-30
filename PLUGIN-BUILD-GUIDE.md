@@ -339,7 +339,7 @@ L3:
   _id_refs -> _output
   _journal_io -> _excerpt, _machine_paths, _output, _usage_core
   _json_schema -> _output
-  _locks -> _output
+  _locks -> _loader, _output
   _manifest_io -> _machine_paths, _output
   _manifest_merge -> _output
   _manifest_vocab -> _output
@@ -351,7 +351,7 @@ L3:
   _skill_places -> _output
   _task_outputs -> _output
   _ui_theme -> _output
-  _worktrees -> _output
+  _worktrees -> _loader, _output
 
 L4:
   _ado_drift -> _manifest_io, _manifest_vocab, _output, _usage_core
