@@ -107,7 +107,8 @@
         "severity": "med",
         "file": "tools/verify.sh (unchanged), .github/workflows/ci.yml:263-278 (manifests job, unchanged); CI run 41070108164",
         "issue": "contradicts task clause 'Split the serial manifest-validation job ... into verify.sh slices that run as parallel jobs' and acceptance (1) 'the median wall of at least five per-run CI runs is at most 8 minutes and their median runner-minutes at most 55'. The split was not made: verify.sh is untouched. Acceptance (1) is not met. One run exists at d1a877b7 (41070108164, release-tier workflow_dispatch, success). I measured its per-run jobs, resample excluded, with `gh run view --json jobs`: wall 9.9 min (14:14:32 -> 14:24:27) and 106.3 runner-minutes (117 if billed per started minute). The 8 Windows selftests cells alone sum to 66.6 min (cp1252 leg 34.8), the linux cells to 23.0, and linux stress to 11.6. The critical path is selftests (windows, cp1252 4) at 581 s. Two Windows plain cells started late (14:15:23 and 14:16:07), which looks like a concurrent-job cap. One run is also not the five-run median the clause asks for. For comparison, the previous dispatch at c185b4cb (40946289828) was 14.1 min and 146.7 runner-minutes, so this is an improvement but not the target.",
-        "resolution": "Do not close the task as meeting its acceptance. The executor's case against the split holds: the manifests+js+plugin job ran 49 s, off a 581 s critical path, and each extra job adds about 12 s of setup plus a queue slot. The owner should amend the clause rather than force the split. Neither target can be met by job shape. Rebalanced on the new table, a Windows cell is about 498 s of sweep plus about 60 s of setup, which is still over 8 min. 55 runner-minutes is below the 66.6 the Windows cells take alone. Meeting them needs a follow-up that cuts the Windows sweep's CPU (test_drive_phase 2688, test_commit_task_work 665, test_audit_task 629, test_close_phase 470 and test_stamp_verification 462 slot-seconds), or an owner decision to drop legs (the Windows cp1252 leg is 34.8 runner-minutes). After that, take at least five per-run runs at the rebalanced table to measure the median."
+        "resolution": "Do not close the task as meeting its acceptance. The executor's case against the split holds: the manifests+js+plugin job ran 49 s, off a 581 s critical path, and each extra job adds about 12 s of setup plus a queue slot. The owner should amend the clause rather than force the split. Neither target can be met by job shape. Rebalanced on the new table, a Windows cell is about 498 s of sweep plus about 60 s of setup, which is still over 8 min. 55 runner-minutes is below the 66.6 the Windows cells take alone. Meeting them needs a follow-up that cuts the Windows sweep's CPU (test_drive_phase 2688, test_commit_task_work 665, test_audit_task 629, test_close_phase 470 and test_stamp_verification 462 slot-seconds), or an owner decision to drop legs (the Windows cp1252 leg is 34.8 runner-minutes). After that, take at least five per-run runs at the rebalanced table to measure the median.",
+        "fixTask": "P143.12-z9j"
       },
       {
         "id": "P143-R12",
@@ -121,7 +122,8 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/_scoped_commit.py:250-258; plugins/audit/scripts/manifest/audit-task.py:5443-5447",
         "issue": "contradicts task clause \"keep behaviour identical\": _phase_entry used `rev-parse --verify -q HEAD` and now uses head_sha, whose _ask_head runs plain `git rev-parse HEAD`. On an unborn branch with a root entry named HEAD, git exits 0 and prints the literal string \"HEAD\". On macOS's case-insensitive filesystem a `head` or `Head` file or directory has the same effect. `--verify -q` exits 1 in that case. head_sha returns \"HEAD\" even though its docstring says it returns 'the commit HEAD names, or None'. `start` then skips the 'has no commit yet ... commit first' refusal and returns state cut with baseRef \"HEAD\". The memo cannot catch this: _files_head returns None for an unborn branch, so the answer comes straight from git. Reproduced in scratchpad/p14310/rev/headfile2.sh (unborn plus `head` file: plain exit 0 'HEAD'; plus `Head` directory: exit 0 'HEAD'; with nothing there: exit 128) and in rev/probe_head.py case 11 (head_sha='HEAD', --verify=None). The existing case pe6 (tests/test_audit_task.py:9682) builds an unborn repo with no such entry, so it stays green.",
-        "resolution": "Have _ask_head ask `git rev-parse --verify -q HEAD`, and have head_sha return None unless the answer matches _OBJECT_NAME. That also makes drive-phase.git_head stricter in the same edge, where it is already pre-existing. Add an sc-hd case with an unborn repo holding a `head` directory, asserting None, and confirm it is red against the plain spelling."
+        "resolution": "Have _ask_head ask `git rev-parse --verify -q HEAD`, and have head_sha return None unless the answer matches _OBJECT_NAME. That also makes drive-phase.git_head stricter in the same edge, where it is already pre-existing. Add an sc-hd case with an unborn repo holding a `head` directory, asserting None, and confirm it is red against the plain spelling.",
+        "fixTask": "P143.11-z9j"
       },
       {
         "id": "P143-R14",
@@ -783,7 +785,7 @@
     {
       "id": "P143.10-z9j",
       "title": "The full sweep finishes under four minutes on a quiet machine: the product's own git calls on the drive path are memoised or batched",
-      "status": "in_progress",
+      "status": "done",
       "description": "P143.8 measured the darwin sweep throughput-bound (about 2500 slot-seconds over 8 workers, 325/327 s quiet) and Windows CI shards 90-99% busy, so only less work moves wall time; 240 s needs about 1920 slot-seconds (-23%). A spawn shim over the drive suite attributed about 84% of its slot-seconds to child processes, most from product code: drive-phase.py carry_git/git_head, _scoped_commit, _tree_stamp, _worktrees._git, audit-task._git_answer, and per-verb git config reads (usage_ledger.resolve_author, _panel_viewer._git_config_origins). Cut those calls in the product (memo bound to a witness, as _config.git_place does, or one batched call), keep behaviour identical, re-measure the full sweep quiet twice 20+ minutes apart with the spread, and state the result against 240 s with its numbers. Never re-record .github/sweep-costs.json from darwin.",
       "files": [
         "plugins/audit/scripts/governance/_scoped_commit.py",
@@ -815,19 +817,165 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "1994076f2215",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "CUTS, all in declared files. (1) _scoped_commit.head_sha(git_root) is a HEAD memo bound to the ref files. It reads HEAD from the tree's own git dir (_own_git_dir checks the .git entry against git's common dir: a .git directory, a submodule gitdir file, or a linked-worktree gitdir whose commondir leads back). Then it reads the branch's loose ref, or packed-refs when there is no loose ref. It reuses git's answer only while those bytes name the same commit, and it keeps an answer only when git named exactly the commit the files name. Nothing is kept for reftable, a symbolic loose ref, a ref outside refs/heads/ or unreadable files. The witness is read before git is asked. The two place lookups use git_place under the keys _locks.lock_dir and the tree-top callers already use. Callers: drive-phase.git_head now delegates to it. audit-task._examined_head and _phase_entry's HEAD use it (the latter replaces rev-parse --verify -q HEAD, with the same refusal on an unborn branch). _phase_entry's --show-toplevel now goes through hc.git_place. (2) _scoped_commit._tracking now takes a list of rels. It makes one `ls-files -z -- <specs>` listing and matches each plain pathspec back as the path itself or a path under it. Wildcards, magic prefixes, ./.. segments, backslashes and non-ASCII names are asked alone. A refused shared listing falls back to one listing per path. plugin_owned_rels is still its only caller, and the sc-ua13 fixture's args prefix still matches. (3) _tree_stamp._content_reading makes one `ls-files -z -t -s --cached --modified --deleted --others --exclude-standard` listing instead of two. The -t tags split it (_LISTED: H/S/M are index lines, C/R/? differ), and an unknown tag or a C/R line with no tab is a refusal. SPAWNS (shim at scratchpad/p14310/shim, over these 10 suites: drive, audit_task, stamp_verification, commit_task_work, close_phase, _scoped_commit, _tree_stamp, _worktrees, usage_ledger, _panel_viewer): product git spawns went from 58646 to 54388 (-4258, -7.3%; scratchpad/p14310/prof-before vs prof-after3, compare.py). By site: git_head -1645, audit-task rev-parse -1586, _tree_stamp ls-files -1387, _scoped_commit ls-files -668. New asks were _ask_head +816 and _config place asks +242. FULL SWEEP, quiet, this tree at 9aeecd5a plus this diff: q1 started 17:37:41Z at load 2.14/3.56/5.96, real 326.93 s, 2511 slot-s. q2 started 18:07:34Z, 24.4 min after q1 ended, at load 2.45/4.10/5.90, real 327.41 s, 2519 slot-s. Both runs were 193/193 files ok with 17672 cases. Spread 0.48 s. Same-session baseline: a clean clone at 9aeecd5a (b1, 17:54:01Z, load 2.63/4.09/5.90) took real 332.57 s and 2561 slot-s. b1 was measured once. So the cut is about -5 s of wall (-1.6%) and -45 slot-s (-1.8%). The drive suite went from 862 to 810/812 slot-s (-6%). THE 240 s TARGET IS NOT MET and is not claimed: 240 s at 8 slots needs about 1920 slot-s, against 2515 now, so another 24% has to go. The quiet-at-start detector printed yes for all three runs. Every process sampled during the runs was my own sweep's child (prove-gates/sweep-selftests selftests, verify.sh fixtures, drive fixture invocations). Logs are in scratchpad/p14310/{q1,q2,b1}.{log,meta,seen}. NOT CUT, though declared, because each needs a file outside this task: usage_ledger.resolve_author (two `git config --get` -> one `--get-regexp -z`; needs a name-fallback and a last-value case in tests/test_usage_ledger.py, not declared). _panel_viewer._git_config_origins (one call per journal row per process; no repeat to memoise inside one process; same suite gap in tests/test__panel_viewer.py). _worktrees.list_worktrees (`worktree list` names every tree's HEAD, so a witness must cover each tree's HEAD and ref; needs tests/test__worktrees.py). drive-phase _index_flags + _seed_from_index as one `ls-files -s -v -z` (verified to print tag+stage lines). That one would leave one row of tools/lints/_deps.py GIT_PATH_BASE_EXEMPT stale, and _deps.py is not declared. _config.git_place keys its memo per field list, so callers asking different lists for one directory each pay a spawn (_config.py is not declared). .github/sweep-costs.json was not re-recorded. CHECKS: ruff is clean and vermin -t=3.8- is clean (minimum 3.7). Lint suites: test__output_lints 173, test__deps, test__refs 292 and test__output, all ok. The drive al-block 8/8 includes the fixture-git bypass scan, which first went red on a check=True subprocess in my new tso helper; the helper now uses _harness.git. Sweep of the 10 suites with the final code (prof-after3): 10/10 files ok, 3132 cases. DEPENDANTS: drive-phase.py still holds for all of them. git_head keeps its signature and its None. Tests that stub M.git_head (test_drive_phase:12663, 14738) are unaffected. tools/affected.py, PLUGIN-BUILD-GUIDE.md, README.md and docs/research/pipeline-cost-design.md describe none of the changed functions (git grep). detect-plan-skip.py, record-risk-confirmation.py and stamp-verification.py only reference drive-phase by name. _scoped_commit.py: every public name is kept; head_sha and forget_heads are new. _tracking is still private with one caller (sc-ua20 green). close-phase, commit-task-work, audit-task and _live_copy import only names whose behaviour is unchanged. tests/test_drive_phase.py:1731's blind_to_tracking still matches the batched argv prefix (xs block green in the full run). _tree_stamp.py: content_digest/take/compare return the same readings (tso1 compares them with the two-listing reading across modified, deleted, staged-then-edited, untracked, ignored, skip-worktree, assume-unchanged, intent-to-add, 3 conflict stages, a tab name and a non-ASCII name). run-test-gate, stamp-verification, _verdict_binding, close-phase and audit-task all passed in the full run. _worktrees.py, usage_ledger.py and _panel_viewer.py are unchanged, so their dependants are unaffected. audit-task.py: _phase_entry gives the same states; _examined_head gives the same SHA or None; PLUGIN-BUILD-GUIDE.md:5484's description still holds. The three declared tests files gained cases only.",
+        "descriptive": "HEAD reads are now memoised against the ref files, and two git listings were each merged into one call: 7.3% fewer product git spawns across the drive-related suites and 6% off the drive suite. The quiet full sweep is 327 s (two runs 24 min apart, spread 0.5 s) against a 333 s same-session baseline, and the 240 s target is not met."
       },
       "startedAt": "2026-10-30T16:46:54Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-30T18:27:50Z",
+      "verifiedBy": [
+        "sc-hd1..sc-hd9 (test__scoped_commit.py): head_sha matches fresh git after a commit, a branch switch, a detached HEAD, a move written only in packed-refs and a loose ref outranking it, in a linked worktree, on an unborn branch, in a submodule and in reftable (skipped where git cannot make one). sc-hd1 is the other direction: three asks with nothing moved send git one question.",
+        "sc-tb1, sc-tb2 (test__scoped_commit.py): the batched _tracking matches one ls-files per path for directories, a prefix that is not a directory, a trailing slash, a missing path and a wildcard (asked alone). A refused shared listing falls back path by path.",
+        "tso1, tso2 (test__tree_stamp.py): the one tagged listing gives exactly the two-listing reading across every index and worktree shape. An unknown tag refuses the reading.",
+        "gh1 (test_drive_phase.py, sb-block): the driver's git_head follows a commit made between two asks in one process, and three unchanged asks send git one question."
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-30T18:19:26Z.014c66",
         "status": "passed",
         "at": "2026-10-30T18:19:26Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "1994076f2215",
+        "at": "2026-10-30T18:27:50Z",
+        "return": "docs/audit/evidence/returns/P143.10-z9j/20261030T164654Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "tests.mode is regression and expectRedFirst is false, and the brief says this task has no test of its own to run. I proved instead that every new case can fail. The mutation probe is scratchpad/p14310/probe/mutations.py, and its output is in mutations.out beside it. The probe runs in a scratch git-archive export of HEAD with the changed files copied over it, never in the shared tree. Each anchor is asserted to occur once. __pycache__ is purged between runs, and each restore is sha256-checked in finally. The baseline was green: test__scoped_commit 77/77, test__tree_stamp 62/62, drive sb-block 7/7. All 14 rows went red: H1 a memo that never invalidates -> sc-hd2 and gh1. H2 a memo that is never used -> sc-hd1 and gh1. H3 the loose ref is ignored -> sc-hd5. H4 a worktree's HEAD read from the common dir -> sc-hd6. H5 a submodule's gitdir is not read -> sc-hd9. T1 an exact-only pathspec match -> sc-tb1. T2 a prefix match without the slash -> sc-tb1. T3 no per-path fallback after a refused listing -> sc-tb2. T4 never batching -> sc-tb1. T5 a wildcard read as a plain path -> sc-tb1. C1 the S tag dropped -> tso1. C2 C read as an index line -> tso1. C3 an unknown tag skipped -> tso2. C4 a differing path keeping its stage columns -> tso1.",
+        "at": "2026-10-30, probe run 17:19:18Z-17:21:36Z (the earlier 17:16Z run had 13/14 rows red because the H4 anchor had moved; the probe reported it as NOT APPLIED, and the row was fixed and re-run)"
+      }
+    },
+    {
+      "id": "P143.11-z9j",
+      "title": "fix P143-R13: contradicts task clause \"keep behaviour identical\": _phase_entr...",
+      "status": "in_progress",
+      "description": "contradicts task clause \"keep behaviour identical\": _phase_entry used `rev-parse --verify -q HEAD` and now uses head_sha, whose _ask_head runs plain `git rev-parse HEAD`. On an unborn branch with a root entry named HEAD, git exits 0 and prints the literal string \"HEAD\". On macOS's case-insensitive filesystem a `head` or `Head` file or directory has the same effect. `--verify -q` exits 1 in that case. head_sha returns \"HEAD\" even though its docstring says it returns 'the commit HEAD names, or None'. `start` then skips the 'has no commit yet ... commit first' refusal and returns state cut with baseRef \"HEAD\". The memo cannot catch this: _files_head returns None for an unborn branch, so the answer comes straight from git. Reproduced in scratchpad/p14310/rev/headfile2.sh (unborn plus `head` file: plain exit 0 'HEAD'; plus `Head` directory: exit 0 'HEAD'; with nothing there: exit 128) and in rev/probe_head.py case 11 (head_sha='HEAD', --verify=None). The existing case pe6 (tests/test_audit_task.py:9682) builds an unborn repo with no such entry, so it stays green.\n\nResolution asked: Have _ask_head ask `git rev-parse --verify -q HEAD`, and have head_sha return None unless the answer matches _OBJECT_NAME. That also makes drive-phase.git_head stricter in the same edge, where it is already pre-existing. Add an sc-hd case with an unborn repo holding a `head` directory, asserting None, and confirm it is red against the plain spelling.",
+      "files": [
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "tests/test__scoped_commit.py",
+        "tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__scoped_commit.py: Have _ask_head ask `git rev-parse --verify -q HEAD`, and have head_sha return None unless the answer matches _OBJECT_NAME"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__scoped_commit.py tests/test_audit_task.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-30T18:28:24Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-30T18:28:23Z",
+          "text": "scope: plugins/audit/scripts/governance/_scoped_commit.py, plugins/audit/scripts/manifest/audit-task.py, every path the finding(s) P143-R13 name"
+        },
+        {
+          "at": "2026-10-30T18:28:23Z",
+          "text": "scope: tests/test__scoped_commit.py, the suite that tests plugins/audit/scripts/governance/_scoped_commit.py (python: its import closure reaches plugins/audit/scripts/governance/_scoped_commit.py)"
+        },
+        {
+          "at": "2026-10-30T18:28:23Z",
+          "text": "scope: tests/test_audit_task.py, the suite that tests plugins/audit/scripts/manifest/audit-task.py (python: its import closure reaches plugins/audit/scripts/manifest/audit-task.py)"
+        }
+      ],
+      "fixes": [
+        "P143-R13"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-30T19:02:13Z.96fc8e",
+        "status": "passed",
+        "at": "2026-10-30T19:02:13Z"
+      }
+    },
+    {
+      "id": "P143.12-z9j",
+      "title": "fix P143-R11: contradicts task clause 'Split the serial manifest-validation j...",
+      "status": "in_progress",
+      "description": "contradicts task clause 'Split the serial manifest-validation job ... into verify.sh slices that run as parallel jobs' and acceptance (1) 'the median wall of at least five per-run CI runs is at most 8 minutes and their median runner-minutes at most 55'. The split was not made: verify.sh is untouched. Acceptance (1) is not met. One run exists at d1a877b7 (41070108164, release-tier workflow_dispatch, success). I measured its per-run jobs, resample excluded, with `gh run view --json jobs`: wall 9.9 min (14:14:32 -> 14:24:27) and 106.3 runner-minutes (117 if billed per started minute). The 8 Windows selftests cells alone sum to 66.6 min (cp1252 leg 34.8), the linux cells to 23.0, and linux stress to 11.6. The critical path is selftests (windows, cp1252 4) at 581 s. Two Windows plain cells started late (14:15:23 and 14:16:07), which looks like a concurrent-job cap. One run is also not the five-run median the clause asks for. For comparison, the previous dispatch at c185b4cb (40946289828) was 14.1 min and 146.7 runner-minutes, so this is an improvement but not the target.\n\nResolution asked: Do not close the task as meeting its acceptance. The executor's case against the split holds: the manifests+js+plugin job ran 49 s, off a 581 s critical path, and each extra job adds about 12 s of setup plus a queue slot. The owner should amend the clause rather than force the split. Neither target can be met by job shape. Rebalanced on the new table, a Windows cell is about 498 s of sweep plus about 60 s of setup, which is still over 8 min. 55 runner-minutes is below the 66.6 the Windows cells take alone. Meeting them needs a follow-up that cuts the Windows sweep's CPU (test_drive_phase 2688, test_commit_task_work 665, test_audit_task 629, test_close_phase 470 and test_stamp_verification 462 slot-seconds), or an owner decision to drop legs (the Windows cp1252 leg is 34.8 runner-minutes). After that, take at least five per-run runs at the rebalanced table to measure the median.",
+      "files": [
+        "tools/verify.sh",
+        ".github/workflows/ci.yml"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "files-no-suite"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-30T18:28:29Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-30T18:28:23Z",
+          "text": "scope: tools/verify.sh, .github/workflows/ci.yml, every path the finding(s) P143-R11 name"
+        },
+        {
+          "at": "2026-10-30T18:28:23Z",
+          "text": "no suite: tools/verify.sh - 2 test files name it and none is named for it (tests/test__config_rules.py, tests/test_audit_lookup.py); name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-30T18:28:23Z",
+          "text": "no suite: .github/workflows/ci.yml - a document, so no test of it is inferred; the files that name it, the checks that read it, are plugins/audit/scripts/config/_config_rules.py, plugins/audit/scripts/panel/_panel_settings.py, tests/_harness.py, tests/test__doctor_setup.py and 13 more"
+        },
+        {
+          "at": "2026-10-30T18:28:23Z",
+          "text": "no tests.add clause for P143-R11: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P143-R11"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-30T18:52:59Z.078d42",
+        "status": "passed",
+        "at": "2026-10-30T18:52:59Z"
       }
     }
   ],

@@ -248,9 +248,13 @@ def _files_head(git_root):
 
 
 def _ask_head(git_root):
-    """`git rev-parse HEAD` in `git_root`, asked of git: the commit, or None."""
+    """`git rev-parse --verify -q HEAD` in `git_root`: git's answer, or None.
+    `--verify` because without it an unborn branch whose tree holds an entry
+    named `HEAD` - or `head`, where the filesystem folds case - is read as that
+    path: git exits 0 and prints the word."""
     try:
-        done = subprocess.run(["git", "-C", str(git_root), "rev-parse", "HEAD"],
+        done = subprocess.run(["git", "-C", str(git_root), "rev-parse",
+                               "--verify", "-q", "HEAD"],
                               capture_output=True, text=True, encoding="utf-8",
                               errors="replace", timeout=60)
     except (OSError, subprocess.SubprocessError):
@@ -259,13 +263,14 @@ def _ask_head(git_root):
 
 
 def head_sha(git_root):
-    """The commit HEAD names in `git_root`, or None when git will not say -
-    git's own answer, reused while the ref files still name it (the block
-    above)."""
+    """The commit HEAD names in `git_root`, or None when git will not say or
+    says anything that is not a full object name - git's own answer, reused
+    while the ref files still name it (the block above)."""
     files = _files_head(git_root)
     if files is not None and _HEADS.get(files[0]) == files[1]:
         return files[1]
     sha = _ask_head(git_root)
+    sha = sha if sha is not None and _OBJECT_NAME.match(sha) else None
     if files is not None:
         if sha is not None and sha == files[1]:
             _HEADS[files[0]] = sha

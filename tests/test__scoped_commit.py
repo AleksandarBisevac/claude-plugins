@@ -1808,11 +1808,70 @@ def _head_memo_cases(check, tmp):
         check("sc-hd7 an unborn branch is None, and its first commit is then the "
               "answer: %r" % ((none_yet, M.head_sha(unborn)),),
               none_yet is None and M.head_sha(unborn) == _fresh_head(unborn))
+        _unborn_head_entry_cases(check, tmp)
         _submodule_head_cases(check, tmp, repo)
         _reftable_cases(check, tmp)
     finally:
         restore()
         M.forget_heads()
+
+
+def _plain_rev_parse(repo):
+    """`(exit code, stdout)` of `rev-parse HEAD` with no `--verify` - the
+    spelling that falls back to reading its argument as a path."""
+    done = subprocess.run(["git", "-C", repo, "rev-parse", "HEAD"],
+                          stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    return done.returncode, done.stdout.decode("utf-8", "replace").strip()
+
+
+def _unborn_head_entry_cases(check, tmp):
+    """An unborn branch whose work tree holds an entry git can read as the
+    path `HEAD`: a `HEAD` directory on any filesystem, a `head` file on one
+    that folds case. Plain `rev-parse HEAD` exits 0 there and echoes the word,
+    so an answer taken on the exit code alone is a name that is not a commit."""
+    named = _unborn(tmp, "head-memo-unborn-HEAD-dir")
+    os.makedirs(os.path.join(named, "HEAD"))
+    folded = _unborn(tmp, "head-memo-unborn-head-file")
+    _write(os.path.join(folded, "head"), "not a ref\n")
+    echoed = _plain_rev_parse(named)
+    answers = (M.head_sha(named), M.head_sha(folded))
+    kept = [k for k in M._HEADS
+            if k[0] in (os.path.realpath(named), os.path.realpath(folded))]
+    check("sc-hd10 an unborn branch whose tree holds a `HEAD` directory, or a "
+          "`head` file, is still None - plain `rev-parse HEAD` exits 0 there "
+          "and prints the word, which names no commit; the fixture is shown to "
+          "echo it, and nothing is kept for either tree: %r"
+          % ((echoed, answers, kept),),
+          echoed == (0, "HEAD") and answers == (None, None) and kept == [])
+    # The two halves of that answer, each alone: git asked so that it refuses
+    # the path reading, and an asker's answer refused unless it is an object
+    # name. Either half holds sc-hd10 by itself, so each has its own case.
+    asked = M._ask_head(named)
+    check("sc-hd11 git is asked so that it refuses rather than echoes: the "
+          "asker answers None in the tree holding a `HEAD` directory: %r"
+          % (asked,), asked is None)
+    real = M._ask_head
+    shaped = []
+    try:
+        for said in ("HEAD", "", "abc1234", "x" * 40):
+            M._ask_head = lambda git_root, said=said: said
+            shaped.append(M.head_sha(folded))
+    finally:
+        M._ask_head = real
+    check("sc-hd12 an answer that is not a full object name - the word, an "
+          "empty line, an abbreviation, forty letters that are not hex - is "
+          "None, whatever the asker said: %r" % (shaped,),
+          shaped == [None, None, None, None])
+    # The other direction: a refusal keyed on the entry rather than on the
+    # missing commit would make every such tree None once it has a commit.
+    for key, value in (("user.email", "fixture@example.com"),
+                       ("user.name", "Fixture"), ("commit.gpgsign", "false")):
+        _git(named, "config", key, value)
+    _commit_one(named, "first.txt")
+    born = M.head_sha(named)
+    check("sc-hd13 once that tree has a commit, the `HEAD` directory changes "
+          "nothing: the answer is the commit: %r" % ((born, _fresh_head(named)),),
+          born is not None and born == _fresh_head(named))
 
 
 def _submodule_head_cases(check, tmp, repo):

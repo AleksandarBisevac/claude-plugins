@@ -9683,6 +9683,18 @@ def _record_cases(check):
               "there is no base for the phase to fork from: %s" % (txt,),
               code == 2 and "commit" in txt.lower() and task_in(mpu, "P2.3")["status"]
               == "pending")
+        # A root entry named `HEAD` is what plain `rev-parse HEAD` reads as a path
+        # on an unborn branch, exiting 0 with the word; the refusal must hold.
+        projh, mph = mk("pe-unborn-headdir", base_manifest(), git=True)
+        os.makedirs(os.path.join(projh, "HEAD"))
+        code, txt = run(["start", "P2.3", "--project-dir", projh])
+        ph = p2_of(mph)
+        check("pe6b ...and so does one whose tree holds a `HEAD` directory - the "
+              "word git echoes there is no commit, so no branch is cut and no "
+              "baseRef is recorded: %s" % (txt,),
+              code == 2 and "no commit yet" in txt
+              and task_in(mph, "P2.3")["status"] == "pending"
+              and ph.get("branch") is None and ph.get("baseRef") is None)
         projt, mpt = entry_repo("pe-taken")
         git(projt, "branch", want)
         code, txt = run(["start", "P2.3", "--project-dir", projt])

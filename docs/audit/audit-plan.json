@@ -1069,7 +1069,8 @@
       "P142.27-6yq",
       "P142.28-6yq",
       "P144.5-ttw",
-      "P144.8-ttw"
+      "P144.8-ttw",
+      "P143.12-z9j"
     ],
     ".gitignore": [
       "P4.4",
@@ -4090,7 +4091,8 @@
       "P142.39-6yq",
       "P148.6",
       "P148.16-xpz",
-      "P143.10-z9j"
+      "P143.10-z9j",
+      "P143.11-z9j"
     ],
     "plugins/audit/scripts/governance/_tree_stamp.py": [
       "P43.4",
@@ -4937,7 +4939,8 @@
       "P148.21-xpz",
       "P149.5-hwg",
       "P149.7-hwg",
-      "P143.10-z9j"
+      "P143.10-z9j",
+      "P143.11-z9j"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -8433,7 +8436,8 @@
       "P140.1",
       "P140.2-ohy",
       "P143.2-6yq",
-      "P143.3-6yq"
+      "P143.3-6yq",
+      "P143.12-z9j"
     ],
     "plugins/audit/scripts/governance/_gate_derive.py": [
       "P79.2",
@@ -11679,7 +11683,8 @@
       "P148.6",
       "P148.16-xpz",
       "P148.20-xpz",
-      "P143.10-z9j"
+      "P143.10-z9j",
+      "P143.11-z9j"
     ],
     "tests/test__status_facts.py": [
       "P131.1",
@@ -11822,7 +11827,8 @@
       "P148.23-xpz",
       "P149.4-hwg",
       "P149.5-hwg",
-      "P149.7-hwg"
+      "P149.7-hwg",
+      "P143.11-z9j"
     ],
     "tests/test_audit_usage.py": [
       "P131.1"
