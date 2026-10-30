@@ -976,6 +976,12 @@
       "title": "CI finishes under eight minutes wall inside GitHub's concurrent-job cap",
       "status": "pending",
       "shard": "phases/P151.json"
+    },
+    {
+      "id": "P152",
+      "title": "The full sweep finishes under four minutes on a quiet machine: decisions are tested directly and real git is kept for the git contract",
+      "status": "pending",
+      "shard": "phases/P152.json"
     }
   ],
   "fileIndex": {
@@ -1078,7 +1084,8 @@
       "P144.8-ttw",
       "P143.12-z9j",
       "P151.1-z9j",
-      "P143.15-z9j"
+      "P143.15-z9j",
+      "P151.2"
     ],
     ".gitignore": [
       "P4.4",
@@ -1307,7 +1314,8 @@
       "P142.51-6yq",
       "P144.6-ttw",
       "P144.7-ttw",
-      "P148.5"
+      "P148.5",
+      "P151.2"
     ],
     "COMPATIBILITY.md": [
       "P18.8",
@@ -1435,7 +1443,8 @@
       "P142.51-6yq",
       "P144.6-ttw",
       "P144.7-ttw",
-      "P148.15-xpz"
+      "P148.15-xpz",
+      "P151.2"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -8222,7 +8231,8 @@
       "P144.8-ttw",
       "P148.3",
       "P148.25-xpz",
-      "P151.1-z9j"
+      "P151.1-z9j",
+      "P151.2"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -8390,7 +8400,8 @@
       "P145.1",
       "P148.3",
       "P148.13-xpz",
-      "P143.8-z9j"
+      "P143.8-z9j",
+      "P151.2"
     ],
     "tools/ui-tests/evidence-badge.test.mjs": [
       "P32.7",
@@ -8447,7 +8458,8 @@
       "P140.2-ohy",
       "P143.2-6yq",
       "P143.3-6yq",
-      "P143.12-z9j"
+      "P143.12-z9j",
+      "P151.2"
     ],
     "plugins/audit/scripts/governance/_gate_derive.py": [
       "P79.2",

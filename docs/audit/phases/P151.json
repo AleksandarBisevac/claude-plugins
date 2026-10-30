@@ -68,6 +68,46 @@
         "phase": "P143",
         "at": "2026-10-30T19:04:24Z"
       }
+    },
+    {
+      "id": "P151.2",
+      "title": "Per-run CI runs the Windows cp1252 leg only over the suites whose subject is stdio or encoding; the release tier runs it whole",
+      "status": "pending",
+      "description": "Owner decision 2026-10-30: shorten the cp1252 leg on per-run CI. It repeats the whole Windows sweep under a legacy code page (about 35 runner-minutes in run 41070108164). Which suites belong in the per-run cp1252 selection must be derived, not listed by hand: a suite is in when it exercises stdio or a non-UTF-8 locale (decide the mark from what the sweep's --encoding mode actually changes; a suite naming no mark must not silently drop out of the release tier). The release tier keeps the whole leg. gate-parity must hold the per-run/release split (red when the per-run cp1252 cell runs the whole tree, or when the release tier drops it). State the predicted per-run runner-minutes with the arithmetic from run 41070108164's job times.",
+      "files": [
+        ".github/workflows/ci.yml",
+        "tools/verify.sh",
+        "tools/gate-parity.py",
+        "tools/sweep-selftests.py",
+        "CONTRIBUTING.md",
+        "CLAUDE.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/gate-parity.py",
+          "python3 tools/gate-parity.py --selftest",
+          "python3 tools/sweep-selftests.py --selftest"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ]
 }

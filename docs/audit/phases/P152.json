@@ -1,0 +1,30 @@
+{
+  "id": "P152",
+  "title": "The full sweep finishes under four minutes on a quiet machine: decisions are tested directly and real git is kept for the git contract",
+  "status": "pending",
+  "description": "Owner decision 2026-10-30. P143.8 and P143.10 measured the sweep throughput-bound (about 2500 slot-seconds over 8 workers, 325-327 s quiet on darwin) with about 84% of the drive suite's time in process spawn; per-call git memoisation gave about 2% each and is exhausted. Most cases in tests/test_drive_phase.py, test_commit_task_work.py, test_audit_task.py and test_close_phase.py reach a decision through a real repository and real verbs although only the decision is under test. First measure: classify every case as decision-logic (git is scenery) or git-contract, with slot-seconds per class. Then convert the decision-logic cases suite by suite to call the pure decision functions on built state, keeping a small deliberate end-to-end set. Never re-record .github/sweep-costs.json from darwin.",
+  "desiredOutcome": "python3 tools/sweep-selftests.py finishes under 240 s wall on the owner's machine, quiet, twice at least 20 minutes apart; every converted case still goes red on the defect it guards; the end-to-end set names what each case proves about git.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": []
+}
