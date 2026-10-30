@@ -7,14 +7,16 @@ commit, the close - one request each, and the step driver runs every step that
 needs no judgement so the main loop makes four requests a task.
 
 EVERY DRIVE HERE IS REAL. The fixture is a committed git repository with a
-three-task, one-wave plan, and the driver calls the real verbs as subprocesses:
-`audit-task.py`, `audit-lookup.py`, `run-test-gate.py`, `stamp-verification.py`,
-`commit-task-work.py` and `audit-lock.py`. The test plays the main loop: it
-calls `next`, and when told to dispatch an agent it plays that agent by making
-the agent's last act, `drive-phase.py submit`, as a command - which takes the
-stamp and files through `audit-task.py file-return`, the one door a return is
-written through. The `ds` cases hold `submit` itself: each refusal writes
-nothing, and each has the twin that files.
+three-task, one-wave plan, and the driver calls the real verbs: `audit-task.py`,
+`audit-lookup.py`, `run-test-gate.py`, `stamp-verification.py`,
+`commit-task-work.py` and `audit-lock.py`, each its own script run through its
+own `__main__` - in this interpreter, unless the case needs a process of its
+own (`_in_process_verbs` says which do). The test plays the main loop: it calls
+`next`, and when told to dispatch an agent it plays that agent by making the
+agent's last act, `drive-phase.py submit`, as a command - which takes the stamp
+and files through `audit-task.py file-return`, the one door a return is written
+through. The `ds` cases hold `submit` itself: each refusal writes nothing, and
+each has the twin that files.
 
 EACH PROPERTY IS SHOWN RED AGAINST A MUTATED DRIVER, inside this suite: a fresh
 copy of the module is loaded, one function is replaced with the defect the
@@ -23,11 +25,12 @@ must fail for the mutant. A predicate that the mutant also satisfies would be
 asserting nothing, and the twin is what says so.
 
 A FULL RUN DRIVES ITS STAGES SIDE BY SIDE, each block in a process of its own.
-The time goes to the verbs, not to the fixture: every step of a real drive is a
-fresh interpreter running a verb, and building a fixture's git repository is a
-small share beside them. A block shares no state with another - each builds its
-own repositories - so the blocks run concurrently and the parent replays every
-case they report, in block order, through one `_harness.run`. The runner is
+The time goes to git: the verbs run in the block's own interpreter, but every
+one of them reads and writes the fixture's repository through git, a process
+per call, and a drive's steps make many of those. A block shares no state with
+another - each builds its own repositories - so the blocks run concurrently and
+the parent replays every case they report, in block order, through one
+`_harness.run`. The runner is
 `_harness.staged_main`, shared with every staged suite. Under the sweep the
 blocks are the sweep's own jobs, drawn from its one budget beside every other
 suite's, and `--replay` prints what they reported. `--stage` still runs the
@@ -46,10 +49,12 @@ twice or never and a green run looks the same either way.
 """
 import argparse
 import ast
+import builtins
 import contextlib
 import hashlib
 import io
 import json
+import locale
 import os
 import re
 import shlex
@@ -58,6 +63,8 @@ import subprocess
 import sys
 import tempfile
 import time
+import traceback
+import types
 
 import _harness                                   # sets sys.path for scripts/ + hooks/
 import _output                                     # noqa: E402  (PLUGIN_ROOT)
@@ -87,11 +94,14 @@ _FIXTURE_IDENTITY = ("[user]\n\temail = fixture@example.com\n\tname = Fixture\n"
 def _load(modname):
     """A fresh copy of the driver, or `(None, why)` when it cannot be loaded -
     a driver that is not there yet is a failing case, never a raise that ends
-    the suite before any case ran."""
+    the suite before any case ran. Its `run_verb` runs each verb in this
+    interpreter unless the case needs a process (`_in_process_verbs`)."""
     try:
-        return _loader.load_script(DRIVER, modname, cache=False), None
+        module = _loader.load_script(DRIVER, modname, cache=False)
     except Exception as exc:                                   # noqa: BLE001
         return None, "%s: %s" % (type(exc).__name__, exc)
+    module.run_verb = _in_process_verbs(module)
+    return module, None
 
 
 # --- the fixture -------------------------------------------------------------
@@ -213,8 +223,9 @@ def _script(name):
 # A `sitecustomize` every child interpreter imports before its script runs: it
 # answers an argument-less `time.gmtime()` - the stamp a verb writes, including
 # `_utc_stamp.utc_stamp` when it is given no epoch - with one fixed second, and
-# leaves every other clock reading alone. A child, because the verbs the driver
-# calls are processes of their own and an in-process patch would never reach them.
+# leaves every other clock reading alone. A child: a verb started while the pin
+# stands runs as a process of its own (`_needs_process` sees the `sitecustomize`),
+# so the pin reaches the verbs and never this process's own clock.
 _PINNED_GMTIME = (
     "import time as _time\n"
     "_real_gmtime = _time.gmtime\n"
@@ -269,7 +280,185 @@ def _windows_stdout():
         _harness.remove_tree(where)
 
 
+# --- a verb run in this process ------------------------------------------------
+# A VERB RUN AS A PROCESS COSTS AN INTERPRETER START AND ITS WHOLE IMPORT GRAPH,
+# and a drive runs several verbs a step, so those starts were a large share of
+# this suite's time. So a verb is run here instead: its script executed as `__main__`
+# in this interpreter - the same `__main__` block a process runs, `safe_stdio`
+# and `terse_cli` included - with its own argv, working directory, environment
+# and byte-backed stdio, each put back afterwards. The modules it imports are the
+# ones this process already holds, which is the saving. What only a process of
+# its own can show stays one, by what the case set up (`_needs_process`). The
+# cases about the boundary itself spawn their processes by hand and are not
+# routed here at all: `ds9` and `ds9w` read the command line's exit status, the
+# CRLF brief case the bytes its stdout pipe carries, and the ASCII-locale block
+# what a child under a pinned locale prints.
+def _needs_process(module=None):
+    """True when a verb has to run as a process for the case to mean anything:
+    a fixture planted a `sitecustomize` on `PYTHONPATH` (a pinned clock, a
+    Windows-shaped stdout), which only a fresh interpreter imports, or the case
+    replaced `module`'s own `subprocess` to watch what crosses the boundary."""
+    for where in (os.environ.get("PYTHONPATH") or "").split(os.pathsep):
+        if where and os.path.isfile(os.path.join(where, "sitecustomize.py")):
+            return True
+    return (module is not None
+            and getattr(module, "subprocess", subprocess) is not subprocess)
+
+
+def _child_codec():
+    """`(encoding, errors)` a child interpreter gives its stdin and stdout:
+    `PYTHONIOENCODING` when set, else the locale's encoding, with the error
+    handler the interpreter picks - `surrogateescape` under UTF-8 mode or the C
+    or POSIX locale, `strict` otherwise - so under a legacy code page or the
+    ASCII locale a verb reads its stdin the way a process of its own would."""
+    spec = os.environ.get("PYTHONIOENCODING") or ""
+    encoding, _sep, errors = spec.partition(":")
+    lenient = (sys.flags.utf8_mode
+               or locale.setlocale(locale.LC_CTYPE) in ("C", "POSIX"))
+    return ((encoding or locale.getpreferredencoding(False)),
+            (errors or ("surrogateescape" if lenient else "strict")))
+
+
+def _exit_status(code, err):
+    """The exit status `sys.exit(code)` gives a process; a code that is not an
+    int is printed on stderr first, as the interpreter prints it."""
+    if code is None:
+        return 0
+    if isinstance(code, int):
+        return code
+    err.write("%s\n" % (code,))
+    return 1
+
+
+def _restore_environ(held):
+    """Put `os.environ` back to `held`: a verb's own changes - the token it
+    hands its children - must not outlive it, as they cannot outlive a process."""
+    for name in [n for n in os.environ if n not in held]:
+        del os.environ[name]
+    for name, value in held.items():
+        if os.environ.get(name) != value:
+            os.environ[name] = value
+
+
+def _is_main_guard(node):
+    """True for a top-level `if __name__ == "__main__":`."""
+    test = getattr(node, "test", None)
+    return (isinstance(node, ast.If) and isinstance(test, ast.Compare)
+            and isinstance(test.left, ast.Name) and test.left.id == "__name__"
+            and len(test.comparators) == 1
+            and isinstance(test.comparators[0], ast.Constant)
+            and test.comparators[0].value == "__main__")
+
+
+# A memo of each script's two halves, so a block parses each verb once. Keyed by
+# its path, size and mtime in nanoseconds, so a script edited while this process
+# runs is parsed again wherever the filesystem records the edit's time that
+# finely; a mutation probe runs each mutant in a process of its own anyway.
+_SCRIPT_PARTS = {}
+
+
+def _script_parts(path):
+    """`(body, main)` code objects of the script at `path`: every top-level
+    statement but a trailing `if __name__ == "__main__":` block, and that block
+    alone - `main` None when the script does not end in one. Split so a verb
+    that runs verbs itself can have them run here too before its command line
+    starts (`_run_in_process`)."""
+    st = os.stat(path)
+    key = (path, st.st_mtime_ns, st.st_size)
+    if key not in _SCRIPT_PARTS:
+        with open(path, "rb") as fh:
+            parsed = ast.parse(fh.read(), path)
+        tail = [n for n in parsed.body[-1:] if _is_main_guard(n)]
+        body = parsed.body[:len(parsed.body) - len(tail)]
+        _SCRIPT_PARTS[key] = tuple(
+            compile(ast.Module(body=part, type_ignores=[]), path, "exec")
+            if part else None for part in (body, tail))
+    return _SCRIPT_PARTS[key]
+
+
+def _run_in_process(path, args, cwd, stdin=None, env=None):
+    """`(code, stdout bytes, stderr bytes)` of the script at `path` run as
+    `__main__` in this interpreter from `cwd`, with `env` laid over the
+    environment and `stdin` (a str) on its stdin as UTF-8 bytes. An exception
+    that escapes the script is its traceback on stderr and exit 1, as a process
+    reports it. A script that runs verbs itself - the driver's `submit` - has
+    its `run_verb` routed here as well (`_in_process_verbs`) before its command
+    line runs."""
+    body, main = _script_parts(path)
+    encoding, errors = _child_codec()
+    out_raw, err_raw = io.BytesIO(), io.BytesIO()
+    streams = (io.TextIOWrapper(io.BytesIO((stdin or "").encode("utf-8")),
+                                encoding=encoding, errors=errors),
+               io.TextIOWrapper(out_raw, encoding=encoding, errors=errors),
+               io.TextIOWrapper(err_raw, encoding=encoding,
+                                errors="backslashreplace"))
+    held = (sys.stdin, sys.stdout, sys.stderr, list(sys.argv), list(sys.path),
+            os.getcwd(), dict(os.environ))
+    module = types.ModuleType("__main__")
+    module.__dict__.update(__file__=path, __builtins__=builtins, __cached__=None)
+    sys.stdin, sys.stdout, sys.stderr = streams
+    sys.argv = [path] + list(args)
+    sys.path.insert(0, os.path.dirname(path))
+    os.environ.update(env or {})
+    try:
+        os.chdir(cwd)
+        try:
+            if body is not None:
+                exec(body, module.__dict__)
+            if callable(getattr(module, "run_verb", None)):
+                module.run_verb = _in_process_verbs(module)
+            if main is not None:
+                exec(main, module.__dict__)
+            code = 0
+        except SystemExit as exc:
+            code = _exit_status(exc.code, streams[2])
+        except Exception:                                      # noqa: BLE001
+            traceback.print_exc(file=streams[2])
+            code = 1
+        for stream in streams[1:]:
+            stream.flush()
+        return code, out_raw.getvalue(), err_raw.getvalue()
+    finally:
+        sys.stdin, sys.stdout, sys.stderr = held[:3]
+        sys.argv = held[3]
+        sys.path[:] = held[4]
+        os.chdir(held[5])
+        _restore_environ(held[6])
+
+
+def _as_text(raw):
+    """Captured bytes as text mode reads them: UTF-8 with replacement, and
+    "\\r\\n" and a lone "\\r" read as "\\n"."""
+    return raw.decode("utf-8", "replace").replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _in_process_verbs(module):
+    """`module.run_verb`, with every verb the case does not need as a process
+    (`_needs_process`) run in this interpreter and read back the way the real
+    one reads a process's bytes - into the same `(code, stdout, stderr)` and
+    the same `--verbose` log entry."""
+    real = module.run_verb
+
+    def run_verb(ctx, script, args, stdin=None, record=False):
+        if _needs_process(module):
+            return real(ctx, script, args, stdin=stdin, record=record)
+        code, raw_out, raw_err = _run_in_process(
+            _loader.script_path(script), args, ctx["project"], stdin,
+            {"CLAUDE_PROJECT_DIR": ctx["project"]})
+        out = (module._record_text if record else module._verb_text)(raw_out)
+        err = module._verb_text(raw_err)
+        ctx["log"].append((script, list(args), code, out + err))
+        return code, out, err
+    return run_verb
+
+
 def _verb(root, name, args, stdin=None):
+    """`(code, stdout + stderr)` of one verb the test runs itself, from `root`:
+    in this interpreter, or as a process when the case needs one."""
+    if not _needs_process():
+        code, raw_out, raw_err = _run_in_process(_loader.script_path(name),
+                                                 args, root, stdin)
+        return code, _as_text(raw_out) + _as_text(raw_err)
     # The verbs write UTF-8 whatever the console's code page; decoding them in
     # the locale's would fail on Windows on the first arrow a verb prints.
     done = subprocess.run(_script(name) + args, cwd=root, input=stdin,
@@ -9741,9 +9930,39 @@ def _recut_refused_move_cases(check):
                                                       "drive"))
                    if n.endswith(".patch")])
 
-    _recut_crash_cases(check, M)
-    _recut_precondition_cases(check, M)
-    _recut_describes_cases(check, M)
+
+# The groups of recut cases that follow `ar8` are blocks of their own: each
+# builds its own repositories and reads nothing an earlier group bound, and the
+# earlier groups leave the driver as they found it - each restores what it
+# replaces - so a fresh driver per group moves no case's verdict, only where the
+# group runs.
+# Each block calls its group by name, which is how `_harness.stage_reach` (`sb1`)
+# follows a stage down to the cases it runs.
+def _recut_driver(check, modname, first):
+    """A fresh driver for one group, or None once the group's first case has
+    failed on a driver that does not load."""
+    M, why = _load(modname)
+    if M is None:
+        check("%s the driver loads" % (first,), False, why)
+    return M
+
+
+def _recut_crash_staged_cases(check):
+    M = _recut_driver(check, "drive_phase_recut_crash", "ar5")
+    if M is not None:
+        _recut_crash_cases(check, M)
+
+
+def _recut_precondition_staged_cases(check):
+    M = _recut_driver(check, "drive_phase_recut_precondition", "ar9")
+    if M is not None:
+        _recut_precondition_cases(check, M)
+
+
+def _recut_describes_staged_cases(check):
+    M = _recut_driver(check, "drive_phase_recut_describes", "ar18")
+    if M is not None:
+        _recut_describes_cases(check, M)
 
 
 _AR_ANSWERS = re.compile(r"--answer ([a-z|-]+)")
@@ -12976,6 +13195,9 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("wd-block", "_wave_redo_cases"), ("wg-block", "_wave_regate_cases"),
           ("ab-block", "_wave_advance_cases"),
           ("ar-block", "_recut_refused_move_cases"),
+          ("ar5-block", "_recut_crash_staged_cases"),
+          ("ar9-block", "_recut_precondition_staged_cases"),
+          ("ar18-block", "_recut_describes_staged_cases"),
           ("ta-block", "_set_aside_cases"),
           ("wh-block", "_wave_hooks_cases"),
           ("pf-block", "_preflight_cases"),
