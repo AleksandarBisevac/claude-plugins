@@ -1810,7 +1810,10 @@ def _affected_gate_cases(check, repos):
     fx = repos.make()
     index = _mio.read_json(fx["manifest"])
     index["meta"]["buildCommands"]["wide"] = "true"
-    index["meta"]["phaseGate"] = {"derived": {"spelling": "true {paths}"}}
+    # The spelling must not be the task's own `test` command (`true`) with a
+    # path added: that entry would be the same runner unscoped, which already
+    # runs every suite the step would, so no derived step would join the row.
+    index["meta"]["phaseGate"] = {"derived": {"spelling": "true -- {paths}"}}
     TI._write_json(fx["manifest"], index)
     os.makedirs(os.path.join(fx["root"], "tests"))
     _write(os.path.join(fx["root"], "tests", "test_a.py"), "import a\n")

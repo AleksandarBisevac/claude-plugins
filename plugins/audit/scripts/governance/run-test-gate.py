@@ -2603,10 +2603,13 @@ def affected_steps(tree, own_tree, manifest, phase_id, task_id, commands,
                    records=()):
     """`(steps, published, info)` - the steps that join a task's measured run,
     the manifest-published commands among them, and `{lines, suites, widen}`
-    saying why. Nothing joins a gate that already carries the phase's wide one.
-    `records` is `member_records`' answer, git-root-relative, left out of what
-    a task's own tree changed."""
+    saying why. Nothing joins a gate that already carries the phase's wide one,
+    and no step joins whose suites a declared entry already runs unscoped
+    (`_affected_tests.left_to_run`). `records` is `member_records`' answer,
+    git-root-relative, left out of what a task's own tree changed."""
     meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
+    build = meta.get("buildCommands")
+    build = build if isinstance(build, dict) else {}
     phase = _phase_by_id(manifest, phase_id) or {}
     task = ([t for t in (phase.get("tasks") or [])
              if isinstance(t, dict) and t.get("id") == task_id] or [{}])[0]
@@ -2632,10 +2635,12 @@ def affected_steps(tree, own_tree, manifest, phase_id, task_id, commands,
         steps, why = _affected.entries_for(info["suites"], phase, meta, tree)
         if why:
             info = dict(info, widen=why)
+        else:
+            steps, left, said = _affected.left_to_run(steps, info["suites"],
+                                                      names, build)
+            info = dict(info, suites=left, lines=list(info["lines"]) + said)
     if info["widen"] is None:
         return steps, [], info
-    build = meta.get("buildCommands")
-    build = build if isinstance(build, dict) else {}
     wide, _left = split_not_commands(
         _resolved([e for e in phase_entries if e not in names], build,
                   meta.get("nodePreamble")), manifest)

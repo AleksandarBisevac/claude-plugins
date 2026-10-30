@@ -245,6 +245,98 @@ def _cases(check):
           % (why,),
           none == [] and why is not None and "phase gate" in why)
 
+    # --- a declared entry that already runs what a step would add -------------
+    # The dogfood shape: a shared key whose command is the selection's own
+    # spelling with no path in it, which runs every suite that spelling runs.
+    sweep = "python3 tools/sweep.py"
+    swept = {"buildCommands": {"selftests": sweep, "lint": "ruff check ."},
+             "phaseGate": {"derived": {"spelling": sweep + " {paths}"}}}
+    chosen = [{"path": "tests/test_other.py", "arm": "related", "basis": "r"},
+              {"path": "tests/test_core.py", "arm": "python", "basis": "p"}]
+    sweep_steps, why = M.entries_for(chosen, {"id": "P1", "tasks": []}, swept,
+                                     ".")
+    kept, left, said = M.left_to_run(sweep_steps, chosen, ["selftests", "lint"],
+                                     swept["buildCommands"])
+    check("af22 a task gate holding a key whose command is the unscoped sweep is "
+          "already wide for the Python arm: no affected/python or "
+          "affected/related step is added, and each one left out is said, "
+          "naming the key that runs it: %r" % ((sweep_steps, kept, left, said),),
+          why is None and len(sweep_steps) == 2 and kept == [] and left == []
+          and len(said) == 2
+          and all("selftests" in ln and sweep in ln for ln in said)
+          and any("tests/test_other.py" in ln for ln in said)
+          and any("tests/test_core.py" in ln for ln in said))
+    # The other direction: an "always drop" or "drop on any shared key" version
+    # passes af22. A path-scoped call of the same runner, the same runner with
+    # an option, and an unrelated key each leave the steps where they were.
+    narrow = dict(swept["buildCommands"], fast=sweep + " --fast")
+    for gate in (["python3 tools/sweep.py tests/test_own.py", "lint"],
+                 ["fast"], ["lint"]):
+        kept, left, said = M.left_to_run(sweep_steps, chosen, gate, narrow)
+        check("af23 a declared gate that is not the unscoped spelling (%r) "
+              "keeps every affected step and says nothing about one: %r"
+              % (gate, (kept, said)),
+              kept == sweep_steps and left == chosen and said == [])
+
+    # --- a path no arm reads ----------------------------------------------------
+    odd = M.select(["assets/logo.svg"], {}, {})
+    check("af24 a changed path no arm reads (no listing, not Python, not prose, "
+          "no e2e spec to widen to) WIDENS to the phase gate and names the "
+          "path, never an empty selection read as 'nothing affected': %r"
+          % (odd,),
+          odd["suites"] == [] and odd["widen"] is not None
+          and "assets/logo.svg" in odd["widen"] and "phase gate" in odd["widen"]
+          and any(odd["widen"] in ln for ln in odd["lines"]))
+    mixed = M.select(["pkg/core.py", "assets/logo.svg"], {},
+                     {"pySources": sources})
+    check("af24b ...and a Python change beside it does not hide it: %r"
+          % (mixed["widen"],),
+          mixed["suites"] == [] and "assets/logo.svg" in (mixed["widen"] or "")
+          and "pkg/core.py" not in (mixed["widen"] or ""))
+    # The other direction: an "always widen" version passes af24. A listing
+    # that answered for the path read it, and so did the graph and prose.
+    answered = M.select(["assets/logo.svg"], _meta(listing={"related": LISTING}),
+                        {"versionAnswer": "vitest/3.2.4",
+                         "related": {"command": "x", "exit": 0, "paths": []}})
+    read = [M.select(["pkg/core.py"], {}, {"pySources": sources}),
+            M.select(["README.md"], {}, {}),
+            M.select(["tests/own_test.sh"], {}, {},
+                     exclude=["tests/own_test.sh"])]
+    # The measured miss: a change to the suite harness turned the harness's own
+    # run red, and the listing - which answered, naming its importers - did not
+    # name the harness itself.
+    harnessed = {"tests/_harness.py": "X = 1\n",
+                 "tests/test_a.py": "import _harness\n"}
+    helper = M.select(["tests/_harness.py"], _meta(listing={"related": LISTING}),
+                      {"versionAnswer": "vitest/3.2.4", "pySources": harnessed,
+                       "related": {"command": "x", "exit": 0,
+                                   "paths": ["tests/test_a.py"]}})
+    spec = M.select(["e2e/nav.spec.ts"], {}, {"suites": tree})
+    check("af26 a changed suite path no arm selected (test support such as the "
+          "harness, or a spec nothing listed) WIDENS to the phase gate naming "
+          "it - a listing that answered for it is not enough: %r / %r"
+          % (helper["widen"], spec["widen"]),
+          helper["suites"] == [] and "tests/_harness.py" in (helper["widen"] or "")
+          and "phase gate" in (helper["widen"] or "")
+          and "e2e/nav.spec.ts" in (spec["widen"] or ""))
+    # The other direction: a changed suite the listing named, or the graph
+    # reached as itself, is selected and widens nothing.
+    named = M.select(["tests/test_a.py"], _meta(listing={"related": LISTING}),
+                     {"versionAnswer": "vitest/3.2.4", "pySources": harnessed,
+                      "related": {"command": "x", "exit": 0,
+                                  "paths": ["tests/test_a.py"]}})
+    itself = M.select(["tests/test_direct.py"], {}, {"pySources": sources})
+    check("af26b ...and a changed suite an arm selected does not widen: %r / %r"
+          % (named["widen"], itself["widen"]),
+          named["widen"] is None and _suites(named) == [("tests/test_a.py",
+                                                         "related")]
+          and itself["widen"] is None
+          and ("tests/test_direct.py", "python") in _suites(itself))
+    check("af25 a path the related listing answered for, a .py path the graph "
+          "read, prose, and a suite the task's own gate runs do NOT widen: %r"
+          % ([answered["widen"]] + [r["widen"] for r in read],),
+          answered["widen"] is None and all(r["widen"] is None for r in read))
+
     # ARMS carries machine ids, not human labels, so the guide's wording for
     # each id is mapped here; an arm with no entry fails by name rather than
     # being skipped, and a guide phrase with no arm behind it fails too.

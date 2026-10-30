@@ -3760,13 +3760,18 @@ listing sees them, every spec. `changed_paths()` reads `git diff --name-status
 
 It is PURE: the caller gathers every observation once. And it widens rather than
 returning an empty selection: a listing that exits non-zero, a version mismatch,
-a `.py` change with no sources read, or suites with no path-scoped spelling to run
-them under (`entries_for()` asks `_gate_derive.resolve_shape`) each answer
-`widen` with the reason, and the caller adds the phase gate. Each selected arm
+a `.py` change with no sources read, a changed path no arm reads, a changed file
+under a test directory that no arm selected (test support every suite may lean
+on), or suites with no path-scoped spelling to run them under (`entries_for()` asks
+`_gate_derive.resolve_shape`) each answer `widen` with the reason, and the caller
+adds the phase gate. Each selected arm
 becomes a step named `affected/<arm>: <suites>`, so the evidence row says which
 arm put each suite there. The gate digest a commit is bound to stays the task's
 own declared gate, because the affected steps are measured, not declared. A task
-whose gate already carries every phase-gate entry adds nothing.
+whose gate already carries every phase-gate entry adds nothing, and a step whose
+command, with its suite paths taken out, is a declared entry's command is left
+out and said (`left_to_run()`): that entry is the same runner unscoped, so it
+already runs those suites.
 
 ### `plugins/audit/scripts/governance/verify-invariants.py`
 The CLI over it: `verify-invariants.py <manifest> <phaseId>`, or `--all` for every phase that

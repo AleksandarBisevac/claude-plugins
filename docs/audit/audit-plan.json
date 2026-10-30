@@ -1744,7 +1744,8 @@
       "P148.7",
       "P148.21-xpz",
       "P149.11-hwg",
-      "P149.12-hwg"
+      "P149.12-hwg",
+      "P143.1-6yq"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2780,7 +2781,8 @@
       "P130.56-ywo",
       "P131.1",
       "P131.2",
-      "P142.46-6yq"
+      "P142.46-6yq",
+      "P143.7-z9j"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -3744,7 +3746,8 @@
       "P142.18-6yq",
       "P142.20-6yq",
       "P148.5",
-      "P149.1"
+      "P149.1",
+      "P143.7-z9j"
     ],
     "plugins/audit/scripts/git/close-phase.py": [
       "P18.3",
@@ -4034,7 +4037,8 @@
       "P128.51-izt",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P143.7-z9j"
     ],
     "plugins/audit/scripts/governance/_policy.py": [
       "P15.4",
@@ -10272,7 +10276,8 @@
       "P149.1",
       "P149.6-hwg",
       "P149.8-hwg",
-      "P149.9-hwg"
+      "P149.9-hwg",
+      "P143.7-z9j"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -10736,7 +10741,8 @@
       "P130.30-ywo",
       "P130.40-ywo",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P143.7-z9j"
     ],
     "plugins/audit/tests/test_integrate_task.py": [
       "P124.4",
@@ -10919,7 +10925,8 @@
       "P143.5-6yq",
       "P144.5-ttw",
       "P144.4-ttw",
-      "P148.3"
+      "P148.3",
+      "P143.7-z9j"
     ],
     "docs/audit/phases/P127.json": [
       "P127.8-bgr"
@@ -11831,7 +11838,8 @@
       "P142.30-6yq",
       "P142.39-6yq",
       "P148.6",
-      "P148.16-xpz"
+      "P148.16-xpz",
+      "P143.1-6yq"
     ],
     "tests/test_derive_phase_gate.py": [
       "P131.1",
@@ -11894,7 +11902,8 @@
       "P149.1",
       "P149.6-hwg",
       "P149.8-hwg",
-      "P149.9-hwg"
+      "P149.9-hwg",
+      "P143.7-z9j"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -12054,7 +12063,8 @@
       "P149.2",
       "P149.3-hwg",
       "P149.9-hwg",
-      "P149.10-hwg"
+      "P149.10-hwg",
+      "P143.7-z9j"
     ],
     "tests/test_usage_ledger.py": [
       "P131.1",

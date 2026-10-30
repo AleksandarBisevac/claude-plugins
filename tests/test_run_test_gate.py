@@ -10045,6 +10045,137 @@ def _affected_cases(check):
                   for ln in failed_lines))
 
 
+def _affected_scope_cases(check):
+    """The affected selection as a task's gate, end to end, over one tree.
+
+    A full-sweep key already runs every suite the selection's spelling runs,
+    so nothing joins it; a narrow gate gets the suites its change reaches and
+    nothing on an unchanged tree; a path no arm reads widens to the phase gate
+    and says so; and the green row a narrow gate records binds the commit with
+    no override.
+    """
+    import _verdict_binding as _vb
+    root = _harness.fixture_root("run-test-gate-scope-")
+    for sub in (("docs", "audit", "phases"), (".claude",), ("tools",),
+                ("tests",), ("pkg",), ("assets",)):
+        os.makedirs(os.path.join(root, *sub))
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+    sweep = "python3 tools/sweep.py"
+    own = sweep + " tests/test_own.py"
+    build = {"selftests": sweep, "lint": "true"}
+    plan = {"meta": {"version": 3, "buildCommands": build,
+                     "phaseGate": {"derived": {
+                         "spelling": sweep + " {paths}",
+                         "listing": {"related": "printf '%s\\n' "
+                                                "tests/test_other.py # {paths}"},
+                         "verifiedOn": {"command": "echo v1", "answer": "v1"}}}},
+            "phases": [{"id": "P1", "title": "one", "shard": "phases/P1.json"}]}
+    with open(mpath, "w") as fh:
+        json.dump(plan, fh)
+    phase = {"id": "P1", "title": "one", "status": "in_progress",
+             "testGate": ["selftests", "lint"], "tasks": [
+                 {"id": "P1.1", "title": "full sweep", "status": "in_progress",
+                  "files": ["pkg/core.py"],
+                  "tests": {"mode": "regression", "gate": ["selftests"]}},
+                 {"id": "P1.2", "title": "narrow", "status": "in_progress",
+                  "files": ["pkg/core.py", "tests/test_own.py"],
+                  "tests": {"mode": "regression", "gate": [own]}},
+                 {"id": "P1.3", "title": "odd path", "status": "in_progress",
+                  "files": ["assets/logo.svg"],
+                  "tests": {"mode": "regression", "gate": [own]}}]}
+    with open(os.path.join(root, "docs", "audit", "phases", "P1.json"),
+              "w") as fh:
+        json.dump(phase, fh)
+    # The fake sweep runs the suites it is handed, or every one when handed
+    # none - the unscoped call the full-sweep key makes.
+    reach = "import os, sys\nsys.path.insert(0, os.getcwd())\n"
+    for rel, body in (
+            ("tools/sweep.py",
+             "import glob, subprocess, sys\n"
+             "paths = sys.argv[1:] or sorted(glob.glob('tests/test_*.py'))\n"
+             "bad = [p for p in paths\n"
+             "       if subprocess.call([sys.executable, p]) != 0]\n"
+             "sys.exit(1 if bad else 0)\n"),
+            ("pkg/__init__.py", ""), ("pkg/core.py", "X = 1\n"),
+            ("tests/test_core.py", reach + "import pkg.core\n"),
+            ("tests/test_other.py", "pass\n"), ("tests/test_own.py", "pass\n"),
+            ("assets/logo.svg", "<svg/>\n")):
+        with open(os.path.join(root, rel), "w") as fh:
+            fh.write(body)
+    _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
+    for arg in (["add", "--", "."],
+                ["-c", "user.email=fixture@example.com",
+                 "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                 "commit", "-qm", "fixture"]):
+        _harness.git(root, *arg, prefix=_PLAIN_GIT)
+    evidence = os.path.join(root, "docs", "audit", "evidence")
+
+    def run(task_id):
+        lines = []
+        code = M.main([mpath, "P1", "--task", task_id, "--project-dir", root,
+                       "--record"], out=lines.append)
+        rows = [r for r in _recorded_rows(evidence) if r.get("taskId") == task_id]
+        row = rows[-1] if rows else {}
+        return code, lines, row, [s.get("name") for s in row.get("steps") or []]
+
+    def binds(task_id):
+        task = [t for t in phase["tasks"] if t["id"] == task_id][0]
+        entries, source = M._mio.gate_entries(phase, task)
+        return _vb.binding(root, {"taskId": task_id, "phaseId": "P1"}, entries,
+                           source, task["files"], mpath, "record it", "no gate",
+                           config=_journal_io.load_config(root),
+                           build=build)["state"]
+
+    code, lines, row, names = run("P1.2")
+    check("as1 a narrow declared gate on an UNCHANGED tree adds no affected "
+          "suite and says the task changed nothing: exit=%r steps=%r lines=%r"
+          % (code, names, lines[:4]),
+          code == M.E_OK and names == [own]
+          and any("changed no path" in ln for ln in lines))
+
+    with open(os.path.join(root, "pkg", "core.py"), "w") as fh:
+        fh.write("X = 2\n")
+    code, lines, row, names = run("P1.1")
+    check("as2 a task gate holding the full-sweep key adds NO affected/python "
+          "or affected/related step - the key already runs those suites - "
+          "and the output names the key that does: exit=%r steps=%r lines=%r"
+          % (code, names, [ln for ln in lines if "selftests" in ln]),
+          code == M.E_OK and names == ["selftests"]
+          and any("tests/test_other.py" in ln and "selftests" in ln
+                  for ln in lines)
+          and any("tests/test_core.py" in ln and "selftests" in ln
+                  for ln in lines))
+
+    code, lines, row, names = run("P1.2")
+    check("as3 a narrow declared gate records the affected suites for its "
+          "changed path, each under the arm that selected it, and not the "
+          "suite its own gate names: exit=%r steps=%r" % (code, names),
+          code == M.E_OK and row.get("status") == "passed"
+          and names == [own, "affected/related: tests/test_other.py",
+                        "affected/python: tests/test_core.py"])
+    states = (binds("P1.2"), binds("P1.1"))
+    check("as4 ...and the green rows bind the commit with NO override - the "
+          "derived steps beside the declared gate do not read as a changed "
+          "gate: %r" % (states,), states == ("bound", "bound"))
+
+    del plan["meta"]["phaseGate"]["derived"]["listing"]
+    with open(mpath, "w") as fh:
+        json.dump(plan, fh)
+    with open(os.path.join(root, "assets", "logo.svg"), "w") as fh:
+        fh.write("<svg></svg>\n")
+    code, lines, row, names = run("P1.3")
+    check("as5 a changed path no arm reads widens the task's run to the phase "
+          "gate, recorded under its own arm, and the line saying so names the "
+          "path: exit=%r steps=%r lines=%r"
+          % (code, names, [ln for ln in lines if "phase gate" in ln]),
+          names == [own, "affected/phase-gate: selftests",
+                    "affected/phase-gate: lint"]
+          and any("assets/logo.svg" in ln and "phase gate" in ln
+                  for ln in lines))
+
+
 def _member_records_cases(check):
     """A wave member's tree holds the phase tree's records once the drive has
     refreshed them, and those bytes are the plan's, not the task's change: the
@@ -10975,6 +11106,7 @@ def _selftest():
         _harness.stage(check, "wt-block", _wave_tree_cases)
         _harness.stage(check, "sl-block", _success_line_cases)
         _harness.stage(check, "ag-block", _affected_cases)
+        _harness.stage(check, "as-block", _affected_scope_cases)
         _harness.stage(check, "rp-block", _member_records_cases)
         _harness.stage(check, "rs-block", _shared_records_cases)
         _group_cases(check)

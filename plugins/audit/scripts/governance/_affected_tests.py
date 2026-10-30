@@ -23,9 +23,15 @@ the Python sources, the tree's suite files -- arrives in `facts`, gathered once
 by the caller (`run-test-gate.py`). Nothing here shells out or reads a file.
 
 WIDEN, NEVER EMPTY. A listing that cannot answer, a version that does not
-match, a `.py` change with no sources to graph, and suites with no command
-spelling to run them under all answer `widen` with the reason: the caller adds
-the PHASE gate. An empty selection is only ever an answer every arm gave.
+match, a `.py` change with no sources to graph, a changed path no arm reads,
+a changed file under a test directory no arm selected (test support), and
+suites with no command spelling to run them under all answer `widen` with
+the reason: the caller adds the PHASE gate. An empty selection is only ever an
+answer every arm gave.
+
+NOT TWICE. A step whose suites a declared entry already runs whole - the
+step's own command with its paths taken out (`left_to_run`) - is left out and
+said, so a full-sweep key does not run the same suites again beside it.
 """
 
 import ast
@@ -273,12 +279,15 @@ def select(changed, meta, facts, exclude=None):
                           "its gate"]}
     templates = listing_templates(meta)
     related_paths = []
+    read = set()
     if "related" in templates:
         why = _untrusted(meta, facts)
         related_paths, ran_why = _ran(facts, "related")
         if why or ran_why:
             return _widened("related: %s" % (why or ran_why,), lines)
         command = facts["related"].get("command") or templates["related"]
+        # The listing was handed every changed path, so its answer covers all.
+        read.update(changed)
         for path in related_paths:
             add(path, "related", "related: named by the recorded listing `%s`"
                 % (command,))
@@ -315,6 +324,27 @@ def select(changed, meta, facts, exclude=None):
             add(path, "e2e-widening", "e2e-widening: %s is app source and no "
                 "recorded listing sees the e2e specs, so every spec runs"
                 % (source[0],))
+    if "e2eChanged" in templates or (specs and not sees_e2e):
+        read.update(source)
+    read.update(p for p in changed if p.endswith(".py")
+                or p.lower().endswith(_DOC_EXTENSIONS) or p in skip)
+    unread = [p for p in changed if p not in read]
+    if unread:
+        return _widened("unrecognised: no arm reads %s - no related listing "
+                        "answered for it, and it is not Python, prose, a suite "
+                        "the task's gate runs, or app source an e2e arm took"
+                        % (", ".join(unread),), lines)
+    # A changed file under a test directory that no arm selected is test
+    # support - a harness, a conftest, a fixture - or a suite nothing listed.
+    # Every suite may lean on it, and a listing that answered with its
+    # importers still left out its own run, so the whole set runs.
+    picked = set(s["path"] for s in suites)
+    support = [p for p in changed if _phases.is_suite_path(p)
+               and p not in skip and p not in picked]
+    if support:
+        return _widened("test support: %s changed and no arm selected it - a "
+                        "file under a test directory may be what every suite "
+                        "leans on" % (", ".join(support),), lines)
     return {"suites": suites, "widen": None, "lines": lines}
 
 
@@ -364,6 +394,58 @@ def entries_for(suites, phase, meta, project, lister=None):
             steps.append(("%s%s: %s" % (_evidence_io.DERIVED_STEP_PREFIX, arm,
                                         ", ".join(named)), entry))
     return steps, None
+
+
+def _words(command):
+    """`command`'s shell words, or None when it does not split."""
+    try:
+        return shlex.split(command) if isinstance(command, str) else None
+    except ValueError:
+        return None
+
+
+def left_to_run(steps, suites, task_entries, build):
+    """`(steps, suites, lines)` - the affected steps the task's own gate does
+    not already run, the suites they still carry, and one line per step left
+    out.
+
+    A DECLARED ENTRY WHOSE COMMAND IS A STEP'S OWN COMMAND WITH ITS SUITE PATHS
+    TAKEN OUT is that runner called unscoped, which runs every suite the step
+    would: a spelling of `<runner> {paths}` beside a key whose command is
+    `<runner>` alone. Adding the step would run those suites a second time.
+    Compared word for word, so the same runner with an option, or scoped to a
+    path, is not that entry and the step stays. A command that does not split
+    is never read as covered.
+
+    THE PREMISE IS THE RUNNER'S: called with no path it runs every suite it
+    would run when one is named. A runner configured to skip a path it still
+    runs when that path is handed to it (a `testpaths` that leaves the suite
+    out) breaks it, and nothing here can see that configuration."""
+    build = build if isinstance(build, dict) else {}
+    paths = set(s.get("path") for s in suites or [] if isinstance(s, dict))
+    declared = {}
+    for entry in task_entries or []:
+        words = _words(build.get(entry, entry))
+        if words:
+            declared.setdefault(tuple(words), entry)
+    kept, lines, gone, still = [], [], set(), set()
+    for name, command in steps:
+        words = _words(command)
+        inside = set(w for w in (words or []) if w in paths)
+        bare = tuple(w for w in words if w not in paths) if words else None
+        entry = declared.get(bare) if inside and bare else None
+        if entry is None:
+            kept.append((name, command))
+            still |= inside
+            continue
+        gone |= inside
+        lines.append("affected: %s is not added - the task's gate entry `%s` "
+                     "runs `%s`, the same call with no path, which runs every "
+                     "suite this step would" % (name, entry,
+                                                build.get(entry, entry)))
+    dropped = gone - still
+    left = [s for s in suites or [] if s.get("path") not in dropped]
+    return kept, left, lines
 
 
 # --- cli ------------------------------------------------------------------------
