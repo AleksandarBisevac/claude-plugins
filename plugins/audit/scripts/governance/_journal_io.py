@@ -950,7 +950,9 @@ def _moment_key(row):
 def read_all(project, config=None):
     """Every row in the journal, oldest first BY MOMENT (`row_moment`), each
     tagged with its file; rows naming no moment first, and a tie by file name
-    and then read order."""
+    and then read order. The tie order across files is a fixed order to print
+    in, not which row came first: a reader that asks what was said LAST reads
+    through `last_words`."""
     directory = journal_dir(project, config)
     out = []
     for path in journal_files(directory):
@@ -963,6 +965,40 @@ def read_all(project, config=None):
             out.append(r)
     out.sort(key=lambda r: _moment_key(r) + (r.get("_file") or "",))
     return out
+
+
+def last_words(rows, words_of):
+    """`{key: set(word, ...)}` - every word that could be the LAST one the
+    trail said about each key. `rows` come in `read_all`'s order, `_file`
+    included; `words_of(row)` names the `(key, word)` pairs one row says, an
+    empty list for a row that says nothing.
+
+    WHY A SET. A `ts` is one second, and two writers' rows stamped with the
+    same second carry no order between them: neither file records the other,
+    and `read_all`'s tie by file name is a fixed order to print in, not a fact
+    about which row came first. So in the newest second that speaks of a key,
+    each writer's own last word on it is a possible last word - a writer's
+    rows are in the order it appended them - and the set holds every one. A
+    single word means the order was recorded; several mean it was not, and the
+    caller settles them in the direction its own question makes safe. A row
+    with no `_file` counts as one writer with every other such row.
+
+    A row older than the newest second already held for its key is passed
+    over, so an input out of moment order cannot wind a key back."""
+    newest = {}
+    for row in rows:
+        moment = _moment_key(row)
+        writer = row.get("_file") or ""
+        for key, word in words_of(row):
+            held = newest.get(key)
+            if held is not None and moment < held[0]:
+                continue
+            if held is None or moment > held[0]:
+                held = (moment, {})
+                newest[key] = held
+            held[1][writer] = word
+    return dict((key, set(by_writer.values()))
+                for key, (_moment, by_writer) in newest.items())
 
 
 def writer_of(basename):

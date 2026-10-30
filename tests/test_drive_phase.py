@@ -6578,26 +6578,171 @@ def _risk_cases(check):
           and "decide high-risk P1.2" in last
           and tasks_of(mpath).get("P1.2", {}).get("status") == "in_progress")
     # A confirmation covers open work as it stood when it was given: a task
-    # reopened after it is run again on a commit nobody confirmed.
+    # reopened after it is run again on a commit nobody confirmed. The two rows
+    # are written in ONE second by two writers - the shape a fast drive
+    # reaches by chance - and the confirming writer's file is made to sort
+    # after the drive session's, so a replay in file-name order would read the
+    # confirmation as the later row. Both are pinned rather than waited for:
+    # left to the clock and to a random writer token, the tie was reached on
+    # some runs only.
     root, mpath = _repo("risk-reopen", task_ids=TASKS[:2])
     _commit_plan(root, mpath, risky(("P1.1",)), "P1.1 is high risk")
-    _verb(root, "record-risk-confirmation.py", [
-        mpath, PHASE, "--confirm-high-risk", "yes, commit P1.1 unattended",
-        "--project", root])
+    _plant_writer_token(root, "f" * 16)
+    moment = int(time.time())
+    with _pinned_clock(moment):
+        _verb(root, "record-risk-confirmation.py", [
+            mpath, PHASE, "--confirm-high-risk", "yes, commit P1.1 unattended",
+            "--project", root])
     reopened = []
 
     def reopen_first(role, tid):
         if role == "executor" and tid == "P1.2" and not reopened:
-            reopened.append(_verb(root, "audit-task.py", [
-                "reopen", "P1.1", mpath, "--project-dir", root, "--reason",
-                "the human wants P1.1 done again"]))
+            with _pinned_clock(moment):
+                reopened.append(_verb(root, "audit-task.py", [
+                    "reopen", "P1.1", mpath, "--project-dir", root, "--reason",
+                    "the human wants P1.1 done again"]))
     run = drive(M, root, mpath, answer=None, on_dispatch=reopen_first)
     last = run["prints"][-1][1]
-    check("hr3 a high-risk task reopened after the confirmation stops at the "
-          "high-risk decision on its second run: %r" % ((reopened, last),),
+    import _journal_io
+    tied = [(r.get("ts"), r.get("_file")) for r in _journal_io.read_all(root)
+            if r.get("action") in (M.RISK_CONFIRMED, M.TASK_REOPEN)]
+    check("hr3 a high-risk task reopened after the confirmation, in the same "
+          "second from another writer whose file sorts first, stops at the "
+          "high-risk decision on its second run: %r" % ((reopened, tied, last),),
           reopened and reopened[0][0] == 0
+          and len(tied) == 2 and tied[0][0] == tied[1][0]
+          and tied[0][1] < tied[1][1]
           and run["steps"][-1] == ("decide", "high-risk", None)
           and "decide high-risk P1.1" in last)
+    _same_moment_cases(check, M)
+
+
+def _plant_writer_token(root, token):
+    """Fix the id a session-less writer of `root` names its journal file with,
+    by writing the token `_journal_io.writer_token` would otherwise mint at
+    random, where it would look for it."""
+    import _journal_io
+    mod = _journal_io._config_mod()
+    state = mod.state_dir(mod.Path(root), _journal_io.load_config(root))
+    mod.ensure_local_dir(state)
+    with open(os.path.join(str(state), _journal_io.WRITER_TOKEN_FILE), "w",
+              encoding="utf-8", newline="\n") as fh:
+        json.dump({"token": token}, fh)
+
+
+def _journal_only_project(files):
+    """A project holding nothing but journal files: `{file name: [row, ...]}`,
+    each file's rows in the order its writer appended them."""
+    root = tempfile.mkdtemp(prefix="same-moment-")
+    jdir = os.path.join(root, "docs", "audit", "journal")
+    os.makedirs(jdir)
+    os.makedirs(os.path.join(root, ".claude"))
+    for name, rows in sorted(files.items()):
+        _write_lf(os.path.join(jdir, name),
+                  "".join(json.dumps(row) + "\n" for row in rows))
+    return root
+
+
+def _same_moment_cases(check, M):
+    """Two writers' rows stamped with the same second carry no order between
+    them: the journal's one-second `ts` cannot say which came first, and the
+    files' names are not a clock. A confirmation sharing that second with a
+    reopen of the same task therefore does not cover it - the drive asks
+    again, which costs a question, where the other reading commits unasked."""
+    tick, tick_after = "2026-10-30T19:07:52Z", "2026-10-30T19:07:53Z"
+
+    def confirm(ts, tid="P1.1"):
+        return {"ts": ts, "action": M.RISK_CONFIRMED, "target": PHASE,
+                "summary": (M.RISK_COVERED % (PHASE,)) + tid}
+
+    def reopen(ts, tid="P1.1"):
+        return {"ts": ts, "action": M.TASK_REOPEN, "target": tid,
+                "details": {"taskId": tid}}
+
+    def covered(by_file):
+        root = _journal_only_project(by_file)
+        try:
+            return sorted(M.confirmed_in_advance({"project": root}, PHASE))
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+    # The writer names are chosen so the reopen's file sorts FIRST: a replay
+    # in file-name order applies the reopen, then re-confirms over it.
+    got = covered({"2026-10.a-reopener.jsonl": [reopen(tick)],
+                   "2026-10.b-confirmer.jsonl": [confirm(tick)]})
+    check("hr4 a confirmation and a reopen of the same task stamped with the "
+          "same second in two writers' files, the reopen's file sorting first: "
+          "the confirmation does not cover the task: %r" % (got,),
+          got == [])
+    got = covered({"2026-10.a-confirmer.jsonl": [confirm(tick)],
+                   "2026-10.b-reopener.jsonl": [reopen(tick)]})
+    check("hr5 the same tie with the file names the other way round reads the "
+          "same - no file name decides it: %r" % (got,), got == [])
+    # The over-fire direction: a rule that let any reopen cancel, or any shared
+    # second, would go red here.
+    got = covered({"2026-10.a-reopener.jsonl": [reopen(tick)],
+                   "2026-10.b-confirmer.jsonl": [confirm(tick_after)]})
+    check("hr6 THE TWIN: a confirmation a second after the reopen covers the "
+          "task again: %r" % (got,), got == ["P1.1"])
+    got = covered({"2026-10.a-reopener.jsonl": [reopen(tick, "P1.2")],
+                   "2026-10.b-confirmer.jsonl": [confirm(tick)]})
+    check("hr7 THE TWIN: a same-second reopen of ANOTHER task leaves the "
+          "confirmation's own task covered: %r" % (got,), got == ["P1.1"])
+    got = covered({"2026-10.one-writer.jsonl": [reopen(tick),
+                                                confirm(tick)]})
+    check("hr8 THE TWIN: inside one writer's file the append order is the "
+          "order the rows happened in, so a confirmation appended after a "
+          "same-second reopen covers the task: %r" % (got,), got == ["P1.1"])
+    got = covered({"2026-10.one-writer.jsonl": [confirm(tick),
+                                                reopen(tick)]})
+    check("hr9 and inside one file a reopen appended after a same-second "
+          "confirmation cancels it: %r" % (got,), got == [])
+    _same_moment_handback_cases(check, M, tick, tick_after)
+
+
+def _same_moment_handback_cases(check, M, tick, tick_after):
+    """The drive carries a fix round's findings into a task's next start only
+    while its own hand-back is the newest re-open of the task. A human's
+    re-open in the same second from another writer may be the newer one, so
+    the findings are not carried."""
+    state = {M.REVIEW_FIX_FIELD: {"P1.1": {"findings": ["P1-R1"],
+                                           "from": None}}}
+    task = {"id": "P1.1", "status": "pending", "commit": None}
+
+    def reopen(ts, reason):
+        return {"ts": ts, "action": M.TASK_REOPEN, "target": "P1.1",
+                "details": {"taskId": "P1.1", "reason": reason}}
+
+    handback = M.REOPEN_REASON % ("P1-R1", tick)
+    human = "the human wants P1.1 done again"
+
+    def carried(by_file):
+        root = _journal_only_project(by_file)
+        try:
+            fix, spent, why = M.standing_review_fix({"project": root}, state,
+                                                    task)
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+        return fix is not None, spent, why
+
+    # The human's file sorts FIRST, so a replay in file-name order reads the
+    # drive's hand-back as the newer re-open.
+    got = carried({"2026-10.a-human.jsonl": [reopen(tick, human)],
+                   "2026-10.b-drive.jsonl": [reopen(tick, handback)]})
+    check("hr10 a human's re-open sharing the hand-back's second, from "
+          "another writer, keeps the fix round's findings out of the next "
+          "start, and says why: %r" % (got,),
+          got[0] is False and got[2] is None
+          and "same second" in str(got[1]) and human in str(got[1]))
+    got = carried({"2026-10.one-writer.jsonl": [reopen(tick, human),
+                                                reopen(tick, handback)]})
+    check("hr11 THE TWIN: inside one writer's file the hand-back appended "
+          "after the human's re-open is the newest, and is carried: %r"
+          % (got,), got == (True, None, None))
+    got = carried({"2026-10.a-human.jsonl": [reopen(tick, human)],
+                   "2026-10.b-drive.jsonl": [reopen(tick_after, handback)]})
+    check("hr12 THE TWIN: a hand-back a second after the human's re-open is "
+          "carried: %r" % (got,), got == (True, None, None))
 
 
 def _owner_types(root, prompt):

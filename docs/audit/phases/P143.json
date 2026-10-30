@@ -169,11 +169,27 @@
         "severity": "low",
         "file": ".github/workflows/ci.yml",
         "issue": "The merged lint job's longest line is an estimate of 2m38s, but its first run took 3m14s (run 41112221437); 2x the measured figure is 388 s, over the 6-minute bound, which gate-parity passes only because it reads the estimate.",
-        "resolution": "Re-record the longest line from run 41112221437 and raise the bound to 7.",
-        "fixTask": "P143.15-z9j"
+        "resolution": "fixed in P143.15-z9j (396474aa9c62): Re-record the longest line from run 41112221437 and raise the bound to 7.",
+        "fixTask": "P143.15-z9j",
+        "commit": "396474aa9c62",
+        "status": "fixed"
+      },
+      {
+        "id": "P143-R19",
+        "severity": "low",
+        "file": "tests/test_drive_phase.py:6595-6604",
+        "issue": "hr3's precondition checks that the two tied rows share one ts and come from two files in a given order (`tied[0][1] < tied[1][1]`), but it does not check WHICH row is in the first file. The executor's outcome says the case asserts 'the reopen's file first', and the test checks less than that. If the drive fixture's session env changed so the confirmation landed in drive-fixture-session.jsonl and the reopen in ffffffffffffffff.jsonl, the precondition would still hold, and hr3 would pass on the old replay too. It would no longer guard the regression. hr4 still covers the shape deterministically.",
+        "resolution": "Include the action in `tied` (e.g. `(ts, _file, action)`) and assert `tied[0][2] == M.TASK_REOPEN and tied[1][2] == M.RISK_CONFIRMED`."
+      },
+      {
+        "id": "P143-R20",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:7890-7898",
+        "issue": "This diff rewrote standing_review_fix's not-carried wording into three branches. Only the tie branch (len(reasons) > 1) has a case (hr10). The single-human-reopen branch ('a re-open for ...') and the no-reopen branch ('absent from the journal') have no case anywhere in tests/ (grep for 're-open for', 'absent from the journal' and 'not the drive's hand-back' over tests/*.py finds nothing). Rewritten lines with no case can break silently.",
+        "resolution": "Add two cases in _same_moment_handback_cases. First, a human re-open a second AFTER the hand-back: fix is None and spent contains \"a re-open for 'the human wants\". Second, a journal with no re-open of P1.1: spent contains 'absent from the journal'."
       }
     ],
-    "outcome": "[findings: 18 - 0 high, 7 med, 11 low; 6 with a recorded fix commit]"
+    "outcome": "[findings: 20 - 0 high, 7 med, 13 low; 7 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1090,12 +1106,17 @@
       "fixes": [
         "P143-R17"
       ],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-30T19:49:10Z.6f259e",
+        "status": "passed",
+        "at": "2026-10-30T19:49:10Z"
+      }
     },
     {
       "id": "P143.15-z9j",
       "title": "fix P143-R18: The merged lint job's longest line is an estimate of 2m38s, but...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The merged lint job's longest line is an estimate of 2m38s, but its first run took 3m14s (run 41112221437); 2x the measured figure is 388 s, over the 6-minute bound, which gate-parity passes only because it reads the estimate.\n\nResolution asked: Re-record the longest line from run 41112221437 and raise the bound to 7.",
       "files": [
         ".github/workflows/ci.yml"
@@ -1124,13 +1145,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "396474aa9c62",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Edited only .github/workflows/ci.yml in the task tree. (1) longest lint line is now '3m14s (run 41112221437, 19:04:54 to 19:08:08)', measured with gh run view 41112221437 --json jobs --jq '.jobs[]|[.name,.startedAt,.completedAt]' (job 'lint + manifests + e2e (linux)' 19:04:54Z -> 19:08:08Z). (2) the lint timeout-minutes goes 6 -> 7 (420 s = 2.17x the 194 s measurement, within the 2-3x range). (3) the 'lint -' estimate-history comment now says the figure is measured and why the bound moved, with no work-item ids. Gates: python3 tools/gate-parity.py exit 0; python3 tools/gate-parity.py --selftest exit 0 (97/97 cases passed). Dependants (tests/_harness.py, tests/test__impact.py, tools/affected.py, etc. listed as depending on ci.yml): still correct - the change touches one comment line block, one 'longest' comment line and one integer; no job names, slices, steps or commands changed. No browser gates run.",
+        "descriptive": "The lint job's recorded longest run is now the measured 3m14s and its timeout is 7 minutes, so gate-parity's at-least-2x rule holds on the measurement rather than on an estimate."
       },
       "startedAt": "2026-10-30T19:14:17Z",
-      "completedAt": null,
+      "completedAt": "2026-10-30T19:29:27Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -1154,6 +1175,17 @@
         "runId": "2026-10-30T19:27:49Z.a806c4",
         "status": "passed",
         "at": "2026-10-30T19:27:49Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "396474aa9c62",
+        "at": "2026-10-30T19:29:27Z",
+        "return": "docs/audit/evidence/returns/P143.15-z9j/20261030T191417Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task, tests.expectRedFirst false; no test added. As a check that the rule fires, setting the bound back to 6 against the new figure made gate-parity print: CI job bound (lint): timeout-minutes is 6, under 2 times its longest recorded run of 3m14s (6m28s needed); restored afterwards.",
+        "at": "n/a"
       }
     }
   ],

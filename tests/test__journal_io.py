@@ -4498,10 +4498,90 @@ def _moment_order_cases(check):
           and str(_now_marker.get("ts")).endswith("Z"))
 
 
+def _said(ts, writer, word, key="T1"):
+    """A row as `read_all` hands it back: its moment, and the file it came
+    from in `_file`."""
+    return {"ts": ts, "_file": "2026-10.%s.jsonl" % (writer,), "word": word,
+            "key": key}
+
+
+def _words_of(row):
+    return [(row["key"], row["word"])]
+
+
+def _last_word_cases(check):
+    """`last_words` answers what the trail last said about each key, and says
+    when it cannot: two writers' rows sharing one second carry no order
+    between them, so each writer's last word there is a possible last word.
+    One writer's rows are in the order it appended them."""
+    moment, later = "2026-10-30T19:07:52Z", "2026-10-30T19:07:53Z"
+    # Both arrangements read_all could produce for a cross-file tie: which
+    # file sorts first must not decide it.
+    for label, rows in (
+            ("a", [_said(moment, "a", "reopen"), _said(moment, "b", "confirm")]),
+            ("b", [_said(moment, "a", "confirm"), _said(moment, "b", "reopen")])):
+        got = M.last_words(rows, _words_of)
+        check("lw1%s two writers speaking of one key in the same second leave "
+              "BOTH words as possible last words, whichever file sorts "
+              "first: %r" % (label, got),
+              got == {"T1": set(["reopen", "confirm"])})
+    got = M.last_words([_said(moment, "a", "reopen"),
+                        _said(moment, "a", "confirm")], _words_of)
+    check("lw2 one writer's same-second rows are in append order: its last "
+          "row is the one last word: %r" % (got,),
+          got == {"T1": set(["confirm"])})
+    got = M.last_words([_said(moment, "b", "confirm"),
+                        _said(later, "a", "reopen")], _words_of)
+    check("lw3 a later second wins outright, whatever the files are "
+          "called: %r" % (got,), got == {"T1": set(["reopen"])})
+    got = M.last_words([_said(moment, "a", "reopen"),
+                        _said(moment, "b", "confirm"),
+                        _said(later, "b", "confirm")], _words_of)
+    check("lw4 an ambiguous second is settled by a later one that speaks of "
+          "the key: %r" % (got,), got == {"T1": set(["confirm"])})
+    got = M.last_words([_said(moment, "a", "reopen"),
+                        _said(moment, "b", "confirm"),
+                        _said(later, "b", "confirm", key="T2")], _words_of)
+    check("lw5 ...and NOT by a later second that speaks only of another "
+          "key: %r" % (got,),
+          got == {"T1": set(["reopen", "confirm"]), "T2": set(["confirm"])})
+    got = M.last_words([_said(moment, "a", "w", key="T1"),
+                        _said(moment, "b", "w", key="T2")], _words_of)
+    check("lw6 a key one writer alone spoke of in a shared second has one "
+          "last word - the tie is per key, not per second: %r" % (got,),
+          got == {"T1": set(["w"]), "T2": set(["w"])})
+    check("lw7 a row that says nothing contributes nothing: %r"
+          % (M.last_words([_said(moment, "a", "w")], lambda row: []),),
+          M.last_words([_said(moment, "a", "w")], lambda row: []) == {})
+    # The same tie off disk, through read_all: the file names are chosen so
+    # the second writer's rows sort FIRST in one fixture and last in the other.
+    for label, names in (("a", ("a-second", "b-first")),
+                         ("b", ("b-second", "a-first"))):
+        root = _harness.fixture_root("journal-last-word-")
+        try:
+            M.append(root, {"action": "x.said", "ts": moment, "target": "T1",
+                            "actor": {"sessionId": names[1]},
+                            "summary": "confirm"})
+            M.append(root, {"action": "x.said", "ts": moment, "target": "T1",
+                            "actor": {"sessionId": names[0]},
+                            "summary": "reopen"})
+            rows = M.read_all(root)
+            files = sorted(set(r.get("_file") for r in rows))
+            got = M.last_words(rows, lambda row: [
+                (row.get("target"), row.get("summary"))])
+        finally:
+            _harness.remove_tree(root)
+        check("lw8%s off disk, two writers' files holding one second each: "
+              "both words stand, and the rows came from two files %r: %r"
+              % (label, files, got),
+              len(files) == 2 and got == {"T1": set(["reopen", "confirm"])})
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _moment_order_cases(check)
+        _last_word_cases(check)
     return _harness.run(body)
 
 

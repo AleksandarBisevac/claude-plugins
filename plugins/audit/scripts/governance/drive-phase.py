@@ -4135,27 +4135,40 @@ def confirmed_in_advance(ctx, phase_id):
     journal that cannot be read covers nothing: the gate then asks, as it would
     with no answer given. The answer covers open work as it stood when it was
     given, so a `task.reopen` row after it takes the task back out: its next
-    run is a commit nobody confirmed. The rows are read oldest first."""
+    run is a commit nobody confirmed.
+
+    "After" is what the trail can show, read through `_journal_io.last_words`:
+    a confirmation and a re-open written by two writers in the same second
+    have no recorded order, and the confirmation then does not cover the task
+    - the gate asks again, where reading either order as the fact could
+    commit a re-opened task unasked."""
     try:
         rows = _journal_io.read_all(ctx["project"])
     except Exception:                                          # noqa: BLE001
         return set()
     head = RISK_COVERED % (phase_id,)
-    covered = set()
-    for row in rows:
-        summary = str(row.get("summary") or "")
+
+    def words_of(row):
         if row.get("action") == TASK_REOPEN:
-            covered.discard(str((row.get("details") or {}).get("taskId")))
-            continue
-        if row.get("action") != RISK_CONFIRMED or str(row.get("target")) != phase_id \
-                or not summary.startswith(head):
-            continue
-        ids = summary[len(head):]
-        clipped = ids.endswith(TRUNCATED)
-        ids = [i.strip() for i in ids[:-len(TRUNCATED)].split(",")] if clipped \
-            else [i.strip() for i in ids.split(",")]
-        covered.update(i for i in (ids[:-1] if clipped else ids) if i)
-    return covered
+            return [(str((row.get("details") or {}).get("taskId")), TASK_REOPEN)]
+        return [(tid, RISK_CONFIRMED) for tid in _confirmed_ids(row, phase_id, head)]
+
+    return set(tid for tid, words in _journal_io.last_words(rows, words_of).items()
+               if words == set([RISK_CONFIRMED]))
+
+
+def _confirmed_ids(row, phase_id, head):
+    """The task ids one `risk.confirmed` row of `phase_id` names, `[]` for any
+    other row. A clipped summary's last id may be cut, so it is left out."""
+    summary = str(row.get("summary") or "")
+    if row.get("action") != RISK_CONFIRMED or str(row.get("target")) != phase_id \
+            or not summary.startswith(head):
+        return []
+    ids = summary[len(head):]
+    clipped = ids.endswith(TRUNCATED)
+    ids = [i.strip() for i in ids[:-len(TRUNCATED)].split(",")] if clipped \
+        else [i.strip() for i in ids.split(",")]
+    return [i for i in (ids[:-1] if clipped else ids) if i]
 
 
 def standing_use(ctx, phase, task, tree=None):
@@ -7852,7 +7865,11 @@ def standing_review_fix(ctx, state, task):
     `REOPEN_REASON`'s shape). A re-open clears the commit `review_fix` reads,
     so a human's re-open after the fix round closed is told apart here: that
     start is not the hand-back's round, and `spent` says why its findings are
-    not carried. `(None, None, why)` when the journal cannot be read."""
+    not carried. `(None, None, why)` when the journal cannot be read.
+
+    "Newest" is `_journal_io.last_words`'s: re-opens written by two writers in
+    one second have no recorded order, so the hand-back is carried only when
+    every re-open that could be the newest is one."""
     fix = review_fix(state, task)
     if fix is None:
         return None, None, None
@@ -7860,19 +7877,28 @@ def standing_review_fix(ctx, state, task):
         rows = _journal_io.read_all(ctx["project"])
     except Exception as exc:                                   # noqa: BLE001
         return None, None, "the journal could not be read (%s)" % (exc,)
-    last = None
-    for row in rows:
+
+    def words_of(row):
         details = row.get("details") if isinstance(row.get("details"), dict) else {}
         if row.get("action") == TASK_REOPEN and details.get("taskId") == task["id"]:
-            last = details
-    if last is not None and _REOPEN_IDS.match(str(last.get("reason") or "")):
+            return [(task["id"], str(details.get("reason") or ""))]
+        return []
+
+    reasons = _journal_io.last_words(rows, words_of).get(task["id"]) or set()
+    others = sorted(r for r in reasons if not _REOPEN_IDS.match(r))
+    if reasons and not others:
         return fix, None, None
+    if not reasons:
+        newest = "absent from the journal"
+    elif len(reasons) > 1:
+        newest = ("one of the re-opens two writers wrote in the same second, "
+                  "one for '%s'" % (_clip(others[0], 60),))
+    else:
+        newest = "a re-open for '%s'" % (_clip(others[0], 60),)
     return None, ("%s's hand-back of %s is not carried: the newest re-open of it "
                   "is %s, not the drive's hand-back" % (
                       task["id"], finding_list(fix.get("findings") or []),
-                      "absent from the journal" if last is None
-                      else "a re-open for '%s'" % (
-                          _clip(str(last.get("reason") or ""), 60),))), None
+                      newest)), None
 
 
 def _fix_dispatched(fix):
