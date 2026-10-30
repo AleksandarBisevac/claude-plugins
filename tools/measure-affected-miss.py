@@ -22,7 +22,11 @@ commit, every `.py` the commit changed is mutated in two ways - an import-time
 `raise`, and a house-style violation (an annotation) that the tree lints read - one
 mutation at a time, and the sweep is run over the whole tree. A suite that went red
 and that `tools/affected.py --base <parent>` did not select is a MISS; every miss is
-named with the commit, the mutation and the suite.
+named with the commit, the mutation and the suite. The sweep's runner itself runs on
+the commit's unmutated bytes (`SHADOW_LAUNCHER`), so a commit whose mutation lands in
+the runner or in a module it imports is measured rather than killing the process
+doing the measuring; every suite it starts, the runner's own among them, sees the
+mutation.
 
 A RED THE SELECTION DID NOT NAME IS CHECKED TWICE BEFORE IT IS COUNTED. It is run
 again alone under the same mutation (a timeout under load is not a miss), and then
@@ -62,9 +66,14 @@ WHAT IT DOES NOT SAY.
   - A commit that could not be measured (the worktree, the selector or the sweep
     failed) is named with the reason and is not counted as a zero.
   - A CI miss is a failing suite its commit's selection did not name, whatever made it
-    fail. A suite already red before the commit, a platform-only red and a flaky one
-    are all counted, so the CI figure is an UPPER bound on the misses the diff itself
-    caused; the mutation half is the one that attributes a red to a change.
+    fail - with one exception, reported apart as `platform-only`: a suite only
+    Windows jobs named, where the same slice on a posix runner concluded `success`
+    and no posix twin of those jobs concluded otherwise (`gh run view --json jobs`
+    is asked; `platform_only` holds the rule). A posix selection cannot see that red,
+    and the mutation half, which runs on posix, cannot produce it. A suite already
+    red before the commit, a flaky one, and a platform red gh could not confirm
+    are all counted, so the CI figure is an UPPER bound on the misses the diff
+    itself caused; the mutation half is the one that attributes a red to a change.
   - The two mutations are two plausible faults, not the set of all faults. A miss rate
     from them is a floor on the true rate for the faults they model and says nothing
     about the rest.
@@ -115,6 +124,11 @@ EXEMPT_LINE = re.compile(r"(?:^|\s)EXEMPT ")
 SUMMARY_LINE = re.compile(r"\b\d+/\d+ files ok\b")
 CI_PREFIX = re.compile(r"^(.*?)\d{4}-\d\d-\d\dT[\d:.]+Z ?")
 SELFTEST_GATE = re.compile(r"\bpython3? (\S+) --selftest\b")
+# The words a CI job's name carries for the runner it ran on. A red only a job on the
+# first kind named, while the same slice passed on the second, is a platform-only red
+# a selection taken on posix cannot see (`platform_only`).
+NON_POSIX_PLATFORMS = ("windows",)
+POSIX_PLATFORMS = ("linux", "ubuntu", "macos")
 PY_SUFFIX = "." + "py"
 CODING_COMMENT = re.compile(rb"^#.*coding[:=]")
 
@@ -134,6 +148,65 @@ DEFAULTS = {
 # Where `--selector` puts its file in a scratch tree: the path the default selector
 # command runs, so the file reads its repository from that tree.
 SELECTOR_REL = "tools/affected.py"
+
+# THE RUNNER IS NOT WHAT A MUTATION MEASURES. A commit that changed the sweep runner,
+# or a module the runner imports, plants the import-time raise in the process doing
+# the measuring, and it died before a suite ran. So a sweep under a mutation runs its
+# runner through this launcher: the runner's PROCESS imports the unmutated bytes of
+# every mutated file, compiled from the bytes held before the mutation (never from a
+# cache a mutated import wrote) under the tree's own path, so every path the runner
+# derives from `__file__` is still the tree's. Every suite it starts is a fresh
+# interpreter reading the tree as mutated - the runner's own suite among them.
+SHADOW_LAUNCHER = """\
+import importlib.machinery, importlib.util, json, os, sys, types
+
+
+def _key(path):
+    return os.path.normcase(os.path.realpath(path))
+
+
+def _main():
+    with open(sys.argv[1], encoding="utf-8") as fh:
+        plan = json.load(fh)
+    held = dict((_key(k), v) for k, v in plan["shadow"].items())
+
+    def unmutated(path):
+        copy = held.get(_key(path))
+        if copy is None:
+            return None
+        with open(copy, "rb") as fh:
+            return fh.read()
+
+    def find_spec(name, path=None, target=None):
+        spec = importlib.machinery.PathFinder.find_spec(name, path)
+        data = unmutated(spec.origin) if spec is not None and spec.origin else None
+        if data is None:
+            return None
+        origin = spec.origin
+
+        def exec_module(module):
+            exec(compile(data, origin, "exec"), module.__dict__)
+
+        loader = types.SimpleNamespace(create_module=lambda _spec: None,
+                                       exec_module=exec_module)
+        return importlib.util.spec_from_file_location(name, origin, loader=loader)
+
+    sys.meta_path.insert(0, types.SimpleNamespace(find_spec=find_spec))
+    runner = plan["runner"]
+    data = unmutated(runner)
+    if data is None:
+        with open(runner, "rb") as fh:
+            data = fh.read()
+    sys.argv = [runner] + sys.argv[2:]
+    sys.path[0] = os.path.dirname(runner)
+    main = types.ModuleType("__main__")
+    main.__file__ = runner
+    sys.modules["__main__"] = main
+    exec(compile(data, runner, "exec"), main.__dict__)
+
+
+_main()
+"""
 
 
 # --- running things -------------------------------------------------------------
@@ -220,6 +293,17 @@ def parse_sweep(text):
     return {"complete": bool(summaries), "red": red, "other": other}
 
 
+def _last_summaries(text):
+    """`{prefix: line index}` of the final summary each `job<TAB>step<TAB>` prefix
+    printed."""
+    last = {}
+    for at, line in enumerate((text or "").splitlines()):
+        if SUMMARY_LINE.search(line):
+            got = CI_PREFIX.match(line)
+            last[got.group(1) if got else ""] = at
+    return last
+
+
 def parse_ci_log(text):
     """The failing suites a `gh run view --log-failed` log names, once each.
 
@@ -229,13 +313,45 @@ def parse_ci_log(text):
     in front of them and each group's final summary is the one whose block is read.
     A log with no summary line names no suite - and the caller sets such a run
     apart as naming no suite, rather than reading anything else as a verdict."""
-    lines = (text or "").splitlines()
-    last = {}
-    for at, line in enumerate(lines):
-        if SUMMARY_LINE.search(line):
-            got = CI_PREFIX.match(line)
-            last[got.group(1) if got else ""] = at
-    return _failures(text, sorted(last.values()))[0]
+    return _failures(text, sorted(_last_summaries(text).values()))[0]
+
+
+def parse_ci_log_jobs(text):
+    """`{job name: [failing suites]}` - `parse_ci_log`'s reading, kept per job."""
+    jobs = {}
+    for prefix, at in _last_summaries(text).items():
+        job = prefix.split("\t", 1)[0].strip()
+        jobs[job] = sorted(set(jobs.get(job, [])) | set(_failures(text, [at])[0]))
+    return jobs
+
+
+def counterparts(job):
+    """The names the same slice carries on a posix runner, when `job` names a
+    non-posix one; none for a job that already ran on posix."""
+    low = job.lower()
+    for word in NON_POSIX_PLATFORMS:
+        if word in low:
+            at = low.index(word)
+            return [job[:at] + posix + job[at + len(word):] for posix in POSIX_PLATFORMS]
+    return []
+
+
+def platform_only(by_job, suites, conclusions):
+    """The suites among `suites` that only non-posix jobs named as failing, where a
+    posix twin of one of those jobs concluded `success` and no posix twin of any of
+    them concluded anything else. A leg only the non-posix runner has (a legacy code
+    page) has no twin, so it neither proves nor refutes; a twin that failed or was
+    cancelled refutes, and a suite with no passing twin stays a miss."""
+    found = []
+    for suite in suites:
+        jobs = [job for job, named in by_job.items() if suite in named]
+        if not jobs or not all(counterparts(job) for job in jobs):
+            continue
+        twins = [conclusions[c] for job in jobs for c in counterparts(job)
+                 if c in conclusions]
+        if twins and all(seen == "success" for seen in twins):
+            found.append(suite)
+    return found
 
 
 def read_selection(rc, text):
@@ -373,9 +489,53 @@ def changed_python(repo, parent, sha, env):
 
 
 # --- measuring one commit ----------------------------------------------------------
-def _sweep(opts, tree, paths):
-    rc, text = run_cmd(opts["sweep_cmd"] + list(paths), tree, opts["env"],
-                       opts["timeout"])
+def runner_index(cmd):
+    """Where the sweep command names its runner: the first Python file after the
+    interpreter, or None for a runner this cannot hand an unmutated copy to."""
+    for at, word in enumerate(cmd[1:], 1):
+        if word.endswith(PY_SUFFIX):
+            return at
+    return None
+
+
+def write_shadow(where, tree, cmd, held):
+    """The sweep command rewritten to start its runner through `SHADOW_LAUNCHER`,
+    with `held` (repository path to unmutated bytes) written under `where`; or the
+    command unchanged when it names no Python runner, or nothing is held."""
+    at = runner_index(cmd)
+    if at is None or not held:
+        return list(cmd)
+    copies = {}
+    for index, (rel, data) in enumerate(sorted(held.items())):
+        copy = os.path.join(where, "held-%d" % (index,))
+        with open(copy, "wb") as fh:
+            fh.write(data)
+        copies[os.path.join(tree, *rel.split("/"))] = copy
+    runner = cmd[at] if os.path.isabs(cmd[at]) else os.path.join(tree, cmd[at])
+    plan = os.path.join(where, "plan.json")
+    with io.open(plan, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"runner": runner, "shadow": copies}))
+    launcher = os.path.join(where, "launcher" + PY_SUFFIX)
+    with io.open(launcher, "w", encoding="utf-8") as fh:
+        fh.write(SHADOW_LAUNCHER)
+    return list(cmd[:at]) + [launcher, plan] + list(cmd[at + 1:])
+
+
+def _sweep(opts, tree, paths, held=None):
+    """One sweep of `tree`. `held` is the unmutated bytes of what a mutation changed,
+    by repository path: the runner's own process runs on them (`SHADOW_LAUNCHER`),
+    and the scratch directory holding them is outside the tree and removed after."""
+    where = None
+    cmd = opts["sweep_cmd"]
+    try:
+        if held and runner_index(cmd) is not None:
+            where = tempfile.mkdtemp(prefix=SCRATCH_PREFIX + "runner-",
+                                     dir=opts["scratch_dir"] or tempfile.gettempdir())
+            cmd = write_shadow(where, tree, cmd, held)
+        rc, text = run_cmd(cmd + list(paths), tree, opts["env"], opts["timeout"])
+    finally:
+        if where is not None:
+            _output.remove_tree(where)
     got = parse_sweep(text)
     got["why"] = "" if got["complete"] else "sweep exit %s said: %s" % (rc, tail(text))
     return got
@@ -403,7 +563,7 @@ def run_mutation(opts, tree, kind, originals, sel):
         for rel, data in sorted(originals.items()):
             with open(os.path.join(tree, rel), "wb") as fh:
                 fh.write(mutate(kind, data))
-        first = _sweep(opts, tree, [])
+        first = _sweep(opts, tree, [], originals)
         if not first["complete"]:
             rec.update(status="sweep-unreadable", why=first["why"])
             return rec
@@ -414,7 +574,7 @@ def run_mutation(opts, tree, kind, originals, sel):
         unselected = [p for p in first["red"] if not is_selected(sel, p)]
         rec["unselected"] = len(unselected)
         if unselected:
-            again = _sweep(opts, tree, unselected)
+            again = _sweep(opts, tree, unselected, originals)
             if not again["complete"]:
                 rec.update(status="sweep-unreadable", why=again["why"])
                 return rec
@@ -623,6 +783,20 @@ def window_truncated(listed, limit, since):
     return not any(t is not None and t < since for t in made)
 
 
+def job_conclusions(gh, run_id, repo, env):
+    """`{job name: conclusion}` for one run, or `{}` when gh could not say - which
+    leaves every red a miss, the upper-bound reading."""
+    rc, text = run_cmd(gh + ["run", "view", str(run_id), "--json", "jobs"], repo, env,
+                       120)
+    try:
+        body = json.loads(text) if rc == 0 else None
+    except ValueError:
+        body = None
+    jobs = body.get("jobs") if isinstance(body, dict) else None
+    return dict((job.get("name") or "", job.get("conclusion") or "")
+                for job in jobs or [] if isinstance(job, dict))
+
+
 def ci_half(opts, shas):
     """`{"asked": False, "why"}` when gh could not be asked, else the runs read.
 
@@ -653,7 +827,7 @@ def ci_half(opts, shas):
             continue
         rec = {"id": item.get("databaseId"), "sha": item.get("headSha") or "",
                "workflow": item.get("workflowName") or "", "status": "", "why": "",
-               "failing": [], "missed": []}
+               "failing": [], "missed": [], "platform": []}
         rc, log = run_cmd(gh + ["run", "view", str(rec["id"]), "--log-failed"],
                           repo, env, 300)
         if rc != 0:
@@ -667,8 +841,13 @@ def ci_half(opts, shas):
                 if not sel["readable"]:
                     rec.update(status="unread", why=sel["why"])
                 else:
-                    rec["missed"] = [p for p in rec["failing"]
-                                     if not is_selected(sel, p)]
+                    missed = [p for p in rec["failing"] if not is_selected(sel, p)]
+                    by_job = parse_ci_log_jobs(log)
+                    if any(counterparts(job) for job, named in by_job.items()
+                           if set(named) & set(missed)):
+                        rec["platform"] = platform_only(
+                            by_job, missed, job_conclusions(gh, rec["id"], repo, env))
+                    rec["missed"] = [p for p in missed if p not in rec["platform"]]
                     rec["status"] = "read"
         runs.append(rec)
     return {"asked": True, "why": "", "runs": runs, "truncated": truncated}
@@ -771,6 +950,10 @@ def render(result):
             tag = "CI run %s (%s %s)" % (run["id"], run["workflow"], run["sha"][:9])
             for path in run["missed"]:
                 lines.append("MISS  %s  %s" % (tag, path))
+            for path in run.get("platform", []):
+                lines.append("platform-only  %s  %s  (red only on a non-posix runner "
+                             "while the same slice passed on posix - not a selection "
+                             "miss)" % (tag, path))
             if run["status"] == "unread":
                 lines.append("CI unread  %s  %s" % (tag, run["why"]))
     if not result.get("mutation", True):
@@ -788,6 +971,9 @@ def render(result):
         read = [r for r in ci["runs"] if r["status"] == "read"]
         tail_text = "%d of %d runs (CI)" % (
             sum(1 for r in read if r["missed"]), len(read))
+        platform = sum(len(r.get("platform", [])) for r in read)
+        if platform:
+            tail_text += ", %d platform-only red(s) set apart" % (platform,)
         if ci.get("truncated"):
             tail_text += (" - WINDOW TRUNCATED at the run limit (--ci-limit): gh "
                           "listed as many failed runs as it was allowed and the "
@@ -927,6 +1113,51 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import mod_a
 """
 
+# A `gh` standing in for the real one: the run list, each run's failed-job log, and -
+# asked with `--json jobs` - each run's jobs and how they concluded, all read from
+# files beside it. A file it does not hold is a failed `gh` call.
+GH_STUB = """\
+import os, sys
+d = os.path.dirname(os.path.abspath(__file__))
+a = sys.argv[1:]
+if a[:2] == ['run', 'list']:
+    name = 'runs.json'
+elif a[:2] == ['run', 'view'] and '--json' in a:
+    name = 'jobs-%s.json' % a[2]
+elif a[:2] == ['run', 'view']:
+    name = 'log-%s.txt' % a[2]
+else:
+    sys.exit(3)
+if not os.path.exists(os.path.join(d, name)):
+    sys.exit(4)
+sys.stdout.write(open(os.path.join(d, name)).read())
+"""
+
+# The runner shape this repository's sweep has: it imports a lint module of its own
+# at import time, and its own suite runs it. A probe flag answers before any suite is
+# swept, so the runner's suite can start it without sweeping itself.
+FAKE_SWEEP_LINTED = """\
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import fake_lints
+if "--probe" in sys.argv[1:]:
+    sys.exit(0)
+""" + FAKE_SWEEP
+
+TEST_USES_LINTS = """\
+import os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",
+                                "tools"))
+import fake_lints
+"""
+
+TEST_RUNS_RUNNER = """\
+import os, subprocess, sys
+root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.exit(subprocess.run([sys.executable, os.path.join(root, "tools", %r),
+                         "--probe"]).returncode)
+"""
+
 
 def _write(path, text):
     directory = os.path.dirname(path)
@@ -948,9 +1179,10 @@ def _fixture_env(root):
     return env
 
 
-def build_repo(root, selection, broken=False, flaky=False):
+def build_repo(root, selection, broken=False, flaky=False, runner=False):
     """A repository of two task commits over a base: one changes a module, one
-    only a text file. `{"problem": str}` when git could not build it."""
+    only a text file - and with `runner`, a third that changes the sweep runner and
+    the lint module it imports. `{"problem": str}` when git could not build it."""
     env = _fixture_env(root)
     repo = os.path.join(root, "repo")
     os.makedirs(repo)
@@ -967,7 +1199,13 @@ def build_repo(root, selection, broken=False, flaky=False):
                "import os, sys\nmarker = %r\nif not os.path.exists(marker):\n"
                "    open(marker, 'w').close()\n    sys.exit(1)\n"
                % os.path.join(root, "flaky-marker"))
-    _write(os.path.join(repo, "tools", _py("fake_sweep")), FAKE_SWEEP)
+    _write(os.path.join(repo, "tools", _py("fake_sweep")),
+           FAKE_SWEEP_LINTED if runner else FAKE_SWEEP)
+    if runner:
+        _write(os.path.join(repo, "tools", _py("fake_lints")), "LINT = 1\n")
+        _write(os.path.join(repo, "tests", _py("test_lints")), TEST_USES_LINTS)
+        _write(os.path.join(repo, "tests", _py("test_runner")),
+               TEST_RUNS_RUNNER % (_py("fake_sweep"),))
     _write(os.path.join(repo, "tools", _py("fake_affected")), FAKE_AFFECTED)
     _write(os.path.join(repo, "selection.txt"), "".join(s + "\n" for s in selection))
     _write(os.path.join(repo, "notes.txt"), "one\n")
@@ -990,6 +1228,16 @@ def build_repo(root, selection, broken=False, flaky=False):
         if rc != 0:
             return {"problem": "git %s: %s" % (args[0], text.strip())}
     rc, shas["note"] = git(["rev-parse", "HEAD"], repo, env)
+    if runner:
+        for rel in (_py("fake_sweep"), _py("fake_lints")):
+            with io.open(os.path.join(repo, "tools", rel), "a", encoding="utf-8") as fh:
+                fh.write("# changed by the runner commit\n")
+        for args in (["add", "-A"],
+                     ["commit", "-qm", "feat(P9.3): change the runner and its lint"]):
+            rc, text = git(args, repo, env)
+            if rc != 0:
+                return {"problem": "git %s: %s" % (args[0], text.strip())}
+        rc, shas["runner"] = git(["rev-parse", "HEAD"], repo, env)
     return {"repo": repo, "env": env, "shas": {k: v.strip() for k, v in shas.items()}}
 
 
@@ -1098,10 +1346,10 @@ def _cases(check):
     # --- the measurement, against a fixture repository -------------------------
     roots = []
 
-    def fixture(selection, broken=False, flaky=False):
+    def fixture(selection, broken=False, flaky=False, runner=False):
         root = tempfile.mkdtemp(prefix="measure-affected-miss-selftest-")
         roots.append(root)
-        return build_repo(root, selection, broken, flaky)
+        return build_repo(root, selection, broken, flaky, runner)
 
     def mutations_of(result, kind):
         return [m for r in result["commits"] for m in r["mutations"]
@@ -1220,6 +1468,29 @@ def _cases(check):
               and steady_raise["missed"] == [_t("test_b")]
               and "green on the second run" in "\n".join(render(unsteady)))
 
+        # A commit whose mutation lands in the sweep runner, and in a lint module the
+        # runner imports, kills the runner at import - so the measurement runs the
+        # mutated tree's suites under an unmutated copy of both. The two suites that
+        # go red are the proof the mutation was still seen where it belongs: one
+        # imports the lint, the other is the runner's own suite and starts it.
+        lined = fixture([_py("test_a")], runner=True)
+        before_runner = tmp_scratch()
+        through = measure(_fixture_opts(lined))
+        runner_rec = [r for r in through["commits"]
+                      if r["sha"] == lined["shas"].get("runner")]
+        runner_raise = [m for r in runner_rec for m in r["mutations"]
+                        if m["kind"] == "raise"]
+        check("m21 a commit whose mutation lands in the sweep runner and in the lint "
+              "module it imports is MEASURED, not could-not-measure: its suites ran "
+              "under an unmutated runner, and the runner's own suite and the lint's "
+              "suite still saw the mutation and are the misses - with no scratch "
+              "left behind: %r"
+              % ([(r["status"], r["why"]) for r in runner_rec],),
+              [r["status"] for r in runner_rec] == ["measured"]
+              and len(runner_raise) == 1
+              and runner_raise[0]["missed"] == [_t("test_lints"), _t("test_runner")]
+              and through["measured"] == 2 and tmp_scratch() == before_runner)
+
         # a sweep that cannot be read is not a clean sweep
         broken_sweep = measure(_fixture_opts(
             fx, sweep_cmd=[sys.executable, os.path.join("tools", _py("absent"))]))
@@ -1278,16 +1549,7 @@ def _cases(check):
                + "selftests\tverify\t2026 1/2 files ok, 3 cases\n== selftests: FAILED\n")
         _write(os.path.join(stub_dir, "log-4.txt"), "Error: the lint job failed\n")
         _write(os.path.join(stub_dir, "log-5.txt"), "Error: the lint job failed\n")
-        _write(os.path.join(stub_dir, _py("gh_stub")),
-               "import os, sys\n"
-               "d = os.path.dirname(os.path.abspath(__file__))\n"
-               "a = sys.argv[1:]\n"
-               "if a[:2] == ['run', 'list']:\n"
-               "    sys.stdout.write(open(os.path.join(d, 'runs.json')).read())\n"
-               "elif a[:2] == ['run', 'view']:\n"
-               "    sys.stdout.write(open(os.path.join(d, 'log-%s.txt' % a[2])).read())\n"
-               "else:\n"
-               "    sys.exit(3)\n")
+        _write(os.path.join(stub_dir, _py("gh_stub")), GH_STUB)
         asked = ci_half(_fixture_opts(
             fx, ci=True, ci_since="2020-01-01",
             gh_cmd=[sys.executable, os.path.join(stub_dir, _py("gh_stub"))]), [])
@@ -1334,6 +1596,72 @@ def _cases(check):
               and reached.get("truncated") is False
               and asked.get("truncated") is False
               and "WINDOW TRUNCATED" not in shown_ci)
+
+        # A red only a Windows job named, while the same slice on a posix runner
+        # passed, is a platform-only red: a selection taken on posix cannot see it,
+        # and it is reported apart from the misses. The other runs are the directions
+        # that must stay misses: a twin that did not pass, a suite a posix job named
+        # beside a Windows job whose twin passed, and a suite only a leg with no posix
+        # twin named.
+        plat_dir = tempfile.mkdtemp(prefix="measure-affected-miss-gh-")
+        roots.append(plat_dir)
+        harness = "tests/" + _py("_harness")
+        winjob = "selftests (windows, plain 1)\tverify\t2026-10-27T13:44:01.6Z "
+        # A leg only Windows runs (a legacy code page): it has no posix twin, so it
+        # neither proves nor refutes - the twin of the other job naming it decides.
+        cpjob = "selftests (windows, cp1252 1)\tverify\t2026-10-27T13:40:30.9Z "
+        linjob = "selftests (linux, stress 1)\tverify\t2026-10-27T13:44:01.6Z "
+        _write(os.path.join(plat_dir, "runs.json"), json.dumps([
+            {"databaseId": n, "headSha": module, "createdAt": stamp,
+             "workflowName": "ci"} for n in (6, 7, 8, 9)]))
+        for n in (6, 7):
+            _write(os.path.join(plat_dir, "log-%d.txt" % n),
+                   cpjob + "FAIL  %s: exited 1\n" % harness
+                   + cpjob + "59/60 files ok, 5538 cases\n"
+                   + winjob + "FAIL  %s: exited 1\n" % harness
+                   + winjob + "59/60 files ok, 5538 cases\n")
+        _write(os.path.join(plat_dir, "log-8.txt"),
+               winjob + "FAIL  %s: exited 1\n" % _t("test_b")
+               + winjob + "1/2 files ok, 3 cases\n"
+               + linjob + "FAIL  %s: exited 1\n" % _t("test_b")
+               + linjob + "1/2 files ok, 3 cases\n")
+        _write(os.path.join(plat_dir, "log-9.txt"),
+               cpjob + "FAIL  %s: exited 1\n" % harness
+               + cpjob + "59/60 files ok, 5538 cases\n")
+        for n, posix in ((6, "success"), (7, "cancelled"), (8, "success"),
+                         (9, "success")):
+            _write(os.path.join(plat_dir, "jobs-%d.json" % n), json.dumps({"jobs": [
+                {"name": "selftests (windows, plain 1)",
+                 "conclusion": "failure" if n != 9 else "success"},
+                {"name": "selftests (windows, cp1252 1)",
+                 "conclusion": "failure" if n != 8 else "success"},
+                {"name": "selftests (linux, plain 1)", "conclusion": posix},
+                {"name": "selftests (linux, stress 1)",
+                 "conclusion": "failure" if n == 8 else "success"}]}))
+        _write(os.path.join(plat_dir, _py("gh_stub")), GH_STUB)
+        plat = ci_half(_fixture_opts(
+            fx, ci=True, ci_since="2020-01-01",
+            gh_cmd=[sys.executable, os.path.join(plat_dir, _py("gh_stub"))]), [])
+        plat_by = {r["id"]: r for r in plat.get("runs", [])}
+        plat_text = "\n".join(render({
+            "problem": "", "commits": result["commits"], "measured": 1,
+            "stopped": None, "ci": plat, "range": result["range"]}))
+        check("m22 a suite red only in a Windows job whose posix counterpart passed "
+              "is a platform-only red, reported apart and not counted as a miss; "
+              "one whose counterpart did not pass, and one a posix job named, stay "
+              "misses: %r"
+              % (dict((n, (r.get("missed"), r.get("platform")))
+                      for n, r in sorted(plat_by.items())),),
+              sorted(plat_by) == [6, 7, 8, 9]
+              and plat_by[6].get("missed") == [] and plat_by[6].get("platform") == [harness]
+              and plat_by[7].get("missed") == [harness] and plat_by[7].get("platform") == []
+              and plat_by[8].get("missed") == [_t("test_b")]
+              and plat_by[8].get("platform") == []
+              and plat_by[9].get("missed") == [harness] and plat_by[9].get("platform") == []
+              and "platform-only  CI run 6" in plat_text
+              and "MISS  CI run 6" not in plat_text
+              and "3 of 4 runs (CI)" in plat_text
+              and "1 platform-only red" in plat_text)
 
         only = measure(_fixture_opts(
             fx, mutation=False, ci=True, ci_since="2020-01-01",

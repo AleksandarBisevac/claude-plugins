@@ -42,9 +42,12 @@ this repo has gone red exactly that way.
 
 WHAT A SUITE REACHES is read the same way, off the code rather than a list: what it
 imports, what it loads or resolves through `_loader` or the hooks' resolver, what a
-suite or a tool names inside a call (the subprocess it starts, the source it reads),
-and onward through each of those, however many files away. What that reading cannot
-see: a target computed at runtime in the product's own code, and a file loaded
+suite, a tool or one of the repository's own hooks names inside a call (the
+subprocess it starts, the source it reads), and onward through each of those,
+however many files away. A path assembled from literal pieces - a join, a `+`, a
+module-level constant holding either - is read as the literal it spells, and a
+document read that way reaches what the commands it records run. What that reading
+cannot see: a target computed at runtime in the product's own code, and a file loaded
 through `importlib` by a computed path - neither shows up here, and the miss
 measurement is what finds them.
 """
@@ -53,6 +56,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -232,10 +236,14 @@ def changed_files(base, explicit):
 # run or load - imports read as `_deps` reads them, loads through the loader names
 # `_deps` keeps - and widened by the ways this repo runs a file it does not import.
 #
-# The directories a red-turning `.py` can sit in. `.claude/hooks/` is not one: a path
-# there matches no branch of `select()` and widens to the full set.
+# The directories a red-turning `.py` can sit in. `.claude/hooks/` is one: the sweep
+# runs every hook there for its own cases, and those hooks import plugin modules
+# off a `sys.path` entry they assemble themselves, so a plugin change turns them red
+# exactly as it turns a suite red. A path IN that directory still matches no branch
+# of `select()` and widens to the full set; this is about what reaches the plugin.
+REPO_HOOKS = ".claude/hooks/"
 REACH_DIRS = (_output.SCRIPTS_DIR, _output.HOOKS_DIR, _output.TESTS_DIR,
-              os.path.join(REPO, "tools"))
+              os.path.join(REPO, "tools"), os.path.join(REPO, *REPO_HOOKS.split("/")))
 
 # The calls that run or load a file named in their arguments, by the module that
 # holds them - read through that module, never by a bare name, because `json.load`
@@ -272,8 +280,10 @@ def _is_dev(rel):
     """Development code: a suite, a suite helper, a tool. Its `.py` literals inside a
     call are what it runs; the product's are mostly text - a brief naming the next
     command, a table of areas - and reading them as runs made every suite reach every
-    other one through a sentence."""
-    return rel.startswith(TESTS + "/") or rel.startswith("tools/")
+    other one through a sentence. The repository's own hooks are development code
+    too: they ship nowhere, and the sweep runs each one's cases."""
+    return (rel.startswith(TESTS + "/") or rel.startswith("tools/")
+            or rel.startswith(REPO_HOOKS))
 
 
 def _call_name(call):
@@ -285,18 +295,105 @@ def _call_name(call):
     return None
 
 
+# The joins that assemble a path, read by the module they are reached through - a
+# bare `join` is `str.join` as often as not.
+PATH_JOIN_MODULES = ("posixpath", "ntpath")
+
+# What a document a file reads can make it run: a command it records. The listing
+# commands a phase gate spells are read out of `CONTRIBUTING.md` by a suite and run,
+# so a document read by development code is an edge like an import.
+DOC_EXT = (".md",)
+DOC_COMMAND = re.compile(r"\bpython3?(?:\s+-\S+)*\s+((?:[\w.-]+/)*[\w.-]+\.py)\b")
+
+
+def _is_path_join(call):
+    """`os.path.join(...)` or `posixpath.join(...)` - the call that assembles a path."""
+    func = call.func
+    if not (isinstance(func, ast.Attribute) and func.attr == "join"):
+        return False
+    owner = func.value
+    if isinstance(owner, ast.Name):
+        return owner.id in PATH_JOIN_MODULES
+    return (isinstance(owner, ast.Attribute) and owner.attr == "path"
+            and isinstance(owner.value, ast.Name) and owner.value.id == "os")
+
+
+def _assembled(node, strings):
+    """The POSIX path an expression spells out of literal pieces, or None.
+
+    A literal; a name bound to an assembled module-level string; a `+` of two of
+    those; or a path join of them, where LEADING pieces that are not literal - the
+    repository root, a temp directory - are where the path is anchored rather than
+    part of it. A non-literal piece after the first literal one is a path computed at
+    runtime, and that is None: what this cannot spell it does not guess."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value.replace("\\", "/")
+    if isinstance(node, ast.Name):
+        return strings.get(node.id)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left = _assembled(node.left, strings)
+        right = _assembled(node.right, strings)
+        return left + right if left is not None and right is not None else None
+    if isinstance(node, ast.Call) and _is_path_join(node) and not node.keywords:
+        pieces = [_assembled(arg, strings) for arg in node.args]
+        while pieces and pieces[0] is None:
+            pieces.pop(0)
+        if not pieces or None in pieces:
+            return None
+        return "/".join(piece.strip("/") for piece in pieces if piece.strip("/"))
+    return None
+
+
 def _py_constants(tree):
-    """Module-level `NAME = "....py"` bindings - `DRIVER = "drive-phase.py"` and
-    `load_script(DRIVER)` are one target spelled in two places."""
-    out = {}
+    """Every module-level string binding this can assemble, by name:
+    `DRIVER = "drive-phase.py"` and `load_script(DRIVER)` are one target spelled in
+    two places, and so are `CLOSE_REL = os.path.join("plugins", ..., "close-phase.py")`
+    and the call that uses it. Read in order, so a constant assembled from an earlier
+    one resolves; a name rebound to something unspellable is dropped, never kept at
+    its earlier value. Which of them name a module or a document is the reader's
+    question (`_note_path`), not this one's - a directory constant is a piece of a
+    later path."""
+    strings = {}
     for node in tree.body:
         if isinstance(node, ast.Assign) and len(node.targets) == 1 \
-                and isinstance(node.targets[0], ast.Name) \
-                and isinstance(node.value, ast.Constant) \
-                and isinstance(node.value.value, str) \
-                and node.value.value.endswith(".py"):
-            out[node.targets[0].id] = _stem(node.value.value)
-    return out
+                and isinstance(node.targets[0], ast.Name):
+            value = _assembled(node.value, strings)
+            if value is None:
+                strings.pop(node.targets[0].id, None)
+            else:
+                strings[node.targets[0].id] = value
+    return strings
+
+
+def _note_path(found, open_calls, path):
+    """Record a path named inside a call: a module by its stem, against every call
+    open around it; a document by its repository-relative spelling."""
+    if path is None or not open_calls:
+        return
+    if path.endswith(".py"):
+        stem = _stem(path)
+        found["in_call"].add(stem)
+        for row in open_calls:
+            row[2].add(stem)
+    elif path.endswith(DOC_EXT):
+        found["docs"].add(path)
+
+
+def _doc_command_stems(posix):
+    """The module stems the commands in a document this repository keeps name, or
+    None when it keeps no such document - a fixture's file under a temp root spells
+    the same pieces and is not this one. The name is matched as spelled: a
+    case-insensitive filesystem opens `docs/readme.md` for `docs/README.md`, and a
+    selection must not depend on which filesystem it was taken on."""
+    path = os.path.join(REPO, *posix.split("/"))
+    try:
+        if os.path.basename(path) not in os.listdir(os.path.dirname(path)):
+            return None
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+    except (OSError, ValueError):
+        return None
+    return set(_stem(m.group(1)) for m in DOC_COMMAND.finditer(text))
 
 
 def _scan(tree, consts):
@@ -304,7 +401,9 @@ def _scan(tree, consts):
 
     `imports` holds the first component of every absolute import, read the way
     `_deps._imported_sibling_names()` reads one; `in_call` every module stem a `.py`
-    literal or bound constant names inside a call; `calls` one row per call that
+    literal or bound constant names inside a call - a path assembled from literal
+    pieces (`_assembled`) read as the literal it spells; `docs` every document path
+    named inside a call the same way; `calls` one row per call that
     names a target or could resolve one - `(name, qualifier, targets, forwards,
     has_args, function)`, where `forwards` says the call passes on a parameter of the
     function it sits in; `fn_calls` the call names inside each function; `aliases`
@@ -314,11 +413,15 @@ def _scan(tree, consts):
     selection, and the first version, walking each tree once per question, spent
     more on the walks than on the parse."""
     found = {"imports": set(), "in_call": set(), "calls": [], "fn_calls": {},
-             "aliases": {}, "from_names": {}}
+             "aliases": {}, "from_names": {}, "docs": set()}
     frames, open_calls = [], []
-    stack = [(tree, True)]
+    # The third field says the node is a PIECE of a path being assembled - an
+    # argument of a join, an operand of a `+` - and is read through the whole it
+    # belongs to: `os.path.join(tmp, "docs", "README.md")` names `docs/README.md`,
+    # never the repository's own `README.md`.
+    stack = [(tree, True, False)]
     while stack:
-        node, entering = stack.pop()
+        node, entering, piece = stack.pop()
         if not entering:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 frames.pop()
@@ -327,7 +430,7 @@ def _scan(tree, consts):
                 if row[0] is not None:
                     found["calls"].append(tuple(row))
             continue
-        stack.append((node, False))
+        stack.append((node, False, piece))
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             params = set(a.arg for a in ast.walk(node.args) if isinstance(a, ast.arg))
             frames.append((node.name, params))
@@ -344,17 +447,21 @@ def _scan(tree, consts):
                     OS_WALK if (qualifier, name) == ("os", "walk") else name)
             open_calls.append([name, qualifier, set(), False, bool(node.args),
                                frames[-1][0] if frames else None])
+            if not piece and _is_path_join(node):
+                _note_path(found, open_calls, _assembled(node, consts))
+        elif isinstance(node, ast.BinOp):
+            if not piece:
+                _note_path(found, open_calls, _assembled(node, consts))
         elif isinstance(node, ast.Constant) and isinstance(node.value, str) \
-                and node.value.endswith(".py") and open_calls:
-            stem = _stem(node.value)
-            found["in_call"].add(stem)
-            for row in open_calls:
-                row[2].add(stem)
+                and open_calls:
+            # A `.py` literal is a module wherever it sits, a piece included - the
+            # name alone is the stem. A document is a path only when whole.
+            if node.value.endswith(".py") or not piece:
+                _note_path(found, open_calls, node.value.replace("\\", "/"))
         elif isinstance(node, ast.Name) and open_calls:
-            if node.id in consts:
-                found["in_call"].add(consts[node.id])
-                for row in open_calls:
-                    row[2].add(consts[node.id])
+            bound = consts.get(node.id)
+            if bound is not None and (bound.endswith(".py") or not piece):
+                _note_path(found, open_calls, bound)
             if frames and node.id in frames[-1][1]:
                 for row in open_calls:
                     row[3] = True
@@ -368,7 +475,9 @@ def _scan(tree, consts):
             found["imports"].add(base)
             for alias in node.names:
                 found["from_names"][alias.asname or alias.name] = (base, alias.name)
-        stack.extend((child, True) for child in ast.iter_child_nodes(node))
+        pieces = isinstance(node, ast.BinOp) or (isinstance(node, ast.Call)
+                                                 and _is_path_join(node))
+        stack.extend((child, True, pieces) for child in ast.iter_child_nodes(node))
     return found
 
 
@@ -411,15 +520,21 @@ def _is_resolver(scan, name, qualifier):
     return original in RESOLVERS.get(mod, ())
 
 
-def _file_edges(rel, scan, known, wrappers):
+def _file_edges(rel, scan, known, wrappers, doc_stems=None):
     """`(imports, runs, unknown)` for one file.
 
     `imports` is what it imports by bare name; `runs` what it loads, resolves or -
-    for development code - names inside a call; `unknown` is True when a resolver
-    call's target is computed at runtime (a name read out of a document, say), which
-    this graph cannot follow and so reads as every module under `scripts/`."""
+    for development code - names inside a call, plus what the commands of each
+    document it names inside a call run (`doc_stems`, by document path); `unknown`
+    is True when a resolver call's target is computed at runtime (a name read out of
+    a document, say), which this graph cannot follow and so reads as every module
+    under `scripts/`."""
     stem = _stem(rel)
-    runs = set(scan["in_call"]) if _is_dev(rel) else set()
+    runs = set()
+    if _is_dev(rel):
+        runs = set(scan["in_call"])
+        for doc in scan["docs"]:
+            runs |= (doc_stems or {}).get(doc) or set()
     unknown = False
     for name, qualifier, targets, forwards, has_args, _fn in scan["calls"]:
         resolver = _is_resolver(scan, name, qualifier)
@@ -456,9 +571,14 @@ def reach_graph():
     wrappers = set(fn for scan in scans.values()
                    for name, qualifier, _t, forwards, _a, fn in scan["calls"]
                    if forwards and fn and _is_resolver(scan, name, qualifier))
+    doc_stems = {}
+    for rel, scan in scans.items():
+        for doc in scan["docs"] if _is_dev(rel) else ():
+            if doc not in doc_stems:
+                doc_stems[doc] = _doc_command_stems(doc)
     imported_by, run_by = {}, {}
     for rel, scan in scans.items():
-        imports, runs, unknown = _file_edges(rel, scan, known, wrappers)
+        imports, runs, unknown = _file_edges(rel, scan, known, wrappers, doc_stems)
         if unknown:
             runs = runs | (scripts - set((_stem(rel),)))
         for stem in imports:
@@ -476,8 +596,10 @@ def reach_graph():
 
 
 def _is_runner(rel):
-    """A file whose own cases the sweep runs: a suite, or a tool carrying them."""
-    return _is_suite(rel) or (rel.startswith("tools/") and rel not in MIGRATED)
+    """A file whose own cases the sweep runs: a suite, a tool carrying them, or one
+    of the repository's own hooks - `SWEEP_DIRS` in the runner holds all three."""
+    return (_is_suite(rel) or (rel.startswith("tools/") and rel not in MIGRATED)
+            or rel.startswith(REPO_HOOKS))
 
 
 def reached_by(graph, rel):
@@ -1047,6 +1169,43 @@ MEASURED_MISSES = (
       "tests/test_run_agent_session.py",),
      ("tests/test__output_lints.py",
       "tests/test_drive_phase.py",)),
+    # The release hooks reach `_manifest_io` and its siblings through a directory
+    # assembled from literal pieces and put on `sys.path`, and name plugin files
+    # through joins of literal pieces held in module constants.
+    ("a18n", "d36d84e8",
+     ("plugins/audit/scripts/governance/drive-phase.py",
+      "plugins/audit/scripts/manifest/_manifest_phases.py",
+      "plugins/audit/scripts/manifest/_manifest_vocab.py",
+      "plugins/audit/scripts/manifest/audit-task.py",
+      "tests/test__manifest_phases.py",
+      "tests/test__manifest_vocab.py",
+      "tests/test_drive_phase.py",),
+     (".claude/hooks/arm-release-bypass.py",
+      ".claude/hooks/guard-release.py",)),
+    ("a18o", "0b856d0c",
+     ("plugins/audit/scripts/git/_worktrees.py",
+      "plugins/audit/scripts/governance/drive-phase.py",
+      "tests/test__worktrees.py",
+      "tests/test_drive_phase.py",
+      "tools/lints/_deps.py",),
+     (".claude/hooks/arm-release-bypass.py",
+      ".claude/hooks/guard-release.py",)),
+    ("a18p", "862b4941",
+     ("plugins/audit/scripts/git/_worktrees.py",
+      "plugins/audit/scripts/git/manage-worktrees.py",
+      "plugins/audit/scripts/governance/drive-phase.py",
+      "tests/test__worktrees.py",
+      "tests/test_drive_phase.py",
+      "tests/test_manage_worktrees.py",
+      "tools/lints/_deps.py",),
+     (".claude/hooks/arm-release-bypass.py",
+      ".claude/hooks/guard-release.py",)),
+    # A suite reaching this file through a join of a non-literal root and literal
+    # pieces, and through the commands a document it reads that way records.
+    ("a18q", "a1891691",
+     ("tools/affected.py",
+      "tools/measure-affected-miss.py",),
+     ("tests/test_derive_phase_gate.py",)),
 )
 # Suites that measurement named which the tree has since retired. Built rather than
 # written, because a `.py` path under `tools/` that names no file is what
@@ -1364,6 +1523,120 @@ def _cases(check):
           not leaf_sel["full"]
           and "test_record_outside_run.py" in leaf_sel["suites"]
           and len(leaf_sel["suites"]) < len(every))
+
+    # --- a path assembled from literal pieces is read as the literal it spells ---
+    # Each shape is run through the graph's own per-file reading in every directory
+    # whose `.py` is development code, so a reading added for one directory and
+    # not the others is red here. The target is a stem the fixture names; `known`
+    # holds it, the way the real graph's set of files would.
+    # Assembled, because `_refs` reads every module filename written under `tools/`
+    # as a reference to a file that must exist, and these name none.
+    probe = "probe." + "py"
+    dev_homes = ("tests/test_" + probe, "tools/" + probe, REPO_HOOKS + probe)
+    target = "close-phase"
+
+    def edges_of(rel, source):
+        tree = ast.parse(source)
+        imports, runs, unknown = _file_edges(rel, _scan(tree, _py_constants(tree)),
+                                             set((target, "_config")), set())
+        return {"runs": runs, "unknown": unknown}
+
+    def reads_in_every_home(source):
+        return dict((rel, target in edges_of(rel, source)["runs"]) for rel in dev_homes)
+
+    joined = reads_in_every_home(
+        "import os, subprocess, sys\n"
+        "def go(root):\n"
+        "    subprocess.run([sys.executable, os.path.join(\n"
+        "        root, 'plugins', 'audit', 'scripts', 'git', 'close-phase' + '.py')])\n")
+    check("a20 a script reached through `os.path.join` of literal pieces - a "
+          "non-literal root first, the name itself assembled - is read as the path "
+          "it spells, in a hook exactly as in a suite and a tool: %r" % (joined,),
+          all(joined.values()))
+
+    held = reads_in_every_home(
+        "import os, subprocess, sys\n"
+        "CLOSE_REL = 'plugins/audit/scripts/git/' + 'close-phase' + '.py'\n"
+        "def go(root):\n"
+        "    subprocess.run([sys.executable, os.path.join(root, CLOSE_REL)])\n")
+    check("a20b ...and the same path held in a module-level constant, assembled "
+          "where no call is open, is read where the constant is used: %r" % (held,),
+          all(held.values()))
+
+    # Built with `+` where no call is open, so nothing reads the path where it is
+    # defined: only a constant resolved through the earlier ones names it at all.
+    chained = reads_in_every_home(
+        "import os, subprocess, sys\n"
+        "GIT_REL = 'plugins/audit/scripts/' + 'git/'\n"
+        "STEM = 'close-phase'\n"
+        "CLOSE_REL = GIT_REL + STEM + '.py'\n"
+        "def go(root):\n"
+        "    subprocess.run([sys.executable, os.path.join(root, CLOSE_REL)])\n")
+    check("a20c ...and a constant built out of earlier constants: %r" % (chained,),
+          all(chained.values()))
+
+    unused = reads_in_every_home(
+        "CLOSE_REL = 'plugins/audit/scripts/git/' + 'close-phase' + '.py'\n")
+    check("a20d THE OTHER DIRECTION: a constant no call ever uses names nothing - "
+          "reading every assembled string as a reach would select through a "
+          "sentence, which is what the development-code rule exists to refuse: %r"
+          % (unused,),
+          not any(unused.values()))
+
+    shipped = edges_of(
+        "plugins/audit/hooks/" + probe,
+        "import os\nimport _config\n"
+        "SCRIPT_REL = os.path.join('git', 'close-phase' + '.py')\n"
+        "def go():\n    return _config.find_script(SCRIPT_REL)\n")
+    check("a20e a shipped hook resolving a script through a constant assembled "
+          "from pieces names that script, rather than reading as a target computed "
+          "at runtime (which widens to every module under scripts/): %r"
+          % (shipped,),
+          target in shipped["runs"] and shipped["unknown"] is False)
+
+    # A document a suite reads by an assembled path is a node too: the commands it
+    # records are what the suite can run - `test_derive_phase_gate.py` runs the
+    # listing commands `CONTRIBUTING.md` records, which name this file.
+    doc_read = _scan(ast.parse(
+        "import os\ndef go(root):\n"
+        "    return open(os.path.join(root, 'CONTRIBUTING' + '.md')).read()\n"), {})
+    doc_piece = _scan(ast.parse(
+        "import os\ndef go(tmp):\n"
+        "    return os.path.join(tmp, 'docs', 'CONTRIBUTING' + '.md')\n"), {})
+    doc_plus = _scan(ast.parse(
+        "def go():\n    return open('CONTRIBUTING' + '.md').read()\n"), {})
+    check("a20f a document read through a join of literal pieces, or a bare `+` of "
+          "them, is recorded by the path they spell, and a piece of a join is never "
+          "read on its own as a path from the repository root: %r / %r / %r"
+          % (sorted(doc_read.get("docs", ())), sorted(doc_plus.get("docs", ())),
+             sorted(doc_piece.get("docs", ()))),
+          sorted(doc_read.get("docs", ())) == ["CONTRIBUTING.md"]
+          and sorted(doc_plus.get("docs", ())) == ["CONTRIBUTING.md"]
+          and sorted(doc_piece.get("docs", ())) == ["docs/CONTRIBUTING.md"])
+
+    # The edge itself, through the graph's per-file reading with the document's
+    # commands handed in, and the two ways it must NOT fire: a shipped module naming
+    # a document (text, not a run), and a document spelled in another case than the
+    # one the repository keeps.
+    listed = _doc_command_stems("CONTRIBUTING.md") or set()
+    doc_src = ("import os, subprocess\n"
+               "def go(root):\n"
+               "    return open(os.path.join(root, 'CONTRIBUTING.md')).read()\n")
+    doc_tree = ast.parse(doc_src)
+    doc_scan = _scan(doc_tree, _py_constants(doc_tree))
+    by_doc = {"CONTRIBUTING.md": listed}
+    suite_runs = _file_edges("tests/test_" + probe, doc_scan, set(("affected",)),
+                             set(), by_doc)[1]
+    product_runs = _file_edges("plugins/audit/scripts/" + probe, doc_scan,
+                               set(("affected",)), set(), by_doc)[1]
+    check("a20g a suite reading a document by an assembled path reaches the scripts "
+          "the document's commands run - `CONTRIBUTING.md` records this file's "
+          "listing commands - while shipped code naming the same document reaches "
+          "nothing, and a case-folded spelling of a kept document is not that "
+          "document: suite %r, shipped %r" % (sorted(suite_runs), sorted(product_runs)),
+          "affected" in listed and suite_runs == set(("affected",))
+          and product_runs == set()
+          and _doc_command_stems("contributing.md") is None)
 
 
 def _selftest():

@@ -1,7 +1,7 @@
 {
   "id": "P143",
   "title": "The affected selection as the task gate",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "A task's gate is the affected selection, after a re-measurement shows 0 misses over at least 20 commits; whole-tree scanners run once per phase and on push; CI stays inside its wall-time bound",
   "testGate": [
@@ -18,8 +18,8 @@
   "blockedBy": [
     "P142"
   ],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "c185b4cb28ef03f4d4d043e6f802ed08879ab187",
+  "branch": "audit/p143-the-affected-selection-as-the",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -216,7 +216,7 @@
     {
       "id": "P143.4-6yq",
       "title": "The affected selector reaches a hook or suite through an assembled path, and the measurement measures a commit that touches its own runner",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The affected selector pinned at d36d84e8 was re-measured over 20 commits with `tools/measure-affected-miss.py --rev d36d84e8 --commits 26 --selector <tools/affected.py at d36d84e8> --ci-since 2026-10-20`. It missed suites, so the affected selection cannot yet be a task's gate. Fix what it missed, and make the measurement able to measure every commit:\n\n1. An import-time raise in plugins/audit/scripts/governance/drive-phase.py and plugins/audit/scripts/manifest/_manifest_*.py (commits d36d84e8, 0b856d0c, 862b4941) turned `.claude/hooks/guard-release.py` and `.claude/hooks/arm-release-bypass.py` red. The selection named neither. Those hooks reach plugin scripts through a path assembled from string pieces (`os.path.join(\"plugins\", \"audit\", \"scripts\", ...)` held in a module constant) and a subprocess. The reach graph reads a literal path only. Make it read a path assembled from literal pieces, directly or through a module-level constant, the same way it reads a literal. Do this in `.claude/hooks/` exactly as in `tests/` and `tools/`. Add a case per shape that is red on today's selector.\n2. An import-time raise at a1891691 (which changed tools/affected.py and tools/measure-affected-miss.py) turned `tests/test_derive_phase_gate.py` red, unselected. Find the edge the graph does not read and fix it by the same rule as in 1, not by a hand-listed suite. Add a case.\n3. Five commits read could-not-measure (089036e0, 9eeea6d5, 0544c08c, d4a26f13, 46a6e095). In each, the mutation lands in `tools/sweep-selftests.py` or `tools/lints/_output_lints.py`, so the runner doing the measuring dies at import before any suite runs. Run the mutated tree's suites under an unmutated copy of the runner and of the lints it imports, so those commits are measured. The runner's own suite still sees the mutation. A case: a commit touching the runner is measured, not skipped.\n4. Say in your outcome whether CI's Windows miss on 94a097d7 (tests/_harness.py, CRLF; fixed since) is a selection miss or a platform-only red that a posix selection cannot see. If it is the latter, the measurement reports it apart from selection misses.\n\nWho depends on these files: tools/affected.py is called by tools/verify.sh --affected and by plugins/audit/scripts/governance/_affected_tests.py (P143.1 makes it the task gate). tools/measure-affected-miss.py is read by tools/lints/_output_lints.py (a row near the prose-number exemptions). Run both tools' --selftest and tests/test__affected_tests.py, tests/test__output_lints.py and tests/test_derive_phase_gate.py.\n\nDeliver scratchpad/probe/mutations.py (mutations3 engine): one row per fix that removes it, each expected red.\nNo F/P/BUG ids in comments.",
       "files": [
         "tools/affected.py",
@@ -243,21 +243,27 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-30T03:10:21Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-30T03:53:53Z.1fa762",
+        "status": "passed",
+        "at": "2026-10-30T03:53:53Z"
+      }
     },
     {
       "id": "P143.5-6yq",
       "title": "The sweep finishes under four minutes: the drive's suite calls its verbs in-process where no case asserts the process boundary",
-      "status": "pending",
+      "status": "in_progress",
       "description": "`time python3 tools/sweep-selftests.py` must finish in under 240 s wall on the owner's machine, twice, at least 20 minutes apart, on a quiet machine. P142 measured 385.3 s and 385.4 s. The lower bound under perfect packing was about 339 s: summed slot-seconds over the sweep's slots. tests/test_drive_phase.py alone is the largest share, because it starts one process per verb call. Re-derive both figures with the sweep's loud output before you start; do not trust these.\n\nCut test_drive_phase.py's cost by its structure. Call the drive's verbs in-process, through the module the suite already loads, wherever a case does not assert on process behaviour (exit codes, stdio encoding, signal handling, the subprocess boundary itself). Keep a subprocess case for each of those that does. Each converted case must still fail on the bug it guards. Pick a sample of converted cases, mutate the guarded code, show them red, and deliver scratchpad/probe/mutations.py (mutations3 engine).\n\nThen re-record the darwin figures you measured. Report the two timed runs with their start times. If 240 s is still out of reach, say what the remaining critical path is, with the numbers the sweep prints, and do not close the task as met.\n\nWho depends on this: tools/sweep-selftests.py reads the suite's STAGES table for its blocks and .github/sweep-costs.json for its timeouts. tests/_harness.py's staged_main runs the blocks. No F/P/BUG ids in comments.",
       "files": [
         "tests/test_drive_phase.py",
@@ -282,16 +288,24 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-30T03:10:24Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     }
-  ]
+  ],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "4331b4e9-59c2-4a61-9004-3102aba69ea2",
+    "branch": "audit/p143-the-affected-selection-as-the",
+    "at": "2026-10-30T03:10:21Z"
+  },
+  "startedAt": "2026-10-30T03:10:21Z"
 }
