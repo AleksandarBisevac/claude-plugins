@@ -1,0 +1,20 @@
+{
+  "gates": {
+    "python3 tools/gate-parity.py": "pass",
+    "python3 tools/gate-parity.py --selftest": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "gate-only task, tests.expectRedFirst false; no test added. As a check that the rule fires, setting the bound back to 6 against the new figure made gate-parity print: CI job bound (lint): timeout-minutes is 6, under 2 times its longest recorded run of 3m14s (6m28s needed); restored afterwards.",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "Edited only .github/workflows/ci.yml in the task tree. (1) longest lint line is now '3m14s (run 41112221437, 19:04:54 to 19:08:08)', measured with gh run view 41112221437 --json jobs --jq '.jobs[]|[.name,.startedAt,.completedAt]' (job 'lint + manifests + e2e (linux)' 19:04:54Z -> 19:08:08Z). (2) the lint timeout-minutes goes 6 -> 7 (420 s = 2.17x the 194 s measurement, within the 2-3x range). (3) the 'lint -' estimate-history comment now says the figure is measured and why the bound moved, with no work-item ids. Gates: python3 tools/gate-parity.py exit 0; python3 tools/gate-parity.py --selftest exit 0 (97/97 cases passed). Dependants (tests/_harness.py, tests/test__impact.py, tools/affected.py, etc. listed as depending on ci.yml): still correct - the change touches one comment line block, one 'longest' comment line and one integer; no job names, slices, steps or commands changed. No browser gates run.",
+    "descriptive": "The lint job's recorded longest run is now the measured 3m14s and its timeout is 7 minutes, so gate-parity's at-least-2x rule holds on the measurement rather than on an estimate."
+  },
+  "testsAdded": [],
+  "claims": "claims:\n1 ci.yml:91 records the figure from run 41112221437 (gh run view command is in the comment block at ci.yml:57-60); ci.yml:246 is the bound the sentence 'moved to 7' describes\n2 bound set back to 6 -> gate-parity reports 'timeout-minutes is 6, under 2 times its longest recorded run of 3m14s (6m28s needed)' -> restored to 7, parity exit 0\n3 grep 'timeout-minutes' / 'longest' in ci.yml: other jobs' longest lines are still labelled estimates (selftests, e2e, browser-panel, browser-report, verified) - left because only the lint job's measured run is in scope; resample is already measured\n4 n/a - no rule to an agent\n5 measured once: one run's job interval (3m14s); stated as such by naming the single run id\n6 n/a - no guard\n7 3m14s carries run 41112221437 and the gh command beside it; 7 is derived: 2 x 194 s = 388 s <= 420 s",
+  "stamp": "audit-stamp: {\"content\":\"sha256:0774fc55a2c8ecea080d52ebe6af412e4b0c3395f567076ac01f7b6747445150\",\"dirtyDigest\":\"sha256:5691efe67c7575f9912252a889faa4cfd7a39f74f103927b159d26896069ccbb\",\"dirtyPaths\":{\".github/workflows/ci.yml\":\"f6d4f1f887da26bf\"},\"head\":\"a76d6352\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".github/workflows/ci.yml\"],\"scopeDigest\":\"sha256:ffd86c160b16404c34e7fffd96d633268cae84b7e491004cf5b955cad5e3163f\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

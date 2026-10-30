@@ -1,0 +1,15 @@
+{
+ "findings": [],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clause 'Re-record the longest line from run 41112221437 and raise the bound to 7'. Diff changes `longest lint: 2m38s (estimate...)` to `3m14s (run 41112221437, 19:04:54 to 19:08:08)` and `timeout-minutes: 6` to `7` on the lint + manifests + e2e job, plus the history comment. I ran the read-only gh command: job 'lint + manifests + e2e (linux)' 19:04:54Z -> 19:08:08Z = 194 s = 3m14s, so the figure is right. 2 x 194 = 388 s <= 420 s, so 7 meets the 2x rule. The claim (one comment block, one longest line, one integer changed, no job names, slices or commands) describes the diff, which touches only .github/workflows/ci.yml. Dependants (tests/_harness.py, tools/affected.py and the others): no job, slice or step changed, so the claim that they stay correct holds. python3 tools/gate-parity.py exits 0 and python3 tools/gate-parity.py --selftest exits 0 (97/97) on the task tree, both run by me.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Gate-only task, no test added (tests.add: none), expectRedFirst false. The executor's side check (bound back to 6 makes gate-parity report 'timeout-minutes is 6, under 2 times its longest recorded run of 3m14s') was not re-run by me.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "The task's tests.gate runs the whole sweep (python3 tools/sweep-selftests.py) among its commands, i.e. whole projects rather than a selected test, so the question is not asked. The diff changes a comment, a longest figure and one integer."
+ },
+ "verdict": "clean",
+ "tasks": []
+}

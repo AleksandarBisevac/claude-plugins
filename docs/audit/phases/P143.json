@@ -69,14 +69,20 @@
         "severity": "med",
         "file": ".github/sweep-costs.json:540-541 (and every figure above it); readers tools/sweep-selftests.py:196-208, :1567-1572 and .github/workflows/ci.yml:60-75",
         "issue": "The cost table now says platform 'darwin' with 8 workers, where it used to hold windows-latest figures for 4 workers. Two things read it: CI's windows shard split and each job's hang-detector timeout. tools/sweep-selftests.py:206-208 and :1567-1572 still say the table 'is recorded from windows because that platform binds ... a darwin figure under-states a windows one'. The windows-to-darwin ratio is not even, and the split assumes it is. test__manifest_io went from 129.8 to 4.4 (about 30x), test__machine_paths from 32.2 to 0.2, test_integrate_task from 123.4 to 6.4, while most suites moved by about 3x. So the windows shards are now balanced on proportions that do not hold on windows. The ci.yml selftests bound estimate is also derived from this table. The phase outcome 'CI stays inside its wall-time bound' was never measured after the change. The executor did disclose this under CONSEQUENCE TO PUBLISH, and the task told it to re-record from the quiet runs.",
-        "resolution": "Before this lands, push the tree to a ci/ branch, dispatch CI, and read each windows selftests cell's longest line and wall time. Then re-record the table from those windows logs with `python3 tools/sweep-selftests.py --costs-from-log <logs> --platform win32 --record-costs .github/sweep-costs.json`. These are still measured figures, not scaled ones, and they keep the windows-binding design the runner documents. If the darwin table is to stay, rewrite the two comments in tools/sweep-selftests.py and the ci.yml estimate so they say what the table now is."
+        "resolution": "fixed in P143.3-6yq (a948943eb9b3): Before this lands, push the tree to a ci/ branch, dispatch CI, and read each windows selftests cell's longest line and wall time. Then re-record the table from those windows logs with `python3 tools/sweep-selftests.py --costs-from-log <logs> --platform win32 --record-costs .github/sweep-costs.json`. These are still measured figures, not scaled ones, and they keep the windows-binding design the runner documents. If the darwin table is to stay, rewrite the two comments in tools/sweep-selftests.py and the ci.yml estimate so they say what the table now is.",
+        "fixTask": "P143.3-6yq",
+        "commit": "a948943eb9b3",
+        "status": "fixed"
       },
       {
         "id": "P143-R7",
         "severity": "med",
         "file": "tests/test__config.py:3070-3216 (st1-st7, outside the declared files); task tests.gate",
         "issue": "The memo's correctness cases (st1-st7) are in tests/test__config.py. That file is not among the task's declared files, and no tests.gate command selects it. The only gate is `python3 tools/sweep-selftests.py tests/test_drive_phase.py`, so the recorded gate run (2026-10-30T13:55:12Z.969e51, passed) shows nothing about the memo, test__locks, test__worktrees or test_integrate_task. The executor's 'full sweep green three times' and 'test__config 370/370' claims carry a stamp that `stamp-verification.py compare` grades stale (exit 1): head moved from c57e3f3c to abeac86b. The scopeDigest still agrees, but that digest does not cover tests/test__config.py. I ran `python3 tests/test__config.py --selftest` once in the task tree: exit 0, 370/370, st1-st7 PASS.",
-        "resolution": "Add tests/test__config.py to the task's files and list st1-st7 in tests.add. Add a gate command that selects the suites guarding the changed modules: `python3 tools/sweep-selftests.py tests/test__config.py tests/test__locks.py tests/test__worktrees.py tests/test_integrate_task.py tests/test_drive_phase.py`. Re-run the gate on the current tree so the claim carries a current stamp."
+        "resolution": "fixed in P143.7-z9j (d1a877b79e51): Add tests/test__config.py to the task's files and list st1-st7 in tests.add. Add a gate command that selects the suites guarding the changed modules: `python3 tools/sweep-selftests.py tests/test__config.py tests/test__locks.py tests/test__worktrees.py tests/test_integrate_task.py tests/test_drive_phase.py`. Re-run the gate on the current tree so the claim carries a current stamp.",
+        "fixTask": "P143.7-z9j",
+        "commit": "d1a877b79e51",
+        "status": "fixed"
       },
       {
         "id": "P143-R8",
@@ -107,8 +113,10 @@
         "severity": "med",
         "file": "tools/verify.sh (unchanged), .github/workflows/ci.yml:263-278 (manifests job, unchanged); CI run 41070108164",
         "issue": "contradicts task clause 'Split the serial manifest-validation job ... into verify.sh slices that run as parallel jobs' and acceptance (1) 'the median wall of at least five per-run CI runs is at most 8 minutes and their median runner-minutes at most 55'. The split was not made: verify.sh is untouched. Acceptance (1) is not met. One run exists at d1a877b7 (41070108164, release-tier workflow_dispatch, success). I measured its per-run jobs, resample excluded, with `gh run view --json jobs`: wall 9.9 min (14:14:32 -> 14:24:27) and 106.3 runner-minutes (117 if billed per started minute). The 8 Windows selftests cells alone sum to 66.6 min (cp1252 leg 34.8), the linux cells to 23.0, and linux stress to 11.6. The critical path is selftests (windows, cp1252 4) at 581 s. Two Windows plain cells started late (14:15:23 and 14:16:07), which looks like a concurrent-job cap. One run is also not the five-run median the clause asks for. For comparison, the previous dispatch at c185b4cb (40946289828) was 14.1 min and 146.7 runner-minutes, so this is an improvement but not the target.",
-        "resolution": "Do not close the task as meeting its acceptance. The executor's case against the split holds: the manifests+js+plugin job ran 49 s, off a 581 s critical path, and each extra job adds about 12 s of setup plus a queue slot. The owner should amend the clause rather than force the split. Neither target can be met by job shape. Rebalanced on the new table, a Windows cell is about 498 s of sweep plus about 60 s of setup, which is still over 8 min. 55 runner-minutes is below the 66.6 the Windows cells take alone. Meeting them needs a follow-up that cuts the Windows sweep's CPU (test_drive_phase 2688, test_commit_task_work 665, test_audit_task 629, test_close_phase 470 and test_stamp_verification 462 slot-seconds), or an owner decision to drop legs (the Windows cp1252 leg is 34.8 runner-minutes). After that, take at least five per-run runs at the rebalanced table to measure the median.",
-        "fixTask": "P143.12-z9j"
+        "resolution": "fixed in P143.12-z9j (a76d6352487d): Do not close the task as meeting its acceptance. The executor's case against the split holds: the manifests+js+plugin job ran 49 s, off a 581 s critical path, and each extra job adds about 12 s of setup plus a queue slot. The owner should amend the clause rather than force the split. Neither target can be met by job shape. Rebalanced on the new table, a Windows cell is about 498 s of sweep plus about 60 s of setup, which is still over 8 min. 55 runner-minutes is below the 66.6 the Windows cells take alone. Meeting them needs a follow-up that cuts the Windows sweep's CPU (test_drive_phase 2688, test_commit_task_work 665, test_audit_task 629, test_close_phase 470 and test_stamp_verification 462 slot-seconds), or an owner decision to drop legs (the Windows cp1252 leg is 34.8 runner-minutes). After that, take at least five per-run runs at the rebalanced table to measure the median.",
+        "fixTask": "P143.12-z9j",
+        "commit": "a76d6352487d",
+        "status": "fixed"
       },
       {
         "id": "P143-R12",
@@ -147,9 +155,25 @@
         "file": ".github/workflows/ci.yml:226-233",
         "issue": "The new cap comment says 'in six of those seven runs a held job was a Windows sweep cell' and 'Measured, not documented'. Both are wrong. Re-derived with `gh run view <id> --json jobs` (first attempts; 40765135807 read through `gh api .../runs/40765135807/attempts/1/jobs` because attempt 2 is a rerun), the held jobs are: 40761628365 windows plain 3+4; 40765135807 linux plain 2 + linux stress 1; 40774503871 windows cp1252 4 + plain 2; 40877191420 windows plain 3 + linux stress 1; 40913965771 windows plain 1+4; 40946289828 linux plain 3 + lint; 41070108164 windows plain 2+4. That is five of seven runs, not six. GitHub also documents a 20-concurrent-job limit for its Free plan, so the limit is documented as well as measured. The executor's outcome repeats the 6-of-7 figure.",
         "resolution": "Change it to 'in five of those seven runs', or drop the count and keep the re-derive command, which is already beside it. Change 'Measured, not documented' to 'Measured, and matching GitHub's documented Free-plan limit'."
+      },
+      {
+        "id": "P143-R17",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py",
+        "issue": "Phase review: confirmed_in_advance (drive-phase.py ~4131-4158) replays journal rows by _journal_io.read_all's order, which sorts on a one-second ts and breaks ties by journal file name. A risk.confirmed row in one writer's file and a task.reopen in another, in the same second, replay in file-name order, so a reopen can be replayed before the confirmation it cancels and the task stays confirmed. P143.5's in-process verbs made the same second reachable: tests/test_drive_phase.py hr3 failed in CI run 41112221437 (selftests linux stress 1, 167/168, the drive committed without asking and commit-task-work refused). Probes: scratchpad/p143-review/probe/same_second.py and instrument.py.",
+        "resolution": "Order rows that share a moment causally rather than by file name (a reopen sharing a moment with a confirmation cancels it, or rows carry sub-second time), make hr3 deterministic, and audit other replays that compare rows across journal files for the same tie.",
+        "fixTask": "P143.14-z9j"
+      },
+      {
+        "id": "P143-R18",
+        "severity": "low",
+        "file": ".github/workflows/ci.yml",
+        "issue": "The merged lint job's longest line is an estimate of 2m38s, but its first run took 3m14s (run 41112221437); 2x the measured figure is 388 s, over the 6-minute bound, which gate-parity passes only because it reads the estimate.",
+        "resolution": "Re-record the longest line from run 41112221437 and raise the bound to 7.",
+        "fixTask": "P143.15-z9j"
       }
     ],
-    "outcome": "[findings: 16 - 0 high, 6 med, 10 low; 3 with a recorded fix commit]"
+    "outcome": "[findings: 18 - 0 high, 7 med, 11 low; 6 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -939,7 +963,7 @@
     {
       "id": "P143.12-z9j",
       "title": "fix P143-R11: contradicts task clause 'Split the serial manifest-validation j...",
-      "status": "in_progress",
+      "status": "done",
       "description": "contradicts task clause 'Split the serial manifest-validation job ... into verify.sh slices that run as parallel jobs' and acceptance (1) 'the median wall of at least five per-run CI runs is at most 8 minutes and their median runner-minutes at most 55'. The split was not made: verify.sh is untouched. Acceptance (1) is not met. One run exists at d1a877b7 (41070108164, release-tier workflow_dispatch, success). I measured its per-run jobs, resample excluded, with `gh run view --json jobs`: wall 9.9 min (14:14:32 -> 14:24:27) and 106.3 runner-minutes (117 if billed per started minute). The 8 Windows selftests cells alone sum to 66.6 min (cp1252 leg 34.8), the linux cells to 23.0, and linux stress to 11.6. The critical path is selftests (windows, cp1252 4) at 581 s. Two Windows plain cells started late (14:15:23 and 14:16:07), which looks like a concurrent-job cap. One run is also not the five-run median the clause asks for. For comparison, the previous dispatch at c185b4cb (40946289828) was 14.1 min and 146.7 runner-minutes, so this is an improvement but not the target.\n\nResolution asked: Do not close the task as meeting its acceptance. The executor's case against the split holds: the manifests+js+plugin job ran 49 s, off a 581 s critical path, and each extra job adds about 12 s of setup plus a queue slot. The owner should amend the clause rather than force the split. Neither target can be met by job shape. Rebalanced on the new table, a Windows cell is about 498 s of sweep plus about 60 s of setup, which is still over 8 min. 55 runner-minutes is below the 66.6 the Windows cells take alone. Meeting them needs a follow-up that cuts the Windows sweep's CPU (test_drive_phase 2688, test_commit_task_work 665, test_audit_task 629, test_close_phase 470 and test_stamp_verification 462 slot-seconds), or an owner decision to drop legs (the Windows cp1252 leg is 34.8 runner-minutes). After that, take at least five per-run runs at the rebalanced table to measure the median.",
       "files": [
         "tools/verify.sh",
@@ -969,13 +993,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a76d6352487d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "WHAT CHANGED (.github/workflows/ci.yml only; tools/verify.sh untouched): the `manifests + js + plugin` job is merged into the `lint` job, renamed `lint + manifests + e2e (linux)`, which now adds setup-node 20 and the npm ci + Claude CLI install step and runs `sh tools/verify.sh --only lint,runner,e2e,manifests,js,plugin`; its timeout goes 5 -> 6 and its `longest lint` line becomes an estimate of 2m38s (lint job's longest 1m50s in run 40774503871 + the manifests job's longest verify 38s, node 5s, install 5s over runs 40761628365..41070108164); the `longest manifests` line is removed; a comment above the job states the measured concurrency cap, its re-derive command, and that nothing checks the job count. WHY (measured, `gh run view <id> --json jobs`, read-only, seven release-tier runs over three days 2026-10-28..30: 40761628365 40765135807 40774503871 40877191420 40913965771 40946289828 41070108164): every run asked for 22 jobs and in every one exactly 2 started late, each 1-4 s after the 1st and 2nd job to finish - a cap of 20 concurrent jobs; in 6 of 7 runs a held job was a Windows sweep cell. In 41070108164 the held `windows, plain 4` started +95 s and set the wall (595 s) over the slowest cell (cp1252 4, 581 s). The per-run tier was 21 jobs (one held); merged it is 20. WHY NOT THE SPLIT: in 41070108164 the manifests job took 49 s (verify step 30 s) against a 581 s critical path, so a split cannot move the wall and adds jobs past the cap. It also cannot be made in my files: I built it in a scratch `git archive HEAD` copy (doctor/status-render/rendered-artifacts steps moved to a `doctor` slice in its own job): `python3 tools/gate-parity.py` exit 0, but `python3 tools/gate-parity.py --selftest` exit 1, 96/97, `FAIL sv14` - sv14 requires exactly one `--only ...manifests...` call holding every MANIFEST_WORK piece. The split needs tools/gate-parity.py (sv14), which is not my file; I stopped there. CHECKS RUN in the task worktree after the change: `python3 tools/gate-parity.py` exit 0 (13 slices, 7 jobs); `python3 tools/gate-parity.py --selftest` exit 0, ALL PASS 97/97; `gate-parity.py --list` shows manifests, js, plugin run by job `lint`; job_bound_evidence on the live text = [], and with timeout 5 it reports `lint ... under 2 times its longest recorded run of 2m38s (5m16s needed)`; `ruby -ryaml` loads the workflow (exit 0). The gate commands themselves were not run (runsGate own-tests, no tests of its own); browser gates not run as instructed. PREDICTION, per-run tier, from 41070108164's job times (resample excluded). WALL: no job held, so wall = slowest job = 581 s (9.7 min) on that run's balance, vs 595 s measured. On the committed table re-recorded from that run: 7978 slot-seconds total (sum of .github/sweep-costs.json `costs`) / 4 parts / 4 slots = 499 s of sweep per Windows cell at perfect packing, + 22 s job overhead (cp1252 4: 581 s job - 559 s verify step) = ~521 s = ~8.7 min. Over the 8 min (480 s) target. RUNNER-MINUTES: 106.3 - (49 + 91)/60 + (91 + 30 + 5 + 3)/60 = ~106.1 min. Over the 55 target: the 8 Windows sweep cells alone took 66.6 min (3998 s) in that run. NEITHER TARGET IS REACHABLE IN tools/verify.sh + ci.yml ALONE. Wall: Windows on 5 parts per leg = 7978/20 = 399 s + 22 = ~421 s (~7.0 min), with Linux legs on 2 parts each to stay at or under the cap (10 Windows + 4 Linux + e2e + lint + 2 browser = 18 jobs); browser (report), 429 s, would then be the critical path (~7.2 min). That needs tools/gate-parity.py (WINDOWS_SHARDS = 4 checked by sv13, sv15's literal fixture `shard: [1, 2, 3, 4]`, and shard_matrix_drift's every-part-on-every-runner rule for a per-family part count). Runner-minutes: with 39.5 min of non-Windows jobs (Linux sweep 23.0, browsers 12.6, e2e 1.7, merged lint ~2.2), 55 leaves 15.5 min for the Windows sweep, which takes 66.6 now. Getting there needs cuts to the Windows sweep's CPU (sweep-costs.json: test_drive_phase 2688.5, test_commit_task_work 665.4, test_audit_task 628.7, test_close_phase 470.4, test_stamp_verification 462.3 slot-s) or an owner decision to drop legs (Windows cp1252 34.8 min; dropping it AND Linux plain 11.4 still leaves ~60 min). The acceptance's five-run median is still unmeasured: every measured run is release-tier, and none is per-run. DEPENDANTS of tools/verify.sh (.gitattributes, ci.yml, derive-phase-gate.py, tests/test__output.py, tests/test__refs.py, tools/affected.py, tools/check-example-pins.py, tools/check-git-pipeline.py): still correct, because verify.sh is byte-unchanged (git status shows only ci.yml modified). DEPENDANTS of ci.yml: plugins/audit/scripts/manifest/audit-task.py, tests/test_audit_task.py, tests/test_drive_phase.py, tests/test__impact.py, tests/test__manifest_phases.py use the path as a fixture string or classification row and never read the real file, so they are still correct. tests/_harness.py names the selftest matrix's OSes in a docstring, and the matrix is unchanged, so it is still correct. tests/test__refs.py's real ci.yml use is a statement that every job is one verify.sh call, which is still true (each job's single run line is `sh tools/verify.sh --only ...`). tools/affected.py selects WORKFLOW_READERS on a ci.yml change: gate-parity (green above), sweep-selftests tt5 (selftests job bound 33 unchanged), check-rendered-artifacts ra29 (verify.sh call lines unchanged) and release.py rt2 (tier input unchanged). Not listed but affected by wording only: tools/gate-parity.py sv14's message says 'the manifest job's slice' (now the lint job; the predicate is unaffected); tests/test__doctor_policy.py's docstring calls CI's manifest job one that does not install the Claude CLI, which was already stale history before this change; tools/ci-verified.py fixtures use the old name 'lint + e2e (linux)' as fixture data only. main has no branch protection and no rulesets (`gh api .../branches/main/protection` 404 'Branch not protected', rulesets []), so the renamed check blocks no merge. Any CI-study parser outside this repo that reads the old lint or manifests job names would need updating.",
+        "descriptive": "The manifests job is merged into the lint job so a per-run CI run fits GitHub's measured 20-concurrent-job cap and no Windows cell waits in the queue. The split was not made: it would add a job past the cap, and gate-parity sv14, a file outside this task, refuses it. Neither 8 min nor 55 runner-minutes can be reached by job shape alone."
       },
       "startedAt": "2026-10-30T18:28:29Z",
-      "completedAt": null,
+      "completedAt": "2026-10-30T19:02:24Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -1003,6 +1027,133 @@
         "runId": "2026-10-30T18:52:59Z.078d42",
         "status": "passed",
         "at": "2026-10-30T18:52:59Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "a76d6352487d",
+        "at": "2026-10-30T19:02:24Z",
+        "return": "docs/audit/evidence/returns/P143.12-z9j/20261030T182829Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "tests.expectRedFirst is false on this tdd task: it names no case to prove a red by, so no red-first proof is owed",
+        "at": "2026-10-30T18:41:16Z"
+      }
+    },
+    {
+      "id": "P143.14-z9j",
+      "title": "fix P143-R17: Phase review: confirmed_in_advance (drive-phase.py ~4131-4158) ...",
+      "status": "in_progress",
+      "description": "Phase review: confirmed_in_advance (drive-phase.py ~4131-4158) replays journal rows by _journal_io.read_all's order, which sorts on a one-second ts and breaks ties by journal file name. A risk.confirmed row in one writer's file and a task.reopen in another, in the same second, replay in file-name order, so a reopen can be replayed before the confirmation it cancels and the task stays confirmed. P143.5's in-process verbs made the same second reachable: tests/test_drive_phase.py hr3 failed in CI run 41112221437 (selftests linux stress 1, 167/168, the drive committed without asking and commit-task-work refused). Probes: scratchpad/p143-review/probe/same_second.py and instrument.py.\n\nResolution asked: Order rows that share a moment causally rather than by file name (a reopen sharing a moment with a confirmation cancels it, or rows carry sub-second time), make hr3 deterministic, and audit other replays that compare rows across journal files for the same tie.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "tests/test__journal_io.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: Order rows that share a moment causally rather than by file name (a reopen sharing a moment with a confirmation cancels it, or rows carry sub-second time), ..."
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-30T19:14:13Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-30T19:14:12Z",
+          "text": "scope: plugins/audit/scripts/governance/drive-phase.py, every path the finding(s) P143-R17 name"
+        },
+        {
+          "at": "2026-10-30T19:14:12Z",
+          "text": "scope: tests/test_drive_phase.py, the suite that tests plugins/audit/scripts/governance/drive-phase.py (python: it hands drive-phase.py to a loader through a module constant)"
+        }
+      ],
+      "fixes": [
+        "P143-R17"
+      ],
+      "reviewPerTask": "signals"
+    },
+    {
+      "id": "P143.15-z9j",
+      "title": "fix P143-R18: The merged lint job's longest line is an estimate of 2m38s, but...",
+      "status": "in_progress",
+      "description": "The merged lint job's longest line is an estimate of 2m38s, but its first run took 3m14s (run 41112221437); 2x the measured figure is 388 s, over the 6-minute bound, which gate-parity passes only because it reads the estimate.\n\nResolution asked: Re-record the longest line from run 41112221437 and raise the bound to 7.",
+      "files": [
+        ".github/workflows/ci.yml"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "phase-no-paths"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-30T19:14:17Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-30T19:14:12Z",
+          "text": "scope: .github/workflows/ci.yml, every path the finding(s) P143-R18 name"
+        },
+        {
+          "at": "2026-10-30T19:14:12Z",
+          "text": "no suite: .github/workflows/ci.yml - a document, so no test of it is inferred; the files that name it, the checks that read it, are plugins/audit/scripts/config/_config_rules.py, plugins/audit/scripts/panel/_panel_settings.py, tests/_harness.py, tests/test__doctor_setup.py and 13 more"
+        },
+        {
+          "at": "2026-10-30T19:14:12Z",
+          "text": "gate-only, not tdd: every file P143-R18 names is a document (.github/workflows/ci.yml) with no test of its own, so there is no case to write first and no red to show; the gate the task carries is its check"
+        }
+      ],
+      "fixes": [
+        "P143-R18"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-30T19:27:49Z.a806c4",
+        "status": "passed",
+        "at": "2026-10-30T19:27:49Z"
       }
     }
   ],
