@@ -129,39 +129,38 @@ def _plan(task_ids, gate, phase_gate=None):
                                          else phase_gate), "tasks": tasks}]}
 
 
-def _repo(prefix, task_ids=TASKS, gate=("true",), per_task="always",
-          phase_gate=None, executor=None):
-    """A committed repository holding the plan, one source file per task, and
-    a `.gitignore` for the driver's and the briefs' state directory. `per_task`
-    is `review.perTask`: `always` is the reviewer-per-task drive most cases here
-    are about, and the `dk` cases drive the other two readings. `phase_gate`
-    is the phase's own `testGate` when it differs from the tasks' gate.
-    `executor` is the config's `executor` object, absent when None - the `ws`
-    cases set the writer-session keys there, committed with the fixture so the
-    tree a gate measures holds no change of the config's own."""
-    root = os.path.realpath(_harness.fixture_root("drive-%s-" % (prefix,)))
-    os.makedirs(os.path.join(root, "docs", "audit"))
-    os.makedirs(os.path.join(root, ".claude"))
-    os.makedirs(os.path.join(root, "src"))
+def _repo_files(task_ids, gate, per_task, phase_gate, executor):
+    """`((repo-relative path, text, newline), ...)` of what `_repo` commits,
+    each written with `open(..., newline=newline)`: the whole of what one
+    fixture's arguments decide, so it is also the key two fixtures share a
+    template by (`_repo`)."""
     config = {"manifestPath": "docs/audit/audit-plan.json",
               "review": {"perTask": per_task}}
     if executor is not None:
         config["executor"] = executor
-    with open(os.path.join(root, ".claude", "audit.config.json"), "w",
-              encoding="utf-8") as fh:
-        json.dump(config, fh)
-    with open(os.path.join(root, ".gitignore"), "w", encoding="utf-8") as fh:
-        fh.write(".claude/state/\n")
+    files = [(".claude/audit.config.json", json.dumps(config), None),
+             (".gitignore", ".claude/state/\n", None)]
     # At least three sources: the findings these cases hand in name `src/f1.txt`
     # to `src/f3.txt`, and a fix task is scoped only onto a path that exists.
     # Written as the bytes they name: a case asserts the project tree still
     # holds the base's exact bytes, and text mode would have written CRLF on
     # Windows, failing that assertion with the product never touching the file.
-    for n in range(1, max(len(task_ids), 3) + 1):
-        _write_lf(os.path.join(root, "src", "f%d.txt" % (n,)), "v0\n")
-    mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
-    with open(mpath, "w", encoding="utf-8") as fh:
-        json.dump(_plan(task_ids, gate, phase_gate), fh, indent=2)
+    files.extend(("src/f%d.txt" % (n,), "v0\n", "\n")
+                 for n in range(1, max(len(task_ids), 3) + 1))
+    files.append(("docs/audit/audit-plan.json",
+                  json.dumps(_plan(task_ids, gate, phase_gate), indent=2), None))
+    return tuple(files)
+
+
+def _build_repo(root, files):
+    """Write `files` (`_repo_files`) under `root` and commit them in a new
+    repository there."""
+    for rel, text, newline in files:
+        path = os.path.join(root, *rel.split("/"))
+        if not os.path.isdir(os.path.dirname(path)):
+            os.makedirs(os.path.dirname(path))
+        with open(path, "w", encoding="utf-8", newline=newline) as fh:
+            fh.write(text)
     # The identity is the repository's own, not only this call's: the verbs the
     # driver runs commit in it too, and a sweep pins HOME and refuses a guessed
     # identity, so nothing else would supply one. It is appended to the config
@@ -174,7 +173,49 @@ def _repo(prefix, task_ids=TASKS, gate=("true",), per_task="always",
         fh.write(_FIXTURE_IDENTITY)
     for argv in (["add", "-A"], ["commit", "-qm", "fixture"]):
         _harness.git(root, *argv)
-    return root, mpath
+
+
+# ONE COMMITTED REPOSITORY PER DISTINCT SET OF FILES, COPIED FOR EVERY FIXTURE
+# THAT ASKS FOR THE SAME FILES. Building one starts a git process for each of
+# init, add and commit, and most fixtures a block builds are byte for byte alike;
+# a process start is the costliest thing a windows runner does, and copying the
+# small files a fresh repository holds is not. The key is the files themselves
+# (`_repo_files`), so an argument that changes what is committed gets a
+# repository of its own without anybody remembering to add it to a key. Every
+# fixture is a copy, the first one included, so a defect of the copy shows on
+# every fixture rather than only on the second. What a copy cannot carry over is
+# the index's stat cache for the files - their inode and ctime are the copy's -
+# so the first git that reads the index re-hashes them and finds them unchanged.
+# What it does carry over is the commit, by its hash: fixtures with the same
+# files share their base commit, as two built within one second always did.
+# `fx2` compares a copy with a repository built from scratch.
+_REPO_TEMPLATES = {}
+
+
+def _repo(prefix, task_ids=TASKS, gate=("true",), per_task="always",
+          phase_gate=None, executor=None, fresh=False):
+    """A committed repository holding the plan, one source file per task, and
+    a `.gitignore` for the driver's and the briefs' state directory. `per_task`
+    is `review.perTask`: `always` is the reviewer-per-task drive most cases here
+    are about, and the `dk` cases drive the other two readings. `phase_gate`
+    is the phase's own `testGate` when it differs from the tasks' gate.
+    `executor` is the config's `executor` object, absent when None - the `ws`
+    cases set the writer-session keys there, committed with the fixture so the
+    tree a gate measures holds no change of the config's own. A copy of the
+    template for its files (`_REPO_TEMPLATES`), or - `fresh` - built in place,
+    which only `fx2` asks for."""
+    root = os.path.realpath(_harness.fixture_root("drive-%s-" % (prefix,)))
+    files = _repo_files(task_ids, gate, per_task, phase_gate, executor)
+    if fresh:
+        _build_repo(root, files)
+    else:
+        template = _REPO_TEMPLATES.get(files)
+        if template is None:
+            template = os.path.realpath(_harness.fixture_root("drive-template-"))
+            _build_repo(template, files)
+            _REPO_TEMPLATES[files] = template
+        shutil.copytree(template, root, symlinks=True, dirs_exist_ok=True)
+    return root, os.path.join(root, "docs", "audit", "audit-plan.json")
 
 
 class _Env(object):
@@ -15259,6 +15300,37 @@ def _stage_cases(check):
           "than through `git config`, is what git reads back: %r" % (said,),
           said == {"user.email": "fixture@example.com", "user.name": "Fixture",
                    "commit.gpgsign": "false"})
+    _template_cases(check)
+
+
+def _template_cases(check):
+    """A fixture copied from a template is the repository a build from scratch
+    makes, for its own arguments and not another fixture's, and a copy shares
+    nothing with its siblings once made."""
+    def tree(where):
+        return _git_out(where, "rev-parse", "HEAD^{tree}").strip()
+
+    def status(where):
+        return _git_out(where, "status", "--porcelain").strip()
+    root_a, _m = _repo("tmpl-a", task_ids=TASKS[:1])
+    root_b, _m = _repo("tmpl-b", task_ids=TASKS[:1], gate=("false",))
+    root_f, _m = _repo("tmpl-f", task_ids=TASKS[:1], gate=("false",), fresh=True)
+    said = (tree(root_a), tree(root_b), tree(root_f), status(root_b))
+    check("fx2 a fixture copied from its template commits the tree a fixture "
+          "built from scratch with the same arguments commits, is clean, and is "
+          "not the tree of a fixture whose arguments differ: %r" % (said,),
+          said[1] and said[1] == said[2] and said[0] and said[0] != said[1]
+          and said[3] == "")
+    root_c, _m = _repo("tmpl-c", task_ids=TASKS[:1])
+    _write_lf(os.path.join(root_a, "src", "f1.txt"), "changed in one copy\n")
+    _harness.git(root_a, "commit", "-qam", "one copy moves on")
+    root_d, _m = _repo("tmpl-d", task_ids=TASKS[:1])
+    seen = [(where != root_a, _read(os.path.join(where, "src", "f1.txt")),
+             status(where), tree(where) == said[0]) for where in (root_c, root_d)]
+    check("fx3 a write and a commit in one copy reach neither a sibling copied "
+          "before it nor one copied after it from the same template: %r"
+          % (seen,),
+          seen == [(True, b"v0\n", "", True)] * 2)
 
 
 if __name__ == "__main__":

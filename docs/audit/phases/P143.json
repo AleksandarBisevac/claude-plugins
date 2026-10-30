@@ -97,7 +97,8 @@
         "severity": "med",
         "file": ".github/sweep-costs.json:1-541 (the figures) x plugins/audit/scripts/governance/stamp-verification.py:3975-4031 (sweep_wall, proof_need, fit_problem)",
         "issue": "The re-recorded table changes how a dependant behaves, not just how much time it holds back. stamp-verification.py's `red` reads the same table to size a sweep-shaped red-first command, and fit_problem() refuses to start any run when 3 x the schedule wall exceeds the deadline (capped at MAX_TIMEOUT 565). I computed it with the module's own sized_deadline/fit_problem, on this 10-core host (8 workers), for `python3 tools/sweep-selftests.py tests/test_drive_phase.py`. With the darwin table at HEAD, need is 324 s and the command fits. With the new Windows table, need is 1011 s against a 565 s deadline, so it REFUSES ('no run was started'). Other suites also grew several-fold: test__worktrees need 123 -> 492, test__manifest_io 15 -> 399. They still fit, but close to the cap. So on the developer's machine, a red-first proof naming the drive's suite now ends in could-not-prove, because Windows figures are being read as darwin wall time. The executor's dependant answer ('holds back more time') understates this.",
-        "resolution": "This table is right for CI, which binds on Windows, so keep it. Fix the reader in a follow-up task on stamp-verification.py: have sweep_wall compare the table's `platform` with the host and not treat another platform's figures as this host's wall time. Either scale them, or count the need as unmeasured, with the basis naming the platform mismatch, so fit_problem does not refuse on borrowed figures. Add a case that goes red when a windows-recorded table refuses a darwin proof. Until then, correct the dependant answer in the return to say that the drive suite's sweep-shaped red-first proof now refuses on this host."
+        "resolution": "This table is right for CI, which binds on Windows, so keep it. Fix the reader in a follow-up task on stamp-verification.py: have sweep_wall compare the table's `platform` with the host and not treat another platform's figures as this host's wall time. Either scale them, or count the need as unmeasured, with the basis naming the platform mismatch, so fit_problem does not refuse on borrowed figures. Add a case that goes red when a windows-recorded table refuses a darwin proof. Until then, correct the dependant answer in the return to say that the drive suite's sweep-shaped red-first proof now refuses on this host.",
+        "fixTask": "P143.9-z9j"
       },
       {
         "id": "P143-R11",
@@ -105,9 +106,16 @@
         "file": "tools/verify.sh (unchanged), .github/workflows/ci.yml:263-278 (manifests job, unchanged); CI run 41070108164",
         "issue": "contradicts task clause 'Split the serial manifest-validation job ... into verify.sh slices that run as parallel jobs' and acceptance (1) 'the median wall of at least five per-run CI runs is at most 8 minutes and their median runner-minutes at most 55'. The split was not made: verify.sh is untouched. Acceptance (1) is not met. One run exists at d1a877b7 (41070108164, release-tier workflow_dispatch, success). I measured its per-run jobs, resample excluded, with `gh run view --json jobs`: wall 9.9 min (14:14:32 -> 14:24:27) and 106.3 runner-minutes (117 if billed per started minute). The 8 Windows selftests cells alone sum to 66.6 min (cp1252 leg 34.8), the linux cells to 23.0, and linux stress to 11.6. The critical path is selftests (windows, cp1252 4) at 581 s. Two Windows plain cells started late (14:15:23 and 14:16:07), which looks like a concurrent-job cap. One run is also not the five-run median the clause asks for. For comparison, the previous dispatch at c185b4cb (40946289828) was 14.1 min and 146.7 runner-minutes, so this is an improvement but not the target.",
         "resolution": "Do not close the task as meeting its acceptance. The executor's case against the split holds: the manifests+js+plugin job ran 49 s, off a 581 s critical path, and each extra job adds about 12 s of setup plus a queue slot. The owner should amend the clause rather than force the split. Neither target can be met by job shape. Rebalanced on the new table, a Windows cell is about 498 s of sweep plus about 60 s of setup, which is still over 8 min. 55 runner-minutes is below the 66.6 the Windows cells take alone. Meeting them needs a follow-up that cuts the Windows sweep's CPU (test_drive_phase 2688, test_commit_task_work 665, test_audit_task 629, test_close_phase 470 and test_stamp_verification 462 slot-seconds), or an owner decision to drop legs (the Windows cp1252 leg is 34.8 runner-minutes). After that, take at least five per-run runs at the rebalanced table to measure the median."
+      },
+      {
+        "id": "P143-R12",
+        "severity": "low",
+        "file": "tests/test_drive_phase.py:15306-15334",
+        "issue": "fx2 and fx3 check that a copy is correct. Nothing checks that the copy (the task's only cut) actually happens. If _repo built every fixture fresh, or if _REPO_TEMPLATES never returned a hit (a mutation that drops the cache), fx2 and fx3 would both stay green. That makes the saving silently revertible. The executor's probe rows M1-M5 all mutate correctness, never whether the template is reused.",
+        "resolution": "Add a case that calls _repo twice with the same arguments and asserts that the second call did not grow _REPO_TEMPLATES (or did not run `git init`, e.g. through the suite's existing counting shim). Prove it red by mutating `_REPO_TEMPLATES[files] = template` away."
       }
     ],
-    "outcome": "[findings: 11 - 0 high, 5 med, 6 low; 1 with a recorded fix commit]"
+    "outcome": "[findings: 12 - 0 high, 5 med, 7 low; 1 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -292,7 +300,7 @@
     {
       "id": "P143.3-6yq",
       "title": "CI runs under eight minutes and 55 runner-minutes: the manifest-validation chain in parallel and Windows on four shards",
-      "status": "in_progress",
+      "status": "done",
       "description": "Split the serial manifest-validation job (validator, shards, doctor, report smoke, rendered artifacts) into verify.sh slices that run as parallel jobs, move Windows to four shards, and re-record .github/sweep-costs.json from the new CI logs with --costs-from-log. Acceptance: (1) the median wall of at least five per-run CI runs is at most 8 minutes and their median runner-minutes at most 55, measured with the command in the plan; (2) the manifest-validation work finishes within 5 minutes; (3) shard_matrix_drift and gate-parity are green; (4) the cost table's recorded date is after this change.",
       "files": [
         ".github/workflows/ci.yml",
@@ -333,14 +341,18 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a948943eb9b3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "CHANGES. (a) .github/sweep-costs.json re-recorded from Windows CI logs, fixing review finding P143-R6. Logs: all 8 Windows selftests cells of release-tier run 41070108164 at d1a877b7 (plain 1-4, cp1252 1-4, jobs 124111662040/138/498/607/692/813/921/936, all green). Each log was fetched with `gh api repos/AleksandarBisevac/claude-plugins/actions/jobs/<id>/logs`, because `gh run view --log` refuses while the resample job is still running. The logs were concatenated and recorded with `python3 tools/sweep-selftests.py --costs-from-log <all.log> --platform windows-2025 --workers 4 --record-costs .github/sweep-costs.json`. Exit 0, output: recorded 193 files' seconds and 324 blocks'. The value 4 comes from each cell's `budget: 4 slots` line. The table is now entirely Windows measurement with no darwin figures left over. A separate recording into an empty scratch table produced the same file byte for byte (cmp IDENTICAL), and its file and block key sets match the old table with nothing missing on either side. Table platform is windows-2025, workers 4. Total slot-seconds went from 2477 (darwin) to 7978 (windows). test__manifest_io went 4.4 -> 132.5. Heaviest block: test_drive_phase ar18-block at 182.4. (b) tools/gate-parity.py: added MANIFEST_WORK, manifest_work_slices(), per_run_named(), family_shard_parts() and WINDOWS_SHARDS, plus selftest cases sv13-sv15 via _ci_shape_cases(), which runs after _slice_cases. sv13 is the live claim, read against the real ci.yml and the real `verify.sh --list`. It checks three things: every slice a per-run job names is listed; each manifest-validation piece (validator, sharded layout, doctor, report smoke, rendered artifacts) is run by a per-run job, with pieces found by the command words --list prints rather than by slice name; and the Windows sweep cells run parts 1..4 of 4 for every Windows slice. sv14 covers three fixtures that must each be reported: an unlisted `manifests-doctor`, the manifests slice dropped, and the manifests slice moved to the release-tier job only. sv15 covers two more: the matrix narrowed to 3 of 3 (which shard_matrix_drift accepts) and an exclude that drops part 4 on Windows. (c) .github/workflows/ci.yml: comment only. The re-record recipe used to name the floating `windows-latest` and omitted `--workers`, so the table would record workers null. It now names windows-2025 and --workers <slots>, and says to fetch logs through the API while the run is in progress. NOT CHANGED, AND WHY: tools/verify.sh is unchanged. The task asked to split the manifest-validation job into parallel slices, and I did not do that, on the measured evidence. In run 41070108164 the manifest-validation steps took 18 s (log timestamps 14:14:46 -> 14:15:04) inside a 49 s 'manifests + js + plugin' job. In run 40946289828 that job took 56 s. The critical path is the Windows sweep cells (453-581 s). Each extra job adds its own checkout + setup-python + setup-node + npm ci (14:14:33 -> 14:14:45 = 12 s of setup in this run) to runner-minutes and moves wall clock by 0 s, so a split works against acceptance (1). 'Windows on four shards' was already in HEAD's ci.yml (shard: [1, 2, 3, 4] crossed with both OS values); sv13 now locks it. MEASURED, RUN 41070108164 (one run; per-run jobs, resample excluded; raw job durations from `gh run view 41070108164 --json jobs`): per-run runner-minutes 106.3; wall 9.9 min from the first job start to the last end. Breakdown: the 8 Windows cells sum to 66.6 min, the 8 linux cells to 23.0, the browser jobs to 12.6, the rest to about 4. The Windows cells ran with the old darwin-balanced split (619 slot-s per part on darwin figures) and finished 453-581 s apart within a leg. Re-balanced on the new Windows table, `--shard 1/4` prints 1994 / 1994 / 1994 / 1994 slot-seconds per part; over 4 slots that is about 498 s of sweep per cell plus about 60 s of setup. WHAT THE NEXT CI RUNS MUST SHOW, which I cannot claim: (1) a median of at least five per-run runs at or under 8 min wall and 55 runner-minutes. 55 runner-minutes cannot be reached by job shape. The 8 Windows cells alone measured 66.6 runner-minutes, and dropping the Windows cp1252 leg (34.8) and the linux stress leg (11.6) would still leave about 60. Meeting the target needs the sweep's own CPU cut, or a decision to drop legs, which is the owner's call (ci.yml says the cp1252 deletion waits on evidence). (2) The manifest work is already 18 s, so it is met. (3) shard_matrix_drift and gate-parity are green locally (see below). (4) The table's recorded date is this change's commit date; the table carries no date field. CHECKS RUN: `python3 tools/gate-parity.py --selftest` exit 0, ALL PASS 97/97 (94 before, plus sv13, sv14, sv15). `python3 tools/gate-parity.py` exit 0 (13 slices, 8 jobs). Mutation probe at <scratchpad>/probe/mutations.py, output beside it in <scratchpad>/probe/mutations.out (exit 0, '10 row(s), 0 not as expected'). Each row runs on a scratch copy of the working tree, asserts its anchor appears exactly once and that the mutation landed, purges __pycache__, and restores in finally. On the first pass m2 (release-tier jobs counted as per-run) SURVIVED, so sv14 gained the moved-to-release fixture, and after that every row was KILLED. That includes three over-fire rows (m7-m9) that turn the live allow case sv13 red. The plan gate REFUSED writing probe/mutations.py in the checkout, verbatim: '[require-plan] Outside the running plan (change magnitude 142 (> 80)): probe/mutations.py ... No task in docs/audit/audit-plan.json declares probe/mutations.py'. That is why the probe lives in the scratchpad and runs against a copy. DEPENDANTS: .github/sweep-costs.json -> ci.yml: path reference, still correct. stamp-verification.py: its sweep_wall budget now reads Windows figures, about 3.2x the darwin sum, so on a dev machine a sweep-shaped red-first command holds back more time for the fix run. tests/test_stamp_verification.py run through the sweep: exit 0, 1/1 files, 352 cases. tools/sweep-selftests.py: `--selftest` exit 0, 156/156. Heaviest block timeout is 3 x 182.4 = 547 s, under SWEEP_DEADLINE 1800. CHANGELOG/CLAUDE/CONTRIBUTING/PLUGIN-BUILD-GUIDE: grep shows only path and semantics references and no figures, still correct. tools/verify.sh: unchanged, so its dependants are unaffected. ci.yml -> affected.py, _harness, test__impact, test__manifest_phases, test__refs, test_audit_task, test_drive_phase, audit-task.py: only a comment changed, it names no new tool basename, and no runs-on, matrix or job was touched, so all still correct. gate-parity.py -> the new names take required arguments and end in no lint suffix (_violations, _drift or _claims), so prove-gates derives no new lint; `python3 tools/prove-gates.py --list` exit 0, no unrowed entry. ruff exit 0, vermin exit 0, house_style_violations/prose_number_claims report nothing for gate-parity.py. FOR THE ORCHESTRATOR: (i) within run 41070108164, tests/test__impact.py took 7.8 s on one leg and 30.8 s on the other, a 3.9x spread. That is above TIMEOUT_PER_COST 3, which tools/sweep-selftests.py's comment says sits over the observed spread (not my file). (ii) ci.yml's 'longest selftests: 13m35s (estimate)' cannot be replaced by this run's measured 9m41s while the bound stays 33: 3 x 9m41s is 29m03s, under 33. The bound is tied to SWEEP_DEADLINE in tools/sweep-selftests.py, outside my files. (iii) tools/sweep-selftests.py:10's docstring example still shows `--platform win32` with no --workers (not my file). Note: I briefly started an unintended `sweep-selftests.py --shard 1/4 --list` loop. --list is not a sweep flag, so it ran a shard. I killed it with pkill; git status showed no strays afterwards.",
+        "descriptive": "The sweep cost table now holds Windows measurements, and gate-parity locks Windows on four parts and the manifest-validation work to a per-run job. I declined the manifest split: it is 18 s off the critical path and would only add runner-minutes. 55 runner-minutes cannot be reached by job shape (Windows cells alone are 66.6)."
       },
       "startedAt": "2026-10-30T14:13:44Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-30T14:52:01Z",
+      "verifiedBy": [
+        "sv13: the live ci.yml and verify.sh --list. Every slice a per-run job runs is listed, each manifest-validation piece is run by a per-run job, and the Windows sweep cells run parts 1..4 of 4 for each Windows slice",
+        "sv14: an unlisted manifests-doctor slice, the manifests slice dropped, and the manifests slice moved to the release-tier job only are each reported",
+        "sv15: the matrix narrowed to 3 of 3, and an exclude dropping part 4 on Windows, are each reported by a Windows slice"
+      ],
       "movedFrom": {
         "id": "P142.7",
         "phase": "P142",
@@ -357,6 +369,17 @@
         "runId": "2026-10-30T14:46:01Z.4afb5a",
         "status": "passed",
         "at": "2026-10-30T14:46:01Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "a948943eb9b3",
+        "at": "2026-10-30T14:52:01Z",
+        "return": "docs/audit/evidence/returns/P143.3-6yq/20261030T141344Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "tests.mode is regression with expectRedFirst false, and the three cases lock a shape HEAD d1a877b7 already has: its ci.yml already runs Windows on parts 1..4 of 4 for both Windows legs, and its manifests job already runs every piece of the manifest-validation work. A red run in a HEAD tree with this test file copied over it would therefore pass. The cases were proven able to fail by a mutation probe run on a scratch copy of the tree: all 9 rows KILLED plus a CLEAN baseline (probe and output listed in outcome.technical).",
+        "at": "n/a - no red-first run was made"
       }
     },
     {
@@ -583,7 +606,7 @@
     {
       "id": "P143.8-z9j",
       "title": "The full sweep finishes under four minutes on a quiet machine: the critical path is measured and its heaviest suites are cut or staged",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The full sweep still takes about 315 s on a quiet machine after the git-place memo (two runs 26 min apart, base 350 s); the target is under 240 s. Measure the critical path first: the longest single jobs and blocks in a loud sweep, and the slot-seconds per suite, then cut the heaviest suites or split them into staged blocks so the sweep's slots stay busy to the end. Take timings only with 1-, 5- and 15-minute load all low and no other sweep, playwright, build or agent session running; repeat twice with a gap and report the spread. If 240 s stays out of reach, name the remaining critical path with numbers and do not claim the target. Never re-record .github/sweep-costs.json from darwin: the table is windows figures, re-recorded from a CI log.",
       "files": [
         "tools/sweep-selftests.py",
@@ -613,6 +636,61 @@
       "dependsOn": [
         "P143.3-6yq"
       ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-30T14:52:20Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "notes": [
+        {
+          "at": "2026-10-30T14:52:27Z",
+          "text": "Also carries P143-R11's measurement: CI run 41070108164 at d1a877b7 took 9.9 min wall and 106.3 runner-minutes (8 Windows cells 66.6, cp1252 4 at 581 s is the critical path); the 8-minute and 55-runner-minute targets need the Windows sweep's CPU cut (heaviest: test_drive_phase 2688 slot-seconds, then test_commit_task_work, test_audit_task, test_close_phase, test_stamp_verification). Re-measure over at least five per-run CI runs after the cut."
+        }
+      ],
+      "testEvidence": {
+        "runId": "2026-10-30T16:22:32Z.58a4cb",
+        "status": "passed",
+        "at": "2026-10-30T16:22:32Z"
+      }
+    },
+    {
+      "id": "P143.9-z9j",
+      "title": "The red-first deadline reads the cost table for the platform it was recorded on, not as this host's wall time",
+      "status": "pending",
+      "description": "The red-first helper sizes its deadline from .github/sweep-costs.json, whose figures are windows-2025 slot-seconds at 4 workers; read on a darwin host with more workers they are taken as this host's wall time, so a proof naming tests/test_drive_phase.py needs 1011 s against a 565 s deadline and is refused (could-not-prove) where the darwin figure fit at 324 s. The reader must take the table's platform and workers into account: compare the recorded platform with the host, and when they differ either scale by a measured ratio that is recorded beside the table, or say that the figure is another platform's and size from a basis that holds here - never treat another platform's seconds as this host's. A case with a windows-recorded table on a darwin host is the red one.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "tests/test_stamp_verification.py",
+        ".github/sweep-costs.json",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_stamp_verification.py: This table is right for CI, which binds on Windows, so keep it"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_stamp_verification.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
       "attempts": 0,
       "maxAttempts": 3,
       "commit": null,
@@ -622,7 +700,24 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-30T14:52:26Z",
+          "text": "scope: .github/sweep-costs.json, plugins/audit/scripts/governance/stamp-verification.py, every path the finding(s) P143-R10 name"
+        },
+        {
+          "at": "2026-10-30T14:52:26Z",
+          "text": "scope: tests/test_stamp_verification.py, the suite that tests .github/sweep-costs.json (the test file that names sweep-costs.json)"
+        },
+        {
+          "at": "2026-10-30T14:52:26Z",
+          "text": "scope: tests/test_stamp_verification.py, the suite that tests plugins/audit/scripts/governance/stamp-verification.py (python: its import closure reaches plugins/audit/scripts/governance/stamp-verification.py)"
+        }
+      ],
+      "fixes": [
+        "P143-R10"
+      ]
     }
   ],
   "reviewPerTask": "signals",

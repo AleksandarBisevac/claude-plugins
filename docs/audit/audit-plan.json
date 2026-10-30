@@ -4434,7 +4434,8 @@
       "P149.2",
       "P149.3-hwg",
       "P149.9-hwg",
-      "P149.10-hwg"
+      "P149.10-hwg",
+      "P143.9-z9j"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -10929,7 +10930,8 @@
       "P144.4-ttw",
       "P148.3",
       "P143.7-z9j",
-      "P143.8-z9j"
+      "P143.8-z9j",
+      "P143.9-z9j"
     ],
     "docs/audit/phases/P127.json": [
       "P127.8-bgr"
@@ -12071,7 +12073,8 @@
       "P149.3-hwg",
       "P149.9-hwg",
       "P149.10-hwg",
-      "P143.7-z9j"
+      "P143.7-z9j",
+      "P143.9-z9j"
     ],
     "tests/test_usage_ledger.py": [
       "P131.1",
