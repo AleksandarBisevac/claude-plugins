@@ -37,6 +37,7 @@ here is what the MOVE and the new question added.
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import errno
 import os
 import subprocess
 import sys
@@ -852,16 +853,75 @@ def _two_listings(root):
     return tracked, differing
 
 
+# A name holding a tab is the one shape that tells a split at the FIRST tab of a
+# listing entry from a split at any later one. NTFS refuses the byte in a file
+# name, so that fixture exists only where the filesystem accepts it.
+TAB_NAME = "tab\there.txt"
+SHAPE_NAMES = ("del.txt", "skip.txt", "assumed.txt", TAB_NAME, "n\u00e4me.txt",
+               "conflict.txt")
+
+
+def _write_shapes(root, write):
+    """Write every shape's base file through `write`; return the names the
+    filesystem refused.
+
+    Only the tab name may be refused. Any other refusal raises, because a shape
+    missing from the fixture would let `tso1` agree with itself over a narrower
+    tree than its label names."""
+    refused = []
+    for name in SHAPE_NAMES:
+        try:
+            write(os.path.join(root, name), "base\n")
+        except OSError:
+            if name != TAB_NAME:
+                raise
+            refused.append(name)
+    return refused
+
+
+def _refusing(refused_name):
+    """A writer standing in for a filesystem that will not hold `refused_name`,
+    raising what NTFS raised for the tab name."""
+    def write(path, text):
+        if os.path.basename(path) == refused_name:
+            raise OSError(errno.EINVAL, "Invalid argument", path)
+        _write(path, text)
+    return write
+
+
+def _shape_writer_cases(check):
+    """The fixture builder itself, on every platform: a refused tab name leaves
+    the rest of the block running, and no other refusal is absorbed."""
+    tabless = _harness.fixture_root("tree-stamp-shapes-tabless-")
+    skipped = _write_shapes(tabless, _refusing(TAB_NAME))
+    built = sorted(n for n in SHAPE_NAMES
+                   if os.path.isfile(os.path.join(tabless, n)))
+    check("tso4 a filesystem refusing the tab name leaves every other shape "
+          "built and names the one it refused, so the block's other cases still "
+          "run there: %r" % ((skipped, built),),
+          skipped == [TAB_NAME]
+          and built == sorted(n for n in SHAPE_NAMES if n != TAB_NAME))
+    # The over-fire twin: a builder that swallowed every OSError passes tso4 and
+    # must fail here.
+    other = _harness.fixture_root("tree-stamp-shapes-other-")
+    try:
+        absorbed = _write_shapes(other, _refusing("n\u00e4me.txt"))
+    except OSError as exc:
+        absorbed = exc
+    check("tso5 a refusal of any OTHER shape name raises rather than narrowing "
+          "the fixture: %r" % (absorbed,), isinstance(absorbed, OSError))
+
+
 def _one_listing_cases(check):
     """Every shape the two halves tell apart: modified, deleted, staged then
     edited again, untracked, ignored, skip-worktree with its file gone,
     assume-unchanged with its file edited, intent-to-add, the three stages of a
-    conflict, and names with a tab and a non-ASCII letter in them."""
+    conflict, a name with a non-ASCII letter in it, and - where the filesystem
+    accepts one - a name with a tab in it, edited so it sits in both halves."""
+    _shape_writer_cases(check)
     root = _seeded_repo("tree-stamp-one-listing-")
     _write(os.path.join(root, ".gitignore"), "ign*\n")
-    for name in ("del.txt", "skip.txt", "assumed.txt", "tab\there.txt",
-                 "n\u00e4me.txt", "conflict.txt"):
-        _write(os.path.join(root, name), "base\n")
+    tab_refused = _write_shapes(root, _write)
     _git(root, "add", "-A")
     _git(root, "commit", "-q", "-m", "shapes")
     base = subprocess.run(["git", "-C", root, "rev-parse", "--abbrev-ref", "HEAD"],
@@ -888,6 +948,8 @@ def _one_listing_cases(check):
     _write(os.path.join(root, "assumed.txt"), "edited\n")
     _write(os.path.join(root, "ita.txt"), "intent\n")
     _git(root, "add", "-N", "ita.txt")
+    if not tab_refused:
+        _write(os.path.join(root, TAB_NAME), "edited\n")
     reading, problem = M._content_reading(root, None)
     tracked, differing = _two_listings(root)
     got = (sorted(reading["tracked"]) if reading else None,
@@ -900,6 +962,19 @@ def _one_listing_cases(check):
           problem is None and got == (tracked, differing) and stages == 3
           and "new.txt" in differing and "ign1" not in differing
           and "skip.txt" not in differing and "assumed.txt" not in differing)
+    tab_label = "tso3 a name holding a tab is read whole in both halves"
+    if tab_refused:
+        _harness.skip(check, tab_label,
+                      "this filesystem refused to create a file named %r"
+                      % (TAB_NAME,), bool(tab_refused))
+    else:
+        got_tracked = [p for p, _h in got[0]] if got[0] is not None else []
+        got_current = got[1] or []
+        check("%s - its index entry and its differing line are each split at "
+              "the entry's first tab, so the path keeps its own: %r"
+              % (tab_label, (got_tracked, got_current)),
+              got_tracked.count(TAB_NAME) == 1
+              and got_current.count(TAB_NAME) == 1)
     real = M._git_fields
 
     def untagged(project, args):

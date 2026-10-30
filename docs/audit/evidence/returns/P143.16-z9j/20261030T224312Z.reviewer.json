@@ -1,0 +1,19 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "tests/test__tree_stamp.py:58-73,965-970",
+   "issue": "The tab name is skipped on ANY OSError for that name, and the error is not kept: _write_shapes appends only the name, so the SKIPPED line says 'this filesystem refused to create a file named' with no errno. On a filesystem where the write fails for an unrelated reason (EACCES, ENOSPC) the case would skip with a reason that is not shown to be true. The `absent` argument to _harness.skip is bool(tab_refused), which is always true inside that branch, so the skip's own grading cannot ever fire.",
+   "resolution": "Have _write_shapes return (name, exc) pairs, or record the errno, and put it in the skip mechanism text (for example 'refused with [Errno 22] Invalid argument'). Optionally narrow the absorbed set to the errnos Windows raises for the name. That needs a Windows run, so printing the error is the safe step."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Clause: 'Build the tab-named fixture only where the filesystem accepts it and say so when it is skipped ... the block's other cases must still run on Windows.' The diff does this. _write_shapes writes every shape through an injected writer. An OSError on TAB_NAME only is recorded (`if name != TAB_NAME: raise`), and any other name's OSError re-raises, so a narrowed fixture cannot happen silently. Where the tab file was refused, tso3 reports it by name via _harness.skip ('tso3 ... SKIPPED HERE - this filesystem refused to create a file named ...'). The post-commit edit of the tab file is guarded by `if not tab_refused`, so tso1 and tso2 still run. tso4 and tso5 exercise the builder on every platform through a refusing writer, so the Windows branch is covered on macOS and Linux. I ran `python3 tests/test__tree_stamp.py --selftest` once: tso1 to tso5 PASS, 65/65 cases passed. The executor's outcome describes the diff accurately: the 61 to 65 case count, the import errno, the tso3, tso4 and tso5 roles, and the left-alone Windows-legal names. Dependants: _tree_stamp.py is unchanged, test_stamp_verification.py defines its own helpers, and sweep-costs.json keys by path with no stage added, so their answers hold. Caveat: block tso never got past fixture building on Windows in the CI run, so tso1 and tso2 have not been seen on Windows with the other shapes (non-ASCII name, conflict stages). The orchestrator's CI run is the verdict there.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "The executor filed not-attempted: regression mode, expectRedFirst false, and the change is test-only, so no product state turns the new cases red. That holds. Its mutation probe (swallow-all gives tso5 red, catch-nothing gives the CI 60/61 raise, rpartition gives tso1 and tso3 red) was not re-run by me and is not a red-first proof.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "The gate is `python3 tools/sweep-selftests.py tests/test__tree_stamp.py`, which selects that one file. I read the tso block and its new helpers, tso1 to tso5, in full. tso3 asserts count==1 of the tab path in each half, which fails if the split lands on a later tab. tso1 compares against the two separate listings. I did not re-read the file's other blocks, so the answer covers the tso block only."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

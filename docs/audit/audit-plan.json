@@ -11703,7 +11703,8 @@
     ],
     "tests/test__tree_stamp.py": [
       "P131.1",
-      "P143.10-z9j"
+      "P143.10-z9j",
+      "P143.16-z9j"
     ],
     "tests/test__ui_theme.py": [
       "P131.1",

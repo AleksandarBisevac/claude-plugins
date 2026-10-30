@@ -161,8 +161,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py",
         "issue": "Phase review: confirmed_in_advance (drive-phase.py ~4131-4158) replays journal rows by _journal_io.read_all's order, which sorts on a one-second ts and breaks ties by journal file name. A risk.confirmed row in one writer's file and a task.reopen in another, in the same second, replay in file-name order, so a reopen can be replayed before the confirmation it cancels and the task stays confirmed. P143.5's in-process verbs made the same second reachable: tests/test_drive_phase.py hr3 failed in CI run 41112221437 (selftests linux stress 1, 167/168, the drive committed without asking and commit-task-work refused). Probes: scratchpad/p143-review/probe/same_second.py and instrument.py.",
-        "resolution": "Order rows that share a moment causally rather than by file name (a reopen sharing a moment with a confirmation cancels it, or rows carry sub-second time), make hr3 deterministic, and audit other replays that compare rows across journal files for the same tie.",
-        "fixTask": "P143.14-z9j"
+        "resolution": "fixed in P143.14-z9j (8a242ad61fc1): Order rows that share a moment causally rather than by file name (a reopen sharing a moment with a confirmation cancels it, or rows carry sub-second time), make hr3 deterministic, and audit other replays that compare rows across journal files for the same tie.",
+        "fixTask": "P143.14-z9j",
+        "commit": "8a242ad61fc1",
+        "status": "fixed"
       },
       {
         "id": "P143-R18",
@@ -187,9 +189,24 @@
         "file": "plugins/audit/scripts/governance/drive-phase.py:7890-7898",
         "issue": "This diff rewrote standing_review_fix's not-carried wording into three branches. Only the tie branch (len(reasons) > 1) has a case (hr10). The single-human-reopen branch ('a re-open for ...') and the no-reopen branch ('absent from the journal') have no case anywhere in tests/ (grep for 're-open for', 'absent from the journal' and 'not the drive's hand-back' over tests/*.py finds nothing). Rewritten lines with no case can break silently.",
         "resolution": "Add two cases in _same_moment_handback_cases. First, a human re-open a second AFTER the hand-back: fix is None and spent contains \"a re-open for 'the human wants\". Second, a journal with no re-open of P1.1: spent contains 'absent from the journal'."
+      },
+      {
+        "id": "P143-R21",
+        "severity": "med",
+        "file": "tests/test__tree_stamp.py",
+        "issue": "CI run 41118921523 at 8a242ad6: selftests (windows, plain 2) and (windows, cp1252 2) fail tests/test__tree_stamp.py 60/61: block tso (added by P143.10-z9j for the merged ls-files -t listing) raises while building its cases, OSError [Errno 22] Invalid argument on a fixture path 'tab\\there.txt' - a file name holding a tab, which Windows cannot create.",
+        "resolution": "Build the tab-named fixture only where the filesystem accepts it and say so when it is skipped (or reach the quoted-path branch with a name Windows can hold); the block's other cases must still run on Windows.",
+        "fixTask": "P143.16-z9j"
+      },
+      {
+        "id": "P143-R22",
+        "severity": "low",
+        "file": "tests/test__tree_stamp.py:58-73,965-970",
+        "issue": "The tab name is skipped on ANY OSError for that name, and the error is not kept: _write_shapes appends only the name, so the SKIPPED line says 'this filesystem refused to create a file named' with no errno. On a filesystem where the write fails for an unrelated reason (EACCES, ENOSPC) the case would skip with a reason that is not shown to be true. The `absent` argument to _harness.skip is bool(tab_refused), which is always true inside that branch, so the skip's own grading cannot ever fire.",
+        "resolution": "Have _write_shapes return (name, exc) pairs, or record the errno, and put it in the skip mechanism text (for example 'refused with [Errno 22] Invalid argument'). Optionally narrow the absorbed set to the errnos Windows raises for the name. That needs a Windows run, so printing the error is the safe step."
       }
     ],
-    "outcome": "[findings: 20 - 0 high, 7 med, 13 low; 7 with a recorded fix commit]"
+    "outcome": "[findings: 22 - 0 high, 8 med, 14 low; 8 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1059,7 +1076,7 @@
     {
       "id": "P143.14-z9j",
       "title": "fix P143-R17: Phase review: confirmed_in_advance (drive-phase.py ~4131-4158) ...",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase review: confirmed_in_advance (drive-phase.py ~4131-4158) replays journal rows by _journal_io.read_all's order, which sorts on a one-second ts and breaks ties by journal file name. A risk.confirmed row in one writer's file and a task.reopen in another, in the same second, replay in file-name order, so a reopen can be replayed before the confirmation it cancels and the task stays confirmed. P143.5's in-process verbs made the same second reachable: tests/test_drive_phase.py hr3 failed in CI run 41112221437 (selftests linux stress 1, 167/168, the drive committed without asking and commit-task-work refused). Probes: scratchpad/p143-review/probe/same_second.py and instrument.py.\n\nResolution asked: Order rows that share a moment causally rather than by file name (a reopen sharing a moment with a confirmation cancels it, or rows carry sub-second time), make hr3 deterministic, and audit other replays that compare rows across journal files for the same tie.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1085,14 +1102,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8a242ad61fc1",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "DESIGN, option (b), at the replay. A `ts` is one second, and two writers' same-second rows carry no order: neither file records the other, and read_all's tie-break by file name is an order to print in. Option (a), sub-second stamps, only narrows the window (two processes, clock granularity, rows from other hosts merged later), and every existing row keeps one-second precision. The row format, chain and COMPATIBILITY.md are therefore untouched. The merge driver's `_tie_faults` already works from the same premise.\n\nCHANGES (all four in the declared files):\n- `_journal_io.last_words(rows, words_of)` -> `{key: set(words)}`. For each key: every writer's last word in the newest second that speaks of it; one writer's rows stay in append order (keyed by `_file`); a row older than the held second is passed over. read_all's docstring now says its cross-file tie order is not causal and points here.\n- drive-phase `confirmed_in_advance` covers a task only when `last_words == {risk.confirmed}`. A reopen sharing the newest second from another writer cancels: the gate asks again. The id parse moved, unchanged, into `_confirmed_ids`.\n- drive-phase `standing_review_fix` carries a hand-back only when every possible newest re-open is the drive's hand-back. Otherwise `spent` says the newest re-opens were written by two writers in one second.\n- tests/test_drive_phase.py: hr3 made deterministic. It plants the session-less writer token as `ffffffffffffffff` (sorting after drive-fixture-session) and pins both verbs' clock to one second via the suite's own `_pinned_clock`. It asserts its own precondition (same ts, two files, the reopen's file first) as well as the high-risk stop. New: hr4-hr9 (confirm/reopen ties: both file orders, a later second, another task, same-file order both ways) and hr10-hr12 (hand-back ties). hr6/hr7/hr8/hr11/hr12 are the over-fire twins.\n- tests/test__journal_io.py: lw1a/lw1b, lw2-lw7, lw8a/lw8b (lw8 goes through append + read_all on disk).\n\nRUNS:\n- the gate `python3 tools/sweep-selftests.py tests/test_drive_phase.py`: exit 0, `1/1 files ok, 688 cases`.\n- extra, for the suite I edited: `python3 tools/sweep-selftests.py tests/test__journal_io.py` exit 0, 273 cases; `ruff check` on the four files: pass; `vermin -t=3.8-` on the four files: pass.\n\nMUTATION PROBE: the plan gate refused it inside the worktree, verbatim: `[require-plan] probe/mutations.py is outside task P143.14-z9j, the task this worktree is bound to (plan: <home>/dev/audit-plugin/claude-plugins): no task of this plan declares it for this one. Only that task's files are open here.` (only the home prefix replaced). I did not route around that in the tree. The probe is at <scratchpad>/p143-14-probe/mutations.py (run: `python3 mutations.py <worktree>`), its output in mutations.out beside it, exit 0, `12/12 rows held`. Each anchor is asserted to appear exactly once and the mutation is checked to have landed; `__pycache__` is purged around every run; the sha256 restore is checked in `finally`. All 8 mutation rows were KILLED: m1 (old reading) -> hr3,hr4,hr5; m2/m2b (writers merged) -> hr3,hr4,hr10 / lw1a,lw1b,lw5,lw8a,lw8b; m3/m3b over-fire (append order lost) -> hr8,hr11 / lw2; m4/m4b over-fire (a later second does not settle) -> hr6,hr12 / lw3,lw4; m5 (hand-back carried in a tie) -> hr10.\n\nA LINT I HAD TO RENAME AROUND (finding, not fixed): the git-bypass scan in tests/test_drive_phase.py (`_git_bound_names`, read by the al-block case labelled 'the case P125-R156 asks for') binds names module-wide, not per scope. `moment`, `files` and `state` are already 'git' at HEAD, so `handback = ... % (..., moment)` and `root = _journal_only_project(files)` cascaded until the unrelated `subprocess.run(..., check=True)` at line 8928 was reported. I renamed my locals (tick, tick_after, by_file); the bound-name diff against HEAD is now empty. The class fix is a scope-aware scan; that is out of this task's scope.\n\nAUDIT OF EVERY read_all CALLER (`grep -rn 'read_all(' plugins/audit tools`):\nFIXED: drive-phase confirmed_in_advance; drive-phase standing_review_fix.\nSAFE:\n- drive-phase filed/role_return_filed, audit-task _filing_rows, commit-task-work filing_rows -> _filed_returns.already_filed_row: a return path is filed once (exclusive create plus refiling_refusal), so there is no second row to order.\n- drive-phase own_commit: `_attempt_start_moment` returns the second itself, the same for any tied row; `_attempt_nonces` is a `>=` filter into a de-duplicated list; `_invariants.withdrawn_nonces` is a set.\n- drive-phase reopen_record: unions only.\n- audit-task _side_branch_warned: any(). group_plan's _accounted_commits: a set union.\n- _doctor_completions receipts: sets, with the watermark the earliest moment.\n- _doctor_trail task restarts: counts.\n- _invariants 922 (commits by action): de-duplicated, used for membership. _invariants _recorded_states: membership.\n- _evidence_io merge_seams: every stretch collected.\n- _panel_state and audit-journal show: display in read_all's order, each row printed with its own ts. A limit cut through a tied second keeps rows chosen by file name; that is display only.\n- audit-lookup cancel_lookup `_latest_cancel_row`: display of a cancel reason, which no decision reads.\nLEFT, the tie is live, and the home is not in this task's files:\n(A) `_scoped_commit.start_head_of`, read by drive-phase own_commit, commit-task-work earlier_attempt and audit-task :6848. reopen resets attempts to 0 (audit-task.py:7972), so one task holds several task.start rows with the same attempt number. Two writers' start rows of one attempt in one second give a head chosen by file name. In own_commit, the old attempt's head could make that attempt's commit read as this attempt's work. This needs a start, a reopen and a restart of one task inside one second by two writers. Fix: `last_words` there, returning None when the heads disagree.\n(B) `hooks/_config.standing_approval`, read by drive-phase standing_use, audit-status and _doctor_trail. The last owner arm/revoke row decides, so an arm and a revoke in one second from two owner sessions are ordered by file name. The safe direction is not armed. `journal_lib()` already gives the hook `_journal_io`.\n(C) `_invariants._last_index_write`: `moment >= best[0]` names the read-order-last of tied rows in a breach message's 'last written by' clause. It changes no verdict.\n\nDEPENDANTS: tests/test_drive_phase.py changed as above. tools/affected.py, PLUGIN-BUILD-GUIDE.md (its _journal_io section names a selection of the API, and `_deps.py --render` lists no functions), README.md and docs/research/pipeline-cost-design.md are still correct: no path, CLI or public signature changed. hooks/detect-plan-skip.py is still correct: the standing-approval reading is unchanged. record-risk-confirmation.py is still correct: its row and summary sentence are read unchanged, and hr1/hr3 drive the real verb. stamp-verification.py is still correct: nothing it reads changed. Names used elsewhere (`_attempt_start_moment`, `_carries`, `_git_said`, `_index_flags`, `_actions`, `_counting`, `_follower_cases`) are unchanged. .github/sweep-costs.json needs no change: hr-block took 5.1s here (measured once) against the 12.0 figure on record. ci.yml, tools/sweep-selftests.py, test__runner_output, test_run_test_gate and test_stamp_verification are untouched by this change.",
+        "descriptive": "When two journal files hold rows from the same second, they no longer replay in file-name order: a reopen in the same second as a high-risk confirmation now makes the drive ask again. hr3 is deterministic."
       },
       "startedAt": "2026-10-30T19:14:13Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-30T19:53:17Z",
+      "verifiedBy": [
+        "hr3 made deterministic: the writer token and the clock are pinned so the confirmation and the reopen share one second, with the reopen's file sorting first; the case asserts that tie as well as the high-risk stop",
+        "hr4/hr5: a confirmation and a reopen of the same task in the same second in two files do not cover it, whichever file sorts first",
+        "hr6-hr9 twins: a later confirmation covers; a same-second reopen of another task does not cancel; inside one file, append order decides both ways",
+        "hr10-hr12: a drive hand-back is not carried when a human's re-open shares its second from another writer; it is carried when appended later in one file, or a second later",
+        "lw1a-lw8b in tests/test__journal_io.py: last_words keeps every writer's last word in the newest second per key, holds append order within a file, lets a later second settle a key, and reads the tie off disk through append and read_all"
+      ],
       "notes": [
         {
           "at": "2026-10-30T19:14:12Z",
@@ -1111,6 +1134,18 @@
         "runId": "2026-10-30T19:49:10Z.6f259e",
         "status": "passed",
         "at": "2026-10-30T19:49:10Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8a242ad61fc1",
+        "at": "2026-10-30T19:53:17Z",
+        "return": "docs/audit/evidence/returns/P143.14-z9j/20261030T191413Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-30T19:43:33Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD exited 1 with failing cases hr3 (house FAIL), hr4 (house FAIL), hr10 (house FAIL), ta9 (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 678/679 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 684/688 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1186,6 +1221,60 @@
         "status": "not-attempted",
         "basis": "gate-only task, tests.expectRedFirst false; no test added. As a check that the rule fires, setting the bound back to 6 against the new figure made gate-parity print: CI job bound (lint): timeout-minutes is 6, under 2 times its longest recorded run of 3m14s (6m28s needed); restored afterwards.",
         "at": "n/a"
+      }
+    },
+    {
+      "id": "P143.16-z9j",
+      "title": "fix P143-R21: CI run 41118921523 at 8a242ad6: selftests (windows, plain 2) an...",
+      "status": "in_progress",
+      "description": "CI run 41118921523 at 8a242ad6: selftests (windows, plain 2) and (windows, cp1252 2) fail tests/test__tree_stamp.py 60/61: block tso (added by P143.10-z9j for the merged ls-files -t listing) raises while building its cases, OSError [Errno 22] Invalid argument on a fixture path 'tab\\there.txt' - a file name holding a tab, which Windows cannot create.\n\nResolution asked: Build the tab-named fixture only where the filesystem accepts it and say so when it is skipped (or reach the quoted-path branch with a name Windows can hold); the block's other cases must still run on Windows.",
+      "files": [
+        "tests/test__tree_stamp.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test__tree_stamp.py: the case P143-R21 asks for, locking the behaviour at HEAD"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__tree_stamp.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-30T22:43:12Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-30T22:43:10Z",
+          "text": "scope: tests/test__tree_stamp.py, every path the finding(s) P143-R21 name"
+        },
+        {
+          "at": "2026-10-30T22:43:10Z",
+          "text": "no test runner in this task's gate for the test P143-R21 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test__tree_stamp.py'], derived as narrowed to this task's tests.add paths, in the spelling meta.phaseGate.derived.spelling records; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P143-R21"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-30T22:47:18Z.8a5311",
+        "status": "passed",
+        "at": "2026-10-30T22:47:18Z"
       }
     }
   ],
