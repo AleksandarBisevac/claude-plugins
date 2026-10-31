@@ -22,7 +22,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P151-R1",
@@ -59,16 +59,20 @@
         "severity": "high",
         "file": "tools/gate-parity.py:1079-1116 (encoding_leg_drift); tools/prove-gates.py:132 (_GATE_SHAPES) and its row tables",
         "issue": "The diff adds a gate whose name ends in `_drift`, which prove-gates' name arm derives as a load-bearing lint (_GATE_SHAPES includes `_drift`), and adds no mutation row and no allow row for it (`grep encoding_leg_drift tools/prove-gates.py` finds nothing). prove-gates' c1 (every derived lint has a row) and a4 (every lint has an ALLOW row) therefore go red; the executor's own return records `python3 tools/prove-gates.py --selftest` as fail, 62/65. tools/prove-gates.py is in the sweep, so every per-run selftests cell that is dealt it goes red - the tests.gate did not include it, so the recorded green gate run does not show this. It is a consequence of the diff crossing into a file outside the task's scope, and it is new beyond the already-filed stale sv7 anchor (`        shard: [1, 2, 3, 4]`, count 0).",
-        "resolution": "Add the two rows the executor proposed (both anchors counted once on the task tree by this review): mutation (\"encoding_leg_drift\", \".github/workflows/ci.yml\", \"replace\", \"|| 'selftests-cp1252' }}\", \"|| 'selftests-cp1252-whole' }}\", \"tools/gate-parity.py\", \"el0\") and allow (\"encoding_leg_drift\", \"tools/gate-parity.py\", \"replace\", \"    if not release_whole:\\n\", \"    if True:\\n\", \"tools/gate-parity.py\", \"el3\"), in this phase, before sign-off; then show prove-gates --selftest green apart from the filed c2/sv7 anchor.",
-        "fixTask": "P151.6-3z1"
+        "resolution": "fixed in P151.3-3z1 (8b479b909ccd): Add the two rows the executor proposed (both anchors counted once on the task tree by this review): mutation (\"encoding_leg_drift\", \".github/workflows/ci.yml\", \"replace\", \"|| 'selftests-cp1252' }}\", \"|| 'selftests-cp1252-whole' }}\", \"tools/gate-parity.py\", \"el0\") and allow (\"encoding_leg_drift\", \"tools/gate-parity.py\", \"replace\", \"    if not release_whole:\\n\", \"    if True:\\n\", \"tools/gate-parity.py\", \"el3\"), in this phase, before sign-off; then show prove-gates --selftest green apart from the filed c2/sv7 anchor.",
+        "fixTask": "P151.3-3z1",
+        "commit": "8b479b909ccd",
+        "status": "fixed"
       },
       {
         "id": "P151-R5",
         "severity": "med",
         "file": "CONTRIBUTING.md:197; .github/workflows/ci.yml:28",
         "issue": "The diff adds a third release-tier slice (verify.sh RELEASE_SLICES now `release resample selftests-cp1252-whole`), which makes two descriptions false. CONTRIBUTING.md:197 says 'The release tier adds two: `release` ... and `resample`' - a count in prose, now wrong (the class CLAUDE.md calls this repo's most frequent defect). The dispatch input's description at ci.yml:28 says 'per-run (every gate) or release (every gate plus the Windows re-sample)', but per run the code-page leg now sweeps only a selection, and the release tier also adds the whole code-page leg. Both files are in the diff, but these lines were left unchanged.",
-        "resolution": "Delete the count from CONTRIBUTING.md:197 and point at `sh tools/verify.sh --list` (or name all three release slices without the number). Reword the ci.yml:28 description so per-run no longer claims every gate and release names the whole code-page leg, e.g. 'per-run (the code-page leg over its selection) or release (adds the Windows re-sample and the whole code-page leg)'.",
-        "fixTask": "P151.7-3z1"
+        "resolution": "fixed in P151.7-3z1 (b2646418c73a): Delete the count from CONTRIBUTING.md:197 and point at `sh tools/verify.sh --list` (or name all three release slices without the number). Reword the ci.yml:28 description so per-run no longer claims every gate and release names the whole code-page leg, e.g. 'per-run (the code-page leg over its selection) or release (adds the Windows re-sample and the whole code-page leg)'.",
+        "fixTask": "P151.7-3z1",
+        "commit": "b2646418c73a",
+        "status": "fixed"
       },
       {
         "id": "P151-R6",
@@ -85,12 +89,42 @@
         "severity": "low",
         "file": "tools/gate-parity.py:3366-3370",
         "issue": "jc0, the live cap claim, also asserts `tiers[\"release\"][\"count\"] > tiers[\"per-run\"][\"count\"]`. That pins that the release tier has a job the per-run tier lacks (today `resample`), which is no part of the cap claim. Merging resample into another job, or dropping it, would turn the cap case red while both tiers sit well under 20, and its message would talk about the cap.",
-        "resolution": "Drop the release > per-run conjunct from jc0. If the tier split on the live workflow needs a pin, keep it in jc3, which already requires the live resample anchor to occur once."
+        "resolution": "Drop the release > per-run conjunct from jc0. If the tier split on the live workflow needs a pin, keep it in jc3, which already requires the live resample anchor to occur once.",
+        "status": "carried",
+        "carriedTo": "BUG-31-z9j"
+      },
+      {
+        "id": "P151-R8",
+        "severity": "low",
+        "file": "tools/sweep-selftests.py",
+        "issue": "Phase review: main() runs table_notes(costs, paths) after the --encoding-subjects narrowing, so every per-run cp1252 cell says 176 cost entries name files no longer swept (run 41158896864), a false claim the table is stale.",
+        "resolution": "Pass the pre-narrowing swept set to table_notes, or word the note for a selection.",
+        "status": "carried",
+        "carriedTo": "BUG-31-z9j"
+      },
+      {
+        "id": "P151-R9",
+        "severity": "low",
+        "file": ".github/workflows/ci.yml",
+        "issue": "Phase review: the release shape is now measured and is the job's longest cell (release run 41161967355: selftests windows cp1252 1 ran 12m03s), but the longest selftests line holds the per-run 7m48s and the cp1252 parts comment still calls the release shape an estimate.",
+        "resolution": "Record the release-tier cp1252 figure as the job's longest and replace the estimate wording with the measurement.",
+        "status": "carried",
+        "carriedTo": "BUG-31-z9j"
+      },
+      {
+        "id": "P151-R10",
+        "severity": "low",
+        "file": "tools/prove-gates.py",
+        "issue": "Phase review: job_bound_evidence has no prove-gates TABLE or ALLOW row (prove-gates --only job_bound: 0 of 0 gates proven red), including P151.4's held-by-deadline branch; jb5-jb9 are never shown to go red when the held-basis checks are weakened.",
+        "resolution": "Add a red row and an allow row for job_bound_evidence's held-basis branch.",
+        "status": "carried",
+        "carriedTo": "BUG-31-z9j"
       }
     ],
-    "outcome": "[findings: 7 - 1 high, 3 med, 3 low; 4 with a recorded fix commit]"
+    "outcome": "[findings: 10 - 1 high, 3 med, 6 low; 6 with a recorded fix commit]",
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "Delivered: Windows sweep on five parts, Linux on two; per-run cp1252 leg over the derived encoding-subject selection with the whole leg in the release tier (owner decision 2026-10-30); gate-parity holds the tier split, the per-family part counts, the 20-job cap and the sweep-deadline bound basis, each with prove-gates rows. Measured: per-run run 41158896864 on ef0ec287 took 7m53s wall (outcome met: under eight minutes, 16 jobs, none held) and about 89 runner-minutes; release-tier run 41161967355 on b2646418 green on attempt 2 (attempt 1: one resample pass failed tests/test__locks.py wt3, recorded as F821 and under investigation). Runner-minutes stay above 55; that depends on P152. Lows carried to BUG-31-z9j. Per-task reviewer answers continued over: P151.4-3z1 intent diverges: Owner: 'Bez pitanja, uzimaj preporučenu opciju.' The five-part longest needs a GitHub run of that shape; the orchestrator records it from the phase's CI run before sign-off.",
   "tasks": [
     {
       "id": "P151.1-z9j",
@@ -556,7 +590,7 @@
     {
       "id": "P151.7-3z1",
       "title": "fix P151-R5: The diff adds a third release-tier slice (verify.sh RELEASE_SLIC...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The diff adds a third release-tier slice (verify.sh RELEASE_SLICES now `release resample selftests-cp1252-whole`), which makes two descriptions false. CONTRIBUTING.md:197 says 'The release tier adds two: `release` ... and `resample`' - a count in prose, now wrong (the class CLAUDE.md calls this repo's most frequent defect). The dispatch input's description at ci.yml:28 says 'per-run (every gate) or release (every gate plus the Windows re-sample)', but per run the code-page leg now sweeps only a selection, and the release tier also adds the whole code-page leg. Both files are in the diff, but these lines were left unchanged.\n\nResolution asked: Delete the count from CONTRIBUTING.md:197 and point at `sh tools/verify.sh --list` (or name all three release slices without the number). Reword the ci.yml:28 description so per-run no longer claims every gate and release names the whole code-page leg, e.g. 'per-run (the code-page leg over its selection) or release (adds the Windows re-sample and the whole code-page leg)'.",
       "files": [
         "CONTRIBUTING.md",
@@ -586,13 +620,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b2646418c73a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Edits in the task worktree. CONTRIBUTING.md tiers paragraph: removed the 'adds two' count, now points at `sh tools/verify.sh --list` (slices marked (release)) and names all three release slices (release, selftests-cp1252-whole, resample) with what each does. ci.yml: tier input description now reads 'per-run (every per-run gate, the code-page leg over its selection) or release (adds the Windows re-sample and the whole code-page leg)'. ci.yml selftests: replaced '# longest selftests: 13m35s (estimate ... four parts ...)' with '# longest selftests: 7m48s (run 41158896864, windows plain 4, 02:12:07 to 02:19:55)'; derived with the gh run view command from the brief (selftests (windows, plain 4) started 02:12:07Z, completed 02:19:55Z; it is the longest selftests cell in that output, next is linux stress 2 at 7m16s). I also rewrote the comment paragraph above it, which said the longest line was still a four-part estimate and awaited a first measured run: it would have been false next to the new figure. The 'bound selftests: held by the sweep deadline' line is untouched. Commands: python3 tools/gate-parity.py exit 0; python3 tools/gate-parity.py --selftest exit 0 (119/119 cases passed); tests/test__deps.py --selftest ALL PASS 254/254; _deps.doc_prose_numbers() returned []. Dependants (the CONTRIBUTING.md and ci.yml readers listed in the brief, e.g. tools/affected.py, tests/_harness.py, tests/test_drive_phase.py): still correct, because only prose, one description string and a comment changed; no key, job, matrix row or parsed line shape changed (the longest line keeps the '<m>m<ss>s' shape gate-parity reads, and the gate-parity run confirms it). No F/P/BUG ids written. The broad sweep, lint, vitest and shots gates were not run (own-tests reading, nothing of its own to run).",
+        "descriptive": "Two stale descriptions now say only what the code does, the release-tier count is replaced by a pointer to the list command, and the selftests job carries its measured five-part figure."
       },
       "startedAt": "2026-10-31T02:38:12Z",
-      "completedAt": null,
+      "completedAt": "2026-10-31T02:53:05Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -620,6 +654,17 @@
         "runId": "2026-10-31T02:52:02Z.cffa7b",
         "status": "passed",
         "at": "2026-10-31T02:52:02Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "b2646418c73a",
+        "at": "2026-10-31T02:53:05Z",
+        "return": "docs/audit/evidence/returns/P151.7-3z1/20261031T023812Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task, tests.expectRedFirst false; documentation and comment edits only",
+        "at": "n/a"
       }
     },
     {
@@ -704,10 +749,10 @@
     }
   ],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "4331b4e9-59c2-4a61-9004-3102aba69ea2",
-    "branch": "audit/p151-ci-finishes-under-eight-minute",
-    "at": "2026-10-30T23:40:46Z"
-  },
-  "startedAt": "2026-10-30T23:40:46Z"
+  "startedAt": "2026-10-30T23:40:46Z",
+  "testEvidence": {
+    "runId": "2026-10-31T03:47:10Z.7eb993",
+    "status": "passed",
+    "at": "2026-10-31T03:47:10Z"
+  }
 }
