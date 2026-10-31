@@ -3403,6 +3403,16 @@ def _cases(check):
             "the same config - the pair is the point, because either case alone "
             "passes on a broken half", "block",
             bash("build > src/app.ts"), use_cfg=cfg_enforced)
+    # A quote the text leaves open must not carry into the shell body: a
+    # closing quote on a later body line once made the joined view balanced
+    # with the body inside the text's quote. This arm blocked both shapes
+    # before that was fixed; the pair locks it through the runnable view.
+    _rd = "cat " + ".env"
+    _expect("s79 a secret read in a shell body is refused when the text after "
+            "the heredoc opens a quote and a body line closes it", "block",
+            bash("bash <<'EOF'\n%s\n'\nEOF\necho '" % _rd))
+    _expect("s80 ...and in its twin with no closing line", "block",
+            bash("bash <<'EOF'\n%s\nEOF\necho '" % _rd))
 
     # (s35+) The original symptom - a read-only one-liner refused as a
     # write - is gone, per the fix above. Measuring the same function again found

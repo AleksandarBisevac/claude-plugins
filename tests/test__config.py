@@ -3750,8 +3750,70 @@ def _sink_table_cases(check):
           len(declared) > 1 and declared == table)
 
 
+def _runnable_part_cases(check):
+    """EACH PART OF THE RUNNABLE VIEW IS READ FROM A NEUTRAL STATE. The view is
+    the command text, then each shell body, then each interpreter body, joined
+    by newlines. A part that ends inside a quote, a substitution or an escape
+    carried that state into the next part, so a body fed to a shell was read
+    as the inside of the text's quote - and a closing quote in a later line of
+    that body handed the reader a balanced line with the body swallowed."""
+    body = "git push --" + "force origin main"
+    shapes = (
+        ("the measured shape: an apostrophe line, then a quote the text opens",
+         "bash <<'EOF'\n%s\n'\nEOF\necho '" % body),
+        ("...and its twin with no apostrophe line",
+         "bash <<'EOF'\n%s\nEOF\necho '" % body),
+        ("the text ends inside a double quote",
+         "bash <<'EOF'\n%s\n\"\nEOF\necho \"" % body),
+        ("the text ends inside a backquote",
+         "bash <<'EOF'\n%s\nEOF\necho `" % body),
+        ("the text ends on an escape",
+         "bash <<'EOF'\n%s\nEOF\necho \\" % body),
+        ("one body opens a quote a later body closes",
+         "bash <<'A'\necho '\nA\nbash <<'B'\n%s\n'\nB\nbash <<'C'\necho done\nC"
+         % body),
+        ("one body ends on an escape before a later body",
+         "bash <<'A'\necho \\\nA\nbash <<'B'\n%s\nB" % body),
+        ("a shell body opens a quote an interpreter body closes",
+         "bash <<'A'\necho '\nA\npython3 - <<'B'\n%s\nprint(\"'\")\nB" % body),
+    )
+    swallowed = [(what, M.command_clauses(M.runnable_text(cmd, pipe_data=True)))
+                 for what, cmd in shapes]
+    swallowed = [(what, clauses) for what, clauses in swallowed
+                 if body not in [c.strip() for c in clauses]]
+    check("qv1 a body fed to a shell is a clause of its own in the runnable "
+          "view, whatever quote, substitution or escape the text or an "
+          "earlier body leaves open: %r" % (swallowed,),
+          not swallowed and len(shapes) == 8)
+
+    # SECOND DIRECTION, for the fix that closes every part or rewrites a
+    # balanced one: the view of a command with no bodies is the command, open
+    # quote and all, so an unreadable line still goes to the strict reading;
+    # and parts that already end neutral are joined unchanged.
+    alone = "git commit -m \"unterminated"
+    plain = "bash <<'EOF'\necho one\nEOF\npython3 - <<'PY'\nprint(2)\nPY\nls"
+    got = (M.runnable_text(alone), M.runnable_text(plain, pipe_data=True))
+    want = (alone, "bash  \npython3 -  \nls\necho one\nprint(2)")
+    check("qv2 SECOND DIRECTION: a command with no bodies comes back as given, "
+          "an open quote included, and parts that end neutral are joined "
+          "unchanged: %r" % (got,), got == want)
+
+    # A COMMENT IS NOT A QUOTE. The shell skips `# don't`, so a closer added for
+    # its apostrophe would open a quote in every reader that knows comments.
+    # The `#` glued to a word is no comment, and its quote is still closed.
+    commented = "python3 - <<'PY'\n# don't\nprint(1)\nPY"
+    glued = "bash <<'EOF'\necho a#'\nEOF\nls"
+    got = (M.runnable_text(commented), M.runnable_text(glued))
+    want = ("python3 -  \n# don't\nprint(1)", "bash  \nls\necho a#''")
+    check("qv3 a quote inside a comment opens nothing, so a body whose comment "
+          "holds an apostrophe gains no closer - and a `#` glued to a word "
+          "starts no comment, so the quote after it is still closed: %r"
+          % (got,), got == want)
+
+
 def _all_cases(check):
     _cases(check)
+    _runnable_part_cases(check)
     _shared_payload_cases(check)
     _git_path_pair_cases(check)
     _git_standing_cases(check)

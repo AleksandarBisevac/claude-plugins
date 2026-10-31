@@ -142,18 +142,28 @@
         "severity": "high",
         "file": "plugins/audit/hooks/_config.py",
         "issue": "phase code review, measured: the text-sink verdict reads only the text before the heredoc marker inside the command substitution, so a body piped or redirected to a shell after the marker (a pipe to sh, 2>&1 then a pipe to sh, a process substitution running sh, tee into bash, xargs -0 sh -c, a line continuation then sh) is dropped as data by all three guards; main denies every one. Also the heredoc-start pattern reads a delimiter word like E-X or a partly quoted one as plain E, so lines bash runs after its real terminator are dropped (the house-form variant is new; main denies it)",
-        "resolution": "one shared function in _config: a heredoc body is data ONLY when the substitution matches the exact house template - cat with a quoted delimiter and nothing else on that line, the body, the delimiter alone on its line, then the closing paren of the quoted argument of a literal text-sink carrier; everything else graded as shell. A delimiter word with anything after the identifier is not split. Red-first every measured shape in all three guards",
-        "fixTask": "P153.14-34e"
+        "resolution": "fixed in P153.14-34e (b33bc1caa88f): one shared function in _config: a heredoc body is data ONLY when the substitution matches the exact house template - cat with a quoted delimiter and nothing else on that line, the body, the delimiter alone on its line, then the closing paren of the quoted argument of a literal text-sink carrier; everything else graded as shell. A delimiter word with anything after the identifier is not split. Red-first every measured shape in all three guards",
+        "fixTask": "P153.14-34e",
+        "commit": "b33bc1caa88f",
+        "status": "fixed"
       },
       {
         "id": "P153-R16",
         "severity": "med",
         "file": "plugins/audit/hooks/_config.py",
         "issue": "P153.14 executor, measured on main, HEAD and the fix tree: runnable_text joins the command text first and the shell-fed heredoc bodies after it, so an unclosed single quote at the end of the text swallows a body fed to a shell - bash with a quoted-delimiter heredoc whose body is a force push, a line holding one apostrophe, the delimiter, then a last line opening a quote, is allowed by the history guard (the same command without the apostrophe line is denied); secrets-read blocks it. Pre-existing, not a regression",
-        "resolution": "grade each shell-fed body on its own rather than concatenated after the text, so no quote state crosses from the text into a body; red-first the measured shape and its no-apostrophe twin"
+        "resolution": "grade each shell-fed body on its own rather than concatenated after the text, so no quote state crosses from the text into a body; red-first the measured shape and its no-apostrophe twin",
+        "fixTask": "P153.15-34e"
+      },
+      {
+        "id": "P153-R17",
+        "severity": "high",
+        "file": "plugins/audit/hooks/_config.py:3472,3485-3502 (with .claude/hooks/guard-uncommitted.py:964)",
+        "issue": "Deny-to-allow regression in the guards that read runnable_text. _closed_part appends synthetic closers to every part that _context_step reads as ending open. A part can end open because the guards' shell lexer misreads it, not because its shell stops inside a quote. The closers then turn a part the lexer could not tokenize, which HEAD sent to the strict text reading, into a balanced parse, and the destructive line that really runs is read as the inside of a quote. Probed in scratch git-archive exports, HEAD _config.py against the working tree's, by calling guard-history-rewrite decide and guard-uncommitted reading() directly. Shape A, a shell body holding a nested quoted heredoc whose body has an apostrophe: bash <<'EOF' / cat <<'Y' / it's / Y / <VERB> / EOF. The inner shell runs <VERB>. The history guard went from deny to allow for <VERB> = <STASH-DROP> and <FORCE-PUSH>. guard-uncommitted went from (deny, text) to (allow, operation) for <HARD-RESET>. The same happens when the nested heredoc writes a file (cat >f <<'Y'). Shape B, an interpreter body that is valid Python and has an escaped apostrophe: python3 - <<'PY' / print('it\\'s') / import os / os.system(\"<VERB>\") / PY. The history guard went from deny to allow for <STASH-DROP> and <FORCE-PUSH>, and guard-uncommitted went from (deny, text) to (allow, operation) for <HARD-RESET>. Variants with an even number of apostrophes were already allowed at HEAD, so this class existed before. The diff extends it to the odd case, which used to fail closed. The docstring's safety argument at 3463 ('what a closer seals is text its own shell never runs') does not hold in these shapes. The sealed text is a heredoc body or Python source that does run. The diff also re-points gu51 off its heredoc fixture because 'the fix now parses' it, so no case pins that a bodied command the lexer cannot read reaches the text reading.",
+        "resolution": "Stop sealing a part with closers it does not have. Grade each part on its own parse, as the task asked: runnable_text returns the parts, or the callers (git_invocations, command_clauses and the secrets guard's views) iterate them. If any part does not tokenize alone, send the command to the strict text reading over the whole view, as HEAD did. Correct the docstring at 3463. Add deny cases for shapes A and B with each verb, in test_guard_history_rewrite.py and guard-uncommitted's selftest. Restore a gu51-style case that pins a bodied, untokenizable command to the text reading. Prove each new case red against the current _closed_part."
       }
     ],
-    "outcome": "[findings: 16 - 3 high, 8 med, 5 low; 5 with a recorded fix commit]"
+    "outcome": "[findings: 17 - 4 high, 8 med, 5 low; 6 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1094,7 +1104,7 @@
     {
       "id": "P153.14-34e",
       "title": "fix P153-R15: phase code review, measured: the text-sink verdict reads only t...",
-      "status": "in_progress",
+      "status": "done",
       "description": "phase code review, measured: the text-sink verdict reads only the text before the heredoc marker inside the command substitution, so a body piped or redirected to a shell after the marker (a pipe to sh, 2>&1 then a pipe to sh, a process substitution running sh, tee into bash, xargs -0 sh -c, a line continuation then sh) is dropped as data by all three guards; main denies every one. Also the heredoc-start pattern reads a delimiter word like E-X or a partly quoted one as plain E, so lines bash runs after its real terminator are dropped (the house-form variant is new; main denies it)\n\nResolution asked: one shared function in _config: a heredoc body is data ONLY when the substitution matches the exact house template - cat with a quoted delimiter and nothing else on that line, the body, the delimiter alone on its line, then the closing paren of the quoted argument of a literal text-sink carrier; everything else graded as shell. A delimiter word with anything after the identifier is not split. Red-first every measured shape in all three guards",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -1125,14 +1135,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b33bc1caa88f",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/hooks/_config.py: new lift_house_bodies(cmd) -> (view, lifted), the one reader of which heredoc body inside a substitution is data. It walks lines with quoting carried across them, and lifts a body only when the substitution is the exact template: a double quote opening the argument at the command's own level, $( or a backquote, cat, a marker quoted with single, double or no quotes and nothing after it on its line, no <<- form, the terminator alone and exact on its line, then )\" or backquote-quote first on the next line; an unquoted delimiter's body must hold no $( or backquote; and sink_carries(skeleton) must hold, where skeleton is the command with every heredoc body removed. split_heredocs calls it first; the pending sink verdict is gone, so _substitution_runs_body answers only shell or code. _HEREDOC_START gains a lookahead so a delimiter word with anything after its identifier (E-X, E'X', 'E'X) is no marker, and its lines stay text. .claude/hooks/guard-uncommitted.py: the second fallback reader (_runs_text, _keeps_quoted, _code, _literal, _heredoc_marker, _bodies and the runner tuples) is deleted; executed_text now returns the lift_house_bodies view, and reading() grades an untokenizable line by the shapes over that view. The executed reading was removed because it cannot happen any more: git_invocations already lifts through split_heredocs, so a lifted view parses exactly when the line does. Docstrings and comments were updated in _config, guard-history-rewrite, guard-uncommitted, PLUGIN-BUILD-GUIDE.md and CONTRIBUTING.md. CONTRIBUTING.md is outside this task's files; the plan gate allowed the edit with no refusal, and it was needed because its sentence described the deleted runner-list fallback. tools/prove-gates.py is unchanged: no row anchors in _config.py or guard-uncommitted.py. Tests: test__config gains ht1-ht5 (389/389); its hb6 row 'a file cat reads before stdin, in the house form' and hb10 row 'part of the argument' moved into ht3's deviation side, because the template now grades them as shell (a documented cost). test_guard_history_rewrite gains gk17-gk33 (325/325). test_guard_secrets_read gains hm1-hm17 (739/739 in the sweep; ts19 fails only when the file is run bare outside the sweep's scratch TMPDIR, the same before this change). guard-uncommitted gains gu52 (13 measured runner shapes, each plus a newline and a stray quote, now refused on a dirty tree) and gu53 (house commit, gh body and backquoted forms quoting the verb plus a stray quote stay allowed). gu49 is flipped to the deny side (a quoted argument of a script run on an untokenizable line), the accepted cost of having no runner list. gu51 is rewritten to the two readings that remain. Mutations, each run in a scratch copy of the tree that was then deleted, never the shared tree: lift returning nothing -> ht1 ht2 ht4, gk12-16 gk32 gk33 gw14i, hk12-15 hm16 hm17, gu44 gu51 gu53 red; nothing-after-marker check dropped -> ht3 ht4, gk17-gk27, hm1-hm11 red; delimiter lookahead dropped -> ht5, gk28 gk29, hm12 hm13 red (gk30 and hm14 stay green under that mutation because the substitution rule already grades that body as shell; both were red on HEAD). Dependants: the suites of guard-release (109), detect_plan_skip (46), guard_bash_writes (239), guard_capabilities (35), guard_edits (47), journal_writes (154), require_plan (238), test__deps (254), test__affected_tests (35), test__doctor_trail (155), test__help (79), test__output_lints (173) and test__refs (292) are all ok via tools/sweep-selftests.py, exit 0. The names others use from these files (_ask_rev_parse, _call_start_path, _command_facts, _handed_command, _cases, _selftest, _text, _substitution_end, _substitutions, targets, judge, parser, executed_text) are unchanged in signature. sweep-costs.json and settings.json need no change. FINDING, NOT FIXED (outside this task's measured scope, for the orchestrator to file): runnable_text joins text, then shell bodies, then code bodies, so a stray open quote at the end of the text swallows a shell-fed body. Example: bash <<'EOF' + BODY + a line holding one apostrophe + EOF + a final line echo plus an open single quote is ALLOWED by the history guard on this tree (probe: decide -> allow; the same without the apostrophe line -> deny). Process notes: guard-uncommitted refused one of my Bash calls (a python heredoc editing its selftest) on its text: '[guard-uncommitted] `this command` would destroy work this tree holds ... (read from the command's TEXT - it could not be tokenized, so the widest loss set was assumed)'; I made that same in-scope file edit with the Edit tool instead. I also ran one read-only stash listing command by mistake at the end of a probe; it lists, mutates nothing, and I report it because the brief bans that verb outright.",
+        "descriptive": "Only the exact house heredoc template is data now: every measured bypass that piped, redirected, continued or mis-split a body is refused by all three guards, and guard-uncommitted's fallback fails closed with no runner list."
       },
       "startedAt": "2026-10-31T09:37:35Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-31T10:12:55Z",
+      "verifiedBy": [
+        "test__config ht1-ht5: lift_house_bodies lifts exactly the house forms (11 spellings), split_heredocs agrees, 19 deviations are lifted by neither, a clean form beside a deviating one lifts only the clean body, a delimiter word with a suffix is not split",
+        "test_guard_history_rewrite gk17-gk31 deny the measured shapes (pipe, bash -s, 2>&1 pipe, process substitution, tee, xargs -0 sh -c, continuation, second -m, --message=, gh body, audit-task description, E-X, E'X', house form with 'E'X, cat with an operand); gk32 gk33 allow double-quoted and unquoted delimiters",
+        "test_guard_secrets_read hm1-hm15 block the same shapes with a secret read as BODY; hm16 hm17 allow",
+        "guard-uncommitted gu52 refuses 13 runner shapes on an untokenizable line on a dirty tree; gu53 keeps three house forms allowed"
+      ],
       "notes": [
         {
           "at": "2026-10-31T09:37:19Z",
@@ -1171,6 +1186,81 @@
         "runId": "2026-10-31T10:12:42Z.3d7003",
         "status": "passed",
         "at": "2026-10-31T10:12:42Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "b33bc1caa88f",
+        "at": "2026-10-31T10:12:55Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-31T09:58:27Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__config.py tests/test_guard_history_rewrite.py .claude/hooks/guard-uncommitted.py tests/test_guard_secrets_read.py tests/test__manifest_vocab.py` in a throwaway tree at HEAD exited 1 with 30 of 739 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - gk17 (house FAIL), gk18 (house FAIL), gk19 (house FAIL), gk20 (house FAIL), gk21 (house FAIL), gk22 (house FAIL), gk23 (house FAIL), gk24 (house FAIL) and 22 more: SELFTEST FAILED: 724/739 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P153.15-34e",
+      "title": "fix P153-R16: P153.14 executor, measured on main, HEAD and the fix tree: runn...",
+      "status": "in_progress",
+      "description": "P153.14 executor, measured on main, HEAD and the fix tree: runnable_text joins the command text first and the shell-fed heredoc bodies after it, so an unclosed single quote at the end of the text swallows a body fed to a shell - bash with a quoted-delimiter heredoc whose body is a force push, a line holding one apostrophe, the delimiter, then a last line opening a quote, is allowed by the history guard (the same command without the apostrophe line is denied); secrets-read blocks it. Pre-existing, not a regression\n\nResolution asked: grade each shell-fed body on its own rather than concatenated after the text, so no quote state crosses from the text into a body; red-first the measured shape and its no-apostrophe twin",
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "tests/test__config.py",
+        "tests/test_guard_history_rewrite.py",
+        "tests/test_guard_secrets_read.py",
+        ".claude/hooks/guard-uncommitted.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__config.py: grade each shell-fed body on its own rather than concatenated after the text, so no quote state crosses from the text into a body"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__config.py tests/test_guard_history_rewrite.py .claude/hooks/guard-uncommitted.py tests/test_guard_secrets_read.py tests/test__manifest_vocab.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-31T10:13:26Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-31T10:13:09Z",
+          "text": "scope: plugins/audit/hooks/_config.py, every path the finding(s) P153-R16 name"
+        },
+        {
+          "at": "2026-10-31T10:13:09Z",
+          "text": "scope: tests/test__config.py, the suite that tests plugins/audit/hooks/_config.py (python: its import closure reaches plugins/audit/hooks/_config.py)"
+        },
+        {
+          "at": "2026-10-31T10:13:24Z",
+          "text": "its _config section names the module and its public helpers; this fix changes how runnable_text orders text and bodies inside an existing function, adding or renaming nothing",
+          "waives": "PLUGIN-BUILD-GUIDE.md"
+        }
+      ],
+      "fixes": [
+        "P153-R16"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-31T10:40:19Z.ad39a5",
+        "status": "passed",
+        "at": "2026-10-31T10:40:19Z"
       }
     }
   ],

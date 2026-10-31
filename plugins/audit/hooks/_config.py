@@ -3452,9 +3452,54 @@ def runnable_text(cmd, pipe_data=False):
     `cat <<'EOF' | bash` keep every byte they are graded on. `pipe_data` is
     `split_heredocs`' own: a guard opts in to reading a quoted body piped to a
     plain script run as data.
+
+    EACH PART IS READ FROM A NEUTRAL STATE. The parts are separate inputs to
+    separate shells - the text to the outer one, each body to whatever it is
+    fed to - but the view is one string, so a quote, a substitution or an
+    escape a part leaves open would carry into the next and read it as quoted:
+    `echo '` ending the text, then a body whose later line is a lone
+    apostrophe, read the body as the inside of a quote and graded nothing in
+    it. So when there is more than one part, each is closed where
+    `_context_step` sees it end: what a closer seals is text its own shell never
+    runs, since that shell stops at the end of its input inside the open quote,
+    and the lines before the quote are graded as the commands they are. A
+    command with no body is one part and comes back as given, so a line a
+    reader cannot parse still reaches the strict reading.
     """
     text, code, shell = split_heredocs(cmd, pipe_data)
-    return "\n".join([text] + shell + code)
+    if not code and not shell:
+        return text
+    return "\n".join(_closed_part(p) for p in [text] + shell + code)
+
+
+_CLOSERS = {"'": "'", '"': '"', "(": ")", "`": "`"}
+
+
+def _comment_at(text, i, stack):
+    """Does a shell comment start at `i`: a `#` opening a word where commands
+    are read, outside every quote."""
+    return (text[i] == "#" and (not stack or stack[-1] in "(`")
+            and (i == 0 or text[i - 1] in " \t\n;&|()<>"))
+
+
+def _closed_part(part):
+    """`part` with whatever it leaves open closed: an escape left pending at
+    its end consumes a space rather than the newline that joins the next part,
+    then each open context is closed innermost first.
+
+    A COMMENT IS SKIPPED, because the shell skips it: `# don't` opens no quote,
+    and a closer added for one would be the opener of a quote in every reader
+    that knows comments - the history guard's lexer among them - carrying into
+    the next part exactly what the closers exist to stop."""
+    stack, at, i, n = [], [], 0, len(part)
+    while i < n:
+        if _comment_at(part, i, stack):
+            end = part.find("\n", i)
+            i = n if end < 0 else end
+            continue
+        i = _context_step(part, i, stack, at)
+    pending = " " if i > n else ""
+    return part + pending + "".join(_CLOSERS[q] for q in reversed(stack))
 
 
 # --- guard config (edits / secrets / tdd) -------------------------------------

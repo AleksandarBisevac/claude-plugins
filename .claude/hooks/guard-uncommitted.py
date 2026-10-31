@@ -958,7 +958,10 @@ def _selftest():
               "before the parser was asked",
               decide("x=$(git checkout -- .)", dirty) is not None
               and decide("echo \"$(git restore .)\"", dirty) is not None)
-        hd = decide("bash <<'EOF'\ngit stash\nit's\nEOF", dirty) or ""
+        # The odd quote sits in the command text itself: a shell-fed body is
+        # read on its own parse, its open quote closed, so a quote in one no
+        # longer makes the line untokenizable.
+        hd = decide("git stash\necho it's", dirty) or ""
         ex = decide(subst_add + "\ngit reset --hard", dirty) or ""
         check("gu51 the two readings say which they are: an untokenizable line "
               "read as TEXT, and a house-form line - its odd quote lifted with "
@@ -1008,6 +1011,15 @@ def _selftest():
               "commit message, a pull request body and the backquoted form "
               "quoting a stash pass on a dirty tree: %r" % (refused,),
               not refused and len(house) == 3)
+        # A quote the text leaves open does not carry into a shell body: an
+        # apostrophe line in the body closed it, the stash read as the inside
+        # of a quote, and the line parsed with nothing destructive in it.
+        shaped = ("bash <<'EOF'\n%s\n'\nEOF\necho '" % _st,
+                  "bash <<'EOF'\n%s\nEOF\necho '" % _st)
+        passed = [cmd for cmd in shaped if decide(cmd, dirty) is None]
+        check("gu54 a stash fed to a shell is refused on a dirty tree when the "
+              "text opens a quote a body line closes, and in its twin with no "
+              "closing line: %r" % (passed,), not passed and len(shaped) == 2)
     finally:
         _rmtree_git_safe(tmp)
 

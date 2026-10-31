@@ -1120,6 +1120,52 @@ def _cases(check):
             v, why = _decide(repo, _cmd)
             check("%s %s: %s" % (_cid, _want, _what), v == _want,
                   repr((v, why[:120])))
+
+        # --- no quote crosses into a shell body -------------------------------
+        # The text is joined first and the bodies after it, so a quote the text
+        # left open read the shell body as its inside, and an apostrophe line
+        # in that body closed it: the force push became a quoted argument and
+        # the call was allowed, while the twin with no apostrophe line was
+        # denied. Each part is now read from a neutral state. A shell heredoc
+        # makes the directory unreadable (tr8b), so a force push in one is
+        # refused on that ground; the stash, refused wherever it runs, is the
+        # body whose own refusal shows the operation itself was read.
+        _fp = "git push --" + "force origin main"
+
+        def _shapes(body):
+            return (
+                ("the text opens a quote a body line closes",
+                 "bash <<'EOF'\n%s\n'\nEOF\necho '" % body),
+                ("...and its twin with no closing line",
+                 "bash <<'EOF'\n%s\nEOF\necho '" % body),
+                ("one body opens a quote a later body closes",
+                 "bash <<'A'\necho '\nA\nbash <<'B'\n%s\n'\nB\n"
+                 "bash <<'C'\necho done\nC" % body),
+                ("the text ends on an escape",
+                 "bash <<'EOF'\n%s\nEOF\necho \\" % body))
+
+        for _n, (_what, _cmd) in enumerate(_shapes(_fp)):
+            v, why = _decide(repo, _cmd)
+            check("gk%d deny, a force push: %s" % (34 + _n, _what), v == "deny",
+                  repr((v, why[:120])))
+        for _n, (_what, _cmd) in enumerate(_shapes(_D)):
+            v, why = _decide(repo, _cmd)
+            check("gk%d deny, on the stash itself: %s" % (38 + _n, _what),
+                  v == "deny" and "stash" in why, repr((v, why[:120])))
+        # A comment is skipped by the shell and by this guard's lexer, so the
+        # closing must skip it too: a closer added after `# it's` would open a
+        # quote here that swallows the next body (gk42), and would send an
+        # ordinary interpreter body to the text reading (gk43).
+        v, why = _decide(repo, "bash <<'A'\n# it's\necho a\nA\nbash <<'B'\n%s\n'"
+                         "\n# it's\necho z\nB" % _D)
+        check("gk42 deny, on the stash itself: an apostrophe in an earlier "
+              "body's comment opens no quote", v == "deny" and "stash" in why,
+              repr((v, why[:120])))
+        v, why = _decide(repo, "python3 - <<'PY'\n# it's what %s does\nprint(1)"
+                         "\nPY" % _D)
+        check("gk43 allow: an interpreter body whose comment holds an "
+              "apostrophe and names the verb is still parsed, not graded as text",
+              v == "allow", repr((v, why[:120])))
         check("gh34 the text the guard grades, per heredoc kind: the body going "
               "into a FILE is gone, the body fed to a shell and the body fed to "
               "an interpreter are both still there. An interpreter body is kept "
