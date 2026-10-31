@@ -962,6 +962,19 @@ def _denied(real, times, refusal=None):
     return seam, calls
 
 
+def _unlink_denied_at(real_unlink, target, times):
+    """`real_unlink`, refusing `target` alone `times` times; `calls` counts
+    only the attempts on `target`, so a temp file a claim writes beside it
+    neither spends a denial nor moves the count."""
+    seam, calls = _denied(real_unlink, times)
+
+    def picky(p, *a, **k):
+        if os.fspath(p) == target:
+            return seam(p, *a, **k)
+        return real_unlink(p, *a, **k)
+    return picky, calls
+
+
 def _sharing_cases(check):
     if not shutil.which("git"):
         _harness.skip(check, "sd1 a denied claim is measured against a real lock",
@@ -987,18 +1000,10 @@ def _sharing_cases(check):
               % ((code, calls["n"], os.path.exists(path)),),
               code == 0 and calls["n"] == 3 and os.path.exists(path))
 
-        def unlink_of(target, times):
-            seam, calls = _denied(real_unlink, times)
-
-            def picky(p, *a, **k):
-                if os.fspath(p) == target:
-                    return seam(p, *a, **k)
-                return real_unlink(p, *a, **k)
-            return picky, calls
         if not os.path.exists(path):
             # sd2 stands on its own: a red sd1 must not decide it.
             M.acquire(proj, "index", session="s-SD", pid=os.getpid(), out=quiet)
-        os.unlink, calls = unlink_of(path, 2)
+        os.unlink, calls = _unlink_denied_at(real_unlink, path, 2)
         try:
             code = M.release(proj, "index", session="s-SD", pid=os.getpid(),
                              out=quiet)
@@ -1707,11 +1712,40 @@ def _reentry_cases(check):
 
 # --- the bound a contended lock is waited out for -----------------------------
 def _unlink_quietly(path):
-    """A holder letting go, from a timer: the file is the whole of the claim."""
+    """Clears a lock name between cases, with nobody else reading it.
+
+    Not a stand-in for a holder letting go while a waiter is reading the
+    claim: a swallowed unlink there loses the one denial Windows gives a name
+    another process holds open, and the claim outlives its holder."""
     try:
         os.unlink(path)
     except OSError:
         pass
+
+
+def _holder_lets_go(proj, said):
+    """A holder letting go, from a timer, the way a real one does - through
+    `M.release`, which retries a sharing denial while the waiter has the claim
+    open to read. The answer lands in `said`; a timer's return reaches nobody."""
+    said["code"] = M.release(proj, "index", session="s-HOLD", pid=os.getppid(),
+                             out=lambda *_a, **_k: None)
+
+
+def _waited_out(proj, session):
+    """(waiter's exit, seconds it spent, holder's release exit) for a holder
+    that lets go inside the default bound while `session` waits on it."""
+    said = {}
+    letting_go = threading.Timer(0.3, _holder_lets_go, args=(proj, said))
+    letting_go.start()
+    started = time.monotonic()
+    try:
+        code = M.acquire(proj, "index", note="the waiter's own",
+                         session=session, pid=os.getpid(),
+                         out=lambda *_a, **_k: None)
+    finally:
+        letting_go.cancel()
+        letting_go.join()
+    return code, time.monotonic() - started, said.get("code")
 
 
 def _wait_cases(check):
@@ -1750,20 +1784,13 @@ def _wait_cases(check):
               code == M.E_LIVE and waited >= 0.35,
               "exit %s after %.3fs" % (code, waited))
 
-        letting_go = threading.Timer(0.3, _unlink_quietly, args=(path,))
-        letting_go.start()
-        started = time.monotonic()
-        try:
-            code = M.acquire(proj, "index", note="the waiter's own",
-                             session="s-W2", pid=os.getpid(), out=quiet)
-        finally:
-            letting_go.cancel()
-        outlasted = time.monotonic() - started
+        code, outlasted, let_go = _waited_out(proj, "s-W2")
         check("wt3 ...so a holder that lets go INSIDE the bound is waited out "
               "rather than refused, on the default this ships with. This is "
               "the case that goes red if the bound is taken back to zero, and "
               "the reason it does not pass a bound of its own",
-              code == 0, "exit %s after %.3fs" % (code, outlasted))
+              code == 0, "exit %s after %.3fs, holder's release %r"
+              % (code, outlasted, let_go))
         M.release(proj, "index", session="s-W2", out=quiet)
 
         dead = subprocess.Popen([sys.executable, "-c", "pass"])
@@ -1781,6 +1808,29 @@ def _wait_cases(check):
               "gone, and a bound spent on it is a delay bought for nothing",
               code == M.E_STALE and gone < 1.0,
               "exit %s after %.3fs" % (code, gone))
+
+        # wt3 again, with the denial Windows gives the holder's unlink while
+        # the waiter has the claim open to read, made to happen once on any
+        # platform. A holder whose let-go swallows that denial leaves its
+        # claim behind and the waiter refuses at the bound.
+        _unlink_quietly(path)               # wt5 starts from a free name
+        M.acquire(proj, "index", note="a structural write", session="s-HOLD",
+                  pid=os.getppid(), out=quiet)
+        real_unlink = os.unlink
+        os.unlink, denied = _unlink_denied_at(real_unlink, path, 1)
+        try:
+            code, outlasted, let_go = _waited_out(proj, "s-W5")
+        finally:
+            os.unlink = real_unlink
+        check("wt5 ...and the holder wt3 waits out lets go through the release "
+              "a real holder runs, so an unlink refused once because the waiter "
+              "is reading the claim is retried, not swallowed with the claim "
+              "left standing. The count proves the refusal landed: one attempt "
+              "is the denial swallowed, two is the retry that let go",
+              code == 0 and let_go == 0 and denied["n"] == 2,
+              "exit %s after %.3fs, holder's release %r, unlink attempts on "
+              "the claim %d" % (code, outlasted, let_go, denied["n"]))
+        M.release(proj, "index", session="s-W5", out=quiet)
     finally:
         shutil.rmtree(proj, ignore_errors=True)
 

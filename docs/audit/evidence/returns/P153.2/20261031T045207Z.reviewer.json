@@ -1,0 +1,15 @@
+{
+ "findings": [],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Clause 1, 'Have the holder let go through M.release(...), the product path that retries the sharing denial via _output.while_shared': _holder_lets_go calls M.release(proj, 'index', session='s-HOLD', pid=os.getppid()), and release's unlink is _output.while_shared(lambda: os.unlink(path)) (_locks.py:1614), which retries EACCES (sharing_denied). The session and pid match the claim wt1 takes. Clause 2, 'add a row that injects one denied unlink': wt5 patches os.unlink with _unlink_denied_at(real_unlink, path, 1), one EACCES on the claim path only, and asserts waiter exit 0, holder release 0 and exactly 2 attempts on the claim. Clause 3, 'Do not widen the margin': the timer stays at 0.3 s and the waiter takes the default bound, with no new wait parameter. The executor's claim describes the diff: only tests/test__locks.py changed, sd2's nested unlink_of was hoisted to module-level _unlink_denied_at with the same behaviour, and _unlink_quietly's docstring now says it is a fixture clear. I ran the file's selftest once in the task tree: ALL PASS 148/148. Dependants: sweep-costs.json, verify.sh and audit-lock.py are unchanged and the executor's answers hold; _locks.py is unchanged and now exercised through release. The one thing I did not observe is the old holder going red: that rests on the executor's by-hand run in a scratch export, which was not stamped.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Executor filed not-attempted: 'regression task with tests.expectRedFirst false ... the fix lives in the test file itself (HEAD's code with this test file copied over it IS the fixed state)'. The basis holds, because no helper run could show a red here. It also reports a by-hand red in a throwaway export: the holder mutated back to a swallowed unlink gave FAIL wt5 (exit 3 after 5.023s, holder's release None, attempts 1), and a seam denying zero times gave FAIL wt5 (attempts 1), both 147/148. I did not re-observe those runs and I credit nothing as proved from them. By reading, wt5's assertion `denied[\"n\"] == 2` fails when the unlink is swallowed (1 attempt) and when no denial lands (also 1 attempt), so it is a real assertion.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "tests.gate is the literal `python3 tools/sweep-selftests.py tests/test__locks.py`, which selects only tests/test__locks.py. I read the cases the diff touches: wt1 to wt5, and sd2 with its hoisted helper. wt3 on its own still passes on POSIX under the old swallowing holder, which is why wt5 exists. sd2 asserts code == 0, calls == 3 and the claim gone, so a deleted retry fails it. The remainder of the 148 cases I did not read, so this is bounded to the changed regions."
+ },
+ "verdict": "clean",
+ "tasks": []
+}
