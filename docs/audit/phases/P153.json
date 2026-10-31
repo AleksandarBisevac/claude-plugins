@@ -22,7 +22,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P153-R1",
@@ -59,7 +59,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/manifest/audit-task.py",
         "issue": "done refuses a tdd/regression task only on a stored cleared gateBasis; a task with no gate of its own whose phase gate is empty still closes green through the declares-no-gate branch of _close_gate",
-        "resolution": "refuse when the gate that would actually run (_mio.gate_entries(phase, node)) is empty for a tdd/regression task; fix the scope refusal hint on a started task (mode change is refused there); document the refusal in commands/task.md, reference/verbs-in-full.md, README and CHANGELOG"
+        "resolution": "fixed in P153.8-34e (97b196c57729): refuse when the gate that would actually run (_mio.gate_entries(phase, node)) is empty for a tdd/regression task; fix the scope refusal hint on a started task (mode change is refused there); document the refusal in commands/task.md, reference/verbs-in-full.md, README and CHANGELOG",
+        "fixTask": "P153.8-34e",
+        "commit": "97b196c57729",
+        "status": "fixed"
       },
       {
         "id": "P153-R5",
@@ -76,7 +79,9 @@
         "severity": "med",
         "file": "plugins/audit/commands/task.md:39",
         "issue": "contradicts task clause: the task asks for one sentence on each surface describing --gate-clear, or for verbs-in-full.md to carry it with the other surfaces pointing at it. commands/task.md still reads '--gate-clear for none' with neither the refusal nor a pointer, so the one surface a user reads first still teaches the spelling that tdd/regression tasks are now refused. The executor's stated reason holds: in the task tree measure-context.py reports '/audit:task add 7989 / 8000', so only 11 bytes of headroom remain and no sentence fits. The clause is nonetheless unmet on that surface.",
-        "resolution": "Either accept the narrowing explicitly (the orchestrator records the waiver), or free bytes in commands/task.md (trim other prose on the add path or move a passage to verbs-in-full.md) and add a short caveat after '--gate-clear for none', for example '(refused on tdd/regression; see verbs-in-full)'. Re-run measure-context --gate afterwards."
+        "resolution": "Either accept the narrowing explicitly (the orchestrator records the waiver), or free bytes in commands/task.md (trim other prose on the add path or move a passage to verbs-in-full.md) and add a short caveat after '--gate-clear for none', for example '(refused on tdd/regression; see verbs-in-full)'. Re-run measure-context --gate afterwards.",
+        "status": "accepted-open",
+        "acceptedReason": "P153 fixes the 3.8.0 meds: lock ownership message (F754 first half; liveness half declined, recorded), wt3 lock test (F821), guard-uncommitted and the shared heredoc split read house-form message bodies as data (F800/F822/F824) - delivered, after eight review rounds of regressions, as main reading plus one narrow exact-template lift, matrix- and fuzz-proven never weaker than main except the lift itself; gate-clear refusal on tdd/regression (F779), related listing keeps hook/tool gates (F809), start-time dependants refusal (F792). R6 left: commands/task.md sits at its context ceiling and the refusal prints its own remedies. R14 left: delete/rename import readers go to the low batch Per-task reviewer answers continued over: P153.10-34e intent diverges: the divergence is commands/task.md left without the refusal sentence: that file sits at the /audit:task add context ceiling (7989/8000), and the refusal itself prints both remedies at the moment it fires; verbs-in-full, the README row and the CHANGELOG carry it; P153.12-34e intent diverges: the divergence is real and is a guard bypass (reviewer high + two meds): the invariant flipped the default from deny to allow; it goes to triage as fix work before the phase lands, never to main as is; P153.15-34e intent diverges: diverges is real: parts are sealed and joined, not parsed on their own; the high goes to a fix task"
       },
       {
         "id": "P153-R7",
@@ -93,49 +98,69 @@
         "severity": "med",
         "file": "plugins/audit/hooks/_config.py:3029-3045",
         "issue": "A program word that is an expansion now passes as a command that does not run its argument. `_NOT_LITERAL` is applied to `partial` only. `$SHELL -c \"$(cat <<'EOF' ...)\"`, `\"$SHELL\" -c ...` and `${BASH} -c ...` reach `_word_runs_argument` with a program `$SHELL`, which is in no table, so the body is data. Measured: guard-history-rewrite went from deny to allow on `$SHELL -c` with a STASHDROP body, and guard-secrets-read went from block to allow on `$SHELL -c` with a KEYREAD body. guard-secrets-read still blocks the direct `$SHELL -c \"KEYREAD\"`. The invariant says 'unless that command runs what it is handed', and a program the reader cannot name cannot be shown not to. `_runs_input` in guard-history-rewrite already treats a `$` or a backquote in rest[0] as a runner, for exactly this reason.",
-        "resolution": "In `_argument_runs`, after `program_candidates`, return True when `rest[0]` (and any candidate word) contains a character from `_NOT_LITERAL`, which matches `_runs_input`'s rule. Add `$SHELL -c \"$(...)\"` and `\"${BASH}\" -c \"$(...)\"` to hb11's runners."
+        "resolution": "fixed in P153.19-34e (727aaad7c343): In `_argument_runs`, after `program_candidates`, return True when `rest[0]` (and any candidate word) contains a character from `_NOT_LITERAL`, which matches `_runs_input`'s rule. Add `$SHELL -c \"$(...)\"` and `\"${BASH}\" -c \"$(...)\"` to hb11's runners.",
+        "fixTask": "P153.19-34e",
+        "commit": "727aaad7c343",
+        "status": "fixed"
       },
       {
         "id": "P153-R9",
         "severity": "med",
         "file": "plugins/audit/hooks/_config.py:2989-2997",
         "issue": "The KNOWN LIMIT is judged differently per guard, and the comment states only one of the two. Before this diff the default was deny (two vouched carriers). Now it is allow, minus `_SHELL_PROGRAMS`/`_RUNS_AN_OPERAND`/interpreters, so the completeness of those lists decides denials. Shells that take `-c` or `/c` are missing: csh, tcsh, pwsh, powershell, cmd, nu. So are common operand runners: nix-shell --run, npx -c, entr -s, hyperfine, nodemon --exec, tar --to-command, rsync -e and psql. Each was measured as kept-as-shell at base and data now. For guard-history-rewrite this is acceptable: its direct reading of a quoted argument to these programs also allows ('a quoted argument was never a command'), so the heredoc spelling opens no new route. guard-secrets-read is different: its direct reading blocks `csh -c \"KEYREAD\"` and `nix-shell --run \"KEYREAD\"`, both measured, and the heredoc spelling of each is now allowed. The shared rule therefore makes the heredoc spelling a bypass of the stricter guard. The comment does not say this, and the filed outcome says secrets-read is narrowed only for a body written to a `.sh` file.",
-        "resolution": "Give `_word_runs_argument` its own tuple of argument-running shells: `_SHELL_PROGRAMS` plus csh, tcsh, pwsh, powershell, cmd, nu, xonsh, elvish and yash. A separate tuple leaves `is_shell` callers unchanged. Add the operand runners nix-shell, npx, entr, hyperfine, nodemon, tar and rsync to `_RUNS_AN_OPERAND`. Extend the KNOWN LIMIT comment to say that the limit widens guard-secrets-read relative to its quoted-text reading. Add at least one deny row through guard-secrets-read's decide (csh -c over a KEYREAD heredoc body) to a suite in this task's gate."
+        "resolution": "fixed in P153.19-34e (727aaad7c343): Give `_word_runs_argument` its own tuple of argument-running shells: `_SHELL_PROGRAMS` plus csh, tcsh, pwsh, powershell, cmd, nu, xonsh, elvish and yash. A separate tuple leaves `is_shell` callers unchanged. Add the operand runners nix-shell, npx, entr, hyperfine, nodemon, tar and rsync to `_RUNS_AN_OPERAND`. Extend the KNOWN LIMIT comment to say that the limit widens guard-secrets-read relative to its quoted-text reading. Add at least one deny row through guard-secrets-read's decide (csh -c over a KEYREAD heredoc body) to a suite in this task's gate.",
+        "fixTask": "P153.19-34e",
+        "commit": "727aaad7c343",
+        "status": "fixed"
       },
       {
         "id": "P153-R10",
         "severity": "low",
         "file": "plugins/audit/hooks/_config.py:2330",
         "issue": "The lookbehind in `_PROGRAM_WORD` leaves out `=`, which the `\\b` it replaced covered. `env --split-string=bash <<'EOF'` runs bash on the body. It was shell at base and is data now: measured deny to allow in guard-history-rewrite with a STASHDROP body. `_head_runs_body` does not recover it, because `_wrapper_rest` gives up on `--split-string=` and the fallback strips it. `x --shell=bash <<EOF` changed the same way.",
-        "resolution": "Add `=` to the `_PROGRAM_WORD` class. A file name after `=` (`--out=report.sh`) puts a dot before `sh`, not `=`, so hb6 stays data. Add `env --split-string=bash <<'EOF'` to hb7."
+        "resolution": "fixed in P153.19-34e (727aaad7c343): Add `=` to the `_PROGRAM_WORD` class. A file name after `=` (`--out=report.sh`) puts a dot before `sh`, not `=`, so hb6 stays data. Add `env --split-string=bash <<'EOF'` to hb7.",
+        "fixTask": "P153.19-34e",
+        "commit": "727aaad7c343",
+        "status": "fixed"
       },
       {
         "id": "P153-R11",
         "severity": "low",
         "file": "plugins/audit/hooks/_config.py:2343-2350",
         "issue": "The comment justifies the `_PROGRAM_WORD` narrowing only for a body WRITTEN to `deploy.sh`. It also turns `./deploy.sh <<'EOF'`, a RUN of a shell script with the body on stdin, from shell into data in both guards: measured deny to allow and block to allow. `_head_runs_body`'s own docstring says 'a script reading its stdin is one `read` and `eval` from running it' for a shell, and `sh deploy.sh <<EOF` stays shell (hb7). No row pins `./deploy.sh <<EOF` either way, so the change is an unstated decision.",
-        "resolution": "Pick one and pin it in hb6/hb7. Either treat a program-position word with a shell-script extension (`.sh`, `.bash`, `.zsh`) as a shell in `_head_runs_body`, which is consistent with `sh deploy.sh` and keeps the redirect-target fix, or say in this comment that a directly executed `.sh` script reading stdin is graded as `./deploy.py` is."
+        "resolution": "fixed in P153.19-34e (727aaad7c343): Pick one and pin it in hb6/hb7. Either treat a program-position word with a shell-script extension (`.sh`, `.bash`, `.zsh`) as a shell in `_head_runs_body`, which is consistent with `sh deploy.sh` and keeps the redirect-target fix, or say in this comment that a directly executed `.sh` script reading stdin is graded as `./deploy.py` is.",
+        "fixTask": "P153.19-34e",
+        "commit": "727aaad7c343",
+        "status": "fixed"
       },
       {
         "id": "P153-R12",
         "severity": "low",
         "file": "tests/test__config.py:3276-3311",
         "issue": "The inherited hb4 comment says 'the substitution's output is text only to the two consumers vouched for. Every other enclosing command may run it', and hb4's title says 'any other consumer could run is still kept'. This diff replaced exactly that allow-list with the invariant, so both texts now describe code that no longer exists.",
-        "resolution": "Rewrite the comment and the check title to name the invariant above `_argument_runs`: the body is kept when the carrier runs its argument by one of the listed routes."
+        "resolution": "fixed in P153.19-34e (727aaad7c343): Rewrite the comment and the check title to name the invariant above `_argument_runs`: the body is kept when the carrier runs its argument by one of the listed routes.",
+        "fixTask": "P153.19-34e",
+        "commit": "727aaad7c343",
+        "status": "fixed"
       },
       {
         "id": "P153-R13",
         "severity": "high",
         "file": ".claude/hooks/guard-uncommitted.py",
         "issue": "phase code review, measured: when a line fails to tokenize, _runs_text drops quoted arguments unless a deny-list of runners matches, so $SHELL -c, ${BASH} -c, $S -c, nix-shell --run, tar --to-command, ssh, script -qc, flock -c, su -c, git -c alias, find -exec sh -c, trap and others carrying a tree-wide destructive verb are allowed when a later line has a stray quote; main denies them",
-        "resolution": "fail closed: on a tokenize failure grade the whole text (minus bodies the shared _config house-template function lifts) as commands, with no runner list; red-first the measured shapes"
+        "resolution": "fixed in P153.19-34e (727aaad7c343): fail closed: on a tokenize failure grade the whole text (minus bodies the shared _config house-template function lifts) as commands, with no runner list; red-first the measured shapes",
+        "fixTask": "P153.19-34e",
+        "commit": "727aaad7c343",
+        "status": "fixed"
       },
       {
         "id": "P153-R14",
         "severity": "med",
         "file": "plugins/audit/scripts/status/_impact.py",
         "issue": "phase code review, read: the dispatch refusal demands only the file suite, text-quoting readers and path-headed doc sections; a delete or rename does not demand its import readers, so the undeclared-edit-after-rename class the task named is not refused",
-        "resolution": "carry to the low batch as its own task: demand import readers for a declared delete/rename; the shipped part is correct as far as it goes"
+        "resolution": "carry to the low batch as its own task: demand import readers for a declared delete/rename; the shipped part is correct as far as it goes",
+        "status": "accepted-open",
+        "acceptedReason": "P153 fixes the 3.8.0 meds: lock ownership message (F754 first half; liveness half declined, recorded), wt3 lock test (F821), guard-uncommitted and the shared heredoc split read house-form message bodies as data (F800/F822/F824) - delivered, after eight review rounds of regressions, as main reading plus one narrow exact-template lift, matrix- and fuzz-proven never weaker than main except the lift itself; gate-clear refusal on tdd/regression (F779), related listing keeps hook/tool gates (F809), start-time dependants refusal (F792). R6 left: commands/task.md sits at its context ceiling and the refusal prints its own remedies. R14 left: delete/rename import readers go to the low batch Per-task reviewer answers continued over: P153.10-34e intent diverges: the divergence is commands/task.md left without the refusal sentence: that file sits at the /audit:task add context ceiling (7989/8000), and the refusal itself prints both remedies at the moment it fires; verbs-in-full, the README row and the CHANGELOG carry it; P153.12-34e intent diverges: the divergence is real and is a guard bypass (reviewer high + two meds): the invariant flipped the default from deny to allow; it goes to triage as fix work before the phase lands, never to main as is; P153.15-34e intent diverges: diverges is real: parts are sealed and joined, not parsed on their own; the high goes to a fix task"
       },
       {
         "id": "P153-R15",
@@ -182,7 +207,10 @@
         "severity": "low",
         "file": "tests/test_guard_secrets_read.py:3405-3426",
         "issue": "s81-s83 (added by this task) and s79/s80 (inherited) cannot go red on the behaviour their comments name. The s81 comment says the case guards against 'a closer, which would make the read line the inside of a quote', and the s79 comment says 'the pair locks it through the runnable view'. The secrets arm that refuses them is a regex over the view (BASH_FILE_READ on `_shell_text`), which no quoting state reaches. With HEAD's `_closed_part` still in place, `tests/test_guard_secrets_read.py --selftest` passed 744/744 including s81-s83, and it passes 744/744 with this diff. The executor's own outcome says they 'passed before the fix too'.",
-        "resolution": "Reword the comments: these cases lock the regex arm and are not a guard on part sealing. Alternatively, point a case at a secrets arm that parses the joined view (`_manifest_write_placed`, `_source_write_hit` and `_past_bound_writers` read `runnable`) and show that it goes red when a part's open quote carries into the next."
+        "resolution": "fixed in P153.19-34e (727aaad7c343): Reword the comments: these cases lock the regex arm and are not a guard on part sealing. Alternatively, point a case at a secrets arm that parses the joined view (`_manifest_write_placed`, `_source_write_hit` and `_past_bound_writers` read `runnable`) and show that it goes red when a part's open quote carries into the next.",
+        "fixTask": "P153.19-34e",
+        "commit": "727aaad7c343",
+        "status": "fixed"
       },
       {
         "id": "P153-R20",
@@ -209,41 +237,56 @@
         "severity": "high",
         "file": "plugins/audit/hooks/_config.py",
         "issue": "final phase review, measured: _context_step reads a dollar-single-quote string ending in backslash-quote as closed, where the shell keeps it open, so a fake house form inside that string is lifted and the verb line after it, which the shell runs, is allowed by hist, unc and sec; main read the raw text and denied",
-        "resolution": "lift only when the quote context before the marker is provably plain (no dollar-single-quote, no unbalanced escape); otherwise no lift"
+        "resolution": "fixed in P153.19-34e (727aaad7c343): lift only when the quote context before the marker is provably plain (no dollar-single-quote, no unbalanced escape); otherwise no lift",
+        "fixTask": "P153.19-34e",
+        "commit": "727aaad7c343",
+        "status": "fixed"
       },
       {
         "id": "P153-R23",
         "severity": "med",
         "file": "plugins/audit/hooks/_config.py",
         "issue": "final phase review, measured false positives against the accepted allows: audit-task done --outcome and --reason with a house-form body are not lifted (done is a group-close word), git -C path commit -m is not a sink, nor commit -am, nor the documented CLAUDE_PLUGIN_ROOT script spelling",
-        "resolution": "derive the sink table from the text options the scripts declare and match git sinks past global options"
+        "resolution": "fixed in P153.19-34e (727aaad7c343): derive the sink table from the text options the scripts declare and match git sinks past global options",
+        "fixTask": "P153.19-34e",
+        "commit": "727aaad7c343",
+        "status": "fixed"
       },
       {
         "id": "P153-R24",
         "severity": "med",
         "file": "CHANGELOG.md",
         "issue": "final phase review, read: the Unreleased section covers only the gate-clear refusal; the start-time readers refusal, scope --files + and --waive, the guard heredoc behaviour and the lock-ownership text are user-visible and absent",
-        "resolution": "add Unreleased entries for each user-visible change of the phase"
+        "resolution": "fixed in P153.19-34e (727aaad7c343): add Unreleased entries for each user-visible change of the phase",
+        "fixTask": "P153.19-34e",
+        "commit": "727aaad7c343",
+        "status": "fixed"
       },
       {
         "id": "P153-R25",
         "severity": "high",
         "file": "plugins/audit/hooks/_config.py",
         "issue": "final review 2, measured under macOS bash 3.2: the house lift ends the body at a raw delimiter line, but bash 3.2 joins backslash-newline inside a command substitution before finding the heredoc end, and treats a quote or backquote in the body as opening a quote while scanning for the closing paren; a body line E-backslash then OF, or an apostrophe in the body with a later clause holding a closing paren, runs the following text (all four guards deny on main, allow on HEAD)",
-        "resolution": "lift only when no body line ends in a backslash and nothing after the closing paren-quote of the lifted argument holds a closing paren; pin both with red-first cases",
-        "fixTask": "P153.20-34e"
+        "resolution": "fixed in P153.20-34e (f1ad5aadf765): lift only when no body line ends in a backslash and nothing after the closing paren-quote of the lifted argument holds a closing paren; pin both with red-first cases",
+        "fixTask": "P153.20-34e",
+        "commit": "f1ad5aadf765",
+        "status": "fixed"
       },
       {
         "id": "P153-R26",
         "severity": "med",
         "file": "plugins/audit/hooks/_config.py",
         "issue": "final review 2, measured: the audit-task carrier is matched by file stem, so any audit-task script at any absolute or variable-rooted path (a /tmp copy that runs its argument) gets the lift; also the frame comment says a hook is refused, but a commit-msg hook firing during the sink clause runs the lifted message",
-        "resolution": "trust the script only at the literal CLAUDE_PLUGIN_ROOT spelling or at a path resolving inside the hook own plugin root; reword the frame comment to name the hook route as the replay class"
+        "resolution": "fixed in P153.20-34e (f1ad5aadf765): trust the script only at the literal CLAUDE_PLUGIN_ROOT spelling or at a path resolving inside the hook own plugin root; reword the frame comment to name the hook route as the replay class",
+        "fixTask": "P153.20-34e",
+        "commit": "f1ad5aadf765",
+        "status": "fixed"
       }
     ],
-    "outcome": "[findings: 26 - 7 high, 13 med, 6 low; 11 with a recorded fix commit]"
+    "outcome": "[findings: 26 - 7 high, 13 med, 6 low; 24 with a recorded fix commit]",
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "P153 fixes the 3.8.0 meds: lock ownership message (F754 first half; liveness half declined, recorded), wt3 lock test (F821), guard-uncommitted and the shared heredoc split read house-form message bodies as data (F800/F822/F824) - delivered, after eight review rounds of regressions, as main reading plus one narrow exact-template lift, matrix- and fuzz-proven never weaker than main except the lift itself; gate-clear refusal on tdd/regression (F779), related listing keeps hook/tool gates (F809), start-time dependants refusal (F792). R6 left: commands/task.md sits at its context ceiling and the refusal prints its own remedies. R14 left: delete/rename import readers go to the low batch Per-task reviewer answers continued over: P153.10-34e intent diverges: the divergence is commands/task.md left without the refusal sentence: that file sits at the /audit:task add context ceiling (7989/8000), and the refusal itself prints both remedies at the moment it fires; verbs-in-full, the README row and the CHANGELOG carry it; P153.12-34e intent diverges: the divergence is real and is a guard bypass (reviewer high + two meds): the invariant flipped the default from deny to allow; it goes to triage as fix work before the phase lands, never to main as is; P153.15-34e intent diverges: diverges is real: parts are sealed and joined, not parsed on their own; the high goes to a fix task",
   "tasks": [
     {
       "id": "P153.1",
@@ -1760,7 +1803,7 @@
     {
       "id": "P153.20-34e",
       "title": "fix P153-R25: final review 2, measured under macOS bash 3.2: the house lift e...",
-      "status": "in_progress",
+      "status": "done",
       "description": "final review 2, measured under macOS bash 3.2: the house lift ends the body at a raw delimiter line, but bash 3.2 joins backslash-newline inside a command substitution before finding the heredoc end, and treats a quote or backquote in the body as opening a quote while scanning for the closing paren; a body line E-backslash then OF, or an apostrophe in the body with a later clause holding a closing paren, runs the following text (all four guards deny on main, allow on HEAD)\n\nResolution asked: lift only when no body line ends in a backslash and nothing after the closing paren-quote of the lifted argument holds a closing paren; pin both with red-first cases",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -1790,14 +1833,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "f1ad5aadf765",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/hooks/_config.py: three narrowings of the house lift's preconditions, nothing widened. (1) _house_body_end returns None when any body line ends in a backslash (bash 3.2 joins backslash-newline inside $( before it finds the heredoc end). (2) _house_body_end returns None when the text after the argument's closing `)\"` holds a `)` anywhere, on any line; a second house argument holds one, so a command lifts one body at most. (3) _house_script_word trusts the audit-task carrier only as \"${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py\" in double quotes (single quotes would name a literal directory in the cwd; unquoted, the scanner already refuses the brace, as before) or a literal absolute path whose realpath equals the script under hook_plugin_root(); the name is built from the stem plus os.extsep, so no script-name literal lands in hooks/ (mv37 green). _HOUSE_FRAME_GIT comment no longer lists a hook among what the lift refuses: a commit-msg hook running the message is named as the replay class, a property of the consumer the lift does not claim to close. lift_house_bodies docstring lists the new preconditions. CHANGELOG [Unreleased]: the one lift bullet (no second one was present in the tree as read) now names all four guards and the new refusals, and says they answer the bash 3.2 shapes measured rather than proving every shell. PLUGIN-BUILD-GUIDE.md lift paragraph: carrier rule restated, the three bash 3.2 refusals stated as measured, with the explicit 'not a proof' sentence. tests/test__config.py: _HL_SCRIPT is now the real plugin script path (forward slashes, single-quoted); hl1 gains the double-quoted plugin-root spelling and quoted -C paths holding a blank, and drops the two-house-argument expectation (now unlifted by rule 2, pinned in hl8); new hl7-hl11. Coordinator's CI item: hl4's git -C row wrote the fixture path unquoted, so the spaced leg's blank split it into two words; the lift's -C skip already accepted a quoted operand (measured: single, double and backslash-escaped spaced paths all lifted), so the fix is in the test (shlex.quote) plus a row with a blank in the path; no lift code was relaxed. --spaced and --encoding cp1252 runs of tests/test__config.py: 381/381. Mutation table on a scratch copy of the tree (pycache purged per row, restored and verified): drop backslash rule -> hl7,hl11 red; drop tail-paren rule -> hl8,hl11; stem match -> hl9,hl11; trust single-quoted plugin root -> hl9; over-fire: refuse any quote in body -> hl10,hl11; refuse any later clause -> hl1,hl10; refuse plugin-root spelling -> hl1,hl10,hl11; refuse any inner backslash -> hl10; refuse literal paths -> hl1,hl4,hl10; -C refusing a quoted operand -> hl1,hl4. Reviewer matrices rerun, main export vs this tree, all four guards, over the reviewer's case sets (31, 1353, 2368, 119, 3000, 1856, 2368, 412, 54 cases plus 15 of the new hl shapes): every row weaker than main is a lifted row (weaker-NOT-lifted 0 in every set), stronger 0, no exceptions; the qq set (the quote/paren hole) now has zero rows weaker than main and zero lifted. Execution check over every lifted case under /bin/bash 3.2.57, /bin/zsh and /bin/dash with shimmed externals: no lifted body executed. The only rows the checker flagged are its own artefacts, verdicts identical to main: a `&`-backgrounded clause whose payload sits outside the lifted body (the shim log interleaves a background job; flagged rows vary between runs) and a NUL-byte case the runner cannot pass to a shell. The twins (apostrophe or quotes in the body, no later `)`) under /bin/bash 3.2: rc=2 'unexpected EOF while looking for matching', zero shim calls; under zsh and dash the commit runs with the body as its message. The holes under /bin/bash 3.2 before the fix: the joined body end ran every body line, the tail `)` shape ran the later clause's payload; both now come back unlifted. DEPENDANTS: _config.py's importers - only guard-history-rewrite and guard-secrets-read (decide), guard-uncommitted (reading) and guard-release (_lifted) call the lift; the other importers (detect-plan-skip, guard-bash-writes, guard-capabilities, guard-edits, journal-writes) use none of the changed names; still correct, gate suites 291/291, 707/707, 43/43, 109/109. tests/test_guard_history_rewrite.py gw14d/gw14e (apostrophe body, nothing after) are lifted exactly as before. tests/test__manifest_vocab.py mv37 green (68/68): no script-name literal added under hooks/. tests/test__refs.py c5 flagged the first draft's non-existent plugin-root path fixture; that line now carries the refs fixture marker (292/292). tests/test__deps.py 254/254; .github/sweep-costs.json unchanged (no case renamed). CHANGELOG.md readers (test__output, test__panel_settings, the release heading) and PLUGIN-BUILD-GUIDE.md readers (test__affected_tests, test__doctor_trail, test__help, test__doctor_hygiene) rerun green - the edited bullet and paragraph are not passages they quote; the waived readers' quoted text is untouched. CONTRIBUTING.md's lift paragraph (not this task's file) states no bash 3.2 property and stays true.",
+        "descriptive": "The house-form lift no longer lifts a body that macOS bash 3.2 reads past (a backslash-ended line, a `)` after the argument) or an audit-task script other than the plugin's own; docs stop claiming more."
       },
       "startedAt": "2026-10-31T14:37:57Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-31T15:02:10Z",
+      "verifiedBy": [
+        "hl7: a house body any line of which ends in a backslash comes back unchanged (E-backslash/OF, EO-backslash/F, three joined lines, under gh and the plugin's audit-task, a backslash-ended line with no delimiter in reach, a backslash-ended last line)",
+        "hl8: a `)` anywhere after the closing `)\"` - after an apostrophe, double quote, backquote or `$(` in the body, on the same or a later line, under git, gh and audit-task, a plain body with a later `)`, and two house arguments - comes back unchanged",
+        "hl9: an audit-task carrier other than the plugin's own script (/tmp, other extension, $HOME, $TMPDIR, an existing file of that name elsewhere, the plugin layout under another root, single-quoted plugin-root spelling, unbraced variable, another path under the plugin root) comes back unchanged",
+        "hl10: allow twins - quotes, backquote, `$(` or an inner backslash in the body with no later `)`, the double-quoted plugin-root spelling, and the plugin's script through a dot segment are still lifted",
+        "hl11: at the four guards the three hole shapes are refused as main refused them, and two lifted twins are refused by none",
+        "hl1/hl4 rows: a quoted -C path holding a blank lifts, and hl4's -C fixture path is shell-quoted so the spaced sweep leg reads it as one word"
+      ],
       "notes": [
         {
           "at": "2026-10-31T14:37:46Z",
@@ -1846,14 +1896,26 @@
         "runId": "2026-10-31T15:01:51Z.4073cf",
         "status": "passed",
         "at": "2026-10-31T15:01:51Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "f1ad5aadf765",
+        "at": "2026-10-31T15:02:10Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-31T14:55:09Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__config.py tests/test_guard_history_rewrite.py .claude/hooks/guard-uncommitted.py tests/test_guard_secrets_read.py tests/test__manifest_vocab.py .claude/hooks/guard-release.py tests/test__deps.py tests/test__refs.py` in a throwaway tree at HEAD exited 1 with 4 of 381 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - hl7 (house FAIL), hl8 (house FAIL), hl9 (house FAIL), hl11 (house FAIL): SELFTEST FAILED: 377/381 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     }
   ],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "4331b4e9-59c2-4a61-9004-3102aba69ea2",
-    "branch": "audit/p153-the-3-8-0-med-defects-are-fixe",
-    "at": "2026-10-31T04:09:54Z"
-  },
-  "startedAt": "2026-10-31T04:09:54Z"
+  "startedAt": "2026-10-31T04:09:54Z",
+  "testEvidence": {
+    "runId": "2026-10-31T15:35:25Z.f07f56",
+    "status": "passed",
+    "at": "2026-10-31T15:35:25Z"
+  }
 }
