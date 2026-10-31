@@ -457,7 +457,10 @@ def _publishers(command, cfg_mod=None, depth=0):
     keeps a `git tag` example inside a quoted argument from reading as a
     publisher, while `runnable_clauses` still separates every live publisher:
     it removes heredoc data and splits the text and each runnable body on its
-    own, so a quote one leaves open does not swallow the next. Within a
+    own, so a quote one leaves open does not swallow the next, and adds the
+    clauses of the joined view, so a part misread as open loses nothing the
+    whole line's split would have found - any clause publishing is a
+    publisher. Within a
     clause the program is found past assignments, wrappers, git's global
     options and `sh -c`; a clause whose quotes do not close falls back to the
     anchored patterns.

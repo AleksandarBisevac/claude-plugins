@@ -1,0 +1,82 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__config.py tests/test_guard_history_rewrite.py .claude/hooks/guard-uncommitted.py tests/test_guard_secrets_read.py tests/test__manifest_vocab.py .claude/hooks/guard-release.py": "pass",
+    "ruff check plugins/audit tools tests": "pass",
+    "vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints": "pass",
+    "python3 tools/bench-hooks.py --gate": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-31T11:43:15Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__config.py tests/test_guard_history_rewrite.py .claude/hooks/guard-uncommitted.py tests/test_guard_secrets_read.py tests/test__manifest_vocab.py .claude/hooks/guard-release.py` in a throwaway tree at HEAD exited 1 with 43 of 390 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - gu1 (house FAIL), gu2 (house FAIL), gu3 (house FAIL), gu4 (house FAIL), gu5 (house FAIL), gu6 (house FAIL), gu7 (house FAIL), gu8 (house FAIL), gu9 (house FAIL) and 34 more: SELFTEST FAILED: 347/390 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "MONOTONE UNION, implemented. (a) guard-history-rewrite.py: git_calls(command, depth, joined=False) - joined=True skips parts_read_alone at every depth, i.e. the reading main had of the raw joined view, kept as a reading rather than deleted. New command_reading(command) -> (calls, strict): when every part reads alone, the joined parse alone, strict False; otherwise the joined view's parse (None-safe) merged with git_calls of every part that ends closed and tokenizes alone, strict True. _merged() is a multiset union so one operation found by two readings is named once. always_refused, amend_requested, stash_operations and reset_targets grade the merged calls, and when strict add their text patterns (union, never either-or); new _reset_target_text and _always_refused_calls factor the pieces. decide: early allow only for calls == [] and not strict; the xargs-git STDIN_VERB check reads the merged calls; the unparsed git -C deny keys on strict; call_trees gets the merged calls plus a session entry for the text reading's answer, appended after so reset indexes still hold. (b) _config.runnable_clauses returns per-part clauses then the joined view's clauses not already present (union); runnable_text docstring rewritten to state the union. That covers guard-release _publishers and _shell_moves and the history guard's _shell_moves. (c) guard-uncommitted reading(): new _parsed_calls uses the parser's command_reading (falls back to git_invocations); on a strict line the text shapes over the lifted view are asked first (widest loss set), then the merged calls' judgement, so neither reading can allow what the other refuses. (d) guard-secrets-read.py: no code change; it reads runnable_text, the joined view, i.e. main's reading over the shared split, and never had a per-part reading. House-template lifting happens inside split_heredocs, before every reading. MATRIX (reviewer probe run.py/cmp.py over cases.json, main export vs this tree): before the change 140 weaker rows (hist 98, sec 6, unc 20, rel 16); after it 96 (hist 54, sec 6, unc 20, rel 16), stronger hist 112. Of the 96: 92 are house-form rows - p153.allow1/allow2/allow3 (commit -m, audit-task --description, gh pr --body, each with every verb), allow4 (backquoted house form, secrets), b11 and b12 (a house-form commit/tag message that a LATER clause runs through bash -c \"$(git log ...)\" or git tag -l | sh: the body is lifted because it matches the template exactly; the guards cannot follow text through git's object store - flagged for a decision, not changed). The other 4 are p153.b2 and p153.b2b with <HARD-RESET> onto HEAD~1 (hist): the marker line `cat <<E'X' )\"` / `cat <<E-X )\"` is not the house form; main denied because its old delimiter regex read the marker as `E`, classed the rest as a shell body and so called the cwd unreadable; this tree reads the delimiter as the shell does, sees the reset run, and the ancestry check finds nothing orphaned (HEAD~1 holds the recorded commit). With a target that orphans the recorded commit (HEAD~2) both shapes deny: gu44, gu45. NOT IN THE REVIEWER'S PROBE, measured separately (11 extra shapes x 7 verbs, same driver): 22 more rows weaker than main, none house-form, from split_heredocs narrowings earlier tasks of this phase made deliberately: a body written to a file named *.sh (with or without a later `sh probe.sh`; hist 10, sec 2, unc 2, rel 2 - this is gh35's pinned allow, from the program-word rule) and a body piped to `python3 \"x.py\"` with the script path quoted (hist 5, unc 1 - the unquoted spelling was already data on main). The union cannot see these because every reading shares the current split. Making them deny means reverting the program-word rule and the quoted-script reading, which turns gh35 red and contradicts the history guard's module docstring - a reversal of a pinned decision, left for the orchestrator. COST: the four arms timed per call (fastest of 30), two runs 20 s apart, HEAD vs this tree: plain 0.19/0.19 ms, house 0.51-0.52/0.51-0.52 ms, a long 40-clause line 9.7-9.8/9.8 ms, a line with a part ending open 0.26/0.94-0.96 ms and a body-pair line 0.35/1.22-1.25 ms; bench-hooks --gate (imports) passes on 3.14 only, it found no 3.8-3.13 interpreter. R19: s79-s83 in tests/test_guard_secrets_read.py could not fail on the quote-crossing their comments named - measured in-process: joining every body inside a quote the text opened left all of them block; dropping shell/interpreter bodies from the split turned all of them allow. Comment and titles reworded to what they pin: the body stays in the view this guard grades. Gate: 6/6 files ok, 1761 cases. ruff (the CLAUDE.md paths) clean; with .claude/hooks added it reports an unused shutil import in guard-uncommitted.py's _selftest and in require-claim-block.py, both already in HEAD. mv37 PASS (68/68). Prose-number and house-style lints: no hit in changed files. DEPENDANTS: .github/sweep-costs.json - path entries for the suites, still correct (suite times unchanged within noise: history 1.5 s, secrets 3.5 s). PLUGIN-BUILD-GUIDE.md and SECURITY.md - waived, unchanged; the guide's mentions are paths and still resolve. tests/test__config.py - names _cases/_selftest by basename only, 393 cases pass; part_ends_open/runnable_parts unchanged. _config.py importers (guard-release, detect-plan-skip, guard-bash-writes, guard-capabilities, guard-edits, guard-history-rewrite, guard-secrets-read, journal-writes): only runnable_clauses changed behaviour, and git grep finds it called only by guard-release (two sites) and guard-history-rewrite - both gated and passing; the other importers do not call it. guard-history-rewrite.py dependants (guard-uncommitted via git_invocations - unchanged semantics, now also command_reading; hooks.json, _areas.py, _commit_trail.py, repair-commits.py, docs/research - basename/path refs, unaffected; tests use git_calls/_substitutions/_substitution_end - git_calls(command) keeps its old meaning, qs4 passes). guard-secrets-read.py dependants: file unchanged. guard-uncommitted.py dependants (settings.json, CONTRIBUTING.md naming executed_text): executed_text unchanged. guard-release.py dependants (arm-release-bypass, settings.json, affected.py, _refs.py, verify.sh): _publishers signature unchanged, 110 cases pass.",
+    "descriptive": "The guards now refuse when ANY reading refuses - the joined view main had, each part read alone, and the text patterns - so the quoted-verb and xargs-git rows near open-ended bodies are refused again; in the reviewer's matrix only house-form rows and two misparse rows remain weaker than main, and a separate probe finds two earlier split narrowings left for decision."
+  },
+  "testsAdded": [
+    "gu1-gu40: each of <QUOTED-STASH-DROP>, <QUOTED-PROGRAM-STASH-DROP>, <QUOTED-FORCE-PUSH> and <XARGS-GIT> is refused, with its own reason word, beside a shell body ending in a backslash (verb before and after), a single-quote body pair (before and after), a double-quote pair, a backquote pair, a $( pair, a glued #' body plus a closer, a body whose #' follows a carriage return, and an echo \"$( body closed by the verb's body",
+    "gu41-gu43: the quoted spellings refused when the text ends on an escape after a body",
+    "gu44-gu45: a hard reset that orphans the recorded commit, after a substitution marker line that is not the house form (quoted and hyphenated delimiter), is refused",
+    "gu46-gu49: second direction - a quoted read beside the same open-ended bodies is allowed; red under an over-fire mutation (every strict line refused), green restored",
+    "s79-s83 in tests/test_guard_secrets_read.py reworded (no new case): they pin that the body stays in the graded view"
+  ],
+  "casesAdded": [
+    [
+      "gu1",
+      "gu2",
+      "gu3",
+      "gu4",
+      "gu5",
+      "gu6",
+      "gu7",
+      "gu8",
+      "gu9",
+      "gu10",
+      "gu11",
+      "gu12",
+      "gu13",
+      "gu14",
+      "gu15",
+      "gu16",
+      "gu17",
+      "gu18",
+      "gu19",
+      "gu20",
+      "gu21",
+      "gu22",
+      "gu23",
+      "gu24",
+      "gu25",
+      "gu26",
+      "gu27",
+      "gu28",
+      "gu29",
+      "gu30",
+      "gu31",
+      "gu32",
+      "gu33",
+      "gu34",
+      "gu35",
+      "gu36",
+      "gu37",
+      "gu38",
+      "gu39",
+      "gu40",
+      "gu41",
+      "gu42",
+      "gu43",
+      "gu44",
+      "gu45",
+      "gu46",
+      "gu47",
+      "gu48",
+      "gu49"
+    ]
+  ],
+  "claims": "claims:\n1 guard-history-rewrite.py command_reading is the union the docstrings name (joined parse via git_calls(joined=True), parts that read alone, strict flag); each arm adds its text patterns only when strict; _config.runnable_clauses appends the joined view's clauses; guard-uncommitted reading() asks the text shapes then _parsed_calls. s79-s83 reworded to what the in-process probe showed they can fail on.\n2 gu1-gu43 FAIL on the unchanged tree (347/390), PASS on a main export, PASS after the fix (390/390); gu46-gu49 red under an in-process over-fire mutation of always_refused, green restored; s79-s83: quote-crossing mutation left block, bodies-dropped mutation gave allow.\n3 class = every reader the per-part routing fed: git grep for runnable_clauses (guard-release x2, history _shell_moves - all now union), the git_calls None consumers in the history guard (four arms, decide's xargs check, unparsed git -C check, call_trees - all now read command_reading), guard-uncommitted reading (union). guard-secrets-read left: it reads the joined runnable_text and has no per-part reading. Two split-level narrowings (*.sh write target, quoted script path) left, because reversing them reverses gh35 - reported with their rows.\n4 n/a - no rule to an agent.\n5 timings: two runs 20 s apart, spread in the outcome; the matrix is deterministic and was run once per tree.\n6 every arm grades parsed operations from every parse that read; text patterns only add; allow cases gu46-gu49 proven quiet and red under over-fire.\n7 the counts in this return come from the probe's cmp.py output and the suite tallies; no number written into repo prose.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:3b9ed83c94d61f9038c54a854acb74444ee01ccf43ec73bb9e43873bee43d424\",\"dirtyDigest\":\"sha256:2fa12d839a56eeaa1b7974f90fe47240643ccf25298f01d8598d60cc03b8ec0b\",\"dirtyPaths\":{\".claude/hooks/guard-release.py\":\"7265ad383920680d\",\".claude/hooks/guard-uncommitted.py\":\"4ad7c0613188f306\",\"plugins/audit/hooks/_config.py\":\"63de855e1a8aca3b\",\"plugins/audit/hooks/guard-history-rewrite.py\":\"a2b6ff0692814fde\",\"tests/test_guard_history_rewrite.py\":\"09d4d63344ba73ef\",\"tests/test_guard_secrets_read.py\":\"eecda50869362f91\"},\"head\":\"099997e0\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".claude/hooks/guard-release.py\",\".claude/hooks/guard-uncommitted.py\",\"plugins/audit/hooks/_config.py\",\"plugins/audit/hooks/guard-history-rewrite.py\",\"plugins/audit/hooks/guard-secrets-read.py\",\"tests/test__config.py\",\"tests/test_guard_history_rewrite.py\",\"tests/test_guard_secrets_read.py\"],\"scopeDigest\":\"sha256:32787577314eb3e4c22ef84f39b817b36db9aacd43720c5f99cbd1a56ccd221d\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

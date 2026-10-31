@@ -1188,6 +1188,80 @@ def _cases(check):
             v, why = _decide(repo, _shape % _fp)
             check("gk%d deny, a force push: %s" % (47 + _n, _what),
                   v == "deny", repr((v, why[:120])))
+
+        # --- no reading is weaker than the raw one -----------------------------
+        # A command one of whose parts ends open (a body ending in an escape, a
+        # quote one body opens and a later one closes) used to go to the text
+        # reading alone, and the text reading cannot see a spelling only the
+        # parser resolves: a quoted verb or program word, or a verb piped to
+        # `xargs git`. The raw view of these lines tokenizes, and read that
+        # way the verb is an operation. So the verdict is now the union of the
+        # readings - any one that refuses refuses - and each verb below must
+        # be refused however its neighbouring bodies end. The reason is
+        # checked as well as the verdict, since a shell heredoc can deny on
+        # an unreadable directory without the verb having been seen at all.
+        _bq = "`"
+        _union_verbs = (
+            ("qs", "git \"stash\" drop", "stash"),
+            ("qg", "\"git\" stash drop", "stash"),
+            ("qf", "git \"push\" --" + "force origin main", "rewrite"),
+            ("xg", "echo stash | xargs git", "xargs"))
+        _union_shapes = (
+            ("a shell body ending in a backslash, the verb before it",
+             "%s\nbash <<'X'\necho a \\\nX"),
+            ("...the verb after it",
+             "bash <<'X'\necho a \\\nX\n%s"),
+            ("one body opens a single quote a later body closes, verb before",
+             "%s\nbash <<'X'\necho '\nX\nbash <<'Y'\n'\nY"),
+            ("...verb after",
+             "bash <<'X'\necho '\nX\nbash <<'Y'\n'\nY\n%s"),
+            ("...a double quote, the verb before a `;`",
+             "%s; bash <<'X'\necho \"\nX\nbash <<'Y'\n\"\nY"),
+            ("...a backquote",
+             "%s\nbash <<'X'\necho " + _bq + "\nX\nbash <<'Y'\n" + _bq + "\nY"),
+            ("...a `$(`",
+             "%s\nbash <<'X'\necho $(\nX\nbash <<'Y'\n)\nY"),
+            ("a glued `#'` body, then a body closing the quote",
+             "%s\nbash <<'X'\necho a#'\nX\nbash <<'Y'\n'\nY"),
+            ("a body whose `#'` follows a carriage return",
+             "bash <<'A'\nx\r#'\ny\nA\nbash <<'B'\n%s\nB"),
+            ("an `echo \"$(` body closed by the body holding the verb",
+             "bash <<'A'\necho \"$(\nA\nbash <<'B'\n%s\n)\"\nB"))
+        _gu = 0
+        for _what, _shape in _union_shapes:
+            for _vk, _verb, _word in _union_verbs:
+                _gu += 1
+                v, why = _decide(repo, _shape % _verb)
+                check("gu%d deny, %s: %s" % (_gu, _vk, _what),
+                      v == "deny" and _word in why, repr((v, why[:120])))
+        # The text ends on an escape after a body: the raw view tokenizes the
+        # line before it, so the quoted spellings are operations there too.
+        for _vk, _verb, _word in _union_verbs[:3]:
+            _gu += 1
+            v, why = _decide(repo, "bash <<'X'\necho hi\nX\n%s \\" % _verb)
+            check("gu%d deny, %s: the text ends on an escape after a body"
+                  % (_gu, _vk), v == "deny" and _word in why,
+                  repr((v, why[:120])))
+        # A command substitution whose marker line carries more than the
+        # delimiter is not the house form: its body ends on the next line, and
+        # every line after that delimiter runs as a command.
+        for _vk, _cmd in (
+                ("quoted delimiter", "git commit -m \"$(cat <<E'X' )\"\nEX\n"
+                 "git reset --hard HEAD~2\nE"),
+                ("hyphenated delimiter", "git commit -m \"$(cat <<E-X )\"\nE-X"
+                 "\ngit reset --hard HEAD~2\nE")):
+            _gu += 1
+            v, why = _decide(repo, _cmd)
+            check("gu%d deny, a reset after a marker line that is not the "
+                  "house form (%s)" % (_gu, _vk), v == "deny",
+                  repr((v, why[:120])))
+        # SECOND DIRECTION: the union must not refuse what every reading
+        # allows - the same open-ended bodies beside a read are allowed.
+        for _what, _shape in _union_shapes[:4]:
+            _gu += 1
+            v, why = _decide(repo, _shape % "git \"status\"")
+            check("gu%d allow, a quoted read: %s" % (_gu, _what),
+                  v == "allow", repr((v, why[:120])))
         check("gh34 the text the guard grades, per heredoc kind: the body going "
               "into a FILE is gone, the body fed to a shell and the body fed to "
               "an interpreter are both still there. An interpreter body is kept "

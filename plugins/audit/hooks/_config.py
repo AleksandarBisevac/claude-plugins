@@ -3453,16 +3453,20 @@ def runnable_text(cmd, pipe_data=False):
     `split_heredocs`' own: a guard opts in to reading a quoted body piped to a
     plain script run as data.
 
-    THE JOIN IS RAW, AND A JOINED VIEW IS ONLY AS READABLE AS ITS PARTS. The
-    parts are separate inputs to separate readers, so a quote, a substitution
-    or an escape one part leaves open carries into the next in this string: a
-    reader that parses the view must first ask `part_ends_open` of each of
-    `runnable_parts`, and take its strict reading when any part answers yes;
-    a reader of clauses splits each part on its own (`runnable_clauses`).
-    No part is ever closed by hand to make the view parse. A part can end open
-    because the lexer misreads it - a nested quoted heredoc's apostrophe, a
-    Python escape the shell does not have - while the line after it really
-    runs, so a closer would turn that line into the inside of a quote.
+    THE JOIN IS RAW, AND IT IS ONE READING AMONG SEVERAL, NEVER THE ONLY ONE.
+    The parts are separate inputs to separate readers, so a quote, a
+    substitution or an escape one part leaves open carries into the next in
+    this string, and the joined parse can then read a live line as the inside
+    of a quote. Reading the parts alone (`part_ends_open`, `runnable_parts`)
+    misses what the joined parse sees instead: a part the lexer misreads as
+    open - a nested quoted heredoc's apostrophe, a Python escape the shell does
+    not have - leaves its neighbours readable only as one view. So a guard
+    takes the UNION: the joined view's reading, each part read alone, and its
+    strict text reading wherever a part ends open, and refuses when any of them
+    refuses (`runnable_clauses` for the clause readers,
+    `guard-history-rewrite.command_reading` for the parse). No part is ever
+    closed by hand to make the view parse; a closer would turn the line after
+    a misread part into the inside of a quote.
     """
     return "\n".join(runnable_parts(cmd, pipe_data))
 
@@ -3475,13 +3479,23 @@ def runnable_parts(cmd, pipe_data=False):
 
 
 def runnable_clauses(cmd, pipe_data=False):
-    """`command_clauses` of each of `runnable_parts`, each part split on its
-    own. A part whose quoting does not close comes back as one clause of its
-    own - `command_clauses`' fail-safe - for its reader's strict reading, and
-    the parts beside it are still split; the joined view would have carried
-    the open quote into them."""
-    return [clause for part in runnable_parts(cmd, pipe_data)
-            for clause in command_clauses(part)]
+    """The clauses of two readings, each clause once, in order: every one of
+    `runnable_parts` split on its own, then the joined `runnable_text` split
+    whole.
+
+    A part whose quoting does not close comes back as one clause of its own -
+    `command_clauses`' fail-safe - for its reader's strict reading, and the
+    parts beside it are still split, where the joined view would have carried
+    the open quote into them. The joined view's clauses stay as well, because
+    a part read alone can be the misreading: a reader that refuses when any
+    clause refuses is then never more permissive than either reading."""
+    parts = runnable_parts(cmd, pipe_data)
+    out = [clause for part in parts for clause in command_clauses(part)]
+    if len(parts) > 1:
+        seen = set(out)
+        out += [clause for clause in command_clauses("\n".join(parts))
+                if clause not in seen]
+    return out
 
 
 def _comment_at(text, i, stack):

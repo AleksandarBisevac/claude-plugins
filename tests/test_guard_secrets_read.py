@@ -3403,25 +3403,28 @@ def _cases(check):
             "the same config - the pair is the point, because either case alone "
             "passes on a broken half", "block",
             bash("build > src/app.ts"), use_cfg=cfg_enforced)
-    # A quote the text leaves open must not carry into the shell body: a
-    # closing quote on a later body line once made the joined view balanced
-    # with the body inside the text's quote. This arm blocked both shapes
-    # before that was fixed; the pair locks it through the runnable view.
+    # WHAT THESE PIN IS THAT THE BODY STAYS IN THE VIEW THIS GUARD GRADES, not
+    # how a quote crosses between parts. This arm matches the runnable view as
+    # text, so no quote state can hide a read from it: measured, joining every
+    # body inside a quote the text opened leaves each one refused. What turns
+    # them red is a split that drops a shell or interpreter body as data - so
+    # each shape below is one whose quoting (an open quote in the text, a
+    # nested quoted heredoc's apostrophe, a Python escape the shell does not
+    # have) a body-classifying change could plausibly misread as data.
     _rd = "cat " + ".env"
-    _expect("s79 a secret read in a shell body is refused when the text after "
-            "the heredoc opens a quote and a body line closes it", "block",
+    _expect("s79 a secret read in a shell body stays in the graded view, and is "
+            "refused, when the text after the heredoc opens a quote and a body "
+            "line closes it", "block",
             bash("bash <<'EOF'\n%s\n'\nEOF\necho '" % _rd))
     _expect("s80 ...and in its twin with no closing line", "block",
             bash("bash <<'EOF'\n%s\nEOF\necho '" % _rd))
-    # A body that ends open only in the lexer's reading is not repaired with a
-    # closer, which would make the read line the inside of a quote.
-    _expect("s81 a secret read after a nested quoted heredoc with an "
-            "apostrophe, inside a shell body, is refused", "block",
+    _expect("s81 ...a shell body holding a nested quoted heredoc with an "
+            "apostrophe before the read", "block",
             bash("bash <<'EOF'\ncat <<'Y'\nit's\nY\n%s\nEOF" % _rd))
-    _expect("s82 ...and after one that writes a file", "block",
+    _expect("s82 ...and one whose nested heredoc writes a file", "block",
             bash("bash <<'EOF'\ncat >f <<'Y'\nit's\nY\n%s\nEOF" % _rd))
-    _expect("s83 ...and in os.system after a Python escaped apostrophe",
-            "block",
+    _expect("s83 ...and an interpreter body, the read in os.system after a "
+            "Python escaped apostrophe", "block",
             bash("python3 - <<'PY'\nprint('it\\'s')\nimport os\n"
                  "os.system(\"%s\")\nPY" % _rd))
 

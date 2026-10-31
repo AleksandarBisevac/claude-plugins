@@ -376,27 +376,47 @@ def reading(command):
     verdict reached without parsing the line as given is a weaker claim and
     saying so is cheaper than being wrong about it quietly.
 
-    There is no third reading. The parser already lifts house-template bodies
-    before it tokenizes (`_config.split_heredocs` calls
-    `lift_house_bodies`), so a line whose lifted view parses is a line that
-    parsed, and a reading that re-parsed the view could only repeat it.
+    The parser lifts house-template bodies before it tokenizes
+    (`_config.split_heredocs` calls `lift_house_bodies`), so a line whose
+    lifted view parses is a line that parsed. A line with a part that will not
+    read alone is graded by BOTH readings the parser's `command_reading`
+    hands back - the shapes over the lifted view, which assume the widest loss
+    set, and then every call any parse of it found - so neither reading can
+    allow what the other refuses.
     """
     if not DESTRUCTIVE_TEXT.search(command or ""):
         return (None, "operation")      # the cheap door: no shape, no parse
     helper = parser()
-    invocations = helper.git_invocations(command) if helper is not None else None
-    if invocations is not None:
+    invocations, strict = _parsed_calls(command, helper)
+    if not strict:
         return (_first_judgement(invocations, helper), "operation")
-    # The line will not tokenize: the shapes grade all of it but the bodies
+    # A part will not read alone: the shapes grade all of it but the bodies
     # the house template lifts.
     view = executed_text(command, helper)
-    if view is not None and not DESTRUCTIVE_TEXT.search(view):
-        return (None, "text")
-    # The parser could not be loaded, or the text names a destructive shape
-    # outside the house template: the widest loss set is assumed and the
-    # refusal says it was read from text.
-    return ({"op": "this command", "kinds": (LOSS_TRACKED, LOSS_UNTRACKED),
-             "probe": "status", "remedy": REMEDY_PATHS}, "text")
+    if view is None or DESTRUCTIVE_TEXT.search(view):
+        # The parser could not be loaded, or the text names a destructive shape
+        # outside the house template: the widest loss set is assumed and the
+        # refusal says it was read from text.
+        return ({"op": "this command", "kinds": (LOSS_TRACKED, LOSS_UNTRACKED),
+                 "probe": "status", "remedy": REMEDY_PATHS}, "text")
+    # The shapes found nothing; a call a parse read is still an operation.
+    found = _first_judgement(invocations, helper)
+    return (found, "operation" if found is not None else "text")
+
+
+def _parsed_calls(command, helper):
+    """`([(verb, args)], strict)` - every git call the parser's readings
+    found, and whether a part of the line will not read alone. A parser with
+    no `command_reading` answers through `git_invocations`, where None is the
+    strict reading with no calls; no parser at all is that too."""
+    if helper is None:
+        return [], True
+    read = getattr(helper, "command_reading", None)
+    if read is None:
+        invocations = helper.git_invocations(command)
+        return invocations or [], invocations is None
+    calls, strict = read(command)
+    return [(call[0], call[1]) for call in calls], strict
 
 
 def _first_judgement(invocations, helper):
