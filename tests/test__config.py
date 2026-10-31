@@ -1660,10 +1660,11 @@ def _cases(check):
                     M.effective_cwd(_cp_dot, str(wprim)),
                     M.effective_cwd(_ls_dotdot, str(wprim)),
                     M.effective_cwd(_rsync_dot, str(wprim)))))
-        # The named programs are anchored the same way, to the start of a word:
-        # a redirect target ENDING IN a shell's name (`cat > probe.sh`) is a
-        # file, not the shell. `hb6`/`hb7` below hold both directions, and
-        # test_guard_history_rewrite.py's gh35 holds it through that guard.
+        # NOT widened the same way: an interpreter NAME ending a redirect
+        # target (`cat > probe.sh`) stays classified as code/shell on purpose
+        # - narrowing it would also narrow `guard-secrets-read`, which shares
+        # this classification and must stay conservative. See gh35 in
+        # test_guard_history_rewrite.py, which pins that case.
     finally:
         _harness.remove_tree(str(wroot))
 
@@ -3214,720 +3215,518 @@ def _git_standing_cases(check):
         _harness.remove_tree(str(root))
 
 
-def _house_body_cases(check):
-    """A house-form body - `--description "$(cat <<'EOF' ... EOF )"` - is the
-    text of an argument, whichever program the substitution's output is handed
-    to. The guards share `split_heredocs`, so these are graded through one of
-    them, `guard-history-rewrite`'s `git_invocations`, where a body line read as
-    a command turns into a refused git verb."""
+# --- the house-form lift ------------------------------------------------------
+# Spelled in pieces so the strings that name a destructive operation are not
+# typed whole into a command line by whoever edits this file.
+_HL_STASH = "git " + "stash drop"
+_HL_ENV = "cat " + ".env"
+_HL_HARD = "git reset " + "--hard"
+_HL_TAG = "git " + "tag v9"
+# One body that each guard below refuses when it is read as shell: a
+# stash for the history guard, a secret read, a tree-wide reset for
+# guard-uncommitted, a tag creation for guard-release - each at the start of
+# its own line, which is where a shell reads a command.
+_HL_BODY = "Measured on each guard.\n%s\n%s\n%s HEAD\n%s" % (
+    _HL_STASH, _HL_ENV, _HL_HARD, _HL_TAG)
+_HL_SCRIPT = "/opt/plugin/scripts/manifest/audit-task.py"
+
+
+def _hl_house(before, after="", body=_HL_BODY, delim="'EOF'"):
+    """`(command, the same command with the body lifted)` for one house-form
+    argument written after `before`."""
+    word = delim.strip("'\"")
+    return ('%s"$(cat <<%s\n%s\n%s\n)"%s' % (before, delim, body, word, after),
+            '%s"$(cat <<%s\n%s\n)"%s' % (before, delim, word, after))
+
+
+def _hl_guards():
+    """Each guard's reading entry, loaded from the tree under test."""
     import _loader
-    hist = _loader.load(os.path.join(_harness.HOOKS_DIR,
-                                     "guard-history-rewrite.py"),
-                        modname="guard_history_rewrite_house")
-    _qg = "git " + "stash"
-    body = "Measured: a body line can open with the verb.\n%s drop\nEOF" % _qg
-    script = "/opt/audit/scripts/manifest/audit-task.py"
-    adds = (
-        ("quoted script path",
-         "python3 \"%s\" add P1 --title t --description \"$(cat <<'EOF'\n%s\n)\""
-         % (script, body)),
-        ("bare script path",
-         "python3 %s add P1 --title t --description \"$(cat <<'EOF'\n%s\n)\""
-         % (script, body)),
-        ("single-quoted script path, --reason form",
-         "python3 '%s' block P1.1 --reason \"$(cat <<'EOF'\n%s\n)\""
-         % (script, body)),
-        ("a commit message, the form that was already lifted",
-         "git commit -m \"$(cat <<'EOF'\n%s\n)\"" % body),
+    repo_hooks = os.path.join(os.path.dirname(_harness.TESTS_DIR), ".claude",
+                              "hooks")
+    return {
+        "hist": _loader.load(os.path.join(_harness.HOOKS_DIR,
+                                          "guard-history-rewrite.py"),
+                             modname="hl_guard_history_rewrite"),
+        "sec": _loader.load(os.path.join(_harness.HOOKS_DIR,
+                                         "guard-secrets-read.py"),
+                            modname="hl_guard_secrets_read"),
+        "unc": _loader.load(os.path.join(repo_hooks, "guard-uncommitted.py"),
+                            modname="hl_guard_uncommitted"),
+        "rel": _loader.load(os.path.join(repo_hooks, "guard-release.py"),
+                            modname="hl_guard_release"),
+    }
+
+
+def _hl_repo():
+    """A git repository with a plan that records a task commit, and a dirty
+    tree: the state in which each guard's refusal is reachable."""
+    root = _harness.fixture_root("hl-")
+    _harness.git(None, "init", "-q", root)
+    os.makedirs(os.path.join(root, "docs", "audit"))
+    for n in range(2):
+        with open(os.path.join(root, "f%d" % n), "w") as fh:
+            fh.write("x")
+        _harness.git(root, "add", "-A")
+        _harness.git(root, "commit", "-qm", "c%d" % n)
+    sha = _harness.git(root, "rev-parse", "HEAD~1").strip()
+    plan = {"meta": {"version": 2}, "phases": [{
+        "id": "P0", "title": "t", "status": "done",
+        "tasks": [{"id": "P0.1", "title": "t", "status": "done",
+                   "commit": sha}]}]}
+    with open(os.path.join(root, "docs", "audit", "audit-plan.json"), "w") as fh:
+        json.dump(plan, fh)
+    _harness.git(root, "add", "-A")
+    _harness.git(root, "commit", "-qm", "plan")
+    with open(os.path.join(root, "f0"), "w") as fh:
+        fh.write("dirty")
+    return root
+
+
+def _hl_verdicts(guards, repo, command):
+    """{guard: True when it refuses `command`}, each asked at the entry its hook
+    calls: the history and secrets hooks' `decide`, guard-uncommitted's
+    `reading` (its `decide` adds only the tree's state, and the tree here is
+    dirty), guard-release's `_publishers` (its `decide` adds only the plan's
+    bugs)."""
+    payload = {"tool_name": "Bash", "cwd": repo,
+               "tool_input": {"command": command}}
+    return {
+        "hist": guards["hist"].decide(payload)[0] == "deny",
+        "sec": guards["sec"].decide(payload)[0] in ("block", "ask"),
+        "unc": guards["unc"].reading(command)[0] is not None,
+        "rel": bool(guards["rel"]._publishers(command, M)),
+    }
+
+
+# The bypasses the phase's reviews measured, each a row on which main's reading
+# refused and a reverted design allowed: a written body later run, a reflected
+# message, a quote context the lift must not trust, a house form spelled one
+# character off. `guards` names the guards main refused it with.
+_MEASURED_BYPASSES = (
+    ('allow4|SR', ('sec',),
+     'git commit -m "`cat <<\'EOF\'\nx\ncat .env\nEOF\n`"'),
+    ('b2|RH', ('hist',),
+     'git commit -m "$(cat <<E\'X\' )"\nEX\ngit reset --hard HEAD~1\nE'),
+    ('b2b|RH', ('hist',),
+     'git commit -m "$(cat <<E-X )"\nE-X\ngit reset --hard HEAD~1\nE'),
+    ('b11|SD', ('hist',),
+     'git commit -m "$(cat <<\'EOF\'\ngit stash drop\nEOF\n)" ; bash -c "$(git log -1 --format=%B)"'),
+    ('b12|SD', ('hist',),
+     'git tag -m "$(cat <<\'EOF\'\ngit stash drop\nEOF\n)" v1 && git tag -l -n1 v1 | sh'),
+    ('wa1|SD', ('hist',),
+     "cat > probe.sh <<'EOF'\ngit stash drop\nEOF"),
+    ('wa2|SD', ('hist',),
+     "cat > probe.sh <<'EOF'\ngit stash drop\nEOF\ncat probe.sh"),
+    ('wa3|SD', ('hist',),
+     "cat > probe.sh <<'EOF'\ngit stash drop\nEOF\nsh other.sh"),
+    ('wa5|SD', ('hist',),
+     "cat > probe.sh <<'EOF'\ngit stash drop\nEOF\necho sh probe.sh"),
+    ('h_trailsp|SD', ('hist',),
+     'git commit -m "$(cat <<\'EOF\'   \nx\ngit stash drop\nEOF\n)"'),
+    ('h_redir_then_run|SD', ('hist',),
+     'git commit -m "$(cat <<\'EOF\'\ngit stash drop\nEOF\n)" > out.sh; sh out.sh'),
+    ('h_unq|SD', ('hist',),
+     'git commit -m "$(cat <<EOF\ngit stash drop\nEOF\n)"'),
+    ('h_m_eq|SD', ('hist',),
+     'git commit --message="$(cat <<\'EOF\'\ngit stash drop\nEOF\n)"'),
+    ('h_ifs|SD', ('hist',),
+     'IFS=x; git commit -m "$(cat <<\'EOF\'\ngit stash drop\nEOF\n)"'),
+    ('h_xargs|SD', ('hist',),
+     'git commit -m "$(cat <<\'EOF\'\ngit stash drop\nEOF\n)" ; git log -1 --format=%B | xargs -I{} sh -c {}'),
+    ('h_gh_editrepl|SD', ('hist',),
+     'gh pr edit 1 --body "$(cat <<\'EOF\'\ngit stash drop\nEOF\n)"; gh pr view 1 --json body -q .body | sh'),
+    ('h_at_ws|SD', ('hist',),
+     'python3 x/audit-task.py add P1 --description "$(cat <<\'EOF\'\ngit stash drop\nEOF\n)"'),
+    ('h_at_sitecustom|SD', ('hist',),
+     'python3 audit-task.py add P1 --description "$(cat <<\'EOF\'\ngit stash drop\nEOF\n)"'),
+    ('t_write_glob|SD', ('hist',),
+     "cat > p.sh <<'EOF'\ngit stash drop\nEOF\nsh p.s?"),
+    ('t_write_glob2|SD', ('hist',),
+     "cat > p.sh <<'EOF'\ngit stash drop\nEOF\nsh p*"),
+    ('t_write_find|SD', ('hist',),
+     "cat > p.sh <<'EOF'\ngit stash drop\nEOF\nfind . -name p.sh -exec sh {} \\;"),
+    ('t_write_bslash_run|SD', ('hist',),
+     "cat > p.sh <<'EOF'\ngit stash drop\nEOF\nsh p\\.sh"),
+    ('t_write_brace|SD', ('hist',),
+     "cat > p.sh <<'EOF'\ngit stash drop\nEOF\nsh p.{sh,}"),
+    ('t_write_bashenv|SD', ('hist',),
+     "cat > e.sh <<'EOF'\ngit stash drop\nEOF\nBASH_ENV=e.sh bash -c true"),
+    ('w0.r6|SD', ('hist',),
+     "cat > p.sh <<'EOF'\ngit stash drop\nEOF\nscript -q /dev/null sh p.sh"),
+    ('w0.r12|SD', ('hist',),
+     "cat > p.sh <<'EOF'\ngit stash drop\nEOF\nexec 3<p.sh; sh <&3"),
+    ('w0.r13|SD', ('hist',),
+     "cat > p.sh <<'EOF'\ngit stash drop\nEOF\nsh /dev/fd/3 3<p.sh"),
+    ('w0.r14|SD', ('hist',),
+     "cat > p.sh <<'EOF'\ngit stash drop\nEOF\ncat p.sh | bash"),
+    ('w0.r20|SR', ('sec',),
+     "cat > p.sh <<'EOF'\ncat .env\nEOF\nawk '{system($0)}' p.sh"),
+    ('w0.r21|SD', ('hist',),
+     "cat > p.sh <<'EOF'\ngit stash drop\nEOF\nsed -n p p.sh | sh"),
+    ('w0.r33|SD', ('hist',),
+     "cat > p.sh <<'EOF'\ngit stash drop\nEOF\nls | xargs sh"),
+    ('w0.r34|SD', ('hist',),
+     "cat > p.sh <<'EOF'\ngit stash drop\nEOF\nsh *.sh"),
+    ('w0.r36|SD', ('hist',),
+     "cat > p.sh <<'EOF'\ngit stash drop\nEOF\nwatch -n1 sh p.sh"),
+    ('w0.r37|SD', ('hist',),
+     "cat > p.sh <<'EOF'\ngit stash drop\nEOF\nparallel sh ::: p.sh"),
+    ('w0.r39|SD', ('hist',),
+     "cat > p.sh <<'EOF'\ngit stash drop\nEOF\nenv -S 'sh p.sh'"),
+    ('w0.r47|SD', ('hist',),
+     "cat > p.sh <<'EOF'\ngit stash drop\nEOF\ngit -c core.pager='sh p.sh' log"),
+    ('w0.r48|SR', ('sec',),
+     'cat > p.sh <<\'EOF\'\ncat .env\nEOF\nperl -e \'system("sh p.sh")\''),
+    ('w0.r49|SR', ('sec',),
+     'cat > p.sh <<\'EOF\'\ncat .env\nEOF\npython3 -c \'import os; os.system("sh p.sh")\''),
+    ('w0.r50|SD', ('hist',),
+     "cat > p.sh <<'EOF'\ngit stash drop\nEOF\nmake -f /dev/null SHELL=p.sh"),
+    ('w0.r57|SD', ('hist',),
+     "cat > p.sh <<'EOF'\ngit stash drop\nEOF\ns\\h p.sh"),
+    ('w8.r0|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\nsh p.sh"),
+    ('w8.r1|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\nbash -x p.sh"),
+    ('w8.r2|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\nsh -e p.sh"),
+    ('w8.r3|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\nsh -o errexit p.sh"),
+    ('w8.r4|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\nnohup sh p.sh"),
+    ('w8.r5|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\ntimeout 5 sh p.sh"),
+    ('w8.r7|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\nsh $(echo p.sh)"),
+    ('w8.r8|SD', ('hist',),
+     'install /dev/stdin p.sh <<\'EOF\'\ngit stash drop\nEOF\nsh "$(ls *.sh)"'),
+    ('w8.r9|SD', ('hist',),
+     'install /dev/stdin p.sh <<\'EOF\'\ngit stash drop\nEOF\nset -- p.sh; sh "$1"'),
+    ('w8.r10|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\np=p; sh $p.sh"),
+    ('w8.r11|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\nsh ~/p.sh"),
+    ('w8.r15|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\nbash < <(cat p.sh)"),
+    ('w8.r16|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\nsudo -u root sh p.sh"),
+    ('w8.r17|SD', ('hist',),
+     'install /dev/stdin p.sh <<\'EOF\'\ngit stash drop\nEOF\nwhile read l; do eval "$l"; done < p.sh'),
+    ('w8.r18|SD', ('hist',),
+     'install /dev/stdin p.sh <<\'EOF\'\ngit stash drop\nEOF\nsh -c "$(cat p.sh)"'),
+    ('w8.r19|SD', ('hist',),
+     'install /dev/stdin p.sh <<\'EOF\'\ngit stash drop\nEOF\neval "$(<p.sh)"'),
+    ('w8.r22|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\ncp p.sh /tmp/q && sh /tmp/q"),
+    ('w8.r23|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\nln -s p.sh q; sh q"),
+    ('w8.r24|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\n$SHELL p.sh"),
+    ('w8.r25|SD', ('hist',),
+     'install /dev/stdin p.sh <<\'EOF\'\ngit stash drop\nEOF\n"$BASH" p.sh'),
+    ('w8.r26|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\n/bin/sh p.sh"),
+    ('w8.r27|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\n/usr/bin/env sh p.sh"),
+    ('w8.r28|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\nexec -a x sh p.sh"),
+    ('w8.r29|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\n! sh p.sh"),
+    ('w8.r30|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\nsh p.sh &"),
+    ('w8.r31|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\n{ sh p.sh; }"),
+    ('w8.r32|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\nfor f in p.sh; do sh $f; done"),
+    ('w8.r35|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\nxargs sh <<< p.sh"),
+    ('w8.r38|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\nzsh -c 'source p.sh'"),
+    ('w8.r40|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\nsh p.sh </dev/null"),
+    ('w8.r41|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\nchmod 755 p.sh && ./p.sh"),
+    ('w8.r42|SD', ('hist',),
+     'install /dev/stdin p.sh <<\'EOF\'\ngit stash drop\nEOF\nchmod +x p.sh; "./p.sh"'),
+    ('w8.r43|SD', ('hist',),
+     'install /dev/stdin p.sh <<\'EOF\'\ngit stash drop\nEOF\n./p.s"h"'),
+    ('w8.r44|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\nsh ./d/../p.sh"),
+    ('w8.r45|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\nsh $PWD/p.sh"),
+    ('w8.r46|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\nsh `echo p.sh`"),
+    ('w8.r51|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\nx=sh; $x p.sh"),
+    ('w8.r52|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\ntrue || sh p.sh"),
+    ('w8.r53|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\nsh p.sh # done"),
+    ('w8.r54|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\nsh\tp.sh"),
+    ('w8.r55|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\nsh -- ./p.sh"),
+    ('w8.r56|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\nsh p.sh\\\n"),
+    ('w8.r58|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\n'sh' p.sh"),
+    ('w8.r59|SD', ('hist',),
+     "install /dev/stdin p.sh <<'EOF'\ngit stash drop\nEOF\n\\sh p.sh"),
+    ('q_ansi_dq|SR', ('sec',),
+     'echo $\'\\\' \ngit commit -m "$(cat <<"EOF"\n\';\ncat .env\n: \'\nEOF\n)"'),
+    ('q_ansi_unq|SR', ('sec',),
+     'echo $\'\\\' \ngit commit -m "$(cat <<EOF\n\';\ncat .env\n: \'\nEOF\n)"'),
+    ('q_ansi_sq|SR', ('sec',),
+     'echo $\'\\\' \ngit commit -m "$(cat <<\'EOF\'\n\';\ncat .env\n: \'\nEOF\n)"'),
+    ('q_ansi_bal|SD', ('hist',),
+     'echo $\'\\\' \ngit commit -m "$(cat <<"EOF"\n\';\ngit stash drop\n: \'\nEOF\n)"\n\''),
+    ('q_dq_sq_bs|SR', ('sec',),
+     'echo "\\"\'"\ngit commit -m "$(cat <<"EOF"\n\';\ncat .env\n: \'\nEOF\n)"'),
+    ('q_heredoc_in_sub_quote|SR', ('sec',),
+     'x=$(echo \')\' )\ngit commit -m "$(cat <<"EOF"\n\';\ncat .env\n: \'\nEOF\n)"'),
+    ('q_brace_sq|SR', ('sec',),
+     'echo ${x/\\\'/a}\ngit commit -m "$(cat <<"EOF"\n\';\ncat .env\n: \'\nEOF\n)"'),
+)
+
+
+def _house_lift_cases(check):
+    """THE ONE NARROW LIFT, BOTH DIRECTIONS. `lift_house_bodies` removes a
+    heredoc body only from an exact house-form argument of a literal text sink;
+    every other command comes back byte for byte, so every guard reads it the
+    way it read it before the lift existed."""
+    lift = M.lift_house_bodies
+    allowed = (
+        ("commit -m", "git commit -m ", ""),
+        ("git -C <path> commit -m", "git -C /x/y commit -m ", ""),
+        ("after an add", "git add a.txt && git commit -m ", ""),
+        ("cd first, -a", "cd /x && git commit -a -m ", ""),
+        ("a subject before", 'git commit -m "subject" -m ', ""),
+        ("--message", "git commit --message ", ""),
+        ("-F", "git commit -F ", ""),
+        ("tag -m", "git tag -a v1 -m ", ""),
+        ("audit-task add --description, plugin root",
+         'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" add P1 '
+         "--title t --description ", ""),
+        ("audit-task done --outcome", "python3 %s done P1.1 --outcome "
+         % _HL_SCRIPT, " --commit abc1234"),
+        ("audit-task cancel --reason", "python3 '%s' cancel P1.2 --reason "
+         % _HL_SCRIPT, ""),
+        ("audit-task note --text", "python3 %s note P1.1 --text " % _HL_SCRIPT,
+         ""),
+        ("audit-task scope --title", "python3 %s scope P1.1 --title "
+         % _HL_SCRIPT, ""),
+        ("gh pr create --body", "gh pr create --title t --body ",
+         " --base main"),
+        ("gh issue edit --title", "gh issue edit 3 --title ", ""),
+        ("a double-quoted delimiter", "git commit -m ", ""),
     )
-    got = [(what, hist.git_invocations(cmd)) for what, cmd in adds]
-    leaked = [(what, inv) for what, inv in got
-              if inv is None or any(verb == "stash" for verb, _a in inv)]
-    check("hb1 git_invocations on an audit-task add whose house-form "
-          "description body has a line opening with the stash verb returns no "
-          "stash invocation: %r" % (leaked,), not leaked and len(got) == 4)
-    # SECOND DIRECTION, for a fix that reads every substitution's body as data:
-    # a stash run outside the body - after the add, or inside a live `$( )` in
-    # the add's own arguments - is still a stash this command runs.
-    outside = (
-        ("after the add",
-         "python3 \"%s\" add P1 --description \"$(cat <<'EOF'\n%s\n)\" && "
-         "%s drop" % (script, body, _qg)),
-        ("before it",
-         "%s pop; python3 \"%s\" add P1 --description \"$(cat <<'EOF'\n%s\n)\""
-         % (_qg, script, body)),
-        ("the body piped to a shell",
-         "cat <<'EOF' | bash\n%s\n" % body),
+    wrong = []
+    for what, before, after in allowed:
+        delim = '"EOF"' if what == "a double-quoted delimiter" else "'EOF'"
+        cmd, want = _hl_house(before, after, delim=delim)
+        got = lift(cmd)
+        if got != want:
+            wrong.append((what, got))
+    two, _ = _hl_house("python3 %s add P1 --title " % _HL_SCRIPT)
+    two_cmd = two + ' --description "$(cat <<\'EOF\'\n%s\nEOF\n)"' % _HL_BODY
+    two_want = ("python3 %s add P1 --title \"$(cat <<'EOF'\nEOF\n)\" "
+                "--description \"$(cat <<'EOF'\nEOF\n)\"" % _HL_SCRIPT)
+    if lift(two_cmd) != two_want:
+        wrong.append(("two house arguments", lift(two_cmd)))
+    check("hl1 lift_house_bodies removes the body of each exact house-form "
+          "argument of a text sink in its one table - git commit and tag "
+          "messages past git's -C, audit-task's prose options, gh pr/issue "
+          "body and title - and leaves every other byte: %r" % (wrong,),
+          not wrong)
+
+    # The same spellings one character off, and every carrier the table does
+    # not hold: each comes back unchanged, so no guard's reading moves.
+    unlifted = (
+        ("a shell's -c", "bash -c ", ""),
+        ("eval", "eval ", ""),
+        ("an interpreter's -c", "python3 -c ", ""),
+        ("command position", "", ""),
+        ("an assignment before the sink", "GIT_DIR=x git commit -m ", ""),
+        ("git -c before the verb", "git -c core.pager=sh commit -m ", ""),
+        ("a git verb that stores no message", "git log --grep ", ""),
+        ("git notes, not in the table", "git notes add -m ", ""),
+        ("an attached option value", "git commit --message=", ""),
+        ("a quoted program word", 'g"it" commit -m ', ""),
+        ("an escaped program word", "\\git commit -m ", ""),
+        ("a path to git", "/usr/bin/git commit -m ", ""),
+        ("gh pr comment, not in the table", "gh pr comment 3 --body ", ""),
+        ("gh release notes, not in the table",
+         "gh release create v1 --notes ", ""),
+        ("an audit-task option outside the prose set",
+         "python3 %s add P1 --files " % _HL_SCRIPT, ""),
+        ("an audit-task verb outside the set",
+         "python3 %s block P1.1 --reason " % _HL_SCRIPT, ""),
+        ("a relative audit-task path",
+         "python3 audit-task.py add P1 --description ", ""),
+        ("a relative audit-task path under a directory",
+         "python3 x/audit-task.py add P1 --description ", ""),
+        ("an interpreter option before the script",
+         "python3 -X dev %s add P1 --description " % _HL_SCRIPT, ""),
+        ("a launcher in front of the script",
+         "sh /opt/plugin/hooks/py-launch.sh %s add P1 --description "
+         % _HL_SCRIPT, ""),
+        ("another script", "python3 /opt/x/other-task.py add P1 --description ",
+         ""),
+        ("the sink piped to a shell", "git commit -m ", " | sh"),
+        ("the sink's output redirected and run", "git commit -m ",
+         " > out.sh; sh out.sh"),
+        ("the message read back into a shell", "git commit -m ",
+         ' ; bash -c "$(git log -1 --format=%B)"'),
+        ("text glued after the closing quote", "git commit -m ", "x"),
+        ("a later clause the frame does not list", "git commit -m ",
+         "; sh .git/COMMIT_EDITMSG"),
+        ("a later git with -c", "git commit -m ",
+         " && git -c core.pager=sh log"),
+        ("a later git verb that runs a program", "git commit -m ",
+         " && git rebase --exec x HEAD~1"),
+        ("a group around the sink", "{ git commit -m ", "; } | sh"),
+        ("a loop around the sink", "while true; do git commit -m ",
+         "; done"),
+        ("a function named like the program", "git() { :; }; git commit -m ",
+         ""),
+        ("an exported PATH", "export PATH=/tmp:$PATH; git commit -m ", ""),
+        ("IFS assigned first", "IFS=x; git commit -m ", ""),
+        ("a comment line first", "# it's\ngit commit -m ", ""),
+        ("an ANSI-C quote first", "echo $'\\' \ngit commit -m ", ""),
+        ("an unbalanced quote first", 'echo "a\ngit commit -m ', ""),
+        ("a substitution first", "x=$(echo ')' )\ngit commit -m ", ""),
+        ("a parameter operator first", "echo ${x/\\'/a}\ngit commit -m ", ""),
+        ("a line continuation first", "git add a \\\n&& git commit -m ", ""),
+        ("another heredoc first",
+         "cat > p.txt <<'X'\nnote\nX\ngit commit -m ", ""),
+        # Each of these is caught by one rule alone: every clause around
+        # it is one the frame lists, so dropping that rule lifts the body.
+        ("a pipe even into a listed program", "git commit -m ", " | git log"),
+        ("an ANSI-C quote inside a listed clause",
+         "git add $'\\' \ngit commit -m ", ""),
+        ("a comment inside a listed clause", "git add a # it's '\ngit commit -m ",
+         ""),
     )
-    kept = [(what, hist.git_invocations(cmd)) for what, cmd in outside]
-    lost = [(what, inv) for what, inv in kept
-            if inv is None or [verb for verb, _a in inv].count("stash") != 1]
-    check("hb2 ...while a real stash outside the body - before or after the add, "
-          "or a body piped to a shell - is still returned, once: %r" % (lost,),
-          not lost and len(kept) == 3)
-    # The same reading, at the shared door every guard calls: the body is lifted
-    # out of the command text and is not returned as shell.
-    split = [(what, M.split_heredocs(cmd)) for what, cmd in adds]
-    as_shell = [(what, parts) for what, parts in split
-                if (_qg + " drop") in parts[0]
-                or any((_qg + " drop") in b for b in parts[2])]
-    check("hb3 split_heredocs lifts each house-form body out of the command "
-          "text and returns none of it as shell: %r" % (as_shell,),
-          not as_shell and len(split) == 4)
-    # SECOND DIRECTION for the narrowing itself: the substitution's output is
-    # text only to a sink in `_config._TEXT_SINKS`. Every other enclosing
-    # command may run it, so its body stays shell - including the one whose
-    # `$(` opened on an earlier line than the marker, which no head reading
-    # on the marker's own line can see.
-    _rm = "rm -rf " + "x"
-    hb_body = "\n%s\nEOF\n)\"" % _rm
-    runs_it = (
-        ("a shell's -c", "bash -c \"$(cat <<'EOF'" + hb_body),
-        ("eval", "eval \"$(cat <<'EOF'" + hb_body),
-        ("an interpreter's -c", "python3 -c \"$(cat <<'EOF'" + hb_body),
-        ("command position", "\"$(cat <<'EOF'" + hb_body),
-        ("command position after a script run",
-         "python3 x.py a; \"$(cat <<'EOF'" + hb_body),
-        ("an assignment", "GIT_EDITOR=\"$(cat <<'EOF'" + hb_body + " git commit"),
-        ("git with an option before its verb",
-         "git -c core.pager=x commit -m \"$(cat <<'EOF'" + hb_body),
-        ("a git verb that is no message", "git log --grep \"$(cat <<'EOF'"
-         + hb_body),
-        ("unquoted", "python3 x.py --d $(cat <<'EOF'\n%s\nEOF\n)" % _rm),
-        ("nested", "python3 x.py --d \"$(echo \"$(cat <<'EOF'" + hb_body + ")\""),
-        ("opened on an earlier line", "bash -c \"$(\ncat <<'EOF'" + hb_body),
-        ("an interpreter option set elsewhere",
-         "export NODE_OPTIONS=x; node e.js \"$(cat <<'EOF'" + hb_body),
-        # A shell running a script file reads its stdin too; no pattern over
-        # the marker's line spells that, so only the innermost head answers.
-        ("a shell as the substitution's own head",
-         "python3 x.py \"$(bash ./go <<'EOF'" + hb_body),
-    )
-    dropped = [(what, M.split_heredocs(cmd)) for what, cmd in runs_it]
-    dropped = [(what, parts) for what, parts in dropped
-               if _rm not in "\n".join([parts[0]] + parts[1] + parts[2])]
-    check("hb4 ...while a body whose substitution output a shell, eval, an "
-          "interpreter's -c, command position, an assignment or any other "
-          "consumer could run is still kept: %r" % (dropped,),
-          not dropped and len(runs_it) == 13)
-    # A quoted script path is the file the interpreter is handed, as a heredoc
-    # head and as the far side of a pipe.
-    quoted = (M.split_heredocs("python3 \"x.py\" --t - <<'EOF'\n%s\nEOF" % _rm),
-              M.split_heredocs("cat <<'EOF' | python3 'x.py' -\n%s\nEOF" % _rm,
-                               pipe_data=True))
-    check("hb5 a quoted script path no longer disqualifies a plain script run, "
-          "as a head or as a pipe's far side: %r" % (quoted,),
-          all(_rm not in "\n".join([p[0]] + p[1] + p[2]) for p in quoted))
+    moved = [(what, lift(cmd)) for what, cmd in
+             ((what, _hl_house(before, after)[0])
+              for what, before, after in unlifted)
+             if lift(cmd) != cmd]
+    check("hl2 ...while a carrier outside the table, a sink handing its output "
+          "on, a frame clause the lift does not list, or a quote context it "
+          "cannot prove plain leaves the command byte for byte unchanged: %r"
+          % (moved,), not moved and bool(unlifted))
 
-
-def _argument_body_cases(check):
-    """THE INVARIANT, ONE CASE PER ROUTE: a heredoc whose substitution is the
-    whole or part of one double-quoted argument is data ONLY when a literal
-    text sink from `_config._TEXT_SINKS` stores it and its clause hands the
-    sink's output to nothing that runs it; every other carrier keeps the body
-    as shell. Two routes graded a sink's body as shell wrongly - a FILE NAME
-    ending in a shell's name read as the shell, and a backquote substitution
-    the quote scanner did not see - and the carrier, its identity and its
-    clause's end are each a route by which a body could pass as data. Each
-    allow below has a deny beside it, for the fix that reads every body as
-    data."""
-    import _loader
-    hist = _loader.load(os.path.join(_harness.HOOKS_DIR,
-                                     "guard-history-rewrite.py"),
-                        modname="guard_history_rewrite_argument")
-    _qg = "git " + "stash"
-    line = _qg + " drop"
-    body = "A body line can open with the verb.\n%s\nEOF" % line
-
-    def kept(parts):
-        return line in "\n".join([parts[0]] + parts[1] + parts[2])
-
-    def split_all(rows, pipe_data=False):
-        return [(what, M.split_heredocs(cmd, pipe_data)) for what, cmd in rows]
-
-    # Route one: a file name is not a program. A word ending in a shell's
-    # name after a dot is a file the head names - a redirect target or an
-    # argument of a script run - and the body stays data. A file `cat` reads
-    # inside a substitution is no longer on this list: that substitution is
-    # not the house template, so its body is shell (`_house_template_cases`).
-    files = (
-        ("a redirect target", "cat > notes.sh <<'EOF'\n%s" % body),
-        ("an argument of a plain script run reading stdin",
-         "python3 x.py --out report.sh - <<'EOF'\n%s" % body),
-        ("a zsh file", "cat > env.zsh <<'EOF'\n%s" % body),
-    )
-    wrong = [(what, parts) for what, parts in split_all(files) if kept(parts)]
-    check("hb6 a word that ENDS IN a shell's name after a dot is a file, not "
-          "the shell: a body written to it, or handed with it to a "
-          "script, is data: %r" % (wrong,), not wrong and len(files) == 3)
-    shells = (
-        ("a shell running a script reads stdin",
-         "sh notes.sh <<'EOF'\n%s" % body),
-        ("a shell reading its program", "bash -s <<'EOF'\n%s" % body),
-        ("a shell by path", "/bin/sh <<'EOF'\n%s" % body),
-        ("after a reserved word", "if true; then sh <<'EOF'\n%s\nfi" % body),
-        ("dot-sourcing a file", ". ./env.sh <<'EOF'\n%s" % body),
-        ("a pipe into a shell running a .sh file",
-         "cat <<'EOF' | sh deploy.sh\n%s" % body),
-        ("the interpreter reading its program", "python3 - <<'EOF'\n%s" % body),
-    )
-    lost = [(what, parts) for what, parts in split_all(shells, True)
-            if not kept(parts)]
-    check("hb7 ...while a shell in PROGRAM position - by name, by path, after a "
-          "reserved word, dot-sourcing, at a pipe's far side - still runs the "
-          "body, and so does an interpreter reading its program: %r" % (lost,),
-          not lost and len(shells) == 7)
-
-    # Route two: a backquote substitution is a substitution, inside double
-    # quotes too, so its heredoc is read from its own head as a `$(`'s is.
-    _bq = "`"
-    script = "/opt/audit/scripts/manifest/audit-task.py"
-    quoted_bq = (
-        ("a commit message",
-         "git commit -m \"%scat <<'EOF'\n%s\n%s\"" % (_bq, body, _bq)),
-        ("a description",
-         "python3 \"%s\" add P1 --description \"%scat <<'EOF'\n%s\n%s\""
-         % (script, _bq, body, _bq)),
-        ("a pull request body",
-         "gh pr create --title t --body \"%scat <<'EOF'\n%s\n%s\""
-         % (_bq, body, _bq)),
-    )
-    wrong = [(what, parts) for what, parts in split_all(quoted_bq)
-             if kept(parts)]
-    invs = [(what, hist.git_invocations(cmd)) for what, cmd in quoted_bq]
-    leaked = [(what, inv) for what, inv in invs
-              if inv is None or any(verb == "stash" for verb, _a in inv)]
-    check("hb8 a backquoted house form's body is data, at the split and "
-          "through a guard's git_invocations: %r" % ((wrong, leaked),),
-          not wrong and not leaked and len(quoted_bq) == 3)
-    run_bq = (
-        ("a shell's -c",
-         "bash -c \"%scat <<'EOF'\n%s\n%s\"" % (_bq, body, _bq)),
-        ("eval", "eval \"%scat <<'EOF'\n%s\n%s\"" % (_bq, body, _bq)),
-        ("command position", "\"%scat <<'EOF'\n%s\n%s\"" % (_bq, body, _bq)),
-        ("unquoted",
-         "python3 x.py --d %scat <<'EOF'\n%s\n%s" % (_bq, body, _bq)),
-        ("a shell as the backquote's own head",
-         "python3 x.py \"%sbash <<'EOF'\n%s\n%s\"" % (_bq, body, _bq)),
-    )
-    lost = [(what, parts) for what, parts in split_all(run_bq)
-            if not kept(parts)]
-    after = hist.git_invocations("git commit -m \"%scat <<'EOF'\n%s\n%s\" && %s"
-                                 % (_bq, body, _bq, line))
-    check("hb9 ...while a backquoted body a shell, eval, command position or "
-          "word splitting may run is kept, and a stash after the backquoted "
-          "form is returned once: %r" % ((lost, after),),
-          not lost and len(run_bq) == 5 and after is not None
-          and [verb for verb, _a in after].count("stash") == 1)
-
-    # Route three: the carrier. The argument is data to a sink in the one
-    # table - git's message, gh's body or title - as part of the argument as
-    # well as all of it, and to nothing else: a program the table does not
-    # name may run what it is handed.
-    sub = "\"$(cat <<'EOF'\n%s\n)\"" % body
-    carried = (
-        ("gh pr create", "gh pr create --title t --body " + sub),
-        ("gh issue comment, short option", "gh issue comment 5 -b " + sub),
-        ("glued to an option", "gh pr create --body=" + sub),
-        ("a git commit message", "git commit -m " + sub),
-        ("a git commit message, long and glued",
-         "git commit --message=" + sub),
-        ("an annotated tag", "git tag -a v1 -m " + sub),
-        ("gh issue create", "gh issue create --title t --body " + sub),
-        ("a later argument after it", "gh pr create --body " + sub
-         + " --base main"),
-        ("a clause after it", "git add x && git commit -m " + sub
-         + " && git log -1"),
-    )
-    wrong = [(what, parts) for what, parts in split_all(carried) if kept(parts)]
-    invs = [(what, hist.git_invocations(cmd)) for what, cmd in carried]
-    leaked = [(what, inv) for what, inv in invs
-              if inv is None or any(verb == "stash" for verb, _a in inv)]
-    check("hb10 a house-form body is data when a text sink from the one "
-          "table carries it - git commit/tag's message, gh's body or title - "
-          "glued to its flag, or followed by more "
-          "arguments and clauses: %r" % ((wrong, leaked),),
-          not wrong and not leaked and len(carried) == 9)
-    runners = (
-        # A wrapper named in no table: only the reading of EVERY word finds
-        # the shell behind it, so this row is red under a program-position-only
-        # reading.
-        ("a shell behind a wrapper no table names",
-         "taskset 1 bash -c " + sub),
-        ("chroot's program operand", "chroot /x " + sub),
-        ("find's -exec", "find . -exec sh -c " + sub + " \\;"),
-        ("a remote command line", "ssh host " + sub),
-        ("an assignment argument", "export PROMPT_COMMAND=" + sub),
-        ("a make variable", "make CMD=" + sub),
-        ("trap", "trap " + sub + " EXIT"),
-        ("a wrapper's program operand", "sudo " + sub),
-        ("env -S", "env -S " + sub),
-        ("watch", "watch " + sub),
-        ("an interpreter's inline program", "node -e " + sub),
-        # Neither is in the table: a program run by path is whatever that file
-        # does, and a wrapper hands its operand to a program it names.
-        ("a program run by path", "./tools/notify --text " + sub),
-        ("a sink behind a wrapper", "timeout 60 gh pr edit 3 --body " + sub),
-    )
-    lost = [(what, parts) for what, parts in split_all(runners)
-            if not kept(parts)]
-    check("hb11 ...while a carrying command that runs its argument - a shell "
-          "or an interpreter anywhere in its words, find -exec, ssh, trap, "
-          "watch, a wrapper's program, an assignment's value, a program run by "
-          "path - keeps the body as shell: %r" % (lost,),
-          not lost and len(runners) == 13)
-
-    # THE CARRIER'S OWN OUTPUT. A text sink prints what it was handed - a
-    # commit prints its subject, gh echoes a title - so a sink whose clause
-    # feeds a pipe, a process substitution, an enclosing substitution or a
-    # group whose output is piped hands the body to whatever reads it. The
-    # body is data only when the clause ends in a separator that runs nothing
-    # with its output.
-    fed = (
-        ("piped to a shell", "gh pr create --body " + sub + " | sh"),
-        ("piped with stderr", "git commit -m " + sub + " |& bash"),
-        ("a later argument, then a pipe",
-         "gh pr create --body " + sub + " --base main | sh"),
-        ("into a process substitution", "git commit -m " + sub + " > >(sh)"),
-        ("the sink in command position", "\"$(gh pr create --body " + sub
-         + ")\""),
-        ("the sink inside an assignment's substitution",
-         "x=$(git commit -m " + sub + ")"),
-        ("the sink backquoted", "`git commit -m " + sub + "`"),
-        ("a subshell piped", "( git commit -m " + sub + " ) | sh"),
-        ("a group piped", "{ git commit -m " + sub + "; } | sh"),
-        ("a compound piped",
-         "if true; then git commit -m " + sub + "; fi | sh"),
-        ("a pipe on the next line after a continuation",
-         "git commit -m " + sub + " \\\n  | sh"),
-        # The sink is the group's SECOND command, so its own clause opens on
-        # no group word and only the depth of the text before it says so.
-        ("a group piped, the sink not its first command",
-         "{ true; git commit -m " + sub + "; } | sh"),
-        ("a loop piped, the sink not its first command",
-         "while true; do true; git commit -m " + sub + "; done | sh"),
-    )
-    lost = [(what, parts) for what, parts in split_all(fed) if not kept(parts)]
-    ends = (
-        ("end of the command", "git commit -m " + sub),
-        ("and-list", "git commit -m " + sub + " && git log -1"),
-        ("or-list", "git commit -m " + sub + " || git status"),
-        ("semicolon", "git commit -m " + sub + "; git status"),
-        ("newline", "git commit -m " + sub + "\ngit status"),
-        ("a file redirect", "git commit -m " + sub + " > commit.log"),
-    )
-    wrong = [(what, parts) for what, parts in split_all(ends) if kept(parts)]
-    check("hb12 a sink's body stays shell unless the carrying command's clause "
-          "ends in a separator that runs nothing with its output - a pipe, a "
-          "process substitution, an enclosing substitution or a piped group "
-          "keeps it - while the clause ending at the command's end, `&&`, "
-          "`||`, `;`, a newline or a file redirect is data: %r"
-          % ((lost, wrong),),
-          not lost and not wrong and len(fed) == 13 and len(ends) == 6)
-
-    # THE CARRIER'S IDENTITY. A data reading is owed only to a literal sink
-    # word: a program word that is an expansion, a runner the shell lists
-    # never named, an option that names a shell, a file run by path, or a
-    # sink name the command itself redefines may run what it is handed.
-    _rd = "cat " + ".env"
-    rd_sub = "\"$(cat <<'EOF'\n%s\nEOF\n)\"" % _rd
-    identity = (
-        ("$SHELL as the program", "$SHELL -c " + sub),
-        ("a braced expansion as the program", "\"${BASH}\" -c " + sub),
-        ("an expansion inside the sink word", "g$x commit -m " + sub),
-        ("csh", "csh -c " + sub),
-        ("tcsh", "tcsh -c " + sub),
-        ("pwsh", "pwsh -Command " + sub),
-        ("cmd", "cmd /c " + sub),
-        ("nu", "nu -c " + sub),
-        ("nix-shell --run", "nix-shell --run " + sub),
-        ("npx -c", "npx -c " + sub),
-        ("rsync -e", "rsync -e " + sub + " a b:"),
-        ("tar --to-command", "tar -xf a.tar --to-command=" + sub),
-        ("env --split-string", "env --split-string=bash -c " + sub),
-        ("--shell=", "script --shell=bash -c " + sub),
-        ("a script run by path", "./deploy.sh " + sub),
-        ("an alias over the sink", "alias git='sh -c'; git commit -m " + sub),
-        ("a function over the sink",
-         "git() { sh -c \"$3\"; }; git commit -m " + sub),
-        ("a secret read, the same way", "$SHELL -c " + rd_sub),
-        ("a substitution whose own command is a program run by path",
-         "git commit -m \"$(./tools/emit <<'EOF'\n%s\n)\"" % body),
-    )
-    lost = [(what, parts) for what, parts in split_all(identity)
-            if not kept(parts) and _rd not in "\n".join(
-                [parts[0]] + parts[1] + parts[2])]
-    heads = (
-        ("a script by path reading the heredoc", "./deploy.sh <<'EOF'\n%s"
-         % body),
-        ("a script by path after a separator",
-         "true; ./deploy.sh --go <<'EOF'\n%s" % body),
-        ("a shell no list named, reading the heredoc", "csh <<'EOF'\n%s" % body),
-        ("...nor this one", "pwsh -NoProfile <<'EOF'\n%s" % body),
-    )
-    lost += [(what, parts) for what, parts in split_all(heads)
-             if not kept(parts)]
-    check("hb13 a body stays shell when its carrier is no literal sink - an "
-          "expansion as the program, csh/tcsh/pwsh/cmd/nu/nix-shell/npx/rsync/"
-          "tar, env's split string, a --shell option, a script run by path, a "
-          "substitution not run by cat - or the command redefines the sink, "
-          "and a heredoc fed to a shell no list named or to a script "
-          "run by path is shell: %r" % (lost,),
-          not lost and len(identity) == 19 and len(heads) == 4)
-
-
-def _house_template_cases(check):
-    """THE HOUSE TEMPLATE, AND NOTHING ELSE, IS DATA. A heredoc body inside a
-    substitution is lifted out of the command text by one function,
-    `lift_house_bodies`, and only when the substitution is the exact template:
-    `"$(cat <<'DELIM'` with nothing after the marker on its line, the body,
-    `DELIM` alone on its line, then `)"` closing the double-quoted argument of
-    a literal text sink. Every deviation leaves the body in the text, where it
-    is graded as shell. The deny rows are spellings a reading of the text
-    BEFORE the marker let through; the allow rows are the house forms a
-    deny-everything fix reddens, which is the second direction."""
-    _qg = "git " + "stash"
-    line = _qg + " drop"
-    body = "A body line can open with the verb.\n" + line
-    script = "/opt/audit/scripts/manifest/audit-task.py"
-    _bq = "`"
-
-    def sub(tail="", delim="'EOF'", term="EOF", text=body):
-        return "\"$(cat <<%s%s\n%s\n%s\n)\"" % (delim, tail, text, term)
-
-    house = (
-        ("a commit message", "git commit -m " + sub()),
-        ("a commit message, long and glued", "git commit --message=" + sub()),
-        ("an annotated tag", "git tag -a v1 -m " + sub()),
-        ("an audit-task description",
-         "python3 \"%s\" add P1 --title t --description %s" % (script, sub())),
-        ("an audit-task reason",
-         "python3 '%s' block P1.1 --reason %s" % (script, sub())),
-        ("a pull request body", "gh pr create --title t --body " + sub()
-         + " --base main"),
-        ("gh's short body option", "gh issue comment 5 -b " + sub()),
-        ("between clauses", "git add x && git commit -m " + sub()
-         + " && git log -1"),
-        ("a double-quoted delimiter", "git commit -m "
-         + sub(delim="\"EOF\"")),
-        ("an unquoted delimiter whose body expands nothing",
-         "git commit -m " + sub(delim="EOF")),
-        ("the backquoted form", "git commit -m \"%scat <<'EOF'\n%s\nEOF\n%s\""
-         % (_bq, body, _bq)),
-    )
-    got = [(what, M.lift_house_bodies(cmd)) for what, cmd in house]
-    wrong = [(what, lifted) for what, (view, lifted) in got
-             if lifted != [body] or line in view]
-    check("ht1 lift_house_bodies lifts exactly one body from each house form - "
-          "a commit or tag message, an audit-task description or reason, a pull "
-          "request body, between clauses, any delimiter quoting, backquoted - "
-          "and the view no longer holds it: %r" % (wrong,),
-          not wrong and len(got) == 11)
-    split = [(what, M.split_heredocs(cmd)) for what, cmd in house]
-    as_shell = [(what, parts) for what, parts in split
-                if line in "\n".join([parts[0]] + parts[1] + parts[2])]
-    check("ht2 ...and split_heredocs, which every guard calls, returns none of "
-          "those bodies as shell: %r" % (as_shell,), not as_shell)
-
-    # THE DEVIATIONS. Each was measured letting a body through: the text before
-    # the marker read clean and the rest of the marker's line was never asked.
-    deviations = (
-        ("a pipe to a shell after the marker",
-         "git commit -m " + sub(" | sh")),
-        ("a pipe to a shell reading stdin", "git commit -m " + sub(" | bash -s")),
-        ("stderr folded, then a pipe", "git commit -m " + sub(" 2>&1 | sh")),
-        ("a process substitution running a shell",
-         "git commit -m " + sub(" > >(sh)")),
-        ("tee into a process substitution",
-         "git commit -m " + sub(" | tee >(bash)")),
-        ("xargs handing the body to a shell's -c",
-         "git commit -m " + sub(" | xargs -0 sh -c")),
-        ("a continuation, then the pipe on the next line",
-         "git commit -m " + sub(" \\\n| sh")),
-        ("a clean first message, then a second that pipes",
-         "git commit -m \"clean\" -m " + sub(" | sh", "'F'", "F")),
-        ("the long option glued", "git commit --message=" + sub(" | sh")),
-        ("a pull request body", "gh pr create --title t --body "
-         + sub(" | sh")),
-        ("an audit-task description",
-         "python3 \"%s\" add P1 --description %s" % (script, sub(" | sh"))),
-        ("cat reading a file before stdin",
-         "git commit -m \"$(cat notes.sh - <<'EOF'\n%s\nEOF\n)\"" % body),
-        ("a tab-stripping marker", "git commit -m " + sub(delim="-'EOF'")),
-        ("text before the substitution inside the quote",
-         "gh pr create --body \"Summary: $(cat <<'EOF'\n%s\nEOF\n)\"" % body),
-        ("text after the close inside the quote",
-         "gh pr create --body \"$(cat <<'EOF'\n%s\nEOF\n) - end\"" % body),
-        ("an unquoted delimiter whose body runs a substitution",
-         "git commit -m " + sub(delim="EOF", text="x $(%s)" % line)),
-        ("a carrier that runs its argument", "bash -c " + sub()),
-        ("a sink whose output is piped to a shell",
-         "git commit -m " + sub() + " | sh"),
-        ("a terminator with text after it",
-         "git commit -m \"$(cat <<'EOF'\n%s\nEOF x\n)\"" % body),
-    )
-    got = [(what, M.lift_house_bodies(cmd)) for what, cmd in deviations]
-    lifted = [(what, out) for what, out in got if out[1]]
-    split = [(what, M.split_heredocs(cmd)) for what, cmd in deviations]
-    dropped = [(what, parts) for what, parts in split
-               if line not in "\n".join([parts[0]] + parts[1] + parts[2])]
-    check("ht3 every deviation from the template - anything after the marker "
-          "on its line (a pipe, a redirect, a process substitution, a "
-          "continuation), cat with an operand, a tab-stripping marker, text "
-          "around the substitution inside the quote, an expanding body, a "
-          "carrier that runs it, a sink piped onward - is lifted by neither "
-          "reader: %r" % ((lifted, dropped),),
-          not lifted and not dropped and len(deviations) == 19)
-
-    # ONE ARGUMENT AT A TIME. A clean house form beside a deviating one lifts
-    # the clean body only; the other stays shell.
-    pair = ("git commit -m %s -m %s"
-            % (sub(text="first message"), sub(" | sh", "'F'", "F")))
-    view, lifted = M.lift_house_bodies(pair)
-    check("ht4 a clean house form beside a deviating one: only the clean body "
-          "is lifted, and the deviating body is still in the view: %r"
-          % ((view, lifted),),
-          lifted == ["first message"] and line in view)
-
-    # A DELIMITER WORD WITH ANYTHING AFTER THE IDENTIFIER IS NOT SPLIT. The
-    # shell's terminator for `<<E-X` is `E-X` and for `<<E'X'` is `EX`; reading
-    # either as `E` swallowed the lines the shell runs after its real
-    # terminator.
-    words = (
-        ("a hyphenated word", "cat > notes.md <<E-X\nhello\nE-X\n%s\nE" % line),
-        ("a partly quoted word",
-         "cat > notes.md <<E'X'\nhello\nEX\n%s\nE" % line),
-        ("a quoted head, then more",
-         "cat > notes.md <<'E'X\nhello\nEX\n%s\nE" % line),
-        ("the house form with a partly quoted word",
-         "git commit -m \"$(cat <<'E'X\nmsg\nEX\n)\"\n%s\nE\n)\"" % line),
-    )
-    split = [(what, M.split_heredocs(cmd)) for what, cmd in words]
-    dropped = [(what, parts) for what, parts in split
-               if line not in "\n".join([parts[0]] + parts[1] + parts[2])]
-    lifted = [(what, M.lift_house_bodies(cmd)[1]) for what, cmd in words]
-    lifted = [(what, out) for what, out in lifted if out]
-    check("ht5 a delimiter word with anything after its identifier is not "
-          "split, so the line the shell runs after its real terminator stays "
-          "in the text: %r" % ((dropped, lifted),),
-          not dropped and not lifted and len(words) == 4)
-
-
-def _audit_task_prose_options():
-    """Every option string `audit-task.py` declares with `help=_PROSE_HELP`,
-    read from its AST - the set `_config._AUDIT_TASK_PROSE` must equal."""
-    import ast
-    path = os.path.join(_output.SCRIPTS_DIR, "manifest", "audit-task.py")
-    with open(path, encoding="utf-8") as fh:
-        tree = ast.parse(fh.read())
-    found = set()
-    for node in ast.walk(tree):
-        if not (isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Attribute)
-                and node.func.attr == "add_argument"):
-            continue
-        prose = any(k.arg == "help" and isinstance(k.value, ast.Name)
-                    and k.value.id == "_PROSE_HELP" for k in node.keywords)
-        if prose:
-            found.update(a.value for a in node.args
-                         if isinstance(a, ast.Constant)
-                         and isinstance(a.value, str)
-                         and a.value.startswith("-"))
-    return found
-
-
-def _sink_table_cases(check):
-    """The audit-task row of the text-sink table is the script's own prose
-    options, not a list typed beside them: an option added there with
-    `_PROSE_HELP` and missing here would turn its house form into shell, and
-    one listed here that stores no text would vouch for an option nobody
-    checked."""
-    declared = _audit_task_prose_options()
-    table = set(M._AUDIT_TASK_PROSE)
-    check("hb14 the audit-task row of the text-sink table equals the options "
-          "audit-task.py declares with _PROSE_HELP: missing %r, extra %r"
-          % (sorted(declared - table), sorted(table - declared)),
-          len(declared) > 1 and declared == table)
-
-
-def _runnable_part_cases(check):
-    """A JOINED VIEW IS ONLY AS READABLE AS ITS PARTS. The view is the command
-    text, then each shell body, then each interpreter body, joined raw by
-    newlines. A part that ends inside a quote, a substitution or an escape
-    would carry that state into the next part, so `part_ends_open` is asked of
-    each part and a reader takes its strict reading when any answers yes. No
-    part is closed by hand: a part can end open only in the lexer's reading
-    while the line after it really runs, and a closer made that line the
-    inside of a quote."""
-    body = "git push --" + "force origin main"
+    # The opening and closing shapes: anything but the exact template.
+    _b = "x\n%s" % _HL_STASH
     shapes = (
-        ("the measured shape: an apostrophe line, then a quote the text opens",
-         "bash <<'EOF'\n%s\n'\nEOF\necho '" % body),
-        ("...and its twin with no apostrophe line",
-         "bash <<'EOF'\n%s\nEOF\necho '" % body),
-        ("the text ends inside a double quote",
-         "bash <<'EOF'\n%s\n\"\nEOF\necho \"" % body),
-        ("the text ends inside a backquote",
-         "bash <<'EOF'\n%s\nEOF\necho `" % body),
-        ("the text ends on an escape",
-         "bash <<'EOF'\n%s\nEOF\necho \\" % body),
-        ("one body opens a quote a later body closes",
-         "bash <<'A'\necho '\nA\nbash <<'B'\n%s\n'\nB\nbash <<'C'\necho done\nC"
-         % body),
-        ("one body ends on an escape before a later body",
-         "bash <<'A'\necho \\\nA\nbash <<'B'\n%s\nB" % body),
-        ("a shell body opens a quote an interpreter body closes",
-         "bash <<'A'\necho '\nA\npython3 - <<'B'\n%s\nprint(\"'\")\nB" % body),
+        ("an unquoted delimiter",
+         'git commit -m "$(cat <<EOF\n%s\nEOF\n)"' % _b),
+        ("a tab-stripping marker",
+         "git commit -m \"$(cat <<-'EOF'\n%s\nEOF\n)\"" % _b),
+        ("a blank after the marker",
+         "git commit -m \"$(cat <<'EOF' \n%s\nEOF\n)\"" % _b),
+        ("a pipe after the marker",
+         "git commit -m \"$(cat <<'EOF' | sh\n%s\nEOF\n)\"" % _b),
+        ("cat with an operand",
+         "git commit -m \"$(cat - <<'EOF'\n%s\nEOF\n)\"" % _b),
+        ("text before the substitution inside the quote",
+         "git commit -m \"x$(cat <<'EOF'\n%s\nEOF\n)\"" % _b),
+        ("a path to cat",
+         "git commit -m \"$(/bin/cat <<'EOF'\n%s\nEOF\n)\"" % _b),
+        ("a backquote substitution",
+         "git commit -m \"`cat <<'EOF'\n%s\nEOF\n`\"" % _b),
+        ("an unquoted substitution",
+         "git commit -m $(cat <<'EOF'\n%s\nEOF\n)" % _b),
+        ("a blank before the closing parenthesis",
+         "git commit -m \"$(cat <<'EOF'\n%s\nEOF\n )\"" % _b),
+        ("a command after the delimiter inside the substitution",
+         "git commit -m \"$(cat <<'EOF'\n%s\nEOF\n| sh)\"" % _b),
+        ("no terminator", "git commit -m \"$(cat <<'EOF'\n%s\n)\"" % _b),
+        ("a body line that only strips to the delimiter",
+         "git commit -m \"$(cat <<'EOF'\nEOF \n%s\nEOF\n)\"" % _b),
+        # bash 3.2 matches the `$(`'s parenthesis over the raw text before it
+        # reads the heredoc: this body's own `)"` line ends the substitution
+        # there, and the line after it runs.
+        ("a body line holding the closing pair",
+         "git commit -m \"$(cat <<'EOF'\nx\n)\"\n%s\nEOF\n)\"" % _HL_STASH),
+        ("a parenthesis anywhere in the body",
+         "git commit -m \"$(cat <<'EOF'\nfix (%s)\nEOF\n)\"" % _HL_STASH),
     )
-    unflagged = [what for what, cmd in shapes
-                 if not any(M.part_ends_open(part)
-                            for part in M.runnable_parts(cmd, pipe_data=True))]
-    check("qv1 whatever quote, substitution or escape the text or an earlier "
-          "body leaves open, a part of the runnable view is reported open, "
-          "so no reader takes the joined parse: %r" % (unflagged,),
-          not unflagged and len(shapes) == 8)
+    reshaped = [(what, lift(cmd)) for what, cmd in shapes if lift(cmd) != cmd]
+    check("hl3 ...and so does every spelling of the substitution but the "
+          "template - an unquoted or tab-stripping marker, anything after it on "
+          "its line, cat with an operand, a backquote, an unquoted or padded "
+          "closing, a missing or near-miss terminator, a `)` in the body: %r"
+          % (reshaped,),
+          not reshaped and bool(shapes))
 
-    # SECOND DIRECTION, for a predicate that calls every part open: the view of
-    # a command with no bodies is the command, open quote and all, so an
-    # unreadable line still goes to the strict reading; and parts that end
-    # neutral are joined unchanged and reported closed.
-    alone = "git commit -m \"unterminated"
-    plain = "bash <<'EOF'\necho one\nEOF\npython3 - <<'PY'\nprint(2)\nPY\nls"
-    got = (M.runnable_text(alone), M.runnable_text(plain, pipe_data=True),
-           [M.part_ends_open(p) for p in M.runnable_parts(plain, pipe_data=True)])
-    want = (alone, "bash  \npython3 -  \nls\necho one\nprint(2)",
-            [False, False, False])
-    check("qv2 SECOND DIRECTION: a command with no bodies comes back as given, "
-          "an open quote included, and parts that end neutral are joined "
-          "unchanged and read as closed: %r" % (got,), got == want)
-
-    # A COMMENT IS NOT A QUOTE. The shell skips `# don't`, so its apostrophe
-    # leaves the part closed. The `#` glued to a word is no comment, and its
-    # quote leaves the part open - and in the view as given, with no closer.
-    commented = "python3 - <<'PY'\n# don't\nprint(1)\nPY"
-    glued = "bash <<'EOF'\necho a#'\nEOF\nls"
-    got = ([M.part_ends_open(p) for p in M.runnable_parts(commented)],
-           [M.part_ends_open(p) for p in M.runnable_parts(glued)],
-           M.runnable_text(glued))
-    want = ([False, False], [False, True], "bash  \nls\necho a#'")
-    check("qv3 a quote inside a comment opens nothing, so a body whose comment "
-          "holds an apostrophe reads closed - and a `#` glued to a word starts "
-          "no comment, so the quote after it leaves the part open: %r"
-          % (got,), got == want)
-
-    # NO PART IS SEALED. A body that ends open only in the lexer's reading - a
-    # nested quoted heredoc's apostrophe, a Python escape the shell does not
-    # have - runs the verb on its last line, and a closer appended after that
-    # line made the verb the inside of a quote.
-    misread = (
-        "bash <<'EOF'\ncat <<'Y'\nit's\nY\n%s\nEOF" % body,
-        "bash <<'EOF'\ncat >f <<'Y'\nit's\nY\n%s\nEOF" % body,
-        "python3 - <<'PY'\nprint('it\\'s')\nimport os\nos.system(\"%s\")\nPY"
-        % body)
-    got = [(M.runnable_text(cmd, pipe_data=True).rsplit("\n", 1)[-1],
-            [M.part_ends_open(p) for p in M.runnable_parts(cmd, pipe_data=True)])
-           for cmd in misread]
-    want = [(body, [False, True]), (body, [False, True]),
-            ("os.system(\"%s\")" % body, [False, True])]
-    check("qv4 a body the lexer misreads as open is reported open and joined "
-          "as given, its verb line last with nothing appended: %r" % (got,),
-          got == want)
-
-
-def _written_then_run_cases(check):
-    """A body redirected to a file is data only while nothing in the same
-    command runs that file. Once a later clause runs the path - a shell or an
-    interpreter given it as its script, the path as the program word, or
-    `source`/`.` reading it - the body is the program that clause runs, and
-    the split hands it to the graded view. A `.sh` name once sent every such
-    body there by accident; the rule here reads the run, not the name.
-
-    Each deny row is held beside allow rows that write the same body and then
-    do something to the file other than run it, or run a DIFFERENT file - the
-    two mutations a fix can take (grade nothing written; grade everything
-    written)."""
-    line = "git " + "stash drop"
-    body = "\n%s\nEOF" % line
-
-    def kept(parts):
-        return line in "\n".join([parts[0]] + parts[1] + parts[2])
-
-    def write(head, after=""):
-        return "%s <<'EOF'%s%s" % (head, after, body)
-
-    ran = (
-        ("a shell running it on a later line",
-         write("cat > probe.sh") + "\nsh probe.sh"),
-        ("bash on the heredoc's own line after `;`",
-         write("cat > probe.sh", "; bash probe.sh")),
-        ("the path as the program word after `&&`",
-         write("cat > probe.sh", " && ./probe.sh")),
-        ("a `./` spelling written, the bare name run",
-         write("cat > ./probe.sh", "; sh probe.sh")),
-        ("the program word after a chmod line",
-         write("cat >probe.sh") + "\nchmod +x probe.sh\n./probe.sh"),
-        ("an append, run by bash with `./`",
-         write("cat >> probe.sh") + "\nbash ./probe.sh"),
-        ("tee writing it", write("tee probe.sh") + "\nsh probe.sh"),
-        ("an interpreter given a Python file",
-         write("cat > probe.py") + "\npython3 probe.py"),
-        ("source reading it", write("cat > probe.sh") + "\nsource probe.sh"),
-        ("dot-sourcing it", write("cat > probe.sh") + "\n. ./probe.sh"),
-        ("an expansion written and an expansion run",
-         write("cat > \"$F\"") + "\nsh \"$F\""),
-        ("a path with no extension", write("cat > /tmp/x/p") + "\nbash /tmp/x/p"),
-        ("the redirect after the heredoc operator",
-         "cat <<'EOF' > probe.sh%s\nsh probe.sh" % body),
-        ("a shell option before the operand",
-         write("cat > probe.sh") + "\nsh -x probe.sh"),
-        ("a shell reading it as its input", write("cat > probe.sh") + "\nbash < probe.sh"),
-        ("a copy of it run under another name",
-         write("cat > probe.sh") + "\ncp probe.sh run.sh && sh run.sh"),
-    )
-    lost = [what for what, cmd in ran
-            for pipe_data in (False, True)
-            if not kept(M.split_heredocs(cmd, pipe_data))]
-    check("hb15 a body redirected to a path a later clause of the same command "
-          "runs - a shell or interpreter operand, the program word, source or "
-          "`.`, `./` normalised, an expansion on both sides, a `<` input, a copy - is graded: %r"
-          % (lost,), not lost and len(ran) == 16)
-
-    # SECOND DIRECTION, for the fix that grades every body written to a file:
-    # the same writes followed by a read, a chmod, prose naming the run, or a
-    # run of another file stay data - gh35's allow among them.
-    inert = (
-        ("written and nothing else", write("cat > probe.sh")),
-        ("another file run", write("cat > probe.sh") + "\nsh other.sh"),
-        ("the file read back", write("cat > probe.sh") + "\ncat probe.sh"),
-        ("only made executable", write("cat > probe.sh") + "\nchmod +x probe.sh"),
-        ("the run spelled as an echo argument",
-         write("cat > probe.sh") + "\necho sh probe.sh"),
-        ("a document then staged", write("cat > notes.md") + "\ngit add notes.md"),
-        ("the file handed to a script as its data",
-         write("cat > payloads.txt") + "\npython3 run.py payloads.txt"),
-        ("an expansion written, then staged by a bare program",
-         write("cat > \"$OUT\"") + "\ngit add \"$OUT\""),
-    )
-    wrong = [what for what, cmd in inert
-             for pipe_data in (False, True)
-             if kept(M.split_heredocs(cmd, pipe_data))]
-    check("hb16 ...while a body written to a path nothing in the command runs "
-          "stays data - read back, made executable, echoed, handed to a script as"
-          " data, or another file run: %r" % (wrong,),
-          not wrong and len(inert) == 8)
+    # At the guards: the same body graded by each of them, lifted and not.
+    guards = _hl_guards()
+    repo = _hl_repo()
+    saved = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = repo
+    try:
+        owner_forms = (
+            ("house-form commit -m", "git commit -m ", ""),
+            ("git -C <path> commit -m", "git -C %s commit -m " % repo, ""),
+            ("audit-task add --description",
+             "python3 %s add P1 --description " % _HL_SCRIPT, ""),
+            ("audit-task done --outcome",
+             "python3 %s done P1.1 --outcome " % _HL_SCRIPT, ""),
+            ("gh pr create --body", "gh pr create --title t --body ", ""),
+        )
+        refused = []
+        for what, before, after in owner_forms:
+            got = _hl_verdicts(guards, repo, _hl_house(before, after)[0])
+            if any(got.values()):
+                refused.append((what, got))
+        check("hl4 no guard - history, secrets, uncommitted, release - "
+              "refuses a house-form commit, "
+              "`git -C` commit, audit-task add --description or done "
+              "--outcome, or gh pr create --body whose body names a stash, a "
+              "secret read, a hard reset and a tag: %r" % (refused,),
+              not refused)
+        # SECOND DIRECTION, the mutation this is here for: a lift that also
+        # took a carrier outside the table. The same body, one spelling off,
+        # is refused by every guard that reads it as shell.
+        kept = (
+            ("a shell's -c", "bash -c ", ""),
+            ("piped to a shell", "git commit -m ", " | sh"),
+            ("a relative audit-task path",
+             "python3 audit-task.py add P1 --description ", ""),
+        )
+        passed = []
+        for what, before, after in kept:
+            got = _hl_verdicts(guards, repo, _hl_house(before, after)[0])
+            if not all(got.values()):
+                passed.append((what, got))
+        check("hl5 ...while the same body under a shell's -c, a sink piped to "
+              "a shell, or an audit-task path the lift does not vouch for is "
+              "refused by every one of them: %r" % (passed,), not passed)
+        missed = []
+        for key, names, command in _MEASURED_BYPASSES:
+            got = _hl_verdicts(guards, repo, command)
+            if not all(got[g] for g in names):
+                missed.append((key, names, got))
+        check("hl6 every bypass the phase's reviews measured - a written body "
+              "later run by any route, a stored message read back into a "
+              "shell, a quote context opened lines earlier, a house form one "
+              "character off - is refused by each guard that refused it at the "
+              "branch point: %r" % (missed,),
+              not missed and len(_MEASURED_BYPASSES) > 0)
+    finally:
+        if saved is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = saved
 
 
 def _all_cases(check):
     _cases(check)
-    _written_then_run_cases(check)
-    _runnable_part_cases(check)
     _shared_payload_cases(check)
     _git_path_pair_cases(check)
     _git_standing_cases(check)
-    _house_body_cases(check)
-    _argument_body_cases(check)
-    _house_template_cases(check)
-    _sink_table_cases(check)
+    _house_lift_cases(check)
 
 
 def _selftest():

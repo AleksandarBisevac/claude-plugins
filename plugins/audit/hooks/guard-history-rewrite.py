@@ -44,30 +44,11 @@ refused before and is allowed now. It is one spelling of a gap that was already
 open - the same two steps written `printf '...' > probe.txt` then `sh probe.txt`
 were allowed before this change and after it, because a quoted argument was never
 a command - and closing it means reading files, which this hook never does. The
-`.sh` spelling of it is allowed too: a program named in a heredoc's head is a
-word, never the tail of one, so a redirect target named `probe.sh` is the file
-written rather than an `sh` invocation, while `sh probe.sh <<EOF` still feeds
-the body to a shell and is graded. `test_guard_history_rewrite.py`'s gh35 holds
-both directions. A script file in a shell's language run by path
-(`./deploy.sh <<EOF`) is that shell reading the script, so its body is graded
-too (gk11).
-
-A BODY INSIDE A SUBSTITUTION is data ONLY in the house template, which
-`_config.lift_house_bodies` recognises whole: `-m "$(cat <<'EOF'` with nothing
-after the marker on its line, the body, `EOF` alone on its line, then `)"` -
-the argument of a text sink from the one table `_config._TEXT_SINKS` (a git
-commit or tag message, gh's body or title, an audit-task prose option), every
-word naming it literal, and its clause ending without handing its output to a
-pipe, a process substitution or an enclosing group (`_config.sink_carries`).
-The reading fails closed: what it gives up is every other spelling and every
-other carrier. A body handed to a program the table does not name - a script
-run by path, `gh` behind a wrapper, a runner nobody listed - or spelled any
-other way is graded as shell, so a body line there opening with a refused verb
-is refused. Earlier readings went the other way, data unless something was known
-to run it, and each spelling their lists missed was a pass: a runner, an
-expansion or a piped output (gk1-gk10), and the rest of the marker's own line -
-a pipe, a redirect, a continuation (gk17-gk27). The way past the cost is the
-template, and a row in the table for a program whose option stores text.
+`.sh` spelling of it is still refused, for a reason that is an accident rather
+than a design: the heredoc's head is matched at its END, so a redirect target
+named `probe.sh` reads as an `sh` invocation. `test_guard_history_rewrite.py`'s
+gh35 records that, and says why narrowing it is a decision about
+`guard-secrets-read` and not about this file.
 
 `git reset --hard` shows the other half of the same idea - one spelling is not
 one operation:
@@ -225,24 +206,6 @@ def runnable(command):
     hand it a body on purpose.
     """
     return _config.runnable_text(command or "", pipe_data=True)
-
-
-def parts_read_alone(command):
-    """Does every part of `runnable(command)` read on its own parse?
-
-    The parts are the text and each runnable body, inputs to different
-    readers, and the view joins them; a quote, substitution or escape one
-    leaves open would read the next as its inside. So each part must end
-    closed in `_config`'s quoting AND tokenize under this file's own lexer,
-    which reads comments and backquotes its own way. A part that fails either
-    is not repaired: `command_reading` then adds the text reading, where each
-    arm's patterns are matched anywhere in the view, quoted or not, to the
-    joined view's parse and the parse of every part that does read alone. One
-    part is the whole command, and its own parse already decides."""
-    parts = _config.runnable_parts(command or "", pipe_data=True)
-    return len(parts) < 2 or all(
-        not _config.part_ends_open(part) and _shell_pieces(part)[1]
-        for part in parts)
 
 
 def shell_words(command):
@@ -970,7 +933,7 @@ def git_invocations(command, depth=0):
     return None if calls is None else [(verb, args) for verb, args, _d in calls]
 
 
-def git_calls(command, depth=0, joined=False):
+def git_calls(command, depth=0):
     """[(verb, [args], dir), ...] for every `git` this command RUNS, or None.
     `dir` is the `-C` value the invocation names, joined when there are
     several, or None - the directory git runs in is part of what it does.
@@ -993,16 +956,7 @@ def git_calls(command, depth=0, joined=False):
     contribute a verb. Doing it at this one door rather than at the four arms is
     what makes it impossible for one arm to forget, and the recursion below
     re-enters the same door, so no nesting depth is graded by a different rule.
-
-    The view is the command text and each runnable body joined, and it is read
-    only when every part reads alone (`parts_read_alone`): a part this cannot
-    read on its own makes the whole command unparseable, the strict reading.
-    `joined` skips that question at every depth and parses the joined view
-    as it stands - the reading this guard had before parts were read alone,
-    kept as one of `command_reading`'s readings rather than replaced.
     """
-    if not joined and not parts_read_alone(command):
-        return None
     text = runnable(command)
     pieces, parsed = _shell_pieces(text)
     if not parsed:
@@ -1024,7 +978,7 @@ def git_calls(command, depth=0, joined=False):
         _rest, readers = _config.program_candidates(
             piece for piece, _sep in pieces[start:at])
         if any(program_name(word) in HERESTRING_READERS for word in readers):
-            nested = git_calls(pieces[at + 1][0], depth + 1, joined)
+            nested = git_calls(pieces[at + 1][0], depth + 1)
             if nested is None:
                 return None
             out.extend(nested)
@@ -1041,14 +995,14 @@ def git_calls(command, depth=0, joined=False):
         for at, stage in enumerate(stages):
             ran = _substituted_command(stage, depth)
             if ran:
-                nested = git_calls(ran, depth + 1, joined)
+                nested = git_calls(ran, depth + 1)
                 if nested is None:
                     return None
                 out.extend(nested)
             line = _printed(stage)
             if not line or not _output_runs(stages, groups, at):
                 continue
-            nested = git_calls(line, depth + 1, joined)
+            nested = git_calls(line, depth + 1)
             if nested is None:
                 return None
             out.extend(nested)
@@ -1061,7 +1015,7 @@ def git_calls(command, depth=0, joined=False):
         if inners is None:
             return None
         for inner in inners:
-            nested = git_calls(inner, depth + 1, joined)
+            nested = git_calls(inner, depth + 1)
             if nested is None:
                 return None
             out.extend(nested)
@@ -1078,7 +1032,7 @@ def git_calls(command, depth=0, joined=False):
             while scan < total and words[scan] is not None:
                 if _is_shell_command_flag(words[scan]) and scan + 1 < total \
                         and words[scan + 1]:
-                    nested = git_calls(words[scan + 1], depth + 1, joined)
+                    nested = git_calls(words[scan + 1], depth + 1)
                     out.extend(nested or [])
                     break
                 scan += 1
@@ -1090,7 +1044,7 @@ def git_calls(command, depth=0, joined=False):
             scan = index + 1
             while scan < total and words[scan] is not None:
                 if not words[scan].startswith("-"):
-                    out.extend(git_calls(words[scan], depth + 1, joined) or [])
+                    out.extend(git_calls(words[scan], depth + 1) or [])
                     break
                 scan += 1
         if program != "git" or index not in runs_at:
@@ -1126,53 +1080,6 @@ def git_calls(command, depth=0, joined=False):
             index += 1
         out.append((verb, args, cdir))
     return out
-
-
-# --- the union of the readings ------------------------------------------------
-# EVERY READING THAT REFUSES REFUSES. The joined view and the parts read alone
-# each misread a shape the other reads: the joined view carries a quote one
-# part leaves open into the next, and a part read alone can be open only in
-# the lexer's reading while the line beside it runs. Routing a command to ONE
-# of them - the text reading whenever any part ends open - lost what the
-# others saw: a quoted verb or program word and a verb piped to `xargs git`
-# are spellings only a parse resolves, and the text patterns, which want the
-# words bare, allowed them beside a body that merely ended in a backslash. So
-# no reading replaces another; each arm grades the calls every parse found
-# and, where any part ends open, its text patterns as well. The house
-# template's bodies are taken out before every one of them, by `runnable`'s
-# own `_config.lift_house_bodies` - the one reading here that may allow what
-# the joined view refuses.
-def _merged(first, second):
-    """`first` then each item of `second` that `first` does not already hold
-    as many times - a union that names one operation once, whichever reading
-    found it."""
-    out = list(first)
-    for item in second:
-        if out.count(item) < second.count(item):
-            out.append(item)
-    return out
-
-
-def command_reading(command):
-    """(calls, strict) - every git call any parse of this command found, and
-    whether a part of it ends open, so the text patterns must be asked too.
-
-    When every part reads alone the joined view IS their parse, and that one
-    list is the answer with `strict` False. Otherwise the calls are the
-    joined view's own parse - `git_calls(joined=True)`, None-safe - merged
-    with `git_calls` of each part that ends closed and tokenizes alone; a part
-    that does neither contributes through the text patterns alone."""
-    calls = git_calls(command)
-    if calls is not None:
-        return calls, False
-    merged = list(git_calls(command, joined=True) or [])
-    parts = _config.runnable_parts(command or "", pipe_data=True)
-    if len(parts) > 1:
-        for part in parts:
-            if _config.part_ends_open(part) or not _shell_pieces(part)[1]:
-                continue
-            merged = _merged(merged, git_calls(part) or [])
-    return merged, True
 
 
 # --- the text fallback --------------------------------------------------------
@@ -1253,9 +1160,8 @@ _FLAGS = re.compile(r"(^|\s)-{1,2}[A-Za-z][\w-]*(=\S*)?")
 
 
 # --- the four arms, each on the operation with the text patterns behind it -----
-# Every arm below takes the raw command and reads it through `command_reading`:
-# it grades every call a parse found, and its own pattern above as well when
-# a part of the line will not read alone. Each parses
+# Every arm below takes the raw command and reads it through `git_invocations`,
+# falling back to its own pattern above when the line will not parse. Each parses
 # for itself rather than being handed a shared parse: lexing a command
 # line costs microseconds against a process spawn of tens of milliseconds, and
 # `tools/bench-hooks.py --gate` is what guards the cost that is real here, which
@@ -1267,19 +1173,14 @@ def always_refused(command):
     are asked in the order that keeps their reasons apart: `--force-with-lease`
     is named for what it is rather than reported as a plain force-push.
     """
-    calls, strict = command_reading(command)
-    why = _always_refused_calls(calls)
-    if why or not strict:
-        return why
-    text = runnable(command)           # the text reading grades the same view
-    for pattern, why in _ALWAYS:
-        if pattern.search(text):
-            return why
-    return None
-
-
-def _always_refused_calls(calls):
-    for verb, args, _dir in calls:
+    invocations = git_invocations(command)
+    if invocations is None:
+        text = runnable(command)       # the fallback grades the same text
+        for pattern, why in _ALWAYS:
+            if pattern.search(text):
+                return why
+        return None
+    for verb, args in invocations:
         if help_requested(args):
             continue                       # documentation, not an operation
         if verb == "push":
@@ -1298,11 +1199,12 @@ def _always_refused_calls(calls):
 
 def amend_requested(command):
     """Does this command amend a commit? True/False, never a maybe."""
-    calls, strict = command_reading(command)
+    invocations = git_invocations(command)
+    if invocations is None:
+        return bool(_AMEND.search(runnable(command)))
     return any(verb == "commit" and _has_option(args, "--amend")
                and not help_requested(args)
-               for verb, args, _dir in calls) or (
-        strict and bool(_AMEND.search(runnable(command))))
+               for verb, args in invocations)
 
 # --- the stash arm -------------------------------------------------------------
 # `git stash` is the OTHER half of this hook and it asks a different question, so
@@ -1353,9 +1255,11 @@ def stash_operations(command):
     read as the bare form too (`git stash -- src/app.ts` is a partial push, and
     a sub-verb git has not shipped yet is refused rather than waved through).
     """
-    calls, strict = command_reading(command)
+    invocations = git_invocations(command)
+    if invocations is None:
+        return _stash_operations_text(command)
     out = []
-    for verb, args, _dir in calls:
+    for verb, args in invocations:
         if verb != "stash":
             continue
         if help_requested(args):
@@ -1373,7 +1277,7 @@ def stash_operations(command):
             sub = arg if arg in STASH_SUBCOMMANDS else ""
             break
         out.append(sub)
-    return _merged(out, _stash_operations_text(command)) if strict else out
+    return out
 
 
 def _stash_operations_text(command):
@@ -1477,12 +1381,15 @@ def recorded_shas(root, cfg):
 
 def reset_targets(command):
     """[(target, index)] for EVERY `git reset --hard` this command runs - the
-    index is the call's position in `command_reading(command)`'s calls, which
-    `call_trees` pairs with its tree, or None for the raw-text reading's
-    answer, asked as well when a part of the line will not read alone. Every
-    reset is graded: the second of `git reset --hard && git reset --hard
-    HEAD~5` orphans commits the first never touched."""
-    calls, strict = command_reading(command)
+    index is the call's position in `git_calls(command)`, which `call_trees`
+    pairs with its tree, or None when the command will not parse and the
+    raw-text reading answered. Every reset is graded: the second of
+    `git reset --hard && git reset --hard HEAD~5` orphans commits the first
+    never touched."""
+    calls = git_calls(command)
+    if calls is None:
+        target = reset_target(command)
+        return [] if target is None else [(target, None)]
     out = []
     for index, call in enumerate(calls):
         verb, args = call[0], call[1]
@@ -1490,10 +1397,6 @@ def reset_targets(command):
                 or help_requested(args):
             continue
         out.append((next((a for a in args if not a.startswith("-")), ""), index))
-    if strict:
-        target = _reset_target_text(command)
-        if target is not None:
-            out.append((target, None))
     return out
 
 
@@ -1507,7 +1410,12 @@ def reset_target(command):
     """
     invocations = git_invocations(command)
     if invocations is None:
-        return _reset_target_text(command)
+        m = _RESET_HARD.search(runnable(command))
+        if not m:
+            return None
+        rest = _FLAGS.sub(" ", m.group(1) or "")
+        words = [w for w in rest.split() if w and not w.startswith("-")]
+        return words[0] if words else ""
     for verb, args in invocations:
         if verb != "reset" or not _has_option(args, "--hard") \
                 or help_requested(args):
@@ -1519,17 +1427,6 @@ def reset_target(command):
                 return arg
         return ""
     return None
-
-
-def _reset_target_text(command):
-    """`reset_target`'s raw-text reading: the first hard reset the patterns
-    find in the runnable view, its ref, "" for none, or None for no reset."""
-    m = _RESET_HARD.search(runnable(command))
-    if not m:
-        return None
-    rest = _FLAGS.sub(" ", m.group(1) or "")
-    words = [w for w in rest.split() if w and not w.startswith("-")]
-    return words[0] if words else ""
 
 
 def orphaned_by(root, git_root, target, shas):
@@ -1669,9 +1566,8 @@ def _shell_moves(command):
     """True when a clause of this command starts with cd, pushd or popd.
 
     The analogous question `guard-release.py`'s `_shell_moves` asks when a
-    payload names no `cwd`. Both readers use `_config.runnable_clauses`, which
-    drops a heredoc body destined for a file and splits the text and each
-    runnable body on its own; their shared `effective_cwd` reader
+    payload names no `cwd`. Both readers use `runnable(command)`, which drops
+    a heredoc body destined for a file; their shared `effective_cwd` reader
     instead accepts raw command text and answers unreadable for the whole
     command whenever any heredoc body is graded shell, because a shell body
     MAY reach the parent through `eval` even where it is more often a child
@@ -1682,7 +1578,7 @@ def _shell_moves(command):
     actual directory - but leaning on that None here would call every
     payload-less command unplaceable, not only the ones that move the shell.
     """
-    for clause in _config.runnable_clauses(command or "", pipe_data=True):
+    for clause in _config.command_clauses(runnable(command) or ""):
         parts = clause.split(None, 1)
         if parts and parts[0].lower() in ("cd", "pushd", "popd"):
             return True
@@ -1733,7 +1629,11 @@ def decide(data):
     """
     if (data.get("tool_name") or "") != "Bash":
         return ("allow", "")
-    command = ((data.get("tool_input") or {}).get("command") or "")
+    # The house-form lift runs before every reading below, and nowhere else:
+    # it returns the command unchanged unless a body is provably a stored
+    # message (`_config.lift_house_bodies`).
+    command = _config.lift_house_bodies(
+        (data.get("tool_input") or {}).get("command") or "")
     if not command.strip():
         return ("allow", "")
 
@@ -1741,11 +1641,10 @@ def decide(data):
     root, cfg = home["project"], home["cfg"]
 
     # A command that parses and runs no git has nothing any arm below could
-    # refuse - every arm reads `command_reading` - so it is answered before a
-    # manifest is opened or a tree is placed. A strict reading is never
-    # answered here: its text patterns have not been asked yet.
-    calls, strict = command_reading(command)
-    if calls == [] and not strict:
+    # refuse - every arm reads `git_calls` - so it is answered before a
+    # manifest is opened or a tree is placed.
+    calls = git_calls(command)
+    if calls == []:
         return ("allow", "")
     rewrite = (always_refused(command) or amend_requested(command)
                or any(target for target, _index in reset_targets(command)))
@@ -1761,7 +1660,7 @@ def decide(data):
                 "Use a literal directory, or `git -C <absolute path>`, so "
                 "the rewrite can be checked against that tree's plan."
                 % (unplaced,))
-    if (strict and rewrite and plan_present(root, cfg)
+    if (calls is None and rewrite and plan_present(root, cfg)
             and unparsed_git_c(command)):
         return ("deny",
                 "this command carries a history rewrite, but it cannot be "
@@ -1769,10 +1668,7 @@ def decide(data):
                 "A `git -C` inside an unreadable command is not the session's "
                 "directory. Pass a command that parses, with a literal "
                 "`git -C <absolute path>` if the rewrite runs elsewhere.")
-    # The text reading's answer runs where the shell stands; it is placed
-    # after the parsed calls, so their indexes into `trees` still hold.
-    trees = call_trees(data, cfg, root, command,
-                       calls + [(None, None, None)] if strict else calls)
+    trees = call_trees(data, cfg, root, command, calls)
     roots = command_roots(root, trees)
 
     # THE STASH ARM IS DECIDED BEFORE THE SHA CHECK, and the ordering is the
@@ -1785,7 +1681,7 @@ def decide(data):
     moves = moving_stash(command)
     if moves and any(plan_present(r, cfg) for r in roots):
         return ("deny", _stash_reason(moves))
-    if any(c[0] == STDIN_VERB for c in calls) \
+    if any(c[0] == STDIN_VERB for c in (calls or [])) \
             and any(plan_present(r, cfg) for r in roots):
         return ("deny", "`xargs git` takes its verb from stdin, which this "
                         "guard cannot read, so it cannot tell a `git log` from a "
@@ -1824,7 +1720,7 @@ def decide(data):
             # working: no ref means no branch pointer moves.
             continue
         reset_git = fallback_git
-        if index is not None and index < len(trees):
+        if index is not None and calls and index < len(trees):
             tree = trees[index][1]
             reset_git = tree if tree is not None else project_git
         lost = orphaned_by(root, reset_git, target, shas)

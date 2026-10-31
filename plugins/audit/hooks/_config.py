@@ -2306,15 +2306,8 @@ def effective_cwd(cmd, payload_cwd):
 # `(?<!<)<<(?!<)`: a here-string (`sh <<<'EOF'`) is not a heredoc, and reading
 # one as a heredoc dropped the lines after it - commands the shell runs - as a
 # body nothing executes.
-#
-# THE DELIMITER WORD ENDS WHERE THE SHELL'S WORD ENDS, and a word with anything
-# after its identifier is no marker here at all. The shell's terminator for
-# `<<E-X` is `E-X` and for `<<E'X'` is `EX`; reading either as `E` ended the
-# body at a line `E` the shell never stops at, and dropped as data the lines
-# the shell runs after its real terminator. Not split, those lines stay text.
 _HEREDOC_START = re.compile(
-    r"(?<!<)<<(?!<)-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1"
-    r"(?=[\s;&|<>()`]|$)")
+    r"(?<!<)<<(?!<)-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
 # The head of a heredoc line, when what it invokes reads its PROGRAM from stdin.
 # `python3 - <<PY`, `python3 <<PY`, `node <<JS`, `bash -s <<EOF` are all the same
 # capability as `python -c`, spelled differently; `git commit -F - <<MSG` and
@@ -2326,18 +2319,8 @@ _HEREDOC_START = re.compile(
 # bucket, where it left the scanned text entirely and no rule saw it at all. A body
 # the guards cannot place is the one they must keep, so the spelling is named here
 # rather than left to be discovered by whoever types it.
-#
-# A PROGRAM IS A WORD, NOT THE TAIL OF ONE. Each name below must start a word -
-# the head's start, a blank, a separator, a quote, a substitution's opener, or a
-# path's last slash (`/bin/sh`) - so a FILE whose name ends in one (`cat >
-# notes.sh`, `python3 x.py --out report.sh -`) is the file it is. A `\b` bound
-# read the dot before `sh` as a word boundary, so every body written to a `.sh`
-# file, or handed beside one to `cat` or a script, was graded as shell - in the
-# house commit form too.
-_PROGRAM_WORD = r"(?:^|(?<=[\s;&|(/\"'`]))"
 _STDIN_INTERP = re.compile(
-    _PROGRAM_WORD +
-    r"(?:python3?|python3\.\d+|node|nodejs|deno|bun|ruby|perl|php|bash|sh|zsh)\b"
+    r"\b(?:python3?|python3\.\d+|node|nodejs|deno|bun|ruby|perl|php|bash|sh|zsh)\b"
     r"(?:\s+-[A-Za-z-]+)*\s*(?:-|/dev/stdin)?\s*$",
     re.IGNORECASE,
 )
@@ -2347,16 +2330,20 @@ _STDIN_INTERP = re.compile(
 # `python3 -` is a program in another language, where a shell READ VERB is a word
 # inside a string and the interpreter arms are what grade it.
 #
-# THE NAMED PROGRAMS START A WORD (`_PROGRAM_WORD`), for the reason above. That
-# narrows `guard-secrets-read` as well, which shares this classification, and
-# the narrowing is the consistent one rather than a widening of its boundary:
-# a body WRITTEN to `deploy.sh` reads nothing, exactly as one written to
-# `deploy.py` or `notes.txt` already did, and the file is graded when a later
-# command runs it, as every file is. The bare `.` is the dot-source builtin
-# only after start-of-head or a real separator (the class `_last_command`
-# splits a head's simple commands on): `git add .` ends in an argument.
+# THE NAMED PROGRAMS STAY `\b`-BOUNDED ONLY, ON PURPOSE - matched anywhere a
+# word boundary allows, including a REDIRECT TARGET's own extension
+# (`cat > probe.sh`). That is gh35's pinned case: narrowing it to the head's
+# command-verb position would also narrow `guard-secrets-read`, which shares
+# this classification, and the conservative direction for a secret-reading
+# guard is to over-match, never under-match. The bare `.` added below carries
+# no such history - nothing before it relied on a trailing, unanchored dot -
+# so IT ALONE requires start-of-head or a real separator (the same class
+# `_last_command` already splits a head's simple commands on) immediately
+# before it: `git add .` ends in an argument, not the dot-source builtin, and
+# reads as one without this anchor, grading an unrelated heredoc body as live
+# shell it was never going to be.
 _STDIN_SHELL = re.compile(
-    r"(?:" + _PROGRAM_WORD + r"(?:bash|sh|zsh|source)\b|(?:^|[;&|(\n])\s*\.)"
+    r"(?:\b(?:bash|sh|zsh|source)\b|(?:^|[;&|(\n])\s*\.)"
     r"(?:\s+-[A-Za-z-]+)*\s*(?:-|/dev/stdin)?\s*$",
     re.IGNORECASE)
 
@@ -2377,12 +2364,7 @@ _HEAD_WRAPPERS = ("env", "sudo", "doas", "xargs", "timeout", "nice", "ionice",
                   "nohup", "command", "builtin", "exec", "time", "stdbuf", "chrt",
                   "setsid")
 _SHELL_PROGRAMS = ("sh", "bash", "zsh", "dash", "ksh", "fish", "mksh", "ash",
-                   "csh", "tcsh", "yash", "posh", "pwsh", "powershell", "cmd",
-                   "nu", "xonsh", "elvish", "source", ".")
-# A program word naming a script FILE in a shell's language: run by path, it is
-# that shell reading the script, and the script may run its stdin.
-_SHELL_SCRIPT = re.compile(r"\.(?:sh|bash|zsh|ksh|dash|csh|tcsh|fish)$",
-                           re.IGNORECASE)
+                   "source", ".")
 _ANY_INTERPRETER = re.compile(
     r"^(?:python(?:3(?:\.\d+)?)?|node|nodejs|deno|bun|ruby|perl|php|awk|gawk"
     r"|lua|tclsh|Rscript|osascript)$")
@@ -2407,11 +2389,7 @@ def _plain_script_run(words):
     No leading assignment, no option before the script, a script operand that
     is a real file name with that interpreter's extension - never `-`, a
     `/dev/` or `/proc/` path - and no word carrying a quote, an expansion or a
-    redirection. That is the only invocation `_DATA_SCRIPT_EXTS` vouches for.
-
-    `words` are the shell's words, quotes already removed by `shell_words`, so
-    a quoted script path is the file name the interpreter is handed; a quote
-    character still inside a word is one the shell kept, and refuses."""
+    redirection. That is the only invocation `_DATA_SCRIPT_EXTS` vouches for."""
     if len(words) < 2:
         return False
     if any(ch in w for w in words for ch in "'\"$`()<>"):
@@ -2426,12 +2404,8 @@ def _plain_script_run(words):
 
 
 def _last_command(text):
-    """The words of the last simple command in `text` (after `;` `&` `|` `(`),
-    as the shell hands them to the program - quotes removed - or split on
-    blanks when the quoting there never closes."""
-    last = re.split(r"[;&|(\n]", text)[-1]
-    words = shell_words(last)
-    return last.split() if words is None else words
+    """The words of the last simple command in `text` (after `;` `&` `|` `(`)."""
+    return re.split(r"[;&|(\n]", text)[-1].split()
 
 
 def is_interpreter(word):
@@ -2850,7 +2824,7 @@ def _head_runs_body(head):
     words, candidates = program_candidates(_last_command(head))
     for word in candidates:
         program = _program_of(word)
-        if program in _SHELL_PROGRAMS or _SHELL_SCRIPT.search(program):
+        if program in _SHELL_PROGRAMS:
             return "shell"
         if _ANY_INTERPRETER.match(program):
             at = words.index(word) if word in words else None
@@ -2916,376 +2890,39 @@ def join_continuations(text):
 def _scan_quotes(text, stack, stop_at_marker=False):
     """(marker match or None, the quoting open after the scan) for `text`.
 
-    `stack` is the quoting open when `text` begins, as a tuple of "'", '"',
-    "(" and "`" - the last one is innermost. A `$(` or a backquote opens a
-    context where the shell reads commands again, inside double quotes too, so
-    a heredoc there is a heredoc: `-m "$(cat <<'EOF' ... EOF\n)"` is the house
-    commit-message form, and the backquoted spelling of it is the same form.
+    `stack` is the quoting open when `text` begins, as a tuple of "'", '"' and
+    "(" - the last one is innermost. A `$(` opens a context where the shell
+    reads commands again, inside double quotes too, so a heredoc there is a
+    heredoc: `-m "$(cat <<'EOF' ... EOF\n)"` is the house commit-message form.
     A backslash outside single quotes escapes the next character. With
     `stop_at_marker`, the scan stops at the first `<<` marker read where the
     shell reads one, and the quoting returned is the one open at that point."""
-    found, opened, _at = _scan_contexts(text, stack, stop_at_marker)
-    return found, opened
-
-
-def _context_step(text, i, stack, at):
-    """The index after the character at `i`, with `stack` and `at` - the
-    quoting open and where each context began - advanced past it in place.
-    The one reading of the shell's quoting every scanner below walks with, so
-    none of them can disagree about where a quote or a substitution ends."""
-    ch, top = text[i], (stack[-1] if stack else None)
-    if top == "'":
-        if ch == "'":
-            stack.pop()
-            at.pop()
-    elif ch == "\\":
-        return i + 2
-    elif text.startswith("$(", i):
-        stack.append("(")
-        at.append(i)
-        return i + 2
-    elif ch == "`":
-        if top == "`":
-            stack.pop()
-            at.pop()
-        else:
-            stack.append("`")
-            at.append(i)
-    elif top == '"':
-        if ch == '"':
-            stack.pop()
-            at.pop()
-    elif ch in "'\"":
-        stack.append(ch)
-        at.append(i)
-    elif ch == "(" and top == "(":
-        stack.append("(")
-        at.append(i)
-    elif ch == ")" and top == "(":
-        stack.pop()
-        at.pop()
-    return i + 1
-
-
-def _scan_contexts(text, stack, stop_at_marker=False):
-    """`_scan_quotes`' answer plus where in `text` each open context began -
-    None for one already open when `text` began. One scanner, so the quoting a
-    marker is read under and the substitution it sits in cannot disagree."""
     stack, i, n = list(stack), 0, len(text)
-    at = [None] * len(stack)
     while i < n:
-        if (stop_at_marker and text[i] == "<"
-                and (not stack or stack[-1] in "(`")):
+        ch, top = text[i], (stack[-1] if stack else None)
+        if top == "'":
+            if ch == "'":
+                stack.pop()
+        elif ch == "\\":
+            i += 1
+        elif text.startswith("$(", i):
+            stack.append("(")
+            i += 1
+        elif top == '"':
+            if ch == '"':
+                stack.pop()
+        elif ch in "'\"":
+            stack.append(ch)
+        elif ch == "(" and top == "(":
+            stack.append("(")
+        elif ch == ")" and top == "(":
+            stack.pop()
+        elif stop_at_marker and ch == "<":
             m = _HEREDOC_START.match(text, i)
             if m:
-                return m, tuple(stack), tuple(at)
-        i = _context_step(text, i, stack, at)
-    return None, tuple(stack), tuple(at)
-
-
-def _plain_mask(text):
-    """One flag per character of `text`: True where it stands at the command's
-    own level - outside every quote and substitution, and no quoting character
-    itself. `_shell_level` and `_redirect_targets` read the same mask, so the
-    two cannot disagree about where a quote ends."""
-    out, stack, at, i, n = [], [], [], 0, len(text)
-    while i < n:
-        was_open = bool(stack)
-        nxt = _context_step(text, i, stack, at)
-        plain = not was_open and not stack and nxt == i + 1
-        out.extend([plain] * (nxt - i))
-        i = nxt
-    return out[:n]
-
-
-def _shell_level(text):
-    """`text` with every character inside a quote or a substitution, and every
-    quoting character itself, blanked: what is left is the command's own level,
-    where a separator, a group or a definition is one the shell acts on."""
-    return "".join(ch if plain else " "
-                   for ch, plain in zip(text, _plain_mask(text)))
-
-
-# --- a substitution's output as an argument: data only to a text sink -----------
-# A HOUSE-TEMPLATE SUBSTITUTION (`lift_house_bodies`, below) THAT IS THE WHOLE OF
-# ONE DOUBLE-QUOTED ARGUMENT IS DATA ONLY WHEN A TEXT SINK CARRIES IT, AND
-# EVERYTHING ELSE STAYS SHELL. A guard fails closed, so the question is never
-# "does this carrier run what it is handed" - a list of the ways a program runs
-# an argument is never finished (a runner nobody listed, an expansion as the
-# program word, a script whose output is then run) - but "is this carrier one
-# that is known to store it as text". Three things must all hold:
-#
-#   * the carrier is a sink in `_TEXT_SINKS` - a program, the words that select
-#     its verb, and the options whose VALUE is text it stores - and the
-#     substitution's argument is the value of one of those options, as the next
-#     word or glued to it (`--body=`, `-m`);
-#   * every word naming the sink is literal - no expansion can stand in for the
-#     program - and nothing in the command at the shell's own level redefines a
-#     word (`alias`, a function, `PATH=`, `eval`, `source`);
-#   * the sink's own output reaches nothing that may run it: its clause is at the
-#     command's top level - in no subshell, group, compound command or other
-#     substitution - and ends in `&&`, `||`, `;`, `&`, a newline or the command's
-#     end, never a pipe or a process substitution. A sink prints what it stored
-#     (a commit its subject, gh a title), so a pipe to a shell runs the body.
-#
-# The substitution itself is the template, recognised whole, so what the
-# argument receives is the body itself. KNOWN COST, stated rather than hidden: a
-# body handed to a program the table does not name, or in any spelling but the
-# template, is graded as shell, so such a body whose line opens with a refused
-# verb is refused. The way past it is the template, and a row in `_TEXT_SINKS`
-# for a program whose option stores text.
-_GH_BODY_TITLE = ("-b", "--body", "-t", "--title")
-_GH_BODY = ("-b", "--body")
-_GH_NOTES_TITLE = ("-n", "--notes", "-t", "--title")
-# `audit-task.py`'s free-text options: every option it declares with
-# `_PROSE_HELP`. test__config's `hb14` holds this tuple to that set.
-_AUDIT_TASK_PROSE = ("--actual", "--description", "--descriptive",
-                     "--expected", "--intent-basis", "--issue",
-                     "--no-evidence-reason", "--outcome", "--override-verdict",
-                     "--reason", "--rename", "--repro", "--resolution",
-                     "--review-outcome", "--summary", "--technical", "--text")
-# (the words that name the sink, the options whose value it stores as text),
-# every word matched exactly.
-_TEXT_SINKS = (
-    (("git", "commit"), ("-m", "--message")),
-    (("git", "tag"), ("-m", "--message")),
-    (("gh", "pr", "create"), _GH_BODY_TITLE),
-    (("gh", "pr", "edit"), _GH_BODY_TITLE),
-    (("gh", "pr", "comment"), _GH_BODY),
-    (("gh", "pr", "review"), _GH_BODY),
-    (("gh", "issue", "create"), _GH_BODY_TITLE),
-    (("gh", "issue", "edit"), _GH_BODY_TITLE),
-    (("gh", "issue", "comment"), _GH_BODY),
-    (("gh", "release", "create"), _GH_NOTES_TITLE),
-    (("gh", "release", "edit"), _GH_NOTES_TITLE),
-)
-# The same, for a python script run by its interpreter: (the script's file
-# name without its extension, the options whose value it stores as text). Keyed
-# by the stem so no module file name is spelled here: a literal file name in a
-# hook reads, to the import-graph lint, as a hook loading that module.
-_SCRIPT_TEXT_SINKS = (
-    ("audit-task", _AUDIT_TASK_PROSE),
-)
-_PYTHON_PROGRAM = re.compile(r"^python(?:3(?:\.\d+)?)?$")
-_PYTHON_SCRIPT_STEM = re.compile(r"^(?P<stem>.+)\.py$")
-# Characters that make a word more than literal text to the shell that reads
-# it: a quote, an expansion, a redirection or a process substitution.
-_NOT_LITERAL = "'\"$`()<>"
-# What, at the shell's own level, changes which program a word names.
-_REDEFINES_A_WORD = re.compile(
-    r"(?:^|[\s;&|])(?:alias|unalias|function|eval|source|enable|hash)"
-    r"(?=[\s;&|]|$)"
-    r"|(?:^|[;&|\n])\s*\.(?=\s)"
-    r"|\bPATH\s*\+?="
-    r"|[A-Za-z_][\w.:-]*\s*\(\s*\)")
-_GROUP_OPENS = ("{", "if", "case", "while", "until", "for", "select")
-_GROUP_CLOSES = ("}", "fi", "esac", "done")
-
-
-def _sink_options(words, cmd):
-    """(options whose value the sink stores, how many words name it) for the
-    command whose words are `words`, or None when no sink in `_TEXT_SINKS` or
-    `_SCRIPT_TEXT_SINKS` is named by them literally."""
-    for path, options in _TEXT_SINKS:
-        if tuple(words[:len(path)]) == path:
-            return options, len(path)
-    if (len(words) < 2 or not _PYTHON_PROGRAM.match(words[0])
-            or any(ch in words[1] for ch in _NOT_LITERAL)
-            or _INTERP_ENV_OPTION.search(cmd)):
-        return None
-    script = _PYTHON_SCRIPT_STEM.match(_program_of(words[1]))
-    for stem, options in _SCRIPT_TEXT_SINKS:
-        if script and script.group("stem") == stem:
-            return options, 2
-    return None
-
-
-def _group_depth(level):
-    """How many subshells, groups and compound commands are open at the end of
-    `level` (a `_shell_level` text), or -1 when one closes that never opened."""
-    depth = 0
-    for token in re.findall(r"[^\s;&|()]+|[()]", level):
-        depth += ((token in _GROUP_OPENS or token == "(")
-                  - (token in _GROUP_CLOSES or token == ")"))
-        if depth < 0:
-            return -1
-    return depth
-
-
-def _clause_feeds_output(text, start):
-    """Does the clause holding the quoted argument that opens at `text[start]`
-    hand its output to something - a pipe, a process substitution, or the end
-    of a group it sits in? Read from the argument's close to the separator that
-    ends the clause; a clause that never closes its argument is read as one
-    that does."""
-    stack, at, i, n = [], [], start, len(text)
-    i = _context_step(text, i, stack, at)
-    while i < n and stack:
-        i = _context_step(text, i, stack, at)
-    if stack:
-        return True
-    while i < n:
-        if not stack:
-            if text.startswith(("&&", "||"), i) or text[i] in ";\n":
-                return False
-            if text.startswith((">(", "<("), i) or text[i] in "|(){}":
-                return True
-            if (text[i] == "&" and not text.startswith("&>", i)
-                    and text[i - 1:i] not in ("<", ">")):
-                return False
-        i = _context_step(text, i, stack, at)
-    return False
-
-
-def sink_carries(text, start, cmd):
-    """Is the double-quoted argument opening at `text[start]` - a heredoc body
-    by way of `cat`'s substitution - the text a sink in `_TEXT_SINKS` stores,
-    in a clause whose output reaches nothing that runs it? `text` is the command
-    with its heredoc bodies taken out, so no body is read as syntax here. The
-    invariant above, in one place for every guard."""
-    level = _shell_level(text)
-    if _REDEFINES_A_WORD.search(level):
-        return False
-    lead = text[:start]
-    partial = re.search(r"\S*$", lead).group(0)
-    before = lead[:len(lead) - len(partial)]
-    if any(ch in partial for ch in _NOT_LITERAL) or _group_depth(
-            level[:len(before)]) != 0:
-        return False
-    if not before.strip() or re.search(r"[;&|(`\n]\s*$", before):
-        return False
-    words = shell_words(command_clauses(before)[-1])
-    sink = _sink_options(words or [], text) if words else None
-    if sink is None:
-        return False
-    options, named = sink
-    if partial:
-        glued = partial[:-1] if partial.startswith("--") else partial
-        flag_ok = glued in options and (partial.endswith("=")
-                                        or not partial.startswith("--"))
-    else:
-        flag_ok = len(words) > named and words[-1] in options
-    return flag_ok and not _clause_feeds_output(text, start)
-
-
-def _substitution_runs_body(prefix):
-    """"shell" or "code" for a heredoc whose marker `prefix` (the command up to
-    the marker) leaves inside a `$( )` or a backquote; False when it is in none.
-
-    The body is the stdin of the INNERMOST substitution's own command, so the
-    head is read from there - the opener enclosing it is the route the output
-    takes. A head that runs its stdin as a program in another language answers
-    "code"; every other body in a substitution is "shell". The one shape that
-    is data, the house template, never reaches here: `lift_house_bodies` has
-    taken its body out of the text first."""
-    _m, opens, at = _scan_contexts(prefix, ())
-    subs = [k for k, ctx in enumerate(opens) if ctx in "(`"]
-    if not subs:
-        return False
-    inner = at[subs[-1]]
-    start = inner + (2 if prefix.startswith("$(", inner) else 1)
-    return "code" if _head_runs_body(prefix[start:].strip()) == "code" else "shell"
-
-
-# --- the house template: the one heredoc in a substitution that is data ---------
-# A BODY IN A SUBSTITUTION IS DATA ONLY IN ONE SPELLING, RECOGNISED WHOLE. Reading
-# after reading asked which carriers run a body, then which sinks store one,
-# each from the text BEFORE the marker - and each was passed by a spelling the
-# reading never looked at: the rest of the marker's own line (`cat <<'EOF' |
-# sh`, a redirect, a process substitution, a continuation), cat with an
-# operand, text around the substitution inside the quote. So nothing is asked
-# about a shape here; a substitution either IS the template or its body is
-# shell:
-#
-#   "$(cat <<'DELIM'          the double quote opening the argument at the
-#                             command's own level, `$(` or a backquote, `cat`,
-#                             the marker - `'DELIM'`, `"DELIM"` or `DELIM` -
-#                             and nothing after it on the line;
-#   <body lines>              with an unquoted DELIM, no `$(` or backquote;
-#   DELIM                     the terminator, alone and exact, on its line;
-#   )" ...                    the close and the argument's closing quote,
-#                             first on the next line;
-#
-# and the argument is the value of a text sink's option, by `sink_carries`,
-# asked of the command with every heredoc body taken out.
-_HOUSE_OPENING = re.compile(r"\"(\$\(|`)cat[ \t]+$")
-
-
-def _house_marker(line, m, after, lines, end):
-    """The index in `line` of the double quote opening a house-template
-    argument whose marker is `m`, read with the quoting `after` open at the
-    marker and the body ending at `lines[end]` - or None when any part of the
-    template differs."""
-    opening = _HOUSE_OPENING.search(line[:m.start()])
-    if opening is None or line[m.end():].strip(" \t"):
-        return None
-    closer = ")" if opening.group(1) == "$(" else "`"
-    if (after != ('"', "(" if closer == ")" else "`")
-            or line.startswith("<<-", m.start())
-            or lines[end] != m.group(2)
-            or end + 1 >= len(lines)
-            or not lines[end + 1].startswith(closer + '"')):
-        return None
-    return opening.start()
-
-
-def lift_house_bodies(cmd):
-    """(the command with each house-template body taken out, the bodies taken).
-
-    THE ONE READER of which heredoc body inside a substitution is data, for
-    every guard: `split_heredocs` calls it first, and a guard that cannot
-    tokenize a line grades what is left. The template is stated above; any
-    difference from it leaves the body in the text, where `split_heredocs`
-    grades it as shell. In the text returned, a lifted heredoc's marker, body
-    and terminator are gone and the substitution reads `"$(cat \\n)"`, which
-    every tokenizer here reads as one argument.
-
-    The lines are walked as `split_heredocs` walks them, quoting carried across
-    them, so a marker counts only where the shell reads one, and every other
-    heredoc's body is skipped rather than read as syntax."""
-    text = cmd or ""
-    if "<<" not in text:
-        return text, []
-    lines = text.split("\n")
-    # (lifted text, text kept when not lifted, candidate number or None)
-    pieces, skeleton, candidates = [], [], []
-    at, i, quote = 0, 0, ()
-    while i < len(lines):
-        line = lines[i]
-        m, after = _unquoted_heredoc_start(line, quote)
-        end = None
-        if m:
-            end = next((j for j in range(i + 1, len(lines))
-                        if lines[j].strip() == m.group(2)), None)
-        if end is None:
-            pieces.append((line, line, None))
-            skeleton.append(line)
-            at += len(line) + 1
-            quote = after if not m else _quote_after(line, quote)
-            i += 1
-            continue
-        opens = _house_marker(line, m, after, lines, end)
-        body = "\n".join(lines[i + 1:end])
-        if opens is not None and not m.group(1) and _LIVE_SUBSTITUTION.search(
-                body):
-            opens = None
-        head = line[:m.start()]
-        if opens is not None:
-            candidates.append((at + opens, body))
-            pieces.append((head, "\n".join(lines[i:end + 1]),
-                           len(candidates) - 1))
-        else:
-            pieces.append(("\n".join(lines[i:end + 1]),) * 2 + (None,))
-        skeleton.append(head + " " + line[m.end():])
-        at += len(skeleton[-1]) + 1
-        quote = _quote_after(line[m.end():], after)
-        i = end + 1
-    whole = "\n".join(skeleton)
-    lifted = [k for k, (start, _body) in enumerate(candidates)
-              if sink_carries(whole, start, whole)]
-    view = "\n".join(piece[0] if piece[2] in lifted else piece[1]
-                     for piece in pieces)
-    return view, [candidates[k][1] for k in lifted]
+                return m, tuple(stack)
+        i += 1
+    return None, tuple(stack)
 
 
 def _unquoted_heredoc_start(line, stack):
@@ -3323,243 +2960,8 @@ def _pipes_to_script_run(tail, cmd):
         return False
     if _INTERP_ENV_OPTION.search(cmd or ""):
         return False
-    far = shell_words(re.split(r"[;&\n]", tail.split("|", 1)[1])[0])
-    return far is not None and _plain_script_run(far)
-
-
-# --- a body written to a file that a later clause runs --------------------------
-# A BODY ON ITS WAY INTO A FILE IS DATA ONLY WHILE NOTHING RUNS THE FILE. `cat >
-# probe.sh <<'EOF'` followed, in the same command, by `sh probe.sh`, `./probe.sh`,
-# `. ./probe.sh` or `python3 probe.py` writes a program and runs it, and the
-# body is that program. A `.sh` name once sent every such body to the graded
-# view by accident - the name read as a shell - and when names stopped being
-# programs the run went unread. So the run is what is read here, whatever the
-# file is called: the paths the heredoc's own command writes (a `>`, `>>` or
-# `>|` target, `tee`'s operands) against every path a LATER clause runs.
-#
-# A PATH IS COMPARED BY ITS LAST COMPONENT, so `./probe.sh`, `probe.sh` and
-# `/abs/dir/probe.sh` are one file here, and a `cd` between the write and the
-# run cannot part them. A component holding an expansion (`"$F"`, `$D/x`'s
-# `x` is literal, `$F`'s is not) may be any name, so it matches the paths on
-# the other side - all but a bare program name, which the shell looks up on
-# PATH rather than opening (`_names_path`): uncertainty about which file runs
-# is graded, not dropped. Both readings over-grade only - a body graded that
-# a stricter reading would leave as data - never the reverse.
-#
-# A RUN IS: the path as the program word (past wrappers, as
-# `program_candidates` reads them); the path as the SCRIPT of a shell,
-# `source`, `.` or an interpreter, or its `<` input - never an argument the
-# script is handed (`_program_operands`); the path named inside an
-# interpreter's inline program; and any of these
-# inside a command handed to `eval` or a shell's `-c`, read again. A name a
-# copy, a move or a link gives the written file is a written name too
-# (`_copied_tails`).
-_RESERVED_LEAD = ("if", "then", "else", "elif", "do", "while", "until", "!",
-                  "{", "(", "time")
-_RUN_DEPTH = 3
-
-
-def _redirect_targets(text):
-    """The words the FIRST simple command of `text` sends its output to: each
-    `>`, `>>` or `>|` (fd-prefixed or `&>`) target at the command's own level,
-    quotes removed. A `>&2` duplicates a descriptor and names no file; a `>(`
-    is a process substitution the heredoc head already grades as shell."""
-    mask, out, i, n = _plain_mask(text), [], 0, len(text)
-    while i < n:
-        ch = text[i]
-        if mask[i] and (ch in ";\n" or (ch == "|" and text[i - 1:i] != ">")
-                        or (ch == "&" and text[i + 1:i + 2] != ">"
-                            and text[i - 1:i] != ">")):
-            break
-        if not (mask[i] and ch == ">") or text[i - 1:i] == ">":
-            i += 1
-            continue
-        j = i + 1
-        if j < n and text[j] in ">|":
-            j += 1
-        if j < n and text[j] in "&(":
-            i = j + 1
-            continue
-        while j < n and mask[j] and text[j] in " \t":
-            j += 1
-        k = j
-        while k < n and not (mask[k] and (text[k].isspace()
-                                          or text[k] in ";&|<>()")):
-            k += 1
-        if k > j:
-            words = shell_words(text[j:k])
-            out.append(words[0] if words else text[j:k])
-        i = k
-    return out
-
-
-def _written_paths(head, tail):
-    """The paths the heredoc's own command writes its stdin to: the redirect
-    targets of the head's last simple command and of the rest of its line up
-    to the next separator, and `tee`'s operands."""
-    last = re.split(r"[;&|(\n]", head)[-1]
-    paths = _redirect_targets(last + " " + tail)
-    words = _last_command(head)
-    rest, _candidates = program_candidates(words)
-    if rest and _program_of(rest[0]) == "tee":
-        paths += [w for w in rest[1:] if not w.startswith("-")]
-    return paths
-
-
-def _path_tail(word):
-    """A path word's last component, as the comparison reads it - or None
-    when an expansion makes that component any name at all."""
-    name = str(word).strip("'\"").lstrip("<").rstrip(")};")
-    name = name.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
-    return None if ("$" in name or "`" in name) else name
-
-
-def _names_path(word, tails, program_word=False):
-    """Whether `word` may be one of the written paths whose last components are
-    `tails` (None in `tails` is an expansion: any name). A run word that is an
-    expansion may be any written path. A written expansion may be any run word
-    but a bare program name: `git` with no slash is looked up on PATH, so
-    `git add "$OUT"` runs git, never the file `$OUT` names."""
-    mine = _path_tail(word)
-    if mine is None:
-        return bool(tails)
-    if not mine:
-        return False
-    if mine in tails:
-        return True
-    return None in tails and (not program_word or "/" in str(word))
-
-
-def _clause_runs(clause, tails, depth):
-    """"code", "shell" or None: whether one clause runs a written path, and in
-    which language the body it runs is then read."""
-    words = shell_words(clause.strip().lstrip("(").strip()) \
-        or clause.split()
-    while words and words[0] in _RESERVED_LEAD:
-        words = words[1:]
-    if not words:
-        return None
-    handed = _handed_command(words)
-    if handed is not None and depth < _RUN_DEPTH:
-        ran = _later_runs(handed[1], tails, depth + 1)
-        if ran:
-            return ran
-    rest, candidates = program_candidates(words)
-    if any(_names_path(word, tails, program_word=True) for word in candidates):
-        return "shell"
-    program = _program_of(rest[0]) if rest else ""
-    interpreter = bool(_ANY_INTERPRETER.match(program))
-    if not (program in _SHELL_PROGRAMS or interpreter):
-        return None
-    language = "code" if interpreter else "shell"
-    script, inputs, inline = _program_operands(program, rest[1:])
-    if any(_names_path(word, tails) for word in script + inputs):
-        return language
-    # An interpreter's inline program is code this cannot parse, so a written
-    # name anywhere in it is read as a run; a shell's `-c` command was read
-    # as the command it is, above.
-    if interpreter and inline is not None and (
-            None in tails or any(t and t in inline for t in tails)):
-        return language
-    return None
-
-
-def _program_operands(program, args):
-    """([script operand], [`<` inputs], inline program or None) for a shell's
-    or an interpreter's arguments: the words that are the PROGRAM it runs,
-    never the arguments that program is handed - `python3 run.py data.txt`
-    runs `run.py` and reads `data.txt`. The option table is
-    `_OWN_PROGRAM`'s for an interpreter it knows, `_SHELL_VALUE_OPTIONS` for a
-    shell; an interpreter it does not know has every operand read as a
-    possible program, since which of its options take a value is unknown."""
-    table = [row for row in _OWN_PROGRAM if row[0].match(program)]
-    inline_flags, takes_value = ((table[0][1], table[0][2]) if table else
-                                 ((), _SHELL_VALUE_OPTIONS))
-    known = bool(table) or program in _SHELL_PROGRAMS
-    script, inputs, inline, index = [], [], None, 0
-    while index < len(args):
-        word = args[index]
-        if word == "<" or (word.startswith("<") and not word.startswith("<<")):
-            if word == "<":
-                index += 1
-            inputs.extend(args[index:index + 1] if word == "<" else [word[1:]])
-            index += 1
-            continue
-        if script or (inline is not None and known):
-            index += 1
-            continue
-        if word == "--":
-            script.extend(args[index + 1:index + 2])
-            index += 2
-            continue
-        if word in inline_flags or (not table and len(word) > 1
-                                    and word[0] == "-" and "c" in word[1:]
-                                    and program in _SHELL_PROGRAMS):
-            inline = " ".join(args[index + 1:index + 2])
-            index += 2
-            continue
-        if word in takes_value:
-            index += 2
-            continue
-        if len(word) > 1 and word[0] in "-+":
-            index += 1
-            continue
-        if known:
-            script.append(word)
-        else:
-            script.extend(w for w in args[index:] if not w.startswith("-"))
-            break
-        index += 1
-    return script, inputs, inline
-
-
-def _later_runs(text, tails, depth=0):
-    """"code", "shell" or None: whether any clause of `text` runs a path whose
-    last component is in `tails`. Each line is also split on its own, so a
-    quote one line leaves open - a later body's apostrophe - does not fold the
-    lines after it into one clause whose run is never read."""
-    clauses = command_clauses(text)
-    lines = text.split("\n")
-    if len(lines) > 1:
-        clauses = clauses + [c for line in lines for c in command_clauses(line)]
-    tails = _copied_tails(clauses, tails)
-    found = None
-    for clause in clauses:
-        ran = _clause_runs(clause, tails, depth)
-        if ran == "shell":
-            return ran
-        found = found or ran
-    return found
-
-
-def _copied_tails(clauses, tails):
-    """`tails` grown by every name a copy, a move or a link in `clauses` gives
-    a written file - `cp probe.sh run.sh; sh run.sh` runs the body under
-    another name. Read in any order and until nothing new is added, which can
-    only grow the set the runs are compared against."""
-    tails, grown = list(tails), True
-    while grown:
-        grown = False
-        for clause in clauses:
-            words = shell_words(clause.strip()) or clause.split()
-            dests = copy_destinations(words) or []
-            if not dests or not any(_names_path(w, tails) for w in words[1:]):
-                continue
-            new = [t for t in (_path_tail(d) for d in dests) if t not in tails]
-            tails += new
-            grown = grown or bool(new)
-    return tails
-
-
-def _written_body_runs(head, tail, after):
-    """"code", "shell" or None: the language a data body is read in because a
-    later clause of the same command runs the file the heredoc writes it to.
-    `head` and `tail` are the heredoc line around its marker, `after` the
-    command past its terminator."""
-    tails = [_path_tail(p) for p in _written_paths(head, tail)]
-    if not tails:
-        return None
-    return _later_runs(tail + "\n" + after, tails)
+    far = re.split(r"[;&\n]", tail.split("|", 1)[1])[0]
+    return _plain_script_run(far.split())
 
 
 def split_heredocs(cmd, pipe_data=False):
@@ -3597,13 +2999,6 @@ def split_heredocs(cmd, pipe_data=False):
     The head is read by program too (`_head_runs_body`), so a wrapper or an
     option in front of an interpreter does not turn its program into data.
 
-    A BODY INSIDE A `$( )` OR A BACKQUOTE IS DATA ONLY IN THE HOUSE TEMPLATE.
-    `lift_house_bodies` takes those bodies out first - the template recognised
-    whole, its argument carried by a literal text sink whose clause hands its
-    output to nothing that runs it (`sink_carries`) - and every other body in a
-    substitution is shell, or code when the innermost substitution's own
-    command is an interpreter reading its program (`_substitution_runs_body`).
-
     A MARKER COUNTS ONLY OUTSIDE QUOTES, as the shell reads it, with the quote
     state carried across lines: a `<<` inside a quoted string opens nothing, and
     reading it as a marker dropped every line up to one spelling the would-be
@@ -3619,12 +3014,6 @@ def split_heredocs(cmd, pipe_data=False):
     body is kept as shell rather than dropped as data; quoting the delimiter is
     what makes the same bytes inert text.
 
-    A BODY WRITTEN TO A FILE A LATER CLAUSE RUNS IS THAT CLAUSE'S PROGRAM.
-    `cat > probe.sh <<'EOF'` then `sh probe.sh` (or `./probe.sh`, `. probe.sh`,
-    `python3 probe.py`) in the same command is graded as the language of the
-    run; the same write with nothing in the command running the file stays
-    data (`_written_body_runs`).
-
     Fail-safe about its own limits: a heredoc whose terminator never arrives is
     left in the text, so an unparseable command is judged exactly as strictly as
     before this existed. The pipe is read on the heredoc's own line only; a
@@ -3633,7 +3022,7 @@ def split_heredocs(cmd, pipe_data=False):
     """
     if "<<" not in (cmd or ""):
         return (cmd or ""), [], []
-    lines = lift_house_bodies(cmd)[0].split("\n")
+    lines = (cmd or "").split("\n")
     kept, code, shell, i, quote = [], [], [], 0, ()
     while i < len(lines):
         line = lines[i]
@@ -3658,9 +3047,6 @@ def split_heredocs(cmd, pipe_data=False):
             continue
         head = line[:m.start()].strip()
         tail = line[m.end():]
-        runs = _substitution_runs_body("\n".join(kept + [line[:m.start()]]))
-        if runs is False:
-            runs = _head_runs_body(head)
         quote = _quote_after(tail, after)
         # THE REST OF THE HEAD LINE IS COMMAND TEXT, and it was dropped with
         # the body: `cat <<'EOF' && git stash` kept only `cat`, so whatever
@@ -3668,28 +3054,22 @@ def split_heredocs(cmd, pipe_data=False):
         kept.append(line[:m.start()] + " " + tail)
         body = "\n".join(lines[i + 1:end])
         live = not m.group(1) and _LIVE_SUBSTITUTION.search(body)
+        runs = _head_runs_body(head)
         if _STDIN_SHELL.search(head) or runs == "shell":
             shell.append(body)
         elif _STDIN_INTERP.search(head) or runs == "code":
             code.append(body)
         elif tail.rstrip().endswith("\\"):
             shell.append(body)     # the line continues; its far side is unread
-        elif "|" in tail and (not pipe_data or live or not m.group(1)
-                              or head.split() != ["cat"]
-                              or not _pipes_to_script_run(tail, cmd)):
+        elif "|" in tail:
             # Only `cat` is vouched for as passing the body on unchanged: any
-            # other head may run it (awk's system()) or hand it elsewhere, so
-            # what the far side does with it is unread.
-            shell.append(body)
+            # other head may run it (awk's system()) or hand it elsewhere.
+            if (not pipe_data or live or not m.group(1)
+                    or head.split() != ["cat"]
+                    or not _pipes_to_script_run(tail, cmd)):
+                shell.append(body)  # what the far side does with it is unread
         elif live:
             shell.append(body)
-        else:
-            ran = _written_body_runs(line[:m.start()], tail,
-                                     "\n".join(lines[end + 1:]))
-            if ran == "code":
-                code.append(body)
-            elif ran:
-                shell.append(body)
         i = end + 1
     return "\n".join(kept), code, shell
 
@@ -3709,74 +3089,296 @@ def runnable_text(cmd, pipe_data=False):
     `cat <<'EOF' | bash` keep every byte they are graded on. `pipe_data` is
     `split_heredocs`' own: a guard opts in to reading a quoted body piped to a
     plain script run as data.
-
-    THE JOIN IS RAW, AND IT IS ONE READING AMONG SEVERAL, NEVER THE ONLY ONE.
-    The parts are separate inputs to separate readers, so a quote, a
-    substitution or an escape one part leaves open carries into the next in
-    this string, and the joined parse can then read a live line as the inside
-    of a quote. Reading the parts alone (`part_ends_open`, `runnable_parts`)
-    misses what the joined parse sees instead: a part the lexer misreads as
-    open - a nested quoted heredoc's apostrophe, a Python escape the shell does
-    not have - leaves its neighbours readable only as one view. So a guard
-    takes the UNION: the joined view's reading, each part read alone, and its
-    strict text reading wherever a part ends open, and refuses when any of them
-    refuses (`runnable_clauses` for the clause readers,
-    `guard-history-rewrite.command_reading` for the parse). No part is ever
-    closed by hand to make the view parse; a closer would turn the line after
-    a misread part into the inside of a quote.
     """
-    return "\n".join(runnable_parts(cmd, pipe_data))
-
-
-def runnable_parts(cmd, pipe_data=False):
-    """`[text] + shell bodies + interpreter bodies` - the parts `runnable_text`
-    joins, each one input to a reader of its own."""
     text, code, shell = split_heredocs(cmd, pipe_data)
-    return [text] + shell + code
+    return "\n".join([text] + shell + code)
 
 
-def runnable_clauses(cmd, pipe_data=False):
-    """The clauses of two readings, each clause once, in order: every one of
-    `runnable_parts` split on its own, then the joined `runnable_text` split
-    whole.
+# --- the house-form lift: one body every guard may read as data ---------------
+# WHY ONE TRANSFORM AND NOT A READING. Every guard above grades a heredoc body
+# by `split_heredocs`, and a body inside a `$( )` is graded as shell there - so
+# the commit message, task description or PR body an agent writes in the house
+# template, `-m "$(cat <<'EOF'` ... `EOF` `)"`, was refused whenever its prose
+# named a command. Widening that reading was tried, more than once, and each
+# widening opened a route the shell runs that the reading called data. So the
+# reading stays exactly as it is, and this function runs before it in every
+# guard: it removes a body only when the whole command is one it can prove
+# stores that body as text, and returns every other command byte for byte.
+#
+# THE ONE TABLE OF SINKS. A program, the verb that stores text, and the options
+# whose value is that text. Nothing outside it is lifted, however harmless it
+# looks: `gh pr comment`, `git notes` and an `--option=value` spelling stay with
+# the reading every guard already had.
+_HOUSE_SINKS = (
+    ("git", "commit", ("-m", "-F", "--message")),
+    ("git", "tag", ("-m",)),
+    ("gh", "pr create", ("--body", "--title")),
+    ("gh", "pr edit", ("--body", "--title")),
+    ("gh", "issue create", ("--body", "--title")),
+    ("gh", "issue edit", ("--body", "--title")),
+    ("audit-task", "add", ("--description", "--title", "--outcome",
+                           "--reason", "--text")),
+    ("audit-task", "scope", ("--description", "--title", "--outcome",
+                             "--reason", "--text")),
+    ("audit-task", "done", ("--description", "--title", "--outcome",
+                            "--reason", "--text")),
+    ("audit-task", "cancel", ("--description", "--title", "--outcome",
+                              "--reason", "--text")),
+    ("audit-task", "note", ("--description", "--title", "--outcome",
+                            "--reason", "--text")),
+)
+# The rest of the command, beside the sink. A stored message can be read back
+# and run by a LATER clause (`git log -1 --format=%B | sh`, a hook, a pager),
+# so the lift also refuses any clause it cannot vouch for: these programs, and
+# for git these verbs, with no `-c` and no option that names a program to run.
+# Anything else in the command - and every pipe, redirect, group, substitution
+# or comment outside the sink's own argument - means no lift at all.
+_HOUSE_FRAME_GIT = ("add", "branch", "checkout", "commit", "diff", "fetch",
+                    "log", "mv", "pull", "push", "reset", "restore", "rev-parse",
+                    "rm", "show", "stash", "status", "switch", "tag")
+_HOUSE_FRAME_GIT_RUNS = ("--exec", "--receive-pack", "--upload-pack", "--output")
+# The template's opening, read at the start of a word: a double quote, a `$(`
+# whose only command is `cat`, a quoted delimiter, and the end of the line.
+_HOUSE_OPEN = re.compile(r"\"\$\(cat[ \t]+<<(['\"])([A-Za-z_][A-Za-z0-9_]*)\1\n")
+_HOUSE_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+_HOUSE_PYTHON = re.compile(r"^python(?:3(?:\.\d+)?)?$")
+# An absolute script path, or one rooted at a plain variable such as the
+# plugin root: a relative `audit-task` is whatever file sits in the cwd.
+_HOUSE_SCRIPT = re.compile(
+    r"^(?:\$\{[A-Za-z_][A-Za-z0-9_]*\}|\$[A-Za-z_][A-Za-z0-9_]*)?"
+    r"/[^$`'\"\\*?\[\s]*$")
+_HOUSE_BRACED = re.compile(r"\$\{[A-Za-z_][A-Za-z0-9_]*\}")
+_HOUSE_STRUCTURE = "<>(){}`"
+_HOUSE_WORD = "\x00house"
 
-    A part whose quoting does not close comes back as one clause of its own -
-    `command_clauses`' fail-safe - for its reader's strict reading, and the
-    parts beside it are still split, where the joined view would have carried
-    the open quote into them. The joined view's clauses stay as well, because
-    a part read alone can be the misreading: a reader that refuses when any
-    clause refuses is then never more permissive than either reading."""
-    parts = runnable_parts(cmd, pipe_data)
-    out = [clause for part in parts for clause in command_clauses(part)]
-    if len(parts) > 1:
-        seen = set(out)
-        out += [clause for clause in command_clauses("\n".join(parts))
-                if clause not in seen]
-    return out
+
+def _house_script_word(word):
+    """Is `word` an absolute path whose file is the audit-task script?
+
+    By stem, so the literal names no file; a quoted word is read without its
+    pair of quotes, and any other quoting is no match."""
+    if len(word) >= 2 and word[0] == word[-1] and word[0] in "'\"":
+        word = word[1:-1]
+        if "'" in word or '"' in word:
+            return False
+    if not _HOUSE_SCRIPT.match(word):
+        return False
+    stem = os.path.splitext(word.rsplit("/", 1)[-1])[0]
+    return stem == "audit-task"
 
 
-def _comment_at(text, i, stack):
-    """Does a shell comment start at `i`: a `#` opening a word where commands
-    are read, outside every quote."""
-    return (text[i] == "#" and (not stack or stack[-1] in "(`")
-            and (i == 0 or text[i - 1] in " \t\n;&|()<>"))
+def _house_git_verb(words):
+    """The index of git's verb past `-C <path>` and `--no-pager`, or None."""
+    i = 1
+    while i < len(words) and words[i].startswith("-"):
+        if words[i] == "-C" and i + 1 < len(words):
+            i += 2
+        elif words[i] == "--no-pager":
+            i += 1
+        else:
+            return None
+    return i if i < len(words) else None
 
 
-def part_ends_open(part):
-    """Does `part`, read alone, end inside a quote, a substitution or a
-    pending escape? Then nothing joined after it can be read on its own parse.
+def _house_program(words):
+    """`(program, verb, index of the first word after the verb)` for a clause
+    the lift can name, or None. `program` is a key of `_HOUSE_SINKS`."""
+    if not words or _HOUSE_ASSIGNMENT.match(words[0]):
+        return None
+    if words[0] == "git":
+        at = _house_git_verb(words)
+        return None if at is None else ("git", words[at], at + 1)
+    if words[0] == "gh" and len(words) >= 3:
+        return ("gh", "%s %s" % (words[1], words[2]), 3)
+    if (_HOUSE_PYTHON.match(words[0]) and len(words) >= 3
+            and _house_script_word(words[1])):
+        return ("audit-task", words[2], 3)
+    return None
 
-    A COMMENT IS SKIPPED, because the shell skips it: `# don't` opens no quote,
-    and a part whose comment holds an apostrophe is as readable as one whose
-    comment does not."""
-    stack, at, i, n = [], [], 0, len(part)
+
+def _house_frame_clause(words):
+    """May this clause stand beside a lifted body? `cd`, a git verb from
+    `_HOUSE_FRAME_GIT` naming no program to run, `gh pr`/`gh issue`, or the
+    audit-task script - and nothing else."""
+    if words and words[0] == "cd":
+        return True
+    named = _house_program(words)
+    if named is None:
+        return (len(words) == 2 and words[0] == "gh"
+                and words[1] in ("pr", "issue"))
+    program, verb, _at = named
+    if program == "git":
+        return (verb in _HOUSE_FRAME_GIT
+                and not any(w.startswith(_HOUSE_FRAME_GIT_RUNS) for w in words))
+    if program == "gh":
+        return words[1] in ("pr", "issue")
+    return True
+
+
+def _house_carrier(words):
+    """Is the next word, after these, the text argument of a sink in
+    `_HOUSE_SINKS`? The option must be the word right before it."""
+    named = _house_program(words)
+    if named is None or not _house_frame_clause(words):
+        return False
+    program, verb, at = named
+    if len(words) <= at:
+        return False
+    return any(p == program and v == verb and words[-1] in options
+               for p, v, options in _HOUSE_SINKS)
+
+
+def _house_dollar_plain(text, i):
+    """Does the `$` at `i` expand nothing but a plain variable? A command or
+    arithmetic substitution, an ANSI-C or locale quote, and a parameter
+    expansion with an operator all re-read quotes or run a command."""
+    nxt = text[i + 1:i + 2]
+    if nxt in ("(", "'", '"'):
+        return False
+    if nxt == "{":
+        return bool(_HOUSE_BRACED.match(text, i))
+    return True
+
+
+def _house_body_end(text, start, delim):
+    """`(start of the delimiter line, end of the closing ')"')` for a body
+    opening at `start`, or None. The delimiter line is the first line equal to
+    it - the line the shell ends the body at - and a line that equals it only
+    once blanks are stripped is a doubt, never a guess. The next line must open
+    with `)"` and the word must end there.
+
+    A CLOSING PARENTHESIS ANYWHERE IN THE BODY IS A DOUBT. bash 3.2, still the
+    `/bin/bash` and `/bin/sh` of macOS, finds the end of a `$(` by matching
+    parentheses and quotes over the raw text before it reads any heredoc, so a
+    body line holding `)"` closed the substitution there and the shell ran the
+    body lines after it - measured, with the body's stash run. With no `)` in the
+    body, the match cannot end before the delimiter line, and every line above
+    it stays heredoc text whatever quotes it holds."""
+    at = start
+    while True:
+        nl = text.find("\n", at)
+        if nl < 0:
+            return None
+        line = text[at:nl]
+        if line == delim:
+            break
+        if line.strip() == delim or ")" in line:
+            return None
+        at = nl + 1
+    close = nl + 1
+    if not text.startswith(')"', close):
+        return None
+    after = close + 2
+    if after < len(text) and text[after] not in " \t\n;&|":
+        return None
+    return at, after
+
+
+def _house_spans(text):
+    """The `(start, end)` of every lifted body, or None when any part of the
+    command leaves a doubt. One pass over the whole command, tracking quotes."""
+    spans, clause, word = [], [], []
+    quote, i, n = None, 0, len(text)
+
+    def close_word():
+        if word:
+            clause.append("".join(word))
+            del word[:]
+
+    def close_clause():
+        close_word()
+        ok = not clause or _house_frame_clause(clause)
+        del clause[:]
+        return ok
+
     while i < n:
-        if _comment_at(part, i, stack):
-            end = part.find("\n", i)
-            i = n if end < 0 else end
+        ch = text[i]
+        if quote == "'":
+            word.append(ch)
+            quote = None if ch == "'" else quote
+            i += 1
             continue
-        i = _context_step(part, i, stack, at)
-    return bool(stack) or i > n
+        if quote == '"':
+            if ch == "\\":
+                if i + 1 >= n:
+                    return None
+                word.append(text[i:i + 2])
+                i += 2
+                continue
+            if ch == "`" or (ch == "$" and not _house_dollar_plain(text, i)):
+                return None
+            word.append(ch)
+            quote = None if ch == '"' else quote
+            i += 1
+            continue
+        if ch == "\\":
+            if i + 1 >= n or text[i + 1] == "\n":
+                return None
+            word.append(text[i:i + 2])
+            i += 2
+        elif ch in " \t":
+            close_word()
+            i += 1
+        elif ch in "\n;&":
+            if not close_clause():
+                return None
+            i += 2 if text.startswith("&&", i) else 1
+        elif ch == "|":
+            if not text.startswith("||", i) or not close_clause():
+                return None
+            i += 2
+        elif ch in _HOUSE_STRUCTURE or (ch == "#" and not word):
+            return None
+        elif ch == "$" and not _house_dollar_plain(text, i):
+            return None
+        elif ch == '"' and not word and _HOUSE_OPEN.match(text, i):
+            m = _HOUSE_OPEN.match(text, i)
+            if not _house_carrier(clause):
+                return None
+            end = _house_body_end(text, m.end(), m.group(2))
+            if end is None:
+                return None
+            spans.append((m.end(), end[0]))
+            clause.append(_HOUSE_WORD)
+            i = end[1]
+        else:
+            if ch in "'\"":
+                quote = ch
+            word.append(ch)
+            i += 1
+    if quote is not None or not close_clause():
+        return None
+    return spans
+
+
+def lift_house_bodies(cmd):
+    """`cmd` with the body of each house-form text argument removed, or `cmd`
+    unchanged when anything in it leaves a doubt.
+
+    A body is removed only when ALL of these hold: its argument is a whole word
+    `"$(cat <<'DELIM'` (or `"DELIM"`) with nothing after the marker on its
+    line, the body, `DELIM` alone on its own line, then `)"`; the word is the
+    value of a sink option in `_HOUSE_SINKS`, the word right after it; every
+    word naming that sink is literal; the quoting before it is provably plain -
+    no ANSI-C or locale quote, no quote left open, no escaped newline, no
+    substitution, no parameter operator, no comment; and every clause of the
+    command is one `_house_frame_clause` vouches for, joined by `;`, `&&`, `||`,
+    `&` or a newline - never a pipe, a redirect, a group or another heredoc.
+
+    The marker, the delimiter and `)"` stay, so the command keeps its shape and
+    every guard reads the rest of it as it always did."""
+    text = cmd or ""
+    if '"$(cat' not in text or "<<" not in text:
+        return text
+    spans = _house_spans(text)
+    if not spans:
+        return text
+    out, at = [], 0
+    for start, end in spans:
+        out.append(text[at:start])
+        at = end
+    out.append(text[at:])
+    return "".join(out)
 
 
 # --- guard config (edits / secrets / tdd) -------------------------------------

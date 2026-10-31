@@ -189,11 +189,42 @@
         "severity": "med",
         "file": "plugins/audit/hooks/_config.py",
         "issue": "P153.17 executor, measured against main: a heredoc body written to a file by a redirect and run by a later clause of the same command (a body written to probe.sh then sh probe.sh, bash probe.sh or ./probe.sh) is data to all four guards now; main denied it only because a .sh name read as a shell. Deny to allow on hist, secrets, uncommitted and release",
-        "resolution": "one rule in the shared split: a body redirected to a path that a later clause of the same command runs (as a shell or interpreter operand, or as the program word) is a shell-fed body and is graded; a body written to a path nothing in the command runs stays data. Red-first the written-then-run shapes in all four guards; gh35 allow (written, not run) stays green",
-        "fixTask": "P153.18-34e"
+        "resolution": "fixed in P153.18-34e (bbdea91e8741): one rule in the shared split: a body redirected to a path that a later clause of the same command runs (as a shell or interpreter operand, or as the program word) is a shell-fed body and is graded; a body written to a path nothing in the command runs stays data. Red-first the written-then-run shapes in all four guards; gh35 allow (written, not run) stays green",
+        "fixTask": "P153.18-34e",
+        "commit": "bbdea91e8741",
+        "status": "fixed"
+      },
+      {
+        "id": "P153-R21",
+        "severity": "high",
+        "file": "plugins/audit/hooks/_config.py",
+        "issue": "final phase review, measured on all four guards vs main: a body written to a .sh file is data unless the later run uses a spelling the run detector enumerates; globs, escaped names, find -exec, BASH_ENV, exec fd, cat file piped to bash, xargs, script, watch, env -S, git -c core.pager, make SHELL=, and install /dev/stdin as the writer all reach allow where main denied (bash ran each). The run detector is an enumeration patched once already",
+        "resolution": "see the phase decision: keep main grading for a written body, lifting only the exact house template",
+        "fixTask": "P153.19-34e"
+      },
+      {
+        "id": "P153-R22",
+        "severity": "high",
+        "file": "plugins/audit/hooks/_config.py",
+        "issue": "final phase review, measured: _context_step reads a dollar-single-quote string ending in backslash-quote as closed, where the shell keeps it open, so a fake house form inside that string is lifted and the verb line after it, which the shell runs, is allowed by hist, unc and sec; main read the raw text and denied",
+        "resolution": "lift only when the quote context before the marker is provably plain (no dollar-single-quote, no unbalanced escape); otherwise no lift"
+      },
+      {
+        "id": "P153-R23",
+        "severity": "med",
+        "file": "plugins/audit/hooks/_config.py",
+        "issue": "final phase review, measured false positives against the accepted allows: audit-task done --outcome and --reason with a house-form body are not lifted (done is a group-close word), git -C path commit -m is not a sink, nor commit -am, nor the documented CLAUDE_PLUGIN_ROOT script spelling",
+        "resolution": "derive the sink table from the text options the scripts declare and match git sinks past global options"
+      },
+      {
+        "id": "P153-R24",
+        "severity": "med",
+        "file": "CHANGELOG.md",
+        "issue": "final phase review, read: the Unreleased section covers only the gate-clear refusal; the start-time readers refusal, scope --files + and --waive, the guard heredoc behaviour and the lock-ownership text are user-visible and absent",
+        "resolution": "add Unreleased entries for each user-visible change of the phase"
       }
     ],
-    "outcome": "[findings: 20 - 4 high, 10 med, 6 low; 9 with a recorded fix commit]"
+    "outcome": "[findings: 24 - 6 high, 12 med, 6 low; 10 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1503,7 +1534,7 @@
     {
       "id": "P153.18-34e",
       "title": "fix P153-R20: P153.17 executor, measured against main: a heredoc body written...",
-      "status": "in_progress",
+      "status": "done",
       "description": "P153.17 executor, measured against main: a heredoc body written to a file by a redirect and run by a later clause of the same command (a body written to probe.sh then sh probe.sh, bash probe.sh or ./probe.sh) is data to all four guards now; main denied it only because a .sh name read as a shell. Deny to allow on hist, secrets, uncommitted and release\n\nResolution asked: one rule in the shared split: a body redirected to a path that a later clause of the same command runs (as a shell or interpreter operand, or as the program word) is a shell-fed body and is graded; a body written to a path nothing in the command runs stays data. Red-first the written-then-run shapes in all four guards; gh35 allow (written, not run) stays green",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -1533,14 +1564,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "bbdea91e8741",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "One rule in the shared split (_config.split_heredocs): a body left as data goes to _written_body_runs, which reads the paths the heredoc's own command writes (redirect targets on its line read outside quotes via a new _plain_mask that _shell_level now uses with identical output; tee operands) against every later clause: the path as program word past wrappers, the script operand or < input of a shell, source, . or interpreter (never an argument the script is handed), the path inside an interpreter's inline program, the same inside eval or a shell -c, and names cp/mv/ln/install/tee give the file. Paths compare by last component; an expansion matches any path except a bare PATH-looked-up program word when the written path is the expansion. Interpreter run puts the body in code, any other run in shell. No guard code changed; runnable_text/parts/clauses unchanged. Cases: hb15 and hb16 (test__config), gh36, s84 and s85, gu56, gr75. Gate sweep 6/6 files, 1768 cases, exit 0; other _config importers and source lints 8/8 files, 1240 cases, exit 0. Probe matrix over main, HEAD and this tree: HEAD to fix weaker 0 in all four guards; main to fix weaker 172 guard-by-case rows: house-form allows allow1-4, replay rows b11/b12, b2/b2b reset rows in hist (allowed already at HEAD; main's deny was a phantom cd reason), and the written-never-run .sh rows wa1/wa2/wa3/wa5 (the gh35 class the rule keeps as data). Every written-then-run shape is graded by all four guards. Dependants: every _config importer still correct (split_heredocs signature and return shape unchanged, more bodies graded only for written-then-run shapes, effective_cwd unreadable for those), their suites green; guard-history-rewrite and guard-secrets-read code unchanged; guard-uncommitted and guard-release gained one selftest case each; test files gained cases only.",
+        "descriptive": "A heredoc written to a file that a later clause of the same command runs is graded as that run's program by all four guards; a body written to a file nothing runs stays data."
       },
       "startedAt": "2026-10-31T11:50:28Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-31T12:15:21Z",
+      "verifiedBy": [
+        "hb15: written-then-run shapes keep the body in the graded parts under both pipe_data readings",
+        "hb16: written-but-not-run shapes leave the body as data, including a file handed to a script as its data and an expansion staged by a bare program",
+        "gh36: history guard refuses a destructive verb in a body written then run by sh, bash, the program word, dot-sourcing and python3",
+        "s84/s85: secrets guard blocks a secret read in a body written then run, allows the same body written then read back",
+        "gu56: uncommitted-work guard refuses a stash in a body written then run, passes it only written",
+        "gr75: release guard reads a tag in a body written then run as a publisher, and only written as none"
+      ],
       "notes": [
         {
           "at": "2026-10-31T11:50:22Z",
@@ -1569,6 +1607,118 @@
         "runId": "2026-10-31T12:15:05Z.99570e",
         "status": "passed",
         "at": "2026-10-31T12:15:05Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "bbdea91e8741",
+        "at": "2026-10-31T12:15:21Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-31T12:08:47Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__config.py tests/test_guard_history_rewrite.py .claude/hooks/guard-uncommitted.py tests/test_guard_secrets_read.py tests/test__manifest_vocab.py .claude/hooks/guard-release.py` in a throwaway tree at HEAD exited 1 with 3 of 746 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - hb15 (house FAIL), gh36 (house FAIL), s84 (house FAIL): SELFTEST FAILED: 745/746 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P153.19-34e",
+      "title": "fix P153-R21: final phase review, measured on all four guards vs main: a body...",
+      "status": "in_progress",
+      "description": "final phase review, measured on all four guards vs main: a body written to a .sh file is data unless the later run uses a spelling the run detector enumerates; globs, escaped names, find -exec, BASH_ENV, exec fd, cat file piped to bash, xargs, script, watch, env -S, git -c core.pager, make SHELL=, and install /dev/stdin as the writer all reach allow where main denied (bash ran each). The run detector is an enumeration patched once already\n\nResolution asked: see the phase decision: keep main grading for a written body, lifting only the exact house template",
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/hooks/guard-history-rewrite.py",
+        "plugins/audit/hooks/guard-secrets-read.py",
+        ".claude/hooks/guard-uncommitted.py",
+        ".claude/hooks/guard-release.py",
+        "tests/test__config.py",
+        "tests/test_guard_history_rewrite.py",
+        "tests/test_guard_secrets_read.py",
+        "CONTRIBUTING.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md",
+        "tools/prove-gates.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__config.py: see the phase decision: keep main grading for a written body, lifting only the exact house template"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__config.py tests/test_guard_history_rewrite.py .claude/hooks/guard-uncommitted.py tests/test_guard_secrets_read.py tests/test__manifest_vocab.py .claude/hooks/guard-release.py tests/test_guard_bash_writes.py tests/test__output_lints.py tests/test__deps.py tests/test__refs.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-31T13:41:38Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-31T13:40:50Z",
+          "text": "scope: plugins/audit/hooks/_config.py, every path the finding(s) P153-R21 name"
+        },
+        {
+          "at": "2026-10-31T13:40:50Z",
+          "text": "scope: tests/test__config.py, the suite that tests plugins/audit/hooks/_config.py (python: its import closure reaches plugins/audit/hooks/_config.py)"
+        },
+        {
+          "at": "2026-10-31T13:41:18Z",
+          "text": "it quotes the print-it-with sentence of CONTRIBUTING.md; this task edits only the guard paragraph",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-10-31T13:41:19Z",
+          "text": "it quotes the refuses-to-start sentence of CONTRIBUTING.md; this task edits only the guard paragraph",
+          "waives": "tools/sweep-selftests.py"
+        },
+        {
+          "at": "2026-10-31T13:41:21Z",
+          "text": "it quotes the related-listing sentence of the guide; this task edits only the _config and guard sections",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-10-31T13:41:22Z",
+          "text": "it quotes the doctor-trail sentence of the guide; this task edits only the _config and guard sections",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-10-31T13:41:23Z",
+          "text": "it reads the Unreleased heading; this task appends entries under it and never renames it",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-10-31T13:41:24Z",
+          "text": "it quotes the RED, WRONG CASE verdict wording of prove-gates.py; this task may adjust rows, never reword that verdict",
+          "waives": "tests/_harness.py"
+        },
+        {
+          "at": "2026-10-31T13:41:37Z",
+          "text": "its guard sections state each guard's fail mode and what it refuses; returning the guards to main reading keeps those statements true, and the lift touches only house-form message bodies",
+          "waives": "SECURITY.md"
+        }
+      ],
+      "fixes": [
+        "P153-R21"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-31T14:26:10Z.a9bfbc",
+        "status": "passed",
+        "at": "2026-10-31T14:26:10Z"
       }
     }
   ],

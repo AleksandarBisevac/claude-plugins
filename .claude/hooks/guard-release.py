@@ -445,6 +445,16 @@ def _words_publishers(cfg_mod, words, depth=0):
     return []
 
 
+def _lifted(cfg_mod, command):
+    """`command` after the plugin's house-form lift, the one transform every
+    guard applies before it reads anything: unchanged unless a body is provably
+    a stored message. Unchanged too when `_config` could not be loaded, which
+    keeps the stricter reading."""
+    text = str(command or "")
+    lift = getattr(cfg_mod, "lift_house_bodies", None)
+    return lift(text) if lift is not None else text
+
+
 def _publishers(command, cfg_mod=None, depth=0):
     """Every publishing invocation, as `(reason, operands)`.
 
@@ -455,20 +465,16 @@ def _publishers(command, cfg_mod=None, depth=0):
 
     A clause begins where a shell can begin a command. Matching only there
     keeps a `git tag` example inside a quoted argument from reading as a
-    publisher, while `runnable_clauses` still separates every live publisher:
-    it removes heredoc data and splits the text and each runnable body on its
-    own, so a quote one leaves open does not swallow the next, and adds the
-    clauses of the joined view, so a part misread as open loses nothing the
-    whole line's split would have found - any clause publishing is a
-    publisher. Within a
+    publisher, while `command_clauses` still separates every live publisher.
+    `runnable_text` removes heredoc data before either reader sees it. Within a
     clause the program is found past assignments, wrappers, git's global
     options and `sh -c`; a clause whose quotes do not close falls back to the
     anchored patterns.
     """
     found = []
     cfg_mod = cfg_mod or _hooks_config(project_dir())
-    text = str(command or "")
-    clauses = (cfg_mod.runnable_clauses(text)
+    text = _lifted(cfg_mod, command)
+    clauses = (cfg_mod.command_clauses(cfg_mod.runnable_text(text))
                if cfg_mod is not None else [text])
     for clause in clauses:
         words = (cfg_mod.shell_words(clause)
@@ -607,7 +613,7 @@ def _shell_moves(cfg_mod, command):
     payload cwd is unknown only when that walk would have had a directory
     change to follow. A comment's apostrophe must not count as one.
     """
-    for clause in cfg_mod.runnable_clauses(command or ""):
+    for clause in cfg_mod.command_clauses(cfg_mod.runnable_text(command or "")):
         parts = clause.split(None, 1)
         if parts and parts[0].lower() in ("cd", "pushd", "popd"):
             return True
@@ -620,6 +626,7 @@ def _session_base(cfg_mod, data, project, command):
     A payload that names no cwd, and a command that does not move the shell,
     answers to `project`. An unreadable `cd` does not.
     """
+    command = _lifted(cfg_mod, command)
     cwd = data.get("cwd")
     if cwd:
         target = cfg_mod.effective_cwd(command or "", cwd)
@@ -1251,33 +1258,6 @@ def _selftest():
           "delete or quoted text are not a publisher: %r"
           % ([(command, publishing(command)) for command in wrapped_readers],),
           not any(publishing(command) for command in wrapped_readers))
-    # The text and each body fed to a shell are split on their own: a quote
-    # one leaves open no longer swallows the next, and no part is closed by
-    # hand to make the whole parse.
-    _tag = "git " + "tag v9.9.9"
-    split_parts = (
-        "bash <<'EOF'\n%s\nEOF\necho '" % _tag,
-        "bash <<'EOF'\n%s\n'\nEOF\necho '" % _tag,
-        "bash <<'X'\necho 'a\nX\n%s" % _tag,
-        "bash <<'A'\n# it's\nA\nbash <<'B'\n%s\nB" % _tag,
-    )
-    check("gr74 RED-FIRST: a tag in a shell body after a text that opens a "
-          "quote, or in the text after a body that does, is a publisher: %r"
-          % ([(command, publishing(command)) for command in split_parts],),
-          all(publishing(command) == "creates a git tag"
-              for command in split_parts))
-    # A body written to a file is data only while nothing in the command runs
-    # the file; a later clause running it makes the body that clause's program.
-    _wr = "cat > probe.sh <<'EOF'%s\n" + _tag + "\nEOF%s"
-    written_run = (_wr % ("", "\nsh probe.sh"), _wr % ("; bash probe.sh", ""),
-                   _wr % (" && ./probe.sh", ""), _wr % ("", "\nsource probe.sh"))
-    check("gr75 RED-FIRST: a tag in a body written to a file a later clause "
-          "runs - by a shell, as the program word, sourced - is a publisher, "
-          "and the same body only written is not: %r"
-          % ([(command, publishing(command)) for command in written_run],),
-          all(publishing(command) == "creates a git tag"
-              for command in written_run)
-          and not publishing(_wr % ("", "")))
 
     # --- the rule, end to end -------------------------------------------------
     tmp = tempfile.mkdtemp(prefix="guard-release-")

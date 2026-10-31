@@ -115,28 +115,21 @@ import sys
 # message matches here and is then thrown out by the parse, which reads the
 # operation.
 #
-# The second job is the fallback for a line the parser cannot read at all (an
-# unbalanced quote, or a heredoc body the parser cannot place). There the table
-# grades `executed_text()`'s view - the line with only its house-template
-# heredoc bodies taken out, by the one reader `_config` shares - and grades the
-# raw line when that view cannot be built. Every other quoted argument or body
-# in such a line is graded as text: a reader that took them out unless a runner
-# list named the command passed every runner the list missed.
+# The second job is the fallback for a line `shlex` cannot read at all (an
+# unbalanced quote). There the same table is the whole reading, and its
+# over-firing on quoted text is the conservative direction: an unparseable line
+# that names one of these operations is refused when the tree is dirty rather than
+# guessed at. That is the shape `guard-history-rewrite.py` settled on, for the
+# same reason.
 #
 # ONE TABLE, TWO USES. A separate pre-filter would be a second description of the
 # same set, and the two would drift in the direction that matters - a shape
 # present in the fallback and missing from the pre-filter never reaches it.
-#
-# THE TREE-WIDE DOT ends where a shell word can end, not only at a blank: a
-# `.` closing a substitution (`$(git checkout -- .)`) or a quoted word is the
-# same pathspec, and a boundary of blanks alone let the pre-filter wave that
-# substitution through before the parser - which reads it - was ever asked.
-_DOT = r"(?<![^\s\"'(=])\.(?![^\s\"');&|`])"
 _SHAPES = (
     r"reset\b[^|;&\n]*--hard",
     r"(?:checkout|switch)\b[^|;&\n]*(?:--force\b|--discard-changes\b"
-    r"|(?<![\w-])-[A-Za-z]*f[A-Za-z]*(?![\w-])|" + _DOT + ")",
-    r"restore\b[^|;&\n]*" + _DOT,
+    r"|(?<![\w-])-[A-Za-z]*f[A-Za-z]*(?![\w-])|(?<!\S)\.(?!\S))",
+    r"restore\b[^|;&\n]*(?<!\S)\.(?!\S)",
     r"clean\b[^|;&\n]*(?<![\w-])-[A-Za-z]*[fdxX]",
     r"stash\b(?![^|;&\n]*\b(?:list|show|apply|pop|drop|branch|clear)\b)",
 )
@@ -371,99 +364,33 @@ def judge(verb, args, helper=None):
 def reading(command):
     """`(judgement, how)` - what this command would destroy and how that was read.
 
-    `how` is "operation" when the line parsed, and "text" when it did not and
-    the shapes above decided instead. The caller reports which, because a
-    verdict reached without parsing the line as given is a weaker claim and
-    saying so is cheaper than being wrong about it quietly.
-
-    The parser lifts house-template bodies before it tokenizes
-    (`_config.split_heredocs` calls `lift_house_bodies`), so a line whose
-    lifted view parses is a line that parsed. A line with a part that will not
-    read alone is graded by BOTH readings the parser's `command_reading`
-    hands back - the shapes over the lifted view, which assume the widest loss
-    set, and then every call any parse of it found - so neither reading can
-    allow what the other refuses.
+    `how` is "operation" when the line parsed, "text" when it did not and the
+    shapes above decided instead. The caller reports which, because a verdict
+    reached by text is a weaker claim and saying so is cheaper than being wrong
+    about it quietly.
     """
     if not DESTRUCTIVE_TEXT.search(command or ""):
         return (None, "operation")      # the cheap door: no shape, no parse
     helper = parser()
-    invocations, strict = _parsed_calls(command, helper)
-    if not strict:
-        return (_first_judgement(invocations, helper), "operation")
-    # A part will not read alone: the shapes grade all of it but the bodies
-    # the house template lifts.
-    view = executed_text(command, helper)
-    if view is None or DESTRUCTIVE_TEXT.search(view):
-        # The parser could not be loaded, or the text names a destructive shape
-        # outside the house template: the widest loss set is assumed and the
-        # refusal says it was read from text.
-        return ({"op": "this command", "kinds": (LOSS_TRACKED, LOSS_UNTRACKED),
-                 "probe": "status", "remedy": REMEDY_PATHS}, "text")
-    # The shapes found nothing; a call a parse read is still an operation.
-    found = _first_judgement(invocations, helper)
-    return (found, "operation" if found is not None else "text")
-
-
-def _parsed_calls(command, helper):
-    """`([(verb, args)], strict)` - every git call the parser's readings
-    found, and whether a part of the line will not read alone. A parser with
-    no `command_reading` answers through `git_invocations`, where None is the
-    strict reading with no calls; no parser at all is that too."""
-    if helper is None:
-        return [], True
-    read = getattr(helper, "command_reading", None)
-    if read is None:
-        invocations = helper.git_invocations(command)
-        return invocations or [], invocations is None
-    calls, strict = read(command)
-    return [(call[0], call[1]) for call in calls], strict
-
-
-def _first_judgement(invocations, helper):
-    for verb, args in invocations:
-        found = judge(verb, args, helper)
-        if found is not None:
-            return found
-    return None
-
-
-# --- what an untokenizable line executes --------------------------------------
-# FAIL CLOSED: A LINE THAT WILL NOT TOKENIZE IS GRADED WHOLE, minus only the
-# heredoc bodies `_config.lift_house_bodies` lifts - the house template,
-# `"$(cat <<'EOF'` ... `EOF` ... `)"` as the argument of a literal text sink,
-# recognised whole by the one function every guard here shares. Nothing else
-# in such a line is data: no quoted argument, no other heredoc.
-#
-# This used to be a second reader that took quoted arguments and heredoc bodies
-# out as data unless a runner list named the command, and every runner the list
-# missed was a pass: an expansion as the program word (`$SHELL -c`), a remote or
-# wrapped runner (`ssh`, `su -c`, `flock -c`, `script -c`, `nix-shell --run`,
-# `tar --to-command=`), a git alias, `find -exec`, `trap`. A list of the ways a
-# program runs its argument is never finished, so there is no list.
-#
-# KNOWN COST, accepted rather than hidden: a line the parser cannot read that
-# QUOTES one of the destructive shapes outside the house template - an argument
-# to a script, a heredoc fed to one - is refused on a dirty tree, read as TEXT.
-# A line the parser CAN read is graded on its operation and never comes here.
-
-
-def executed_text(command, helper):
-    """The text `command` EXECUTES as this fallback reads it - the line with
-    each house-template body lifted out by `_config.lift_house_bodies` - or
-    None when the shared reader could not be loaded or broke on the line.
-
-    None sends the caller to the raw line, which is the conservative reading;
-    it is a separate answer from a view equal to the line, which means nothing
-    in it was the house template."""
-    cfg = getattr(helper, "_config", None) if helper is not None else None
-    lift = getattr(cfg, "lift_house_bodies", None)
-    if lift is None:
-        return None
-    try:
-        view, _lifted = lift(command or "")
-    except Exception:
-        return None                     # a reader that broke has read nothing
-    return view
+    if helper is not None:
+        # The house-form lift, before the operation reading and the text one
+        # alike: it changes nothing unless a body is provably a stored message
+        # (`_config.lift_house_bodies`, reached through the parser it ships with).
+        command = helper._config.lift_house_bodies(command or "")
+        if not DESTRUCTIVE_TEXT.search(command):
+            return (None, "operation")
+    invocations = helper.git_invocations(command) if helper is not None else None
+    if invocations is not None:
+        for verb, args in invocations:
+            found = judge(verb, args, helper)
+            if found is not None:
+                return (found, "operation")
+        return (None, "operation")
+    # The line will not tokenize, or the parser could not be loaded. The text
+    # matched a destructive shape and nothing can narrow it, so the widest loss
+    # set is assumed and the refusal says it was read from text.
+    return ({"op": "this command", "kinds": (LOSS_TRACKED, LOSS_UNTRACKED),
+             "probe": "status", "remedy": REMEDY_PATHS}, "text")
 
 
 # --- asking git what is at stake ----------------------------------------------
@@ -893,10 +820,9 @@ def _selftest():
         check("gu40 ...and even that fallback is quiet on a clean tree, because "
               "the tree is half of every verdict",
               decide('git reset --hard "', clean) is None)
-        check("gu41 ...and it says the line could not be tokenized as given, so "
-              "the verdict is the weaker claim it is",
-              "could not be tokenized" in (decide('git reset --hard "', dirty)
-                                           or ""))
+        check("gu41 ...and it says the verdict was read from text rather than "
+              "from the operation",
+              "TEXT" in (decide('git reset --hard "', dirty) or ""))
 
         # --- the cap ---------------------------------------------------------
         wide = os.path.join(tmp, "wide")
@@ -911,167 +837,6 @@ def _selftest():
               "is capped and the rest COUNTED: %r" % (got,),
               got and "and 5 more" in got
               and got.count(".txt (") == NAMED_CAP)
-
-        # --- a line that will not tokenize: its DATA is not its operation -----
-        # Each fixture below is built so `shlex` refuses it (an apostrophe in a
-        # quoted-delimiter heredoc, or an odd double quote inside one), because
-        # that is the branch which used to read every byte as a command.
-        task_add = ("python3 plugins/audit/scripts/manifest/audit-task.py add "
-                    "--phase P1 --title t --description-file - <<'EOF'\n"
-                    "The guard refused this task's text, which quotes "
-                    "`git stash` and `git checkout -- .`.\nEOF")
-        subst_add = ("python3 audit-task.py add --phase P1 --description "
-                     "\"$(cat <<'EOF'\nquote: \"git stash\" and \"git checkout "
-                     "-- .\" are refused; the third quote is \" alone\nEOF\n)\"")
-        stdin_note = ("audit-task.py note P1 \"never run git stash\" <<'EOF'\n"
-                      "it's git checkout -- . that loses work\nEOF")
-        check("gu43 an audit-task add whose heredoc description QUOTES a stash "
-              "and a checkout is allowed on a dirty tree - the body is the "
-              "description's bytes, not a command: %r"
-              % (decide(task_add, dirty),),
-              decide(task_add, dirty) is None)
-        check("gu44 ...and so is the same description inside \"$(cat <<'EOF' "
-              "...)\" with an odd quote in it, and a quoted argument beside a "
-              "heredoc body: %r" % ((decide(subst_add, dirty),
-                                     decide(stdin_note, dirty)),),
-              decide(subst_add, dirty) is None
-              and decide(stdin_note, dirty) is None)
-        # The deny direction. A fallback that read NOTHING would pass gu43 and
-        # gu44; these are the cases that go red under that over-narrowing.
-        check("gu45 the SAME commands run outside the heredoc are still "
-              "refused, alone and after the heredoc in one untokenizable line",
-              decide("git stash", dirty) is not None
-              and decide("git checkout -- .", dirty) is not None
-              and decide(task_add + "\ngit stash", dirty) is not None
-              and decide(task_add + "\ngit checkout -- .", dirty) is not None)
-        check("gu46 an untokenizable line whose quoted or heredoc text IS "
-              "executed is still refused: a heredoc fed to a shell, a "
-              "command substitution inside double quotes, one inside an "
-              "UNQUOTED-delimiter heredoc, and `sh -c \"...\"`",
-              all(decide(cmd, dirty) is not None for cmd in (
-                  "bash <<'EOF'\ngit stash\nit's\nEOF",
-                  "echo \"$(git stash)\" it's",
-                  "cat > n.md <<EOF\n$(git checkout -- .)\nit's\nEOF",
-                  "sh -c \"git clean -fdx\" it's",
-                  "echo `git reset --hard` it's")))
-        check("gu47 ...and the data reading is quiet on a CLEAN tree too, while "
-              "the shell-fed heredoc is quiet there for the tree's reason",
-              decide(task_add, clean) is None
-              and decide("bash <<'EOF'\ngit stash\nit's\nEOF", clean) is None)
-        check("gu48 a quoted program word, a quoted git verb, an interpreter's "
-              "inline code and a program run by path are read, untokenizable "
-              "line or not",
-              all(decide(cmd, dirty) is not None for cmd in (
-                  "\"git\" stash; echo it's",
-                  "git \"stash\"; echo it's",
-                  "python3 -c \"import os; os.system('git stash')\" it's",
-                  "cat > x.sh <<'EOF'\ngit stash\nEOF\n./x.sh it's")))
-        check("gu49 ...and so is a quoted argument of an interpreter running "
-              "a script file: no runner list decides what is data any more, "
-              "the house template alone does: %r"
-              % (decide("python3 tools/x.py --note \"never git stash\" it's",
-                        dirty),),
-              decide("python3 tools/x.py --note \"never git stash\" it's",
-                     dirty) is not None)
-        check("gu50 a dot closing a substitution is the tree-wide pathspec - "
-              "the cheap pre-filter used to wave `$(git checkout -- .)` through "
-              "before the parser was asked",
-              decide("x=$(git checkout -- .)", dirty) is not None
-              and decide("echo \"$(git restore .)\"", dirty) is not None)
-        # Two untokenizable lines: one whose odd quote is in the command text,
-        # and one whose odd quote is in a shell-fed BODY. A body the lexer
-        # cannot read is never closed by hand into one it can, so both reach
-        # the text reading.
-        hd = decide("git stash\necho it's", dirty) or ""
-        bd = decide("bash <<'EOF'\ngit stash\nit's\nEOF", dirty) or ""
-        ex = decide(subst_add + "\ngit reset --hard", dirty) or ""
-        check("gu51 the two readings say which they are: an untokenizable line "
-              "and an untokenizable shell body are read as TEXT, and a "
-              "house-form line - its odd quote lifted with its body - read as "
-              "an operation, with no claim of text: %r" % ((hd, bd, ex),),
-              "TEXT" in hd and "tokenized" in hd
-              and "TEXT" in bd and "tokenized" in bd
-              and ex and "TEXT" not in ex and "tokenized" not in ex)
-        # Each line below was measured passing: the reading that took quoted
-        # arguments out as data unless a runner list named the command never
-        # named these, and the stray quote on the next line is what sends the
-        # line to that reading at all.
-        _st = "git " + "stash"
-        _stray = "\necho '"
-        runners = (
-            "$SHELL -c '%s'" % _st,
-            "\"${BASH}\" -c '%s'" % _st,
-            "S=sh; $S -c '%s'" % _st,
-            "printf '%s' | $SHELL" % _st,
-            "nix-shell --run '%s'" % _st,
-            "tar -xf a.tar --to-command='%s'" % _st,
-            "ssh host '%s'" % _st,
-            "script -qc '%s'" % _st,
-            "flock /tmp/l -c '%s'" % _st,
-            "su -c '%s'" % _st,
-            "git -c alias.x='!%s' x" % _st,
-            "find . -exec sh -c '%s' \\;" % _st,
-            "trap '%s' EXIT" % _st,
-        )
-        passed = [cmd for cmd in runners if decide(cmd + _stray, dirty) is None]
-        check("gu52 an untokenizable line is graded whole: a quoted command "
-              "handed to an expansion as the program, a remote or wrapped "
-              "runner, a git alias, find -exec or trap is refused on a dirty "
-              "tree: %r" % (passed,), not passed and len(runners) == 13)
-        # Two apostrophes in each body, so a body read as shell leaves the line
-        # untokenizable and the shapes see it; with one, the stray quote and
-        # the body's apostrophe pair up, the line parses, and the case could
-        # not tell a lifted body from an unlifted one.
-        house = (
-            "git commit -m \"$(cat <<'EOF'\nsee %s, it's Bob's\nEOF\n)\"",
-            "gh pr create --title t --body \"$(cat <<'EOF'\n%s: it's Bob's\n"
-            "EOF\n)\"",
-            "git commit -m \"`cat <<'EOF'\nsee %s, it's Bob's\nEOF\n`\"",
-        )
-        refused = [cmd for cmd in house
-                   if decide((cmd % _st) + _stray, dirty) is not None]
-        check("gu53 ...while the house template's body is lifted first, so a "
-              "commit message, a pull request body and the backquoted form "
-              "quoting a stash pass on a dirty tree: %r" % (refused,),
-              not refused and len(house) == 3)
-        # A quote the text leaves open does not carry into a shell body: an
-        # apostrophe line in the body closed it, the stash read as the inside
-        # of a quote, and the line parsed with nothing destructive in it.
-        shaped = ("bash <<'EOF'\n%s\n'\nEOF\necho '" % _st,
-                  "bash <<'EOF'\n%s\nEOF\necho '" % _st)
-        passed = [cmd for cmd in shaped if decide(cmd, dirty) is None]
-        check("gu54 a stash fed to a shell is refused on a dirty tree when the "
-              "text opens a quote a body line closes, and in its twin with no "
-              "closing line: %r" % (passed,), not passed and len(shaped) == 2)
-        # A body that ends open only in the lexer's reading - a nested quoted
-        # heredoc's apostrophe, a Python escape the shell does not have - is
-        # not repaired with a closer: that made the verb line the inside of a
-        # quote and the line an allowed operation.
-        _rh = "git reset --" + "hard HEAD~1"
-        misread = []
-        for verb in (_rh, _st):
-            misread += [
-                "bash <<'EOF'\ncat <<'Y'\nit's\nY\n%s\nEOF" % verb,
-                "bash <<'EOF'\ncat >f <<'Y'\nit's\nY\n%s\nEOF" % verb,
-                "python3 - <<'PY'\nprint('it\\'s')\nimport os\n"
-                "os.system(\"%s\")\nPY" % verb]
-        passed = [cmd for cmd in misread if decide(cmd, dirty) is None]
-        check("gu55 a reset and a stash run by a shell body holding a nested "
-              "quoted heredoc with an apostrophe, and by a Python body with an "
-              "escaped apostrophe, are refused on a dirty tree: %r" % (passed,),
-              not passed and len(misread) == 6)
-        # A body written to a file is data only while nothing in the command
-        # runs the file: a later clause running it makes the body its program.
-        # Each line parses, so the tokenized reading is the one asked.
-        _wr = "cat > probe.sh <<'EOF'%s\n" + _st + "\nEOF%s"
-        ran = (_wr % ("", "\nsh probe.sh"), _wr % ("; bash probe.sh", ""),
-               _wr % (" && ./probe.sh", ""), _wr % ("", "\n. ./probe.sh"))
-        passed = [cmd for cmd in ran if decide(cmd, dirty) is None]
-        check("gu56 a stash in a body written to a file a later clause runs - "
-              "by a shell, as the program word, dot-sourced - is refused on a "
-              "dirty tree, while the same body only written passes: %r"
-              % (passed,), not passed and len(ran) == 4
-              and decide(_wr % ("", ""), dirty) is None)
     finally:
         _rmtree_git_safe(tmp)
 

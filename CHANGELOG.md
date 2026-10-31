@@ -6,7 +6,31 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 
 ## [Unreleased]
 
+### Added
+- **`scope --files +a,b` adds to the files a task holds, and `scope --waive "<path>: <why>"`
+  answers a reader with a reason.** The `+` spelling appends instead of restating the held list (a
+  `+` value beside a plain one is refused), and a waiver is recorded as a dated note carrying
+  `waives`, append-only like the list.
+
 ### Changed
+- **`audit-task start` refuses a first start while a file the task changes has an unanswered
+  reader.** A reader `_impact.owed` finds for a declared file - its suite, a code file quoting a
+  passage of it beside its path, a document heading naming its path - must be in the task's
+  `files` or waived; the refusal names each reader and both answers, `scope <id> --files
+  +<reader>` and `scope <id> --waive "<reader>: <why>"`. A scan git could not complete is passed
+  only by `--force --reason`, on the row.
+- **The guards read a house-form message as text.** A commit or tag message, a `gh pr`/`gh issue`
+  body or title, or an audit-task description, outcome, reason, title or note written as
+  `"$(cat <<'EOF'` ... `EOF` `)"` no longer has its prose refused for naming a command: the
+  history-rewrite and secrets-read guards pass the command through `_config.lift_house_bodies`
+  before they read it, and it removes such a body only when the whole command leaves no doubt -
+  never when the body holds a `)`, the message is piped or redirected, or another clause runs
+  something it does not list. Any other command comes back unchanged, so every other heredoc is
+  read as it was.
+- **A phase lock your own process took under an earlier session id is named as yours.** `acquire`
+  and `release` still refuse it, and the refusal now says the claim is the caller's own process
+  under that earlier session and prints the whole `audit-lock.py release` command, with the
+  session and the pid, that lets it go; a dead drive's lock is not read as a live run.
 - **A `tdd` or `regression` task can no longer be given the empty gate.** `scope --gate-clear`,
   `add --gate-clear` and `--tests-mode tdd` over a gate already cleared are refused with nothing
   written, because such a task owes a case of its own and nothing would run it: it closed with

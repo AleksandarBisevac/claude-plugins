@@ -2968,7 +2968,10 @@ def _decide_core(data, root, cfg):
         return ("allow", "grep: not a secret target")
 
     if tool == "Bash":
-        cmd = str(ti.get("command", ""))
+        # The house-form lift first, so every view below reads the same
+        # command; it changes nothing unless a body is provably a stored
+        # message (`_config.lift_house_bodies`).
+        cmd = _config.lift_house_bodies(str(ti.get("command", "")))
         # EVERY BRANCH BELOW READS A VIEW OF THE COMMAND, NEVER THE RAW TEXT,
         # and which view is the rule's own claim about what counts as evidence.
         # `_runnable_text` drops what nothing executes; `_shell_text` also drops a

@@ -659,15 +659,19 @@ slice is `python3 tools/gate-parity.py --list`.
   resolves against the working directory.
 - **Fail-open for advisory paths, fail-loud for guards** — see `SECURITY.md`
   for the table; keep it true.
-- **A guard grades what a command executes, and its fallback fails closed.** A
-  heredoc body on its way to a consumer that does not run it is data, and so is
-  the house template's body (`_config.lift_house_bodies`, one function every
-  guard shares). A guard that cannot tokenize a line grades all of it but the
-  bodies that function lifts: a fallback that took quoted arguments out as data
-  unless a runner list named the command passed every runner the list missed.
-  `guard-uncommitted.py`'s `executed_text()` is the worked example, and its
-  selftest pins both directions. Nothing enforces this rule for a guard added
-  later, so its author is the check.
+- **A guard reads a Bash command after one transform, and only that one.** The
+  guards that grade a heredoc body (`guard-history-rewrite`,
+  `guard-secrets-read`, and this repo's `guard-uncommitted` and `guard-release`)
+  first hand the command to `_config.lift_house_bodies`, which removes a
+  heredoc body only from the house template's argument of a text sink in its
+  `_HOUSE_SINKS` table, and returns every other command byte for byte; what
+  follows is the guard's own reading, unchanged. Widening a reading
+  so that more bodies count as data was tried, and each widening opened a route
+  the shell runs, so a body that is not the exact template stays shell and a
+  doubt means no lift. A guard added later calls the lift where it takes the
+  command from the payload; nothing enforces that, so its author is the check.
+  `tests/test__config.py`'s `hl` group pins both directions at each guard that
+  calls it today.
 - Every command that mutates the manifest must revalidate
   (`scripts/manifest/validate-manifest.py`, exit codes 0/1/2).
 - **Every claim in output carries the basis that makes it true — and when the
