@@ -26,5 +26,490 @@
     "findings": []
   },
   "summary": null,
-  "tasks": []
+  "tasks": [
+    {
+      "id": "P152.1",
+      "title": "The drive's decisions are made by named planners over fake facts, with no behaviour change",
+      "status": "pending",
+      "description": "Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.1. Extract the decision seams S1-S4 in drive-phase.py into pure planners (_advance_plan, _triage_plan, _pending_turn, _close_plan) reading a facts dict; reads keep their order and their laziness (stored_green spends, note_sessions writes). Add unit blocks up-block, ut-block, uq-block, uc-block to tests/test_drive_phase.py STAGES: one case per arm, both directions, literal expectations, no fixture repository. PLUGIN-BUILD-GUIDE.md drive-phase section gains one paragraph naming the planners and why there is no single decide(). The whole drive suite is green before and after.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: up/ut/uq/uc blocks cover every planner arm in both directions with literal expected values"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py",
+          "python3 tools/sweep-selftests.py tests/test__deps.py",
+          "python3 tools/sweep-selftests.py tests/test__output_lints.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P152.2",
+      "title": "Sign-off, answers and findings are tested as unit cases over the planners, with one end-to-end drive per family",
+      "status": "pending",
+      "description": "Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.2. Convert the 25 blocks listed there (sg sgf sq sq3 sa da cv lf rc hr sh rb db sf sr rr lr ht nf dc dc4 di of bk cn) to unit cases over _triage_plan and _pending_turn with the same label text and id; keep one e2e-signoff block (sign-off clean, one findings round to a fix task and its close, one decline, one boot, one high-risk confirmed in advance). gr/gr4 stay. Each expected value is a literal, never recomputed from the planner. Remove the dropped labels from .github/sweep-costs.json blocks for the suite; re-record nothing.",
+      "files": [
+        "tests/test_drive_phase.py",
+        ".github/sweep-costs.json"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py",
+          "python3 tools/sweep-selftests.py tests/test__harness.py",
+          "python3 tools/sweep-selftests.py --selftest",
+          "python3 tools/sweep-selftests.py tests/test__output_lints.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [
+        "P152.1"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P152.3",
+      "title": "Task steps, stored verdicts, decisions and submit shapes are tested as unit cases over the advance planners, with one end-to-end drive per family",
+      "status": "pending",
+      "description": "Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.3. Convert the 35 blocks listed there to unit cases over the advance predicates and _pending_turn; keep e2e-steps (the canonical three-task drive with its request count dp1-dp3, one red gate to a decision and its block answer dd1/dd2, one stored red replayed then measured again sv, one fix batch through one add --from-file - fx, one review.perTask key per value dk, one scope change sc). dl-block's lock cases keep a real audit-lock.py answer. Literal expectations only. Remove dropped labels from .github/sweep-costs.json.",
+      "files": [
+        "tests/test_drive_phase.py",
+        ".github/sweep-costs.json"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py",
+          "python3 tools/sweep-selftests.py tests/test__harness.py",
+          "python3 tools/sweep-selftests.py --selftest",
+          "python3 tools/sweep-selftests.py tests/test__output_lints.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [
+        "P152.2"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P152.4",
+      "title": "Wave decisions and the CI cadence are tested as unit cases, with three end-to-end drives",
+      "status": "pending",
+      "description": "Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.4. Convert ci wv wz wc wr wp nr wh wt wt5 wo sk to unit cases over ci_due/ci_settle/ci_after_close, wave_width/hooks_width, parked-return and sibling-red routing; keep e2e-wave (two disjoint tasks in one next wv1, one parked return nr, one full cadence cycle with the fake gh ci). wqm and wj stay end-to-end. Do not widen _ci_fake. drive-phase.py changes only if ci_settle's decision is not separable from its gh call, then as one more seam ci_turn(run_state, counter, cadence). Remove dropped labels from .github/sweep-costs.json.",
+      "files": [
+        "tests/test_drive_phase.py",
+        ".github/sweep-costs.json",
+        "plugins/audit/scripts/governance/drive-phase.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py",
+          "python3 tools/sweep-selftests.py tests/test__harness.py",
+          "python3 tools/sweep-selftests.py --selftest",
+          "python3 tools/sweep-selftests.py tests/test__output_lints.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [
+        "P152.3"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P152.5",
+      "title": "test_audit_task.py runs its verbs in-process where the process is not the subject",
+      "status": "pending",
+      "description": "Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.5. Move test_drive_phase.py's _run_in_process/_script_parts/_child_codec/_exit_status to tests/_harness.py as run_script_in_process(path, args, cwd, stdin, env), with its own cases (ip-block moves with the code), and use it in tests/test_audit_task.py fb-block (_cli), at4-block (lv_call, the caller only; the sleepers stay real processes) and at6-block (gs_gate). Keep two real-process runs in fb (the stdin '-' and argv dialect). The restore of argv, cwd, environ and streams stays in a finally. PLUGIN-BUILD-GUIDE.md tests/ paragraph on _harness.py gains one sentence.",
+      "files": [
+        "tests/_harness.py",
+        "tests/test_drive_phase.py",
+        "tests/test_audit_task.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tests/test__harness.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__harness.py: run_script_in_process restores argv, cwd, environ and streams after a raising script and reports its exit status"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__harness.py",
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py",
+          "python3 tools/sweep-selftests.py tests/test_audit_task.py",
+          "python3 tools/sweep-selftests.py --selftest"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [
+        "P152.4"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P152.6",
+      "title": "Per-verb git reads are memoised on the bytes git itself reads",
+      "status": "pending",
+      "description": "Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.6. Memoise resolve_author (usage_ledger.py), _git_config_origins (_panel_viewer.py), current_branch (_id_shape.py) and _worktree_key_uncached (_journal_io.py, through _config.git_place) on a witness made of the files git reads (HEAD, config files), never a timer. Red-first in both directions for every memo: a memo that never invalidates goes red, a memo that is never used goes red. _deps.py GIT_PATH_BASE_EXEMPT rows follow any git call that moves. PLUGIN-BUILD-GUIDE.md sections of each touched module.",
+      "files": [
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/scripts/panel/_panel_viewer.py",
+        "plugins/audit/scripts/manifest/_id_shape.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "tests/test_usage_ledger.py",
+        "tests/test__panel_viewer.py",
+        "tests/test__id_shape.py",
+        "tests/test__journal_io.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__id_shape.py: each memoised read is re-asked after the witness file changes and is not re-asked while it is unchanged"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_usage_ledger.py",
+          "python3 tools/sweep-selftests.py tests/test__panel_viewer.py",
+          "python3 tools/sweep-selftests.py tests/test__id_shape.py",
+          "python3 tools/sweep-selftests.py tests/test__journal_io.py",
+          "python3 tools/sweep-selftests.py tests/test__config.py",
+          "python3 tools/sweep-selftests.py tests/test__deps.py",
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py",
+          "python3 tools/sweep-selftests.py tests/test_audit_task.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P152.7",
+      "title": "xf-block and the at4 sleepers spend only the time their subject needs",
+      "status": "pending",
+      "description": "Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.7, optional and measured first. Profile xf-block; hoist a scan only if one is repeated per case, else decline with the profile. at4-block: a case whose subject is the refusal passes --wait 0, a case whose subject is the wait keeps the default; say which of the sleepers is which before cutting.",
+      "files": [
+        "tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_task.py",
+          "python3 tools/sweep-selftests.py tests/test__locks.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "before-you-claim"
+      ],
+      "risk": "low",
+      "blockedBy": [
+        "P152.5"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P152.8",
+      "title": "The machine-path scan skips a line holding none of a shape's needles, and remembers a file it has scanned",
+      "status": "pending",
+      "description": "Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.8. _MACHINE_PATH_SHAPES rows become (name, pattern, needles) with a compiled NEEDLE alternation beside the table; both readers unpack three; scan_text skips a line NEEDLE does not match and is memoised per process on (rel, surface, sha256(text)). Cases: stripping each needle from every fixture line stops the shape firing; the full-domain equivalence case (detector rows with the prefilter equal those without, over the real tree) goes red when one needle is removed. Add a prove-gates row for the equivalence case. tests/test__journal_io.py's re-export walk reads the table's shape.",
+      "files": [
+        "plugins/audit/scripts/_machine_paths.py",
+        "tools/check-committed-pii.py",
+        "tests/test__machine_paths.py",
+        "tests/test__journal_io.py",
+        "tools/prove-gates.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__machine_paths.py: a shape whose needles are stripped from a line no longer fires; check-committed-pii pi-domain: prefilter rows equal unfiltered rows over the real domain"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__machine_paths.py",
+          "python3 tools/sweep-selftests.py tests/test__journal_io.py",
+          "python3 tools/sweep-selftests.py tools/check-committed-pii.py",
+          "python3 tools/sweep-selftests.py tests/test__deps.py",
+          "python3 tools/prove-gates.py --list"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P152.9",
+      "title": "The dependency lints index each scope, module and file once",
+      "status": "pending",
+      "description": "Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.9. (a) _scope_normalisers(scope) built in one walk, _name_normalisers a lookup in it; (b) _wrapper_map computes the loader and alias name sets once per module; (c) register_citation_violations parses each file once and hands the tree to its readers (text form kept for unit cases); (d) dict_key_contracts builds a per-module scope index. No lint changes its answer. Cases: each index equals a recomputation on a fixture module with a poisoned entry; _name_normalisers still answers the ck3 pair. prove-gates row ck3's anchor follows its line.",
+      "files": [
+        "tools/lints/_deps.py",
+        "tests/test__deps.py",
+        "tools/prove-gates.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__deps.py: each per-scope, per-module and per-file index equals a recomputation over a fixture module with a poisoned entry"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__deps.py",
+          "python3 tools/sweep-selftests.py tests/test__output_lints.py",
+          "python3 tools/prove-gates.py --list"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P152.10",
+      "title": "Each file is parsed once per process for the tree lints and the gate prover, keyed on its content",
+      "status": "pending",
+      "description": "Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.10. _output_lints.parsed_sources(dirs) returns [(rel, path, src, tree)] memoised on (path, sha256(bytes)) - content, never mtime and size, because prove-gates mutates and restores inside one process. The fifteen _output_lints parse sites and prove-gates _gate_sources read it; parsed_sources gets a NOT_A_GATE row. Cases: a rewritten file re-parses, an identical rewrite does not, a poisoned tree is nobody else's. Optional test-side _tree_answer memo. Every prove-gates anchor quoting an ast.parse line is re-pointed; the whole prove-gates table runs once.",
+      "files": [
+        "tools/lints/_output_lints.py",
+        "tools/prove-gates.py",
+        "tests/test__output_lints.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__output_lints.py: parsed_sources re-parses a rewritten file, does not re-parse an identical rewrite, and keeps one tree's poison out of another"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__output_lints.py",
+          "python3 tools/sweep-selftests.py tests/test__deps.py",
+          "python3 tools/sweep-selftests.py tests/test__refs.py",
+          "python3 tools/prove-gates.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "before-you-claim"
+      ],
+      "risk": "high",
+      "blockedBy": [
+        "P152.9"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P152.11",
+      "title": "The stamp-verification suite proves verdict shapes through the judge, in fewer processes, from one repository template",
+      "status": "pending",
+      "description": "Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.11. (a) About 60 shape proofs move to M.head_tree over the fixture repository plus M.red_verdict(run, ctx) with literal run records, each literal the captured output of the kept real proof of its dialect (a comment names which); one real proof per runner dialect and every deliberate-sleep block stay. (b) The sub-second unit blocks merge into six subject blocks (su-readers, su-verdict, su-sweep-table, su-env, su-wording, su-records). (c) _seeded_repo is built once per block process and copied per case. Remove dropped labels from .github/sweep-costs.json; re-record nothing.",
+      "files": [
+        "tests/test_stamp_verification.py",
+        ".github/sweep-costs.json",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_stamp_verification.py",
+          "python3 tools/sweep-selftests.py --selftest",
+          "python3 tools/sweep-selftests.py tests/test__harness.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
 }
