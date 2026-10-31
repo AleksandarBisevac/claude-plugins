@@ -1,7 +1,7 @@
 {
   "id": "P151",
   "title": "CI finishes under eight minutes wall inside GitHub's concurrent-job cap",
-  "status": "in_progress",
+  "status": "done",
   "description": "Carried out of P143, whose drive answered only sign-off after its reviews and would not run a task added by hand: the Windows sweep on five parts per leg runs as its own phase after P143 lands.",
   "desiredOutcome": "A per-run CI run on main finishes under eight minutes wall with no job held by the concurrent-job cap, measured on GitHub, with gate-parity green.",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "b538f8ec83d0828fc234d656380caa682d3fe1b4",
   "branch": "audit/p151-ci-finishes-under-eight-minute",
-  "mergedAt": null,
+  "mergedAt": "2026-10-31T03:49:44Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -754,5 +754,6 @@
     "runId": "2026-10-31T03:47:10Z.7eb993",
     "status": "passed",
     "at": "2026-10-31T03:47:10Z"
-  }
+  },
+  "mergedHead": "5c7c961b48c97afca6ede183b8e77c6276164c7e"
 }
