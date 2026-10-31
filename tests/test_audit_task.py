@@ -21970,6 +21970,83 @@ def _tdd_gate_clear_cases(check):
         check("ocg10 SECOND-DIRECTION CASE: a gate-only task whose gate was "
               "cleared still closes: %r" % ((code, status_of(mp), txt[-200:]),),
               code == 0 and status_of(mp) == "done")
+
+        # ---- the same state with no basis: the phase's gate is the empty one --
+        # A task that declares no gate of its own is measured under its phase's
+        # (`_manifest_io.gate_entries`), and an empty phase gate is a designed,
+        # validator-accepted state. So "no gate runs this task" is reached
+        # WITHOUT a `cleared` basis on the task, and a refusal keyed on that
+        # basis closes these green. Each fixture keeps the task's own gate
+        # missing or empty with no basis, so the only road to an empty gate is
+        # the phase.
+        def phase_empty(mode, own):
+            fx = _pd_fixture()
+            fx["phases"][1]["testGate"] = []
+            tests = {"mode": mode, "expectRedFirst": mode == "tdd",
+                     "add": ["tests/test_fresh.py: the case the fix owes"]}
+            if own is not None:
+                tests["gate"] = own
+            fx["phases"][1]["tasks"][2]["tests"] = tests
+            return fx
+
+        def mk_phase_empty(name, mode, own):
+            proj, mp = mk(name, phase_empty(mode, own))
+            os.makedirs(os.path.join(proj, "tests"), exist_ok=True)
+            with open(os.path.join(proj, "tests", "test_fresh.py"), "w") as fh:
+                fh.write("x = 1\n")
+            return proj, mp
+
+        proj, mp = mk_phase_empty("tg-pe-done", "tdd", None)
+        before = bytes_of(mp)
+        code, txt = run(["done", "P2.4", "--project-dir", proj,
+                         "--commit", _PD_SHA, "--descriptive", "fixed"]
+                        + _NOT_ASKED)
+        check("ocg13 `done` REFUSES a tdd task that declares no gate of its own "
+              "in a phase whose testGate is empty - the gate that would run "
+              "it is empty though no basis reads `cleared` - writes no byte "
+              "and names the remedy (`scope P2.4 --gate`): %r"
+              % ((code, status_of(mp), txt[-260:]),),
+              code == 2 and bytes_of(mp) == before
+              and status_of(mp) == "in_progress"
+              and "scope P2.4 --gate " in txt)
+        check("ocg13b ...and the refusal names the route it took - the empty "
+              "PHASE gate, with the phase's own remedy - rather than claiming "
+              "a `cleared` basis the task does not hold: %r" % (txt[-400:],),
+              "phase P2's testGate" in txt
+              and "retarget P2 --gate " in txt
+              and "gateBasis `cleared`" not in txt)
+        proj, mp = mk_phase_empty("tg-pe-nc", "regression", [])
+        before = bytes_of(mp)
+        code, txt = run(["done", "P2.4", "--no-change", "--reason", "already",
+                         "--project-dir", proj])
+        check("ocg14 ...and a regression task whose own gate is `[]` with no "
+              "basis, closed `--no-change` in the same phase, is refused the "
+              "same way: %r" % ((code, status_of(mp), txt[-260:]),),
+              code == 2 and bytes_of(mp) == before
+              and status_of(mp) == "in_progress"
+              and "scope P2.4 --gate " in txt)
+        # SECOND DIRECTION: the same empty phase gate on a task that owes no
+        # case of its own is the designed state and still closes - a refusal
+        # keyed on the empty resolved gate alone, ignoring the mode, goes red.
+        proj, mp = mk_phase_empty("tg-pe-go", "gate-only", None)
+        code, txt = run(["done", "P2.4", "--project-dir", proj,
+                         "--commit", _PD_SHA, "--descriptive", "docs only"]
+                        + _NOT_ASKED)
+        check("ocg15 SECOND-DIRECTION CASE: a gate-only task with no gate of "
+              "its own in a phase whose testGate is empty still closes: %r"
+              % ((code, status_of(mp), txt[-200:]),),
+              code == 0 and status_of(mp) == "done")
+        # ...and a tdd task with a gate of its own in that phase is measured by
+        # it, so the empty phase gate is no reason to refuse it - a refusal
+        # that read the PHASE gate instead of the resolved one goes red here.
+        proj, mp = mk_phase_empty("tg-pe-own", "tdd", ["test"])
+        code, txt = run(["done", "P2.4", "--project-dir", proj,
+                         "--commit", _PD_SHA, "--descriptive", "fixed"]
+                        + _NOT_ASKED)
+        check("ocg16 SECOND-DIRECTION CASE: a tdd task carrying its own gate "
+              "in a phase whose testGate is empty still closes: %r"
+              % ((code, status_of(mp), txt[-200:]),),
+              code == 0 and status_of(mp) == "done")
     finally:
         _harness.remove_tree(tmp)
 

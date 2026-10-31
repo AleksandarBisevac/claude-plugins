@@ -13,7 +13,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `run-test-gate` answering empty and the record reading `cleared` as though somebody had chosen
   that. This holds for a mode `add` derived from the title as much as one passed. The refusal
   names both remedies - `--gate <command that runs its case>`, or `--tests-mode gate-only` when
-  the task owes no case - and `done` asks the same of a plan that already holds the state.
+  the task owes no case - and `done` asks the same of a plan that already holds the state. `done`
+  asks it of the gate that would actually run the task, not of the stored `cleared` basis, so a
+  `tdd` or `regression` task declaring no gate of its own in a phase whose `testGate` is empty is
+  refused at the close as well - it used to close green with its close resting on its commit alone
+  - and the line names `/audit:phase retarget <phaseId> --gate <command>` beside the task's own
+  remedy. `scope` and `add` leave that route to the close, since a phase's gate is the phase's to
+  change.
   The README's `/audit:task` row and `reference/verbs-in-full.md` say so where they describe
   `--gate-clear`.
 

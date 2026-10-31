@@ -1475,37 +1475,59 @@ def _retarget_gate_contradiction(args):
 _OWES_CASE_MODES = tuple(m for m in _vocab.TESTS_MODE if m != "gate-only")
 
 
-def _owed_case_gate_refusal(tid, tests, remedy):
+def _owed_case_gate_refusal(tid, phase, task, remedy, at_close=False):
     """The refusal line for a task whose mode owes a case of its own and whose
-    gate was cleared on purpose, or None.
+    gate - the one that would actually run it - is empty, or None.
 
-    REFUSED, NOT FALLEN BACK TO THE PHASE GATE. The cleared gate is the one
-    empty gate `_manifest_io.gate_entries` does not replace with the phase's, so
-    a tdd or regression task holding it closes with its own case never run:
-    `run-test-gate` answers `empty-gate`, `commit-task-work` commits bound to
-    no verdict, and the record reads `cleared` as though somebody had chosen
-    that. Writing the phase's gate in its place instead would answer a request
-    for no gate with a gate nobody named - the phase's widest one - and the
-    phase's own gate may be empty too, so the fallback would not even close the
-    state. The two fields contradict each other and only the caller knows which
-    one is wrong, so the line names both answers.
+    ASKED OF THE RESOLVED GATE, NOT OF THE STORED BASIS. `_manifest_io.gate_entries`
+    is the one answer to "which gate measures this task", and it reaches an
+    empty answer by two routes: the task's own gate cleared on purpose
+    (`gateBasis: cleared`), which is never replaced with the phase's, and a task
+    declaring no gate of its own (absent, `[]` or all-blank) whose phase's
+    `testGate` is empty - itself a designed, validator-accepted state. Either way
+    a tdd or regression task closes with its own case never run: `run-test-gate`
+    answers `empty-gate`, `commit-task-work` commits bound to no verdict, and the
+    close would rest on its commit alone. A predicate keyed on the basis saw the
+    first route only.
+
+    REFUSED, NOT FILLED IN. Writing a gate in its place would answer a request
+    for no gate with a gate nobody named, and only the caller knows which field
+    is wrong - the gate, or the mode - so the line names both answers, and on
+    the phase route the phase's gate as a third.
 
     ASKED OF THE STATE A WRITE LEAVES, NOT OF THE FLAG: `--gate-clear` on a tdd
     task, `--tests-mode tdd` over a gate already cleared, and `add` doing both
-    at once all end in the same `tests` block. `done` asks it too, for a plan
-    that already holds the state. `remedy` is the caller's spelling of what to
-    do next, since a task not yet started and one already closing are mended
-    with different calls.
+    at once all end in the same `tests` block. `remedy` is the caller's spelling
+    of what to do next, since a task not yet started and one already closing are
+    mended with different calls.
+
+    THE PHASE ROUTE IS REFUSED AT THE CLOSE ALONE (`at_close`). A write answers
+    for the task's own block; the phase's gate is the phase's, set and cleared
+    by `/audit:phase retarget` at any time, and a task minted under an empty
+    phase gate is the designed state `add` already announces. The close is
+    where the gate that runs the task stops being able to change, so `done`
+    asks both routes - including the one a later phase-gate clear opens over a
+    task the writes let through.
     """
-    tests = tests if isinstance(tests, dict) else {}
-    mode = tests.get("mode")
-    if mode not in _OWES_CASE_MODES or not _mio.gate_cleared(tests):
+    tests = task.get("tests") if isinstance(task, dict) else None
+    mode = tests.get("mode") if isinstance(tests, dict) else None
+    if mode not in _OWES_CASE_MODES:
         return None
+    entries, source = _mio.gate_entries(phase, task)
+    if entries or (source == "phase" and not at_close):
+        return None
+    if source == "task":
+        why = "its gate is cleared (tests.gateBasis `cleared`)"
+    else:
+        pid = (phase.get("id") if isinstance(phase, dict) else None) or "<phaseId>"
+        why = ("it declares no gate of its own and falls back to phase %s's "
+               "testGate, which is empty" % (pid,))
+        remedy = ("%s Or give the phase a gate that runs it (/audit:phase "
+                  "retarget %s --gate <command>)." % (remedy, pid))
     return ("[audit-task] REFUSED: %s is tests.mode %s, which owes a case the "
-            "task writes, and its gate is cleared (tests.gateBasis `cleared`): "
-            "nothing would ever run that case, and the task would close as if "
-            "an empty gate had been chosen for it. %s Nothing written."
-            % (tid, mode, remedy))
+            "task writes, and %s: nothing would ever run that case, and the "
+            "task would close as if an empty gate had been chosen for it. %s "
+            "Nothing written." % (tid, mode, why, remedy))
 
 
 # What a task not yet closing does about it: either field may be the wrong one.
@@ -4337,7 +4359,7 @@ def _locked_add(args, project, config, mpath, title, out):
         out(gate_refusal)
         return E_USAGE
     gate_refusal = (_files_gate_refusal(task, phase, assembled)
-                    or _owed_case_gate_refusal(task_id, task["tests"],
+                    or _owed_case_gate_refusal(task_id, phase, task,
                                                _OWED_CASE_WRITE_REMEDY))
     if gate_refusal:
         out(gate_refusal)
@@ -7740,9 +7762,9 @@ def _locked_done(args, project, config, mpath, tid, out):
     # better than a commit. A started task may still move its gate
     # (`_FORWARD_ONLY`), so the remedy is the gate and not the mode.
     owed = _owed_case_gate_refusal(
-        tid, node.get("tests"),
+        tid, phase, node,
         "Give it a gate that runs its case (/audit:task scope %s --gate "
-        "<command>) and run that gate before closing." % (tid,))
+        "<command>) and run that gate before closing." % (tid,), at_close=True)
     if owed:
         out(owed)
         return E_USAGE
@@ -9806,7 +9828,7 @@ def _batch_build_tasks(doc, ids, keys, phase, first, assembled, project, mpath):
         gate_refusal = (_gate_write_refusal(task["tests"]["gate"], assembled,
                                             project, "tests.gate")
                         or _files_gate_refusal(task, phase, assembled)
-                        or _owed_case_gate_refusal(tid, task["tests"],
+                        or _owed_case_gate_refusal(tid, phase, task,
                                                    _OWED_CASE_WRITE_REMEDY))
         if gate_refusal:
             bad.append("tasks[%d]: %s" % (i, gate_refusal))
@@ -10580,7 +10602,7 @@ def _locked_scope(args, project, config, mpath, tid, out):
     # Asked of the block this call leaves, so the mode and the gate are judged
     # together whichever of the two this call moved - and AFTER the widening
     # guard, so a started task's mode change meets the refusal about the mode.
-    owed = (_owed_case_gate_refusal(tid, node.get("tests"),
+    owed = (_owed_case_gate_refusal(tid, phase, node,
                                     _OWED_CASE_WRITE_REMEDY)
             if tests_writes else None)
     if owed:

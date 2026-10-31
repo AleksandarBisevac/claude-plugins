@@ -62,8 +62,10 @@
         "severity": "med",
         "file": "plugins/audit/hooks/_config.py",
         "issue": "the heredoc split still grades three house-form bodies as shell (read, not run): _STDIN_SHELL matches a script file extension (x.sh) as a shell; _scan_quotes does not track backquote substitutions, so a backquoted house form opens no heredoc; gh pr create --body \"$(cat <<EOF ...)\" is not an accepted head. Third recurrence of the class guard-uncommitted and the shared head were",
-        "resolution": "state the invariant once in _config - a heredoc whose substitution is the whole or part of a quoted argument is data to every guard, whatever command carries the argument - and derive accepted shapes from it rather than from a list of heads; red-first one case per path plus the allow/deny pair kept from the shared-head fix; keep the hook import budget",
-        "fixTask": "P153.12-34e"
+        "resolution": "fixed in P153.12-34e (66b6b90f33f5): state the invariant once in _config - a heredoc whose substitution is the whole or part of a quoted argument is data to every guard, whatever command carries the argument - and derive accepted shapes from it rather than from a list of heads; red-first one case per path plus the allow/deny pair kept from the shared-head fix; keep the hook import budget",
+        "fixTask": "P153.12-34e",
+        "commit": "66b6b90f33f5",
+        "status": "fixed"
       },
       {
         "id": "P153-R6",
@@ -115,7 +117,7 @@
         "resolution": "Rewrite the comment and the check title to name the invariant above `_argument_runs`: the body is kept when the carrier runs its argument by one of the listed routes."
       }
     ],
-    "outcome": "[findings: 12 - 1 high, 6 med, 5 low; 1 with a recorded fix commit]"
+    "outcome": "[findings: 12 - 1 high, 6 med, 5 low; 2 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -552,11 +554,14 @@
     {
       "id": "P153.8-34e",
       "title": "fix P153-R1: The new predicate keys on the stored basis (`_mio.gate_cleared(t...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The new predicate keys on the stored basis (`_mio.gate_cleared(tests)`, i.e. gateBasis == `cleared`) rather than on the gate that actually measures the task. Its own docstring says 'the phase's own gate may be empty too', and in that state the defect the task describes ('A task can close with no gate while the record reads green') is still open by a second shape: a tdd/regression task whose own tests.gate is absent or [] with no basis falls back to its phase (`_manifest_io.gate_entries`, _manifest_io.py:685-692), an empty phase testGate is a designed, validator-accepted state (`_manifest_phases.py:791`, `phase add --gate-clear`), `run-test-gate` answers `empty-gate` with exit 0 (run-test-gate.py:5401-5420), and `done` closes it via `_close_gate`'s arm '%s declares no gate, nor does its phase, so its close rests on its commit alone' (audit-task.py:7289-7313) - `_owed_case_gate_refusal` returns None because gateBasis is not `cleared`. Judged by reading, not run.\n\nResolution asked: Ask the refusal at `done` (and, if wanted, at the writes) of the resolved gate: refuse when tests.mode is tdd/regression and `_mio.gate_entries(phase, node)[0]` is empty, which covers both the cleared gate and the fallback to an empty phase gate; add a case beside ocg8 with a tdd task carrying no own gate in a phase whose testGate is [] (and its gate-only second-direction pair).",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
-        "tests/test_audit_task.py"
+        "tests/test_audit_task.py",
+        "plugins/audit/reference/verbs-in-full.md",
+        "plugins/audit/README.md",
+        "CHANGELOG.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -574,14 +579,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-31T08:23:53Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -592,11 +597,32 @@
         {
           "at": "2026-10-31T06:58:26Z",
           "text": "scope: tests/test_audit_task.py, the suite that tests plugins/audit/scripts/manifest/audit-task.py (python: its import closure reaches plugins/audit/scripts/manifest/audit-task.py)"
+        },
+        {
+          "at": "2026-10-31T08:23:32Z",
+          "text": "its audit-task.py section names the verbs and the module's role; this fix changes a refusal's condition or wording inside an existing verb, adding no verb, flag or module",
+          "waives": "PLUGIN-BUILD-GUIDE.md"
+        },
+        {
+          "at": "2026-10-31T08:23:50Z",
+          "text": "it quotes the decide-high-risk table row of the README; this fix edits only the /audit:task row's refusal sentence",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-10-31T08:23:51Z",
+          "text": "it reads the Unreleased heading; this fix appends to the existing Unreleased entry and never renames the heading",
+          "waives": "tools/release.py"
         }
       ],
       "fixes": [
         "P153-R1"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-31T08:39:31Z.07895a",
+        "status": "passed",
+        "at": "2026-10-31T08:39:31Z"
+      }
     },
     {
       "id": "P153.9-34e",
@@ -641,6 +667,11 @@
         {
           "at": "2026-10-31T06:58:30Z",
           "text": "scope: tests/test_audit_task.py, the suite that tests plugins/audit/scripts/manifest/audit-task.py (python: its import closure reaches plugins/audit/scripts/manifest/audit-task.py)"
+        },
+        {
+          "at": "2026-10-31T08:23:33Z",
+          "text": "its audit-task.py section names the verbs and the module's role; this fix changes a refusal's condition or wording inside an existing verb, adding no verb, flag or module",
+          "waives": "PLUGIN-BUILD-GUIDE.md"
         }
       ],
       "fixes": [
@@ -794,7 +825,7 @@
     {
       "id": "P153.12-34e",
       "title": "fix P153-R5: the heredoc split still grades three house-form bodies as shell ...",
-      "status": "in_progress",
+      "status": "done",
       "description": "the heredoc split still grades three house-form bodies as shell (read, not run): _STDIN_SHELL matches a script file extension (x.sh) as a shell; _scan_quotes does not track backquote substitutions, so a backquoted house form opens no heredoc; gh pr create --body \"$(cat <<EOF ...)\" is not an accepted head. Third recurrence of the class guard-uncommitted and the shared head were\n\nResolution asked: state the invariant once in _config - a heredoc whose substitution is the whole or part of a quoted argument is data to every guard, whatever command carries the argument - and derive accepted shapes from it rather than from a list of heads; red-first one case per path plus the allow/deny pair kept from the shared-head fix; keep the hook import budget",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -822,14 +853,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "66b6b90f33f5",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/hooks/_config.py: (1) the invariant is stated once, in a comment block above the new _argument_runs: a heredoc whose substitution is the whole or part of one double-quoted argument is data whatever command carries the argument, unless that command runs what it is handed. _holds_output_as_text (a list of two vouched consumers) is replaced by _argument_runs/_word_runs_argument, which name the ways a command runs an argument instead: command position, an assignment-shaped partial, a wrapper prefix leaving no program (program_candidates), a shell anywhere in the words ('.' only in program position), an interpreter anywhere that is not a plain script run of its first two words (or any interpreter when an interpreter env option is assigned in the command), a program in the new _RUNS_AN_OPERAND (eval, trap, find, ssh, su, chroot, watch, ...), and git other than a commit/tag message value. The argument may now be part of the quoted string (the old opener-adjacent check is dropped); unquoted or nested substitutions still stay shell. (2) _scan_contexts tracks a backquote as a substitution context, inside double quotes too, and _substitution_runs_body reads the innermost of either opener. (3) _STDIN_SHELL and _STDIN_INTERP anchor their program names to the start of a word (new _PROGRAM_WORD), so a file name ending in a shell name (notes.sh, report.sh, env.zsh) is not a shell; shells by name, by path, after a reserved word, dot-sourced and at a pipe's far side still are. split_heredocs' docstring updated. tests/test__config.py: new group _argument_body_cases, hb6-hb11 (allow/deny per route); the stale comment near tr8c rewritten. tests/test_guard_history_rewrite.py: gh35 re-pointed from 'known limit: cat > probe.sh is refused' to 'cat > probe.sh is allowed AND sh probe.sh <<EOF is refused'. PLUGIN-BUILD-GUIDE.md: the split_heredocs paragraph states the invariant and drops the _holds_output_as_text name. Mutation probes in a throwaway copy (never the worktree), __pycache__ purged per row, each red: _PROGRAM_WORD back to \\b -> hb6 and gh35; anchored to start only -> hb7; only the interp pattern left at \\b -> gh35; backquote untracked -> hb8; backquote opener dropped in _substitution_runs_body -> hb8,hb9; _argument_runs always False -> hb4,hb9,hb11,tr8b; always True -> hb1,hb2,hb3,hb6,hb8,hb9,hb10; _RUNS_AN_OPERAND emptied -> hb4,hb9,hb11,tr8b; program-position-only scan -> hb11 (it survived at first, so a 'taskset 1 bash -c' row was added and it went red); assignment check off -> hb11. Final runs (exit codes read directly): own sweep 3/3 files ok, 725 cases, exit 0; the dependants' suites (test_guard_secrets_read, guard-release, test__refs, test_guard_bash_writes, test_guard_capabilities, test_guard_edits, test_detect_plan_skip, test_journal_writes, require-claim-block, test__output_lints, test__deps, test__affected_tests, test__doctor_trail) exit 0; bench-hooks --gate exit 0 (measured on one interpreter, 3.14, as its output says); ruff 0; vermin 0. GATE NOTE: the literal gate command exits 2 because tests/test_guard_uncommitted.py does not exist (sweep: 'is not a suite this sweep covers ... nothing was run'). guard-uncommitted's cases live inline in .claude/hooks/guard-uncommitted.py --selftest, so the sweep was run with that path instead; creating tests/test_guard_uncommitted.py would be an orphan suite. OUT OF SCOPE, REFUSED BY THE PLAN GATE: plugins/audit/hooks/guard-history-rewrite.py docstring (the 'WHAT THAT GIVES UP' paragraph) still says the .sh redirect spelling is refused and that gh35 records it as a known limit; that is now false. The Edit was refused: '[require-plan] plugins/audit/hooks/guard-history-rewrite.py is outside task P153.12-34e, the task this worktree is bound to'. It needs a follow-up edit, which would replace that sentence with: the .sh spelling is allowed too, because a program in a heredoc's head is a word, while sh probe.sh <<EOF still feeds a shell; gh35 holds both. DEPENDANTS: _config.py's importers (guard-release, detect-plan-skip, guard-bash-writes, guard-capabilities, guard-edits, guard-history-rewrite, guard-secrets-read, journal-writes) are still correct, and their suites are green. The names used elsewhere (_ask_rev_parse, _call_start_path, _command_facts, _handed_command) are unchanged. The removed _holds_output_as_text had no reader outside _config (grep over plugins, .claude, tools and tests). guard-secrets-read is narrowed in the same direction: a body written to x.sh is data there, as one written to x.py already was. Its suite is green and no case pinned the old reading. tests/test__config.py: no shared name was renamed; its path in sweep-costs.json is unchanged. tests/test_guard_history_rewrite.py: only gh35's assertion changed, and no shared name. tools/prove-gates.py: unchanged, because the new functions are private and have no lint shape, so no row is owed. PLUGIN-BUILD-GUIDE.md: only the _config paragraph changed, and the waived suites test__affected_tests and test__doctor_trail are green. tests/test_guard_uncommitted.py: does not exist (see the gate note); guard-uncommitted's inline gu48 case for 'cat > x.sh ... ./x.sh it's' is still denied by its own reader.",
+        "descriptive": "One stated invariant replaces the vouched-head list: a heredoc inside a quoted argument is data to every guard unless the carrying command runs it, so backquoted forms, gh --body and .sh file names no longer grade a body as shell, while shells, eval, interpreters' -c, runners and git config stay shell"
       },
       "startedAt": "2026-10-31T07:00:03Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-31T08:23:12Z",
+      "verifiedBy": [
+        "hb6/hb7: a file named *.sh/*.zsh in a heredoc head is data, while a shell in program position (by name, path, after a reserved word, dot-sourced, piped to) still runs the body",
+        "hb8/hb9: a backquoted house form is data at the split and through git_invocations, while a backquoted body under bash -c, eval, command position, unquoted, or with a shell head is kept, and a stash after it is returned once",
+        "hb10/hb11: a house-form body is data for gh pr create/issue comment, glued to an option, as part of the argument, for a program by path and behind a wrapper, while a shell behind an unlisted wrapper, chroot, find -exec, ssh, export/make assignments, trap, sudo, env -S, watch and node -e keep it",
+        "gh35 (re-pointed): cat > probe.sh is allowed, sh probe.sh <<EOF is refused"
+      ],
       "notes": [
         {
           "at": "2026-10-31T06:58:37Z",
@@ -868,6 +904,18 @@
         "runId": "2026-10-31T08:12:55Z.9934fc",
         "status": "passed",
         "at": "2026-10-31T08:12:55Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "66b6b90f33f5",
+        "at": "2026-10-31T08:23:12Z",
+        "return": "docs/audit/evidence/returns/P153.12-34e/20261031T070003Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-31T07:15:36Z",
+        "basis": "`python3 tests/test__config.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 381 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - hb6 (house FAIL), hb8 (house FAIL), hb10 (house FAIL): SELFTEST FAILED: 378/381 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     }
   ],

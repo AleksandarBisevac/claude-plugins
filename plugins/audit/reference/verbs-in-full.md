@@ -1287,7 +1287,14 @@ gate, so `scope --gate-clear` (and `add --gate-clear`, `--tests-mode tdd` over a
 cleared) refuse with nothing written - a mode `add` derived from the title counts the same.
 The line names both remedies: `--gate <command that runs its case>`, or `--tests-mode
 gate-only` when the task owes no case. `done` asks the same of a plan that already holds the
-state, and refuses to close the task until it has a gate that runs its case.
+state, and refuses to close the task until it has a gate that runs its case. It asks of the gate
+that would actually run the task (`_manifest_io.gate_entries`), not of the stored basis, so it
+also refuses a `tdd` or `regression` task that declares no gate of its own (absent, `[]` or
+all-blank) in a phase whose `testGate` is empty - the fallback leaves nothing to run that case
+either - and names `/audit:phase retarget <phaseId> --gate <command>` beside the task's own
+remedy. The writes do not refuse that second route: a phase's gate is the phase's, set and
+cleared by `retarget` at any time, and a task minted under an empty phase gate is the state
+`add` already announces, so the close is where it is asked.
 
 **Why the verb exists.** `/audit:sync pull sprint` imports tasks with `files: []` and
 tells the reader to scope them before running. Nothing could: `add` creates, `cancel`
