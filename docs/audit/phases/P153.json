@@ -1,7 +1,7 @@
 {
   "id": "P153",
   "title": "The 3.8.0 med defects are fixed: locks, guard false positive, the affected listing, dependants at mint, and the empty task gate",
-  "status": "in_progress",
+  "status": "done",
   "description": "D9: a med defect holds a release. Register entries F754, F800, F809 (open part), F792 (with its P151 recurrences) and F779, each verified open against main on 2026-10-29/31, plus F821's release-tier flake in tests/test__locks.py.",
   "desiredOutcome": "Each entry's Do is met with a case that goes red on the defect, the register status of each reads FIXED with its commit, and release-tier CI is green on the phase's landing commit.",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "d981a743ca219bde9737f5bec0d9f23cd4c36c09",
   "branch": "audit/p153-the-3-8-0-med-defects-are-fixe",
-  "mergedAt": null,
+  "mergedAt": "2026-10-31T15:37:23Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -1917,5 +1917,6 @@
     "runId": "2026-10-31T15:35:25Z.f07f56",
     "status": "passed",
     "at": "2026-10-31T15:35:25Z"
-  }
+  },
+  "mergedHead": "edcec90aa58c8b47fbd886916a5acbbe4965dee7"
 }

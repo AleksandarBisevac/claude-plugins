@@ -986,7 +986,7 @@
     {
       "id": "P153",
       "title": "The 3.8.0 med defects are fixed: locks, guard false positive, the affected listing, dependants at mint, and the empty task gate",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P153.json"
     }
   ],
