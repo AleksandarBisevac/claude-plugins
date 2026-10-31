@@ -611,22 +611,26 @@ Each hook does `sys.path.insert(0, dirname(__file__)); import _config`. `--selft
 
 `split_heredocs` is the shared door to a heredoc body: `guard-history-rewrite`,
 `guard-secrets-read` and this repo's `guard-release` read it through `runnable_text` or directly,
-so how it grades a body is how each of them does. A marker inside a
-`$( )` or a backquote is read from the **innermost** open substitution: that command's stdin is
-the body, so it is the head, and the opener around it is only the route the output takes. The
-output is then a word of the enclosing command, and one invariant decides it, stated once above
-`_TEXT_SINKS`, and it fails closed: a heredoc whose substitution is the whole or part of one
-double-quoted argument is data **only** when `sink_carries` finds a text sink storing it — a
-program, verb and option from the one table `_TEXT_SINKS` (a git commit or tag message, gh's body
-or title, an audit-task prose option, which `hb14` holds to the script's own `_PROSE_HELP`
-options), every word naming it literal, nothing at the command's level redefining a word, and its
-clause ending without handing the sink's output to a pipe, a process substitution or an enclosing
-group. Every other carrier keeps the body as shell — a runner nobody listed, an expansion as the
-program word, a script run by path — and so does an unquoted or nested substitution, or one whose
-own command is not `cat`. A program named in a head is a word, never the tail of one, so a file
+so how it grades a body is how each of them does. A body inside a `$( )` or a backquote is data
+**only** in the house template, and one function recognises it whole, `lift_house_bodies`, which
+`split_heredocs` calls first and `.claude/hooks/guard-uncommitted.py` grades an untokenizable line
+by: `"$(cat <<'DELIM'` with nothing after the marker on its line, the body (no `$(` or backquote
+when DELIM is unquoted), `DELIM` alone on its own line, then `)"` — the argument of a text sink
+`sink_carries` finds, by the invariant stated once above `_TEXT_SINKS`: a program, verb and option
+from that one table (a git commit or tag message, gh's body or title, an audit-task prose option,
+which `hb14` holds to the script's own `_PROSE_HELP` options), every word naming it literal,
+nothing at the command's level redefining a word, and its clause ending without handing the sink's
+output to a pipe, a process substitution or an enclosing group. Every other spelling keeps the body
+as shell — anything after the marker on its line, `cat` with an operand, text around the
+substitution inside the quote — and so does every other carrier: a runner nobody listed, an
+expansion as the program word, a script run by path. A body in any other substitution is read from
+the **innermost** one, whose command is the head: an interpreter reading its program makes it code,
+anything else shell. A heredoc delimiter word with anything after its identifier (`<<E-X`,
+`<<E'X'`) is not split at all, so the lines the shell runs after its real terminator stay text. A program named in a head is a word, never the tail of one, so a file
 named `notes.sh` is not a shell, while a `.sh` script in program position is. Script words
 are read as the shell hands them over (`shell_words`), so a quoted script path is the file the
-interpreter runs. `tests/test__config.py`'s `hb` group holds both directions of each route.
+interpreter runs. `tests/test__config.py`'s `hb` group holds both directions of each route, and
+its `ht` group the template's.
 
 `hook_plugin_root()` / `hook_plugin_version()` / `stamp_running_plugin()` /
 `running_plugin_stamps()` are the writer and the reader of the running-copy stamp.

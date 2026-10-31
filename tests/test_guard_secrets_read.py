@@ -4941,6 +4941,55 @@ def _cases(check):
                 _want, {"tool_name": "Bash", "cwd": str(tmp),
                         "tool_input": {"command": _hcmd}})
 
+    # (hm) ONLY THE EXACT HOUSE TEMPLATE IS DATA. Each block row was measured
+    # passing: the sink verdict read the text before the heredoc marker and
+    # never the rest of the marker's line, and the delimiter reader took the
+    # head of a longer word as the terminator.
+    def _hm_sub(tail, delim="'EOF'", term="EOF"):
+        return "\"$(cat <<%s%s\n%s\n%s\n)\"" % (delim, tail, _hp_read, term)
+
+    _hm_task = "python3 \"/opt/audit/scripts/manifest/audit-task.py\" add P1 "
+    for _hid, _want, _hcmd, _what in (
+            ("hm1", "block", "git commit -m " + _hm_sub(" | sh"),
+             "the marker's line pipes the body to a shell"),
+            ("hm2", "block", "git commit -m " + _hm_sub(" | bash -s"),
+             "...to a shell reading stdin"),
+            ("hm3", "block", "git commit -m " + _hm_sub(" 2>&1 | sh"),
+             "...after folding stderr"),
+            ("hm4", "block", "git commit -m " + _hm_sub(" > >(sh)"),
+             "...into a process substitution running a shell"),
+            ("hm5", "block", "git commit -m " + _hm_sub(" | tee >(bash)"),
+             "...through tee into a process substitution"),
+            ("hm6", "block", "git commit -m " + _hm_sub(" | xargs -0 sh -c"),
+             "...through xargs to a shell's -c"),
+            ("hm7", "block", "git commit -m " + _hm_sub(" \\\n| sh"),
+             "...on the next line after a continuation"),
+            ("hm8", "block", "git commit -m \"clean\" -m "
+             + _hm_sub(" | sh", "'F'", "F"),
+             "a clean first message, then a second that pipes"),
+            ("hm9", "block", "git commit --message=" + _hm_sub(" | sh"),
+             "the long option glued"),
+            ("hm10", "block", "gh pr create --title t --body "
+             + _hm_sub(" | sh"), "a pull request body"),
+            ("hm11", "block", _hm_task + "--description " + _hm_sub(" | sh"),
+             "an audit-task description"),
+            ("hm12", "block", "cat > notes.md <<E-X\nhello\nE-X\n%s\nE"
+             % _hp_read, "a hyphenated delimiter word is not cut at its head"),
+            ("hm13", "block", "cat > notes.md <<E'X'\nhello\nEX\n%s\nE"
+             % _hp_read, "...nor a partly quoted one"),
+            ("hm14", "block", "git commit -m \"$(cat <<'E'X\nmsg\nEX\n)\"\n%s\n"
+             "E\n)\"" % _hp_read, "...nor one in the house form"),
+            ("hm15", "block", "git commit -m \"$(cat notes.txt - <<'EOF'\n%s\n"
+             "EOF\n)\"" % _hp_read, "cat with an operand is not the template"),
+            ("hm16", "allow", "git commit -m " + _hm_sub("", "\"EOF\""),
+             "the house form with a double-quoted delimiter"),
+            ("hm17", "allow", "git commit -m " + _hm_sub("", "EOF"),
+             "...and with an unquoted one whose body expands nothing")):
+        _expect("%s a body naming a secret read, %s: %s" % (_hid, _what,
+                                                             _want),
+                _want, {"tool_name": "Bash", "cwd": str(tmp),
+                        "tool_input": {"command": _hcmd}})
+
     # (lw) A SHELL WRITE INTO A LINKED WORKTREE IS JUDGED AGAINST THAT
     # WORKTREE'S PLAN. The Edit arm (require-plan) re-rooted onto the worktree
     # while this arm skipped every target outside CLAUDE_PROJECT_DIR - so an

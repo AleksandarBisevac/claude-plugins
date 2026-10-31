@@ -2306,8 +2306,15 @@ def effective_cwd(cmd, payload_cwd):
 # `(?<!<)<<(?!<)`: a here-string (`sh <<<'EOF'`) is not a heredoc, and reading
 # one as a heredoc dropped the lines after it - commands the shell runs - as a
 # body nothing executes.
+#
+# THE DELIMITER WORD ENDS WHERE THE SHELL'S WORD ENDS, and a word with anything
+# after its identifier is no marker here at all. The shell's terminator for
+# `<<E-X` is `E-X` and for `<<E'X'` is `EX`; reading either as `E` ended the
+# body at a line `E` the shell never stops at, and dropped as data the lines
+# the shell runs after its real terminator. Not split, those lines stay text.
 _HEREDOC_START = re.compile(
-    r"(?<!<)<<(?!<)-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+    r"(?<!<)<<(?!<)-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1"
+    r"(?=[\s;&|<>()`]|$)")
 # The head of a heredoc line, when what it invokes reads its PROGRAM from stdin.
 # `python3 - <<PY`, `python3 <<PY`, `node <<JS`, `bash -s <<EOF` are all the same
 # capability as `python -c`, spelled differently; `git commit -F - <<MSG` and
@@ -2991,13 +2998,13 @@ def _shell_level(text):
 
 
 # --- a substitution's output as an argument: data only to a text sink -----------
-# A HEREDOC WHOSE SUBSTITUTION IS THE WHOLE OR PART OF ONE DOUBLE-QUOTED ARGUMENT
-# IS DATA ONLY WHEN A TEXT SINK CARRIES IT, AND EVERYTHING ELSE STAYS SHELL. A
-# guard fails closed, so the question is never "does this carrier run what it is
-# handed" - a list of the ways a program runs an argument is never finished
-# (a runner nobody listed, an expansion as the program word, a script whose
-# output is then run) - but "is this carrier one that is known to store it as
-# text". Three things must all hold:
+# A HOUSE-TEMPLATE SUBSTITUTION (`lift_house_bodies`, below) THAT IS THE WHOLE OF
+# ONE DOUBLE-QUOTED ARGUMENT IS DATA ONLY WHEN A TEXT SINK CARRIES IT, AND
+# EVERYTHING ELSE STAYS SHELL. A guard fails closed, so the question is never
+# "does this carrier run what it is handed" - a list of the ways a program runs
+# an argument is never finished (a runner nobody listed, an expansion as the
+# program word, a script whose output is then run) - but "is this carrier one
+# that is known to store it as text". Three things must all hold:
 #
 #   * the carrier is a sink in `_TEXT_SINKS` - a program, the words that select
 #     its verb, and the options whose VALUE is text it stores - and the
@@ -3012,11 +3019,12 @@ def _shell_level(text):
 #     end, never a pipe or a process substitution. A sink prints what it stored
 #     (a commit its subject, gh a title), so a pipe to a shell runs the body.
 #
-# The substitution's own command must be `cat` with literal words, so what the
+# The substitution itself is the template, recognised whole, so what the
 # argument receives is the body itself. KNOWN COST, stated rather than hidden: a
-# body handed to a program the table does not name is graded as shell, so a
-# house-form body there whose line opens with a refused verb is refused. The way
-# past it is a row in `_TEXT_SINKS`, for a program whose option stores text.
+# body handed to a program the table does not name, or in any spelling but the
+# template, is graded as shell, so such a body whose line opens with a refused
+# verb is refused. The way past it is the template, and a row in `_TEXT_SINKS`
+# for a program whose option stores text.
 _GH_BODY_TITLE = ("-b", "--body", "-t", "--title")
 _GH_BODY = ("-b", "--body")
 _GH_NOTES_TITLE = ("-n", "--notes", "-t", "--title")
@@ -3152,34 +3160,123 @@ def sink_carries(text, start, cmd):
 
 
 def _substitution_runs_body(prefix):
-    """(verdict, where the argument opens) for a heredoc whose marker `prefix`
-    (the command up to the marker) leaves inside a `$( )` or a backquote;
-    (False, None) when it is in none.
+    """"shell" or "code" for a heredoc whose marker `prefix` (the command up to
+    the marker) leaves inside a `$( )` or a backquote; False when it is in none.
 
     The body is the stdin of the INNERMOST substitution's own command, so the
     head is read from there - the opener enclosing it is the route the output
-    takes, not something that runs the body. When that head runs its stdin, it
-    answers ("shell" or "code"). When the head is `cat` with literal words, one
-    substitution open inside one double-quoted argument, the verdict is "sink":
-    data if `sink_carries` says so of the finished text. Anything else is
-    "shell"."""
+    takes. A head that runs its stdin as a program in another language answers
+    "code"; every other body in a substitution is "shell". The one shape that
+    is data, the house template, never reaches here: `lift_house_bodies` has
+    taken its body out of the text first."""
     _m, opens, at = _scan_contexts(prefix, ())
     subs = [k for k, ctx in enumerate(opens) if ctx in "(`"]
     if not subs:
-        return False, None
+        return False
     inner = at[subs[-1]]
     start = inner + (2 if prefix.startswith("$(", inner) else 1)
-    head = prefix[start:].strip()
-    runs = _head_runs_body(head)
-    if runs is not None:
-        return runs, None
-    if len(opens) != 2 or opens[0] != '"' or opens[1] not in "(`":
-        return "shell", None
-    words = shell_words(head)
-    if (not words or words[0] != "cat"
-            or any(ch in head for ch in _NOT_LITERAL)):
-        return "shell", None
-    return "sink", at[0]
+    return "code" if _head_runs_body(prefix[start:].strip()) == "code" else "shell"
+
+
+# --- the house template: the one heredoc in a substitution that is data ---------
+# A BODY IN A SUBSTITUTION IS DATA ONLY IN ONE SPELLING, RECOGNISED WHOLE. Reading
+# after reading asked which carriers run a body, then which sinks store one,
+# each from the text BEFORE the marker - and each was passed by a spelling the
+# reading never looked at: the rest of the marker's own line (`cat <<'EOF' |
+# sh`, a redirect, a process substitution, a continuation), cat with an
+# operand, text around the substitution inside the quote. So nothing is asked
+# about a shape here; a substitution either IS the template or its body is
+# shell:
+#
+#   "$(cat <<'DELIM'          the double quote opening the argument at the
+#                             command's own level, `$(` or a backquote, `cat`,
+#                             the marker - `'DELIM'`, `"DELIM"` or `DELIM` -
+#                             and nothing after it on the line;
+#   <body lines>              with an unquoted DELIM, no `$(` or backquote;
+#   DELIM                     the terminator, alone and exact, on its line;
+#   )" ...                    the close and the argument's closing quote,
+#                             first on the next line;
+#
+# and the argument is the value of a text sink's option, by `sink_carries`,
+# asked of the command with every heredoc body taken out.
+_HOUSE_OPENING = re.compile(r"\"(\$\(|`)cat[ \t]+$")
+
+
+def _house_marker(line, m, after, lines, end):
+    """The index in `line` of the double quote opening a house-template
+    argument whose marker is `m`, read with the quoting `after` open at the
+    marker and the body ending at `lines[end]` - or None when any part of the
+    template differs."""
+    opening = _HOUSE_OPENING.search(line[:m.start()])
+    if opening is None or line[m.end():].strip(" \t"):
+        return None
+    closer = ")" if opening.group(1) == "$(" else "`"
+    if (after != ('"', "(" if closer == ")" else "`")
+            or line.startswith("<<-", m.start())
+            or lines[end] != m.group(2)
+            or end + 1 >= len(lines)
+            or not lines[end + 1].startswith(closer + '"')):
+        return None
+    return opening.start()
+
+
+def lift_house_bodies(cmd):
+    """(the command with each house-template body taken out, the bodies taken).
+
+    THE ONE READER of which heredoc body inside a substitution is data, for
+    every guard: `split_heredocs` calls it first, and a guard that cannot
+    tokenize a line grades what is left. The template is stated above; any
+    difference from it leaves the body in the text, where `split_heredocs`
+    grades it as shell. In the text returned, a lifted heredoc's marker, body
+    and terminator are gone and the substitution reads `"$(cat \\n)"`, which
+    every tokenizer here reads as one argument.
+
+    The lines are walked as `split_heredocs` walks them, quoting carried across
+    them, so a marker counts only where the shell reads one, and every other
+    heredoc's body is skipped rather than read as syntax."""
+    text = cmd or ""
+    if "<<" not in text:
+        return text, []
+    lines = text.split("\n")
+    # (lifted text, text kept when not lifted, candidate number or None)
+    pieces, skeleton, candidates = [], [], []
+    at, i, quote = 0, 0, ()
+    while i < len(lines):
+        line = lines[i]
+        m, after = _unquoted_heredoc_start(line, quote)
+        end = None
+        if m:
+            end = next((j for j in range(i + 1, len(lines))
+                        if lines[j].strip() == m.group(2)), None)
+        if end is None:
+            pieces.append((line, line, None))
+            skeleton.append(line)
+            at += len(line) + 1
+            quote = after if not m else _quote_after(line, quote)
+            i += 1
+            continue
+        opens = _house_marker(line, m, after, lines, end)
+        body = "\n".join(lines[i + 1:end])
+        if opens is not None and not m.group(1) and _LIVE_SUBSTITUTION.search(
+                body):
+            opens = None
+        head = line[:m.start()]
+        if opens is not None:
+            candidates.append((at + opens, body))
+            pieces.append((head, "\n".join(lines[i:end + 1]),
+                           len(candidates) - 1))
+        else:
+            pieces.append(("\n".join(lines[i:end + 1]),) * 2 + (None,))
+        skeleton.append(head + " " + line[m.end():])
+        at += len(skeleton[-1]) + 1
+        quote = _quote_after(line[m.end():], after)
+        i = end + 1
+    whole = "\n".join(skeleton)
+    lifted = [k for k, (start, _body) in enumerate(candidates)
+              if sink_carries(whole, start, whole)]
+    view = "\n".join(piece[0] if piece[2] in lifted else piece[1]
+                     for piece in pieces)
+    return view, [candidates[k][1] for k in lifted]
 
 
 def _unquoted_heredoc_start(line, stack):
@@ -3256,14 +3353,12 @@ def split_heredocs(cmd, pipe_data=False):
     The head is read by program too (`_head_runs_body`), so a wrapper or an
     option in front of an interpreter does not turn its program into data.
 
-    A MARKER INSIDE A `$( )` OR A BACKQUOTE IS READ FROM THE INNERMOST
-    SUBSTITUTION (`_substitution_runs_body`). Matching the `$(` that encloses
-    `cat` as indirection graded every house-form commit or description body as
-    shell, and a body line opening with a git verb became a refused command.
-    Whether the output is then data is the invariant stated above
-    `_TEXT_SINKS`: only a literal text sink, whose clause hands its output to
-    nothing that runs it, makes it data, and that is read once the whole
-    command is, by `sink_carries`.
+    A BODY INSIDE A `$( )` OR A BACKQUOTE IS DATA ONLY IN THE HOUSE TEMPLATE.
+    `lift_house_bodies` takes those bodies out first - the template recognised
+    whole, its argument carried by a literal text sink whose clause hands its
+    output to nothing that runs it (`sink_carries`) - and every other body in a
+    substitution is shell, or code when the innermost substitution's own
+    command is an interpreter reading its program (`_substitution_runs_body`).
 
     A MARKER COUNTS ONLY OUTSIDE QUOTES, as the shell reads it, with the quote
     state carried across lines: a `<<` inside a quoted string opens nothing, and
@@ -3288,8 +3383,8 @@ def split_heredocs(cmd, pipe_data=False):
     """
     if "<<" not in (cmd or ""):
         return (cmd or ""), [], []
-    lines = (cmd or "").split("\n")
-    kept, code, shell, pending, i, quote = [], [], [], [], 0, ()
+    lines = lift_house_bodies(cmd)[0].split("\n")
+    kept, code, shell, i, quote = [], [], [], 0, ()
     while i < len(lines):
         line = lines[i]
         m, after = _unquoted_heredoc_start(line, quote)
@@ -3313,8 +3408,7 @@ def split_heredocs(cmd, pipe_data=False):
             continue
         head = line[:m.start()].strip()
         tail = line[m.end():]
-        runs, opens_at = _substitution_runs_body(
-            "\n".join(kept + [line[:m.start()]]))
+        runs = _substitution_runs_body("\n".join(kept + [line[:m.start()]]))
         if runs is False:
             runs = _head_runs_body(head)
         quote = _quote_after(tail, after)
@@ -3324,14 +3418,7 @@ def split_heredocs(cmd, pipe_data=False):
         kept.append(line[:m.start()] + " " + tail)
         body = "\n".join(lines[i + 1:end])
         live = not m.group(1) and _LIVE_SUBSTITUTION.search(body)
-        if runs == "sink":
-            # Data only once the whole command is read: whether the sink's
-            # clause ends cleanly is in text that comes after this body.
-            if live:
-                shell.append(body)
-            else:
-                pending.append((body, opens_at))
-        elif _STDIN_SHELL.search(head) or runs == "shell":
+        if _STDIN_SHELL.search(head) or runs == "shell":
             shell.append(body)
         elif _STDIN_INTERP.search(head) or runs == "code":
             code.append(body)
@@ -3347,10 +3434,7 @@ def split_heredocs(cmd, pipe_data=False):
         elif live:
             shell.append(body)
         i = end + 1
-    text = "\n".join(kept)
-    shell.extend(body for body, opens_at in pending
-                 if not sink_carries(text, opens_at, text))
-    return text, code, shell
+    return "\n".join(kept), code, shell
 
 
 def runnable_text(cmd, pipe_data=False):

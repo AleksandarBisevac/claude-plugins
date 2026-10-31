@@ -3346,20 +3346,20 @@ def _argument_body_cases(check):
         return [(what, M.split_heredocs(cmd, pipe_data)) for what, cmd in rows]
 
     # Route one: a file name is not a program. A word ending in a shell's
-    # name after a dot is a file the head names - a redirect target, a file
-    # `cat` reads, an argument of a script run - and the body stays data.
+    # name after a dot is a file the head names - a redirect target or an
+    # argument of a script run - and the body stays data. A file `cat` reads
+    # inside a substitution is no longer on this list: that substitution is
+    # not the house template, so its body is shell (`_house_template_cases`).
     files = (
         ("a redirect target", "cat > notes.sh <<'EOF'\n%s" % body),
-        ("a file cat reads before stdin, in the house form",
-         "git commit -m \"$(cat notes.sh - <<'EOF'\n%s\n)\"" % body),
         ("an argument of a plain script run reading stdin",
          "python3 x.py --out report.sh - <<'EOF'\n%s" % body),
         ("a zsh file", "cat > env.zsh <<'EOF'\n%s" % body),
     )
     wrong = [(what, parts) for what, parts in split_all(files) if kept(parts)]
     check("hb6 a word that ENDS IN a shell's name after a dot is a file, not "
-          "the shell: a body written to it, or handed with it to cat or a "
-          "script, is data: %r" % (wrong,), not wrong and len(files) == 4)
+          "the shell: a body written to it, or handed with it to a "
+          "script, is data: %r" % (wrong,), not wrong and len(files) == 3)
     shells = (
         ("a shell running a script reads stdin",
          "sh notes.sh <<'EOF'\n%s" % body),
@@ -3429,8 +3429,6 @@ def _argument_body_cases(check):
         ("gh pr create", "gh pr create --title t --body " + sub),
         ("gh issue comment, short option", "gh issue comment 5 -b " + sub),
         ("glued to an option", "gh pr create --body=" + sub),
-        ("part of the argument",
-         "gh pr create --body \"Summary: $(cat <<'EOF'\n%s\n) - end\"" % body),
         ("a git commit message", "git commit -m " + sub),
         ("a git commit message, long and glued",
          "git commit --message=" + sub),
@@ -3447,9 +3445,9 @@ def _argument_body_cases(check):
               if inv is None or any(verb == "stash" for verb, _a in inv)]
     check("hb10 a house-form body is data when a text sink from the one "
           "table carries it - git commit/tag's message, gh's body or title - "
-          "glued to its flag, part of the argument, or followed by more "
+          "glued to its flag, or followed by more "
           "arguments and clauses: %r" % ((wrong, leaked),),
-          not wrong and not leaked and len(carried) == 10)
+          not wrong and not leaked and len(carried) == 9)
     runners = (
         # A wrapper named in no table: only the reading of EVERY word finds
         # the shell behind it, so this row is red under a program-position-only
@@ -3578,6 +3576,143 @@ def _argument_body_cases(check):
           not lost and len(identity) == 19 and len(heads) == 4)
 
 
+def _house_template_cases(check):
+    """THE HOUSE TEMPLATE, AND NOTHING ELSE, IS DATA. A heredoc body inside a
+    substitution is lifted out of the command text by one function,
+    `lift_house_bodies`, and only when the substitution is the exact template:
+    `"$(cat <<'DELIM'` with nothing after the marker on its line, the body,
+    `DELIM` alone on its line, then `)"` closing the double-quoted argument of
+    a literal text sink. Every deviation leaves the body in the text, where it
+    is graded as shell. The deny rows are spellings a reading of the text
+    BEFORE the marker let through; the allow rows are the house forms a
+    deny-everything fix reddens, which is the second direction."""
+    _qg = "git " + "stash"
+    line = _qg + " drop"
+    body = "A body line can open with the verb.\n" + line
+    script = "/opt/audit/scripts/manifest/audit-task.py"
+    _bq = "`"
+
+    def sub(tail="", delim="'EOF'", term="EOF", text=body):
+        return "\"$(cat <<%s%s\n%s\n%s\n)\"" % (delim, tail, text, term)
+
+    house = (
+        ("a commit message", "git commit -m " + sub()),
+        ("a commit message, long and glued", "git commit --message=" + sub()),
+        ("an annotated tag", "git tag -a v1 -m " + sub()),
+        ("an audit-task description",
+         "python3 \"%s\" add P1 --title t --description %s" % (script, sub())),
+        ("an audit-task reason",
+         "python3 '%s' block P1.1 --reason %s" % (script, sub())),
+        ("a pull request body", "gh pr create --title t --body " + sub()
+         + " --base main"),
+        ("gh's short body option", "gh issue comment 5 -b " + sub()),
+        ("between clauses", "git add x && git commit -m " + sub()
+         + " && git log -1"),
+        ("a double-quoted delimiter", "git commit -m "
+         + sub(delim="\"EOF\"")),
+        ("an unquoted delimiter whose body expands nothing",
+         "git commit -m " + sub(delim="EOF")),
+        ("the backquoted form", "git commit -m \"%scat <<'EOF'\n%s\nEOF\n%s\""
+         % (_bq, body, _bq)),
+    )
+    got = [(what, M.lift_house_bodies(cmd)) for what, cmd in house]
+    wrong = [(what, lifted) for what, (view, lifted) in got
+             if lifted != [body] or line in view]
+    check("ht1 lift_house_bodies lifts exactly one body from each house form - "
+          "a commit or tag message, an audit-task description or reason, a pull "
+          "request body, between clauses, any delimiter quoting, backquoted - "
+          "and the view no longer holds it: %r" % (wrong,),
+          not wrong and len(got) == 11)
+    split = [(what, M.split_heredocs(cmd)) for what, cmd in house]
+    as_shell = [(what, parts) for what, parts in split
+                if line in "\n".join([parts[0]] + parts[1] + parts[2])]
+    check("ht2 ...and split_heredocs, which every guard calls, returns none of "
+          "those bodies as shell: %r" % (as_shell,), not as_shell)
+
+    # THE DEVIATIONS. Each was measured letting a body through: the text before
+    # the marker read clean and the rest of the marker's line was never asked.
+    deviations = (
+        ("a pipe to a shell after the marker",
+         "git commit -m " + sub(" | sh")),
+        ("a pipe to a shell reading stdin", "git commit -m " + sub(" | bash -s")),
+        ("stderr folded, then a pipe", "git commit -m " + sub(" 2>&1 | sh")),
+        ("a process substitution running a shell",
+         "git commit -m " + sub(" > >(sh)")),
+        ("tee into a process substitution",
+         "git commit -m " + sub(" | tee >(bash)")),
+        ("xargs handing the body to a shell's -c",
+         "git commit -m " + sub(" | xargs -0 sh -c")),
+        ("a continuation, then the pipe on the next line",
+         "git commit -m " + sub(" \\\n| sh")),
+        ("a clean first message, then a second that pipes",
+         "git commit -m \"clean\" -m " + sub(" | sh", "'F'", "F")),
+        ("the long option glued", "git commit --message=" + sub(" | sh")),
+        ("a pull request body", "gh pr create --title t --body "
+         + sub(" | sh")),
+        ("an audit-task description",
+         "python3 \"%s\" add P1 --description %s" % (script, sub(" | sh"))),
+        ("cat reading a file before stdin",
+         "git commit -m \"$(cat notes.sh - <<'EOF'\n%s\nEOF\n)\"" % body),
+        ("a tab-stripping marker", "git commit -m " + sub(delim="-'EOF'")),
+        ("text before the substitution inside the quote",
+         "gh pr create --body \"Summary: $(cat <<'EOF'\n%s\nEOF\n)\"" % body),
+        ("text after the close inside the quote",
+         "gh pr create --body \"$(cat <<'EOF'\n%s\nEOF\n) - end\"" % body),
+        ("an unquoted delimiter whose body runs a substitution",
+         "git commit -m " + sub(delim="EOF", text="x $(%s)" % line)),
+        ("a carrier that runs its argument", "bash -c " + sub()),
+        ("a sink whose output is piped to a shell",
+         "git commit -m " + sub() + " | sh"),
+        ("a terminator with text after it",
+         "git commit -m \"$(cat <<'EOF'\n%s\nEOF x\n)\"" % body),
+    )
+    got = [(what, M.lift_house_bodies(cmd)) for what, cmd in deviations]
+    lifted = [(what, out) for what, out in got if out[1]]
+    split = [(what, M.split_heredocs(cmd)) for what, cmd in deviations]
+    dropped = [(what, parts) for what, parts in split
+               if line not in "\n".join([parts[0]] + parts[1] + parts[2])]
+    check("ht3 every deviation from the template - anything after the marker "
+          "on its line (a pipe, a redirect, a process substitution, a "
+          "continuation), cat with an operand, a tab-stripping marker, text "
+          "around the substitution inside the quote, an expanding body, a "
+          "carrier that runs it, a sink piped onward - is lifted by neither "
+          "reader: %r" % ((lifted, dropped),),
+          not lifted and not dropped and len(deviations) == 19)
+
+    # ONE ARGUMENT AT A TIME. A clean house form beside a deviating one lifts
+    # the clean body only; the other stays shell.
+    pair = ("git commit -m %s -m %s"
+            % (sub(text="first message"), sub(" | sh", "'F'", "F")))
+    view, lifted = M.lift_house_bodies(pair)
+    check("ht4 a clean house form beside a deviating one: only the clean body "
+          "is lifted, and the deviating body is still in the view: %r"
+          % ((view, lifted),),
+          lifted == ["first message"] and line in view)
+
+    # A DELIMITER WORD WITH ANYTHING AFTER THE IDENTIFIER IS NOT SPLIT. The
+    # shell's terminator for `<<E-X` is `E-X` and for `<<E'X'` is `EX`; reading
+    # either as `E` swallowed the lines the shell runs after its real
+    # terminator.
+    words = (
+        ("a hyphenated word", "cat > notes.md <<E-X\nhello\nE-X\n%s\nE" % line),
+        ("a partly quoted word",
+         "cat > notes.md <<E'X'\nhello\nEX\n%s\nE" % line),
+        ("a quoted head, then more",
+         "cat > notes.md <<'E'X\nhello\nEX\n%s\nE" % line),
+        ("the house form with a partly quoted word",
+         "git commit -m \"$(cat <<'E'X\nmsg\nEX\n)\"\n%s\nE\n)\"" % line),
+    )
+    split = [(what, M.split_heredocs(cmd)) for what, cmd in words]
+    dropped = [(what, parts) for what, parts in split
+               if line not in "\n".join([parts[0]] + parts[1] + parts[2])]
+    lifted = [(what, M.lift_house_bodies(cmd)[1]) for what, cmd in words]
+    lifted = [(what, out) for what, out in lifted if out]
+    check("ht5 a delimiter word with anything after its identifier is not "
+          "split, so the line the shell runs after its real terminator stays "
+          "in the text: %r" % ((dropped, lifted),),
+          not dropped and not lifted and len(words) == 4)
+
+
 def _audit_task_prose_options():
     """Every option string `audit-task.py` declares with `help=_PROSE_HELP`,
     read from its AST - the set `_config._AUDIT_TASK_PROSE` must equal."""
@@ -3622,6 +3757,7 @@ def _all_cases(check):
     _git_standing_cases(check)
     _house_body_cases(check)
     _argument_body_cases(check)
+    _house_template_cases(check)
     _sink_table_cases(check)
 
 

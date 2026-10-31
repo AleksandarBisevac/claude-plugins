@@ -52,19 +52,22 @@ both directions. A script file in a shell's language run by path
 (`./deploy.sh <<EOF`) is that shell reading the script, so its body is graded
 too (gk11).
 
-A BODY INSIDE A QUOTED ARGUMENT - the house form, `-m "$(cat <<'EOF' ... )"` - is
-data ONLY when `_config.sink_carries` says a text sink stores it: a program,
-verb and option from the one table `_config._TEXT_SINKS` (a git commit or tag
-message, gh's body or title, an audit-task prose option), every word naming it
-literal, and its clause ending without handing its output to a pipe, a process
-substitution or an enclosing group. The reading fails closed: what it gives up is
-every other carrier. A house-form body handed to a program the table does not
-name - a script run by path, `gh` behind a wrapper, a runner nobody listed - is
-graded as shell, so a body line there opening with a refused verb is refused. An
-earlier reading went the other way, data unless the carrier was known to run it,
-and every runner, expansion or piped output its lists missed was a pass
-(gk1-gk10 are those spellings). The way past the cost is a row in the table, for
-a program whose option stores text.
+A BODY INSIDE A SUBSTITUTION is data ONLY in the house template, which
+`_config.lift_house_bodies` recognises whole: `-m "$(cat <<'EOF'` with nothing
+after the marker on its line, the body, `EOF` alone on its line, then `)"` -
+the argument of a text sink from the one table `_config._TEXT_SINKS` (a git
+commit or tag message, gh's body or title, an audit-task prose option), every
+word naming it literal, and its clause ending without handing its output to a
+pipe, a process substitution or an enclosing group (`_config.sink_carries`).
+The reading fails closed: what it gives up is every other spelling and every
+other carrier. A body handed to a program the table does not name - a script
+run by path, `gh` behind a wrapper, a runner nobody listed - or spelled any
+other way is graded as shell, so a body line there opening with a refused verb
+is refused. Earlier readings went the other way, data unless something was known
+to run it, and each spelling their lists missed was a pass: a runner, an
+expansion or a piped output (gk1-gk10), and the rest of the marker's own line -
+a pipe, a redirect, a continuation (gk17-gk27). The way past the cost is the
+template, and a row in the table for a program whose option stores text.
 
 `git reset --hard` shows the other half of the same idea - one spelling is not
 one operation:

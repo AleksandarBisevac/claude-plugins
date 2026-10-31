@@ -1073,6 +1073,53 @@ def _cases(check):
             v, why = _decide(repo, _cmd)
             check("%s %s: %s" % (_cid, _want, _what), v == _want,
                   repr((v, why[:120])))
+
+        # --- only the exact house template is data ----------------------------
+        # Each deny row was measured passing: the sink verdict read the text
+        # before the heredoc marker and never the rest of the marker's line, and
+        # the delimiter reader took the head of a longer word as the terminator.
+        def _hm(tail, delim="'EOF'", term="EOF"):
+            return "\"$(cat <<%s%s\n%s\n%s\n)\"" % (delim, tail, _hd, term)
+
+        _task = "python3 \"/opt/audit/scripts/manifest/audit-task.py\" add P1 "
+        for _cid, _cmd, _want, _what in (
+                ("gk17", "git commit -m " + _hm(" | sh"), "deny",
+                 "the marker's line pipes the body to a shell"),
+                ("gk18", "git commit -m " + _hm(" | bash -s"), "deny",
+                 "...to a shell reading stdin"),
+                ("gk19", "git commit -m " + _hm(" 2>&1 | sh"), "deny",
+                 "...after folding stderr"),
+                ("gk20", "git commit -m " + _hm(" > >(sh)"), "deny",
+                 "...into a process substitution running a shell"),
+                ("gk21", "git commit -m " + _hm(" | tee >(bash)"), "deny",
+                 "...through tee into a process substitution"),
+                ("gk22", "git commit -m " + _hm(" | xargs -0 sh -c"), "deny",
+                 "...through xargs to a shell's -c"),
+                ("gk23", "git commit -m " + _hm(" \\\n| sh"), "deny",
+                 "...on the next line after a continuation"),
+                ("gk24", "git commit -m \"clean\" -m " + _hm(" | sh", "'F'", "F"),
+                 "deny", "a clean first message, then a second that pipes"),
+                ("gk25", "git commit --message=" + _hm(" | sh"), "deny",
+                 "the long option glued"),
+                ("gk26", "gh pr create --title t --body " + _hm(" | sh"), "deny",
+                 "a pull request body"),
+                ("gk27", _task + "--description " + _hm(" | sh"), "deny",
+                 "an audit-task description"),
+                ("gk28", "cat > notes.md <<E-X\nhello\nE-X\n%s\nE" % _D, "deny",
+                 "a hyphenated delimiter word is not cut at its head"),
+                ("gk29", "cat > notes.md <<E'X'\nhello\nEX\n%s\nE" % _D, "deny",
+                 "...nor a partly quoted one"),
+                ("gk30", "git commit -m \"$(cat <<'E'X\nmsg\nEX\n)\"\n%s\nE\n)\""
+                 % _D, "deny", "...nor one in the house form"),
+                ("gk31", "git commit -m \"$(cat notes.txt - <<'EOF'\n%s\nEOF\n)\""
+                 % _hd, "deny", "cat with an operand is not the template"),
+                ("gk32", "git commit -m " + _hm("", "\"EOF\""), "allow",
+                 "the house form with a double-quoted delimiter"),
+                ("gk33", "git commit -m " + _hm("", "EOF"), "allow",
+                 "...and with an unquoted one whose body expands nothing")):
+            v, why = _decide(repo, _cmd)
+            check("%s %s: %s" % (_cid, _want, _what), v == _want,
+                  repr((v, why[:120])))
         check("gh34 the text the guard grades, per heredoc kind: the body going "
               "into a FILE is gone, the body fed to a shell and the body fed to "
               "an interpreter are both still there. An interpreter body is kept "
