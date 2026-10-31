@@ -1,0 +1,19 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "tools/gate-parity.py:3366-3370",
+   "issue": "jc0, the live cap claim, also asserts `tiers[\"release\"][\"count\"] > tiers[\"per-run\"][\"count\"]`. That pins that the release tier has a job the per-run tier lacks (today `resample`), which is no part of the cap claim. Merging resample into another job, or dropping it, would turn the cap case red while both tiers sit well under 20, and its message would talk about the cap.",
+   "resolution": "Drop the release > per-run conjunct from jc0. If the tier split on the live workflow needs a pin, keep it in jc3, which already requires the live resample anchor to occur once."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clause: \"Add a gate-parity check counting the jobs a per-run and a release-tier run start concurrently, with jobs gated by `needs: verified` counted together and `verified` itself excluded ... against a named JOB_CAP = 20 constant, with a red-first case.\" The diff adds JOB_CAP = 20, concurrent_jobs() and job_cap_drift(), wired into parity() as 'job_cap', render() and the module docstring. Per tier it counts matrix cells after exclude and include. A job tied by `needs` (transitively, either direction) to every other job of its tier is listed in `alone` and left out of the count; on the live ci.yml that is `verified` on both tiers. Everything else is counted together. One deviation in wording only: the clause says \"from job_slices' expanded cells\", and the diff calls _matrix_cells directly. job_slices uses that same function (gate-parity.py:931), and counting jobs instead of slice-running cells is the better fit. Verified on the task tree: concurrent_jobs gives per-run 16 (selftests 12, e2e, lint, browser-panel, browser-report) and release 17 (adds resample). The measured per-run run 41158896864 (`gh run view --json jobs`) has 18 jobs, 2 skipped (verified, resample), so 16 started, all within a few seconds of each other. The executor's claim fits the diff. It states 16/17 for the live file, and I reproduced its linux sweep: linux at 4 parts gives per-run 20 and release 21, with only the release tier named. The ci.yml comment edit replaces the stale 'Nothing checks the job count' with what now checks it. The dependants the brief lists reference paths or fixtures, not the changed comment text, so the executor's answer for them holds.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "The executor filed not-attempted: tests.expectRedFirst is false and tests.add names no case, so none is owed. The basis holds. For the record, I ran `python3 tools/prove-gates.py --only job_cap` in a scratch clone of the task tree (git clone --local at ef0ec287 plus the three modified files copied over), exit 0. The red row went RED at jc0, jc3 (1 of 1 proven red). The two allow rows went RED at jc2, jc3 and at jc0, jc1, jc2, jc3 (2 of 2 proven quiet). `prove-gates --list` shows the three rows once each, all 'anchored'. `gate-parity --selftest` gave 119/119 and plain `gate-parity.py` exited 0 there. This is my own observation and does not change the executor's word.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "The `selftests` entry in tests.gate is `python3 tools/sweep-selftests.py`, which runs the whole tree, and the other entries are validators, lint, browser and vitest runs over whole projects. No entry selects a bounded set of tests, so the question has no bound."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

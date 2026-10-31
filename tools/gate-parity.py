@@ -57,6 +57,10 @@ here was a second reader of the same files:
     the directory the suites left (`lint_dir_findings()`, `lint_dir_verdict()`).
   * every reason-carrying exemption table names who audits it
     (`exemption_audit_drift()`).
+  * no tier's run starts more jobs at once than GitHub's concurrent-job cap
+    (`job_cap_drift()`, `concurrent_jobs()`): a job past it waits for a running
+    one to finish, and the one held is as likely to be a cell on the critical
+    path as any other.
 """
 import ast
 import io
@@ -1118,6 +1122,121 @@ def encoding_leg_drift(text, listed):
     return findings
 
 
+# --- how many jobs one run asks GitHub for at once --------------------------------
+# GitHub runs at most JOB_CAP of an account's jobs at once and holds the rest until a
+# running job finishes, so a run asking for more waits on its own jobs - and the
+# windows sweep cells, the critical path, are the ones that end up held. Basis: GitHub
+# documents twenty concurrent jobs for the Free plan, and ci.yml's comment above the
+# lint job records the measurement on this account (release-tier runs of twenty-two
+# jobs, exactly two of which started only when an earlier job finished). The cap is
+# the ACCOUNT's, so two runs at once share it; this counts one run, which is the
+# least a run can ask for, not a promise that nothing waits.
+JOB_CAP = 20
+_RUN_TIERS = ("per-run", "release")
+
+
+def _job_needs(keys):
+    """([job, ...], problem) for a job's `needs`: a scalar or a `[a, b]` flow
+    list. The block form reads as an empty value here, so it is a problem,
+    never a job that needs nothing."""
+    if "needs" not in keys:
+        return [], None
+    value = keys["needs"].strip()
+    if value.startswith("[") and value.endswith("]"):
+        value = value[1:-1]
+    names = [v.strip().strip("'\"") for v in value.split(",") if v.strip()]
+    if not names:
+        return [], ("its `needs` is in a form this reader does not resolve (a "
+                    "block list?), so which jobs it waits for is unknown")
+    return names, None
+
+
+def _ancestors(needs):
+    """{job: set of every job it waits for, directly or through another}."""
+    out = {}
+    for job in needs:
+        seen, todo = set(), list(needs[job])
+        while todo:
+            name = todo.pop()
+            if name not in seen:
+                seen.add(name)
+                todo.extend(needs.get(name, ()))
+        out[job] = seen
+    return out
+
+
+def concurrent_jobs(text):
+    """{"tiers": {tier: {"count", "jobs", "alone"}}, "problems", "problem"}.
+
+    Per tier, the jobs one run starts: each job's matrix cells after `exclude`
+    and `include` (`_matrix_cells`; a job with no matrix is one), on the tiers
+    its `if:` reaches (`_if_tier`; a condition that cannot be proved is counted
+    on both, since it may run). A job every other job of its tier waits for or
+    is waited for by - through `needs`, directly or not - runs ALONE, never
+    beside another, so it is in `alone` and not in `count`. Every other job is
+    counted as running at once: a `needs` chain that keeps two of them apart is
+    an over-count here, never an under-count, so a tier this reports over the
+    cap may in fact fit - and one it reports under the cap does. A job whose
+    matrix or `needs` cannot be read is a `problems` row, not a job left out.
+    """
+    jobs = _workflow_jobs(text)
+    if not jobs:
+        return {"tiers": {}, "problems": [],
+                "problem": "no top-level `jobs:` block, so no job could be counted"}
+    cells, tiers, needs, problems = {}, {}, {}, []
+    for job, lines in jobs:
+        keys = _job_keys(lines)
+        tier, _why = _if_tier(keys.get("if", ""))
+        tiers[job] = _RUN_TIERS if tier in (None, "per-run") else ("release",)
+        names, why = _job_needs(keys)
+        if why is not None:
+            problems.append((job, why))
+        unknown = [n for n in names if n not in dict(jobs)]
+        if unknown:
+            problems.append((job, "its `needs` names %s, which no job of the "
+                             "workflow is" % (", ".join(unknown),)))
+        needs[job] = [n for n in names if n not in unknown]
+        matrix = _matrix_cells(lines)
+        if matrix["problem"] is not None:
+            problems.append((job, "%s, so how many jobs it starts is unknown"
+                             % (matrix["problem"],)))
+        cells[job] = len(matrix["cells"])
+    above = _ancestors(needs)
+    out = {}
+    for tier in _RUN_TIERS:
+        on = [job for job, _lines in jobs if tier in tiers[job]]
+        alone = [job for job in on
+                 if all(job in above[other] or other in above[job]
+                        for other in on if other != job)]
+        counted = [(job, cells[job]) for job in on if job not in alone]
+        out[tier] = {"count": sum(n for _j, n in counted), "jobs": counted,
+                     "alone": alone}
+    return {"tiers": out, "problems": problems, "problem": None}
+
+
+def job_cap_drift(text, cap=JOB_CAP):
+    """[(subject, why)] for a tier whose run starts more than `cap` jobs at
+    once (`concurrent_jobs`), and for every job that could not be counted."""
+    got = concurrent_jobs(text)
+    if got["problem"] is not None:
+        return [("ci.yml", got["problem"])]
+    findings = []
+    for tier in _RUN_TIERS:
+        row = got["tiers"][tier]
+        if row["count"] <= cap:
+            continue
+        findings.append((
+            "%s tier" % (tier,),
+            "a %s run starts %d jobs at once (%s), over the cap of %d GitHub "
+            "runs at once, so %d wait for a running job to finish%s"
+            % (tier, row["count"],
+               ", ".join("%s: %d" % jn for jn in row["jobs"]), cap,
+               row["count"] - cap,
+               "; %s run alone first" % (", ".join(row["alone"]),)
+               if row["alone"] else "")))
+    return findings + [("%s (job)" % (job,), why) for job, why in got["problems"]]
+
+
 # THE MANIFEST-VALIDATION WORK, each piece found by a word its command or label
 # carries in `verify.sh --list` rather than by a slice's name, so moving a piece
 # into a slice of its own changes what is read and not whether it is read. A
@@ -2092,6 +2211,17 @@ def runner_image_verdict(repo=None):
     return got["findings"]
 
 
+def job_cap_verdict(repo=None):
+    """`job_cap_drift()` over ci.yml, with an unreadable workflow AS a finding."""
+    path = os.path.join(repo or REPO, CI_REL)
+    try:
+        with io.open(path, encoding="utf-8") as fh:
+            text = fh.read()
+    except (IOError, OSError, UnicodeDecodeError) as exc:
+        return [("ci.yml", "could not be read: %s" % (exc,))]
+    return job_cap_drift(text)
+
+
 # --- the directories ruff and vermin are pointed at -----------------------------
 # THE DIRECTORY LISTS LIVE IN ONE PLACE, `verify.sh`, and what that place says is a
 # claim about where the code is. The suites and the two lint modules left the
@@ -2206,7 +2336,7 @@ def slice_verdict(repo=None):
 
 def parity(repo=None):
     """{"slices", "failmodes", "job_timeouts", "runner_images", "lint_dirs",
-    "stale_exemptions", "counts"}.
+    "stale_exemptions", "job_cap", "counts"}.
 
     The rules that are not slice questions ride here because this command is
     already the one that reads a runner and the documents describing it, and a
@@ -2219,6 +2349,7 @@ def parity(repo=None):
             "runner_images": runner_image_verdict(repo),
             "lint_dirs": lint_dir_verdict(repo),
             "stale_exemptions": exemption_audit_drift(repo),
+            "job_cap": job_cap_verdict(repo),
             "counts": {"slices": len(listed["order"]) if listed else 0,
                        "jobs": jobs}}
 
@@ -2228,7 +2359,7 @@ def render(result, stream=None):
     out = stream if stream is not None else sys.stdout
     bad = (result["slices"] + result["failmodes"] + result["job_timeouts"]
            + result["runner_images"] + result["lint_dirs"]
-           + result["stale_exemptions"])
+           + result["stale_exemptions"] + result["job_cap"])
     out.write("gate parity: %d slice(s) listed by verify.sh --list, %d job(s) in "
               "ci.yml\n" % (result["counts"].get("slices", 0),
                             result["counts"].get("jobs", 0)))
@@ -2244,6 +2375,8 @@ def render(result, stream=None):
         out.write("  lint directories (%s): %s\n" % (tool, note))
     for name, note in result["stale_exemptions"]:
         out.write("  exemption table (%s): %s\n" % (name, note))
+    for tier, note in result["job_cap"]:
+        out.write("  CI job cap (%s): %s\n" % (tier, note))
     if not bad:
         out.write("  every slice ci.yml names is one verify.sh lists, every "
                   "per-run slice has a job, every sharded slice runs all its "
@@ -2254,8 +2387,9 @@ def render(result, stream=None):
                   "sub-minute job, or the sweep's deadline for a sweep job "
                   "declaring it), every CI job pins its runner image "
                   "instead of a floating `-latest` label, ruff and vermin are "
-                  "pointed at the directories the code now lives in, and every "
-                  "exemption table names who audits it\n")
+                  "pointed at the directories the code now lives in, every "
+                  "exemption table names who audits it, and no tier's run starts "
+                  "more jobs at once than the concurrent-job cap\n")
     return 1 if bad else 0
 
 
@@ -2775,7 +2909,7 @@ def _slice_cases(check):
     # was handed, would leave both green. Over a tree holding none of the files
     # each one reads, each must arrive carrying a finding.
     wired = ("failmodes", "job_timeouts", "runner_images", "lint_dirs",
-             "stale_exemptions")
+             "stale_exemptions", "job_cap")
     check("sv20 every verdict `parity()` renders besides the slices is asked of "
           "the tree `parity()` is handed and reaches its result: over a tree with "
           "none of their files, each carries a finding (findings per verdict: %r)"
@@ -2784,14 +2918,17 @@ def _slice_cases(check):
 
     clean = {"slices": [], "failmodes": [], "job_timeouts": [],
              "runner_images": [], "lint_dirs": [],
-             "stale_exemptions": [], "counts": {"slices": 3, "jobs": 2}}
+             "stale_exemptions": [], "job_cap": [],
+             "counts": {"slices": 3, "jobs": 2}}
     for key, row, needle in (("slices", ("js", "no job runs it"), "js"),
                              ("failmodes", ("guard-edits / PreToolUse", "why"),
                               "guard-edits / PreToolUse"),
                              ("job_timeouts", ("lint", "no bound"), "lint"),
                              ("runner_images", ("e2e", "floats"), "e2e"),
                              ("lint_dirs", ("vermin", "no tests"), "vermin"),
-                             ("stale_exemptions", ("GONE", "outlived"), "GONE")):
+                             ("stale_exemptions", ("GONE", "outlived"), "GONE"),
+                             ("job_cap", ("release tier", "over"),
+                              "release tier")):
         buf = io.StringIO()
         code = render(dict(clean, **{key: [row]}), stream=buf)
         check("sv9 %s (a %s finding alone exits 1 and names its subject, so no "
@@ -2812,7 +2949,8 @@ def _slice_cases(check):
 # are the run's critical path and the count is what its wall clock rests on: a
 # matrix narrowed back to fewer parts is still complete, so shard_matrix_drift
 # accepts it, and only this pin names it. The linux legs' count is not pinned -
-# shard_matrix_drift holds each family to every part of its own total either way.
+# shard_matrix_drift holds each family to every part of its own total either way,
+# and job_cap_drift fails a count that would push a run's jobs past the cap.
 # The code-page leg (a slice `encoding_sweep_shape` reads as a sweep under
 # `--encoding`) has a count of its own: per run it sweeps a selection, split into
 # the fewest parts that each carry less than a plain part, so its cells end first.
@@ -3051,6 +3189,142 @@ def _encoding_leg_cases(check):
           and [_run_tiers("release", a) for a in ("per-run", "release", None)]
           == [(), ("release",), ("release",)]
           and _run_tiers("per-run", None) == ("per-run", "release"))
+
+
+# --- how many jobs a run asks for at once, against the cap: the cases -----------
+_JC_CLAUSE = ("a tier whose run starts more jobs at once than the concurrent-job "
+              "cap is named, and one starting exactly the cap is not")
+_JC_GATE = """\
+  verified:
+    name: verified
+    if: ${{ github.event_name == 'push' }}
+    timeout-minutes: 5
+    runs-on: ubuntu-24.04
+    steps:
+      - run: python tools/ci-verified.py
+"""
+_JC_GUARD = "${{ !cancelled() && needs.verified.outputs.run == '' }}"
+# The anchor a live mutation gives the release-tier job a matrix after: its
+# display name, which no other job carries.
+_JC_RESAMPLE = "    name: resample (windows)\n"
+
+
+def _jc_job(name, cells=0, needs="verified", release=False, raw_needs=None):
+    """One job of a fixture workflow: a matrix of `cells` parts when `cells`,
+    a plain job otherwise; `needs` None for a job needing nothing."""
+    cond = _JC_GUARD[:-3] + (" && inputs.tier == 'release' }}" if release
+                             else " }}")
+    lines = ["  %s:" % (name,)]
+    if raw_needs is not None:
+        lines.append(raw_needs)
+    elif needs is not None:
+        lines.append("    needs: %s" % (needs,))
+    lines.append("    if: %s" % (cond,))
+    lines.append("    timeout-minutes: 5")
+    if cells:
+        lines += ["    strategy:", "      matrix:",
+                  "        part: [%s]" % (", ".join(str(i) for i in
+                                                    range(1, cells + 1)),)]
+    lines += ["    runs-on: ubuntu-24.04", "    steps:",
+              "      - run: sh tools/verify.sh --only lint"]
+    return "\n".join(lines) + "\n"
+
+
+def _jc_workflow(*jobs):
+    return "name: ci\njobs:\n" + _JC_GATE + "".join(jobs)
+
+
+def _job_cap_cases(check):
+    try:
+        with io.open(os.path.join(REPO, CI_REL), encoding="utf-8") as fh:
+            text = fh.read()
+    except (IOError, OSError, UnicodeDecodeError) as exc:
+        check("jc0 %s (the workflow could not be read, so nothing was counted: "
+              "%r)" % (_JC_CLAUSE, exc), False)
+        return
+    live = concurrent_jobs(text)
+    found = job_cap_drift(text)
+    tiers = live["tiers"]
+    # THE LIVE CLAIM, and the case a matrix grown past the cap turns red.
+    check("jc0 %s (THE LIVE CLAIM, over the real ci.yml: per tier the jobs a run "
+          "starts at once and the ones that run alone are %r against a cap of %d, "
+          "and the findings are %r)" % (_JC_CLAUSE, tiers, JOB_CAP, found),
+          found == [] and live["problem"] is None and live["problems"] == []
+          and sorted(tiers) == ["per-run", "release"]
+          and all(0 < tiers[t]["count"] <= JOB_CAP for t in tiers)
+          and all(tiers[t]["alone"] == ["verified"] for t in tiers)
+          and tiers["release"]["count"] > tiers["per-run"]["count"])
+
+    # One job over the cap on a per-run job's matrix: both tiers start it, so
+    # both are named, each with the count it asked for and the cap.
+    over = _jc_workflow(_jc_job("cells", cells=JOB_CAP - 1),
+                        _jc_job("one"), _jc_job("two"))
+    over_found = job_cap_drift(over)
+    check("jc1 %s (a per-run run asking for one job over the cap names both "
+          "tiers, each with its count and the cap: %r)" % (_JC_CLAUSE,
+                                                           over_found),
+          [s for s, _w in over_found] == ["per-run tier", "release tier"]
+          and all(("%d" % (JOB_CAP + 1,)) in w and ("%d" % (JOB_CAP,)) in w
+                  for _s, w in over_found))
+
+    # THE ALLOW CASE, for the over-fire in either of its two shapes: a cap read
+    # as a strict bound convicts a run asking for exactly the cap, and the gate
+    # job counted beside the jobs that wait for it convicts it too - every job
+    # here needs `verified`, so it ends before any of them starts.
+    at = _jc_workflow(_jc_job("cells", cells=JOB_CAP - 1), _jc_job("one"))
+    at_jobs = concurrent_jobs(at)
+    check("jc2 %s (a run asking for exactly the cap, behind a gate job every other "
+          "job needs, is clean on both tiers: %r / %r)"
+          % (_JC_CLAUSE, at_jobs["tiers"], job_cap_drift(at)),
+          job_cap_drift(at) == []
+          and [at_jobs["tiers"][t]["count"] for t in ("per-run", "release")]
+          == [JOB_CAP, JOB_CAP]
+          and [at_jobs["tiers"][t]["alone"] for t in ("per-run", "release")]
+          == [["verified"], ["verified"]])
+
+    # The tier split: a release-only job tipping the release tier over leaves
+    # the per-run tier clean, and so does the live workflow's release-tier job
+    # given a matrix of the cap's size.
+    release_only = _jc_workflow(_jc_job("cells", cells=JOB_CAP - 1),
+                                _jc_job("one"), _jc_job("late", release=True))
+    grown = text.replace(_JC_RESAMPLE, _JC_RESAMPLE + (
+        "    strategy:\n      matrix:\n        draw: [%s]\n"
+        % (", ".join(str(i) for i in range(1, JOB_CAP + 1)),)), 1)
+    split = [[s for s, _w in job_cap_drift(t)] for t in (release_only, grown)]
+    check("jc3 %s (a release-only job past the cap names the release tier alone, "
+          "in a fixture and in the live workflow whose release-tier job is given "
+          "a matrix of the cap's size: %r)" % (_JC_CLAUSE, split),
+          text.count(_JC_RESAMPLE) == 1 and grown != text
+          and split == [["release tier"], ["release tier"]])
+
+    # A job running alone only when every other job is tied to it by `needs`:
+    # one job needing nothing runs beside the gate, so the gate is counted.
+    side = _jc_workflow(_jc_job("cells", cells=3), _jc_job("side", needs=None))
+    side_jobs = concurrent_jobs(side)
+    check("jc4 a job runs alone only when every other job of its tier needs it or "
+          "is needed by it: with a job needing nothing beside it, the gate job is "
+          "counted (%r)" % (side_jobs["tiers"],),
+          [side_jobs["tiers"][t]["alone"] for t in ("per-run", "release")]
+          == [[], []]
+          and [side_jobs["tiers"][t]["count"] for t in ("per-run", "release")]
+          == [5, 5])
+
+    # What cannot be counted is said, never read as a run under the cap.
+    unread = [
+        job_cap_drift(_jc_workflow(_jc_job("cells", raw_needs="    needs:\n"
+                                           "      - verified"))),
+        job_cap_drift(_jc_workflow(_jc_job("cells", needs="no-such-job"))),
+        job_cap_drift(_jc_workflow(_jc_job("cells").replace(
+            "    runs-on:", "    strategy:\n      matrix:\n        os: "
+            "${{ fromJSON(inputs.oses) }}\n    runs-on:", 1))),
+        job_cap_drift("name: ci\n")]
+    check("jc5 a `needs` in block form, a `needs` naming no job, a matrix the "
+          "reader cannot resolve and a workflow with no jobs are each a finding "
+          "naming what could not be counted, never a clean verdict: %r"
+          % (unread,),
+          all(len(f) == 1 for f in unread)
+          and [f[0][0] for f in unread]
+          == ["cells (job)", "cells (job)", "cells (job)", "ci.yml"])
 
 
 # --- the verdict the command renders carries what each rule it wires finds ------
@@ -4113,6 +4387,7 @@ def _cases(check):
     _slice_cases(check)
     _ci_shape_cases(check)
     _encoding_leg_cases(check)
+    _job_cap_cases(check)
     _wiring_cases(check)
     _verify_slice_run_cases(check)
     _runner_image_cases(check)

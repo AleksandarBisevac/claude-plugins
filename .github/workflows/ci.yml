@@ -297,9 +297,12 @@ jobs:
   # job too, so none should be held - a prediction until a run of this shape is
   # measured. A job added to this
   # file (a slice split into its own job, a new leg or shard) is held behind the cap
-  # unless another merges or a family's `parts` drops. Nothing checks the job count
-  # against the cap: tools/gate-parity.py does not count jobs, so keeping it is the
-  # author's.
+  # unless another merges or a family's `parts` drops. tools/gate-parity.py counts
+  # the jobs each tier's run starts at once - matrix cells after exclude and include,
+  # `verified` left out since every other job needs it - and fails the build on a
+  # tier over its JOB_CAP (`job_cap_drift()`); `python3 tools/gate-parity.py
+  # --selftest` prints both tiers' counts in case jc0. It counts one run: the cap is
+  # the account's, so two runs at once still share it.
   lint:
     name: lint + manifests + e2e (linux)
     needs: verified

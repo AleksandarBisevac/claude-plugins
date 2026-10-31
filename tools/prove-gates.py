@@ -962,6 +962,17 @@ TABLE = (
   "run: sh tools/verify.sh --only lint,runner,e2e",
   "run: sh tools/verify.sh --only lint,runner,e2e,lnt",
   "tools/gate-parity.py", "sv7"),
+ # A RUN THAT ASKS FOR MORE JOBS AT ONCE THAN GITHUB WILL START. Every slice is
+ # still named and every part still runs, so no other rule here notices; only
+ # counting the jobs does. The mutation gives the release-tier job a matrix wider
+ # than the cap by itself, so the row stays red whatever the rest of the workflow
+ # grows or sheds - and leaves the per-run tier as it was. `jc0` reads the real
+ # workflow.
+ ("job_cap_drift", ".github/workflows/ci.yml", "after",
+  "    name: resample (windows)\n",
+  "    strategy:\n      matrix:\n        draw: [%s]\n"
+  % (", ".join(str(i) for i in range(1, 22)),),
+  "tools/gate-parity.py", "jc0"),
  # ...and the other question asked of that same runner, which is a PAIR rather
  # than a file: the selector chooses the checks and the runner dispatches them, and
  # the fault was a check the selector named and the runner had no arm for. The
@@ -1637,6 +1648,19 @@ ALLOW = (
   "                if \"per-run\" in run[\"tiers\"]:",
   "                if True:",
   "tools/gate-parity.py", "el3"),
+ # THE JOB-CAP RULE'S TWO OVER-FIRES, both convicting a run that asks for exactly
+ # the cap. Read the cap as a strict bound, and the run GitHub starts whole is
+ # reported as held; count the gate job every other job needs beside the jobs
+ # waiting for it, and the same run reads one over. `jc2` is that run, behind a
+ # gate job, and expects silence.
+ ("job_cap_drift", "tools/gate-parity.py", "replace",
+  "        if row[\"count\"] <= cap:",
+  "        if row[\"count\"] < cap:",
+  "tools/gate-parity.py", "jc2"),
+ ("job_cap_drift", "tools/gate-parity.py", "replace",
+  "        alone = [job for job in on\n",
+  "        alone = [job for job in on if False\n",
+  "tools/gate-parity.py", "jc2"),
  # THE DERIVATION, WIDENED PAST THE THING IT SEPARATES. A reason is a SENTENCE;
  # the length floor is what tells an excuse from a label, and `{"P1": "done"}` is
  # data. Drop it to nothing and every string-to-string map in the tree becomes an
