@@ -2723,8 +2723,10 @@ def _reshape_cases(check):
             "mode": "gate-only", "expectRedFirst": False,
             "add": [], "gate": ["test"]}
         ag_proj, ag_mp = mk("ag-add-gate", agm)
+        # `--tests-mode gate-only` NAMED: a mode that owes a case of its own may
+        # not take the empty gate (the ocg block), and this title derives one.
         code, txt = run(["add", "Markdown only", "--phase", "P2", "--gate-clear",
-                         "--project-dir", ag_proj])
+                         "--tests-mode", "gate-only", "--project-dir", ag_proj])
         ag_state_txt = txt
         _ag = task_in(ag_mp, "P2.4") or {}
         check("ag1 `add --gate-clear` writes the EMPTY gate instead of the phase's "
@@ -3567,7 +3569,10 @@ def _reshape_cases(check):
             "files": ["src/known.ts"],
             "testEvidence": {"runId": "run-opaque-1", "status": "passed",
                              "at": "2026-01-01T00:00:00Z"},
-            "tests": {"mode": "tdd", "expectRedFirst": True,
+            # GATE-ONLY, because fg4 and fg5 clear this gate and a mode owing a
+            # case of its own may not take the empty gate (the ocg block); the
+            # forward-only reading these cases pin is the same in every mode.
+            "tests": {"mode": "gate-only", "expectRedFirst": False,
                       "add": [], "gate": ["test", "typecheck"]}})
         fgm["fileIndex"]["src/known.ts"] = ["P2.3"]
         fg_proj, fg_mp = mk("fg-gate", fgm)
@@ -3664,7 +3669,7 @@ def _reshape_cases(check):
               "let this through: %r" % (txt[:250],),
               code == 2 and _fg_after == _fg_before
               and "already been attempted (2)" in txt
-              and '`tests.mode` would move from "tdd" to "regression"' in txt)
+              and '`tests.mode` would move from "gate-only" to "regression"' in txt)
         code, txt = run(["scope", "P2.3", "--risk", "high",
                          "--project-dir", fg_proj])
         with open(fg_mp, "rb") as _fh:
@@ -7556,7 +7561,7 @@ def _close_cases(check):
               and "from --gate" in txttg)
         codetg, txttg = run(
             ["add", "Ungradeable", "--phase", "P1", "--project-dir", tg_proj,
-             "--gate-clear"])
+             "--gate-clear", "--tests-mode", "gate-only"])
         check("tg9 `--gate-clear` still reaches the EMPTY gate - the "
               "derivation runs after both flags, never instead of them: %r"
               % ((tg_gate("P1.7"), codetg),),
@@ -15586,7 +15591,11 @@ def _batch_remedy_cases(check, project, batch, tree_bytes):
         "tests_add": ("tests/c.test.ts: c", "tasks[].tests.add",
                       tests_edit(add=["tests/c.test.ts: c"])),
         "gate": ("test", "tasks[].tests.gate", tests_edit(gate=["test"])),
-        "gate_clear": (None, "tasks[].tests.gate", tests_edit(gate=[])),
+        # The SECOND task, which is gate-only: the first is tdd, and a tdd task
+        # may not take the empty gate (the ocg block) - so the remedy is
+        # followed onto a task that can take it.
+        "gate_clear": (None, "tasks[].tests.gate",
+                       lambda d: d["tasks"][1]["tests"].update(gate=[])),
         "fixes": ("finding-a", "tasks[].fixes",
                   task_edit(fixes=["finding-a"])),
         "title": ("a title", "tasks[].title", task_edit(title="a title")),
@@ -21747,6 +21756,212 @@ def _gate_entry_cases(check):
         _harness.remove_tree(tmp)
 
 
+def _tdd_gate_clear_cases(check):
+    """A task whose discipline owes a case it adds cannot be given an empty
+    gate. `tdd` and `regression` each promise a test the task writes, and the
+    gate is the only command that ever runs it - so a cleared gate on one of
+    them is a task that closes with its own test never run while its record
+    reads `cleared` as though somebody had chosen that. The refusal is asked
+    of the STATE a write would leave, not of the flag, because the same state
+    can be asked for through several doors: `scope --gate-clear`, `scope
+    --gate-drop` of the last entry (refused by a rule of its own, pinned
+    here), `scope --tests-mode tdd` over a gate
+    already cleared, `add --tests-mode tdd --gate-clear` and a batch task
+    carrying `"gate": []` - and `done` refuses to close a task a plan already
+    holds in it."""
+    tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
+    (run, _run_on_stdin, base_manifest, mk, _mk_empty, task_in, _pin, _unpin,
+     _PD_SHA, _pd_fixture, _pd_repo, _git) = _at_kit(tmp)
+    try:
+        def plan(mode, gate):
+            m = base_manifest()
+            # A NON-EMPTY gate different from the phase's, so a refusal that
+            # still wrote, and a write that fell back to the phase gate, each
+            # leave a value this fixture can tell from the untouched one.
+            m["phases"][1]["tasks"][1]["tests"] = {
+                "mode": mode, "expectRedFirst": mode == "tdd",
+                "add": ["tests/test_b.py: the case the fix owes"],
+                "gate": gate}
+            return m
+
+        def tests_of(mp):
+            return (task_in(mp, "P2.3") or {}).get("tests") or {}
+
+        def bytes_of(mp):
+            with open(mp, "rb") as fh:
+                return fh.read()
+
+        for tag, mode in (("ocg1", "tdd"), ("ocg2", "regression")):
+            proj, mp = mk("tg-%s" % mode, plan(mode, ["lint"]))
+            before = bytes_of(mp)
+            code, txt = run(["scope", "P2.3", "--gate-clear",
+                             "--project-dir", proj])
+            check("%s scope --gate-clear on a %s task is REFUSED and writes no "
+                  "byte - an empty gate on a task that owes a case of its own "
+                  "means that case is never run, and the record would read "
+                  "`cleared` as if that had been chosen: %r"
+                  % (tag, mode, (code, tests_of(mp).get("gate"), txt[-240:])),
+                  code == 2 and bytes_of(mp) == before
+                  and tests_of(mp).get("gate") == ["lint"]
+                  and tests_of(mp).get("gateBasis") is None)
+            check("%sb ...and the refusal names the task's mode and BOTH "
+                  "remedies - a gate that runs the case (`--gate`), or a "
+                  "discipline that owes no case (`--tests-mode gate-only`): %r"
+                  % (tag, txt[-300:]),
+                  mode in txt and "--gate " in txt
+                  and "--tests-mode gate-only" in txt)
+
+        # THE PAIRED NEGATIVE, and the case that goes red if the refusal were
+        # written against the FLAG rather than the state it leaves: a caller
+        # who says the task owes no case of its own may then clear its gate,
+        # which is the designed empty state the gc group pins.
+        proj, mp = mk("tg-pair", plan("tdd", ["lint"]))
+        code, txt = run(["scope", "P2.3", "--tests-mode", "gate-only",
+                         "--gate-clear", "--project-dir", proj])
+        check("ocg3 SECOND-DIRECTION CASE: `--tests-mode gate-only --gate-clear` "
+              "on the same tdd task is ALLOWED and lands both - the refusal is "
+              "about a tdd/regression task with no gate, not about the flag: %r"
+              % ((code, tests_of(mp).get("mode"), tests_of(mp).get("gate"),
+                  txt[-200:]),),
+              code == 0 and tests_of(mp).get("mode") == "gate-only"
+              and tests_of(mp).get("gate") == [])
+
+        # The same state through the other doors. A refusal bolted onto
+        # `--gate-clear` alone leaves every one of these open. An empty gate
+        # carrying NO basis is not this state - `_manifest_io.gate_entries`
+        # falls back to the phase for it - so the fixture is the cleared one.
+        mode_plan = plan("gate-only", [])
+        mode_plan["phases"][1]["tasks"][1]["tests"]["gateBasis"] = "cleared"
+        proj, mp = mk("tg-mode", mode_plan)
+        before = bytes_of(mp)
+        code, txt = run(["scope", "P2.3", "--tests-mode", "tdd",
+                         "--project-dir", proj])
+        check("ocg4 `--tests-mode tdd` over a gate that is ALREADY empty is "
+              "refused too, gate and mode untouched - the same end state "
+              "reached from the other field: %r"
+              % ((code, tests_of(mp).get("mode"), txt[-200:]),),
+              code == 2 and bytes_of(mp) == before
+              and tests_of(mp).get("mode") == "gate-only")
+        proj, mp = mk("tg-drop", plan("tdd", ["lint"]))
+        before = bytes_of(mp)
+        code, txt = run(["scope", "P2.3", "--gate-drop", "lint",
+                         "--project-dir", proj])
+        check("ocg5 `--gate-drop` of a tdd task's LAST entry is refused - it "
+              "empties the gate as surely as the clear does: %r"
+              % ((code, tests_of(mp).get("gate"), txt[-200:]),),
+              code == 2 and bytes_of(mp) == before
+              and tests_of(mp).get("gate") == ["lint"])
+        # ...and its paired negative: a drop that leaves an entry is the
+        # ordinary narrowing gc9 pins, and must stay open on a tdd task.
+        proj, mp = mk("tg-drop2", plan("tdd", ["lint", "test"]))
+        code, txt = run(["scope", "P2.3", "--gate-drop", "lint",
+                         "--project-dir", proj])
+        check("ocg6 SECOND-DIRECTION CASE: a drop that leaves an entry on a tdd "
+              "task still lands: %r" % ((code, tests_of(mp).get("gate")),),
+              code == 0 and tests_of(mp).get("gate") == ["test"])
+        proj, mp = mk("tg-add", base_manifest())
+        before = bytes_of(mp)
+        code, txt = run(["add", "A fix with its case", "--phase", "P2",
+                         "--tests-mode", "tdd", "--tests-add",
+                         "tests/test_c.py: the case", "--gate-clear",
+                         "--project-dir", proj])
+        check("ocg7 `add --tests-mode tdd --gate-clear` is refused and mints no "
+              "id - creation is a door to the same state: %r"
+              % ((code, txt[-200:]),),
+              code == 2 and bytes_of(mp) == before
+              and task_in(mp, "P2.4") is None)
+        # `add --from-file` builds each task through the same builder but asks
+        # its refusals in a loop of its own, and reads a task's `"gate": []` as
+        # the clear - so the batch is a door of its own.
+        proj, mp = mk("tg-batch", base_manifest())
+        doc = _batch_doc()
+        doc["tasks"][0]["tests"]["gate"] = []
+        bpath = os.path.join(proj, "plan-batch.json")
+        with open(bpath, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(doc))
+        before = bytes_of(mp)
+        code, txt = run(["add", "--from-file", bpath, "--project-dir", proj])
+        check("ocg12 a batch naming a tdd task with an EMPTY gate is refused "
+              "whole, nothing written, the task named: %r"
+              % ((code, txt[-260:]),),
+              code == 2 and bytes_of(mp) == before
+              and "tests.mode tdd" in txt)
+
+        # ---- the close: a plan that ALREADY holds the state ------------------
+        # Written before the refusals above existed, or by hand. The drive closes
+        # a task through `done` alone (after `commit-task-work`, or with
+        # `--no-change`), and with an empty cleared gate `run-test-gate` answers
+        # `empty-gate` and `commit-task-work` commits "bound to no verdict" - so
+        # `done` is the one door left, and it must not close the task green.
+        def started(mode):
+            fx = _pd_fixture()
+            fx["phases"][1]["tasks"][2]["tests"] = {
+                "mode": mode, "expectRedFirst": mode == "tdd",
+                "add": ["tests/test_fresh.py: the case the fix owes"],
+                "gate": [], "gateBasis": "cleared"}
+            return fx
+
+        def status_of(mp):
+            return (task_in(mp, "P2.4") or {}).get("status")
+
+        def mk_started(name, mode):
+            """`mk`, with the case `tests.add` names ON DISK, so the only thing
+            a close can refuse over is the gate - an absent case file is a
+            refusal of its own, and it would answer ocg8 for the wrong reason
+            and turn ocg10 red."""
+            proj, mp = mk(name, started(mode))
+            os.makedirs(os.path.join(proj, "tests"), exist_ok=True)
+            with open(os.path.join(proj, "tests", "test_fresh.py"), "w") as fh:
+                fh.write("x = 1\n")
+            return proj, mp
+
+        proj, mp = mk_started("tg-done", "tdd")
+        before = bytes_of(mp)
+        code, txt = run(["done", "P2.4", "--project-dir", proj,
+                         "--commit", _PD_SHA, "--descriptive", "fixed"]
+                        + _NOT_ASKED)
+        check("ocg8 `done` REFUSES a tdd task whose gate was cleared, writes no "
+              "byte, and names the remedy (`scope P2.4 --gate`) - otherwise the "
+              "close lands green on a case nothing ran: %r"
+              % ((code, status_of(mp), txt[-260:]),),
+              code == 2 and bytes_of(mp) == before
+              and status_of(mp) == "in_progress"
+              and "scope P2.4 --gate " in txt)
+        # A remedy that is itself refused is a dead end with directions on it:
+        # the task is STARTED, so this is the forward-only gate move.
+        code, txt = run(["scope", "P2.4", "--gate", "test",
+                         "--project-dir", proj])
+        _tg_t = (task_in(mp, "P2.4") or {}).get("tests") or {}
+        check("ocg11 ...and the remedy it names lands on the started task, "
+              "leaving a declared gate the close can be measured under: %r"
+              % ((code, _tg_t.get("gate"), _tg_t.get("gateBasis"),
+                  txt[-200:]),),
+              code == 0 and _tg_t.get("gate") == ["test"]
+              and _tg_t.get("gateBasis") == "declared")
+        proj, mp = mk_started("tg-done-nc", "regression")
+        before = bytes_of(mp)
+        code, txt = run(["done", "P2.4", "--no-change", "--reason", "already",
+                         "--project-dir", proj])
+        check("ocg9 ...and the `--no-change` close the drive also takes is "
+              "refused the same way, on a regression task: %r"
+              % ((code, status_of(mp), txt[-260:]),),
+              code == 2 and bytes_of(mp) == before
+              and status_of(mp) == "in_progress"
+              and "scope P2.4 --gate " in txt)
+        # SECOND DIRECTION: the cleared gate on a task that owes no case of its
+        # own is the designed state, and it still closes - a refusal keyed on
+        # the cleared basis alone would go red here.
+        proj, mp = mk_started("tg-done-go", "gate-only")
+        code, txt = run(["done", "P2.4", "--project-dir", proj,
+                         "--commit", _PD_SHA, "--descriptive", "docs only"]
+                        + _NOT_ASKED)
+        check("ocg10 SECOND-DIRECTION CASE: a gate-only task whose gate was "
+              "cleared still closes: %r" % ((code, status_of(mp), txt[-200:]),),
+              code == 0 and status_of(mp) == "done")
+    finally:
+        _harness.remove_tree(tmp)
+
+
 STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("at3-block", "_flag_cases"), ("at4-block", "_start_cases"),
           ("at5-block", "_close_cases"), ("at6-block", "_group_cases"),
@@ -21774,7 +21989,8 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("xf-block", "_crossfile_cases"),
           ("rf-block", "_retired_flag_cases"),
           ("gx-block", "_gate_entry_cases"),
-          ("sh-block", "_start_head_cases"))
+          ("sh-block", "_start_head_cases"),
+          ("ocg-block", "_tdd_gate_clear_cases"))
 
 
 if __name__ == "__main__":

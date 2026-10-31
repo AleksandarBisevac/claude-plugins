@@ -1387,6 +1387,49 @@ def _retarget_gate_contradiction(args):
     return None
 
 
+# The `tests.mode` words that promise a case the task itself writes: every mode
+# but the one whose whole grading is the gate it is handed.
+_OWES_CASE_MODES = tuple(m for m in _vocab.TESTS_MODE if m != "gate-only")
+
+
+def _owed_case_gate_refusal(tid, tests, remedy):
+    """The refusal line for a task whose mode owes a case of its own and whose
+    gate was cleared on purpose, or None.
+
+    REFUSED, NOT FALLEN BACK TO THE PHASE GATE. The cleared gate is the one
+    empty gate `_manifest_io.gate_entries` does not replace with the phase's, so
+    a tdd or regression task holding it closes with its own case never run:
+    `run-test-gate` answers `empty-gate`, `commit-task-work` commits bound to
+    no verdict, and the record reads `cleared` as though somebody had chosen
+    that. Writing the phase's gate in its place instead would answer a request
+    for no gate with a gate nobody named - the phase's widest one - and the
+    phase's own gate may be empty too, so the fallback would not even close the
+    state. The two fields contradict each other and only the caller knows which
+    one is wrong, so the line names both answers.
+
+    ASKED OF THE STATE A WRITE LEAVES, NOT OF THE FLAG: `--gate-clear` on a tdd
+    task, `--tests-mode tdd` over a gate already cleared, and `add` doing both
+    at once all end in the same `tests` block. `done` asks it too, for a plan
+    that already holds the state. `remedy` is the caller's spelling of what to
+    do next, since a task not yet started and one already closing are mended
+    with different calls.
+    """
+    tests = tests if isinstance(tests, dict) else {}
+    mode = tests.get("mode")
+    if mode not in _OWES_CASE_MODES or not _mio.gate_cleared(tests):
+        return None
+    return ("[audit-task] REFUSED: %s is tests.mode %s, which owes a case the "
+            "task writes, and its gate is cleared (tests.gateBasis `cleared`): "
+            "nothing would ever run that case, and the task would close as if "
+            "an empty gate had been chosen for it. %s Nothing written."
+            % (tid, mode, remedy))
+
+
+# What a task not yet closing does about it: either field may be the wrong one.
+_OWED_CASE_WRITE_REMEDY = ("Pass --gate <a command that runs its case>, or "
+                           "--tests-mode gate-only if it owes no case of its own.")
+
+
 # --- what a gate entry may be, asked where it is written -----------------------
 def _reads_as_plan(path):
     """Whether `path` is an existing file the manifest loader reads as a plan:
@@ -4207,7 +4250,9 @@ def _locked_add(args, project, config, mpath, title, out):
     if gate_refusal:
         out(gate_refusal)
         return E_USAGE
-    gate_refusal = _files_gate_refusal(task, phase, assembled)
+    gate_refusal = (_files_gate_refusal(task, phase, assembled)
+                    or _owed_case_gate_refusal(task_id, task["tests"],
+                                               _OWED_CASE_WRITE_REMEDY))
     if gate_refusal:
         out(gate_refusal)
         return E_USAGE
@@ -7522,6 +7567,17 @@ def _locked_done(args, project, config, mpath, tid, out):
             "afterwards. Record the attempt first (/audit:task start %s), then "
             "close it." % (tid, status, tid))
         return E_USAGE
+    # BEFORE EITHER CLOSE ARM, `--no-change` included: the drive reaches `done`
+    # by both, and a gate that grades nothing measures a no-change claim no
+    # better than a commit. A started task may still move its gate
+    # (`_FORWARD_ONLY`), so the remedy is the gate and not the mode.
+    owed = _owed_case_gate_refusal(
+        tid, node.get("tests"),
+        "Give it a gate that runs its case (/audit:task scope %s --gate "
+        "<command>) and run that gate before closing." % (tid,))
+    if owed:
+        out(owed)
+        return E_USAGE
     # Where git runs: `_doctor_setup.check_git`'s spelling, byte for byte -- the
     # project plus the config's `gitRoot`, absolute, for a workspace whose
     # repository is a subdirectory. A third answer here would send this verb to a
@@ -9581,7 +9637,9 @@ def _batch_build_tasks(doc, ids, keys, phase, first, assembled, project, mpath):
             project, companions, runner_aware=bool(fixes))
         gate_refusal = (_gate_write_refusal(task["tests"]["gate"], assembled,
                                             project, "tests.gate")
-                        or _files_gate_refusal(task, phase, assembled))
+                        or _files_gate_refusal(task, phase, assembled)
+                        or _owed_case_gate_refusal(tid, task["tests"],
+                                                   _OWED_CASE_WRITE_REMEDY))
         if gate_refusal:
             bad.append("tasks[%d]: %s" % (i, gate_refusal))
             continue
@@ -10329,6 +10387,15 @@ def _locked_scope(args, project, config, mpath, tid, out):
         if blockers:
             out(_rescope_refusal(tid, node, blockers))
             return E_USAGE
+    # Asked of the block this call leaves, so the mode and the gate are judged
+    # together whichever of the two this call moved - and AFTER the widening
+    # guard, so a started task's mode change meets the refusal about the mode.
+    owed = (_owed_case_gate_refusal(tid, node.get("tests"),
+                                    _OWED_CASE_WRITE_REMEDY)
+            if tests_writes else None)
+    if owed:
+        out(owed)
+        return E_USAGE
 
     # WHAT THE TWO SURFACES BELOW ANNOUNCE, split once here rather than twice
     # apiece. `started` says the task has moved; it does NOT say a widening

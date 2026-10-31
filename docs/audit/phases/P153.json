@@ -23,7 +23,30 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P153-R1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:1395-1423, 7570-7580",
+        "issue": "The new predicate keys on the stored basis (`_mio.gate_cleared(tests)`, i.e. gateBasis == `cleared`) rather than on the gate that actually measures the task. Its own docstring says 'the phase's own gate may be empty too', and in that state the defect the task describes ('A task can close with no gate while the record reads green') is still open by a second shape: a tdd/regression task whose own tests.gate is absent or [] with no basis falls back to its phase (`_manifest_io.gate_entries`, _manifest_io.py:685-692), an empty phase testGate is a designed, validator-accepted state (`_manifest_phases.py:791`, `phase add --gate-clear`), `run-test-gate` answers `empty-gate` with exit 0 (run-test-gate.py:5401-5420), and `done` closes it via `_close_gate`'s arm '%s declares no gate, nor does its phase, so its close rests on its commit alone' (audit-task.py:7289-7313) - `_owed_case_gate_refusal` returns None because gateBasis is not `cleared`. Judged by reading, not run.",
+        "resolution": "Ask the refusal at `done` (and, if wanted, at the writes) of the resolved gate: refuse when tests.mode is tdd/regression and `_mio.gate_entries(phase, node)[0]` is empty, which covers both the cleared gate and the fallback to an empty phase gate; add a case beside ocg8 with a tdd task carrying no own gate in a phase whose testGate is [] (and its gate-only second-direction pair)."
+      },
+      {
+        "id": "P153-R2",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:1427-1428, 10390-10398",
+        "issue": "On a STARTED task the scope refusal prints `_OWED_CASE_WRITE_REMEDY`, whose second half ('--tests-mode gate-only if it owes no case of its own') is itself refused: a tests.mode change on a started task is a narrowing `_narrowings` blocks (fg6 pins 'already been attempted'), unlike tests.gate which is `_FORWARD_ONLY`. The `done` arm already words its remedy for this ('A started task may still move its gate ... so the remedy is the gate and not the mode'); the scope arm does not, so e.g. `scope <started tdd task> --gate-clear` names a dead-end remedy.",
+        "resolution": "Pass `_started(node)`-dependent remedy text at the _locked_scope call site (the gate-only half only for a task not yet started), and pin it with a case on a started tdd task asserting '--tests-mode gate-only' is absent from the refusal."
+      },
+      {
+        "id": "P153-R3",
+        "severity": "low",
+        "file": "plugins/audit/commands/task.md:39; plugins/audit/reference/verbs-in-full.md:266-267, 1269; README.md:461",
+        "issue": "User-visible behaviour changed and the surfaces describing `--gate-clear` still say it is how a task reaches the EMPTY gate ('`--gate-clear` for none'), with no mention that a tdd/regression task (including one whose mode `add` derived from its title) is now refused and must pass `--tests-mode gate-only`. The executor named this follow-up itself; it is outside the task's declared files.",
+        "resolution": "Add one sentence to each surface (or to verbs-in-full.md and point the others at it) stating the refusal and its two remedies, and a CHANGELOG entry for the new refusal."
+      }
+    ],
+    "outcome": "[findings: 3 - 0 high, 1 med, 2 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -130,7 +153,7 @@
     {
       "id": "P153.3",
       "title": "guard-uncommitted reads a heredoc body or a quoted argument as data, not as a command, so a description that quotes git is not refused",
-      "status": "in_progress",
+      "status": "done",
       "description": "Register F800. The guard refused an audit-task.py add whose heredoc description merely quoted git commands: it could not tokenize the command, assumed the widest loss set, and refused; the same description passed on stdin from a file. Bind the evidence to the operation: when the command cannot be tokenized, read only what is outside heredoc bodies and quoted arguments; red-first the allow case and keep the deny case red.",
       "files": [
         ".claude/hooks/guard-uncommitted.py",
@@ -154,19 +177,41 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "271cd13cecc3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "guard-uncommitted.py: when the sibling parser cannot tokenize a line, reading() now builds executed_text(command), a quote- and heredoc-aware walk. It drops quoted-delimiter heredoc bodies, including one inside a command substitution inside double quotes (the house description form), and drops quoted ARGUMENTS. It keeps every command substitution and backquote, inside double quotes and inside unquoted-delimiter bodies too. It keeps a quoted program word and every quoted argument of git. It truncates at a quote or substitution that never closes; bash runs nothing past one, verified with bash -c on an unterminated quote, which ran only the earlier complete lines. It returns None, keeping the raw-line reading and the unchanged widest refusal, when any command in the line can run text it is handed: a shell, eval, make, xargs or exec, a program named by path, or an interpreter not running a script file. That judgement uses the shared _config.program_candidates, is_shell, is_interpreter and runs_own_program. The view is re-parsed with the sibling's git_invocations and judged on the operation; that reading is labelled 'executed', and its refusal says the line could not be tokenized and what was read. If the view will not parse either, the shapes grade the view. Also fixed: the pre-filter's tree-wide dot (_DOT) now ends where a shell word ends, so a variable assigned from a substitution running a tree-wide checkout is no longer waved through before the parser is asked; it was allowed on HEAD, tokenizable or not. gu41 is reworded to assert the 'could not be tokenized' basis: its old 'TEXT' assertion now belongs to the raw path, and gu51 pins the two labels apart. New cases gu43-gu51. Selftest 52/52. Gate `python3 tools/sweep-selftests.py .claude/hooks/guard-uncommitted.py` exit 0 (1/1 files ok, 52 cases). Mutation probe: <scratchpad>/p153-3/probe/mutations.py, output in output.txt beside it, run as `python3 mutations.py <checkout>`. Baseline 52/52, and all nine rows were KILLED, including both over-fire directions (M8 every interpreter a runner turned gu44 and gu49 red; M9 every command a runner did the same) and the defect restored (M1 turned gu44 and gu49 red). Probe exit 0. REFUSALS, verbatim apart from paths: (a) the plan gate refused probe/mutations.py inside the worktree: '[require-plan] probe/mutations.py is outside task P153.3, the task this worktree is bound to (plan: <home>/dev/audit-plugin/claude-plugins): no task of this plan declares it for this one. Only that task's files are open here.' The probe therefore lives in the scratchpad. (b) The first submit call was refused by the live plugin guard-history-rewrite, whose message opens: '[guard-history-rewrite] `git st` + `ash` moves work between the working tree and the stash' (spelled split here for the same reason). The return object's prose quoted the stash command, and because the heredoc head names its script by a QUOTED path, _config._plain_script_run does not vouch for it, so the body was graded as code and fell to the raw-text arm. (c) The second submit was refused for absolute machine paths; this filing writes <home>/ and <scratchpad>/. Apart from those spellings, the content is unchanged. CONTRIBUTING.md gains one Hard-rules bullet: a guard grades what a command executes in its fallback too. It names executed_text() and its selftest, and says nothing enforces the rule for a guard added later. Extra checks: ruff on the hook reports only a pre-existing unused shutil import in _selftest (present on HEAD; .claude/hooks is outside CI's ruff scope). vermin 3.8 ok. house_style_violations, prose_number_claims and doc_prose_numbers: 0 findings. Dependant suites tests/test__areas.py, test__deps.py, test__output_lints.py and test_derive_phase_gate.py via the sweep: 4/4 ok, 593 cases. tools/prove-gates.py: no row anchors on this hook (a grep for the hook name in tools/, tests/ and .github/ hits only .github/sweep-costs.json), so no row needs changing. Dependants: .claude/settings.json registers the hook by path, and the contract (stdin payload, deny JSON, exit 0) is unchanged, so it is still correct. .github/sweep-costs.json's figure for this file still matches (the sweep ran in 1.0s). The names targets, judge, parser and decide found in guard-release.py, require-claim-block.py, the skills and CHANGELOG are those files' own same-named symbols: .claude hooks do not import this file, and none of this file's signatures changed, so they are still correct. CONTRIBUTING.md's basename dependants (evals.json, _output.py, the four suites above, tools/affected.py, tools/check-committed-pii.py) reference the file, not this bullet, and no heading was renamed; still correct, and the suites are green. FOUND, OUT OF SCOPE (not edited; not a declared file): the root of the tokenized-path half is _config._head_runs_body in plugins/audit/hooks/_config.py. Its _HEAD_INDIRECTION search matches the command substitution that ENCLOSES the cat heredoc, so every house-form body (commit message or description) is graded as SHELL by every guard sharing split_heredocs. Measured: git_invocations on an audit-task add whose house-form description has a body line opening with the stash verb returns a stash invocation with args ['is','banned','here']. A body line opening with a tree-wide checkout would be refused by this guard on the tokenized path, and the plugin's history guard reads the same bodies as commands; refusal (b) above is a second instance of the class. The fix belongs in _config: read the head from the innermost open substitution, and stop letting a quoted script path disqualify a plain script run. It needs a register entry and its own task.",
+        "descriptive": "guard-uncommitted no longer refuses a command for heredoc bodies or quoted arguments that only quote destructive git, while every real destructive command stays refused, including one inside a command substitution that the pre-filter used to miss."
       },
       "startedAt": "2026-10-31T04:09:57Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-31T04:47:54Z",
+      "verifiedBy": [
+        "gu43 an audit-task add whose stdin heredoc description quotes a stash and a tree-wide checkout is allowed on a dirty tree",
+        "gu44 the same description in the house command-substitution heredoc form with an odd quote, and a quoted argument beside a heredoc, are allowed",
+        "gu45 the same commands outside the heredoc are still refused, alone and after the heredoc in one untokenizable line",
+        "gu46 executed quoted or heredoc text is still refused: a shell-fed heredoc, a double-quoted substitution, an unquoted-delimiter body's substitution, sh -c, a backquote",
+        "gu47 the data reading is quiet on a clean tree",
+        "gu48 a quoted program word, a quoted git verb, an interpreter's inline code and a path-run program are still read",
+        "gu49 an interpreter running a script file hands its quoted args over as data",
+        "gu50 a dot closing a substitution is tree-wide (pre-filter)",
+        "gu51 the TEXT and EXECUTES readings are labelled apart"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-31T04:36:28Z.e9a015",
         "status": "passed",
         "at": "2026-10-31T04:36:28Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "271cd13cecc3",
+        "at": "2026-10-31T04:47:54Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-31T04:26:49Z",
+        "basis": "`python3 tools/sweep-selftests.py .claude/hooks/guard-uncommitted.py` in a throwaway tree at HEAD exited 1 with 5 of 52 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code, the task's run with its inline suite .claude/hooks/guard-uncommitted.py laid over as HEAD's copy plus its 2 test hunk(s), 7 other hunk(s) held at HEAD), each passing with the working tree's implementation - gu44 (house FAIL), gu46 (house FAIL), gu49 (house FAIL), gu50 (house FAIL), gu51 (house FAIL): SELFTEST FAILED: 47/52 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -273,6 +318,43 @@
         "expectRedFirst": true,
         "gate": [
           "python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test_audit_lookup.py tests/test__impact.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P153.7-34e",
+      "title": "The shared heredoc split reads a house-form commit or description body as data, so no guard grades it as shell",
+      "status": "pending",
+      "description": "Register F822. _config._head_runs_body: _HEAD_INDIRECTION matches the command substitution that encloses the cat heredoc, so every guard sharing split_heredocs grades house-form bodies as commands (measured by P153.3: a stash invocation with args is banned here). Read the head from the innermost open substitution, and stop letting a quoted script path disqualify a plain script run. Hooks are importless of scripts/; keep the hook import budget (tools/bench-hooks.py --gate). Check every guard that shares split_heredocs and tools/prove-gates.py rows anchored in _config.py; name any undeclared file that must change.",
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "tests/test__config.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__config.py: git_invocations on an audit-task add whose house-form description body has a line opening with the stash verb returns no stash invocation; a real stash outside the body is still returned"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__config.py"
         ],
         "gateBasis": "tests.add"
       },
