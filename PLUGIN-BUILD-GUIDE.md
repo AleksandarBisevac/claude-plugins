@@ -620,13 +620,20 @@ of those guards applies before any reading of its own — in `guard-history-rewr
 word `"$(cat <<'DELIM'` (or `"DELIM"`) with nothing after the marker on its line, the body,
 `DELIM` alone on its own line, then `)"`, as the value of a sink option in `_HOUSE_SINKS` — a git
 commit or tag message past `-C <path>` and `--no-pager`, `gh pr` or `gh issue` create or edit
-`--body`/`--title`, or an audit-task prose option on `add`, `scope`, `done`, `cancel` or `note`,
-the script named by its stem at an absolute or variable-rooted path. It lifts nothing at all when
-the quoting before a marker is not provably plain (an ANSI-C or locale quote, a quote left open, an
-escaped newline, a substitution, a parameter operator, a comment), when a body holds a `)` — bash
-3.2 matches the substitution's parenthesis over the raw text before it reads the heredoc, so a
-body's own `)"` line ended it and the lines after it ran — or when any clause of the command is one
-`_house_frame_clause` does not list or is joined to the next by a pipe, a redirect or a group.
+`--body`/`--title`, or an audit-task prose option on `add`, `scope`, `done`, `cancel` or `note`
+of this plugin's own script — `"${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py"` as
+written in double quotes, or a literal absolute path whose real path is the script under
+`hook_plugin_root()`, since a path matched by the file's name alone runs whatever file carries
+it. It lifts nothing at all when the quoting before a marker is not provably plain (an ANSI-C or
+locale quote, a quote left open, an escaped newline, a substitution, a parameter operator, a
+comment), or when any clause of the command is one `_house_frame_clause` does not list or is
+joined to the next by a pipe, a redirect or a group. Three more refusals answer what macOS's bash
+3.2 does to a `$(` before it reads the heredoc, each found with the body run under that shell: a
+body holding a `)` (the body's own `)"` line ended the substitution), a body line ending in a
+backslash (the join made a line `E\` followed by `OF` the delimiter), and a `)` anywhere after the
+argument's closing `)"` (a quote or backquote in the body reads as open while the shell scans for
+the closing parenthesis, so the scan ended at the later one) — so a command lifts one body at
+most. Those are the shapes measured, not a proof that no shell reads the template another way.
 Every other command comes back byte for byte and is read exactly as it was before the lift existed.
 `tests/test__config.py`'s `hl` group holds both directions, at the function and at each guard's
 entry; its `_MEASURED_BYPASSES` table is the set of bypasses the design was measured against.

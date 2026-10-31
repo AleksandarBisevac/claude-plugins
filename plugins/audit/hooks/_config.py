@@ -3128,11 +3128,15 @@ _HOUSE_SINKS = (
                             "--reason", "--text")),
 )
 # The rest of the command, beside the sink. A stored message can be read back
-# and run by a LATER clause (`git log -1 --format=%B | sh`, a hook, a pager),
-# so the lift also refuses any clause it cannot vouch for: these programs, and
-# for git these verbs, with no `-c` and no option that names a program to run.
-# Anything else in the command - and every pipe, redirect, group, substitution
-# or comment outside the sink's own argument - means no lift at all.
+# and run by a LATER clause (`git log -1 --format=%B | sh`, a pager), so the
+# lift also refuses any clause it cannot vouch for: these programs, and for git
+# these verbs, with no `-c` and no option that names a program to run. Anything
+# else in the command - and every pipe, redirect, group, substitution or
+# comment outside the sink's own argument - means no lift at all. What no
+# reading of this command can see is a consumer outside it that runs the stored
+# text - a commit-msg hook executing the message, a later session piping it to
+# a shell: that is the replay class, a property of the consumer, and the lift
+# does not claim to close it.
 _HOUSE_FRAME_GIT = ("add", "branch", "checkout", "commit", "diff", "fetch",
                     "log", "mv", "pull", "push", "reset", "restore", "rev-parse",
                     "rm", "show", "stash", "status", "switch", "tag")
@@ -3142,29 +3146,39 @@ _HOUSE_FRAME_GIT_RUNS = ("--exec", "--receive-pack", "--upload-pack", "--output"
 _HOUSE_OPEN = re.compile(r"\"\$\(cat[ \t]+<<(['\"])([A-Za-z_][A-Za-z0-9_]*)\1\n")
 _HOUSE_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 _HOUSE_PYTHON = re.compile(r"^python(?:3(?:\.\d+)?)?$")
-# An absolute script path, or one rooted at a plain variable such as the
-# plugin root: a relative `audit-task` is whatever file sits in the cwd.
-_HOUSE_SCRIPT = re.compile(
-    r"^(?:\$\{[A-Za-z_][A-Za-z0-9_]*\}|\$[A-Za-z_][A-Za-z0-9_]*)?"
-    r"/[^$`'\"\\*?\[\s]*$")
+# The audit-task carrier is this plugin's own script and nothing that merely
+# shares its name: `/tmp/audit-task.py`, a copy under `$HOME` or a relative path
+# runs whatever file sits there. Trusted at two spellings only - the plugin-root
+# variable exactly as the commands write it, or a literal absolute path that
+# resolves to the script beside these hooks. The name is built from its stem.
+_HOUSE_SCRIPT_REL = ("scripts", "manifest", "audit-task" + os.extsep + "py")
+_HOUSE_ROOT_SCRIPT = "${CLAUDE_PLUGIN_ROOT}/" + "/".join(_HOUSE_SCRIPT_REL)
+_HOUSE_SCRIPT = re.compile(r"^(?:[A-Za-z]:)?/[^$`'\"\\*?\[\s]*$")
 _HOUSE_BRACED = re.compile(r"\$\{[A-Za-z_][A-Za-z0-9_]*\}")
 _HOUSE_STRUCTURE = "<>(){}`"
 _HOUSE_WORD = "\x00house"
 
 
 def _house_script_word(word):
-    """Is `word` an absolute path whose file is the audit-task script?
+    """Is `word` this plugin's own audit-task script?
 
-    By stem, so the literal names no file; a quoted word is read without its
-    pair of quotes, and any other quoting is no match."""
+    `_HOUSE_ROOT_SCRIPT` as written, in double quotes - single quotes would
+    make it a literal directory name in the cwd, and bare its braces never
+    reach here - or a literal absolute path, bare or in one pair of quotes,
+    whose real path is the script under `hook_plugin_root()`. Any other
+    quoting is no match."""
+    quote = ""
     if len(word) >= 2 and word[0] == word[-1] and word[0] in "'\"":
-        word = word[1:-1]
+        quote, word = word[0], word[1:-1]
         if "'" in word or '"' in word:
             return False
-    if not _HOUSE_SCRIPT.match(word):
+    if word == _HOUSE_ROOT_SCRIPT:
+        return quote == '"'
+    if not _HOUSE_SCRIPT.match(word) or not os.path.isabs(word):
         return False
-    stem = os.path.splitext(word.rsplit("/", 1)[-1])[0]
-    return stem == "audit-task"
+    own = os.path.join(hook_plugin_root(), *_HOUSE_SCRIPT_REL)
+    return (os.path.normcase(os.path.realpath(word))
+            == os.path.normcase(os.path.realpath(own)))
 
 
 def _house_git_verb(words):
@@ -3252,8 +3266,19 @@ def _house_body_end(text, start, delim):
     parentheses and quotes over the raw text before it reads any heredoc, so a
     body line holding `)"` closed the substitution there and the shell ran the
     body lines after it - measured, with the body's stash run. With no `)` in the
-    body, the match cannot end before the delimiter line, and every line above
-    it stays heredoc text whatever quotes it holds."""
+    body, the match cannot end before the template's own `)`.
+
+    A BODY LINE ENDING IN A BACKSLASH IS A DOUBT. The same bash joins a
+    backslash-newline inside `$(` before it looks for the heredoc's end, so a
+    line `E\\` then a line `OF` became the delimiter and the lines after it ran.
+
+    A `)` ANYWHERE AFTER THE CLOSING `)"` IS A DOUBT. While it scans for that
+    `)`, the same bash reads a quote or backquote in the body as opening a quote,
+    so with an apostrophe in the body the template's `)` was skipped, the scan
+    ended at a `)` in a later clause, and the text between ran. With no later
+    `)` the scan has nowhere to end and bash stops at a syntax error, running
+    nothing. A second house argument holds a `)`, so a command lifts one body at
+    most."""
     at = start
     while True:
         nl = text.find("\n", at)
@@ -3262,7 +3287,7 @@ def _house_body_end(text, start, delim):
         line = text[at:nl]
         if line == delim:
             break
-        if line.strip() == delim or ")" in line:
+        if line.strip() == delim or ")" in line or line.endswith("\\"):
             return None
         at = nl + 1
     close = nl + 1
@@ -3270,6 +3295,8 @@ def _house_body_end(text, start, delim):
         return None
     after = close + 2
     if after < len(text) and text[after] not in " \t\n;&|":
+        return None
+    if ")" in text[after:]:
         return None
     return at, after
 
@@ -3352,13 +3379,17 @@ def _house_spans(text):
 
 
 def lift_house_bodies(cmd):
-    """`cmd` with the body of each house-form text argument removed, or `cmd`
-    unchanged when anything in it leaves a doubt.
+    """`cmd` with the body of its house-form text argument removed - one at
+    most, since a second one puts a `)` after the first - or `cmd` unchanged
+    when anything in it leaves a doubt.
 
     A body is removed only when ALL of these hold: its argument is a whole word
     `"$(cat <<'DELIM'` (or `"DELIM"`) with nothing after the marker on its
-    line, the body, `DELIM` alone on its own line, then `)"`; the word is the
-    value of a sink option in `_HOUSE_SINKS`, the word right after it; every
+    line, the body, `DELIM` alone on its own line, then `)"`; no body line
+    holds a `)` or ends in a backslash, and nothing after the `)"` holds a `)`
+    (`_house_body_end` says why); the word is the value of a sink option in
+    `_HOUSE_SINKS`, the word right after it, of this plugin's own audit-task
+    script when the sink is audit-task (`_house_script_word`); every
     word naming that sink is literal; the quoting before it is provably plain -
     no ANSI-C or locale quote, no quote left open, no escaped newline, no
     substitution, no parameter operator, no comment; and every clause of the

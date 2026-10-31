@@ -199,8 +199,10 @@
         "severity": "high",
         "file": "plugins/audit/hooks/_config.py",
         "issue": "final phase review, measured on all four guards vs main: a body written to a .sh file is data unless the later run uses a spelling the run detector enumerates; globs, escaped names, find -exec, BASH_ENV, exec fd, cat file piped to bash, xargs, script, watch, env -S, git -c core.pager, make SHELL=, and install /dev/stdin as the writer all reach allow where main denied (bash ran each). The run detector is an enumeration patched once already",
-        "resolution": "see the phase decision: keep main grading for a written body, lifting only the exact house template",
-        "fixTask": "P153.19-34e"
+        "resolution": "fixed in P153.19-34e (727aaad7c343): see the phase decision: keep main grading for a written body, lifting only the exact house template",
+        "fixTask": "P153.19-34e",
+        "commit": "727aaad7c343",
+        "status": "fixed"
       },
       {
         "id": "P153-R22",
@@ -222,9 +224,24 @@
         "file": "CHANGELOG.md",
         "issue": "final phase review, read: the Unreleased section covers only the gate-clear refusal; the start-time readers refusal, scope --files + and --waive, the guard heredoc behaviour and the lock-ownership text are user-visible and absent",
         "resolution": "add Unreleased entries for each user-visible change of the phase"
+      },
+      {
+        "id": "P153-R25",
+        "severity": "high",
+        "file": "plugins/audit/hooks/_config.py",
+        "issue": "final review 2, measured under macOS bash 3.2: the house lift ends the body at a raw delimiter line, but bash 3.2 joins backslash-newline inside a command substitution before finding the heredoc end, and treats a quote or backquote in the body as opening a quote while scanning for the closing paren; a body line E-backslash then OF, or an apostrophe in the body with a later clause holding a closing paren, runs the following text (all four guards deny on main, allow on HEAD)",
+        "resolution": "lift only when no body line ends in a backslash and nothing after the closing paren-quote of the lifted argument holds a closing paren; pin both with red-first cases",
+        "fixTask": "P153.20-34e"
+      },
+      {
+        "id": "P153-R26",
+        "severity": "med",
+        "file": "plugins/audit/hooks/_config.py",
+        "issue": "final review 2, measured: the audit-task carrier is matched by file stem, so any audit-task script at any absolute or variable-rooted path (a /tmp copy that runs its argument) gets the lift; also the frame comment says a hook is refused, but a commit-msg hook firing during the sink clause runs the lifted message",
+        "resolution": "trust the script only at the literal CLAUDE_PLUGIN_ROOT spelling or at a path resolving inside the hook own plugin root; reword the frame comment to name the hook route as the replay class"
       }
     ],
-    "outcome": "[findings: 24 - 6 high, 12 med, 6 low; 10 with a recorded fix commit]"
+    "outcome": "[findings: 26 - 7 high, 13 med, 6 low; 11 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1624,7 +1641,7 @@
     {
       "id": "P153.19-34e",
       "title": "fix P153-R21: final phase review, measured on all four guards vs main: a body...",
-      "status": "in_progress",
+      "status": "done",
       "description": "final phase review, measured on all four guards vs main: a body written to a .sh file is data unless the later run uses a spelling the run detector enumerates; globs, escaped names, find -exec, BASH_ENV, exec fd, cat file piped to bash, xargs, script, watch, env -S, git -c core.pager, make SHELL=, and install /dev/stdin as the writer all reach allow where main denied (bash ran each). The run detector is an enumeration patched once already\n\nResolution asked: see the phase decision: keep main grading for a written body, lifting only the exact house template",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -1658,14 +1675,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "727aaad7c343",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Restored plugins/audit/hooks/_config.py, guard-history-rewrite.py, guard-secrets-read.py, .claude/hooks/guard-uncommitted.py and .claude/hooks/guard-release.py to their text at the branch point (git show d981a743:<path>); every phase commit touching _config.py was guard heredoc work, so no non-guard helper was lost (names other files use - _ask_rev_parse, _call_start_path, _command_facts, _handed_command and the guards' _substitutions, git_calls, amend_requested, _copy_targets, _session_base, _git_verb, _hooks_config, _effective - all still defined, checked by grep). Then added ONE transform, _config.lift_house_bodies(cmd), with ONE sink table _HOUSE_SINKS (git commit -m/-F/--message past -C <path> and --no-pager; git tag -m; gh pr|issue create|edit --body/--title; the audit-task script by stem at an absolute or variable-rooted path, add|scope|done|cancel|note with --description/--title/--outcome/--reason/--text; no .py literal). It removes a body only when: the word is exactly a double-quoted $(cat <<'D' or <<\"D\" with nothing after the marker on its line, D alone on its own line, then )\" ending the word; the quoting before it is provably plain (no $' or $\", no open quote, no escaped newline, no $( or backquote, no ${...} with an operator, no comment); nothing in the body is a ')' (measured: macOS /bin/bash 3.2 matches the $( parenthesis over raw text, so a body line ')\"' ended the substitution and ran the lines after it); and every clause of the command is one _house_frame_clause lists (cd; git with -C/--no-pager only and a verb from _HOUSE_FRAME_GIT with no --exec/--receive-pack/--upload-pack/--output; gh pr/issue; the audit-task script), joined by ; && || & or newline - any pipe, redirect, group or other heredoc means no lift. Any doubt returns the command byte for byte. Wired before every reading: guard-history-rewrite decide, guard-secrets-read decide (Bash branch), guard-uncommitted reading (after the cheap text door, through the parser's _config; the door re-asked on the lifted text), guard-release _publishers and _session_base via a _lifted() helper that keeps the raw text if _config cannot be loaded. Tests: tests/test_guard_history_rewrite.py and tests/test_guard_secrets_read.py restored to the branch point (they pin main's reading; the cases that pinned the reverted designs are gone, and the deny rows they held are carried by hl6). New group hl in tests/test__config.py: hl1 exact lifted output for every sink form incl. git -C, audit-task with the plugin-root variable, gh, two house args, a double-quoted delimiter; hl2 carriers and frames returned unchanged incl. bash -c, eval, python -c, assignment, git -c, --message=, quoted/escaped/pathed program, gh comment/release, relative audit-task, launcher, pipe, redirect, read-back, unlisted later clause, group, loop, function, export PATH, IFS, comment, ANSI-C, open quote, substitution, parameter operator, continuation, prior heredoc, and one case each that only the pipe/dollar/comment rule catches; hl3 every off-template shape incl. a body holding ')\"' and a parenthesis; hl4 the owner's allow forms (house commit -m, git -C x commit -m, audit-task add --description, done --outcome, gh pr create --body) with a body naming <stash-drop>, <secret-read>, <hard-reset>, <tag-create> allowed by all four guards at their entry points in a real dirty repo with a plan; hl5 the same body under bash -c, piped to sh, and a relative audit-task path refused by all four; hl6 _MEASURED_BYPASSES, one representative of every bypass class the three review matrices measured as weaker than main (91 rows), each refused by the guard main refused it with. Mutation probe on a scratch copy, pycache purged per cycle, each mutation turned red: lift never lifts -> hl1,hl4; carrier always true -> hl2; frame check dropped -> hl2,hl6; ')' doubt dropped -> hl3; $ always plain -> hl2; comment doubt dropped -> hl2; relative script accepted -> hl2,hl5,hl6; pipe accepted -> hl2; each guard unwired (hist/sec/unc/rel) -> hl4; sink option unchecked -> hl2; restored 376/376. MATRIX (four guards, union of the rv16, rv18 and final-review case files, 6783 unique commands, branch-point export vs this tree): rows weaker than main 86 (hist 48, sec 11, unc 21, rel 21 by guard), stronger 0, rows differing at all 86, exceptions 0; all 86 are commands lift_house_bodies changes, i.e. exact house-form bodies, and each was run under bash with git/gh/python3 shadowed: none ran a body line or wrote stderr. Re-run on a fresh copy after the ')' fix gave the same 86. Shell fuzz of the lift (lifted commands only, run under /bin/bash 3.2, /bin/sh, /bin/zsh, /bin/dash): random bodies, two seeds, about 3160 lifted bodies, 0 body runs (the first seed, before the ')' rule, found 104 body runs under bash/sh - that is where the rule came from); random frames around a house arg, two seeds, about 990 lifted, 0 body runs. Allow list (31 rows): refused by some guard on main 30, on this tree 10 - remaining: -am cluster (not -m), py-launch launcher, padded closing '  )\"', body with ')' or backquote $( (two rows), 2>&1 | tail pipe, gh pr comment and gh release (not in the table), and two rows refused only for their frame (tag creation by guard-release, <amend> by the history guard). Docs: CONTRIBUTING.md guard rule rewritten to name the one transform, the guards that call it, and that nothing enforces it for a new guard; PLUGIN-BUILD-GUIDE.md split_heredocs paragraph rewritten to the lift's real conditions and call sites; CHANGELOG [Unreleased] gained Added (scope --files + and --waive) and Changed entries (start-time readers refusal, the house-form lift, the lock-ownership message) beside the existing gate-clear entry; heading unchanged. tools/prove-gates.py: --changed over every file of this task names three rows (hooks_rule_drift, sweep_glob_drift, commit_spelling_drift), all proven RED; no row anchors in the changed code, so none needed fixing. Other checks: ruff check plugins/audit tools tests exit 0; vermin -t=3.8- over plugins/audit/scripts, plugins/audit/hooks, tests, tools/lints exit 0; tools/bench-hooks.py --gate exit 0 (one interpreter measured, 3.14). Extra sweep: test__affected_tests, test__doctor_trail, arm-release-bypass, require-claim-block all ok. Dependants: _config.py importers (detect-plan-skip, guard-bash-writes, guard-capabilities, guard-edits, journal-writes) still correct - every name main defined is back unchanged and only names were added; guard-release changed (calls the lift); guard-history-rewrite/guard-secrets-read changed in one line each; guard-history-rewrite's readers (guard-uncommitted by path, docs/research, hooks.json, _areas, _commit_trail, repair-commits) still correct - its names are main's; guard-uncommitted's readers (settings.json, sweep-costs, the guide) still correct, and the CONTRIBUTING mention of executed_text was removed with the function; guard-release readers (arm-release-bypass, affected, _refs, verify.sh, test__affected_tests) still correct, arm-release-bypass suite ok; test files' readers (sweep-costs, _harness quoting prove-gates, bench-hooks _text) untouched; CONTRIBUTING/guide/CHANGELOG quoted texts (SECURITY.md, _deps/sweep quotes, guide quotes in test__affected_tests and test__doctor_trail, release.py's Unreleased heading, _harness's prove-gates quote) not reworded - test__deps, test__refs, test__affected_tests, test__doctor_trail ok. Known residuals, all exact house-form lifts and so inside the owner's acceptable class: a script named audit-task at an absolute path that runs its own argument, and a repo hook already configured to run a commit message, still receive the body.",
+        "descriptive": "The four guards read every command exactly as main did, except that the body of an exact house-form commit/tag message, audit-task prose option or gh pr/issue body is removed first when nothing in the command leaves a doubt."
       },
       "startedAt": "2026-10-31T13:41:38Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-31T14:26:30Z",
+      "verifiedBy": [
+        "hl1: lift_house_bodies removes exactly the body of every house-form sink argument in its one table and keeps every other byte",
+        "hl2: every carrier outside the table, every sink handing its output on, every unlisted frame clause and every unprovable quote context comes back byte for byte",
+        "hl3: every off-template spelling of the substitution, including a ')' in the body, comes back unchanged",
+        "hl4: the owner's five allow forms with a body naming four destructive operations are allowed by all four guards at their entries",
+        "hl5: the same body under a shell's -c, piped to a shell, or behind a relative audit-task path is refused by all four",
+        "hl6: one representative of every bypass class the phase reviews measured is refused by each guard main refused it with"
+      ],
       "notes": [
         {
           "at": "2026-10-31T13:40:50Z",
@@ -1719,6 +1743,109 @@
         "runId": "2026-10-31T14:26:10Z.a9bfbc",
         "status": "passed",
         "at": "2026-10-31T14:26:10Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "727aaad7c343",
+        "at": "2026-10-31T14:26:30Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-31T14:19:15Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__config.py tests/test_guard_history_rewrite.py .claude/hooks/guard-uncommitted.py tests/test_guard_secrets_read.py tests/test__manifest_vocab.py .claude/hooks/guard-release.py tests/test_guard_bash_writes.py tests/test__output_lints.py tests/test__deps.py tests/test__refs.py` in a throwaway tree at HEAD exited 1 with 9 of 291 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - hl1 (house FAIL), hl2 (house FAIL), hl3 (house FAIL), hl4 (house FAIL), hl5 (house FAIL), hl6 (house FAIL), gh35 (house FAIL), gw14e (house FAIL) and 1 more: SELFTEST FAILED: 288/291 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P153.20-34e",
+      "title": "fix P153-R25: final review 2, measured under macOS bash 3.2: the house lift e...",
+      "status": "in_progress",
+      "description": "final review 2, measured under macOS bash 3.2: the house lift ends the body at a raw delimiter line, but bash 3.2 joins backslash-newline inside a command substitution before finding the heredoc end, and treats a quote or backquote in the body as opening a quote while scanning for the closing paren; a body line E-backslash then OF, or an apostrophe in the body with a later clause holding a closing paren, runs the following text (all four guards deny on main, allow on HEAD)\n\nResolution asked: lift only when no body line ends in a backslash and nothing after the closing paren-quote of the lifted argument holds a closing paren; pin both with red-first cases",
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "tests/test__config.py",
+        "tests/test_guard_history_rewrite.py",
+        "tests/test_guard_secrets_read.py",
+        ".claude/hooks/guard-uncommitted.py",
+        ".claude/hooks/guard-release.py",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__config.py: lift only when no body line ends in a backslash and nothing after the closing paren-quote of the lifted argument holds a closing paren"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__config.py tests/test_guard_history_rewrite.py .claude/hooks/guard-uncommitted.py tests/test_guard_secrets_read.py tests/test__manifest_vocab.py .claude/hooks/guard-release.py tests/test__deps.py tests/test__refs.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-31T14:37:57Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-31T14:37:46Z",
+          "text": "scope: plugins/audit/hooks/_config.py, every path the finding(s) P153-R25 name"
+        },
+        {
+          "at": "2026-10-31T14:37:46Z",
+          "text": "scope: tests/test__config.py, the suite that tests plugins/audit/hooks/_config.py (python: its import closure reaches plugins/audit/hooks/_config.py)"
+        },
+        {
+          "at": "2026-10-31T14:37:49Z",
+          "text": "its guard sections state fail modes and refusals; this task only narrows when the house lift applies, so guards refuse a superset",
+          "waives": "SECURITY.md"
+        },
+        {
+          "at": "2026-10-31T14:37:50Z",
+          "text": "it quotes the related-listing sentence of the guide; this task edits only the lift paragraph",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-10-31T14:37:52Z",
+          "text": "it quotes the doctor-trail sentence of the guide; this task edits only the lift paragraph",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-10-31T14:37:53Z",
+          "text": "it reads the generated module-map heading; this task adds no module",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-10-31T14:37:54Z",
+          "text": "it quotes guide text about scope spelling; this task edits only the lift paragraph",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-10-31T14:37:55Z",
+          "text": "it reads the Unreleased heading; this task edits bullets under it, never the heading",
+          "waives": "tools/release.py"
+        }
+      ],
+      "fixes": [
+        "P153-R25"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-31T15:01:51Z.4073cf",
+        "status": "passed",
+        "at": "2026-10-31T15:01:51Z"
       }
     }
   ],

@@ -22,11 +22,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 - **The guards read a house-form message as text.** A commit or tag message, a `gh pr`/`gh issue`
   body or title, or an audit-task description, outcome, reason, title or note written as
   `"$(cat <<'EOF'` ... `EOF` `)"` no longer has its prose refused for naming a command: the
-  history-rewrite and secrets-read guards pass the command through `_config.lift_house_bodies`
-  before they read it, and it removes such a body only when the whole command leaves no doubt -
-  never when the body holds a `)`, the message is piped or redirected, or another clause runs
-  something it does not list. Any other command comes back unchanged, so every other heredoc is
-  read as it was.
+  history-rewrite and secrets-read guards, and this repository's uncommitted-work and release
+  guards, pass the command through `_config.lift_house_bodies` before they read it, and it
+  removes such a body only when the whole command leaves no doubt - never when the body holds a
+  `)` or a line ending in a backslash, a `)` follows the message anywhere in the command, the
+  audit-task script is any file but the plugin's own, the message is piped or redirected, or
+  another clause runs something it does not list. Those refusals answer the ways macOS's bash 3.2
+  was measured to read past the body's end; they are not a proof that no shell reads it another
+  way. Any other command comes back unchanged, so every other heredoc is read as it was.
 - **A phase lock your own process took under an earlier session id is named as yours.** `acquire`
   and `release` still refuse it, and the refusal now says the claim is the caller's own process
   under that earlier session and prints the whole `audit-lock.py release` command, with the

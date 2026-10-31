@@ -3228,7 +3228,15 @@ _HL_TAG = "git " + "tag v9"
 # its own line, which is where a shell reads a command.
 _HL_BODY = "Measured on each guard.\n%s\n%s\n%s HEAD\n%s" % (
     _HL_STASH, _HL_ENV, _HL_HARD, _HL_TAG)
-_HL_SCRIPT = "/opt/plugin/scripts/manifest/audit-task.py"
+# The lift trusts one audit-task carrier: the script inside the plugin root of
+# the `_config` under test, at a literal path (forward slashes, so the word a
+# shell reads is the same on Windows) or at the `${CLAUDE_PLUGIN_ROOT}`
+# spelling. Single-quoted, so a checkout path holding a blank is still one
+# word.
+_HL_SCRIPT_PATH = os.path.join(_output.PLUGIN_ROOT, "scripts", "manifest",
+                               "audit-task.py").replace(os.sep, "/")
+_HL_SCRIPT = "'%s'" % _HL_SCRIPT_PATH
+_HL_ROOT_SCRIPT = "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py"
 
 
 def _hl_house(before, after="", body=_HL_BODY, delim="'EOF'"):
@@ -3489,6 +3497,187 @@ _MEASURED_BYPASSES = (
 )
 
 
+# Three ways a shell reads past the end the lift computes for a house body,
+# each measured under macOS's bash 3.2 with the externals shimmed:
+#   - it joins a backslash-newline inside `$(` before it looks for the heredoc's
+#     end, so a body line `E\` followed by `OF` ends the body there;
+#   - it reads a quote or backquote in the body as opening a quote while it
+#     scans for the `)` that ends `$(`, so with a `)` anywhere after the
+#     argument's closing `)"` the substitution ends there and the text between
+#     runs;
+#   - a carrier matched by its file name runs whatever script carries the name.
+_HL_H = "git commit -m \"$(cat <<'EOF'\n"
+
+
+def _hl_joined(before, body=_HL_BODY, after=""):
+    """A house-form argument whose body bash 3.2 ends at a line `E\\` + `OF`."""
+    return '%s"$(cat <<\'EOF\'\nE\\\nOF\n%s\nEOF\n)"%s' % (before, body, after)
+
+
+def _hl_quoted_tail(payload):
+    """The commands whose text after the house argument's `)"` holds a `)`:
+    bash 3.2 ends the substitution at that `)` and runs `payload`."""
+    tail = "'x)\"; %s; : '\\'" % payload
+    return (
+        ("an apostrophe in the body, a later `)` on the line",
+         _HL_H + "it's\nEOF\n)\" && git log --grep=" + tail),
+        ("an apostrophe in the body, the payload on later lines",
+         _HL_H + "it's\nEOF\n)\" && git log --grep='x)\"\n%s\n: '\\'"
+         % payload),
+        ("a double quote in the body",
+         _HL_H + "say \"hi\nEOF\n)\" && git log --grep=\"x)'; %s; : \"\\\""
+         % payload),
+        ("a backquote in the body",
+         _HL_H + "a `b\nEOF\n)\" && git log --grep='x`)\"; %s; : '\\'"
+         % payload),
+        ("an opening substitution in the body",
+         _HL_H + "$(\nEOF\n)\" && git log --grep=" + tail),
+        ("gh pr create, the `)` in gh pr view",
+         "gh pr create --title t --body \"$(cat <<'EOF'\nit's\nEOF\n)\" && "
+         "gh pr view --json " + tail),
+        ("audit-task, the `)` in a later git log",
+         "python3 %s note P1.1 --text \"$(cat <<'EOF'\nit's\nEOF\n)\" && "
+         "git log --grep=%s" % (_HL_SCRIPT, tail)),
+    )
+
+
+def _hl_shell_cases(check, lift, elsewhere):
+    """THE LIFT'S PRECONDITIONS AGAINST WHAT A SHELL DOES, BOTH DIRECTIONS:
+    each shape a shell reads past the computed body end comes back unchanged,
+    and the near shapes no shell misreads are still lifted."""
+    joins = (
+        ("E-backslash then OF", _hl_joined("git commit -m ")),
+        ("EO-backslash then F", '%s"$(cat <<\'EOF\'\ntext\nEO\\\nF\n%s\nEOF\n)"'
+         % ("git commit -m ", _HL_BODY)),
+        ("three joined lines", '%s"$(cat <<\'EOF\'\nE\\\nO\\\nF\n%s\nEOF\n)"'
+         % ("git commit -m ", _HL_BODY)),
+        ("under gh pr create", _hl_joined("gh pr create --title t --body ")),
+        ("under the plugin's audit-task",
+         _hl_joined("python3 %s add P1 --description " % _HL_SCRIPT)),
+        ("a backslash-ended line with no delimiter in reach",
+         _hl_house("git commit -m ", body="fix the\\\nparser\n" + _HL_BODY)[0]),
+        ("a backslash-ended last line",
+         _hl_house("git commit -m ", body=_HL_BODY + "\nend\\")[0]),
+    )
+    moved = [(what, lift(cmd)) for what, cmd in joins if lift(cmd) != cmd]
+    check("hl7 a house body any line of which ends in a backslash is not "
+          "lifted - bash 3.2 joins the line before it finds the heredoc's "
+          "end, so `E\\` + `OF` closes the body early: %r" % (moved,),
+          not moved and bool(joins))
+
+    tails = _hl_quoted_tail(_HL_STASH) + (
+        ("a plain body, a `)` in a later clause",
+         _HL_H + "plain\nEOF\n)\" && git log --grep='x)'"),
+        ("two house arguments",
+         "python3 %s add P1 --title \"$(cat <<'EOF'\nit's\nEOF\n)\" "
+         "--description \"$(cat <<'EOF'\nok\nEOF\n)\"" % _HL_SCRIPT),
+    )
+    moved = [(what, lift(cmd)) for what, cmd in tails if lift(cmd) != cmd]
+    check("hl8 ...nor is one with a `)` anywhere after the argument's closing "
+          "`)\"`, on its line or a later one, a second house argument's "
+          "included - bash 3.2 reads a quote in the body as open while it "
+          "scans for the `)` ending `$(`: %r" % (moved,),
+          not moved and bool(tails))
+
+    real = os.path.join(elsewhere, "audit-task.py")
+    with open(real, "w") as fh:
+        fh.write("")
+    carriers = (
+        ("a script of that name in /tmp", "python3 /tmp/audit-task.py add P1 "
+         "--description "),
+        ("the name with another extension", "python3 /tmp/audit-task.sh add "
+         "P1 --title "),
+        ("a variable directory", 'python3 "$HOME/audit-task.py" add P1 --title '),
+        ("an unquoted variable directory",
+         "python3 $TMPDIR/audit-task.py note P1.1 --text "),
+        ("an existing file of that name outside the plugin",
+         "python3 '%s' add P1 --description " % real.replace(os.sep, "/")),
+        ("the plugin's layout under another root",
+         "python3 /opt/plugin/scripts/manifest/audit-task.py add P1 "
+         "--description "),
+        ("the plugin-root spelling single-quoted, a literal directory name",
+         "python3 '%s' add P1 --description " % _HL_ROOT_SCRIPT),
+        ("the plugin-root variable without braces",
+         "python3 $CLAUDE_PLUGIN_ROOT/scripts/manifest/audit-task.py add P1 "
+         "--description "),
+        ("another path under the plugin-root spelling",
+         'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/audit-task.py" add P1 '  # refs: fixture
+         "--description "),
+    )
+    moved = [(what, lift(cmd)) for what, cmd in
+             ((what, _hl_house(before)[0]) for what, before in carriers)
+             if lift(cmd) != cmd]
+    check("hl9 ...nor an audit-task carrier but the plugin's own script - at "
+          "the literal `${CLAUDE_PLUGIN_ROOT}` spelling or a literal path that "
+          "resolves to it - since a script matched by its name alone runs "
+          "whatever carries the name: %r" % (moved,),
+          not moved and bool(carriers))
+
+    # SECOND DIRECTION, for the mutation that refuses every quote in a body or
+    # every later clause: the same characters with no `)` after the closing
+    # `)"` leave bash 3.2 at a syntax error, which runs nothing - lifted.
+    twins = (
+        ("an apostrophe in the body, nothing after", "git commit -m ", "",
+         "it's\n" + _HL_BODY),
+        ("an apostrophe, a later clause with no `)`", "git commit -m ",
+         " && git log -1", "it's\n" + _HL_BODY),
+        ("quotes and a backquote in the body, a later option",
+         "python3 %s done P1.1 --outcome " % _HL_SCRIPT, " --commit abc1234",
+         'say "hi `x` it\'s\n' + _HL_BODY),
+        ("a backslash inside a body line", "git commit -m ", "",
+         "a\\b\n" + _HL_BODY),
+        ("the plugin-root spelling double-quoted",
+         'python3 "%s" add P1 --description ' % _HL_ROOT_SCRIPT, "", _HL_BODY),
+        ("the plugin's script through a dot segment",
+         "python3 '%s' add P1 --description "
+         % _HL_SCRIPT_PATH.replace("/scripts/manifest/",
+                                   "/scripts/./manifest/"), "", _HL_BODY),
+    )
+    wrong = []
+    for what, before, after, body in twins:
+        cmd, want = _hl_house(before, after, body=body)
+        if lift(cmd) != want:
+            wrong.append((what, lift(cmd)))
+    check("hl10 ...while a quote, backquote or inner backslash in the body "
+          "with no `)` after the closing `)\"`, and the plugin's own script at "
+          "the `${CLAUDE_PLUGIN_ROOT}` spelling or a path resolving to it, "
+          "are still lifted: %r" % (wrong,), not wrong and bool(twins))
+
+
+def _hl_shell_guard_cases(check, guards, repo):
+    """The three shapes at the guards: refused as main refused them, and their
+    twins refused by none."""
+    held = []
+    for what, cmd, names in (
+            ("E-backslash then OF", _hl_joined("git commit -m "), None),
+            ("E-backslash then OF under audit-task",
+             _hl_joined("python3 %s add P1 --description " % _HL_SCRIPT), None),
+            ("a script of that name in /tmp",
+             _hl_house("python3 /tmp/audit-task.py add P1 --description ")[0],
+             None),
+            ("an apostrophe, a later `)`, a stash",
+             _hl_quoted_tail(_HL_STASH)[0][1], ("hist",)),
+            ("an apostrophe, a later `)`, a hard reset on later lines",
+             _hl_quoted_tail(_HL_HARD + " HEAD")[1][1], ("hist", "unc"))):
+        got = _hl_verdicts(guards, repo, cmd)
+        if not all(got[g] for g in (names or got)):
+            held.append((what, got))
+    clear = []
+    for what, cmd in (
+            ("an apostrophe in the body, nothing after",
+             _hl_house("git commit -m ", body="it's\n" + _HL_BODY)[0]),
+            ("the plugin-root spelling",
+             _hl_house('python3 "%s" add P1 --description '
+                       % _HL_ROOT_SCRIPT)[0])):
+        got = _hl_verdicts(guards, repo, cmd)
+        if any(got.values()):
+            clear.append((what, got))
+    check("hl11 at the guards, a backslash-joined body end, a non-plugin "
+          "audit-task carrier and a `)` after a quoted body are refused as on "
+          "main, while their lifted twins are refused by none: %r"
+          % ((held, clear),), not held and not clear)
+
+
 def _house_lift_cases(check):
     """THE ONE NARROW LIFT, BOTH DIRECTIONS. `lift_house_bodies` removes a
     heredoc body only from an exact house-form argument of a literal text sink;
@@ -3498,6 +3687,10 @@ def _house_lift_cases(check):
     allowed = (
         ("commit -m", "git commit -m ", ""),
         ("git -C <path> commit -m", "git -C /x/y commit -m ", ""),
+        ("git -C, a single-quoted path holding a blank",
+         "git -C '/x/a b/y' commit -m ", ""),
+        ("git -C, a double-quoted path holding a blank",
+         'git -C "/x/a b/y" commit -m ', ""),
         ("after an add", "git add a.txt && git commit -m ", ""),
         ("cd first, -a", "cd /x && git commit -a -m ", ""),
         ("a subject before", 'git commit -m "subject" -m ', ""),
@@ -3509,8 +3702,10 @@ def _house_lift_cases(check):
          "--title t --description ", ""),
         ("audit-task done --outcome", "python3 %s done P1.1 --outcome "
          % _HL_SCRIPT, " --commit abc1234"),
-        ("audit-task cancel --reason", "python3 '%s' cancel P1.2 --reason "
-         % _HL_SCRIPT, ""),
+        ("audit-task cancel --reason", 'python3 "%s" cancel P1.2 --reason '
+         % _HL_SCRIPT_PATH, ""),
+        ("audit-task, the plugin-root spelling",
+         'python3 "%s" note P1.1 --text ' % _HL_ROOT_SCRIPT, ""),
         ("audit-task note --text", "python3 %s note P1.1 --text " % _HL_SCRIPT,
          ""),
         ("audit-task scope --title", "python3 %s scope P1.1 --title "
@@ -3527,13 +3722,7 @@ def _house_lift_cases(check):
         got = lift(cmd)
         if got != want:
             wrong.append((what, got))
-    two, _ = _hl_house("python3 %s add P1 --title " % _HL_SCRIPT)
-    two_cmd = two + ' --description "$(cat <<\'EOF\'\n%s\nEOF\n)"' % _HL_BODY
-    two_want = ("python3 %s add P1 --title \"$(cat <<'EOF'\nEOF\n)\" "
-                "--description \"$(cat <<'EOF'\nEOF\n)\"" % _HL_SCRIPT)
-    if lift(two_cmd) != two_want:
-        wrong.append(("two house arguments", lift(two_cmd)))
-    check("hl1 lift_house_bodies removes the body of each exact house-form "
+    check("hl1 lift_house_bodies removes the body of the exact house-form "
           "argument of a text sink in its one table - git commit and tag "
           "messages past git's -C, audit-task's prose options, gh pr/issue "
           "body and title - and leaves every other byte: %r" % (wrong,),
@@ -3660,6 +3849,12 @@ def _house_lift_cases(check):
           % (reshaped,),
           not reshaped and bool(shapes))
 
+    elsewhere = _harness.fixture_root("hl-at-")
+    try:
+        _hl_shell_cases(check, lift, elsewhere)
+    finally:
+        _harness.remove_tree(elsewhere)
+
     # At the guards: the same body graded by each of them, lifted and not.
     guards = _hl_guards()
     repo = _hl_repo()
@@ -3668,7 +3863,12 @@ def _house_lift_cases(check):
     try:
         owner_forms = (
             ("house-form commit -m", "git commit -m ", ""),
-            ("git -C <path> commit -m", "git -C %s commit -m " % repo, ""),
+            # Quoted as a shell needs it: the sweep's spaced leg puts a blank
+            # in the fixture's path, and unquoted that is two words.
+            ("git -C <path> commit -m",
+             "git -C %s commit -m " % shlex.quote(repo), ""),
+            ("git -C <path holding a blank> commit -m",
+             'git -C "%s" commit -m ' % os.path.join(repo, "a b"), ""),
             ("audit-task add --description",
              "python3 %s add P1 --description " % _HL_SCRIPT, ""),
             ("audit-task done --outcome",
@@ -3714,6 +3914,7 @@ def _house_lift_cases(check):
               "character off - is refused by each guard that refused it at the "
               "branch point: %r" % (missed,),
               not missed and len(_MEASURED_BYPASSES) > 0)
+        _hl_shell_guard_cases(check, guards, repo)
     finally:
         if saved is None:
             os.environ.pop("CLAUDE_PROJECT_DIR", None)
