@@ -30,16 +30,44 @@
         "file": "PLUGIN-BUILD-GUIDE.md:4447-4448; plugins/audit/scripts/governance/drive-phase.py:3910-3912",
         "issue": "The guide's opening sentence 'Where a step branches on plain values, the branch is a planner under # --- deciding a step on facts ---' and the section comment's 'So each place a step branches on plain values is a planner here' claim more than the code does. Branches on plain values still decided inline: advance's file-return arm `if stored_green(...) != _evio.STORED_HOLDS` (drive-phase.py:4301), `if tree: integrate_member(...)` (4385), kept_tree_stop / redo_patch at the top of advance, writer_wait/writer_settle, triage's review_due / filed-at-head / owed_tasks branches ahead of the advance point, drive_locked's `pending['decision'] == 'triage'` and `pending.get('task')` note_sessions branches, and sign-off. A reader told every plain-value branch is a planner would look for one that does not exist.",
         "resolution": "Narrow both sentences to what is true, e.g. 'Four of the drive's branch points are planners under ...: advance's writer/scope/reviewer/gate/risk/close, the triage's advance and tail, drive_locked's stale and route, and close_task's findings/lock/route/commit/answer; the other branches (the file-return arm's stored-green check, integrate_member, kept_tree_stop, the triage's head and owed checks, sign-off) are still decided inline.' Apply the same narrowing to the comment at drive-phase.py:3910-3912."
+      },
+      {
+        "id": "P152-R2",
+        "severity": "med",
+        "file": "tests/test_drive_phase.py:12414-12417, 12887-12962 (subject: plugins/audit/scripts/governance/drive-phase.py:7559-7570, 9294-9298)",
+        "issue": "No case sends the sign-off-in-advance call through main() any more. The removed sq2 was an end-to-end drive: file a clean phase review, send `next P1 --answer sign-off --reason ...`, and assert exit 0, `done`, exactly one signoff verb call, and the signedOff/landed/released did-line. sq1 is still a drive and still asserts that the dispatch PRINTS that call, but nothing sends it. sq0, sq2, sq3, sq4, sq5, sq3m and sq0m now only ask the predicates and planners: `_pending_turn('route')`, `_triage_plan('advance')`, `advance_applies`, plus `apply_phase_answer` called directly. The wiring that acts on their answer goes unexercised: route 'advance' sets ctx['advance'], drive_phase carries it to the triage point, `if sent == \"advance\"` applies it, and `if sent == \"not-applied\"` prints the triage. Read, not run: a mutation of drive-phase.py:7563 to `if reason is not None:` (apply whenever an advance was sent, ignoring the planner) would leave every remaining case green, because no kept drive sends an advance. This is the path the phase-review dispatch tells the main loop to take for every clean phase, and its one-call sign-off is the cost property sq2 pinned. Plan section 5 calls this kind of loss acceptable only when it is stated, and the outcome does not state it.",
+        "resolution": "Restore one end-to-end advance in e2e-signoff. Either add a second clean drive or reuse _e2e_clean's first leg. Drive with phase_review=False, call _file_phase_review, then _next(M, root, mpath, '--answer', 'sign-off', '--reason', SUMMARY). Assert exit 0, instruction DONE, one ('audit-task.py','signoff') call under _counting, the signedOff, landed and released did-events, and NOT_APPLIED absent. In the findings round, send the same advance call once after the first review is filed and assert TRIAGE, NOT_APPLIED in the print, and zero signoff calls. That covers sq3's refusal arm end to end at the cost of one `next`."
+      },
+      {
+        "id": "P152-R3",
+        "severity": "low",
+        "file": "tests/test_drive_phase.py:12938-12942, 13203-13206, 13212-13217, 13230-13234",
+        "issue": "Several narrowed labels still claim a downstream consequence that the case does not check and that no kept drive walks. sq3/sq4 say 'so the triage is printed, noted not applied, and no sign-off runs' but check only `_triage_plan` == ('not-applied', None) and a constant's prefix. rr2 says 'and the phase review is dispatched' but checks only that nothing is marked. rr4 says 'so each is recorded once' but checks only findings_held(...) is False. sr1 says 'so sign-off dispatches a new review' but checks only owed_tasks. The case ids are the lookup keys, so a reader of a red or green line trusts these clauses.",
+        "resolution": "Cut each label to what its condition reads: e.g. sq3 'the advance point answers not-applied', rr2 'nothing is marked at a head with no return', rr4 'the reused return is not marked recorded', sr1 'the review filed before it owes the added task its answers'. Alternatively, assert the consequence: finding 1's fix does that for sq3/sq4."
+      },
+      {
+        "id": "P152-R4",
+        "severity": "low",
+        "file": "PLUGIN-BUILD-GUIDE.md:4545-4548",
+        "issue": "This file is untouched by the diff, but the diff changed what it describes. The paragraph says 'The `sg` cases drive it over the fixture plan: ... a red phase gate never reaches `signoff`, and several findings are one `finding` call - each beside a mutant driver that breaks it.' After this diff, sg3/sg3b/sg3m (red gate) and sg4m (one `finding` call) are unit cases in us-block over run_signoff/record_findings with faked verbs. Only sg1, sg2, sg4 and sg5 still drive the fixture plan (e2e-signoff). The executor's outcome notes this drift.",
+        "resolution": "Rewrite the sentence. The sg1/sg2/sg4 cases drive the fixture plan: model-facing steps, the committed sign-off, several findings recorded in one `finding` call. sg3/sg3m and sg4m ask run_signoff and record_findings over faked verbs: a red phase gate never reaches `signoff`, and one call per finding is caught. Do it in the phase's docs task or a follow-up, since this task's files exclude the guide."
+      },
+      {
+        "id": "P152-R5",
+        "severity": "low",
+        "file": "tests/test_drive_phase.py:12352-12361",
+        "issue": "Plan section 5 requires the executor to say, for each planner arm a converted block used to reach in a drive, which kept scenario still walks it or that none does. Neither the e2e-signoff header comment nor the filed outcome lists them. These arms are now proven only on their facts, with no case showing they are reachable: a return reused at the head after lost drive state (rr), a fresh review dispatched for a task added after the review (sr), a hand-off that satisfies the triage (ht), the round-cap stop (rc1), a decline on boot/gate-coverage/breach inside a drive (db/dc/di), `leave` on a moved parent (nf2), the stalled stop (bk1), and the advance (finding 1).",
+        "resolution": "Add the list to the e2e-signoff header comment: each arm with 'walked by <scenario>' or 'walked by no kept scenario'. A reader deciding whether a later change needs a new drive can then see the gap without re-deriving it."
       }
     ],
-    "outcome": "[findings: 1 - 0 high, 0 med, 1 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 5 - 0 high, 1 med, 4 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
     {
       "id": "P152.1",
       "title": "The drive's decisions are made by named planners over fake facts, with no behaviour change",
-      "status": "in_progress",
+      "status": "done",
       "description": "Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.1. Extract the decision seams S1-S4 in drive-phase.py into pure planners (_advance_plan, _triage_plan, _pending_turn, _close_plan) reading a facts dict; reads keep their order and their laziness (stored_green spends, note_sessions writes). Add unit blocks up-block, ut-block, uq-block, uc-block to tests/test_drive_phase.py STAGES: one case per arm, both directions, literal expectations, no fixture repository. PLUGIN-BUILD-GUIDE.md drive-phase section gains one paragraph naming the planners and why there is no single decide(). The whole drive suite is green before and after.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -69,14 +97,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "92c399f5f89c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: new section '# --- deciding a step on facts ---' above close_task with _fact (a fact is a value or a zero-arg callable, called only when reached; a missing fact raises KeyError), _at_point (an unknown point raises ValueError) and four planners, each planner(point, facts) -> (arm, detail): _advance_plan (points writer, scope, reviewer, gate, risk, close), _triage_plan (advance, tail), _pending_turn (stale, route), _close_plan (findings, lock, route, commit, answer); _writer_facts/_reviewer_facts build the advance points' facts. advance(), close_task(), triage() and drive_locked() now read their facts and perform the arm; no function renamed or removed. Lazy reads kept: note_sessions stays first and unconditional in advance and between the stale and route points in drive_locked; stored_green in the gate point is a callable read first, unconditionally, as before; the one in the file-return arm is unchanged inline; standing_use (writes a journal row) is a callable read only when neither confirmed nor answered in advance; confirmed_in_advance only for an unconfirmed high-risk task; review_rounds (writes state) is a callable at the triage tail point, asked only after the advance point, with the not-applied did-line appended before it as before; rounds_cost_lines stays in the round-cap arm; own_commit is read only when the step named no sha; writer_holds only when no executor return is filed; pending_still_applies only when a decision waits; advance_admissible only after the other conjuncts; gate_went_red only for a phase-key fix task; filed(reviewer) stays under `if due`. One reorder: verdict_moved is now read before the stale decision's state.pop/write_state instead of after; it reads only ctx['basisNoted']/ctx['basisMoved'] and write_state writes only the state file, so neither sees the other. tests/test_drive_phase.py: up-block (up1-up26), ut-block (ut1-ut8), uq-block (uq1-uq14), uc-block (ucl1-ucl9; uc1-uc8 were taken by an existing block) added to STAGES; each case asserts an arm and a one-fact-flipped twin with literal expected values, fake facts, no repository; facts an arm must not read raise via _never. The test variables avoid names the file-wide git-argv scanner (bare_git_calls) already binds, since an earlier spelling cascaded that set and flagged line 8928. PLUGIN-BUILD-GUIDE.md: one paragraph in the drive-phase.py section naming the planners and why there is no single decide(). Tallies: drive suite before 688 cases exit 0 (HEAD 9f714cb5), after 745 cases exit 0; new blocks 57/57; test__deps 254 cases exit 0; test__output_lints 173 cases exit 0; ruff and vermin -t=3.8- clean on both .py files; test__help 79/79 and test__affected_tests 35/35 run directly as dependants of the guide.",
+        "descriptive": "The drive's branch points are now named, facts-dict planners with unit cases for each arm, and behaviour is unchanged."
       },
       "startedAt": "2026-10-31T15:42:25Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-31T16:23:34Z",
+      "verifiedBy": [
+        "up-block: every arm of _advance_plan's six points, each with a one-fact-flipped twin, an unknown point, and a fact handed as a callable",
+        "ut-block: _triage_plan's advance and tail points - advance, not-applied, none, stop, round-cap (cap, answers, wanted) and the triage sentence",
+        "uq-block: _pending_turn's stale point (keep, drop, usage-moved, rerun reset) and route point (stop-other-task, advance, advance-no-reason, answer onward, render, drive-task, drive-phase)",
+        "uc-block: _close_plan's findings, lock, route, commit and answer points, with the own-commit git log proven unread when a sha is named"
+      ],
       "notes": [
         {
           "at": "2026-10-31T15:42:14Z",
@@ -104,12 +137,24 @@
         "runId": "2026-10-31T16:18:36Z.f65394",
         "status": "passed",
         "at": "2026-10-31T16:18:36Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "92c399f5f89c",
+        "at": "2026-10-31T16:23:34Z",
+        "return": "docs/audit/evidence/returns/P152.1/20261031T154225Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-31T16:11:23Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD exited 1 with failing cases ta9 (house FAIL), up1 (house FAIL), up2 (house FAIL), up3 (house FAIL), up4 (house FAIL), up5 (house FAIL), up6 (house FAIL), up7 (house FAIL), up8 (house FAIL) and 49 more, but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 687/688 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 687/745 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P152.2",
       "title": "Sign-off, answers and findings are tested as unit cases over the planners, with one end-to-end drive per family",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.2. Convert the 25 blocks listed there (sg sgf sq sq3 sa da cv lf rc hr sh rb db sf sr rr lr ht nf dc dc4 di of bk cn) to unit cases over _triage_plan and _pending_turn with the same label text and id; keep one e2e-signoff block (sign-off clean, one findings round to a fix task and its close, one decline, one boot, one high-risk confirmed in advance). gr/gr4 stay. Each expected value is a literal, never recomputed from the planner. Remove the dropped labels from .github/sweep-costs.json blocks for the suite; re-record nothing.",
       "files": [
         "tests/test_drive_phase.py",
@@ -121,7 +166,7 @@
         "expectRedFirst": false,
         "gate": [
           "python3 tools/sweep-selftests.py tests/test_drive_phase.py",
-          "python3 tools/sweep-selftests.py tests/test__harness.py",
+          "python3 tools/sweep-selftests.py tests/_harness.py",
           "python3 tools/sweep-selftests.py --selftest",
           "python3 tools/sweep-selftests.py tests/test__output_lints.py"
         ],
@@ -137,16 +182,29 @@
         "P152.1"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-31T17:33:09Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-31T16:23:46Z",
+          "text": "the task only deletes block rows for labels it removes; the table's shape and the runner's fallback for an unknown block are unchanged, and the runner's own sb cases are in the gate",
+          "waives": "tools/sweep-selftests.py"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-31T17:45:07Z.35c8e7",
+        "status": "passed",
+        "at": "2026-10-31T17:45:07Z"
+      }
     },
     {
       "id": "P152.3",
@@ -163,7 +221,7 @@
         "expectRedFirst": false,
         "gate": [
           "python3 tools/sweep-selftests.py tests/test_drive_phase.py",
-          "python3 tools/sweep-selftests.py tests/test__harness.py",
+          "python3 tools/sweep-selftests.py tests/_harness.py",
           "python3 tools/sweep-selftests.py --selftest",
           "python3 tools/sweep-selftests.py tests/test__output_lints.py"
         ],
@@ -188,7 +246,14 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-31T16:23:47Z",
+          "text": "the task only deletes block rows for labels it removes; the table's shape and the runner's fallback for an unknown block are unchanged, and the runner's own sb cases are in the gate",
+          "waives": "tools/sweep-selftests.py"
+        }
+      ]
     },
     {
       "id": "P152.4",
@@ -206,7 +271,7 @@
         "expectRedFirst": false,
         "gate": [
           "python3 tools/sweep-selftests.py tests/test_drive_phase.py",
-          "python3 tools/sweep-selftests.py tests/test__harness.py",
+          "python3 tools/sweep-selftests.py tests/_harness.py",
           "python3 tools/sweep-selftests.py --selftest",
           "python3 tools/sweep-selftests.py tests/test__output_lints.py"
         ],
@@ -231,7 +296,14 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-31T16:23:48Z",
+          "text": "the task only deletes block rows for labels it removes; the table's shape and the runner's fallback for an unknown block are unchanged, and the runner's own sb cases are in the gate",
+          "waives": "tools/sweep-selftests.py"
+        }
+      ]
     },
     {
       "id": "P152.5",
@@ -248,11 +320,11 @@
       "tests": {
         "mode": "tdd",
         "add": [
-          "tests/test__harness.py: run_script_in_process restores argv, cwd, environ and streams after a raising script and reports its exit status"
+          "tests/_harness.py: run_script_in_process restores argv, cwd, environ and streams after a raising script and reports its exit status"
         ],
         "expectRedFirst": true,
         "gate": [
-          "python3 tools/sweep-selftests.py tests/test__harness.py",
+          "python3 tools/sweep-selftests.py tests/_harness.py",
           "python3 tools/sweep-selftests.py tests/test_drive_phase.py",
           "python3 tools/sweep-selftests.py tests/test_audit_task.py",
           "python3 tools/sweep-selftests.py --selftest"
@@ -305,7 +377,7 @@
     {
       "id": "P152.6",
       "title": "Per-verb git reads are memoised on the bytes git itself reads",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.6. Memoise resolve_author (usage_ledger.py), _git_config_origins (_panel_viewer.py), current_branch (_id_shape.py) and _worktree_key_uncached (_journal_io.py, through _config.git_place) on a witness made of the files git reads (HEAD, config files), never a timer. Red-first in both directions for every memo: a memo that never invalidates goes red, a memo that is never used goes red. _deps.py GIT_PATH_BASE_EXEMPT rows follow any git call that moves. PLUGIN-BUILD-GUIDE.md sections of each touched module.",
       "files": [
         "plugins/audit/scripts/usage/usage_ledger.py",
@@ -344,14 +416,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-31T16:23:55Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -375,7 +447,13 @@
           "text": "the edit is confined to the touched module's own section; the text this reader quotes sits in another section and is not edited",
           "waives": "tools/prove-gates.py"
         }
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-31T17:31:15Z.8228c9",
+        "status": "failed",
+        "at": "2026-10-31T17:31:15Z"
+      }
     },
     {
       "id": "P152.7",
@@ -615,7 +693,7 @@
         "gate": [
           "python3 tools/sweep-selftests.py tests/test_stamp_verification.py",
           "python3 tools/sweep-selftests.py --selftest",
-          "python3 tools/sweep-selftests.py tests/test__harness.py"
+          "python3 tools/sweep-selftests.py tests/_harness.py"
         ],
         "gateBasis": "declared"
       },
@@ -657,6 +735,11 @@
           "at": "2026-10-31T15:42:21Z",
           "text": "the edit is confined to the touched module's own section; the text this reader quotes sits in another section and is not edited",
           "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-10-31T16:23:49Z",
+          "text": "the task only deletes block rows for labels it removes; the table's shape and the runner's fallback for an unknown block are unchanged, and the runner's own sb cases are in the gate",
+          "waives": "tools/sweep-selftests.py"
         }
       ]
     }
