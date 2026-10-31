@@ -24,6 +24,7 @@ This module carries no `--selftest`; its cases live in `tests/test__output_lints
 """
 import ast
 import functools
+import hashlib
 import os
 import re
 import sys
@@ -277,6 +278,94 @@ def tracked_files(root, exts):
                   and os.path.isfile(os.path.join(root, n))), None
 
 
+# --- one parse per file per process ---------------------------------------------
+# Every tree lint below used to open and parse each file itself, so a process that
+# ran them all - this module's suite, the gate prover - parsed the same file once
+# per lint per call. `parsed_source()` is the one door they read through now, and
+# the memo behind it holds one entry per path.
+#
+# THE KEY IS THE CONTENT: a hit needs the path AND the sha256 of the bytes read on
+# this call. Never the mtime or the size. `tools/prove-gates.py` mutates a file and
+# restores it inside one process, and a restore landing in the same second with the
+# same length is exactly the stale-bytecode trap this repository has already paid
+# for once - a key on the stamp would hand every later row the mutated tree and
+# make every proof a lie. The bytes are read on every call (cheap); only the parse
+# is skipped (not cheap).
+#
+# A HIT RETURNS THE MEMOISED TREE ITSELF, NOT A COPY. A deep copy costs several
+# parses, which would make the memo slower than no memo. So no reader may mutate a
+# tree it was handed - set a field, move a node, or hang an attribute on one - and
+# `poisoned_parses()` compares each memoised tree with a fresh parse of its source:
+# `pm8` in `tests/test__output_lints.py` runs it after every lint that reads through
+# here has run over the real tree, and the gate prover's own suite runs it after its
+# derivation, so a reader that starts mutating goes red there by name.
+_PARSE_MEMO = {}
+
+
+def parsed_source(path, filename=None, memo=None):
+    """`(src, tree)` for one file, parsed at most once per distinct content.
+
+    Raises what `open(path, encoding="utf-8")` and `ast.parse` raised at the sites
+    it replaced - `OSError`, `UnicodeDecodeError`, `SyntaxError` - so each caller
+    keeps its own `except` and its own wording. A failure is never memoised.
+    `filename` is what a `SyntaxError` names; it does not change the tree.
+    `src` reads as text mode read it, line endings translated to `\\n`.
+    """
+    memo = _PARSE_MEMO if memo is None else memo
+    with open(path, "rb") as fh:
+        data = fh.read()
+    digest = hashlib.sha256(data).digest()
+    held = memo.get(path)
+    if held is not None and held[0] == digest:
+        return held[1], held[2]
+    src = data.decode("utf-8")
+    if "\r" in src:
+        src = src.replace("\r\n", "\n").replace("\r", "\n")
+    tree = ast.parse(src, filename=filename or path)
+    memo[path] = (digest, src, tree)
+    return src, tree
+
+
+def poisoned_parses(memo=None):
+    """Sorted paths whose memoised tree is no longer what parsing its memoised
+    source gives - a field rewritten, a node moved, or an attribute a reader hung
+    on a node. Compared against an INDEPENDENT parse, never against a snapshot
+    taken from the memo itself, which would be the memo compared with itself.
+    The check behind the no-copy decision above; it is what a suite runs after
+    every reader it can reach."""
+    memo = _PARSE_MEMO if memo is None else memo
+    bad = []
+    for path, (_digest, src, tree) in sorted(memo.items()):
+        if ast.dump(tree) != ast.dump(ast.parse(src)) or any(
+                set(vars(node)) - set(node._fields) - set(node._attributes)
+                for node in ast.walk(tree)):
+            bad.append(path)
+    return bad
+
+
+# The roots the tree lints judge, for a caller that names none.
+PARSE_ROOTS = (SCRIPTS_DIR, HOOKS_DIR, TESTS_DIR, LINTS_DIR)
+
+
+def parsed_sources(dirs=None, memo=None):
+    """`[(rel, path, src, tree)]` for every `.py` `lint_py_files` finds under each
+    of `dirs` (`PARSE_ROOTS` when None), root by root, each through
+    `parsed_source`. A file that cannot be read or parsed is NOT dropped: its row
+    carries `src` None and the exception in place of the tree, so a caller says
+    what happened rather than a walk deciding it was nothing."""
+    dirs = PARSE_ROOTS if dirs is None else dirs
+    out = []
+    for d in dirs:
+        for rel, path in lint_py_files(d):
+            try:
+                src, tree = parsed_source(path, rel, memo)
+            except (OSError, UnicodeDecodeError, SyntaxError) as exc:
+                out.append((rel, path, None, exc))
+                continue
+            out.append((rel, path, src, tree))
+    return out
+
+
 # --- the pinned preamble ------------------------------------------------------
 # The name of this module, spelled once. The preamble searches for the FILE and the
 # lint looks for calls on the MODULE, and those two spellings drifting apart is the
@@ -454,9 +543,7 @@ def path_preamble_violations(script_dir=None):
         if os.path.basename(rel) == _PREAMBLE_EXEMPT:
             continue
         try:
-            with open(path, "r", encoding="utf-8") as fh:
-                src = fh.read()
-            tree = ast.parse(src, filename=rel)
+            src, tree = parsed_source(path, rel)
         except (OSError, UnicodeDecodeError, SyntaxError) as exc:
             violations.append((rel, "cannot be read or parsed: %s" % exc))
             continue
@@ -509,6 +596,23 @@ def _self_location_lines(tree):
                   and id(node) not in named)
 
 
+def _preamble_lines(src):
+    """The lines lying wholly inside an occurrence of the pinned preamble in
+    `src` - the lines blanking each occurrence out of the source would empty,
+    found without re-parsing a blanked copy. An occurrence starting mid-line
+    leaves that first line OUT: the text before it is not the preamble, and what
+    the preamble puts there is a comment."""
+    lines = set()
+    span = PATH_PREAMBLE.count("\n")
+    at = src.find(PATH_PREAMBLE)
+    while at != -1:
+        first = src.count("\n", 0, at) + 1
+        whole = at == 0 or src[at - 1] == "\n"
+        lines.update(range(first if whole else first + 1, first + span))
+        at = src.find(PATH_PREAMBLE, at + len(PATH_PREAMBLE))
+    return lines
+
+
 def depth_sensitive_paths(script_dir=None):
     """(relname, line, what) for a `.py` under `scripts/` that locates ITSELF.
 
@@ -522,9 +626,10 @@ def depth_sensitive_paths(script_dir=None):
     is no version of "one level is fine" that a lint can hold.
 
     What makes the strong form affordable is that the pinned preamble carries the
-    ONLY `os.path.dirname(os.path.abspath(__file__))` left in the tree, and it is
-    cut out before the scan — replaced by blank lines rather than deleted, so a
-    violation still reports the line number the reader will open. Anything a file
+    ONLY `os.path.dirname(os.path.abspath(__file__))` left in the tree, and its
+    lines are left out of the scan (`_preamble_lines`), read off the unaltered
+    source, so a violation still reports the line number the reader will open and
+    the tree is the one every other lint reads through `parsed_source`. Anything a file
     genuinely needs is on `_output`: `SCRIPTS_DIR`, `PLUGIN_ROOT`, `HOOKS_DIR`,
     `TESTS_DIR`, `LINTS_DIR`, `REPO_ROOT`.
 
@@ -544,19 +649,19 @@ def depth_sensitive_paths(script_dir=None):
              else [(rel, path) for rel, path in script_files()
                    if not rel.startswith(LOADER_PROBE_DIR)
                    and "/" + LOADER_PROBE_DIR not in rel])
-    blanked = "\n" * PATH_PREAMBLE.count("\n")
     violations = []
     for rel, path in files:
         if os.path.basename(rel) == _PREAMBLE_EXEMPT:
             continue
         try:
-            with open(path, "r", encoding="utf-8") as fh:
-                src = fh.read()
-            tree = ast.parse(src.replace(PATH_PREAMBLE, blanked), filename=rel)
+            src, tree = parsed_source(path, rel)
         except (OSError, UnicodeDecodeError, SyntaxError) as exc:
             violations.append((rel, 0, "cannot be read or parsed: %s" % exc))
             continue
+        inside = _preamble_lines(src)
         for line in _self_location_lines(tree):
+            if line in inside:
+                continue
             violations.append((rel, line,
                                "reads __file__ outside the pinned preamble - a file "
                                "that locates itself carries its own depth; take the "
@@ -651,8 +756,7 @@ def manifest_dirname_project_violations(script_dir=None, table=None):
     for rel, path in lint_py_files(script_dir):
         rel = rel.replace(os.sep, "/")
         try:
-            with open(path, "r", encoding="utf-8") as fh:
-                tree = ast.parse(fh.read(), filename=rel)
+            _src, tree = parsed_source(path, rel)
         except (OSError, SyntaxError, UnicodeDecodeError) as exc:
             violations.append((rel, "cannot be read or parsed: %s" % (exc,)))
             continue
@@ -739,8 +843,7 @@ def entries_missing_guard(dirs=None):
     for d in dirs:
         for name, path in lint_py_files(d):
             try:
-                with open(path, "r", encoding="utf-8") as fh:
-                    tree = ast.parse(fh.read(), filename=name)
+                _src, tree = parsed_source(path, name)
             except (OSError, SyntaxError):
                 missing.append(name)
                 continue
@@ -845,8 +948,7 @@ def parser_sites(files):
     out = []
     for rel, path in files:
         try:
-            with open(path, "r", encoding="utf-8") as fh:
-                tree = ast.parse(fh.read(), filename=rel)
+            _src, tree = parsed_source(path, rel)
         except (OSError, UnicodeDecodeError, SyntaxError) as exc:
             out.append((rel, 0, "cannot be read or parsed: %s" % (exc,)))
             continue
@@ -993,8 +1095,7 @@ def verb_dispatch_sites(files):
     out = []
     for rel, path in files:
         try:
-            with open(path, "r", encoding="utf-8") as fh:
-                tree = ast.parse(fh.read(), filename=rel)
+            _src, tree = parsed_source(path, rel)
         except (OSError, UnicodeDecodeError, SyntaxError) as exc:
             out.append((rel, 0, "cannot be read or parsed: %s" % (exc,)))
             continue
@@ -1096,8 +1197,7 @@ def house_style_violations(dirs=None):
     for d in dirs:
         for name, path in lint_py_files(d):
             try:
-                with open(path, "r", encoding="utf-8") as fh:
-                    tree = ast.parse(fh.read(), filename=name)
+                _src, tree = parsed_source(path, name)
             except (OSError, SyntaxError) as exc:
                 violations.append((name, getattr(exc, "lineno", 0) or 0,
                                     "file does not parse: %s" % exc))
@@ -1212,8 +1312,7 @@ def truncated_evidence_violations(dirs=None):
     for d in dirs:
         for name, path in lint_py_files(d):
             try:
-                with open(path, "r", encoding="utf-8") as fh:
-                    tree = ast.parse(fh.read(), filename=name)
+                _src, tree = parsed_source(path, name)
             except (OSError, SyntaxError):
                 # house_style_violations already reports an unparseable file by
                 # name; saying it twice adds noise, not information.
@@ -1343,8 +1442,7 @@ def bare_output_cut_violations(dirs=None, pending=None):
     for d in dirs:
         for name, path in lint_py_files(d):
             try:
-                with open(path, "r", encoding="utf-8") as fh:
-                    tree = ast.parse(fh.read(), filename=name)
+                _src, tree = parsed_source(path, name)
             except (OSError, SyntaxError):
                 continue
             scopes = [tree] + [n for n in ast.walk(tree)
@@ -1652,8 +1750,7 @@ def runner_line_end_violations(dirs=None, home=RUNNER_TEXT_HOME, pending=None):
     for d in dirs:
         for name, path in lint_py_files(d):
             try:
-                with open(path, "r", encoding="utf-8") as fh:
-                    parsed[name] = ast.parse(fh.read(), filename=name)
+                _src, parsed[name] = parsed_source(path, name)
             except (OSError, SyntaxError):
                 continue
     stem = dict((name, os.path.splitext(os.path.basename(name))[0])
@@ -1755,8 +1852,7 @@ def text_write_newline_violations(dirs=None, pending=None):
     for d in dirs:
         for name, path in lint_py_files(d):
             try:
-                with open(path, "r", encoding="utf-8") as fh:
-                    tree = ast.parse(fh.read(), filename=name)
+                _src, tree = parsed_source(path, name)
             except (OSError, SyntaxError):
                 continue
             for node in ast.walk(tree):
@@ -1889,11 +1985,12 @@ def _unencoded_kind(call):
     return ""
 
 
-def unencoded_text_io(source, filename="<source>"):
+def unencoded_text_io(source, filename="<source>", tree=None):
     """Sorted `(line, what)` for every text I/O in `source` that names no
     encoding - the one walker both `text_encoding_violations` and any suite
-    asking it of its own source run."""
-    tree = ast.parse(source, filename=filename)
+    asking it of its own source run. `tree`, when given, is `source` already
+    parsed (`parsed_source` hands both), and is read instead of a second parse."""
+    tree = ast.parse(source, filename=filename) if tree is None else tree
     found = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
@@ -1946,8 +2043,8 @@ def text_encoding_violations(dirs=None, pending=None):
         for rel, path in lint_py_files(d):
             name = "%s/%s" % (top, rel)
             try:
-                with open(path, "r", encoding="utf-8") as fh:
-                    found = unencoded_text_io(fh.read(), filename=rel)
+                src, tree = parsed_source(path, rel)
+                found = unencoded_text_io(src, filename=rel, tree=tree)
             except (OSError, SyntaxError, UnicodeDecodeError):
                 continue
             if found:
@@ -2088,8 +2185,7 @@ def raw_json_writer_violations(script_dir=None, hooks_dir=None, table=None):
         for rel, path in lint_py_files(directory):
             named = "%s/%s" % (kind, rel)
             try:
-                with open(path, "r", encoding="utf-8") as fh:
-                    tree = ast.parse(fh.read(), filename=rel)
+                _src, tree = parsed_source(path, rel)
             except (OSError, SyntaxError):
                 continue
             if named == RAW_JSON_WRITER_HOME:
@@ -2192,8 +2288,7 @@ def returns_writer_violations(script_dir=None):
     for rel, path in lint_py_files(script_dir):
         named = "scripts/%s" % rel
         try:
-            with open(path, "r", encoding="utf-8") as fh:
-                tree = ast.parse(fh.read(), filename=rel)
+            _src, tree = parsed_source(path, rel)
         except (OSError, SyntaxError):
             continue
         if named == RETURNS_WRITER_HOME:
@@ -2342,8 +2437,7 @@ def ts_order_violations(script_dir=None, hooks_dir=None, table=None):
         for rel, path in lint_py_files(directory):
             named = "%s/%s" % (kind, rel)
             try:
-                with open(path, "r", encoding="utf-8") as fh:
-                    tree = ast.parse(fh.read(), filename=rel)
+                _src, tree = parsed_source(path, rel)
             except (OSError, SyntaxError):
                 continue
             for line, where, what in _ts_text_orders(tree):

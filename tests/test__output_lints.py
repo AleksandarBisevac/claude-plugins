@@ -144,7 +144,7 @@ def _cases(check):
     check("f2 ...and the default scope now reaches tests/ too, which is the half a "
           "sibling directory added: %r"
           % (sorted(n for n, _p in M.py_files(M.TESTS_DIR)),),
-          L.entries_missing_guard() == sorted(L.entries_missing_guard((M.SCRIPTS_DIR,))
+          real == sorted(L.entries_missing_guard((M.SCRIPTS_DIR,))
                                               + L.entries_missing_guard((M.TESTS_DIR,)))
           and M.py_files(M.TESTS_DIR) != [])
 
@@ -693,10 +693,11 @@ def _cases(check):
     finally:
         shutil.rmtree(tev, ignore_errors=True)
 
+    te_real = L.truncated_evidence_violations()
     check("te11 ...and the real tree carries none of the shape. This is the case "
           "that goes red the next time somebody prints a count over evidence they "
-          "cut: %r" % (L.truncated_evidence_violations(),),
-          L.truncated_evidence_violations() == [])
+          "cut: %r" % (te_real,),
+          te_real == [])
 
     # --------------------------------- a tool's output, cut at one end
     bc = tempfile.mkdtemp(prefix="audit-barecut-")
@@ -741,10 +742,11 @@ def _cases(check):
               and [h for h in held if h[0] == "title.py" and h[1] == 0])
     finally:
         shutil.rmtree(bc, ignore_errors=True)
+    bc_real = L.bare_output_cut_violations()
     check("bc4 ...and the pending table is empty while the real tree still "
           "carries no head-only cut of output: %r pending, %r found"
-          % (L.BARE_CUT_PENDING, L.bare_output_cut_violations()),
-          L.BARE_CUT_PENDING == () and L.bare_output_cut_violations() == [])
+          % (L.BARE_CUT_PENDING, bc_real),
+          L.BARE_CUT_PENDING == () and bc_real == [])
 
     # ------------------------------------ text-mode writes name their newline
     nw = tempfile.mkdtemp(prefix="audit-newline-")
@@ -823,11 +825,12 @@ def _cases(check):
               and (nw_real in L.NEWLINE_DIRS) == os.path.isdir(nw_real))
     finally:
         shutil.rmtree(nw, ignore_errors=True)
+    nw_found = L.text_write_newline_violations()
     check("nw4...and the pending table holds no row and the real tree "
           "(scripts and hooks) opens no text handle for writing without a "
           "newline: %r pending, %r found"
-          % (L.NEWLINE_PENDING, L.text_write_newline_violations()),
-          not L.NEWLINE_PENDING and L.text_write_newline_violations() == [])
+          % (L.NEWLINE_PENDING, nw_found),
+          not L.NEWLINE_PENDING and nw_found == [])
 
     # --------------------------- a shell script finds its dir on any $0
     sd = tempfile.mkdtemp(prefix="audit-shself-")
@@ -854,9 +857,10 @@ def _cases(check):
               not ({"good.sh", "comment.sh", "notsh.txt"} & set(sd_files)))
     finally:
         shutil.rmtree(sd, ignore_errors=True)
+    sd_real = L.sh_self_dir_violations()
     check("sd3 ...and no tracked script in the real tree reads its own "
-          "directory from a raw $0: %r" % (L.sh_self_dir_violations(),),
-          L.sh_self_dir_violations() == [])
+          "directory from a raw $0: %r" % (sd_real,),
+          sd_real == [])
 
     # ------------------------------------------- the raw JSON writer, by name
     rw = tempfile.mkdtemp(prefix="audit-rawjson-")
@@ -911,10 +915,11 @@ def _cases(check):
     finally:
         shutil.rmtree(rw, ignore_errors=True)
 
+    rj_real = L.raw_json_writer_violations()
     check("rj5 ...and the real tree reaches the raw writer only from the sites "
           "RAW_JSON_WRITERS names, each of which still does: %r"
-          % (L.raw_json_writer_violations(),),
-          L.raw_json_writer_violations() == [])
+          % (rj_real,),
+          rj_real == [])
 
     # ------------------------------------------------ the returns writer
     rt = tempfile.mkdtemp(prefix="returns-writer-")
@@ -970,9 +975,10 @@ def _cases(check):
                   for f, w in L.returns_writer_violations(rt)))
     finally:
         shutil.rmtree(rt, ignore_errors=True)
+    rw_real = L.returns_writer_violations()
     check("rw5 ...and the real tree files a return only through the scrubbing "
-          "writer: %r" % (L.returns_writer_violations(),),
-          L.returns_writer_violations() == [])
+          "writer: %r" % (rw_real,),
+          rw_real == [])
 
     # ------------------------------------------------------------ selftest coverage
     # Every case builds its own tree: the classifier is asked about a FIXTURE through
@@ -1097,10 +1103,11 @@ def _cases(check):
           M.LINTS_DIR in L.NEWLINE_DIRS and M.LINTS_DIR in L.ENCODING_DIRS)
 
     # ------------------------------------------------- the pinned path preamble
+    pp_real = L.path_preamble_violations()
     check("pp1 the real tree carries the preamble exactly once in every `.py` "
           "under scripts/, above every sibling import: %r"
-          % (L.path_preamble_violations(),),
-          L.path_preamble_violations() == [])
+          % (pp_real,),
+          pp_real == [])
     check("pp2 ...and `_output.py` is exempt BY NAME rather than by passing: it IS the "
           "anchor the preamble walks up to, so it carries the text zero times and a "
           "count-based rule that exempted nothing would name it - the case that says "
@@ -1246,10 +1253,11 @@ def _cases(check):
         shutil.rmtree(pre, ignore_errors=True)
 
     # ------------------------------------------------ the self-location lint
+    ds_real = L.depth_sensitive_paths()
     check("ds1 no `.py` under scripts/ reads `__file__` outside the pinned "
           "preamble any more - the seventeen sites are gone and this is what "
-          "stops the eighteenth: %r" % (L.depth_sensitive_paths(),),
-          L.depth_sensitive_paths() == [])
+          "stops the eighteenth: %r" % (ds_real,),
+          ds_real == [])
     dsl = tempfile.mkdtemp(prefix="audit-depth-")
     try:
         with open(os.path.join(dsl, "clean.py"), "w", encoding="utf-8") as fh:
@@ -2372,12 +2380,177 @@ def _line_end_cases(check):
           L.RUNNER_LINE_END_PENDING == () and real == [])
 
 
+# --- the parse memo -------------------------------------------------------------
+def _write_keeping_stamp(path, data, stamp):
+    """Write `data` and put the file's times back to `stamp`, so a memo keyed on
+    mtime and size cannot tell this write from the one before it - the
+    same-second, same-length restore the mutation prover performs."""
+    with open(path, "wb") as fh:
+        fh.write(data)
+    os.utime(path, ns=stamp)
+
+
+def _function_names(tree):
+    import ast
+    return [n.name for n in tree.body if isinstance(n, ast.FunctionDef)]
+
+
+def _memo_readers():
+    """The public functions in `_output_lints` that reach `parsed_source` - the
+    one door to the memo - and can be called with no argument: every tree lint
+    reading through it, and the `parsed_sources` walk. DERIVED from the module's
+    own call graph, so a reader added later is run here without anybody listing
+    it."""
+    import ast
+    import inspect
+    with open(L.__file__, encoding="utf-8") as fh:
+        tree = ast.parse(fh.read())
+    calls = {}
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef):
+            calls[node.name] = set(
+                n.func.id for n in ast.walk(node)
+                if isinstance(n, ast.Call) and isinstance(n.func, ast.Name))
+    reach = set(["parsed_source"])
+    grew = True
+    while grew:
+        grew = False
+        for name, called in calls.items():
+            if name not in reach and called & reach:
+                reach.add(name)
+                grew = True
+    out = []
+    for name in sorted(reach - set(["parsed_source"])):
+        if name.startswith("_"):
+            continue
+        params = inspect.signature(getattr(L, name)).parameters.values()
+        if all(p.default is not p.empty or p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD)
+               for p in params):
+            out.append(name)
+    return out
+
+
+def _parse_memo_cases(check):
+    import shutil
+    import tempfile
+    tmp = tempfile.mkdtemp(prefix="audit-parse-memo-")
+    try:
+        path = os.path.join(tmp, "a.py")
+        first = b"def alpha():\n    return 1\n"
+        other = b"def omega():\n    return 2\n"
+        with open(path, "wb") as fh:
+            fh.write(first)
+        st = os.stat(path)
+        stamp = (st.st_atime_ns, st.st_mtime_ns)
+
+        def tree_of():
+            rows = [r for r in L.parsed_sources((tmp,)) if r[1] == path]
+            return rows[0] if len(rows) == 1 else (None, None, None, None)
+
+        rel, _p, src0, tree0 = tree_of()
+        check("pm1 parsed_sources answers (rel, path, src, tree) for a file under "
+              "the root, the tree being the parse of the source: %r"
+              % ((rel, _function_names(tree0) if tree0 else None),),
+              rel == "a.py" and src0 == first.decode("utf-8")
+              and _function_names(tree0) == ["alpha"])
+
+        _write_keeping_stamp(path, first, stamp)
+        again = tree_of()[3]
+        check("pm2 an IDENTICAL rewrite is not re-parsed: the same tree object "
+              "comes back, which is the whole saving - a memo that re-parses "
+              "every call is no memo",
+              tree0 is not None and again is tree0)
+
+        _write_keeping_stamp(path, other, stamp)
+        _r, _p, src1, tree1 = tree_of()
+        check("pm3 a REWRITTEN file is re-parsed even when its length and its "
+              "times are the ones the memo saw - the key is the content, so a "
+              "same-second, same-size mutation is still seen: %r"
+              % (_function_names(tree1) if tree1 else None,),
+              tree1 is not tree0 and src1 == other.decode("utf-8")
+              and _function_names(tree1) == ["omega"])
+
+        _write_keeping_stamp(path, first, stamp)
+        _r, _p, src2, tree2 = tree_of()
+        check("pm4 mutate-then-restore inside one process: the mutated tree "
+              "during the mutation, the original after the restore to identical "
+              "bytes and times - the gate prover's own sequence: %r"
+              % (_function_names(tree2) if tree2 else None,),
+              src2 == first.decode("utf-8") and tree2 is not tree1
+              and _function_names(tree2) == ["alpha"])
+
+        # The decision: a hit hands back the memoised tree itself, not a copy
+        # (a deep copy costs several parses), so a reader that mutated it would
+        # poison every later reader. pm5 and pm6 show that the shared tree IS
+        # shared and that `poisoned_parses` sees each kind of poison; pm8 is the
+        # proof that no reader does it.
+        fields = {}
+        L.parsed_sources((tmp,), memo=fields)
+        hit = L.parsed_sources((tmp,), memo=fields)[0][3]
+        hit.body[0].name = "poisoned"
+        later = L.parsed_sources((tmp,), memo=fields)[0][3]
+        check("pm5 a tree is SHARED between readers of one memo - a field one "
+              "reader rewrote is what the next one reads - and `poisoned_parses` "
+              "reports it: %r" % (L.poisoned_parses(fields),),
+              later is hit and L.poisoned_parses(fields) == [path])
+        hung = {}
+        L.parsed_sources((tmp,), memo=hung)
+        L.parsed_sources((tmp,), memo=hung)[0][3].body[0].seen = True
+        check("pm6 ...and an attribute a reader HUNG on a node, every field left "
+              "as it was, is poison too - the dump alone cannot see it: %r"
+              % (L.poisoned_parses(hung),),
+              L.poisoned_parses(hung) == [path])
+        check("pm7 one memo's poison is no other memo's: the default memo still "
+              "holds the clean tree for the same path and bytes",
+              _function_names(tree_of()[3]) == ["alpha"])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    readers = _memo_readers()
+    for name in readers:
+        getattr(L, name)()
+    real = dict((p, entry) for p, entry in L._PARSE_MEMO.items()
+                if p.startswith(M.REPO_ROOT))
+    bad = L.poisoned_parses(real)
+    check("pm8 no reader poisons a shared tree: after every public lint that "
+          "reaches parsed_source has run over the real tree (%d derived: %s), "
+          "every memoised tree still equals a fresh parse of its source and "
+          "carries no attribute a reader hung on it - %d trees checked, "
+          "poisoned: %r" % (len(readers), ", ".join(readers), len(real), bad),
+          len(readers) >= 10 and len(real) > 50 and bad == [])
+
+    # `depth_sensitive_paths` reads the memoised tree of the UNALTERED source and
+    # leaves the preamble's lines out, where it used to parse a copy with the
+    # preamble blanked. The old reading is computed here independently and the
+    # two must agree - a whole-line preamble, one starting mid-line behind a real
+    # read (that line is NOT the preamble's), and two occurrences.
+    import ast
+    blank = "\n" * L.PATH_PREAMBLE.count("\n")
+    fixtures = {
+        "whole": "import os\n" + L.PATH_PREAMBLE + "x = __file__\n",
+        "mid-line": "x = __file__  " + L.PATH_PREAMBLE + "y = __file__\n",
+        "twice": L.PATH_PREAMBLE + "z = __file__\n" + L.PATH_PREAMBLE,
+    }
+    agree = {}
+    for label, src in sorted(fixtures.items()):
+        old = L._self_location_lines(ast.parse(src.replace(L.PATH_PREAMBLE, blank)))
+        cut = L._preamble_lines(src)
+        new = [n for n in L._self_location_lines(ast.parse(src)) if n not in cut]
+        agree[label] = (old, new)
+    check("pm9 leaving the preamble's lines out of the unaltered tree reports "
+          "exactly the lines blanking the preamble out of the source did, a "
+          "preamble that starts mid-line behind a real read included: %r"
+          % (agree,),
+          all(old == new and old for old, new in agree.values()))
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _ts_order_cases(check)
         _encoding_cases(check)
         _line_end_cases(check)
+        _parse_memo_cases(check)
     return _harness.run(body)
 
 

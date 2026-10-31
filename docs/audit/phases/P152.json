@@ -851,7 +851,12 @@
           "waives": "tests/_harness.py"
         }
       ],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-31T21:09:16Z.1f0721",
+        "status": "passed",
+        "at": "2026-10-31T21:09:16Z"
+      }
     },
     {
       "id": "P152.11",
@@ -882,7 +887,7 @@
       ],
       "risk": "med",
       "blockedBy": [
-        "P152.12-6jb"
+        "P152.14-6jb"
       ],
       "dependsOn": [],
       "attempts": 0,
@@ -926,7 +931,7 @@
     {
       "id": "P152.12-6jb",
       "title": "A test conversion is checked mechanically: the lines of a module its suite reached before are still reached after",
-      "status": "in_progress",
+      "status": "done",
       "description": "Two reviews in a row (P152.2 and P152.3) found the same class: an end-to-end block converted to unit cases over a planner left the code that ACTS on the planner's answer run by no test (the advance sign-off route, the one-task route in drive_locked, the ADO echo in render). Finding these by reading is enumeration; close the class with an invariant. Add tools/reach-diff.py: given a module path, a suite path and two git revisions, it runs the suite's blocks (each STAGES block, or the whole file) at each revision in a scratch export with a line tracer restricted to that module's code objects, and prints every line reached at the base revision and not reached at the head revision, grouped by enclosing function, exit 1 when any such line exists and 0 otherwise; a line that moved is matched by its function and text, not its number. It never writes the checkout. Its own --selftest proves both directions on a fixture module and suite: dropping the only case that reaches a branch goes red and names the line; a pure refactor that only moves code stays green. CONTRIBUTING.md: one paragraph where test conversions are described, naming the tool as the check a conversion owes.",
       "files": [
         "tools/reach-diff.py",
@@ -955,14 +960,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "bcf00c1794fb",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "New tools/reach-diff.py: `python3 tools/reach-diff.py <module> <suite> --base <rev> --head <rev> [--repo PATH] [--jobs N] [--timeout S] [--tracer monitoring|settrace]`. Exit 0 when no line is lost, 1 when one is, 2 on a usage error or when no comparison could be made. It never writes the checkout. Each revision is a `git archive` export streamed through tarfile into a mkdtemp scratch, removed in `finally` through _suite.remove_tree. The suite runs through the sweep's own run_one and grade, loaded with _loader.load as prove-gates does, so children get the sweep's cwd, TMPDIR, HOME, git config and session-variable filtering. There is one job per STAGES block (`--selftest --stage LABEL`), or one whole-file run when sweep.is_staged or sweep.stage_labels say no. Both revisions' jobs share one ThreadPoolExecutor of sweep.default_jobs() workers; the default timeout is twice the sweep's DEFAULT_TIMEOUT. The tracer is a sitecustomize module written to a scratch directory that is put first on PYTHONPATH, so it runs in every Python process the suite starts, children included. It also runs the sitecustomize it shadows (Homebrew's). It keeps only lines whose code object's file resolves to the module: sys.monitoring LINE with DISABLE after the first event per location, or sys.settrace plus threading.settrace on the 3.8 floor (`--tracer settrace` forces it). Each process writes a JSON file at exit, renamed into place. Lines are matched by (enclosing dotted function from the AST, stripped text, occurrence index within that function), never by number. Lines reached at base whose key the head module no longer holds are listed apart as `gone` and do not decide the exit code. Any failed block (red case, crash, timeout, no contract line) or a revision that reached no line of the module refuses with 2. The docstring states what the tracer cannot see: -I/-E/-S children, an env without the hook, os._exit, kills, timeouts. Selftest: 16 cases on a scratch git fixture repo with one tag per variant (moved, reworded, drop-positive, drop-child, red-case, crash, untouched, plain-base/plain-drop) plus key and usage units. `python3 tools/sweep-selftests.py tools/reach-diff.py` exit 0, 16 cases. Also green under the sweep: tests/test__output_lints.py (173), tools/_suite.py (35), tests/test__refs.py (292), tests/test__deps.py, tests/test__areas.py, tests/test_derive_phase_gate.py (36), tools/gate-parity.py (119), tools/affected.py (57), tools/check-committed-pii.py (51); that run printed `8/8 files ok, 986 cases`, exit 0. `ruff check` exit 0; `vermin -t=3.8-` exit 0. CONTRIBUTING.md: one Hard-rules bullet after 'New behavior => new selftest cases' naming the tool as the check a conversion owes. It says, in its own sentence, that nothing runs the tool automatically: no verify.sh slice, no hook; it runs where a task names it in its gate. REAL RUN: `python3 tools/reach-diff.py plugins/audit/scripts/governance/drive-phase.py tests/test_drive_phase.py --base 92c399f5 --head HEAD`, exit 1, 716.9 s wall (user 1935.7 s, sys 1289.7 s), 8 jobs, measured once. Base 92c399f5: 5808 lines reached, 125 blocks, 6760 processes traced. Head c12794395e9b: 5784 lines, 77 blocks, 4846 processes. Lost: 35 lines in 13 functions, all quoted with line numbers in the report to the orchestrator. They include the advance sign-off route (triage 7564-7567 and 7569, drive_locked 9295-9299), drive_task's stop-blocked 9121-9124, apply_phase_answer's breach/no-ff/leave answers (8990, 8993, 8995, 8996), gate_went_red 7008-7013, close_task 4263 (review-answer) and rounds_cost_lines 7457-7460. Two lines the brief expected are NOT lost, and that was checked independently: drive-phase.py is byte-identical between 92c399f5 and HEAD (`git diff --stat` printed nothing), and a separate trace of HEAD's blocks alone (scratchpad/head_only.py, 485 s, no block failed, again 5784 lines) shows line 9313 `return drive_task(ctx, state)` and 9867 `lines.extend(ado_echo_lines(ctx))` reached at HEAD, while 7564, 7565, 9295 and 9296 are not. So the one-task route and the ADO echo were covered again before P152.2/P152.3 landed; the advance sign-off route is still a real gap at HEAD.",
+        "descriptive": "A test conversion can now be checked mechanically: tools/reach-diff.py names every line of a module the old suite reached and the new one does not. Its first run over the drive suite found 35 such lines, including the advance sign-off route."
       },
       "startedAt": "2026-10-31T19:44:31Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-31T20:35:56Z",
+      "verifiedBy": [
+        "tools/reach-diff.py rd1-rd16 on a scratch git fixture. Dropping the only block that reaches a branch exits 1 naming exactly that line and function (rd1). A pure move exits 0 with no gap and nothing gone (rd2), over a fixture whose reached line numbers differ between revisions (rd3). Lines reached only in a child interpreter are measured (rd4). A red case, a crashed suite, and a revision reaching no line each exit 2 (rd5-rd7). A suite with no STAGES runs whole (rd8). The settrace fallback agrees (rd9). Line keys separate occurrences and survive a move (rd10, rd11). Usage errors exit 2 (rd12-rd14). The compared repository is never written (rd15). A reworded reached line is listed as gone and decides nothing (rd16)."
+      ],
       "notes": [
         {
           "at": "2026-10-31T19:44:29Z",
@@ -980,6 +987,18 @@
         "runId": "2026-10-31T20:30:12Z.327a9e",
         "status": "passed",
         "at": "2026-10-31T20:30:12Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "bcf00c1794fb",
+        "at": "2026-10-31T20:35:56Z",
+        "return": "docs/audit/evidence/returns/P152.12-6jb/20261031T194431Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-31T20:23:34Z",
+        "basis": "`python3 tools/sweep-selftests.py tools/reach-diff.py` in a throwaway tree at HEAD: inline suite tools/reach-diff.py (its test file is its implementation file): it is new at HEAD, so there is no HEAD copy to hold its implementation at; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1014,7 +1033,7 @@
       ],
       "risk": "med",
       "blockedBy": [
-        "P152.12-6jb"
+        "P152.14-6jb"
       ],
       "dependsOn": [],
       "attempts": 0,
@@ -1027,6 +1046,59 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P152.14-6jb",
+      "title": "reach-diff cannot pass over a child it did not trace, a line that moved to another function, or a line hidden behind an identical one",
+      "status": "pending",
+      "description": "Fix the five review findings of P152.12 in tools/reach-diff.py. (1) A suite that puts its own sitecustomize first on PYTHONPATH (tests/test_drive_phase.py _pinned_clock, _windows_stdout) leaves its children untraced, silently: install the hook as usercustomize as well, once per process, and record started-versus-written per process so an untraced child is counted and a revision with any untraced child of the module is reported (exit 2 or a printed count the exit reads - decide and state it); selftest plants a fixture sitecustomize ahead of the hook and sees it fail first. (2) A line reached at base whose function or text changed is listed as gone and never changes the exit: match it again by its text anywhere in the module before calling it gone; if head did not reach it, it is lost (exit 1). (3) Occurrence-index matching lets an inserted identical line mask a loss: align each function's lines with difflib.SequenceMatcher; selftest inserts an identical earlier line and drops reach to the later one. (4) CONTRIBUTING.md's bullet promises only what the tool does. (5) State in the docstring that the hook makes in-process verbs run as processes in suites that check for a sitecustomize, and remove that effect if the usercustomize route allows it. Every fix proven red-first by mutation.",
+      "files": [
+        "tools/reach-diff.py",
+        "CONTRIBUTING.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/reach-diff.py: an untraced child behind a fixture sitecustomize, a line moved to another function and left unreached, and a loss behind an inserted identical line each exit non-zero"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tools/reach-diff.py",
+          "python3 tools/sweep-selftests.py tests/test__output_lints.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-31T20:36:20Z",
+          "text": "the task edits one bullet about reach-diff; the passages this reader quotes are elsewhere in CONTRIBUTING.md",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-10-31T20:36:20Z",
+          "text": "the task edits one bullet about reach-diff; the passages this reader quotes are elsewhere in CONTRIBUTING.md",
+          "waives": "tools/sweep-selftests.py"
+        }
+      ]
     }
   ],
   "reviewPerTask": "signals",

@@ -1,0 +1,57 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__output_lints.py": "pass",
+    "python3 tools/sweep-selftests.py tests/test__deps.py": "pass",
+    "python3 tools/sweep-selftests.py tests/test__refs.py": "pass",
+    "python3 tools/prove-gates.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-31T20:44:56Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__output_lints.py` in a throwaway tree at HEAD exited 1 on \"AttributeError: module '_output_lints' has no attribute 'parsed_sources'\" (read as python), and the task introduces 'parsed_sources': absent from HEAD's module-level bindings of tools/lints/_output_lints.py and bound in the working tree's; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "tools/lints/_output_lints.py: new section 'one parse per file per process' - _PARSE_MEMO (one entry per path: (sha256 digest, src, tree)), parsed_source(path, filename=None, memo=None) reading the bytes on every call and hitting only when path AND sha256(bytes) match (never mtime/size), raising OSError/UnicodeDecodeError/SyntaxError as the replaced open+ast.parse did so each site keeps its own except and wording, failures never memoised, text-mode newline translation reproduced; parsed_sources(dirs=None, memo=None) -> [(rel, path, src, tree)] over lint_py_files, an unparseable file kept as a row (src None, exception in place of the tree); poisoned_parses(memo=None) compares each memoised tree with an independent fresh parse (ast.dump) and flags attributes hung on nodes; PARSE_ROOTS. All fifteen lint parse sites now read parsed_source (12 open+parse pairs mechanically, path_preamble_violations, text_encoding_violations via a new optional tree= argument on unencoded_text_io, and depth_sensitive_paths, which now reads the memoised tree of the unaltered source and drops the preamble's lines via new _preamble_lines(src) instead of parsing a blanked copy). tools/prove-gates.py: imports _output_lints; _gate_sources keeps its own walk (file set unchanged) and parses each file through _output_lints.parsed_source; 'parsed_sources' added to _TREE_WALKS (a lint written over the memo walk is still derived); NOT_A_GATE row for parsed_sources; ds5 ALLOW row re-pointed to '        inside = _preamble_lines(src)' -> '        inside = set()' (the only anchor quoting an ast.parse line); new selftest case ng4 (derivation reads through the memo and poisons none of it). tests/test__output_lints.py: _parse_memo_cases pm1-pm9; the doubled label+condition lint calls in f2, te11, bc4, nw4, sd3, rj5, rw5, pp1, ds1 bound to one local each. PLUGIN-BUILD-GUIDE.md: one paragraph in the _output_lints section. CONTRIBUTING.md unchanged: grep -n -i parse finds no sentence on how a lint reads the tree. Copy decision: shared tree, no copy (deepcopy of _output_lints.py's tree 41 ms vs parse 13 ms, measured once) - proven by pm8 (all 15 derived no-arg readers run over the real tree, 326 trees fresh-compared, none poisoned) and ng4 (186 trees after the prover's derivations). Optional _tree_answer memo NOT taken: the suite patches L.LINTS_DIR around real-tree calls (lines near 1076-1082), so a cross-case answer memo would serve a stale answer; the label+condition doubles were bound to locals instead. Red-first probe (git archive HEAD + git diff applied in mkdtemp, anchor asserted once and landed, __pycache__ purged each cycle): baseline 9/9 green; key on path only -> pm3,pm4 red; key on mtime+size -> pm3,pm4; drop memo -> pm2,pm5; poisoned_parses dump half dropped -> pm5; attribute half dropped -> pm6; a lint hangs an attribute -> pm8; prover derivation hangs an attribute -> ng4; prover parses around the memo -> ng4; _preamble_lines mid-line whole=True -> pm9; preamble lines not left out -> ds1,ds4,ds5. prove-gates --list: every row anchored (191 anchored, 2 reason-recorded). Whole table: python3 tools/prove-gates.py exit 0, 100 of 100 gates proven red, 91 of 91 guards quiet, wall 1473 s under load 21-59. Times (single runs, load-before in brackets): test__output_lints HEAD 65.4 s [29.1] and 64.4 s [5.0], task 51.2 s [7.8] and 51.0 s [4.5]; prove-gates --selftest HEAD 50.3 s [13.3] -> task 16.8 s [5.6] (once each); gate_names() x10 in-process HEAD 12.72 s -> task 0.28 s (once each). Dependants run green: test__output_lints 182/182, test__deps 266, test__refs 292, test__output 91, test__doctor_hygiene 42, test__panel_settings 78, test__report_page 29, test_drive_phase 745, test_stamp_verification 356, tools/affected.py 57, tools/sweep-selftests.py 160, tools/gate-parity.py 119 (plain run exit 0), prove-gates --selftest 66; ruff and vermin -t=3.8- clean on the three .py files.",
+    "descriptive": "Each file is parsed once per distinct content per process for the tree lints and the gate prover's derivation, keyed on sha256 of the bytes; test__output_lints 64-65 s -> 51 s, prove-gates selftest 50 s -> 17 s."
+  },
+  "testsAdded": [
+    "pm1 parsed_sources answers (rel, path, src, tree)",
+    "pm2 an identical rewrite (same bytes, times reset) is not re-parsed - same tree object",
+    "pm3 a rewritten file with the same length and times is re-parsed (content key, not stamp)",
+    "pm4 mutate-then-restore in one process: mutated tree during, original after",
+    "pm5 a tree is shared within one memo and poisoned_parses sees a rewritten field",
+    "pm6 poisoned_parses sees an attribute hung on a node with every field intact",
+    "pm7 one memo's poison is not another memo's",
+    "pm8 every derived no-arg reader of parsed_source run over the real tree poisons no memoised tree",
+    "pm9 the preamble line cut agrees with the old blanking read, mid-line occurrence included",
+    "ng4 (tools/prove-gates.py) the derivation reads through the memo and poisons none of it"
+  ],
+  "casesAdded": [
+    [
+      "pm1",
+      "pm2",
+      "pm3",
+      "pm4",
+      "pm5",
+      "pm6",
+      "pm7",
+      "pm8",
+      "pm9"
+    ]
+  ],
+  "claims": "claims:\n1 _output_lints.py parsed_source: digest = hashlib.sha256(data).digest(); hit only when held[0] == digest; tree returned uncopied - the comment block above _PARSE_MEMO says exactly that; prove-gates _gate_sources docstring matches its body (own walk, parsed_source per file)\n2 probe/mutations.py in scratch over git archive HEAD + diff: path-only key -> pm3,pm4 red; mtime+size key -> pm3,pm4; memo dropped -> pm2,pm5; dump half -> pm5; attribute half -> pm6; lint poisons -> pm8; prover poisons -> ng4; prover bypasses memo -> ng4; mid-line whole=True -> pm9; preamble not cut -> ds1,ds4,ds5; baseline 9/9 green; each anchor asserted once and landed, __pycache__ purged, restore asserted byte-equal\n3 grep -n 'ast.parse(' tools/lints/_output_lints.py tools/prove-gates.py: 7 hits - parsed_source's own parse, poisoned_parses' independent parse (must stay fresh), unencoded_text_io fallback for a caller passing only source; prove-gates _label_templates (reads suite labels, outside the derivation, catches ValueError too - left), _ng_src fixture, _c6_tree and line ~4703 parse prove-gates' own source once - left. _deps.py parse sites left on purpose (P152.9's diff; brief says a follow-up)\n4 the no-mutation rule for memo readers is enforced by pm8 and ng4, named in the rule's own comment in _output_lints.py and in the PLUGIN-BUILD-GUIDE paragraph\n5 test__output_lints measured twice with a gap: HEAD 65.4/64.4 s, task 51.2/51.0 s; prove-gates selftest and gate_names x10 measured once each (stated as once)\n6 n/a - no guard reading a command\n7 no number written into prose or docs; counts in case labels are computed with %d",
+  "stamp": "audit-stamp: {\"content\":\"sha256:832d90b111d55d6aff22ad89381c64352d82930b12fd4fdfb0f5053bdd6d0dd6\",\"dirtyDigest\":\"sha256:e78d37a7829917158845240e7723519868ce154bca81b0ebe844e2f90bb533f9\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"1f2a9cac5e0ae6b3\",\"tests/test__output_lints.py\":\"e11f75bc1b8ec27b\",\"tools/lints/_output_lints.py\":\"ec20528b735547aa\",\"tools/prove-gates.py\":\"433324af9d77f502\"},\"head\":\"c1279439\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"tests/test__output_lints.py\",\"tools/lints/_output_lints.py\",\"tools/prove-gates.py\"],\"scopeDigest\":\"sha256:8d6d843a846df5b2be12c355be459ef6f4868645c1607dbe813bd90f41c4a111\",\"v\":2}",
+  "testsAddGaps": [
+    "tests/test__output_lints.py: parsed_sources re-parses a rewritten file, does not re-parse an identical rewrite, and keeps one tree's poison out of another - bound to `pm1`, which the suite did not print",
+    "tests/test__output_lints.py: parsed_sources re-parses a rewritten file, does not re-parse an identical rewrite, and keeps one tree's poison out of another - bound to `pm2`, which the suite did not print",
+    "tests/test__output_lints.py: parsed_sources re-parses a rewritten file, does not re-parse an identical rewrite, and keeps one tree's poison out of another - bound to `pm3`, which the suite did not print",
+    "tests/test__output_lints.py: parsed_sources re-parses a rewritten file, does not re-parse an identical rewrite, and keeps one tree's poison out of another - bound to `pm4`, which the suite did not print",
+    "tests/test__output_lints.py: parsed_sources re-parses a rewritten file, does not re-parse an identical rewrite, and keeps one tree's poison out of another - bound to `pm5`, which the suite did not print",
+    "tests/test__output_lints.py: parsed_sources re-parses a rewritten file, does not re-parse an identical rewrite, and keeps one tree's poison out of another - bound to `pm6`, which the suite did not print",
+    "tests/test__output_lints.py: parsed_sources re-parses a rewritten file, does not re-parse an identical rewrite, and keeps one tree's poison out of another - bound to `pm7`, which the suite did not print",
+    "tests/test__output_lints.py: parsed_sources re-parses a rewritten file, does not re-parse an identical rewrite, and keeps one tree's poison out of another - bound to `pm8`, which the suite did not print",
+    "tests/test__output_lints.py: parsed_sources re-parses a rewritten file, does not re-parse an identical rewrite, and keeps one tree's poison out of another - bound to `pm9`, which the suite did not print"
+  ],
+  "testsAddUnchecked": []
+}

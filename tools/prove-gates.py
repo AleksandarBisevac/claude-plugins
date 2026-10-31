@@ -89,6 +89,7 @@ if _output.LINTS_DIR not in sys.path:
     sys.path.insert(0, _output.LINTS_DIR)
 
 import _deps  # noqa: E402  (the rule string one row mutates)
+import _output_lints  # noqa: E402  (the parse memo the derivation reads through)
 
 S = "plugins/audit/scripts/"
 # The two lint modules (`_deps`, `_refs`) sit outside the plugin, so their rows name a
@@ -237,9 +238,11 @@ _GATE_OUTSIDE = ("tools/sweep-selftests.py", "tools/_suite.py",
 # THE WALKS ARE NAMED RATHER THAN GUESSED AT, because a walk is a shared thing here
 # and a second one would already be a defect: `_output.py_files()` is the recursive
 # walk the sweep, the lints and the classifier all use, `lint_py_files()` is its
-# scoped sibling, and `kept_files()` is the derived-off-`.gitignore` set the prose
-# scans read.
-_TREE_WALKS = ("py_files", "lint_py_files", "kept_files")
+# scoped sibling, `kept_files()` is the derived-off-`.gitignore` set the prose
+# scans read, and `parsed_sources()` is `lint_py_files()` with each file parsed
+# through the memo - a lint written over it walks the tree as surely as one
+# written over the walk it wraps.
+_TREE_WALKS = ("py_files", "lint_py_files", "kept_files", "parsed_sources")
 
 # THE FILES AN `ALLOW` ROW MAY MUTATE: every file that HOLDS a guard, repo-relative.
 # `_GATE_MODULES` under `scripts/`, plus the guards that do not live in the plugin at
@@ -1223,12 +1226,12 @@ ALLOW = (
   "            seen.add(hit[0])\n", OUTL, "pp13"),
  # THE PUREST INSTANCE OF THAT NARROWING SHAPE IN THE TREE. The rule bans
  # `__file__`, and the pinned preamble is the one legitimate occurrence of it -
- # which is why the preamble is cut out before the scan. Stop cutting it and
+ # which is why the preamble's lines are left out of the scan. Stop leaving them out and
  # every compliant file reads as a violation, quoting the very bytes the house
  # rule tells people to paste.
  ("depth_sensitive_paths", L + "_output_lints.py", "replace",
-  "            tree = ast.parse(src.replace(PATH_PREAMBLE, blanked), filename=rel)",
-  "            tree = ast.parse(src, filename=rel)", OUTL, "ds5"),
+  "        inside = _preamble_lines(src)",
+  "        inside = set()", OUTL, "ds5"),
  # The rule is the annotation, not the parameter. Drop the `is not None` and a
  # default argument - `ga5`'s fixture, and most signatures in the tree - is
  # reported as annotated.
@@ -1984,6 +1987,12 @@ NOT_A_GATE = (
   "of edges is not a list of findings. What makes it a candidate is that it "
   "walks every file under its roots with no argument; what makes it not a gate "
   "is that nothing it returns is a pass or a fail."),
+ ("parsed_sources",
+  "the PARSE WALK, for the reason `script_files` is one: it answers which `.py` "
+  "files sit under the lint roots and what each one parses to, through the "
+  "content-keyed memo, and a list of trees is not a list of findings. A file "
+  "that will not parse is a row carrying its exception, handed to the caller to "
+  "judge; the verdicts are the lints that read the trees, each with rows above."),
 )
 
 _MIN_NOT_A_GATE_REASON = 80   # a reason short enough to be a label is not a reason
@@ -2057,6 +2066,13 @@ def _gate_sources(script_dir=None, repo=None):
 
     `script_dir` still overrides the plugin half so a case can point the whole
     derivation at a fixture tree; when it is given, nothing else is walked.
+
+    EACH FILE IS PARSED THROUGH `_output_lints.parsed_source`, whose memo is keyed
+    on the file's CONTENT: the derivation runs dozens of times in one process, and
+    this prover mutates and restores files in that same process, so a memo keyed on
+    anything but the bytes would hand a restored file's mutated tree to every later
+    derivation. The walk stays this one, not `parsed_sources`', so the file set the
+    derivation reads is the one it always read.
     """
     repo_root = repo or REPO
     if script_dir is not None:
@@ -2076,7 +2092,7 @@ def _gate_sources(script_dir=None, repo=None):
                 rel = prefix + os.path.relpath(path, root).replace(os.sep, "/")
                 try:
                     out.append((rel, path,
-                                ast.parse(_read_source(path))))
+                                _output_lints.parsed_source(path)[1]))
                 except (OSError, SyntaxError):
                     continue
     return out
@@ -3651,6 +3667,20 @@ def _cases(check):
           _ng_excused
           and not any(name in _ng_live for name in _ng_excused)
           and not_a_gate_problems(table=NOT_A_GATE) == [])
+
+    # The derivation above read every file through `_output_lints`' parse memo,
+    # which hands the SAME tree to each later derivation rather than a copy. So
+    # the derivation must leave each tree as it found it, and this asks the memo
+    # itself, after the derivations this suite has run, against a fresh parse.
+    _pm_mine = dict((p, e) for p, e in _output_lints._PARSE_MEMO.items()
+                    if os.path.abspath(p).startswith(REPO + os.sep))
+    _pm_bad = _output_lints.poisoned_parses(_pm_mine)
+    check("ng4 the derivation reads through the parse memo and poisons none of "
+          "it: the memo holds this prover's own file among the %d files of this "
+          "checkout it was handed, and every one of those trees is still what "
+          "parsing its source gives - poisoned: %r" % (len(_pm_mine), _pm_bad),
+          os.path.abspath(__file__) in [os.path.abspath(p) for p in _pm_mine]
+          and _pm_bad == [])
 
     # --- the verdict comes back through a per-run path ------------------------
     # This file read `redfirst.sh`'s gate log out of the SYSTEM temp root by name,

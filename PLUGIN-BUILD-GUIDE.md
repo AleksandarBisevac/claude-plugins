@@ -1695,6 +1695,17 @@ chosen: a name moved when no shipped file read it, and `tests/test__output_lints
 `test__ui_theme_lints.py`, `test__help_lints.py` and `test__config_rules_lints.py` hold the cases
 beside each. `install_path()` never puts this directory on `sys.path`, so a development caller adds it.
 
+`_output_lints.py`'s tree lints read every file through one door, `parsed_source(path)`, and
+`parsed_sources(dirs)` is the walk over it (`[(rel, path, src, tree)]`, a file that will not
+parse kept as a row carrying its exception). Behind the door is a per-process memo keyed on the
+path AND the sha256 of the bytes read on that call — the content, never the mtime or the size,
+because `tools/prove-gates.py` reads its derivation through the same memo while it mutates and
+restores files in one process, and a same-second, same-length restore is the stale-cache trap a
+stamp key walks into. A hit returns the memoised tree itself rather than a copy (a deep copy
+costs more than the parse it saves), so no reader may mutate a tree: `poisoned_parses()`
+compares each memoised tree with a fresh parse, and `pm8` in `tests/test__output_lints.py` and
+`ng4` in the prover's own suite run it after every reader they reach.
+
 ### `tools/lints/_refs.py`
 The other half of the same idea, aimed at paths rather than at imports: roughly 150 places
 spell a route to a `.py` under `plugins/audit/` — the command files, CI's own steps, this
