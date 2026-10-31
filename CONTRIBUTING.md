@@ -591,8 +591,12 @@ slice is `python3 tools/gate-parity.py --list`.
   branch that routes on the answer, the line that prints it — can stop being run by
   anything, with every case green. Reading for that finds the instances a reviewer
   thinks to look for, so a change that converts a suite runs
-  `python3 tools/reach-diff.py <module> <suite> --base <the commit before it> --head HEAD`
-  and answers its output: the suite runs at both revisions in scratch exports with a
+  `python3 tools/reach-diff.py <module> <suite> --base <the commit before it> --head WORKTREE`
+  and answers its output. A gate on a task's change names `--head WORKTREE`, because
+  the gate runs over the task's uncommitted work: `--head HEAD` measures the last
+  commit, which for an uncommitted conversion is the base again and for an
+  uncommitted fix still holds the loss. The suite runs at both in scratch copies -
+  the base exported from git, the working tree copied as git lists it - with a
   line tracer on the module in every Python process that imports its hook, and the
   tool exits 1 naming each line of the module reached before and not after, grouped
   by the function it is in now. Lines are paired across the revisions by aligning
@@ -602,8 +606,9 @@ slice is `python3 tools/gate-parity.py --list`.
   line it names is reached again by a case, or named in the change as deliberately
   left. It refuses with 2 rather than passing when a block failed, a revision reached
   no line of the module, or a child the suite started on the module's path never
-  wrote what it reached; its docstring says what the tracer cannot see, and which
-  children it cannot count. Nothing runs it for you: it is no slice of `verify.sh`
+  wrote what it reached - unless that block ran at both revisions with the same
+  such children, which it prints as a blind spot the two sides share; its docstring
+  says what the tracer cannot see, and which children it cannot count. Nothing runs it for you: it is no slice of `verify.sh`
   and no hook asks for it, so it runs where a task names it in its gate, and
   otherwise a review is where a missing run is found.
 - **Every `.py` under `hooks/` and `scripts/` is scanned wherever it sits.** The

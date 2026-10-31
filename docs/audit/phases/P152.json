@@ -150,9 +150,30 @@
         "file": "tests/test_stamp_verification.py:84-101 (_seeded_repo docstring, line 93)",
         "issue": "'the init, config, add and commit are the same five git calls every time': the body makes four git calls (init, config, add, commit). This is a wrong number written into prose, and it contradicts the filed claims item 7, 'no number written into prose ... comments carry none'.",
         "resolution": "Delete the number: 'the init, config, add and commit are the same git calls every time'."
+      },
+      {
+        "id": "P152-R17",
+        "severity": "med",
+        "file": "tools/reach-diff.py:674-713,776-787",
+        "issue": "A comparison whose two sides materialise the same tree exits 0 with no change measured. The new WORKTREE head makes this the likely failure: `--base HEAD --head WORKTREE` on a clean checkout, or after the task's work is committed (when a phase review re-runs a task gate), copies exactly the base commit and reports 'lost: 0 lines'. The same happens with `--base X --head X`. The task exists because a gate passed vacuously (`--head HEAD` over an uncommitted conversion compares the base with itself). The diff fixes that spelling and leaves the same vacuous pass open under the new one. P152.4's re-pointed gate in the working tree's plan is now spelled exactly `--base HEAD --head WORKTREE`.",
+        "resolution": "In compare(), after both sides are prepared, refuse with 2 when they hold the same content. Either the two sides resolve to the same commit, or the head is WORKTREE and the scratch copy is byte-identical to the base export. Comparing the two scratch trees touches no git state. Print it as 'the head is the base: no change to measure'. Add a selftest case: `--base HEAD --head WORKTREE` over a clean fixture checkout exits 2."
+      },
+      {
+        "id": "P152-R18",
+        "severity": "low",
+        "file": "tools/reach-diff.py:64-77 (docstring), 253-275 (blind_spots); CONTRIBUTING.md:606-611",
+        "issue": "A blind spot is matched only by the number of untraced children per block label. The docstring says such a block 'measured the same blind spot on both sides', and CONTRIBUTING says 'the same such children'. Equal counts do not establish that. Suppose the base kills a child that runs path P (P reached nowhere else) and the head kills a different child in the same block. The counts match, P's loss is invisible, and the run exits 0. In a suite with no STAGES table the label is '(whole file)', so the match is one count over the whole suite. The residual risk is half-stated ('lines only those children ran are measured at neither revision'), but the sentence before it claims identity.",
+        "resolution": "Record each module child's identity: the child dumps its argv with the export root stripped, and the parent's `spawned` records the same key. Then match the multiset of untraced keys per block instead of their count. If identity matching is not wanted, reword the docstring and the CONTRIBUTING sentence to say the same NUMBER of children, and state that a different child killed at the head hides a loss among the lines the base's child ran."
+      },
+      {
+        "id": "P152-R19",
+        "severity": "low",
+        "file": "tools/reach-diff.py:277-281 (HOOK_SOURCE dump)",
+        "issue": "The hook reads the block label in the atexit handler (`os.environ.get(\"REACH_DIFF_BLOCK\")` inside dump()), not when it installs. A suite process that clears or replaces os.environ before exiting has its untraced children filed under '(whole file)'. In a staged run that label ran at neither side, so the run refuses with 2 and names the wrong block. This fails safe, but the refusal is misattributed. `parent` is already captured at install time.",
+        "resolution": "Capture `block = os.environ.get(\"REACH_DIFF_BLOCK\")` beside `parent` in _reach_diff_install() and write that value in dump()."
       }
     ],
-    "outcome": "[findings: 16 - 0 high, 7 med, 9 low; 5 with a recorded fix commit]"
+    "outcome": "[findings: 19 - 0 high, 8 med, 11 low; 5 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -401,7 +422,7 @@
           "python3 tools/sweep-selftests.py --selftest",
           "python3 tools/sweep-selftests.py tests/test__output_lints.py",
           "python3 tools/sweep-selftests.py tests/test_stamp_verification.py",
-          "python3 tools/reach-diff.py plugins/audit/scripts/governance/drive-phase.py tests/test_drive_phase.py --base 234c87ad --head HEAD"
+          "python3 tools/reach-diff.py plugins/audit/scripts/governance/drive-phase.py tests/test_drive_phase.py --base HEAD --head WORKTREE"
         ],
         "gateBasis": "declared"
       },
@@ -920,7 +941,7 @@
     {
       "id": "P152.11",
       "title": "The stamp-verification suite proves verdict shapes through the judge, in fewer processes, from one repository template",
-      "status": "in_progress",
+      "status": "done",
       "description": "Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.11. (a) About 60 shape proofs move to M.head_tree over the fixture repository plus M.red_verdict(run, ctx) with literal run records, each literal the captured output of the kept real proof of its dialect (a comment names which); one real proof per runner dialect and every deliberate-sleep block stay. (b) The sub-second unit blocks merge into six subject blocks (su-readers, su-verdict, su-sweep-table, su-env, su-wording, su-records). (c) _seeded_repo is built once per block process and copied per case. Remove dropped labels from .github/sweep-costs.json; re-record nothing.",
       "files": [
         "tests/test_stamp_verification.py",
@@ -950,13 +971,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6c164a9615cb",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tests/test_stamp_verification.py. (a) New `_judged(root, man, cmd, key, *extra)` hands `red_verdict` the runs recorded under `_RECORDED[key]` over the fixture's real repository, reading it as `run_red` does (declared_tests, _at_head, dependency_plan, head_tree, _cat_blobs, new_stages, child_env, and for a sweep command load_sweep_table/sized_deadline/sweep_budget); it refuses (exit None, payload `record`) a record holding or lacking a second or fix run against `_wants_second` and classify_run+baseline_problem, so a change to those decisions turns the literal case red. `_proof(root, man, cmd, key)` dispatches real vs judged; `_suite_red`, `_extra_red`, `_label_red`, `_path_red` take `key=`. 88 recorded runs over 72 cases now judged: sr99 sr117-121 sr126 ns1-5 (sr-red-baseline), sr145-150 sr153 sr157-159 sr161 (sr-reach), sr164-166 sr168-170 (sr-moved), sr175-181 sr184 sr185 (sr-binding), sr136-138 (sr-every-run-isolated), sr107 sr109 sr110 (sr-round5), sr51 sr52 (sr-label), sr74 sr88 sr127 sr128 (sr-green), sr16 sr18 sr20 (sr-introduces), sr81-84, sr57 sr58 sr60, sr93 sr103, sr70 sr71, sr67, sr56, swc2 swc8, swn2-4, sd3. Each record was CAPTURED from that case's own real proof in a HEAD export (a wrapper on M.red_verdict), the throwaway path scrubbed to `<holder>`, tally lines built from `_TALLY`, sweep totals from `_sweep_total`, sweep rows' counts %-formatted; texts used twice or more are `_RUN_<KEY>_<RUN>` constants; `_U_EQ`/`_U_DASH` for unittest's 70-char rules. The comment above `_RECORDED` names the real proof kept per dialect: house sr1+sr50, staged house swd6, unittest-as-script and -f sr102, `python -m unittest` sr167, `sh -c` sr160, jest-shaped runner via node_modules sd1, stand-in sweep swc1, real sweep swn1. Kept real on purpose: sr101 (converting it lost 5 module lines - `_file_sha` except-OSError and `_lay_over`'s removal of a deleted declared file - so it was reverted), isolation cases sr129 sr130 sr132 sr134 sr135 sr142-144, sr-directory (its subject is the lay-over of a declared directory), sd1 sd2 sd4 sd5, swc1 swc9, swn0 swn1, and every deliberate-sleep block (swd, sr-sigterm, sr-process, sr-budget, sr-run-confirm) untouched. Labels narrowed honestly: sr138 (checks payload baseline.stubbed instead of the head run's exit), sr136 (HEAD's red run is not a green baseline, no longer 'is not skipped'), sd3 (the dependency plan links node_modules; now also asserts the basis says so). (b) 44 sub-second blocks plus swt-wall/swp-platform merged into six subject blocks su-readers (14), su-verdict (7), su-sweep-table (2), su-env (10), su-wording (4), su-records (8): each member runs under `_harness.stage` with its old label, called by name through a lambda because `_harness.stage_reach` reads calls (a first version passing the function objects failed 'STAGED BLOCKS NEVER RUN'). STAGES 79 -> 40 rows. (c) `_seeded_repo` builds one template per process (`_SEED_TEMPLATE`) under fixture_root and copies it with shutil.copytree(symlinks=True, dirs_exist_ok=True) into a fresh fixture_root; removal stays atexit remove_tree; no rmtree added. .github/sweep-costs.json: the 44 dropped labels' rows removed by record_costs(labels=every suite's current rows, this suite's stage_labels) from its own figures, platform windows-2025 and workers 4 as swd7 does; no figure re-recorded; this suite 462.3 -> 400.2 = sum of its 34 remaining rows; no other suite's row changed. PLUGIN-BUILD-GUIDE.md `### tests/`: one paragraph, 'A block is a subject, not a function'. Case multiset: a full in-process --selftest at HEAD and now both print 356 cases with identical id multisets (the one id printed twice, `in`, is printed twice at HEAD too). Gates run from the checkout: sweep of the suite exit 0, 356 cases; sweep --selftest exit 0, 160/160; sweep tests/_harness.py exit 0, 98 cases; reach-diff (on a scratch commit b7e1a23f/ea6b9de6 in a `git clone --shared` under the scratchpad, --repo) exit 2 'no comparison made' at BOTH base 234c87ad and head: one module child untraced at each, the helper sr-sigterm SIGKILLs on purpose (_signal_mid_run), which never writes its lines - the base refuses on its own. The same comparison through reach-diff's own code with only that refusal lifted (scratch reach_lifted.py): base 2459 lines reached, head 2459, 'lost: 0 lines' (code 0); before sr101 was reverted it showed the 5 lines above. Also: ruff clean, vermin 3.8, house_style_violations none, prose_number_claims none for this file, doc_prose_numbers none for the guide, check-committed-pii --scan-text 10 findings at HEAD and 10 now (all pre-existing fixture lines), bare_git_calls [] at HEAD and now, gate-parity --list and full exit 0, tools/_suite.py 35 cases ok. Timing, single runs each, sweep of the suite in a git-archive export: before (HEAD) wall 33.1 s, 167.5 slot-s, 79 blocks, load 5.00->6.23; after wall 27.1 s, 126.0 slot-s, 40 blocks, load 6.77->6.35. Remaining wall is the sleep blocks (swd-block 15.6 s, sr-sigterm 14.1 s).",
+        "descriptive": "The stamp-verification suite judges 72 verdict-shape cases from captured run records over real fixture repositories, runs its 44 quick blocks as six subject blocks and copies one seeded repository per process: 79 -> 40 blocks, 167.5 -> 126.0 slot-seconds, same 356 cases."
       },
       "startedAt": "2026-10-31T21:31:38Z",
-      "completedAt": null,
+      "completedAt": "2026-10-31T22:20:14Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -994,6 +1015,17 @@
         "runId": "2026-10-31T22:12:57Z.79970f",
         "status": "passed",
         "at": "2026-10-31T22:12:57Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "6c164a9615cb",
+        "at": "2026-10-31T22:20:14Z",
+        "return": "docs/audit/evidence/returns/P152.11/20261031T213138Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task with tests.add none and tests.expectRedFirst false: no case of this task's own for the helper to prove. The converted cases were proven red against the judge by a scratch probe instead (probe/mutations.py over a git-archive export of a scratch commit in a throwaway clone; each anchor asserted landed, __pycache__ purged, PYTHONDONTWRITEBYTECODE=1, export discarded, clone `git status --porcelain` empty after, checkout module `git diff --quiet HEAD` exit 0). Baseline over the 16 blocks holding judged cases: 140/140 green. wants-second-never -> sr19 sr20; wants-second-always -> every judged case (the record-consistency check) plus swc9; baseline-always-green -> sr99 sr117-sr121 sr126 ns2 ns3 ns4 sr107 sr109 sr110 sr136 sr137 sr145 sr147 sr148 swn3 (and real sr102 sr129 sr130 sr132 sr160, unit sr104); fix-always-passes -> sr128 swc2 swn4 (and sr142-144 real, unit sr131 sr171 swc3 swc3b swn5 swn6); new-stage-never -> ns1 ns5; new-suite-never -> swn2 (and swn1 real, swn7 unit); one-declared-ignores-others -> sr168 sr178 (unit sr173); replaces-never -> sr184 sr185 (unit sr186); classify-mixed-read-as-red -> sr70 (unit sr55). classify_run's command reading (read_run_tally(text, None)), its assertion requirement (collected>0 alone is red) and read_run_tally->read_tally each SURVIVED the judged cases and went red only in su-readers' unit cases (sr69 sr86 / sr13 sp3 / sp1 sp3 pn1 sv-json1, 177/179 and 175/179 with su-readers added): no recorded shape is one where the command names the runner of a mixed tally, a failure without an assertion, or a fallback-only tally.",
+        "at": "2026-10-31T22:57Z-23:00Z (probe wall 99.8 s, load 5.3-6.6)"
       }
     },
     {
@@ -1089,7 +1121,7 @@
         "gate": [
           "python3 tools/sweep-selftests.py tests/test_drive_phase.py",
           "python3 tools/sweep-selftests.py tests/test_stamp_verification.py",
-          "python3 tools/reach-diff.py plugins/audit/scripts/governance/drive-phase.py tests/test_drive_phase.py --base 92c399f5 --head HEAD"
+          "python3 tools/reach-diff.py plugins/audit/scripts/governance/drive-phase.py tests/test_drive_phase.py --base 92c399f5 --head WORKTREE"
         ],
         "gateBasis": "declared"
       },
@@ -1191,7 +1223,7 @@
     {
       "id": "P152.15-6jb",
       "title": "reach-diff measures uncommitted work: --head can name the working tree",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The drive runs a task's gate on the task's uncommitted work, but tools/reach-diff.py exports revisions with git archive, so --head HEAD measures the last commit, not the task's change: a gate naming it is vacuous for a conversion (HEAD equals the base) and permanently red for a fix (the committed loss is still there). Add a head that names the working tree (e.g. --head WORKTREE): materialise it by copying the tracked files as they are on disk plus untracked files git does not ignore (git ls-files -co --exclude-standard), into the same scratch layout, never writing the checkout; deleted tracked files are absent. Refuse (exit 2) a --base WORKTREE. Selftest: an uncommitted change that drops a branch's only reaching case exits 1 under --head WORKTREE and 0 under --head HEAD, proving the head really is the working tree; an untracked new suite file is seen. CONTRIBUTING.md bullet: say a gate on a task's change names --head WORKTREE. Then re-point the gates of P152.4, P152.11 and P152.13-6jb from --head HEAD to --head WORKTREE (scope --gate with the full list - --gate replaces the list).",
       "files": [
         "tools/reach-diff.py",
@@ -1218,14 +1250,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-31T22:20:16Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -1239,7 +1271,13 @@
           "text": "the task edits the reach-diff bullet only; the passages this reader quotes are elsewhere in CONTRIBUTING.md",
           "waives": "tools/sweep-selftests.py"
         }
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-31T22:34:18Z.985bba",
+        "status": "passed",
+        "at": "2026-10-31T22:34:18Z"
+      }
     }
   ],
   "reviewPerTask": "signals",
