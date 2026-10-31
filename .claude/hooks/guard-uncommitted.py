@@ -115,21 +115,29 @@ import sys
 # message matches here and is then thrown out by the parse, which reads the
 # operation.
 #
-# The second job is the fallback for a line `shlex` cannot read at all (an
-# unbalanced quote). There the same table is the whole reading, and its
-# over-firing on quoted text is the conservative direction: an unparseable line
-# that names one of these operations is refused when the tree is dirty rather than
-# guessed at. That is the shape `guard-history-rewrite.py` settled on, for the
-# same reason.
+# The second job is the fallback for a line the parser cannot read at all (an
+# unbalanced quote, or a heredoc body the parser cannot place). There the table
+# grades `executed_text()`'s view - the line with its heredoc bodies and quoted
+# arguments taken out - and grades the raw line only when that view cannot be
+# built or the line holds a command that runs text it is handed. Grading the raw
+# line everywhere refused a task description that QUOTED these operations: the
+# reading assumed the widest loss set for a command whose only act was to pass
+# text to a script.
 #
 # ONE TABLE, TWO USES. A separate pre-filter would be a second description of the
 # same set, and the two would drift in the direction that matters - a shape
 # present in the fallback and missing from the pre-filter never reaches it.
+#
+# THE TREE-WIDE DOT ends where a shell word can end, not only at a blank: a
+# `.` closing a substitution (`$(git checkout -- .)`) or a quoted word is the
+# same pathspec, and a boundary of blanks alone let the pre-filter wave that
+# substitution through before the parser - which reads it - was ever asked.
+_DOT = r"(?<![^\s\"'(=])\.(?![^\s\"');&|`])"
 _SHAPES = (
     r"reset\b[^|;&\n]*--hard",
     r"(?:checkout|switch)\b[^|;&\n]*(?:--force\b|--discard-changes\b"
-    r"|(?<![\w-])-[A-Za-z]*f[A-Za-z]*(?![\w-])|(?<!\S)\.(?!\S))",
-    r"restore\b[^|;&\n]*(?<!\S)\.(?!\S)",
+    r"|(?<![\w-])-[A-Za-z]*f[A-Za-z]*(?![\w-])|" + _DOT + ")",
+    r"restore\b[^|;&\n]*" + _DOT,
     r"clean\b[^|;&\n]*(?<![\w-])-[A-Za-z]*[fdxX]",
     r"stash\b(?![^|;&\n]*\b(?:list|show|apply|pop|drop|branch|clear)\b)",
 )
@@ -364,26 +372,342 @@ def judge(verb, args, helper=None):
 def reading(command):
     """`(judgement, how)` - what this command would destroy and how that was read.
 
-    `how` is "operation" when the line parsed, "text" when it did not and the
+    `how` is "operation" when the line parsed; "executed" when it did not but
+    the text it executes (`executed_text`) did, so the operation decided on a
+    line read with its data taken out; "text" when neither parsed and the
     shapes above decided instead. The caller reports which, because a verdict
-    reached by text is a weaker claim and saying so is cheaper than being wrong
-    about it quietly.
+    reached without parsing the line as given is a weaker claim and saying so
+    is cheaper than being wrong about it quietly.
     """
     if not DESTRUCTIVE_TEXT.search(command or ""):
         return (None, "operation")      # the cheap door: no shape, no parse
     helper = parser()
     invocations = helper.git_invocations(command) if helper is not None else None
     if invocations is not None:
-        for verb, args in invocations:
-            found = judge(verb, args, helper)
-            if found is not None:
-                return (found, "operation")
-        return (None, "operation")
-    # The line will not tokenize, or the parser could not be loaded. The text
-    # matched a destructive shape and nothing can narrow it, so the widest loss
-    # set is assumed and the refusal says it was read from text.
+        return (_first_judgement(invocations, helper), "operation")
+    # The line will not tokenize. What it EXECUTES may still be readable: the
+    # same line with its data taken out, parsed again, is graded on the
+    # operation; when even that will not parse, the shapes grade it.
+    view = executed_text(command, helper)
+    if view is not None:
+        invocations = helper.git_invocations(view)
+        if invocations is not None:
+            return (_first_judgement(invocations, helper), "executed")
+        if not DESTRUCTIVE_TEXT.search(view):
+            return (None, "text")
+    # The parser could not be loaded, or the line runs text it is handed, or
+    # its executed text names a destructive shape nothing can narrow: the
+    # widest loss set is assumed and the refusal says it was read from text.
     return ({"op": "this command", "kinds": (LOSS_TRACKED, LOSS_UNTRACKED),
              "probe": "status", "remedy": REMEDY_PATHS}, "text")
+
+
+def _first_judgement(invocations, helper):
+    for verb, args in invocations:
+        found = judge(verb, args, helper)
+        if found is not None:
+            return found
+    return None
+
+
+# --- what an untokenizable line executes --------------------------------------
+# A HEREDOC BODY AND A QUOTED ARGUMENT ARE DATA, as the shell reads them: a
+# quoted-delimiter body is bytes on a consumer's stdin and a quoted argument is
+# one word handed to a program, so a description quoting `git stash` runs no
+# stash. The fallback used to grade every byte of the line, and refused that
+# description for the widest loss set.
+#
+# WHAT STAYS CODE, each because the shell runs it:
+#   * a `$(...)` or backquote anywhere outside single quotes - inside double
+#     quotes, and inside an UNQUOTED-delimiter heredoc body, too;
+#   * a quoted word in PROGRAM position (`"git" stash`) and every quoted
+#     argument of a `git` command, whose arguments are its operation;
+#   * the WHOLE line, raw, when any command in it can execute text it is
+#     handed (`_runs_text`): a shell, `eval`, `source`, `xargs`, `make`, a
+#     program named by path, an interpreter not running a script file. To one
+#     of those a quoted argument or a body is a program, so nothing is data.
+# Everything after a quote or a substitution that never closes is dropped:
+# the shell runs nothing past it, and what precedes it stays read.
+#
+# KNOWN COST, accepted rather than hidden: a `case` pattern's `)` inside a
+# substitution ends it early here, and the rest is read as code - an over-fire,
+# the direction this guard may err in.
+_RESERVED = ("if", "then", "do", "else", "elif", "while", "until", "!", "{",
+             "time")
+_TEXT_RUNNERS = ("eval", "make", "xargs", "exec")
+
+
+def _program_words(words):
+    while words and words[0] in _RESERVED:
+        words = words[1:]
+    return words
+
+
+def _runs_text(words, cfg):
+    """Could this simple command execute text handed to it as data?
+
+    `words` are its words with quotes removed. Read through the shared
+    `program_candidates`, so a wrapper (`sudo`, `env`, `timeout 5`) does not
+    hide the program it runs."""
+    words = _program_words(list(words))
+    if not words:
+        return False
+    rest, candidates = cfg.program_candidates(words)
+    prefix = words[:len(words) - len(rest)]
+    if any(cfg.program_name(word).lower() in _TEXT_RUNNERS for word in prefix):
+        return True
+    for word in candidates:
+        name = cfg.program_name(word).lower()
+        if name == "git":
+            continue
+        if cfg.is_shell(word) or name in _TEXT_RUNNERS:
+            return True
+        if cfg.is_interpreter(word):
+            at = rest.index(word) if word in rest else len(rest)
+            script = rest[at + 1] if at + 1 < len(rest) else ""
+            if (not script or script.startswith("-")
+                    or not cfg.runs_own_program([word, script])):
+                return True
+            continue
+        if "/" in word or "\\" in word:
+            return True                 # a file run as a program: unread
+    return False
+
+
+def _keeps_quoted(words, cfg):
+    """Is a quoted word that follows `words` executed rather than handed over?"""
+    rest, candidates = cfg.program_candidates(_program_words(list(words)))
+    return (not rest
+            or any(cfg.program_name(word).lower() == "git" for word in candidates))
+
+
+def _single_end(text, start, ansi):
+    """The index of the quote closing a single-quoted word, or None. `$'...'`
+    honours backslash escapes; a plain single quote honours none."""
+    i, n = start, len(text)
+    while i < n:
+        if ansi and text[i] == "\\":
+            i += 2
+            continue
+        if text[i] == "'":
+            return i
+        i += 1
+    return None
+
+
+def _literal(st, i, end, term):
+    """`(full, subs, lit, i)` for double-quoted text, or an unquoted heredoc
+    body when `term` is None: the text with its substitutions read as code,
+    the list of substitutions alone, and the literal characters."""
+    text = st["text"]
+    full, subs, lit = [], [], []
+    while i < end and not st["stop"]:
+        ch = text[i]
+        if term is not None and ch == term:
+            return ("".join(full), subs, "".join(lit), i + 1)
+        if ch == "\\" and i + 1 < end:
+            full.append(text[i:i + 2])
+            lit.append(text[i + 1])
+            i += 2
+            continue
+        if text.startswith("$(", i) or ch == "`":
+            closer = ")" if ch == "$" else "`"
+            inner, i = _code(st, i + (2 if ch == "$" else 1), closer)
+            piece = ("$(" if ch == "$" else "`") + inner + closer
+            full.append(piece)
+            subs.append(piece)
+            continue
+        full.append(ch)
+        lit.append(ch)
+        i += 1
+    if term is not None:
+        st["stop"] = True               # a quote that never closes
+    return ("".join(full), subs, "".join(lit), i)
+
+
+def _heredoc_marker(st, i):
+    """Read the delimiter after a `<<` at `i`; record the pending body and
+    return the index past the delimiter, or None when no delimiter follows."""
+    text, n = st["text"], len(st["text"])
+    strip = text.startswith("-", i)
+    i += 1 if strip else 0
+    while i < n and text[i] in " \t":
+        i += 1
+    delim, quoted = [], False
+    while i < n and text[i] not in " \t\r\n;&|<>()":
+        ch = text[i]
+        if ch in "'\"":
+            close = text.find(ch, i + 1)
+            if close < 0:
+                return None
+            delim.append(text[i + 1:close])
+            quoted = True
+            i = close + 1
+            continue
+        if ch == "\\" and i + 1 < n:
+            delim.append(text[i + 1])
+            quoted = True
+            i += 2
+            continue
+        delim.append(ch)
+        i += 1
+    if not delim:
+        return None
+    st["pending"].append(("".join(delim), quoted, strip))
+    return i
+
+
+def _bodies(st, i, out):
+    """Consume the pending heredoc bodies starting at `i`. A quoted-delimiter
+    body is data and leaves; an unquoted one keeps its substitutions, each
+    emitted as a command line of its own. A terminator that never arrives
+    ends the body at the end of the text, as the shell does."""
+    text, n = st["text"], len(st["text"])
+    pending, st["pending"] = st["pending"], []
+    for delim, quoted, strip in pending:
+        start = i
+        while True:
+            nl = text.find("\n", i)
+            line = text[i:n if nl < 0 else nl]
+            if (line.lstrip("\t") if strip else line).strip() == delim:
+                body_end, i = i, (n if nl < 0 else nl + 1)
+                break
+            if nl < 0:
+                body_end, i = n, n
+                break
+            i = nl + 1
+        if not quoted:
+            _full, subs, _lit, _at = _literal(st, start, body_end, None)
+            if subs:
+                out.append("\n" + "\n".join(subs) + "\n")
+    return i
+
+
+def _end_word(cmd):
+    if cmd["has"]:
+        cmd["words"].append("".join(cmd["cur"]))
+    cmd["cur"], cmd["has"] = [], False
+
+
+def _end_command(st, cmd):
+    _end_word(cmd)
+    if _runs_text(cmd["words"], st["cfg"]):
+        st["runs"] = True
+    cmd["words"] = []
+
+
+def _code(st, i, closer):
+    """`(text, i)` - the code view of shell text from `i` up to `closer`
+    (`)`, a backquote, or None for the end of the line)."""
+    text, n, cfg = st["text"], len(st["text"]), st["cfg"]
+    out, depth = [], 0
+    cmd = {"words": [], "cur": [], "has": False}
+    while i < n and not st["stop"]:
+        ch = text[i]
+        if closer is not None and ch == closer and (closer == "`" or depth == 0):
+            _end_command(st, cmd)
+            return ("".join(out), i + 1)
+        if ch == "\\":
+            if text.startswith("\n", i + 1):
+                i += 2                  # a continuation joins, it does not split
+                continue
+            out.append(text[i:i + 2])
+            cmd["cur"].append(text[i + 1:i + 2])
+            cmd["has"] = True
+            i += 2
+            continue
+        if ch == "#" and not cmd["has"]:
+            end = text.find("\n", i)
+            i = n if end < 0 else end   # a comment runs nothing
+            continue
+        if text.startswith("$(", i) or ch == "`":
+            inner_closer = ")" if ch == "$" else "`"
+            opener = "$(" if ch == "$" else "`"
+            inner, i = _code(st, i + len(opener), inner_closer)
+            if st["stop"]:
+                break
+            out.append(opener + inner + inner_closer)
+            cmd["cur"].append(opener + inner_closer)
+            cmd["has"] = True
+            continue
+        if ch == "'" or text.startswith("$'", i):
+            start = i + (2 if ch == "$" else 1)
+            end = _single_end(text, start, ch == "$")
+            if end is None:
+                st["stop"] = True       # the shell runs nothing past it
+                break
+            out.append(text[i:end + 1] if _keeps_quoted(cmd["words"], cfg)
+                       else "''")
+            cmd["cur"].append(text[start:end])
+            cmd["has"] = True
+            i = end + 1
+            continue
+        if ch == '"':
+            keep = _keeps_quoted(cmd["words"], cfg)
+            full, subs, lit, i = _literal(st, i + 1, n, '"')
+            if st["stop"]:
+                break
+            out.append('"' + (full if keep else "".join(subs)) + '"')
+            cmd["cur"].append(lit)
+            cmd["has"] = True
+            continue
+        if text.startswith("<<", i) and not text.startswith("<<<", i):
+            after = _heredoc_marker(st, i + 2)
+            if after is not None:
+                _end_word(cmd)
+                out.append(" ")
+                i = after
+                continue
+        if ch == "\n":
+            _end_command(st, cmd)
+            out.append("\n")
+            i = _bodies(st, i + 1, out)
+            continue
+        if ch in " \t\r":
+            _end_word(cmd)
+            out.append(ch)
+            i += 1
+            continue
+        if ch in ";&|()<>":
+            _end_word(cmd)
+            if ch in ";&|()":
+                _end_command(st, cmd)
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+            out.append(ch)
+            i += 1
+            continue
+        out.append(ch)
+        cmd["cur"].append(ch)
+        cmd["has"] = True
+        i += 1
+    _end_command(st, cmd)
+    if closer is not None:
+        st["stop"] = True               # a substitution that never closes
+    return ("".join(out), i)
+
+
+def executed_text(command, helper):
+    """The text `command` EXECUTES - its heredoc bodies and quoted arguments
+    taken out, by the rules above - or None when nothing of it may be read as
+    data: the parser could not be loaded, the view could not be built, or a
+    command in the line runs text it is handed.
+
+    None sends the caller to the raw line, which is the conservative reading;
+    it is a separate answer from an empty view, which means the line executes
+    nothing at all."""
+    cfg = getattr(helper, "_config", None) if helper is not None else None
+    if cfg is None:
+        return None
+    st = {"text": command or "", "cfg": cfg, "pending": [], "runs": False,
+          "stop": False}
+    try:
+        view, _end = _code(st, 0, None)
+    except Exception:
+        return None                     # a reader that broke has read nothing
+    return None if st["runs"] else view
 
 
 # --- asking git what is at stake ----------------------------------------------
@@ -524,9 +848,13 @@ def refusal(judgement, entries, problem, how):
                 "holds any is UNKNOWN: %s. Uncommitted work is in no reflog, so "
                 "this refuses rather than guessing." % (judgement["op"], problem)
                 + tail)
-    read_by = "" if how == "operation" else (
-        " (read from the command's TEXT - it could not be tokenized, so the "
-        "widest loss set was assumed)")
+    read_by = {
+        "operation": "",
+        "executed": (" (the command could not be tokenized as given, so this "
+                     "was read from the operation it EXECUTES - its heredoc "
+                     "bodies and quoted arguments taken out as data)"),
+    }.get(how, " (read from the command's TEXT - it could not be tokenized, "
+               "so the widest loss set was assumed)")
     return (head + "`%s` would destroy work this tree holds and git keeps "
             "nowhere else%s. %d file(s) would be lost: %s."
             % (judgement["op"], read_by, len(entries), named(entries)) + tail)
@@ -813,9 +1141,10 @@ def _selftest():
         check("gu40 ...and even that fallback is quiet on a clean tree, because "
               "the tree is half of every verdict",
               decide('git reset --hard "', clean) is None)
-        check("gu41 ...and it says the verdict was read from text rather than "
-              "from the operation",
-              "TEXT" in (decide('git reset --hard "', dirty) or ""))
+        check("gu41 ...and it says the line could not be tokenized as given, so "
+              "the verdict is the weaker claim it is",
+              "could not be tokenized" in (decide('git reset --hard "', dirty)
+                                           or ""))
 
         # --- the cap ---------------------------------------------------------
         wide = os.path.join(tmp, "wide")
@@ -830,6 +1159,79 @@ def _selftest():
               "is capped and the rest COUNTED: %r" % (got,),
               got and "and 5 more" in got
               and got.count(".txt (") == NAMED_CAP)
+
+        # --- a line that will not tokenize: its DATA is not its operation -----
+        # Each fixture below is built so `shlex` refuses it (an apostrophe in a
+        # quoted-delimiter heredoc, or an odd double quote inside one), because
+        # that is the branch which used to read every byte as a command.
+        task_add = ("python3 plugins/audit/scripts/manifest/audit-task.py add "
+                    "--phase P1 --title t --description-file - <<'EOF'\n"
+                    "The guard refused this task's text, which quotes "
+                    "`git stash` and `git checkout -- .`.\nEOF")
+        subst_add = ("python3 audit-task.py add --phase P1 --description "
+                     "\"$(cat <<'EOF'\nquote: \"git stash\" and \"git checkout "
+                     "-- .\" are refused; the third quote is \" alone\nEOF\n)\"")
+        stdin_note = ("audit-task.py note P1 \"never run git stash\" <<'EOF'\n"
+                      "it's git checkout -- . that loses work\nEOF")
+        check("gu43 an audit-task add whose heredoc description QUOTES a stash "
+              "and a checkout is allowed on a dirty tree - the body is the "
+              "description's bytes, not a command: %r"
+              % (decide(task_add, dirty),),
+              decide(task_add, dirty) is None)
+        check("gu44 ...and so is the same description inside \"$(cat <<'EOF' "
+              "...)\" with an odd quote in it, and a quoted argument beside a "
+              "heredoc body: %r" % ((decide(subst_add, dirty),
+                                     decide(stdin_note, dirty)),),
+              decide(subst_add, dirty) is None
+              and decide(stdin_note, dirty) is None)
+        # The deny direction. A fallback that read NOTHING would pass gu43 and
+        # gu44; these are the cases that go red under that over-narrowing.
+        check("gu45 the SAME commands run outside the heredoc are still "
+              "refused, alone and after the heredoc in one untokenizable line",
+              decide("git stash", dirty) is not None
+              and decide("git checkout -- .", dirty) is not None
+              and decide(task_add + "\ngit stash", dirty) is not None
+              and decide(task_add + "\ngit checkout -- .", dirty) is not None)
+        check("gu46 an untokenizable line whose quoted or heredoc text IS "
+              "executed is still refused: a heredoc fed to a shell, a "
+              "command substitution inside double quotes, one inside an "
+              "UNQUOTED-delimiter heredoc, and `sh -c \"...\"`",
+              all(decide(cmd, dirty) is not None for cmd in (
+                  "bash <<'EOF'\ngit stash\nit's\nEOF",
+                  "echo \"$(git stash)\" it's",
+                  "cat > n.md <<EOF\n$(git checkout -- .)\nit's\nEOF",
+                  "sh -c \"git clean -fdx\" it's",
+                  "echo `git reset --hard` it's")))
+        check("gu47 ...and the data reading is quiet on a CLEAN tree too, while "
+              "the shell-fed heredoc is quiet there for the tree's reason",
+              decide(task_add, clean) is None
+              and decide("bash <<'EOF'\ngit stash\nit's\nEOF", clean) is None)
+        check("gu48 a quoted word is data only as an ARGUMENT: a quoted program "
+              "word, a quoted git verb, an interpreter's inline code and a "
+              "program run by path are still read, untokenizable line or not",
+              all(decide(cmd, dirty) is not None for cmd in (
+                  "\"git\" stash; echo it's",
+                  "git \"stash\"; echo it's",
+                  "python3 -c \"import os; os.system('git stash')\" it's",
+                  "cat > x.sh <<'EOF'\ngit stash\nEOF\n./x.sh it's")))
+        check("gu49 ...while an interpreter running a SCRIPT FILE hands its "
+              "quoted arguments over as data - the narrowing the task add "
+              "needs, and no wider: %r"
+              % (decide("python3 tools/x.py --note \"never git stash\" it's",
+                        dirty),),
+              decide("python3 tools/x.py --note \"never git stash\" it's",
+                     dirty) is None)
+        check("gu50 a dot closing a substitution is the tree-wide pathspec - "
+              "the cheap pre-filter used to wave `$(git checkout -- .)` through "
+              "before the parser was asked",
+              decide("x=$(git checkout -- .)", dirty) is not None
+              and decide("echo \"$(git restore .)\"", dirty) is not None)
+        hd = decide("bash <<'EOF'\ngit stash\nit's\nEOF", dirty) or ""
+        ex = decide('git reset --hard "', dirty) or ""
+        check("gu51 the two untokenizable readings say which they are: the raw "
+              "line read as TEXT, and the executed view read as an operation",
+              "TEXT" in hd and "EXECUTES" not in hd
+              and "EXECUTES" in ex and "TEXT" not in ex)
     finally:
         _rmtree_git_safe(tmp)
 

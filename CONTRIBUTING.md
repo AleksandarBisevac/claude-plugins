@@ -659,6 +659,17 @@ slice is `python3 tools/gate-parity.py --list`.
   resolves against the working directory.
 - **Fail-open for advisory paths, fail-loud for guards** — see `SECURITY.md`
   for the table; keep it true.
+- **A guard grades what a command executes, and that holds in its fallback
+  too.** A heredoc body on its way to a consumer that does not run it, and a
+  quoted argument handed to a program that does not run it, are data. A guard that
+  falls back to the raw line when it cannot tokenize one refuses a task
+  description for *quoting* `git stash`, and that is the false positive that gets
+  a guard routed around. The fallback still reads everything the shell runs: a
+  substitution, a quoted program word, every argument of `git`, and the whole
+  line once anything in it (a shell, `eval`, an interpreter given inline code) can
+  run text it is handed. `guard-uncommitted.py`'s `executed_text()` is the worked
+  example, and its selftest pins both directions. Nothing enforces this rule for a
+  guard added later, so its author is the check.
 - Every command that mutates the manifest must revalidate
   (`scripts/manifest/validate-manifest.py`, exit codes 0/1/2).
 - **Every claim in output carries the basis that makes it true — and when the
