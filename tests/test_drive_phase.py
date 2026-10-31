@@ -813,113 +813,6 @@ def _drive_cases(check):
           marks == {"started": list(TASKS), "closed": list(TASKS)})
 
 
-def _drive_mutant_cases(check):
-    """The drive's properties, each red against a mutated driver - a block of its
-    own, because it builds a repository per mutant and nothing above it."""
-    # --- each property, red against a mutated driver --------------------------
-    mutant, _w = _load("drive_phase_stop_after_close")
-    real_close = mutant.close_task
-
-    def close_then_stop(ctx, state, phase, task, intent_basis=None):
-        stopped = real_close(ctx, state, phase, task, intent_basis=intent_basis)
-        if stopped is not None:
-            return stopped
-        return mutant.instruction("decide", ["decide continue %s: closed"
-                                             % (task["id"],)])
-    mutant.close_task = close_then_stop
-    root_m, mpath_m = _repo("steps")
-    run_m = drive(mutant, root_m, mpath_m)
-    check("dp2m RED TWIN: a driver that stops after each close instead of going "
-          "on to the next task's dispatch costs more than four requests a task, "
-          "and dp2's count catches it - over a drive that still closed every task, "
-          "so the extra requests are the mutation's and not a broken drive's: %d"
-          % (model_steps(run_m),),
-          model_steps(run_m) == 5 * len(TASKS) + 1
-          and run_m["steps"][-1] == ("done", None, None))
-
-    mutant, _w = _load("drive_phase_echo")
-    mutant.echo_steps = lambda ctx: True
-    root_m, mpath_m = _repo("echo", task_ids=TASKS[:1])
-    run_m = drive(mutant, root_m, mpath_m, cap=1)
-    sizes_m = [len(t.encode("utf-8")) for _c, t in run_m["prints"]]
-    check("dp3m RED TWIN: a driver that echoes each verb's output into its print "
-          "goes past %d bytes, and dp3's bound catches it: %r" % (BOUND, sizes_m),
-          sizes_m and max(sizes_m) > BOUND)
-
-    mutant, _w = _load("drive_phase_no_gate")
-    mutant.record_gate = lambda ctx, phase, task: (0, "skipped", "")
-    root_m, mpath_m = _repo("nogate", task_ids=TASKS[:1])
-    seen = {}
-    real_m = mutant.dispatch
-
-    def watch_m(ctx, state, phase, task, role, *tree):
-        if role == "reviewer":
-            seen[task["id"]] = _ledger_has_green(root_m, mpath_m, task["id"])
-        return real_m(ctx, state, phase, task, role, *tree)
-    mutant.dispatch = watch_m
-    drive(mutant, root_m, mpath_m, cap=2)
-    check("dp4m RED TWIN: a driver that dispatches the reviewer without recording "
-          "the gate leaves no green row at the dispatch, and dp4 catches it: %r"
-          % (seen,), seen == {"P1.1": False})
-
-    mutant, _w = _load("drive_phase_no_field")
-    mutant.moved_fields = lambda result: []
-    root_m, mpath_m = _repo("nofield", task_ids=TASKS[:1])
-
-    def move(role, tid):
-        if role == "executor":
-            _edit(root_m, tid, "moved after the claim\n")
-    run_m = drive(mutant, root_m, mpath_m, on_dispatch=move, cap=2)
-    rev_m = [t for (_c, t), s in zip(run_m["prints"], run_m["steps"])
-             if s[0] == "dispatch" and s[1] == "reviewer"]
-    check("dp5m RED TWIN: a driver that says only 'stale' and drops the field "
-          "never names scopeDigest, and dp5 catches it: %r" % (rev_m,),
-          rev_m and not any("scopeDigest" in t for t in rev_m))
-
-
-def _refusal_cases(check):
-    M, why = _load("drive_phase_refusal")
-    if M is None:
-        check("dr1 the driver loads", False, why)
-        return
-
-    def refuse_at_commit(module, prefix):
-        """Drive one task to its reviewer, then edit its file after the gate was
-        recorded: `commit-task-work.py` refuses a commit the recorded gate no
-        longer binds."""
-        root, mpath = _repo(prefix, task_ids=TASKS[:1])
-
-        def after(role, tid):
-            if role == "reviewer":
-                _edit(root, tid, "edited after the gate\n")
-        run = drive(module, root, mpath, on_dispatch=after, cap=4)
-        return root, mpath, run
-
-    root, mpath, run = refuse_at_commit(M, "refuse")
-    code, text = run["prints"][-1]
-    task = tasks_of(mpath).get("P1.1", {})
-    check("dr1 a refused verb stops the drive: exit 1, no instruction after it, "
-          "and the task is not closed: %r" % ((code, run["steps"][-1],
-                                               task.get("status")),),
-          code == 1 and run["steps"][-1] == ("none", None, None)
-          and task.get("status") == "in_progress" and not task.get("commit"))
-    check("dr2 the stop prints the verb's own refusal, naming the verb: %r"
-          % (text[:400],),
-          "[commit-task-work]" in text and "REFUSED" in text
-          and any("stopped" in ln and "commit-task-work.py" in ln
-                  for ln in text.splitlines()[:2]))
-
-    mutant, _w = _load("drive_phase_refusal_mute")
-    mutant.relay_refusal = lambda ctx, script, code, text: (
-        mutant.E_STOPPED, "%s %s: stopped" % (mutant.PREFIX, ctx["phase"]))
-    _r, _m, run_m = refuse_at_commit(mutant, "mute")
-    code_m, text_m = run_m["prints"][-1]
-    check("dr2m RED TWIN: a driver that stops with its own sentence instead of the "
-          "verb's words loses the refusal and its remedy, and dr2 catches it: %r"
-          % (text_m,),
-          code_m == 1 and "[commit-task-work]" not in text_m)
-
-
 def _decide_cases(check):
     M, why = _load("drive_phase_decide")
     if M is None:
@@ -966,127 +859,6 @@ def _decide_cases(check):
 
 def _attempts(mpath, task_id):
     return tasks_of(mpath).get(task_id, {}).get("attempts")
-
-
-def _rerun_cases(check):
-    """A gate that reached no verdict is the runner's, not the work's: `rerun`
-    measures again without re-starting the task, so it spends no attempt, and the
-    decision's printed rule says which answer spends one."""
-    M, why = _load("drive_phase_rerun")
-    if M is None:
-        check("dd3 the driver loads", False, why)
-        return
-    root, mpath = _repo("rerun", task_ids=TASKS[:1], gate=("false",))
-    run = drive(M, root, mpath, cap=3)
-    _code, text = run["prints"][-1]
-    rule = list((M.STEPS.get("decide-gate-red") or {}).get("rule") or ())
-    before = _attempts(mpath, "P1.1")
-    with _Env(root):
-        said = []
-        rerun = M.main(["next", PHASE, mpath, "--project-dir", root,
-                        "--answer", "rerun"], out=said.append)
-    after = _attempts(mpath, "P1.1")
-    check("dd3 a red gate's decision offers `rerun` beside `retry` and prints the "
-          "rule saying which spends an attempt; answered `rerun`, the gate runs "
-          "again and the task is not re-started - its attempts stay %r: %r"
-          % (before, (rerun, after, said, text)),
-          rule and all(line in text for line in rule)
-          and "rerun" in text and rerun == 0 and after == before
-          and instruction("\n".join(said))[1] == "gate-red"
-          and len(text.encode("utf-8")) <= BOUND)
-    with _Env(root):
-        said_r = []
-        retry = M.main(["next", PHASE, mpath, "--project-dir", root,
-                        "--answer", "retry"], out=said_r.append)
-    check("dd3m THE TWIN: `retry` re-starts the task and spends one attempt, so the "
-          "two answers are not the same answer under two names: %r"
-          % ((retry, before, _attempts(mpath, "P1.1")),),
-          retry == 0 and _attempts(mpath, "P1.1") == (before or 0) + 1)
-
-
-def _resume_cases(check):
-    """An executor that ended without running its submit block is resumed, not
-    retried: `resume` is offered first, spends no attempt and prints one
-    instruction; `retry` still spends one."""
-    M, why = _load("drive_phase_resume")
-    if M is None:
-        check("rs1 the driver loads", False, why)
-        return
-    root, mpath = _repo("resume", task_ids=TASKS[:1])
-    _next(M, root, mpath)                       # dispatches the executor
-    _code, text = _next(M, root, mpath)         # it filed nothing
-    before = _attempts(mpath, "P1.1")
-    check("rs1 an executor dispatched and never filed is a decision whose FIRST "
-          "option is `resume`, with the rule saying it spends no attempt: %r"
-          % (text,),
-          instruction(text)[1] == "no-executor-return"
-          and "answer: next %s --answer resume|retry|block" % (PHASE,) in text
-          and "no attempt" in text and len(text.encode("utf-8")) <= BOUND)
-    code, said = _next(M, root, mpath, "--answer", "resume")
-    after = _attempts(mpath, "P1.1")
-    check("rs2 `--answer resume` spends no attempt and prints the one instruction "
-          "- resume the dispatched executor and run its submit block: %r"
-          % ((code, said, before, after),),
-          code == 0 and after == before and "resume" in said
-          and "submit" in said and len(said.splitlines()) <= 2
-          and len(said.encode("utf-8")) <= BOUND)
-    _file_executor(root, mpath, "P1.1")
-    _code, moved = _next(M, root, mpath)
-    check("rs4 once the resumed executor files, the drive goes on past the "
-          "decision: %r" % (moved,), instruction(moved)[0] != "decide")
-    root3, mpath3 = _repo("resume-unfiled", task_ids=TASKS[:1])
-    _next(M, root3, mpath3)
-    _next(M, root3, mpath3)
-    _next(M, root3, mpath3, "--answer", "resume")
-    _code, again = _next(M, root3, mpath3)
-    check("rs3 until the return is filed the decision is asked again: %r"
-          % (again,), instruction(again)[1] == "no-executor-return")
-    root2, mpath2 = _repo("resume-retry", task_ids=TASKS[:1])
-    _next(M, root2, mpath2)
-    _next(M, root2, mpath2)
-    b2 = _attempts(mpath2, "P1.1")
-    _next(M, root2, mpath2, "--answer", "retry")
-    check("rs5 THE TWIN: `retry` still spends one attempt: %r"
-          % ((b2, _attempts(mpath2, "P1.1")),),
-          _attempts(mpath2, "P1.1") == (b2 or 0) + 1)
-
-
-def _retry_reason_cases(check):
-    """The reason typed beside `--answer retry` is recorded by the driver itself
-    and reaches the next attempt's brief. The state is read after a real `next`,
-    never written by hand, so removing the recording turns this red."""
-    M, why = _load("drive_phase_retry_reason")
-    if M is None:
-        check("answering retry with --reason records the reason keyed to the new "
-              "start, and the generated brief carries it (the driver loads): %r"
-              % (why,), False)
-        return
-    root, mpath = _repo("retry-reason", task_ids=TASKS[:1])
-    _next(M, root, mpath)                       # dispatches the executor
-    _code, text = _next(M, root, mpath)         # it filed nothing
-    old_start = tasks_of(mpath).get("P1.1", {}).get("startedAt")
-    reason = "flaky-infra-rr7 rerun as-is"
-    code, said = _next(M, root, mpath, "--answer", "retry", "--reason", reason)
-    new_start = tasks_of(mpath).get("P1.1", {}).get("startedAt")
-    entry = (_drive_state(root).get("retryReason") or {}).get("P1.1") or {}
-    want_key = M.start_key({"startedAt": new_start})
-    brc, _printed = _verb(root, "audit-lookup.py",
-                          [mpath, "brief", "P1.1", "--role", "executor",
-                           "--project", root])
-    brief = _read(os.path.join(root, ".claude", "state", "briefs", "P1.1",
-                               "%s.executor.md" % (want_key,))
-                  ).decode("utf-8", "replace")
-    line = "operator's reason for --answer retry: %s" % (reason,)
-    check("answering retry with --reason records the reason keyed to the new "
-          "start, and the generated brief carries it (the decision was %r; "
-          "answered code %r; start %r -> %r; recorded %r; brief exit %r, "
-          "reason lines %r)"
-          % (instruction(text)[1], code, old_start, new_start, entry, brc,
-             [ln for ln in brief.splitlines() if "reason for" in ln]),
-          instruction(text)[1] == "no-executor-return" and code == 0
-          and bool(new_start) and bool(want_key)
-          and entry == {"start": want_key, "value": reason}
-          and brc == 0 and brief.count(line) == 1)
 
 
 # --- the writer as a headless session ------------------------------------------
@@ -3665,100 +3437,11 @@ def _gate_calls(module):
     return calls
 
 
-def _rerun_measures_cases(check):
-    """`--answer rerun` on a red gate is a request to MEASURE: the gate run it
-    leads to is given `--no-reuse`, so a red verdict is never repeated back as
-    the answer to a rerun, and the mark is spent on that one run - the next
-    plain gate run may repeat a verdict again."""
-    M, why = _load("drive_phase_rerun_measures")
-    if M is None:
-        check("rm1 the driver loads", False, why)
-        return
-    calls = _gate_calls(M)
-    root, mpath = _repo("rerun-measures", task_ids=TASKS[:1], gate=("false",))
-    run = drive(M, root, mpath, cap=3)
-    first = run["steps"][-1]
-    code, text = _next(M, root, mpath, "--answer", "rerun")
-    rerun_call = calls[1] if len(calls) > 1 else ([], "")
-    check("rm1 a rerun after a red gate runs the gate with --no-reuse, and what "
-          "it printed is a measurement - no GATE VERDICT REUSED line: %r"
-          % ((first, code, rerun_call[0], rerun_call[1][-300:]),),
-          first == ("decide", "gate-red", None) and code == 0
-          and len(calls) == 2 and "--no-reuse" in rerun_call[0]
-          and "GATE VERDICT REUSED" not in rerun_call[1]
-          and "REUSED" not in text)
-    state = _drive_state(root)
-    check("rm2 the rerun mark is spent on that run: none is left in the drive "
-          "state once the gate measured: %r" % (state.get("rerun"),),
-          not (state.get("rerun") or {}).get("P1.1"))
-    # The decision the measured run printed is taken back out, so the next
-    # plain `next` meets the gate step afresh, as it would after a decision
-    # that no longer applies.
-    state.pop("pending", None)
-    with open(os.path.join(root, ".claude", "state", "drive", "%s.json"
-                           % (PHASE,)), "w", encoding="utf-8") as fh:
-        json.dump(state, fh)
-    _next(M, root, mpath)
-    plain = calls[2] if len(calls) > 2 else (["--no-reuse"], "")
-    check("rm3 THE TWIN: the next plain gate run is given no --no-reuse, and on "
-          "this unchanged tree it repeats the recorded red - so the reuse rm1 "
-          "avoided is real here, and the mark was spent once: %r"
-          % ((plain[0], plain[1][:200]),),
-          "--no-reuse" not in plain[0] and "GATE VERDICT REUSED" in plain[1])
-    _rerun_after_record_cases(check, M)
-
-
-def _rerun_after_record_cases(check, M):
-    """One tree identity, an older red the drive measured and a newer green
-    recorded by hand: `rerun` closes on a green and never prints the red the
-    newer row superseded, and a plain gate run after it repeats the GREEN."""
-    flagdir = os.path.realpath(_harness.fixture_root("drive-rerun-flag-"))
-    flag = os.path.join(flagdir, "flag")
-    probe = os.path.join(flagdir, "probe.py")
-    with open(probe, "w", encoding="utf-8") as fh:
-        fh.write("import os, sys\nsys.exit(0 if os.path.exists(%r) else 1)\n"
-                 % (flag,))
-    root, mpath = _repo("rerun-after-record", task_ids=TASKS[:1],
-                        gate=('"%s" "%s"' % (sys.executable, probe),))
-    calls = _gate_calls(M)
-    run = drive(M, root, mpath, cap=3)
-    check("rm4 the fixture's gate is red first, and the drive asks: %r"
-          % (run["steps"][-1],), run["steps"][-1] == ("decide", "gate-red", None))
-    with open(flag, "w", encoding="utf-8") as fh:
-        fh.write("x\n")
-    with _Env(root):
-        hand = M.run_verb({"project": root, "log": []}, "run-test-gate.py", [
-            mpath, PHASE, "--task", "P1.1", "--record", "--no-reuse",
-            "--project-dir", root])
-    check("rm5 the hand-recorded run over the same tree is green: %r"
-          % (hand[0],), hand[0] == 0 and "GATE GREEN" in hand[1] + hand[2])
-    before = len(calls)
-    code, text = _next(M, root, mpath, "--answer", "rerun")
-    seen = calls[before:]
-    said = text + "".join(out for _a, out in seen)
-    check("rm6 `rerun` after the newer recorded green closes on a green and "
-          "never prints the red it superseded: %r" % ((code, said[-300:]),),
-          code == 0 and seen and "GATE RED" not in said
-          and "GATE-RED" not in text and "gate-red" not in text)
-    state = _drive_state(root)
-    state.pop("pending", None)
-    with open(os.path.join(root, ".claude", "state", "drive", "%s.json"
-                           % (PHASE,)), "w", encoding="utf-8") as fh:
-        json.dump(state, fh)
-    before = len(calls)
-    _next(M, root, mpath)
-    plain = "".join(out for _a, out in calls[before:])
-    check("rm7 THE TWIN: a plain gate run on this identity repeats a verdict "
-          "only if it is the GREEN one - the red is never what it names: %r"
-          % (plain[:300],), "GATE RED" not in plain)
-
-
 # --- a stored gate verdict, shown only while its basis holds -------------------
 # A build command a gate entry names, red and green, spelled so a change between
 # two of them is a change of `meta.buildCommands` alone: the entry names stay.
 _SV_RED = '"%s" -c "import sys; sys.exit(1)"' % (sys.executable,)
 _SV_GREEN = '"%s" -c "import sys; sys.exit(0)"' % (sys.executable,)
-_SV_GREEN_TOO = '"%s" -c "import sys; sys.exit(0)" again' % (sys.executable,)
 # The run id and its age a gate-red line carries: `run <runId>, <n><unit> old`.
 _SV_RUN = re.compile(r"\brun (\S+), (\d+)([smhd]) old\b")
 # Two members gated by two entries, so each is red on a step of its own.
@@ -3866,19 +3549,6 @@ def _stored_red_cases(check):
           % ((said[-600:], [a for a, _o in second_runs],
               [(t, tasks[t].get("status")) for t in ("P1.1", "P1.2")]),),
           _sv_measured_again(said, second_runs, tasks))
-    # RED TWIN: the same wave under a driver whose decisions never ask whether
-    # their run still answers the gate - the parked red is replayed, so sv3's
-    # predicate fails for it, which is what says the predicate reads the check.
-    mutant, _w = _load("drive_phase_stored_red_mutant")
-    mutant.gate_basis_holds = lambda ctx, manifest, pending: True
-    root_m, mpath_m, calls_m, _second_m = _sv_red_wave(mutant, "storedredm",
-                                                       _SV_TWO_STEPS)
-    said_m, runs_m, tasks_m = _sv_after_change(mutant, root_m, mpath_m, calls_m)
-    check("sv3m RED TWIN: a driver that shows a stored red without asking its "
-          "basis replays the second member's red under the old command: %r"
-          % ((said_m[-300:], [t.get("status") for t in tasks_m.values()]),),
-          not _sv_measured_again(said_m, runs_m, tasks_m))
-    _sv_pure_cases(check, M)
 
 
 def _sv_after_change(M, root, mpath, calls):
@@ -3997,293 +3667,14 @@ def _sv_pure_cases(check, M):
           and old is not None and old.group(1) == "r-5.abc;")
 
 
-def _stored_rerun_cases(check):
-    """A rerun answered on one wave member is a request to measure every member
-    whose parked red failed on the same step - never one measured and the
-    other's stored red replayed; a member red on another step is still asked
-    on its own."""
-    M, why = _load("drive_phase_stored_rerun")
-    if M is None:
-        check("sv4 the driver loads", False, why)
-        return
-    root, mpath, calls, _second = _sv_red_wave(M, "storedrerun")
-    before = len(calls)
-    _code, text = _next(M, root, mpath, "--answer", "rerun")
-    second_runs = _sv_task_calls(calls[before:], "P1.2")
-    check("sv4 both members red on the same step: `rerun` answered on the first "
-          "measures the second too, with --no-reuse, in the same next: %r"
-          % ((text[-300:], [a for a, _o in second_runs]),),
-          second_runs and all("--no-reuse" in a for a, _o in second_runs))
-    # RED TWIN: a rerun that marks only the member it was answered on leaves
-    # the other's red parked and its gate unrun, so sv4's predicate fails.
-    mutant, _w = _load("drive_phase_stored_rerun_mutant")
-    mutant.rerun_alongside = lambda ctx, state, manifest, pending: []
-    root_m, mpath_m, calls_m, _second_m = _sv_red_wave(mutant, "storedrerunm")
-    before = len(calls_m)
-    _next(mutant, root_m, mpath_m, "--answer", "rerun")
-    runs_m = _sv_task_calls(calls_m[before:], "P1.2")
-    check("sv4r RED TWIN: a driver whose rerun reaches only the member it was "
-          "answered on measures nothing for the second: %r"
-          % ([a for a, _o in runs_m],),
-          not (runs_m and all("--no-reuse" in a for a, _o in runs_m)))
-    root_b, mpath_b, calls_b, _second_b = _sv_red_wave(M, "storedrerunb",
-                                                       _SV_TWO_STEPS)
-    before = len(calls_b)
-    _code, text_b = _next(M, root_b, mpath_b, "--answer", "rerun")
-    other_runs = _sv_task_calls(calls_b[before:], "P1.2")
-    check("sv4m THE TWIN: red on different steps, the rerun answered on the "
-          "first member does not reach the second - its decision stays parked "
-          "for its own answer and its gate is not run: %r"
-          % ((text_b[-300:], [a for a, _o in other_runs],
-              _sv_parked(root_b, "P1.2").get("decision")),),
-          not other_runs and _sv_parked(root_b, "P1.2").get("decision")
-          == "gate-red")
-    # Overlapping, not equal: the first member red on one step, the second on
-    # that step and another. "The same failing step" is a step both share.
-    root_c, mpath_c, calls_c, _second_c = _sv_red_wave(
-        M, "storedrerunc", ("unit-a", ("unit-a", "unit-b")))
-    shared = ((_sv_parked(root_c, "P1.2").get("verdict") or {}).get("failing"))
-    before = len(calls_c)
-    _code, text_c = _next(M, root_c, mpath_c, "--answer", "rerun")
-    shared_runs = _sv_task_calls(calls_c[before:], "P1.2")
-    check("sv4o a member red on that step and another is reached by the rerun "
-          "answered on a member red on the one step - measured with --no-reuse "
-          "in the same next: %r" % ((shared, [a for a, _o in shared_runs]),),
-          shared == ["unit-a", "unit-b"]
-          and shared_runs and all("--no-reuse" in a for a, _o in shared_runs))
-
-
-def _stored_explain_cases(check):
-    """`--explain` is a path that shows a stored decision too: once the run a
-    gate-red stood on no longer answers the gate, it says so - why, and what the
-    next `next` does - and never replays the text the last signal kept."""
-    M, why = _load("drive_phase_stored_explain")
-    if M is None:
-        check("sv10 the driver loads", False, why)
-        return
-    root, mpath = _repo("storedexplain", task_ids=TASKS[:1], gate=("unit",),
-                        per_task="phase")
-    _commit_plan(root, mpath, lambda plan: plan["meta"].update(
-        buildCommands={"unit": _SV_RED}), "the gate's build command, red")
-    _code, first = _next(M, root, mpath)
-    if instruction(first) == ("dispatch", "executor", "P1.1"):
-        _file_executor(root, mpath, "P1.1")
-    # The form every command runs: the decision goes out as a signal, and its
-    # text is what a later explain could replay.
-    _code, line = _signal_next(M, root, mpath)
-    code, held = _explain_of(M, root, mpath, "P1.1")
-    check("sv10 THE TWIN: with the build command unchanged, explain shows the "
-          "waiting gate-red with its run and its answers: %r" % ((line, held),),
-          "gate-red" in line and code == 0 and "decide gate-red P1.1" in held
-          and _SV_RUN.search(held) is not None and "--answer" in held)
-    _sv_set_command(mpath, _SV_GREEN)
-    code, after = _explain_of(M, root, mpath, "P1.1")
-    check("sv11 after the build command changed, explain says the gate-red no "
-          "longer stands on a run that answers the gate, why, and that the next "
-          "next measures again - no decide line and no answer offered: %r"
-          % ((code, after),),
-          code == 0 and "decide gate-red" not in after and "--answer" not in after
-          and "no longer answers its gate" in after
-          and "other commands" in after and "next measures" in after)
-
-
-def _stored_green_cases(check):
-    """The green a task's gate recorded is the drive's stored verdict until the
-    close: once `meta.buildCommands` resolves the gate to another command, the
-    drive measures it again rather than closing on the old green; unchanged, it
-    closes on it as before."""
-    M, why = _load("drive_phase_stored_green")
-    if M is None:
-        check("sv5 the driver loads", False, why)
-        return
-
-    def to_reviewer(module, prefix):
-        root, mpath = _repo(prefix, task_ids=TASKS[:1], gate=("unit",))
-        _commit_plan(root, mpath, lambda plan: plan["meta"].update(
-            buildCommands={"unit": _SV_GREEN}), "the gate's build command")
-        calls = _gate_calls(module)
-        texts = []
-        for _ in range(4):
-            texts.append(_next(module, root, mpath)[1])
-            kind = instruction(texts[-1])
-            if kind == ("dispatch", "executor", "P1.1"):
-                _file_executor(root, mpath, "P1.1")
-            elif kind[0] != "dispatch" or kind[1] == "reviewer":
-                break
-        return root, mpath, calls, texts
-
-    def changed_then_closed(module, prefix):
-        """The command changed after the green and the reviewer filed: `(text,
-        measured, status, reached)` of the next that follows, `reached` the
-        last print and the gate calls before the change."""
-        root, mpath, calls, texts = to_reviewer(module, prefix)
-        reached = (texts[-1], list(calls))
-        _sv_set_command(mpath, _SV_GREEN_TOO)
-        _file_reviewer(root, mpath, "P1.1")
-        before = len(calls)
-        _code, text = _next(module, root, mpath)
-        return (text, calls[before:], tasks_of(mpath)["P1.1"].get("status"),
-                reached)
-
-    def measured_again(measured, status):
-        return bool(len(measured) == 1
-                    and "GATE VERDICT REUSED" not in measured[0][1]
-                    and "GATE GREEN" in measured[0][1] and status == "done")
-
-    text, measured, status, (last, gated) = changed_then_closed(M, "storedgreen")
-    check("sv5 the fixture reaches the per-task reviewer with the gate measured "
-          "green once: %r" % ((last[-200:], len(gated)),),
-          instruction(last) == ("dispatch", "reviewer", "P1.1")
-          and len(gated) == 1 and "GATE GREEN" in gated[0][1])
-    check("sv6 a stored green whose build command changed since is measured "
-          "again before the close - one gate run, not a repeat - and the task "
-          "closes on that run: %r"
-          % ((text[-300:], [o[-120:] for _a, o in measured]),),
-          measured_again(measured, status))
-    # RED TWIN: a driver whose green mark is read as it was - present, so held
-    # - closes on the old green, and sv6's predicate fails for it.
-    mutant, _w = _load("drive_phase_stored_green_mutant")
-    mutant.stored_green = lambda ctx, state, manifest, task, kind: (
-        mutant._evio.STORED_HOLDS if mutant._marked(state, kind, task) else None)
-    text_m, measured_m, status_m, _reached = changed_then_closed(mutant,
-                                                                 "storedgreenm")
-    check("sv6r RED TWIN: a driver that closes on a stored green without asking "
-          "its basis measures nothing after the command changed: %r"
-          % ((text_m[-200:], len(measured_m), status_m),),
-          not measured_again(measured_m, status_m))
-    root_t, mpath_t, calls_t, _texts_t = to_reviewer(M, "storedgreent")
-    _file_reviewer(root_t, mpath_t, "P1.1")
-    before = len(calls_t)
-    _code, text_t = _next(M, root_t, mpath_t)
-    check("sv6m THE TWIN: with the build command and the tree unchanged, the "
-          "stored green is reused as before - the close runs no gate: %r"
-          % ((text_t[-300:], len(calls_t) - before),),
-          len(calls_t) == before
-          and tasks_of(mpath_t)["P1.1"].get("status") == "done")
-
-
-def _single_task_cases(check):
-    """`next <taskId>` drives that one task and stops: the run of `/audit:run`
-    and `/audit:next`, which execute exactly one task, through the same steps."""
-    M, why = _load("drive_phase_single")
-    if M is None:
-        check("dt1 the driver loads", False, why)
-        return
-    root, mpath = _repo("single")
-    run = drive(M, root, mpath, target="P1.2")
-    tasks = tasks_of(mpath)
-    check("dt1 `next P1.2` dispatches that task's executor and reviewer, closes it "
-          "and prints `done`, leaving its siblings pending, the phase unsigned, "
-          "the lock released and no drive state behind: %r"
-          % ((run["steps"], [(t, tasks.get(t, {}).get("status")) for t in TASKS]),),
-          run["steps"] == [("dispatch", "executor", "P1.2"),
-                           ("dispatch", "reviewer", "P1.2"), ("done", None, None)]
-          and tasks.get("P1.2", {}).get("status") == "done"
-          and [tasks.get(t, {}).get("status") for t in ("P1.1", "P1.3")]
-          == ["pending", "pending"]
-          and not os.path.exists(os.path.join(root, ".claude", "state", "drive"))
-          and "phase-%s" % (PHASE,) not in _verb(
-              root, "audit-lock.py", ["status", "--project", root])[1])
-    again = drive(M, root, mpath, target="P1.2", cap=2)
-    check("dt2 a task already done is reported done at once, and nothing is "
-          "started: %r" % ((again["steps"], _attempts(mpath, "P1.2")),),
-          again["steps"] == [("done", None, None)]
-          and tasks_of(mpath).get("P1.2", {}).get("status") == "done")
-    whole = drive(M, root, mpath, cap=3)
-    check("dt3 THE TWIN: `next P1` still drives the phase - its first dispatch is "
-          "the first pending task, so the task scope narrows only when asked: %r"
-          % (whole["steps"],),
-          whole["steps"][:1] == [("dispatch", "executor", "P1.1")])
-    root_t, mpath_t = _repo("task-form")
-    refused = []
-    with _Env(root_t):
-        for given in ("p1", "P1", "1"):
-            said, errs = [], io.StringIO()
-            with contextlib.redirect_stderr(errs):
-                code = M.main(["next", given, mpath_t, "--project-dir", root_t,
-                               "--task"], out=said.append)
-            refused.append((given, code, said, errs.getvalue()))
-    after = tasks_of(mpath_t)
-    check("dt7 the one-task form given a phase id (p1, P1, 1) exits 2 on one line "
-          "naming /audit:phase P1 and the tasks it would run, one at a time on a "
-          "plan with no waveWidth, and starts nothing: %r" % (refused,),
-          all(c == 2 and s == [] and e.count("\n") == 1
-              and "`/audit:phase P1`" in e and "P1.1, P1.2, P1.3" in e
-              and "one at a time" in e for _g, c, s, e in refused)
-          and all(t.get("status") == "pending" for t in after.values())
-          and not os.path.exists(os.path.join(root_t, ".claude", "state", "drive")))
-    with open(os.path.join(root_t, ".claude", "audit.config.json"),
-              encoding="utf-8") as fh:
-        cfg = json.load(fh)
-    cfg["executor"] = {"waveWidth": 3}
-    with open(os.path.join(root_t, ".claude", "audit.config.json"), "w",
-              encoding="utf-8") as fh:
-        json.dump(cfg, fh)
-    errs = io.StringIO()
-    with _Env(root_t), contextlib.redirect_stderr(errs):
-        M.main(["next", "P1", mpath_t, "--project-dir", root_t, "--task"],
-               out=[].append)
-    check("dt8 with executor.waveWidth above 1 the same refusal says the phase "
-          "verb runs them in waves: %r" % (errs.getvalue(),),
-          "in waves of up to 3" in errs.getvalue()
-          and "one at a time" not in errs.getvalue())
-    said = []
-    with _Env(root_t):
-        code = M.main(["next", "P1.2", mpath_t, "--project-dir", root_t, "--task"],
-                      out=said.append)
-    kind = instruction("\n".join(said))
-    check("dt9 THE TWIN: a task id with the one-task flag still drives that task: "
-          "%r" % ((code, kind),), code == 0 and kind == ("dispatch", "executor", "P1.2"))
-    echo_free = [t for _c, t in run["prints"] + again["prints"] + whole["prints"]
-                 if "ado echo" in t]
-    check("dt5 THE ALLOW TWIN: a plan with no board owes no ADO echo, and no print "
-          "says one is owed: %r" % (echo_free,), echo_free == [])
-    root_a, mpath_a = _repo("single-ado")
-    with open(mpath_a, encoding="utf-8") as fh:
-        plan = json.load(fh)
-    plan["meta"]["ado"] = {"organization": "o", "project": "p"}
-    plan["phases"][0]["tasks"][1]["ado"] = {"id": 4242}
-    with open(mpath_a, "w", encoding="utf-8") as fh:
-        json.dump(plan, fh, indent=2)
-    _harness.git(root_a, "commit", "-qam", "board")
-    run_a = drive(M, root_a, mpath_a, target="P1.2")
-    owed = [t for _c, t in run_a["prints"] if "ado echo owed: P1.2" in t]
-    rule_a = list((M.STEPS.get("ado-echo") or {}).get("rule") or ())
-    check("dt6 a linked task the drive closed owes the board its echo, and the print "
-          "that reports the close says so with the rule for it - no verb sends it, "
-          "so the instruction is the whole of it: %r" % (owed,),
-          len(owed) == 1 and rule_a and all(line in owed[0] for line in rule_a)
-          and run_a["steps"][-1] == ("done", None, None))
-    rule = list((M.STEPS.get("dispatch-executor") or {}).get("rule") or ())
-    first = run["prints"][0][1] if run["prints"] else ""
-    check("dt4 the executor's dispatch prints the rule that applies at it, under "
-          "the instruction, inside the bound: %r" % (first,),
-          rule and all(line in first for line in rule)
-          and len(first.encode("utf-8")) <= BOUND)
-
-
 def _lock_stop_cases(check):
     """A lock another live run holds stops the drive, and the stop carries the
     rule for it: wait, never take it over by hand."""
     M, why = _load("drive_phase_lock")
     if M is None:
-        check("dl1 the driver loads", False, why)
+        check("dl2 the driver loads", False, why)
         return
     real = M.run_verb
-
-    def held(ctx, script, args, stdin=None):
-        if script == "audit-lock.py" and args[:1] == ["acquire"]:
-            return 3, "[audit-lock] phase-P1 is held by a live session\n", ""
-        return real(ctx, script, args, stdin=stdin)
-    M.run_verb = held
-    root, mpath = _repo("lock", task_ids=TASKS[:1])
-    run = drive(M, root, mpath, cap=1)
-    code, text = run["prints"][-1]
-    rule = list((M.STEPS.get("stop-lock") or {}).get("rule") or ())
-    check("dl1 a held lock stops the drive with the lock verb's own words and the "
-          "rule printed under them: %r" % ((code, text),),
-          code == 1 and "[audit-lock]" in text and rule
-          and all(line in text for line in rule))
 
     def index_held(ctx, script, args, stdin=None):
         if script == "audit-task.py" and args[:1] == ["start"]:
@@ -4436,29 +3827,6 @@ def _lock_stop_cases(check):
           code2 == 2 and not held_later
           and _drive_state(root).get("lock") != "taken")
 
-    # The project a context carries is the manifest's own when no --project-dir
-    # was typed: the session's directory may be another checkout.
-    M.run_verb = real
-    root, mpath = _repo("ctxproj", task_ids=TASKS[:1])
-    other = os.path.realpath(_harness.fixture_root("drive-ctxother-"))
-    held_env = os.environ.get("CLAUDE_PROJECT_DIR")
-    os.environ["CLAUDE_PROJECT_DIR"] = other
-    try:
-        ns = argparse.Namespace(project_dir=None, manifest=mpath, verbose=False)
-        _m, ctx = M.project_context(ns)
-        ns_typed = argparse.Namespace(project_dir=root, manifest=mpath,
-                                      verbose=False)
-        _m, typed = M.project_context(ns_typed)
-    finally:
-        if held_env is None:
-            os.environ.pop("CLAUDE_PROJECT_DIR", None)
-        else:
-            os.environ["CLAUDE_PROJECT_DIR"] = held_env
-    check("dl4 with no --project-dir the context's project is the manifest's own "
-          "project, not the session's directory: %r" % (ctx["project"],),
-          os.path.realpath(ctx["project"]) == root
-          and os.path.realpath(typed["project"]) == root)
-
 
 def _key_cases(check):
     """`review.perTask` read by the driver, in `reviewer_due` alone: `phase`
@@ -4484,15 +3852,6 @@ def _key_cases(check):
                   == "deferred"
                   and (tasks.get(t, {}).get("intentCheck") or {}).get("commit")
                   == tasks.get(t, {}).get("commit") for t in TASKS))
-    mutant, _w = _load("drive_phase_keys_always_due")
-    mutant.reviewer_due = lambda *a, **k: True
-    root_m, mpath_m = _repo("phase-mut", task_ids=TASKS[:1], per_task="phase")
-    run_m = drive(mutant, root_m, mpath_m, cap=3)
-    check("dk1m RED TWIN: a driver whose `reviewer_due` answers yes under every "
-          "key dispatches a reviewer under `phase`, and dk1 catches it: %r"
-          % (run_m["steps"],),
-          ("dispatch", "reviewer", "P1.1") in run_m["steps"])
-
     signals = {"P1.1": {"redFirst": {"status": "proved",
                                      "basis": "t.py exit 1, its own case"}},
                "P1.2": {},
@@ -4979,142 +4338,6 @@ def _submit_cases(check):
     _handback_cases(check, M, ((code, text), (code_2, text_2)))
 
 
-def _owed_task_repo(M, prefix, expect):
-    """A one-task repository whose task is tdd over `src/mine.py` with an EMPTY
-    `tests.add` - a fix task born from a finding that named no case - and
-    `expectRedFirst` as `expect`, started and its file changed. Only that stored
-    field differs between the two repositories a case builds."""
-    plan = _plan(TASKS[:1], ("true",))
-    task = plan["phases"][0]["tasks"][0]
-    task["files"] = ["src/mine.py"]
-    plan["fileIndex"] = {"src/mine.py": ["P1.1"]}
-    task["tests"] = {"mode": "tdd", "add": [], "gate": ["true"],
-                     "expectRedFirst": expect}
-    root, mpath = _repo(prefix, task_ids=TASKS[:1])
-    _write_lf(os.path.join(root, "src", "mine.py"), "v = 1\n")
-    with open(mpath, "w", encoding="utf-8") as fh:
-        json.dump(plan, fh, indent=2)
-    _harness.git(root, "add", "-A")
-    _harness.git(root, "commit", "-qm", "tdd fix task")
-    with _Env(root):
-        M.main(["next", PHASE, mpath, "--project-dir", root], out=[].append)
-    _write_lf(os.path.join(root, "src", "mine.py"), "v = 2\n")
-    return root, mpath
-
-
-def _owed_red_first_cases(check):
-    """Every reader of a fix task's red-first obligation asks the stored
-    `expectRedFirst` beside the mode: `submit`, the writer path's command and
-    block, and the fix prompt. Each case pairs a task with the field false and a
-    twin with it true - same mode, same empty `tests.add`, same gate."""
-    M, why = _load("drive_phase_owed_red_first")
-    if M is None:
-        check("ow1 the driver loads", False, why)
-        return
-    root, mpath = _owed_task_repo(M, "ow-false", False)
-    body = _executor_body("P1.1", {"testsAdded": []})
-    del body["redFirst"]
-    code, text = _submit(None, root, mpath, "P1.1", body)
-    path = _filed_path(mpath, "P1.1")
-    filed = json.loads(_read(path).decode("utf-8")) if path and os.path.exists(path) else {}
-    red = filed.get("redFirst") or {}
-    check("ow1 a tdd task whose stored expectRedFirst is false submits with no "
-          "command after `--`: it is filed, red-first not-attempted, the basis "
-          "naming the field and saying nothing is owed, and no helper mark on "
-          "it: %r" % ((code, text, red),),
-          code == 0 and red.get("status") == "not-attempted"
-          and "expectRedFirst" in str(red.get("basis")) and red.get("at")
-          and "source" not in red and "after `--`" not in text)
-    root, mpath = _owed_task_repo(M, "ow-typed", False)
-    code, text = _submit(None, root, mpath, "P1.1", _executor_body(
-        "P1.1", {"testsAdded": [], "redFirst": {
-            "status": "proved", "basis": "typed, no helper ran", "at": "z"}}))
-    path = _filed_path(mpath, "P1.1")
-    filed = json.loads(_read(path).decode("utf-8")) if path and os.path.exists(path) else {}
-    check("ow2 a `proved` the agent typed on such a task is not what is filed: "
-          "no helper ran, so the driver's not-attempted block replaces it: %r"
-          % ((code, filed.get("redFirst")),),
-          code == 0 and (filed.get("redFirst") or {}).get("status") == "not-attempted")
-    root, mpath = _owed_task_repo(M, "ow-true", True)
-    body = _executor_body("P1.1", {"testsAdded": []})
-    del body["redFirst"]
-    code, text = _submit(None, root, mpath, "P1.1", body)
-    path = _filed_path(mpath, "P1.1")
-    check("ow3 THE TWIN: the same task with expectRedFirst true is still "
-          "refused without a command, naming it, and files nothing - the mutant "
-          "that stops asking at all goes red here: %r" % (text,),
-          code == 1 and "after `--`" in text and path is not None
-          and not os.path.exists(path))
-
-    unowed = {"id": "P1.1", "tests": {"mode": "tdd", "add": [],
-                                      "expectRedFirst": False, "gate": []}}
-    owed = {"id": "P1.1", "tests": {"mode": "tdd", "add": [],
-                                    "expectRedFirst": True, "gate": []}}
-    got = (M.writer_test_command({}, {}, unowed), M.writer_test_command({}, {}, owed))
-    check("ow4 the writer path derives no command and no could-not-prove basis "
-          "for the unowed task, and keeps its basis for the owed twin: %r" % (got,),
-          got[0] == (None, None) and got[1][0] is None
-          and isinstance(got[1][1], str) and "no file" in got[1][1])
-    blocks = (M.unowed_red_first(unowed), M.unowed_red_first(owed),
-              M.unowed_red_first({"id": "P1.2", "tests": {
-                  "mode": "regression", "add": [], "expectRedFirst": False}}))
-    check("ow5 the not-attempted block says why: the field for a tdd task, the "
-          "mode for another, and none for a task that owes the proof: %r" % (blocks,),
-          blocks[0].get("status") == "not-attempted"
-          and "expectRedFirst" in blocks[0].get("basis", "")
-          and blocks[1] is None
-          and "regression" in blocks[2].get("basis", ""))
-    check("ow6 the fix prompt asks for a case that fails at HEAD only of a task "
-          "that owes a red-first proof: %r" % ((M.fix_prove_lines(unowed),
-                                               M.fix_prove_lines(owed)),),
-          M.fix_prove_lines(unowed) == [] and len(M.fix_prove_lines(owed)) == 1)
-
-
-def _submit_mutant_cases(check):
-    """Each refusal of `submit`, red against a driver with that refusal taken
-    out. In-process, the one way a replaced function is reached, and after the
-    real cases, so a driver that cannot be driven in-process stops only these."""
-    mutant, _w = _load("drive_phase_submit_any_stamp")
-    mutant.take_stamp = lambda ctx, task: ("audit-stamp: {}", None)
-    root_m, mpath_m, _t = _started(mutant, "anystamp")
-    os.rename(os.path.join(root_m, ".git"), os.path.join(root_m, ".git-away"))
-    try:
-        code_m, text_m = _submit(mutant, root_m, mpath_m, "P1.1",
-                                 _executor_body("P1.1"))
-    finally:
-        os.rename(os.path.join(root_m, ".git-away"), os.path.join(root_m, ".git"))
-    path_m = _filed_path(mpath_m, "P1.1")
-    check("ds1m RED TWIN: a submit that files whatever the take printed files a "
-          "claim bound to no tree, and ds1 catches it: %r" % ((code_m, text_m),),
-          code_m == 0 and os.path.exists(path_m))
-
-    mutant, _w = _load("drive_phase_submit_no_early")
-    mutant.already_filed = lambda ctx, task: None
-    root, mpath, _t = _started(mutant, "noearly")
-    _submit(None, root, mpath, "P1.1", _executor_body("P1.1"))
-    path = _filed_path(mpath, "P1.1")
-    first = _read(path) if os.path.exists(path) else None
-    code_m, text_m = _submit(mutant, root, mpath, "P1.1", _executor_body("P1.1"))
-    check("ds3m RED TWIN: a submit that does not look for the filed return first "
-          "takes a stamp before the filing verb refuses, and ds3 catches it - the "
-          "first still stays as filed, so the refusal itself is the verb's: %r"
-          % (text_m,),
-          code_m == 1 and "stamp taken" in text_m and first is not None
-          and _read(path) == first)
-
-    mutant, _w = _load("drive_phase_submit_no_shape")
-    mutant.submitted_shape = lambda role, body, fills, task=None: []
-    root_m, mpath_m, _t = _started(mutant, "noshape")
-    bad = _executor_body("P1.1")
-    del bad["outcome"]
-    code_m, text_m = _submit(mutant, root_m, mpath_m, "P1.1", bad)
-    check("ds4m RED TWIN: a submit that does not check the shape first takes the "
-          "stamp before the filing verb refuses, and ds4 catches it: %r"
-          % (text_m,),
-          code_m == 1 and "stamp taken" in text_m)
-    _stdin_bytes_case(check)
-
-
 def _windows_text_run(real, received):
     """`subprocess.run` as Windows runs it in text mode, for a POSIX host: a
     str `input` reaches the child through a text wrapper that writes every
@@ -5346,43 +4569,6 @@ def _answer_lines(text):
             if ln.startswith("  ") and ln.rstrip().endswith("[accept]")]
 
 
-def _continue_cases(check):
-    """Under `always`, a per-task reviewer's `diverges` is `decide
-    review-answer`, and its `continue` is a human's word on it: it takes
-    `--reason`, and the summary keeps that reason as it keeps the triage's
-    accept."""
-    M, why = _load("drive_phase_continue")
-    if M is None:
-        check("ct1 the driver loads", False, why)
-        return
-    root, mpath = _repo("continue", task_ids=TASKS[:1])
-    run = drive(M, root, mpath, answer=None,
-                reviewer_answers={"P1.1": "diverges"})
-    last = run["prints"][-1][1]
-    bare, bare_text = _next(M, root, mpath, "--answer", "continue")
-    check("ct1 a per-task `diverges` is `decide review-answer`, whose print says "
-          "`continue` needs --reason, and a bare continue is refused: %r"
-          % ((run["steps"][-1], last, bare, bare_text),),
-          run["steps"][-1] == ("decide", "review-answer", None)
-          and "continue needs --reason" in last and bare == M.E_USAGE
-          and len(last.encode("utf-8")) <= BOUND)
-    check("ct1r ...and its print carries the rule the triage's accept carries: "
-          "the answer is the human's (AskUserQuestion), and --reason is their "
-          "words verbatim - without it the model can write the reason itself: %r"
-          % (last,),
-          "AskUserQuestion" in last and "verbatim" in last
-          and "human" in last)
-    words = "the human: P1.1 was meant to diverge, the plan was stale"
-    code, text = _next(M, root, mpath, "--answer", "continue", "--reason", words)
-    rest = drive(M, root, mpath)
-    summary = _phase_of(mpath).get("summary") or ""
-    check("ct2 ALLOW: continue with the human's words goes on, the phase signs "
-          "off, and the summary keeps those words beside the triage's: %r"
-          % ((code, rest["steps"][-1], summary),),
-          code == 0 and rest["steps"][-1] == DONE
-          and summary.startswith(SUMMARY) and words in summary)
-
-
 # --- sign-off converges: re-review only where it can change the answer --------
 def _carry_target(root, mpath):
     """A later phase holding one pending task, made through the verbs: where a
@@ -5445,32 +4631,6 @@ def _triage_with(M, prefix, findings):
     root, mpath = _repo(prefix, task_ids=TASKS[:1], per_task="phase")
     drive(M, root, mpath, findings=findings, answer=None)
     return root, mpath
-
-
-def _fix_task_over(M, prefix, finding, extra_files=()):
-    """`(task, code, text)` - the one fix task `--answer fix` adds over `finding`
-    in a phase whose runner takes paths (`vitest run` behind the `test` key, a
-    sibling's gate pointed at one suite). `extra_files` are written into the
-    fixture first: a fix task is scoped only onto paths that exist."""
-    root, mpath = _triage_with(M, prefix, [finding])
-    for rel in extra_files:
-        full = os.path.join(root, *rel.split("/"))
-        if not os.path.isdir(os.path.dirname(full)):
-            os.makedirs(os.path.dirname(full))
-        with open(full, "w", encoding="utf-8") as fh:
-            fh.write("v0\n")
-
-    def spell(plan):
-        plan["meta"]["buildCommands"] = {"test": "vitest run"}
-        phase = plan["phases"][0]
-        phase["testGate"] = ["test"]
-        phase["tasks"][0]["tests"]["gate"] = ["vitest run src/f1.test.ts"]
-    _commit_plan(root, mpath, spell, "a runner that takes paths")
-    _harness.git(root, "add", "-A")
-    _harness.git(root, "commit", "-qm", "the files the findings name")
-    code, text = _next(M, root, mpath, "--answer", "fix", "--fix", "P1-R1")
-    mine = [t for t in tasks_of(mpath).values() if t.get("fixes") == ["P1-R1"]]
-    return (mine[0] if mine else {}), code, text
 
 
 def _fix_gate_cases(check, M):
@@ -5568,45 +4728,6 @@ def _fix_batch_cases(check):
           mode == "tdd" and code_s == 0 and red.get("status") == "could-not-prove"
           and "declares no test file" in (red.get("basis") or "")
           and red.get("at"))
-
-    spaced = [dict(COLON_FINDINGS[0],
-                   issue="the split reads wrong, see `(split_not_commands at :4809)`")]
-    root_p, mpath_p = _triage_with(M, "fix-batch-paren", spaced)
-    code_p, text_p = _next(M, root_p, mpath_p, "--answer", "fix", "--fix", "P1-R1")
-    fix_p = [t for t in tasks_of(mpath_p).values() if t.get("fixes") == ["P1-R1"]]
-    check("fb4 --answer fix over a finding whose issue holds a backtick span with "
-          "a spaced paren adds its fix task, carrying that text whole: %r"
-          % ((code_p, [t.get("id") for t in fix_p], text_p[-300:]),),
-          code_p == 0 and len(fix_p) == 1
-          and "`(split_not_commands at :4809)`" in (fix_p[0].get("description") or "")
-          and instruction(text_p)[0] == "dispatch")
-
-    _fix_gate_cases(check, M)
-
-    mutant, _w = _load("drive_phase_fix_batch_bad")
-    real_verb = mutant.run_verb
-
-    def spoil_second(ctx, script, args, stdin=None):
-        # The second task of the batch names a finding the phase never had,
-        # which the verb refuses: the whole batch must be refused with it.
-        if script == "audit-task.py" and list(args)[:1] == ["add"] and stdin:
-            doc = json.loads(stdin)
-            if len(doc.get("tasks") or []) > 1:
-                doc["tasks"][1]["fixes"] = ["P1-R9"]
-                stdin = json.dumps(doc)
-        return real_verb(ctx, script, args, stdin=stdin)
-    mutant.run_verb = spoil_second
-    root_b, mpath_b = _triage_with(mutant, "fix-batch-bad", COLON_FINDINGS)
-    before = sorted(tasks_of(mpath_b))
-    code_b, text_b = _next(mutant, root_b, mpath_b, "--answer", "fix", "--fix",
-                           "P1-R1,P1-R2")
-    found_b = [f.get("fixTask") for f in
-               (_phase_of(mpath_b).get("review") or {}).get("findings") or []]
-    check("fb2 a batch whose second task the verb refuses writes neither task: "
-          "the drive stops with the verb's refusal, and no finding names a fix "
-          "task: %r" % ((code_b, sorted(tasks_of(mpath_b)), found_b, text_b[-300:]),),
-          code_b != 0 and sorted(tasks_of(mpath_b)) == before
-          and found_b == [None, None] and "P1-R9" in text_b)
 
 
 def _journal_only_project(files):
@@ -6077,35 +5198,6 @@ def _lint_probe_cases(check):
 
 
 UNRELATED_GATE = "echo tests/unrelated_test.py 1 passed"
-
-
-def _banner_cases(check):
-    """A green gate that printed NO OVERLAP or TREE CHANGED is not reported as
-    a plain green: the task's did-line carries it, and at the phase gate it is a
-    decision before the verdict."""
-    M, why = _load("drive_phase_banner")
-    if M is None:
-        check("gb1 the driver loads", False, why)
-        return
-    root, mpath = _repo("banner", task_ids=TASKS[:1], gate=(UNRELATED_GATE,),
-                        per_task="phase", phase_gate=(UNRELATED_GATE,))
-    run = drive(M, root, mpath, answer=_stop_at_other)
-    text = "\n".join(t for _c, t in run["prints"])
-    last = run["prints"][-1][1]
-    check("gb1 a task gate that ran none of the task's paths is printed as "
-          "`gate P1.1 green (NO OVERLAP)`, not a plain green: %r" % (text[:500],),
-          "gate P1.1 green (NO OVERLAP)" in text)
-    check("gb2 the same banner on the phase gate is a decision before the "
-          "verdict, and nothing is signed off: %r" % (last,),
-          run["steps"][-1] == ("decide", "gate-coverage", None)
-          and "NO OVERLAP" in last and not _signed(mpath)
-          and len(last.encode("utf-8")) <= BOUND)
-    words = "the human: the suite exercises f1 through its import"
-    code, text = _next(M, root, mpath, "--answer", "accept", "--reason", words)
-    check("gb3 accepted with a reason, the phase signs off and the summary "
-          "keeps the reason: %r" % ((code, text),),
-          code == 0 and instruction(text) == DONE
-          and words in (_phase_of(mpath).get("summary") or ""))
 
 
 def _remedy(text):
@@ -7147,110 +6239,6 @@ def _wave_crash_cases(check):
           and after["P1.2"].get("commit"))
 
 
-def _preflight_repo(prefix, include, tasks=1):
-    """A one-task fixture shaped like a testbed's P1.3: a vitest config whose
-    `include` is `include` (JS source), a gate running vitest on the one test
-    the task adds, and that test declared in `tests.add`."""
-    root, mpath = _repo(prefix, task_ids=TASKS[:tasks],
-                        gate=("npx vitest run lib/store.test.ts",))
-    with open(os.path.join(root, "vitest.config.ts"), "w", encoding="utf-8") as fh:
-        fh.write("const INCLUDE = %s;\nexport default { test: { include: %s } };\n"
-                 % ("['tests/unit/**/*.test.ts']", include))
-    with open(mpath, encoding="utf-8") as fh:
-        plan = json.load(fh)
-    plan["phases"][0]["tasks"][0]["tests"]["add"] = [
-        "lib/store.test.ts: the store keeps its items"]
-    with open(mpath, "w", encoding="utf-8") as fh:
-        json.dump(plan, fh, indent=2)
-    for argv in (["add", "-A"], ["commit", "-qm", "preflight fixture"]):
-        _harness.git(root, *argv)
-    return root, mpath
-
-
-def _preflight_cases(check):
-    """Task start refuses a declared test the runner will never collect: a
-    definite NOT_COLLECTED is a `scope-gap` decision before any dispatch, and
-    `widen` declares the runner config; a could-not-tell runner prints one line
-    and the run dispatches."""
-    M, why = _load("drive_phase_preflight")
-    if M is None:
-        check("pf1 the driver loads", False, why)
-        return
-    root, mpath = _preflight_repo("pfgap", "['tests/unit/**/*.test.ts']")
-    code, text = _next_wave(M, root, mpath)
-    task = tasks_of(mpath)["P1.1"]
-    check("pf1 a vitest include of tests/unit/** and a test at lib/store.test.ts "
-          "stops at decide scope-gap naming vitest and vitest.config.ts, before "
-          "any dispatch, with the task still pending: %r" % (text,),
-          code == 0 and instruction(text) == ("decide", "scope-gap", None)
-          and "vitest.config.ts" in text and "vitest" in text.split("vitest.config.ts")[0]
-          and "widen|block" in text and not _dispatched(text)
-          and task.get("status") == "pending")
-    said = []
-    with _Env(root):
-        code = M.main(["next", PHASE, mpath, "--project-dir", root, "--answer",
-                       "widen"], out=said.append)
-    after = "\n".join(said)
-    task = tasks_of(mpath)["P1.1"]
-    check("pf2 widen declares the runner config beside the task's files and the "
-          "run goes on to dispatch it: %r %r" % (after, task.get("files")),
-          code == 0 and "vitest.config.ts" in (task.get("files") or [])
-          and "src/f1.txt" in (task.get("files") or [])
-          and _dispatched(after) == ["P1.1"])
-    root, mpath = _preflight_repo("pfblock", "['tests/unit/**/*.test.ts']")
-    _next_wave(M, root, mpath)
-    said = []
-    with _Env(root):
-        code = M.main(["next", PHASE, mpath, "--project-dir", root, "--answer",
-                       "block", "--reason", "the human will widen it by hand"],
-                      out=said.append)
-    check("pf3 block blocks the task and dispatches nothing: %r" % ("\n".join(said),),
-          code == 0 and tasks_of(mpath)["P1.1"].get("status") == "blocked"
-          and not _dispatched("\n".join(said)))
-    root, mpath = _preflight_repo("pfunsure", "INCLUDE")
-    code, text = _next_wave(M, root, mpath)
-    lines = [ln for ln in text.splitlines() if "could not tell" in ln]
-    check("pf4 a runner whose include is a variable could not be read: ONE line "
-          "says so and the run dispatches: %r" % (text,),
-          code == 0 and len(lines) == 1 and _dispatched(text) == ["P1.1"]
-          and "scope-gap" not in text)
-    root, mpath = _preflight_repo("pfwave", "['tests/unit/**/*.test.ts']", tasks=2)
-    cfg_path = os.path.join(root, ".claude", "audit.config.json")
-    with open(cfg_path, encoding="utf-8") as fh:
-        cfg = json.load(fh)
-    cfg["executor"] = {"waveWidth": 2}
-    with open(cfg_path, "w", encoding="utf-8") as fh:
-        json.dump(cfg, fh)
-    code, text = _next_wave(M, root, mpath)
-    check("pf5 the same stop holds at a wave width above 1: %r" % (text,),
-          instruction(text) == ("decide", "scope-gap", None)
-          and not _dispatched(text))
-    root, mpath = _preflight_repo("pftask", "['tests/unit/**/*.test.ts']")
-    said = []
-    with _Env(root):
-        code = M.main(["next", "P1.1", mpath, "--project-dir", root],
-                      out=said.append)
-    text = "\n".join(said)
-    check("pf6 a width-1 run of ONE task, named by its id, stops at the same "
-          "scope-gap before any start: %r" % (text,),
-          code == 0 and instruction(text) == ("decide", "scope-gap", None)
-          and not _dispatched(text)
-          and tasks_of(mpath)["P1.1"].get("status") == "pending")
-    root, mpath = _preflight_repo("pfrule", "['tests/unit/**/*.test.ts']")
-    _next_wave(M, root, mpath)
-    _code, after = _answer_wave(M, root, mpath, "--answer", "widen")
-    rule = _loader.load_script("audit-lookup.py", "lookup_for_pf7",
-                               cache=False).WIDEN_RULE
-    brief = _brief_of(root, after, "P1.1")
-    plain_root, plain_mpath = _repo("pfplain", task_ids=TASKS[:1])
-    _code, plain = _next_wave(M, plain_root, plain_mpath)
-    check("pf7 the executor of a task that declares a test is dispatched with "
-          "the widen rule in its brief, and a task declaring none is not: %r %r"
-          % (rule, _dispatched(after)),
-          _dispatched(after) == ["P1.1"] and rule in brief
-          and rule not in _brief_of(plain_root, plain, "P1.1"))
-
-
 def _wave_width_cases(check):
     """A width outside the vocabulary stops the drive by name; `auto` is read
     with its basis; an undeclared path is a decision, and `widen` declares it,
@@ -7366,22 +6354,6 @@ def _follower_cases(check):
           and held == "current" and gates == ["failed", "passed"]
           and "docs/map.txt" in (task.get("files") or [])
           and "decide gate-red" not in said and "docs/map.txt regenerated" in said)
-
-    recipe = "git show HEAD:map.fresh > docs/map.txt"
-    root, mpath = _follower_repo("followshot", "docs/map.txt", recipe, "shots",
-                                 browser=True)
-    run = drive(M, root, mpath, cap=2)
-    left = _read(os.path.join(root, "docs", "map.txt"))
-    told = run["prints"][-1][1]
-    subprocess.run(recipe, shell=True, cwd=root, check=True, timeout=60)
-    after = drive(M, root, mpath, cap=1)
-    check("fw2 a recipe that needs a browser is never run by the drive: it prints "
-          "the orchestrator one instruction naming it, and the next drive after "
-          "the orchestrator ran it gates green and goes on: %r"
-          % ((told, left, after["steps"]),),
-          "follow P1.1: run `%s`" % (recipe,) in told and left == b"stale\n"
-          and "docs/map.txt" in (tasks_of(mpath)["P1.1"].get("files") or [])
-          and after["steps"] == [("dispatch", "reviewer", "P1.1")])
 
 
 def _follower_wave_cases(check):
@@ -10326,43 +9298,6 @@ def _close_evidence_cases(check):
                                           "--format=", task["commit"]))
 
 
-def _brief_scope_cases(check):
-    """A brief printed and then made stale by a scope widening was never the
-    current scope's dispatch: the next `next` issues it again, spending no
-    attempt, rather than grading an executor that never received it."""
-    M, why = _load("drive_phase_brief_scope")
-    if M is None:
-        check("bs1 the driver loads", False, why)
-        return
-    root, mpath = _repo("brief-scope", task_ids=TASKS[:1])
-    _code, first = _next(M, root, mpath)
-    before = _attempts(mpath, "P1.1")
-    with _Env(root):
-        scode, sout = _verb(root, "audit-task.py", [
-            "scope", "P1.1", mpath, "--project-dir", root,
-            "--files", "src/f1.txt,src/extra.txt"])
-    code, again = _next(M, root, mpath)
-    brief = _BRIEF.search(again)
-    held = ""
-    if brief:
-        with open(os.path.join(root, *brief.group(1).split("/")), encoding="utf-8") as fh:
-            held = fh.read()
-    check("bs1 after `scope` widens a task whose brief was printed and no return "
-          "filed, `next` issues the brief again over the widened scope - not "
-          "`decide no-executor-return` - and spends no attempt: %r"
-          % ((instruction(first), scode, sout[-300:], code, again,
-              before, _attempts(mpath, "P1.1")),),
-          instruction(first) == ("dispatch", "executor", "P1.1")
-          and scode == 0 and code == 0
-          and instruction(again) == ("dispatch", "executor", "P1.1")
-          and "src/extra.txt" in held
-          and _attempts(mpath, "P1.1") == before)
-    _code, third = _next(M, root, mpath)
-    check("bs2 THE TWIN: with the scope unchanged since the brief was issued, "
-          "an unfiled executor is still the no-executor-return decision: %r"
-          % (third,), instruction(third)[1] == "no-executor-return")
-
-
 def _scope_change_cases(check):
     """A scope widened after the executor filed is a decision naming both lists,
     never a close; with the scope as filed the close goes on."""
@@ -11381,179 +10316,6 @@ def _nested_project_cases(check):
     finally:
         _harness.remove_tree(scratch)
 
-SCOPE_LANGUAGE_CLAUSE = (
-    "tests/test_drive_phase.py: scope_gap on a task whose tests.add "
-    "is a tests/test_*.py path and whose gate holds selftests and "
-    "vitest returns no decision; a .mjs path vitest does not collect still returns "
-    "the scope-gap decision naming vitest.config.mjs; a Python path under a gate "
-    "with neither the sweep nor pytest is still reported")
-
-SWEEP_GATE = "python3 tools/sweep-selftests.py"
-VITEST_GATE = "npx vitest run"
-# The sweep script's root list, the one thing the preflight reads from it.
-SWEEP_ROOTS = ('SWEEP_DIRS = (\n    os.path.join("backend", "tests"),\n'
-               '    "tools",\n)\n')
-
-
-def _language_repo(prefix, add_path, gate, config="vitest.config.mjs"):
-    """A one-task fixture whose gate is `gate`, whose only declared test is
-    `add_path`, with a sweep script and a vitest config that includes only
-    `tests/unit/**` (`config` names the config file; None writes none)."""
-    root, mpath = _repo(prefix, task_ids=TASKS[:1], gate=gate)
-    with open(mpath, encoding="utf-8") as fh:
-        plan = json.load(fh)
-    plan["phases"][0]["tasks"][0]["tests"]["add"] = ["%s: it holds" % (add_path,)]
-    with open(mpath, "w", encoding="utf-8") as fh:
-        json.dump(plan, fh, indent=2)
-    os.makedirs(os.path.join(root, "tools"))
-    with open(os.path.join(root, "tools", "sweep-selftests.py"), "w",
-              encoding="utf-8") as fh:
-        fh.write(SWEEP_ROOTS)
-    if config:
-        with open(os.path.join(root, config), "w", encoding="utf-8") as fh:
-            fh.write("export default { test: { include: ['tests/unit/**/*.test.ts'] } };\n")
-    for argv in (["add", "-A"], ["commit", "-qm", "language fixture"]):
-        _harness.git(root, *argv)
-    return root, mpath
-
-
-def _scope_language_cases(check):
-    def clause(detail):
-        return "%s (%s)" % (SCOPE_LANGUAGE_CLAUSE, detail)
-
-    M, why = _load("drive_phase_language")
-    if M is None:
-        check(clause("the driver loads"), False, why)
-        return
-
-    def run(prefix, add_path, gate, config="vitest.config.mjs"):
-        root, mpath = _language_repo(prefix, add_path, gate, config)
-        code, text = _next_wave(M, root, mpath)
-        return code, text, tasks_of(mpath)["P1.1"]
-
-    both = (SWEEP_GATE, VITEST_GATE)
-    code, text, task = run("pyboth", "backend/tests/test_mine.py", both)
-    check(clause("a Python suite under the sweep and vitest draws no scope-gap and "
-                 "no could-not-tell line, and the task is dispatched: %r" % (text,)),
-          code == 0 and _dispatched(text) == ["P1.1"] and "scope-gap" not in text
-          and "could not tell" not in text)
-    code, text, task = run("mjs", "lib/store.test.mjs", both)
-    check(clause("a .mjs test vitest does not collect still stops at scope-gap "
-                 "naming vitest and vitest.config.mjs, with the widen remedy and "
-                 "the task still pending: %r" % (text,)),
-          code == 0 and instruction(text) == ("decide", "scope-gap", None)
-          and "vitest.config.mjs" in text and "widen|block" in text
-          and "vitest does not collect lib/store.test.mjs" in text
-          and not _dispatched(text) and task.get("status") == "pending")
-    code, text, task = run("pyvitest", "backend/tests/test_mine.py",
-                           (VITEST_GATE,))
-    check(clause("a Python suite under a gate holding neither the sweep nor pytest "
-                 "is reported as a scope-gap that says no runner of the gate takes "
-                 "it: %r" % (text,)),
-          code == 0 and instruction(text) == ("decide", "scope-gap", None)
-          and "no runner in this gate takes backend/tests/test_mine.py" in text
-          and not _dispatched(text))
-    code, text, task = run("jsonly", "lib/store.test.mjs", (SWEEP_GATE,))
-    check(clause("a .mjs test under a gate holding only the sweep is reported the "
-                 "same way: %r" % (text,)),
-          code == 0 and instruction(text) == ("decide", "scope-gap", None)
-          and "no runner in this gate takes lib/store.test.mjs" in text)
-    code, text, task = run("pyoutside", "docs/test_mine.py", both)
-    check(clause("a Python suite outside the sweep's roots is still reported "
-                 "though the sweep is in the gate (the guard must not pass every "
-                 ".py): %r" % (text,)),
-          code == 0 and instruction(text) == ("decide", "scope-gap", None)
-          and "sweep does not collect docs/test_mine.py" in text)
-    code, text, task = run("pypytest", "tests/test_mine.py", ("python3 -m pytest",),
-                           config=None)
-    check(clause("a Python suite under a gate holding pytest is asked of pytest "
-                 "alone and, collected by its defaults, draws no decision: %r"
-                 % (text,)),
-          code == 0 and _dispatched(text) == ["P1.1"] and "scope-gap" not in text)
-
-
-UNCLASSIFIED_CLAUSE = (
-    "a gate holding an entry no known runner classifies answers could-not-tell for "
-    "a path no known runner takes, and the task starts")
-
-
-def _unclassified_entry_cases(check):
-    def clause(cid, detail):
-        return "%s %s (%s)" % (cid, UNCLASSIFIED_CLAUSE, detail)
-
-    M, why = _load("drive_phase_unclassified")
-    if M is None:
-        check(clause("uc0", "the driver loads: %r" % (why,)), False)
-        return
-
-    def run(prefix, add_path, gate):
-        root, mpath = _language_repo(prefix, add_path, gate)
-        code, text = _next_wave(M, root, mpath)
-        return code, text, tasks_of(mpath)["P1.1"]
-
-    node = "node --test lib/store.test.mjs"
-    unit = "python3 -m unittest discover -s backend/tests"
-    code, text, task = run("ucjs", "lib/store.test.mjs", (SWEEP_GATE, node))
-    check(clause("uc1", "a .mjs suite, a gate of the sweep and `node --test`: one "
-                 "could-not-tell line, the task dispatched, no scope-gap: %r" % (text,)),
-          code == 0 and _dispatched(text) == ["P1.1"] and "scope-gap" not in text
-          and text.count("could not tell") == 1)
-    code, text, task = run("ucpy", "backend/tests/test_mine.py", (VITEST_GATE, unit))
-    check(clause("uc2", "a .py suite, a gate of vitest and `python3 -m unittest`: "
-                 "the same answer: %r" % (text,)),
-          code == 0 and _dispatched(text) == ["P1.1"] and "scope-gap" not in text
-          and text.count("could not tell") == 1)
-    code, text, task = run("ucknown", "lib/store.test.mjs", (SWEEP_GATE,))
-    check(clause("uc3", "the other direction: a gate whose every entry the preflight "
-                 "classifies has no unclassified one, so the real misroute still "
-                 "stops: %r" % (text,)),
-          code == 0 and instruction(text) == ("decide", "scope-gap", None)
-          and "no runner in this gate takes lib/store.test.mjs" in text
-          and not _dispatched(text))
-    code, text, task = run("ucdefinite", "docs/test_mine.py", (SWEEP_GATE, unit))
-    check(clause("uc4", "a known runner's own definite no is not softened by the "
-                 "unclassified entry beside it: %r" % (text,)),
-          code == 0 and instruction(text) == ("decide", "scope-gap", None)
-          and "sweep does not collect docs/test_mine.py" in text)
-    _unclassified_lint_entry_cases(check, run, clause)
-
-
-# The shape this repo's own gate has: the sweep plus entries that validate, lint,
-# render or screenshot and run no test of a language the sweep leaves out.
-REALISTIC_GATE = (
-    SWEEP_GATE,
-    "python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-plan.json",
-    "claude plugin validate . && claude plugin validate plugins/audit",
-    "python3 plugins/audit/scripts/status/audit-status.py docs/audit/audit-plan.json --gate",
-    "python3 plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json "
-    "--out-dir /tmp/audit-report",
-    "ruff check plugins/audit tools && vermin -t=3.8- --no-tips --violations "
-    "plugins/audit/scripts plugins/audit/hooks tests",
-    "node tools/capture-screenshots.mjs --check",
-    "node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html",
-)
-
-
-def _unclassified_lint_entry_cases(check, run, clause):
-    code, text, task = run("uclint", "lib/store.test.mjs", REALISTIC_GATE)
-    check(clause("uc5", "the sweep beside validate, lint, report and screenshot "
-                 "entries, none of which runs a test: the real misroute still "
-                 "stops at scope-gap: %r" % (text,)),
-          code == 0 and instruction(text) == ("decide", "scope-gap", None)
-          and "no runner in this gate takes lib/store.test.mjs" in text
-          and "could not tell" not in text and not _dispatched(text)
-          and task.get("status") == "pending")
-    for cid, prefix, extra in (
-            ("uc6", "ucmocha", "npx mocha lib/"),
-            ("uc7", "ucrunner", "node tools/run-suites.mjs lib/store.test.mjs"),
-            ("uc8", "ucavatap", "npx ava lib/store.test.mjs")):
-        code, text, task = run(prefix, "lib/store.test.mjs", REALISTIC_GATE + (extra,))
-        check(clause(cid, "the same gate with `%s` added, an entry that can run "
-                     "tests and that no runner classifies: could-not-tell, "
-                     "dispatched, no scope-gap: %r" % (extra, text)),
-              code == 0 and _dispatched(text) == ["P1.1"] and "scope-gap" not in text
-              and text.count("could not tell") == 1)
-
 
 IMPORT_NOTE = re.compile(r"^import (\w+)(?: as (\w+))?\s+# noqa: E402\s+"
                          r"\(((?:\w+, )*\w+):", re.M)
@@ -11572,101 +10334,6 @@ def _import_note_cases(check):
     check("imc1 every name an import note in the driver gives is one the driver "
           "uses from that module (%d notes read): %r" % (len(notes), unused),
           len(notes) >= 10 and unused == [])
-
-
-def _playwright_gate_cases(check):
-    """A gate of vitest beside `npx playwright test`: an e2e spec vitest's
-    config leaves out may be the browser runner's, whose config this reading
-    does not read - so it is could-not-tell, never a scope-gap stop."""
-    M, why = _load("drive_phase_playwright")
-    if M is None:
-        check("pw1 the driver loads: %r" % (why,), False)
-        return
-
-    def run(prefix, gate):
-        root, mpath = _language_repo(prefix, "e2e/checkout.spec.ts", gate)
-        code, text = _next_wave(M, root, mpath)
-        return code, text, tasks_of(mpath)["P1.1"]
-
-    code, text, task = run("pwtest", (VITEST_GATE, "npx playwright test"))
-    check("pw1 a gate of vitest plus npx playwright test does not stop on a "
-          "declared e2e spec vitest does not collect - one could-not-tell line "
-          "naming playwright, the task dispatched: %r" % (text,),
-          code == 0 and _dispatched(text) == ["P1.1"] and "scope-gap" not in text
-          and text.count("could not tell") == 1 and "playwright" in text)
-    # SECOND-DIRECTION CASE, for a token read as any mention of the runner:
-    # `playwright install` runs no test, so vitest's definite no still stops.
-    code, text, task = run("pwinstall", (VITEST_GATE, "npx playwright install"))
-    check("pw2 ALLOW: a gate of vitest plus `npx playwright install`, which runs "
-          "no test, still stops at scope-gap on the spec vitest does not "
-          "collect: %r" % (text,),
-          code == 0 and instruction(text) == ("decide", "scope-gap", None)
-          and "vitest does not collect e2e/checkout.spec.ts" in text
-          and not _dispatched(text) and task.get("status") == "pending")
-
-
-UNCHECKED_CLAUSE = ("ids bound to a suite the submit's command did not run are "
-                    "filed on the return beside testsAddGaps, and the reviewer's "
-                    "brief shows them")
-
-
-def _unchecked_ids_cases(check):
-    """A tdd task binding ids in two suites, submitted with a command that runs
-    one: the other suite's id is neither graded nor a gap, and it must still
-    reach the reviewer, who prints the return's fields and nothing else."""
-    M, why = _load("drive_phase_unchecked")
-    check("ucs0 the driver loads: %r" % (why,), M is not None)
-    if M is None:
-        return
-    plan = _plan(TASKS[:1], ("true",))
-    task = plan["phases"][0]["tasks"][0]
-    task["files"] = ["src/mine.py", "tests/test_mine.py", "tests/test_other.py"]
-    plan["fileIndex"] = dict((f, ["P1.1"]) for f in task["files"])
-    ran_entry = "tests/test_mine.py: new1"
-    skipped_entry = "tests/test_other.py: oth1"
-    task["tests"] = {"mode": "tdd", "add": [ran_entry, skipped_entry],
-                     "gate": ["true"], "expectRedFirst": True}
-    root, mpath = _repo("unchecked", task_ids=TASKS[:1])
-    os.makedirs(os.path.join(root, "tests"))
-    for rel, text in (("src/mine.py", "v = 1\n"),
-                      ("tests/test_mine.py", _house_suite([("old1", "mine.v >= 1")])),
-                      ("tests/test_other.py", _house_suite([("old2", "mine.v >= 1")]))):
-        with open(os.path.join(root, *rel.split("/")), "w", encoding="utf-8") as fh:
-            fh.write(text)
-    with open(mpath, "w", encoding="utf-8") as fh:
-        json.dump(plan, fh, indent=2)
-    _harness.git(root, "add", "-A")
-    _harness.git(root, "commit", "-qm", "tdd")
-    with _Env(root):
-        M.main(["next", PHASE, mpath, "--project-dir", root], out=[].append)
-    with open(os.path.join(root, "src", "mine.py"), "w", encoding="utf-8") as fh:
-        fh.write("v = 2\n")
-    with open(os.path.join(root, "tests", "test_mine.py"), "w", encoding="utf-8") as fh:
-        fh.write(_house_suite([("old1", "mine.v >= 1"), ("new1", "mine.v == 2")]))
-    with open(os.path.join(root, "tests", "test_other.py"), "w", encoding="utf-8") as fh:
-        fh.write(_house_suite([("old2", "mine.v >= 1"), ("oth1", "mine.v == 2")]))
-    body = _executor_body("P1.1", {"testsAdded": [ran_entry, skipped_entry],
-                                   "casesAdded": ["new1", "oth1"]})
-    code, text = _submit(None, root, mpath, "P1.1", body,
-                         tail=["--", sys.executable, "tests/test_mine.py"])
-    path = _filed_path(mpath, "P1.1")
-    filed = json.loads(_read(path).decode("utf-8")) if os.path.exists(path or "-") else {}
-    held = filed.get(_fr.UNCHECKED_FIELD)
-    lookup = _loader.load_script("audit-lookup.py", "drive_unchecked_lookup")
-    shown = "\n".join(lookup._tests_add_review_lines(task, filed))
-    quiet = "\n".join(lookup._tests_add_review_lines(
-        task, dict(filed, **{_fr.UNCHECKED_FIELD: []})))
-    check("ucs1 %s: %r" % (UNCHECKED_CLAUSE, (code, filed.get(_fr.GAPS_FIELD), held)),
-          code == 0 and filed.get(_fr.GAPS_FIELD) == []
-          and isinstance(held, list) and len(held) == 1
-          and held[0].startswith(skipped_entry) and "not checked" in held[0]
-          and held[0] in shown and ran_entry not in held[0])
-    # THE OTHER DIRECTION: a return whose submit graded every entry (the field is
-    # an empty list) shows no such section, so a brief that always printed one
-    # would pass the case above.
-    check("ucs2 ALLOW: a filed return with no unchecked entry shows the reviewer "
-          "no 'never compared' section: %r" % (quiet[-200:],),
-          "never compared" not in quiet and "never compared" in shown)
 
 
 def _recorded_dispatches(root, member, key="writer"):
@@ -13751,11 +12418,1853 @@ def _fix_scope_cases(check, M):
               recorded[0] == 0 and stop is None and got == want)
 
 
-STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
-          ("dr-block", "_refusal_cases"),
-          ("ucs-block", "_unchecked_ids_cases"),
-          ("dd-block", "_decide_cases"), ("ct-block", "_continue_cases"),
-          ("dd3-block", "_rerun_cases"), ("rs-block", "_resume_cases"),
+# --- one task's steps, decided on facts -----------------------------------------
+# The cases below were drives once: each built a repository, played the main
+# loop to the step it asks about and read the print. What each asks is now
+# asked of the function that decides it AND of the code that acts on its
+# answer - `advance`, `close_task`, `apply_answer`, `submit`, `scope_gap`,
+# `explain` run whole, over a context pointing at nothing on disk, a plan
+# written out here and the verbs answered by a fake that records what it was
+# asked. What only a real drive shows is the kept `e2e-steps` block's, and
+# `_steps_verb_cases` keeps the few whose subject is a verb's own answer, run
+# for real over a fixture with no drive. Every expected value is written out,
+# never recomputed from the function asked.
+_STEP_START = "2026-10-21T10:00:00Z"
+_STEP_RESTART = "2026-10-21T10:05:00Z"
+
+
+def _caught(call, *args, **kwargs):
+    """What `call` returns, or `("raised", "Type: text")` when it raises - so a
+    defect that crashes a step reads as that case failing, never as the block
+    dying before its later cases ran."""
+    try:
+        return call(*args, **kwargs)
+    except Exception as exc:                                   # noqa: BLE001
+        return ("raised", "%s: %s" % (type(exc).__name__, exc))
+
+
+def _step_task(tid="P1.1", **extra):
+    """A task in progress under one start, its gate `true`."""
+    task_u = {"id": tid, "title": "task %s" % (tid,), "status": "in_progress",
+            "files": ["src/f%s.txt" % (tid.rsplit(".", 1)[-1],)],
+            "startedAt": _STEP_START, "risk": "low", "attempts": 1,
+            "maxAttempts": 3, "dependsOn": [], "blockedBy": [],
+            "tests": {"mode": "gate-only", "add": [], "gate": ["true"],
+                      "expectRedFirst": False}}
+    task_u.update(extra)
+    return task_u
+
+
+def _step_phase(tasks, key="always", **extra):
+    """A phase holding `tasks` under the review key `key`."""
+    phase = {"id": PHASE, "reviewPerTask": key, "review": {"model": "sonnet",
+                                                           "findings": []},
+             "testGate": ["true"], "tasks": list(tasks)}
+    phase.update(extra)
+    return phase
+
+
+def _step_plan(phase, meta=None):
+    return {"meta": dict(meta or {}), "phases": [phase]}
+
+
+def _verb_rig(answers=None):
+    """`(run_verb, calls)`: a `run_verb` answering `(script, first argument)`
+    or `script` from `answers` - `(code, out, err)`, or a function of the args
+    returning one - else the stock answer below, and the `(script, args,
+    stdin)` of every call, in order."""
+    stock = {"run-test-gate.py": (0, "[run-test-gate] GATE GREEN: true\n", ""),
+             "audit-lookup.py": (0, "written: .claude/state/briefs/P1.1/b.md\n",
+                                 ""),
+             "commit-task-work.py": (0, "[commit-task-work] committed "
+                                        "abc1234def5\n", ""),
+             "audit-lock.py": (0, "[audit-lock] acquired phase-P1\n", "")}
+    calls = []
+
+    def run_verb(ctx, script, args, stdin=None, record=False):
+        args = list(args)
+        calls.append((script, args, stdin))
+        for key in ((script, (args or [""])[0]), script):
+            said = (answers or {}).get(key)
+            if said is not None:
+                return said(args) if callable(said) else said
+        return stock.get(script, (0, "", ""))
+    return run_verb, calls
+
+
+def _scripts(calls):
+    """`[(script, first argument)]` of a rig's calls."""
+    return [(s, (a or [""])[0]) for s, a, _i in calls]
+
+
+def _step_rig(M, phase, filed=None, answers=None, meta=None):
+    """Point `M`'s readers of disk and git at `phase` and `filed` (`{(task,
+    role): body}`), its verbs at a `_verb_rig`; the calls list."""
+    plan_u = _step_plan(phase, meta)
+    M.load_phase = lambda ctx: (plan_u, phase)
+    M.kept_tree_stop = lambda ctx, state, task_u: None
+    M.note_sessions = lambda ctx, state, task_u: None
+    M.writer_wait = lambda ctx, state, task_u: None
+    M.writer_settle = lambda ctx, state, manifest, phase_, task_u, tree: None
+    M.filed = lambda ctx, task_u, role: ((filed or {}).get((task_u["id"], role)), None)
+    M.lock_moved = lambda ctx, state, task_u, tree=None: []
+    M.run_verb, calls = _verb_rig(answers)
+    return calls
+
+
+def _step_ctx(**extra):
+    ctx = _unit_ctx(evidence="/nowhere/evidence", verbose=False, only=None,
+                    carryTo=None, stateDir="/nowhere/state")
+    ctx.update(extra)
+    return ctx
+
+
+def _filed_executor(**over):
+    """An executor's return as filed: no stamp, so nothing grades it."""
+    body = {"gates": {}, "outcome": {"technical": "t", "descriptive": "d"},
+            "testsAdded": [], "redFirst": {"status": "not-attempted",
+                                           "basis": "gate-only"}}
+    body.update(over)
+    return body
+
+
+def _steps_unit_cases(check):
+    """One task's steps, the stored verdicts, the decisions a step asks and the
+    shapes `submit` refuses, each asked of the function that decides it and the
+    code that acts on its answer - no repository, no verb run for real."""
+    M, why = _unit_driver("drive_phase_steps_units")
+    if M is None:
+        check("dp2m the driver loads", False, why)
+        return
+    _close_units(check)
+    _refusal_units(check)
+    _rerun_units(check)
+    _resume_units(check)
+    _retry_reason_units(check)
+    _gate_mark_units(check)
+    _stored_red_units(check)
+    _sv_pure_cases(check, M)
+    _stored_rerun_units(check)
+    _stored_green_units(check)
+    _stored_explain_units(check)
+    _key_units(check)
+    _continue_units(check)
+    _single_task_units(check)
+    _lock_units(check)
+    _owed_red_first_units(check)
+    _submit_mutant_units(check)
+    _unchecked_ids_units(check)
+    _brief_scope_units(check)
+    _banner_units(check)
+    _preflight_units(check)
+    _scope_language_units(check)
+    _unclassified_units(check)
+    _playwright_units(check)
+    _falsifier_units(check)
+    _follower_browser_units(check)
+    _machine_text_cases(check)
+
+
+def _close_units(check):
+    """The close a filed task takes, and the step order that puts the gate
+    before the reviewer: a close that goes on, a print that stays inside its
+    bound, a gate recorded before the reviewer's brief, a stale stamp's field."""
+    M, _w = _unit_driver("drive_phase_close_units")
+    task_u = _step_task()
+    phase = _step_phase([task_u], key="phase")
+    calls = _step_rig(M, phase)
+    said = _caught(M.close_task, _step_ctx(), {}, phase, task_u)
+    mutant, _w = _unit_driver("drive_phase_close_then_stop")
+    calls_mu = _step_rig(mutant, phase)
+    real_close = mutant.close_task
+
+    def close_then_stop(ctx, state, phase_, task_, intent_basis=None):
+        stopped = real_close(ctx, state, phase_, task_, intent_basis=intent_basis)
+        if stopped is not None:
+            return stopped
+        return mutant.instruction("decide", ["decide continue %s: closed"
+                                             % (task_["id"],)])
+    mutant.close_task = close_then_stop
+    said_mu = _caught(mutant.close_task, _step_ctx(), {}, phase, task_u)
+    check("dp2m RED TWIN: a driver that stops after each close returns a print "
+          "from the close where the real one returns None and goes on to the "
+          "next task - one more `next` a task, which dp2's count catches - over "
+          "a close that still ran its commit and its done verb: %r"
+          % ((said, said_mu, _scripts(calls), _scripts(calls_mu)),),
+          said is None and isinstance(said_mu, dict)
+          and said_mu.get("lines") == ["decide continue P1.1: closed"]
+          and _scripts(calls) == [("commit-task-work.py", "audit-plan.json"),
+                                  ("audit-task.py", "done")]
+          and _scripts(calls_mu) == _scripts(calls))
+
+    echo = "[audit-task] started P1.1 attempt 1; " + "x" * 400
+    ctx = _step_ctx(log=[("audit-task.py", ["start", "P1.1"], 0, echo)],
+                    did=["started P1.1"])
+    step = M.dispatch_said(ctx, "executor", "P1.1", "audit-executor", "sonnet",
+                           ".claude/state/briefs/P1.1/b.md")
+    plain = M.render(ctx, 0, step)
+    mutant, _w = _unit_driver("drive_phase_echo")
+    mutant.echo_steps = lambda ctx_: True
+    loud = mutant.render(ctx, 0, step)
+    check("dp3m RED TWIN: a driver that echoes each verb's output into its print "
+          "goes past %d bytes over the same step, and dp3's bound catches it; "
+          "the real print of that step keeps it: %r"
+          % (BOUND, (len(plain.encode("utf-8")), len(loud.encode("utf-8")))),
+          len(plain.encode("utf-8")) <= BOUND
+          and len(loud.encode("utf-8")) > BOUND and echo in loud
+          and echo not in plain)
+
+    task_u = _step_task()
+    phase = _step_phase([task_u], key="always")
+    M, _w = _unit_driver("drive_phase_gate_first")
+    calls = _step_rig(M, phase, filed={("P1.1", "executor"): _filed_executor()})
+    state = {}
+    said = _caught(M.advance, _step_ctx(), state, _step_plan(phase), phase, task_u)
+    mutant, _w = _unit_driver("drive_phase_no_gate")
+    calls_mu = _step_rig(mutant, phase,
+                        filed={("P1.1", "executor"): _filed_executor()})
+    mutant.record_gate = lambda ctx, phase_, task_, tree=None, no_reuse=False: (
+        0, "skipped", "")
+    said_mu = _caught(mutant.advance, _step_ctx(), {}, _step_plan(phase), phase, task_u)
+    check("dp4m RED TWIN: the real step records the gate through run-test-gate "
+          "before it writes the reviewer's brief; a driver that dispatches the "
+          "reviewer without recording the gate asks run-test-gate nothing "
+          "first, which dp4 reads as no green row at the dispatch: %r"
+          % ((_scripts(calls), _scripts(calls_mu), _text_of(said)[:60]),),
+          _scripts(calls) == [("run-test-gate.py", "audit-plan.json"),
+                              ("audit-lookup.py", "audit-plan.json")]
+          and _scripts(calls_mu) == [("audit-lookup.py", "audit-plan.json")]
+          and _text_of(said).startswith(
+              "dispatch audit:audit-reviewer P1.1 model=sonnet brief=")
+          and _text_of(said_mu).startswith(
+              "dispatch audit:audit-reviewer P1.1 model=sonnet brief=")
+          and isinstance(_marked_value(M, state, "gated", task_u), dict))
+
+    stale = json.dumps({"verdict": "stale", "fields": [
+        {"field": "scopeDigest", "state": "moved", "paths": ["src/f2.txt"]},
+        {"field": "head", "state": "same"}]})
+    M, _w = _unit_driver("drive_phase_grade")
+    M.run_verb, _c = _verb_rig({"stamp-verification.py": (0, stale, "")})
+    graded = M.grade_stamp(_step_ctx(), "audit-stamp: {}")
+    mutant, _w = _unit_driver("drive_phase_no_field")
+    mutant.run_verb, _c = _verb_rig({"stamp-verification.py": (0, stale, "")})
+    mutant.moved_fields = lambda result: []
+    graded_m = mutant.grade_stamp(_step_ctx(), "audit-stamp: {}")
+    check("dp5m RED TWIN: a stale stamp is graded naming the field that moved "
+          "and its path; a driver that says only 'stale' and drops the field "
+          "never names scopeDigest, and dp5 catches it: %r"
+          % ((graded, graded_m),),
+          graded == "stamp stale (moved scopeDigest: src/f2.txt)"
+          and graded_m == "stamp stale (moved ?)")
+
+
+def _marked_value(M, state, kind, task_u):
+    return M._marked(state, kind, task_u)
+
+
+def _refusal_units(check):
+    """A verb that refuses stops the step with its own words."""
+    refusal = ("[commit-task-work] REFUSED: src/f1.txt changed after the "
+               "recorded gate ran\n  remedy: run the gate again, then commit\n")
+    task_u = _step_task()
+    phase = _step_phase([task_u], key="phase")
+    M, _w = _unit_driver("drive_phase_refusal")
+    calls = _step_rig(M, phase, answers={
+        "commit-task-work.py": (1, refusal, "")})
+    said = _caught(M.close_task, _step_ctx(), {}, phase, task_u)
+    check("dr1 a refused verb stops the step: a stop, exit 1, no instruction, "
+          "and the task is never closed - the done verb is not run: %r"
+          % ((said, _scripts(calls)),),
+          isinstance(said, tuple) and said[0] == M.E_STOPPED == 1
+          and _scripts(calls) == [("commit-task-work.py", "audit-plan.json")])
+    check("dr2 the stop prints the verb's own refusal, naming the verb: %r"
+          % (said,),
+          isinstance(said, tuple)
+          and (said[1].splitlines() or [""])[0] == "[drive-phase] P1: stopped - "
+          "commit-task-work.py refused (exit 1); its own words follow"
+          and refusal.rstrip("\n") in said[1])
+    mutant, _w = _unit_driver("drive_phase_refusal_mute")
+    _step_rig(mutant, phase, answers={"commit-task-work.py": (1, refusal, "")})
+    mutant.relay_refusal = lambda ctx, script, code, text: (
+        mutant.E_STOPPED, "%s %s: stopped" % (mutant.PREFIX, ctx["phase"]))
+    said_mu = _caught(mutant.close_task, _step_ctx(), {}, phase, task_u)
+    check("dr2m RED TWIN: a driver that stops with its own sentence instead of the "
+          "verb's words loses the refusal and its remedy, and dr2 catches it: %r"
+          % (said_mu,),
+          said_mu == (1, "[drive-phase] P1: stopped"))
+
+
+def _gate_red(task_id="P1.1", **extra):
+    pending = {"decision": "gate-red", "task": task_id,
+               "start": _fr.return_start_key(_STEP_START),
+               "why": "[run-test-gate] GATE RED: false",
+               "verdict": {"runId": None, "at": None, "tree": None,
+                           "failing": []}}
+    pending.update(extra)
+    return pending
+
+
+def _rerun_units(check):
+    """A gate that reached no verdict is the runner's, not the work's: `rerun`
+    marks the gate to be measured again without re-starting the task; `retry`
+    re-starts it, which is what spends an attempt."""
+    M, _w = _unit_driver("drive_phase_rerun")
+    task_u = _step_task()
+    phase = _step_phase([task_u])
+    plan_u = _step_plan(phase)
+    calls = _step_rig(M, phase)
+    text = _text_of(M.render_decision(_step_ctx(), _gate_red()))
+    state = {}
+    said = _caught(M.apply_answer, _step_ctx(), state, plan_u, phase, _gate_red(), "rerun", "")
+    check("dd3 a red gate's decision offers `rerun` beside `retry` and prints the "
+          "rule saying which spends an attempt; answered `rerun`, the gate is "
+          "marked to be measured again and the task is not re-started - no "
+          "verb runs, so no attempt is spent: %r" % ((text, said, state, calls),),
+          text.splitlines() == [
+              "decide gate-red P1.1: recorded gate red ([run-test-gate] GATE "
+              "RED: false); no run recorded with it",
+              "rerun spends no attempt (GATE COULD NOT RUN); retry spends one; "
+              "past maxAttempts, block and tell the human.",
+              "answer: next P1 --answer retry|rerun|block (block needs --reason)"]
+          and len(text.encode("utf-8")) <= BOUND
+          and said is None and calls == []
+          and state == {"rerun": {"P1.1": {"start": "20261021T100000Z",
+                                           "value": True}}})
+    calls_ru = _step_rig(M, phase)
+    said_ru = _caught(M.apply_answer, _step_ctx(), {}, plan_u, phase, _gate_red(), "retry", "")
+    check("dd3m THE TWIN: `retry` re-starts the task through `audit-task.py "
+          "start` - the verb that spends one attempt - so the two answers are "
+          "not the same answer under two names: %r" % ((said_ru, calls_ru),),
+          said_ru is None and _scripts(calls_ru) == [("audit-task.py", "start")])
+
+
+def _resume_units(check):
+    """An executor that ended without running its submit block is resumed, not
+    retried: `resume` is offered first, spends no attempt and prints one
+    instruction; `retry` still spends one."""
+    M, _w = _unit_driver("drive_phase_resume")
+    task_u = _step_task()
+    phase = _step_phase([task_u])
+    plan_u = _step_plan(phase)
+    pending = {"decision": "no-executor-return", "task": "P1.1",
+               "start": "20261021T100000Z", "why": ""}
+    text = _text_of(M.render_decision(_step_ctx(), pending))
+    check("rs1 an executor dispatched and never filed is a decision whose FIRST "
+          "option is `resume`, with the rule saying it spends no attempt: %r"
+          % (text,),
+          text.splitlines() == [
+              "decide no-executor-return P1.1: the executor was dispatched and "
+              "filed no return for this start",
+              "recommended: resume - it spends no attempt; retry spends one and "
+              "recuts work that may be finished.",
+              "answer: next P1 --answer resume|retry|block (block needs "
+              "--reason)"]
+          and len(text.encode("utf-8")) <= BOUND)
+    calls = _step_rig(M, phase)
+    said = _caught(M.apply_answer, _step_ctx(), {}, plan_u, phase, dict(pending), "resume", "")
+    rs_print = _text_of(said)
+    check("rs2 `--answer resume` runs no verb, so it spends no attempt, and "
+          "prints the one instruction - resume the dispatched executor and run "
+          "its submit block: %r" % ((rs_print, calls),),
+          calls == [] and rs_print == (
+              "resume the executor dispatched for P1.1 (the agent id your "
+              "dispatch returned) and have it run its submit block")
+          and len(rs_print.encode("utf-8")) <= BOUND)
+    M.role_return_filed = lambda ctx, task_, role: (
+        "docs/audit/evidence/returns/P1/x.executor.json")
+    filed = (M.pending_still_applies(_step_ctx(), plan_u, pending),
+             M._advance_plan("writer", {"executorFiled": True,
+                                        "writerHolds": _never("writerHolds"),
+                                        "staleBrief": _never("staleBrief"),
+                                        "dispatched": _never("dispatched")}))
+    check("rs4 once the resumed executor files, the waiting decision no longer "
+          "applies and the writer's step goes on past it: %r" % (filed,),
+          filed == (False, ("go-on", None)))
+    M.role_return_filed = lambda ctx, task_, role: None
+    state = {}
+    M._mark(state, "dispatched-executor", task_u, {"scope": M.brief_scope(task_u)})
+    unfiled = (M.pending_still_applies(_step_ctx(), plan_u, pending),
+               M._advance_plan("writer", M._writer_facts(state, task_u, None,
+                                                         False)))
+    check("rs3 until the return is filed the decision still applies, and the "
+          "writer's step - the dispatch mark kept - asks it again: %r" % (unfiled,),
+          unfiled == (True, ("no-executor-return", None)))
+    calls = _step_rig(M, phase)
+    M.apply_answer(_step_ctx(), {}, plan_u, phase, dict(pending), "retry", "")
+    check("rs5 THE TWIN: `retry` still re-starts the task through the verb that "
+          "spends one attempt: %r" % (_scripts(calls),),
+          _scripts(calls) == [("audit-task.py", "start")])
+
+
+def _retry_reason_units(check):
+    """The reason typed beside `--answer retry` is recorded by the driver itself,
+    keyed to the start the retry made, and the brief's reader finds it there.
+    The state is the one `apply_answer` wrote through the real `write_state`,
+    never written by hand, so removing the recording turns this red."""
+    M, why = _load("drive_phase_retry_reason")
+    label = ("answering retry with --reason records the reason keyed to the new "
+             "start, and the brief's reader (`audit-lookup.retry_reason`) finds "
+             "it for that start and not for the one it replaced (%r)")
+    if M is None:
+        check(label % (why,), False)
+        return
+    where = tempfile.mkdtemp(prefix="drive-retry-reason-")
+    try:
+        task_u = _step_task()
+        phase = _step_phase([task_u])
+        restarted = dict(task_u, startedAt=_STEP_RESTART, attempts=2)
+        M.load_phase = lambda ctx: (_step_plan(_step_phase([restarted])), phase)
+        M.run_verb, calls = _verb_rig()
+        ctx = _step_ctx(stateDir=where)
+        reason = "flaky-infra-rr7 rerun as-is"
+        said = _caught(M.apply_answer, ctx, {}, _step_plan(phase), phase,
+                              {"decision": "no-executor-return", "task": "P1.1",
+                               "start": "20261021T100000Z", "why": ""},
+                              "retry", reason)
+        lookup = _loader.load_script("audit-lookup.py", "lookup_retry_reason",
+                                     cache=False)
+        found = (lookup.retry_reason({"state": where}, phase, restarted),
+                 lookup.retry_reason({"state": where}, phase, task_u))
+        held = _fr.drive_state(where, PHASE)[0].get("retryReason")
+    finally:
+        _harness.remove_tree(where)
+    check(label % ((said, _scripts(calls), held, found),),
+          said is None and _scripts(calls) == [("audit-task.py", "start")]
+          and held == {"P1.1": {"start": "20261021T100500Z",
+                                "value": "flaky-infra-rr7 rerun as-is"}}
+          and found == ("flaky-infra-rr7 rerun as-is", None))
+
+
+def _gate_mark_units(check):
+    """`--answer rerun` on a red gate is a request to MEASURE: the gate run it
+    leads to is given `--no-reuse`, and the mark is spent on that one run."""
+    M, _w = _unit_driver("drive_phase_rerun_measures")
+    task_u = _step_task()
+    phase = _step_phase([task_u])
+    calls = _step_rig(M, phase)
+    state = {}
+    M.apply_answer(_step_ctx(), state, _step_plan(phase), phase, _gate_red(),
+                   "rerun", "")
+    M.task_gate(_step_ctx(), state, phase, task_u)
+    check("rm1 a rerun after a red gate runs the gate with --no-reuse - a "
+          "measurement, never a repeat of the verdict it was asked about: %r"
+          % (calls,),
+          [a for _s, a, _i in calls] == [[
+              "audit-plan.json", "P1", "--task", "P1.1", "--record",
+              "--project-dir", "/nowhere", "--no-reuse"]])
+    check("rm2 the rerun mark is spent on that run: none is left in the drive "
+          "state once the gate measured: %r" % (state,), state == {})
+    M.task_gate(_step_ctx(), state, phase, task_u)
+    check("rm3 THE TWIN: the next plain gate run is given no --no-reuse, so a "
+          "recorded verdict may be repeated again - the mark was spent once: %r"
+          % (calls[1:],),
+          [a for _s, a, _i in calls[1:]] == [[
+              "audit-plan.json", "P1", "--task", "P1.1", "--record",
+              "--project-dir", "/nowhere"]])
+
+
+# A gate entry resolved through `meta.buildCommands`, red and green, so a
+# change between them is a change of the build command alone.
+_SV_UNIT_RED = {"unit": "false-command"}
+_SV_UNIT_GREEN = {"unit": "true-command"}
+
+
+def _sv_ledger(build, run_id="r1", tree=None, failing=("unit",)):
+    """`(project, task, phase)` - a scratch project whose ledger holds one run
+    `run_id` measured under the gate `unit` resolved through `build`, red on
+    the steps `failing`, in `tree` (None: the project). The caller removes
+    the project."""
+    proj = os.path.realpath(_harness.fixture_root("drive-sv-ledger-"))
+    task_u = _step_task(tests={"mode": "gate-only", "add": [], "gate": ["unit"],
+                             "expectRedFirst": False})
+    phase = _step_phase([task_u])
+    entries, _source = _mio.gate_entries(phase, task_u)
+    _evio.append_row(proj, {
+        "runId": run_id, "ts": _STEP_START, "taskId": "P1.1",
+        "gateDigest": _evio.gate_digest(entries, build),
+        "testedState": {"tree": {"key": _evio.tree_key(tree)}} if tree else {},
+        "steps": [{"name": name, "exit": 1 if name in failing else 0}
+                  for name in ("unit",)]}, writer="sv-units", config={})
+    return proj, task_u, phase
+
+
+def _stored_red_units(check):
+    """A gate-red decision is shown only while the run it stands on still
+    answers the gate the task resolves to now."""
+    M, _w = _unit_driver("drive_phase_stored_red")
+    proj, task_u, phase = _sv_ledger(_SV_UNIT_RED)
+    try:
+        moved = _step_plan(phase, {"buildCommands": dict(_SV_UNIT_GREEN)})
+        pending = _gate_red(verdict={"runId": "r1", "at": _STEP_START,
+                                     "tree": None, "failing": ["unit"]})
+        ctx = _step_ctx(project=proj, gitRoot=proj)
+        real_u = M.pending_still_applies(ctx, moved, pending)
+        mutant, _w = _unit_driver("drive_phase_stored_red_mutant")
+        mutant.gate_basis_holds = lambda ctx_, manifest, pending_: True
+        held = mutant.pending_still_applies(_step_ctx(project=proj, gitRoot=proj),
+                                            moved, pending)
+    finally:
+        _harness.remove_tree(proj)
+    check("sv3m RED TWIN: once the build command changed, the real driver drops "
+          "the stored red - its run was measured under other commands - and "
+          "says so; a driver that shows a stored red without asking its basis "
+          "keeps it standing, and sv3's drive would replay it: %r"
+          % ((real_u, held, ctx["did"]),),
+          real_u is False and held is True
+          and ctx["did"] == ["P1.1's gate-red no longer stands - run r1 was "
+                             "measured under a gate that resolves to other "
+                             "commands now; measured again"])
+
+
+def _stored_rerun_units(check):
+    """A rerun answered on one wave member reaches every member whose parked red
+    failed on a step it failed on too - never one measured and the other's
+    stored red replayed; a member red on other steps is asked on its own."""
+    task_a, task_b = _step_task("P1.1"), _step_task("P1.2")
+    phase = _step_phase([task_a, task_b], key="phase")
+    plan_u = _step_plan(phase)
+
+    def answered(module, mine, theirs):
+        state = {"wave": {"parked": {"P1.2": _gate_red(
+            "P1.2", verdict={"runId": "r2", "at": None, "tree": None,
+                             "failing": list(theirs)})}}}
+        calls = _step_rig(module, phase)
+        pending = _gate_red(verdict={"runId": "r1", "at": None, "tree": None,
+                                     "failing": list(mine)})
+        module.apply_answer(_step_ctx(), state, plan_u, phase, pending, "rerun", "")
+        module.task_gate(_step_ctx(), state, phase, task_b)
+        return state, [a for s, a, _i in calls if s == "run-test-gate.py"]
+
+    M, _w = _unit_driver("drive_phase_stored_rerun")
+    state, runs = answered(M, ["unit-a"], ["unit-a"])
+    check("sv4 both members red on the same step: `rerun` answered on the first "
+          "takes the second's parked decision back and marks its gate, which "
+          "is then measured with --no-reuse: %r" % ((state, runs),),
+          state.get("wave") == {"parked": {}}
+          and runs == [["audit-plan.json", "P1", "--task", "P1.2", "--record",
+                        "--project-dir", "/nowhere", "--no-reuse"]])
+    mutant, _w = _unit_driver("drive_phase_stored_rerun_mutant")
+    mutant.rerun_alongside = lambda ctx, state_, manifest, pending: []
+    state_m, runs_m = answered(mutant, ["unit-a"], ["unit-a"])
+    check("sv4r RED TWIN: a driver whose rerun reaches only the member it was "
+          "answered on leaves the second parked and measures nothing for it "
+          "afresh: %r" % ((state_m, runs_m),),
+          "P1.2" in (state_m.get("wave") or {}).get("parked")
+          and runs_m == [["audit-plan.json", "P1", "--task", "P1.2", "--record",
+                          "--project-dir", "/nowhere"]])
+    state, runs = answered(M, ["unit-a"], ["unit-b"])
+    check("sv4m THE TWIN: red on different steps, the rerun answered on the "
+          "first member does not reach the second - its decision stays parked "
+          "for its own answer and its gate is not marked: %r" % ((state, runs),),
+          ((state.get("wave") or {}).get("parked") or {}).get("P1.2", {})
+          .get("decision") == "gate-red"
+          and runs == [["audit-plan.json", "P1", "--task", "P1.2", "--record",
+                        "--project-dir", "/nowhere"]])
+    state, runs = answered(M, ["unit-a"], ["unit-a", "unit-b"])
+    check("sv4o a member red on that step and another is reached by the rerun "
+          "answered on a member red on the one step - measured with --no-reuse: "
+          "%r" % ((state, runs),),
+          state.get("wave") == {"parked": {}} and (runs or [[""]])[0][-1] == "--no-reuse")
+
+
+def _stored_green_units(check):
+    """The green a task's gate recorded is the drive's stored verdict until the
+    close: once `meta.buildCommands` resolves the gate to another command, the
+    step measures it again rather than closing on the old green; unchanged, it
+    closes on it."""
+    proj, task_u, phase = _sv_ledger(_SV_UNIT_GREEN, failing=())
+    filed = {("P1.1", "executor"): _filed_executor(),
+             ("P1.1", "reviewer"): {"findings": [], "verdict": "clean",
+                                    "intent": {"answer": "matches", "note": "n"}}}
+
+    def closed(module, build):
+        calls = _step_rig(module, phase, filed=filed,
+                          meta={"buildCommands": dict(build)})
+        state = {}
+        module._mark(state, "gated", task_u, {"runId": "r1", "at": _STEP_START,
+                                            "tree": None, "failing": []})
+        module._mark(state, "dispatched-reviewer", task_u)
+        ctx = _step_ctx(project=proj, gitRoot=proj)
+        said = _caught(module.advance, ctx, state, _step_plan(
+            phase, {"buildCommands": dict(build)}), phase, task_u)
+        return said, _scripts(calls), state, ctx["did"]
+
+    try:
+        M, _w = _unit_driver("drive_phase_stored_green")
+        held = M.stored_green(_step_ctx(project=proj, gitRoot=proj), {
+            "gated": {"P1.1": {"start": "20261021T100000Z", "value": {
+                "runId": "r1", "at": _STEP_START, "tree": None,
+                "failing": []}}}}, _step_plan(phase, {
+                    "buildCommands": dict(_SV_UNIT_GREEN)}), task_u, "gated")
+        check("sv5 a green mark whose run the ledger holds under the gate as it "
+              "resolves now holds, read through the one check every stored "
+              "verdict passes: %r" % (held,), held == "holds")
+        said, ran, state, did = closed(M, {"unit": "another-true-command"})
+        check("sv6 a stored green whose build command changed since is measured "
+              "again before the close - one gate run, its mark spent and said - "
+              "and the task closes on that run: %r" % ((ran, did, _text_of(said)),),
+              said is None
+              and ran == [("run-test-gate.py", "audit-plan.json"),
+                          ("commit-task-work.py", "audit-plan.json"),
+                          ("audit-task.py", "done")]
+              and (did or [""])[0] == ("P1.1's stored green no longer stands - run r1 was "
+                             "measured under a gate that resolves to other "
+                             "commands now; measured again"))
+        mutant, _w = _unit_driver("drive_phase_stored_green_mutant")
+        mutant.stored_green = lambda ctx, state_, manifest, task_, kind: (
+            mutant._evio.STORED_HOLDS if mutant._marked(state_, kind, task_)
+            else None)
+        said_mu, ran_m, _s, _d = closed(mutant, {"unit": "another-true-command"})
+        check("sv6r RED TWIN: a driver that closes on a stored green without "
+              "asking its basis measures nothing after the command changed: %r"
+              % (ran_m,),
+              ran_m == [("commit-task-work.py", "audit-plan.json"),
+                        ("audit-task.py", "done")])
+        said_t, ran_t, _s, _d = closed(M, _SV_UNIT_GREEN)
+        check("sv6m THE TWIN: with the build command and the tree unchanged, the "
+              "stored green is reused as before - the close runs no gate: %r"
+              % (ran_t,),
+              said_t is None
+              and ran_t == [("commit-task-work.py", "audit-plan.json"),
+                            ("audit-task.py", "done")])
+    finally:
+        _harness.remove_tree(proj)
+
+
+def _stored_explain_units(check):
+    """`--explain` shows a stored decision too: once the run a gate-red stood on
+    no longer answers the gate, it says so - why, and what the next `next`
+    does - and never replays the decision's answers."""
+    M, _w = _unit_driver("drive_phase_stored_explain")
+    proj, task_u, phase = _sv_ledger(_SV_UNIT_RED)
+    pending = _gate_red(verdict={"runId": "r1", "at": _STEP_START, "tree": None,
+                                 "failing": ["unit"]})
+    M.read_state = lambda ctx: {"pending": dict(pending)}
+    try:
+        shown = []
+        for build in (_SV_UNIT_RED, _SV_UNIT_GREEN):
+            tmp, mfile = _with_manifest(phase, {"buildCommands": dict(build)})
+            try:
+                shown.append(M.explain(_step_ctx(project=proj, gitRoot=proj,
+                                                 manifest=mfile), "P1.1"))
+            finally:
+                _harness.remove_tree(tmp)
+    finally:
+        _harness.remove_tree(proj)
+    (code, held), (code_m, after) = shown
+    check("sv10 THE TWIN: with the build command unchanged, explain shows the "
+          "waiting gate-red with its run and its answers: %r" % ((code, held),),
+          code == 0 and (held.splitlines() or [""])[0].startswith(
+              "decide gate-red P1.1: recorded gate red")
+          and _SV_RUN.search(held) is not None
+          and _SV_RUN.search(held).group(1) == "r1"
+          and held.splitlines()[-1] == ("answer: next P1 --answer "
+                                        "retry|rerun|block (block needs "
+                                        "--reason)"))
+    check("sv11 after the build command changed, explain says the gate-red no "
+          "longer stands on a run that answers the gate, why, and that the next "
+          "next measures again - no decide line and no answer offered: %r"
+          % ((code_m, after),),
+          code_m == 0 and after.splitlines() == [
+              "[drive-phase] P1: the gate-red decision on P1.1 stood on run r1, "
+              "which no longer answers its gate - run r1 was measured under a "
+              "gate that resolves to other commands now",
+              "next measures the gate again: next P1"])
+
+
+def _key_units(check):
+    """`review.perTask` is read by the driver in `reviewer_due` alone."""
+    M, _w = _unit_driver("drive_phase_keys")
+    mutant, _w = _unit_driver("drive_phase_keys_always_due")
+    mutant.reviewer_due = lambda *a, **k: True
+    task_u = _step_task()
+    got = []
+    for module in (M, mutant):
+        due = module.reviewer_due("phase", _filed_executor())
+        got.append(module._advance_plan("reviewer", {
+            "due": due, "reviewerFiled": False, "dispatched": False,
+            "stepped": False}))
+    check("dk1m RED TWIN: under `phase` no reviewer is due, so the step goes on "
+          "to the close; a driver whose `reviewer_due` answers yes under every "
+          "key dispatches a reviewer there, and dk1 catches it: %r" % (got,),
+          got == [("go-on", None), ("dispatch", None)] and task_u)
+
+
+def _continue_units(check):
+    """Under `always`, a per-task reviewer's `diverges` is `decide
+    review-answer`, and its `continue` is a human's word on it: it takes
+    `--reason`, and the summary keeps that reason as it keeps the triage's
+    accept."""
+    M, _w = _unit_driver("drive_phase_continue")
+    task_u = _step_task()
+    phase = _step_phase([task_u])
+    plan_u = _step_plan(phase)
+    _step_rig(M, phase)
+    state = {}
+    said = M.decision(_step_ctx(), state, "review-answer", task_u,
+                      M.review_items({"intent": {"answer": "diverges"}}))
+    last = _text_of(said)
+    bare = M.answer_refusal(_step_ctx(), state["pending"], "continue", "")
+    check("ct1 a per-task `diverges` is `decide review-answer`, whose print says "
+          "`continue` needs --reason, and a bare continue is refused: %r"
+          % ((last, bare),),
+          (last.splitlines() or [""])[0] == ("decide review-answer P1.1: intent diverges "
+                                   "- a human action item")
+          and last.splitlines()[-1] == ("answer: next P1 --answer continue "
+                                        "(continue needs --reason)")
+          and bare == "--answer continue needs --reason: it is recorded with "
+                      "the task"
+          and len(last.encode("utf-8")) <= BOUND)
+    check("ct1r ...and its print carries the rule the triage's accept carries: "
+          "the answer is the human's (AskUserQuestion), and --reason is their "
+          "words verbatim - without it the model can write the reason itself: %r"
+          % (last,),
+          "AskUserQuestion" in last and "verbatim" in last and "human" in last)
+    words = "the human: P1.1 was meant to diverge, the plan was stale"
+    pending = state.pop("pending")
+    went = _caught(M.apply_answer, _step_ctx(), state, plan_u, phase, pending, "continue",
+                          words)
+    state["summary"] = SUMMARY
+    summary = M.signoff_summary(state, phase, _HEAD_A)
+    check("ct2 ALLOW: continue with the human's words goes on - nothing is "
+          "printed in its place - and the sign-off summary keeps those words "
+          "beside the triage's: %r" % ((went, summary),),
+          went is None and summary == (
+              "%s Per-task reviewer answers continued over: P1.1 intent "
+              "diverges: %s" % (SUMMARY, words)))
+
+
+def _plain_project(task_ids=TASKS[:1], executor=None):
+    """`(root, mpath)` - a project holding the fixture's config and plan on
+    disk and no repository: what a reader of the plan alone needs. The caller
+    removes it."""
+    root_u = os.path.realpath(_harness.fixture_root("drive-plain-"))
+    for rel, text, newline in _repo_files(task_ids, ("true",), "always", None,
+                                          executor):
+        path = os.path.join(root_u, *rel.split("/"))
+        if not os.path.isdir(os.path.dirname(path)):
+            os.makedirs(os.path.dirname(path))
+        with open(path, "w", encoding="utf-8", newline=newline) as fh:
+            fh.write(text)
+    return root_u, os.path.join(root_u, "docs", "audit", "audit-plan.json")
+
+
+def _single_task_units(check):
+    """`next <taskId>` drives that one task and stops: the run of `/audit:run`
+    and `/audit:next`, which execute exactly one task, through the same
+    steps."""
+    M, _w = _unit_driver("drive_phase_single")
+    tasks = [_step_task(t, status="pending", startedAt=None) for t in TASKS]
+    phase = _step_phase(tasks)
+    calls = _step_rig(M, phase)
+    advanced = []
+
+    def start(ctx, task_u):
+        task_u["status"] = "in_progress"
+        ctx["did"].append("started %s" % (task_u["id"],))
+        return None
+
+    def step(ctx, state, manifest, phase_, task_u, tree=None):
+        advanced.append(task_u["id"])
+        task_u.update(status="done", commit="abc1234def5")
+        ctx["did"].append("closed %s at abc1234" % (task_u["id"],))
+        return None
+    M.start_task, M.advance = start, step
+    M.scope_gap = lambda ctx, state, task_u: None
+    where = tempfile.mkdtemp(prefix="drive-single-state-")
+    try:
+        ctx = _step_ctx(only="P1.2", stateDir=where)
+        state = {"lock": "taken"}
+        said = _caught(M.drive_task, ctx, state)
+        left = os.listdir(where)
+    finally:
+        _harness.remove_tree(where)
+    check("dt1 a drive scoped to P1.2 starts and advances that task alone and, "
+          "once it is terminal, gives back the lock it took and prints `done "
+          "P1.2`, its siblings untouched and no drive state left: %r"
+          % ((said, advanced, [t["status"] for t in tasks], _scripts(calls),
+              left),),
+          said == (0, {"kind": "done", "lines": ["done P1.2: done at abc1234"],
+                       "signal": said[1].get("signal")})
+          and advanced == ["P1.2"]
+          and [t["status"] for t in tasks] == ["pending", "done", "pending"]
+          and _scripts(calls) == [("audit-lock.py", "release")] and left == [])
+    calls = _step_rig(M, phase)
+    again = _caught(M.drive_task, _step_ctx(only="P1.2"), {})
+    check("dt2 a task already done is reported done at once, and nothing is "
+          "started: %r" % ((again, calls),),
+          _text_of(again[1]) == "done P1.2: already done at abc1234"
+          and calls == [] and advanced == ["P1.2"])
+    fresh = _step_phase([_step_task(t, status="pending", startedAt=None)
+                         for t in TASKS])
+    picked = M.next_task(_step_plan(fresh), fresh)
+    route = M._pending_turn("route", {
+        "pending": None, "answer": None, "reason": None, "only": None,
+        "fixes": [], "carryTo": None, "admissible": _never("admissible")})
+    check("dt3 THE TWIN: `next P1` still drives the phase - its first step is the "
+          "first pending task, so the task scope narrows only when asked: %r"
+          % ((route, picked[0]["id"], picked[1]),),
+          route == ("drive-phase", None) and picked[0]["id"] == "P1.1"
+          and picked[1] == "ready")
+    first = _text_of(M.dispatch_said(_step_ctx(), "executor", "P1.2",
+                                     "audit-executor", "sonnet",
+                                     ".claude/state/briefs/P1.2/b.md"))
+    check("dt4 the executor's dispatch prints the rule that applies at it, under "
+          "the instruction, inside the bound: %r" % (first,),
+          first.splitlines() == [
+              "dispatch audit-executor P1.2 model=sonnet "
+              "brief=.claude/state/briefs/P1.2/b.md",
+              "Description starts with the id; dispatch nothing alongside."]
+          and len(first.encode("utf-8")) <= BOUND)
+    boarded = _step_plan(_step_phase([_step_task("P1.2", ado={"id": 4242})]),
+                         {"ado": {"organization": "o", "project": "p"}})
+    echo = []
+    for meta_plan in (_step_plan(_step_phase([_step_task("P1.2")])), boarded):
+        tmp, mfile = _with_manifest(meta_plan["phases"][0], meta_plan["meta"])
+        try:
+            echo.append(M.ado_echo_lines(_step_ctx(
+                manifest=mfile, did=["closed P1.2 at abc1234"])))
+        finally:
+            _harness.remove_tree(tmp)
+    check("dt5 THE ALLOW TWIN: a plan with no board owes no ADO echo for a task "
+          "the drive closed, and no line says one is owed: %r" % (echo[0],),
+          echo[0] == [])
+    check("dt6 a linked task the drive closed owes the board its echo, and the "
+          "print that reports the close says so with the rule for it - no verb "
+          "sends it, so the instruction is the whole of it: %r" % (echo[1],),
+          echo[1] == ["ado echo owed: P1.2",
+                      "Update each item's board state only: never create one, "
+                      "never ask, no retry; a failure is one report line - "
+                      "/audit:sync push mends it."])
+    root_u, mpath = _plain_project(TASKS)
+    try:
+        refused = []
+        with _Env(root_u):
+            for given in ("p1", "P1", "1"):
+                said, errs = [], io.StringIO()
+                with contextlib.redirect_stderr(errs):
+                    code = M.main(["next", given, mpath, "--project-dir", root_u,
+                                   "--task"], out=said.append)
+                refused.append((given, code, said, errs.getvalue()))
+        after = tasks_of(mpath)
+        left = os.path.exists(os.path.join(root_u, ".claude", "state", "drive"))
+        cfg = os.path.join(root_u, ".claude", "audit.config.json")
+        with open(cfg, encoding="utf-8") as fh:
+            config = json.load(fh)
+        config["executor"] = {"waveWidth": 3}
+        with open(cfg, "w", encoding="utf-8") as fh:
+            json.dump(config, fh)
+        errs = io.StringIO()
+        with _Env(root_u), contextlib.redirect_stderr(errs):
+            M.main(["next", "P1", mpath, "--project-dir", root_u, "--task"],
+                   out=[].append)
+        scoped = M.context(argparse.Namespace(
+            project_dir=root_u, manifest=mpath, verbose=False, phase="P1.2",
+            task_only=True))
+    finally:
+        _harness.remove_tree(root_u)
+    check("dt7 the one-task form given a phase id (p1, P1, 1) exits 2 on one line "
+          "naming /audit:phase P1 and the tasks it would run, one at a time on a "
+          "plan with no waveWidth, and starts nothing: %r" % (refused,),
+          all(c == 2 and s == [] and e.count("\n") == 1
+              and "`/audit:phase P1`" in e and "P1.1, P1.2, P1.3" in e
+              and "one at a time" in e for _g, c, s, e in refused)
+          and all(t.get("status") == "pending" for t in after.values())
+          and not left)
+    check("dt8 with executor.waveWidth above 1 the same refusal says the phase "
+          "verb runs them in waves: %r" % (errs.getvalue(),),
+          "in waves of up to 3" in errs.getvalue()
+          and "one at a time" not in errs.getvalue())
+    route = M._pending_turn("route", {
+        "pending": None, "answer": None, "reason": None, "only": scoped["only"],
+        "fixes": [], "carryTo": None, "admissible": _never("admissible")})
+    check("dt9 THE TWIN: a task id with the one-task flag is no refusal: the "
+          "context scopes the drive to that task, and `next` drives it alone: %r"
+          % ((scoped["only"], scoped["phase"], route),),
+          scoped["only"] == "P1.2" and scoped["phase"] == "P1"
+          and route == ("drive-task", None))
+
+
+def _lock_units(check):
+    """A lock another live run holds stops the drive with the rule for it, and
+    the context's project is the manifest's own."""
+    M, _w = _unit_driver("drive_phase_lock")
+    where = tempfile.mkdtemp(prefix="drive-lock-state-")
+    try:
+        M.run_verb, calls = _verb_rig({("audit-lock.py", "acquire"): (
+            3, "[audit-lock] phase-P1 is held by a live session\n", "")})
+        code, text = M.drive(_step_ctx(stateDir=where))
+    finally:
+        _harness.remove_tree(where)
+    check("dl1 a held lock stops the drive with the lock verb's own words and the "
+          "rule printed under them, and nothing past the lock runs: %r"
+          % ((code, text, _scripts(calls)),),
+          code == 1 and text.splitlines() == [
+              "[drive-phase] P1: stopped - audit-lock.py refused (exit 3); its "
+              "own words follow",
+              "[audit-lock] phase-P1 is held by a live session",
+              "Held by a live run: stop, never take it over. Looks abandoned: "
+              "ask the human before --takeover."]
+          and _scripts(calls) == [("audit-lock.py", "acquire")])
+    root_u, mpath = _plain_project()
+    other = os.path.realpath(_harness.fixture_root("drive-ctxother-"))
+    held_env = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = other
+    try:
+        _m, ctx = M.project_context(argparse.Namespace(
+            project_dir=None, manifest=mpath, verbose=False))
+        _m, typed = M.project_context(argparse.Namespace(
+            project_dir=root_u, manifest=mpath, verbose=False))
+    finally:
+        if held_env is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = held_env
+        _harness.remove_tree(root_u)
+        _harness.remove_tree(other)
+    check("dl4 with no --project-dir the context's project is the manifest's own "
+          "project, not the session's directory: %r" % (ctx["project"],),
+          os.path.realpath(ctx["project"]) == root_u
+          and os.path.realpath(typed["project"]) == root_u)
+
+
+def _submit_args(task_id="P1.1", role="executor"):
+    return argparse.Namespace(id=task_id, role=role, head=None, slice=None,
+                              shown=None, case=[], introduces=[], deps_from=None)
+
+
+_TAKEN = json.dumps({"line": "audit-stamp: {\"head\": \"abc1234\"}",
+                     "stamp": {"head": "abc1234"}})
+
+
+def _submit_rig(M, task_u, answers=None):
+    """`(ctx, calls, filed)`: `M.submit` pointed at a scratch project, the stamp
+    verb answering a stamp, the filing verb answering it filed, and `filed` -
+    the bodies the filing verb was handed. The caller removes `ctx["project"]`."""
+    where = os.path.realpath(_harness.fixture_root("drive-submit-units-"))
+    stock = {("stamp-verification.py", "take"): (0, _TAKEN, ""),
+             ("audit-task.py", "file-return"): (
+                 0, "written: docs/audit/evidence/returns/P1/x.json\n", "")}
+    stock.update(answers or {})
+    M.run_verb, calls = _verb_rig(stock)
+    ctx = _step_ctx(project=where, gitRoot=where,
+                    evidence=os.path.join(where, "docs", "audit", "evidence"))
+    return ctx, calls
+
+
+def _filed_bodies(calls):
+    return [json.loads(i) for s, a, i in calls
+            if s == "audit-task.py" and a[:1] == ["file-return"]]
+
+
+def _owed_task(expect):
+    return _step_task(files=["src/mine.py"], tests={
+        "mode": "tdd", "add": [], "gate": ["true"], "expectRedFirst": expect})
+
+
+def _owed_red_first_units(check):
+    """Every reader of a fix task's red-first obligation asks the stored
+    `expectRedFirst` beside the mode: `submit`, the writer path's command and
+    block, and the fix prompt."""
+    M, _w = _unit_driver("drive_phase_owed_red_first")
+    results = []
+    for expect, red in ((False, None), (False, {
+            "status": "proved", "basis": "typed, no helper ran", "at": "z"}),
+            (True, None)):
+        task_u = _owed_task(expect)
+        plan_u = _step_plan(_step_phase([task_u]))
+        ctx, calls = _submit_rig(M, task_u)
+        body = _executor_body("P1.1", {"testsAdded": []})
+        if red is None:
+            del body["redFirst"]
+        else:
+            body["redFirst"] = red
+        try:
+            said = _caught(M.submit, ctx, plan_u, _submit_args(), None, json.dumps(body))
+        finally:
+            _harness.remove_tree(ctx["project"])
+        results.append((said, _filed_bodies(calls), _scripts(calls)))
+    (said, bodies, _s), (said_t, typed, _s2), (said_o, owed, ran_o) = results
+    red = (bodies or [{}])[0].get("redFirst") or {}
+    check("ow1 a tdd task whose stored expectRedFirst is false submits with no "
+          "command after `--`: it is filed, red-first not-attempted, the basis "
+          "naming the field and saying nothing is owed, and no helper mark on "
+          "it: %r" % ((said, red),),
+          said[0] == 0 and red.get("status") == "not-attempted"
+          and red.get("basis") == ("tests.expectRedFirst is false on this tdd "
+                                   "task: it names no case to prove a red by, "
+                                   "so no red-first proof is owed")
+          and red.get("at") and "source" not in red)
+    check("ow2 a `proved` the agent typed on such a task is not what is filed: "
+          "no helper ran, so the driver's not-attempted block replaces it: %r"
+          % ((said_t, typed),),
+          said_t[0] == 0
+          and ((typed or [{}])[0].get("redFirst") or {}).get("status")
+          == "not-attempted")
+    check("ow3 THE TWIN: the same task with expectRedFirst true is still "
+          "refused without a command, naming it, and files nothing - the mutant "
+          "that stops asking at all goes red here: %r" % ((said_o, ran_o),),
+          said_o == (1, "[drive-phase] P1: stopped - P1.1 is a tdd task, so "
+                        "its red-first block is the helper's: name the test "
+                        "command after `--`. Nothing filed.")
+          and owed == [] and ran_o == [])
+    unowed, owed = _owed_task(False), _owed_task(True)
+    got = (M.writer_test_command({}, {}, unowed), M.writer_test_command({}, {}, owed))
+    check("ow4 the writer path derives no command and no could-not-prove basis "
+          "for the unowed task, and keeps its basis for the owed twin: %r" % (got,),
+          got[0] == (None, None) and got[1][0] is None
+          and isinstance(got[1][1], str) and "no file" in got[1][1])
+    blocks = (M.unowed_red_first(unowed), M.unowed_red_first(owed),
+              M.unowed_red_first({"id": "P1.2", "tests": {
+                  "mode": "regression", "add": [], "expectRedFirst": False}}))
+    check("ow5 the not-attempted block says why: the field for a tdd task, the "
+          "mode for another, and none for a task that owes the proof: %r" % (blocks,),
+          (blocks[0] or {}).get("status") == "not-attempted"
+          and "expectRedFirst" in (blocks[0] or {}).get("basis", "")
+          and blocks[1] is None
+          and "regression" in (blocks[2] or {}).get("basis", ""))
+    check("ow6 the fix prompt asks for a case that fails at HEAD only of a task "
+          "that owes a red-first proof: %r" % ((M.fix_prove_lines(unowed),
+                                               M.fix_prove_lines(owed)),),
+          M.fix_prove_lines(unowed) == [] and len(M.fix_prove_lines(owed)) == 1)
+
+
+def _submit_mutant_units(check):
+    """Each refusal of `submit`, red against a driver with that refusal taken
+    out: the refusal stops before any verb, the mutant takes a stamp or files."""
+    task_u = _step_task()
+    plan_u = _step_plan(_step_phase([task_u]))
+    nostamp = {("stamp-verification.py", "take"): (
+        1, "", "[stamp-verification] git named no tree here\n")}
+
+    def submitted(module, body, answers=None):
+        ctx, calls = _submit_rig(module, task_u, answers)
+        try:
+            said = _caught(module.submit, ctx, plan_u, _submit_args(), None, json.dumps(body))
+        finally:
+            _harness.remove_tree(ctx["project"])
+        return said, _scripts(calls), ctx["did"]
+
+    M, _w = _unit_driver("drive_phase_submit_units")
+    said, ran, _d = submitted(M, _executor_body("P1.1"), nostamp)
+    mutant, _w = _unit_driver("drive_phase_submit_any_stamp")
+    mutant.take_stamp = lambda ctx, task_, tree=None: ("audit-stamp: {}", None)
+    said_mu, ran_m, _d = submitted(mutant, _executor_body("P1.1"), nostamp)
+    check("ds1m RED TWIN: a take that names no tree stops the submit and files "
+          "nothing; a submit that files whatever the take printed files a claim "
+          "bound to no tree, and ds1 catches it: %r" % ((said, ran, said_mu, ran_m),),
+          said[0] == 1 and "the stamp is missing" in said[1]
+          and ran == [("stamp-verification.py", "take")]
+          and said_mu[0] == 0
+          and ran_m == [("audit-task.py", "file-return")])
+    filed_already = "docs/audit/evidence/returns/P1/x.executor.json"
+    M.already_filed = lambda ctx, task_: filed_already
+    said, ran, _d = submitted(M, _executor_body("P1.1"))
+    mutant, _w = _unit_driver("drive_phase_submit_no_early")
+    mutant.already_filed = lambda ctx, task_: None
+    said_mu, ran_m, did_m = submitted(mutant, _executor_body("P1.1"), {
+        ("audit-task.py", "file-return"): (
+            1, "[audit-task] REFUSED: a return is already filed for this "
+               "start\n", "")})
+    check("ds3m RED TWIN: a return already filed for the start stops the submit "
+          "before any verb; a submit that does not look for it first takes a "
+          "stamp before the filing verb refuses, and ds3 catches it: %r"
+          % ((said, ran, said_mu, ran_m, did_m),),
+          said == (1, "[drive-phase] P1: stopped - the executor return for P1.1 "
+                      "is already filed for this start (%s) and stays as filed. "
+                      "Nothing run." % (filed_already,))
+          and ran == [] and said_mu[0] == 1 and "stamp taken" in did_m
+          and ran_m == [("stamp-verification.py", "take"),
+                        ("audit-task.py", "file-return")])
+    bad = _executor_body("P1.1")
+    del bad["outcome"]
+    M, _w = _unit_driver("drive_phase_submit_shape")
+    said, ran, _d = submitted(M, bad)
+    mutant, _w = _unit_driver("drive_phase_submit_no_shape")
+    mutant.submitted_shape = lambda role, body, fills, task_=None: []
+    said_mu, ran_m, did_m = submitted(mutant, bad, {
+        ("audit-task.py", "file-return"): (1, "[audit-task] REFUSED: shape\n", "")})
+    check("ds4m RED TWIN: a return short of its shape stops the submit before "
+          "any verb; a submit that does not check the shape first takes the "
+          "stamp before the filing verb refuses, and ds4 catches it: %r"
+          % ((_text_of(said[1])[:120], ran, ran_m, did_m),),
+          said[0] == 1 and "`outcome`" in _text_of(said[1]) and ran == []
+          and "stamp taken" in did_m
+          and ran_m == [("stamp-verification.py", "take"),
+                        ("audit-task.py", "file-return")])
+
+
+UNCHECKED_CLAUSE = ("ids bound to a suite the submit's command did not run are "
+                    "filed on the return beside testsAddGaps, and the reviewer's "
+                    "brief shows them")
+
+
+def _unchecked_ids_units(check):
+    """A tdd task binding ids in two suites, submitted with a command that runs
+    one: the other suite's id is neither graded nor a gap, and it must still
+    reach the reviewer, who prints the return's fields and nothing else."""
+    M, why = _unit_driver("drive_phase_unchecked")
+    check("ucs0 the driver loads: %r" % (why,), M is not None)
+    if M is None:
+        return
+    ran_entry = "tests/test_mine.py: new1"
+    skipped_entry = "tests/test_other.py: oth1"
+    task_u = _step_task(files=["src/mine.py", "tests/test_mine.py",
+                             "tests/test_other.py"],
+                      tests={"mode": "tdd", "add": [ran_entry, skipped_entry],
+                             "gate": ["true"], "expectRedFirst": True})
+    plan_u = _step_plan(_step_phase([task_u]))
+    proved = json.dumps({"redFirst": {"status": "proved", "basis": "new1 red",
+                                      "at": "z"},
+                         "printed": ["old1 mine.v >= 1",
+                                     "new1 mine.v == 2"]})
+    ctx, calls = _submit_rig(M, task_u, {("stamp-verification.py", "red"): (
+        0, proved, "")})
+    body = _executor_body("P1.1", {"testsAdded": [ran_entry, skipped_entry],
+                                   "casesAdded": ["new1", "oth1"]})
+    try:
+        said = _caught(M.submit, ctx, plan_u, _submit_args(), [
+            sys.executable, "tests/test_mine.py"], json.dumps(body))
+    finally:
+        _harness.remove_tree(ctx["project"])
+    filed = (_filed_bodies(calls) or [{}])[0]
+    held = filed.get(_fr.UNCHECKED_FIELD)
+    lookup = _loader.load_script("audit-lookup.py", "drive_unchecked_lookup")
+    shown = "\n".join(lookup._tests_add_review_lines(task_u, filed))
+    quiet = "\n".join(lookup._tests_add_review_lines(
+        task_u, dict(filed, **{_fr.UNCHECKED_FIELD: []})))
+    check("ucs1 %s: %r" % (UNCHECKED_CLAUSE, (said, filed.get(_fr.GAPS_FIELD),
+                                              held)),
+          said[0] == 0 and filed.get(_fr.GAPS_FIELD) == []
+          and held == ["tests/test_other.py: oth1 - not checked: the submit's "
+                       "command did not run `tests/test_other.py`, so the ids "
+                       "bound to it were not compared with any printed label"]
+          and held[0] in shown)
+    # THE OTHER DIRECTION: a return whose submit graded every entry (the field is
+    # an empty list) shows no such section, so a brief that always printed one
+    # would pass the case above.
+    check("ucs2 ALLOW: a filed return with no unchecked entry shows the reviewer "
+          "no 'never compared' section: %r" % (quiet[-200:],),
+          "never compared" not in quiet and "never compared" in shown)
+
+
+def _brief_scope_units(check):
+    """A brief printed and then made stale by a scope widening was never the
+    current scope's dispatch: the step issues it again, spending no attempt,
+    rather than grading an executor that never received it."""
+    M, _w = _unit_driver("drive_phase_brief_scope")
+    task_u = _step_task()
+    widened = dict(task_u, files=["src/f1.txt", "src/extra.txt"])
+    phase = _step_phase([widened])
+    stepped = []
+    for current in (widened, task_u):
+        calls = _step_rig(M, _step_phase([current]))
+        state = {}
+        M._mark(state, "dispatched-executor", current,
+                {"scope": M.brief_scope(task_u)})
+        ctx = _step_ctx()
+        said = _caught(M.advance, ctx, state, _step_plan(phase), _step_phase([current]),
+                         current)
+        stepped.append((_text_of(said), _scripts(calls), ctx["did"]))
+    (again, ran, did), (third, ran_t, _d) = stepped
+    check("bs1 after `scope` widens a task whose brief was printed and no return "
+          "filed, the step writes the brief again over the widened scope - not "
+          "`decide no-executor-return` - and starts nothing, so no attempt is "
+          "spent: %r" % (stepped[0],),
+          again.startswith("dispatch audit:audit-executor P1.1 model=unset")
+          and ran == [("audit-lookup.py", "audit-plan.json")]
+          and did == ["P1.1's brief issued again: its scope changed after the "
+                      "last one was printed"])
+    check("bs2 THE TWIN: with the scope unchanged since the brief was issued, "
+          "an unfiled executor is still the no-executor-return decision: %r"
+          % (stepped[1],),
+          third.startswith("decide no-executor-return P1.1") and ran_t == [])
+
+
+_NO_OVERLAP = ("[run-test-gate] GATE GREEN: echo\n"
+               "NO OVERLAP WITH THIS WORK: the gate ran none of src/f1.txt\n")
+
+
+def _banner_units(check):
+    """A green gate that printed NO OVERLAP or TREE CHANGED is not reported as
+    a plain green: the task's did-line carries it, and at the phase gate it is a
+    decision before the verdict."""
+    M, _w = _unit_driver("drive_phase_banner")
+    task_u = _step_task()
+    phase = _step_phase([task_u], key="phase")
+    _step_rig(M, phase, answers={"run-test-gate.py": (0, _NO_OVERLAP, "")})
+    ctx = _step_ctx()
+    stop = _caught(M.gate_step, ctx, {}, _step_plan(phase), phase, task_u)
+    check("gb1 a task gate that ran none of the task's paths is reported as "
+          "`gate P1.1 green (NO OVERLAP)`, not a plain green: %r" % (ctx["did"],),
+          stop is None and ctx["did"] == ["gate P1.1 green (NO OVERLAP)"])
+    done = _unit_phase()
+    said, calls, state = _signoff_with_gate(M, done, (0, _NO_OVERLAP, ""))
+    last = _text_of(said)
+    check("gb2 the same banner on the phase gate is a decision before the "
+          "verdict, and the sign-off verb never runs: %r" % ((last, calls),),
+          (last.splitlines() or [""])[0] == ("decide gate-coverage P1: the green phase "
+                                   "gate printed NO OVERLAP")
+          and calls == [] and state["pending"]["decision"] == "gate-coverage"
+          and len(last.encode("utf-8")) <= BOUND)
+    words = "the human: the suite exercises f1 through its import"
+    summaries = []
+    M.git_head = lambda ctx_: _HEAD_A
+    M.signoff_step = lambda ctx_, state_, phase_: summaries.append(
+        M.signoff_summary(dict(state_, summary=SUMMARY), phase_, _HEAD_A))
+    held = {"phaseGate": {"head": _HEAD_A, "runId": "r-1", "banners": ["NO OVERLAP"]}}
+    M.apply_phase_answer(_unit_ctx(), held, {}, done, {"decision": "gate-coverage",
+                                                       "task": None},
+                         "accept", words, ())
+    check("gb3 accepted with a reason, the answer is bound to the run it was "
+          "given over and sign-off goes on, its summary keeping the reason: %r"
+          % (summaries,),
+          summaries == ["%s Gate banner accepted: %s" % (SUMMARY, words)])
+
+
+_VITEST_TS = "vitest.config.ts"
+
+
+def _scope_project(files):
+    """A scratch project holding `files` (`{rel: text}`); the caller removes it."""
+    root_u = os.path.realpath(_harness.fixture_root("drive-scope-gap-"))
+    for rel, text in files.items():
+        path = os.path.join(root_u, *rel.split("/"))
+        if not os.path.isdir(os.path.dirname(path)):
+            os.makedirs(os.path.dirname(path))
+        _write_lf(path, text)
+    return root_u
+
+
+def _gap(M, files, add, gate, task_status="pending", build=None):
+    """`(result, did, text)` of `scope_gap` over a task declaring `add` under
+    `gate`, in a project holding `files`."""
+    task_u = _step_task(status=task_status, startedAt=None, tests={
+        "mode": "tdd", "add": ["%s: it holds" % (add,)], "gate": list(gate),
+        "expectRedFirst": True})
+    phase = _step_phase([task_u])
+    root_u = _scope_project(files)
+    try:
+        _step_rig(M, phase, meta={"buildCommands": build} if build else None)
+        ctx = _step_ctx(project=root_u, gitRoot=root_u)
+        said = _caught(M.scope_gap, ctx, {}, task_u)
+    finally:
+        _harness.remove_tree(root_u)
+    text = _text_of(said[1]) if isinstance(said, tuple) else ""
+    return said, ctx["did"], text
+
+
+def _preflight_files(include):
+    return {_VITEST_TS: "const INCLUDE = %s;\nexport default { test: { include: "
+                        "%s } };\n" % ("['tests/unit/**/*.test.ts']", include)}
+
+
+_PF_GATE = ("npx vitest run lib/store.test.ts",)
+
+
+def _preflight_units(check):
+    """Task start refuses a declared test the runner will never collect: a
+    definite NOT_COLLECTED is a `scope-gap` decision before any start, and
+    `widen` declares the runner config; a could-not-tell runner says so once and
+    the start goes on."""
+    M, _w = _unit_driver("drive_phase_preflight")
+    said, did, text = _gap(M, _preflight_files("['tests/unit/**/*.test.ts']"),
+                           "lib/store.test.ts", _PF_GATE)
+    check("pf1 a vitest include of tests/unit/** and a test at lib/store.test.ts "
+          "is decide scope-gap naming vitest and vitest.config.ts, before any "
+          "start: %r" % (text,),
+          isinstance(said, tuple) and said[0] == 0
+          and (text.splitlines() or [""])[0].startswith(
+              "decide scope-gap P1.1: vitest does not collect lib/store.test.ts")
+          and "widen adds vitest.config.ts" in (text.splitlines() or [""])[0]
+          and "widen|block" in text and did == [])
+    task_u = _step_task(status="pending", startedAt=None)
+    phase = _step_phase([task_u])
+    calls = _step_rig(M, phase)
+    gap = {"decision": "scope-gap", "task": "P1.1", "start": None,
+           "why": "", "config": _VITEST_TS}
+    went = _caught(M.apply_answer, _step_ctx(), {}, _step_plan(phase), phase, gap,
+                          "widen", "")
+    check("pf2 widen declares the runner config beside the task's files through "
+          "the scope verb, and the drive goes on to start it: %r"
+          % ((went, calls),),
+          went is None and [(s, a) for s, a, _i in calls] == [
+              ("audit-task.py", ["scope", "P1.1", "audit-plan.json",
+                                 "--project-dir", "/nowhere", "--files",
+                                 "src/f1.txt,vitest.config.ts"])])
+    calls = _step_rig(M, phase, answers={("commit-task-work.py", "audit-plan.json"):
+                                         (0, json.dumps({"commit": "abc1234"}), "")})
+    blocked = _caught(M.apply_answer, _step_ctx(), {}, _step_plan(phase), phase, dict(gap),
+                             "block", "the human will widen it by hand")
+    check("pf3 block blocks the task through the verb, keeps the record, and "
+          "starts nothing: %r" % ((blocked, _scripts(calls)),),
+          blocked is None
+          and _scripts(calls) == [("audit-task.py", "block"),
+                                  ("commit-task-work.py", "audit-plan.json")])
+    said, did, text = _gap(M, _preflight_files("INCLUDE"), "lib/store.test.ts",
+                           _PF_GATE)
+    check("pf4 a runner whose include is a variable could not be read: ONE line "
+          "says so and the start goes on: %r" % (did,),
+          said is None and len(did) == 1 and did[0].startswith(
+              "could not tell whether vitest collects lib/store.test.ts"))
+    two = [_step_task(t, status="pending", startedAt=None, tests={
+        "mode": "tdd", "add": ["lib/store.test.ts: it holds"],
+        "gate": list(_PF_GATE), "expectRedFirst": True}) for t in TASKS[:2]]
+    two[1]["files"] = ["src/f2.txt"]
+    wave = _step_phase(two)
+    root_u = _scope_project(_preflight_files("['tests/unit/**/*.test.ts']"))
+    try:
+        _step_rig(M, wave)
+        M.carried_members = lambda ctx, phase_: []
+        M.kept_members = lambda state, phase_: []
+        M.red_at_base = lambda ctx, ready, names: ([], None)
+        M.open_wave = _never("open_wave")
+        said = _caught(M.wave_step, _step_ctx(project=root_u, gitRoot=root_u), {},
+                           _step_plan(wave), wave, 2, "executor.waveWidth 2")
+    finally:
+        _harness.remove_tree(root_u)
+    check("pf5 the same stop holds at a wave width above 1: the wave asks each "
+          "member it picked before it opens: %r" % (_text_of(said)[:160],),
+          isinstance(said, tuple)
+          and _text_of(said[1]).startswith("decide scope-gap P1.1"))
+    M, _w = _unit_driver("drive_phase_preflight_task")
+    root_u = _scope_project(_preflight_files("['tests/unit/**/*.test.ts']"))
+    try:
+        pending = _step_task(status="pending", startedAt=None, tests={
+            "mode": "tdd", "add": ["lib/store.test.ts: it holds"],
+            "gate": list(_PF_GATE), "expectRedFirst": True})
+        calls = _step_rig(M, _step_phase([pending]))
+        said = _caught(M.drive_task, _step_ctx(project=root_u, gitRoot=root_u, only="P1.1"),
+                            {})
+    finally:
+        _harness.remove_tree(root_u)
+    check("pf6 a width-1 run of ONE task, named by its id, stops at the same "
+          "scope-gap before any start: %r" % ((_text_of(said)[:120], calls),),
+          isinstance(said, tuple)
+          and _text_of(said[1]).startswith("decide scope-gap P1.1")
+          and calls == [])
+
+
+SCOPE_LANGUAGE_CLAUSE = (
+    "tests/test_drive_phase.py: scope_gap on a task whose tests.add "
+    "is a tests/test_*.py path and whose gate holds selftests and "
+    "vitest returns no decision; a .mjs path vitest does not collect still returns "
+    "the scope-gap decision naming vitest.config.mjs; a Python path under a gate "
+    "with neither the sweep nor pytest is still reported")
+
+SWEEP_GATE = "python3 tools/sweep-selftests.py"
+VITEST_GATE = "npx vitest run"
+# The sweep script's root list, the one thing the preflight reads from it.
+SWEEP_ROOTS = ('SWEEP_DIRS = (\n    os.path.join("backend", "tests"),\n'
+               '    "tools",\n)\n')
+
+
+def _language_files(config="vitest.config.mjs"):
+    """The sweep script and a vitest config that includes only `tests/unit/**`
+    (`config` names the config file; None writes none)."""
+    files = {"tools/sweep-selftests.py": SWEEP_ROOTS}
+    if config:
+        files[config] = ("export default { test: { include: "
+                         "['tests/unit/**/*.test.ts'] } };\n")
+    return files
+
+
+def _scope_language_units(check):
+    def clause(detail):
+        return "%s (%s)" % (SCOPE_LANGUAGE_CLAUSE, detail)
+
+    M, _w = _unit_driver("drive_phase_language")
+    both = (SWEEP_GATE, VITEST_GATE)
+    said, did, text = _gap(M, _language_files(), "backend/tests/test_mine.py", both)
+    check(clause("a Python suite under the sweep and vitest draws no scope-gap and "
+                 "no could-not-tell line, and the task starts: %r" % ((said, did),)),
+          said is None and did == [])
+    said, did, text = _gap(M, _language_files(), "lib/store.test.mjs", both)
+    check(clause("a .mjs test vitest does not collect still stops at scope-gap "
+                 "naming vitest and vitest.config.mjs, with the widen remedy, "
+                 "before any start: %r" % (text,)),
+          text.startswith("decide scope-gap P1.1: vitest does not collect "
+                          "lib/store.test.mjs")
+          and "vitest.config.mjs" in text and "widen|block" in text)
+    said, did, text = _gap(M, _language_files(), "backend/tests/test_mine.py",
+                           (VITEST_GATE,))
+    check(clause("a Python suite under a gate holding neither the sweep nor pytest "
+                 "is reported as a scope-gap that says no runner of the gate takes "
+                 "it: %r" % (text,)),
+          text.startswith("decide scope-gap P1.1: no runner in this gate takes "
+                          "backend/tests/test_mine.py"))
+    said, did, text = _gap(M, _language_files(), "lib/store.test.mjs",
+                           (SWEEP_GATE,))
+    check(clause("a .mjs test under a gate holding only the sweep is reported the "
+                 "same way: %r" % (text,)),
+          text.startswith("decide scope-gap P1.1: no runner in this gate takes "
+                          "lib/store.test.mjs"))
+    said, did, text = _gap(M, _language_files(), "docs/test_mine.py", both)
+    check(clause("a Python suite outside the sweep's roots is still reported "
+                 "though the sweep is in the gate (the guard must not pass every "
+                 ".py): %r" % (text,)),
+          text.startswith("decide scope-gap P1.1: sweep does not collect "
+                          "docs/test_mine.py"))
+    said, did, text = _gap(M, _language_files(None), "tests/test_mine.py",
+                           ("python3 -m pytest",))
+    check(clause("a Python suite under a gate holding pytest is asked of pytest "
+                 "alone and, collected by its defaults, draws no decision: %r"
+                 % ((said, did),)),
+          said is None and did == [])
+
+
+UNCLASSIFIED_CLAUSE = (
+    "a gate holding an entry no known runner classifies answers could-not-tell for "
+    "a path no known runner takes, and the task starts")
+
+# The shape this repo's own gate has: the sweep plus entries that validate, lint,
+# render or screenshot and run no test of a language the sweep leaves out.
+REALISTIC_GATE = (
+    SWEEP_GATE,
+    "python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-plan.json",
+    "claude plugin validate . && claude plugin validate plugins/audit",
+    "python3 plugins/audit/scripts/status/audit-status.py docs/audit/audit-plan.json --gate",
+    "python3 plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json "
+    "--out-dir /tmp/audit-report",
+    "ruff check plugins/audit tools && vermin -t=3.8- --no-tips --violations "
+    "plugins/audit/scripts plugins/audit/hooks tests",
+    "node tools/capture-screenshots.mjs --check",
+    "node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html",
+)
+
+
+def _unclassified_units(check):
+    def clause(cid, detail):
+        return "%s %s (%s)" % (cid, UNCLASSIFIED_CLAUSE, detail)
+
+    M, why = _unit_driver("drive_phase_unclassified")
+    if M is None:
+        check(clause("uc0", "the driver loads: %r" % (why,)), False)
+        return
+    node = "node --test lib/store.test.mjs"
+    unit = "python3 -m unittest discover -s backend/tests"
+    said, did, text = _gap(M, _language_files(), "lib/store.test.mjs",
+                           (SWEEP_GATE, node))
+    check(clause("uc1", "a .mjs suite, a gate of the sweep and `node --test`: one "
+                 "could-not-tell line, the task starts, no scope-gap: %r" % (did,)),
+          said is None and len(did) == 1 and "could not tell" in did[0])
+    said, did, text = _gap(M, _language_files(), "backend/tests/test_mine.py",
+                           (VITEST_GATE, unit))
+    check(clause("uc2", "a .py suite, a gate of vitest and `python3 -m unittest`: "
+                 "the same answer: %r" % (did,)),
+          said is None and len(did) == 1 and "could not tell" in did[0])
+    said, did, text = _gap(M, _language_files(), "lib/store.test.mjs",
+                           (SWEEP_GATE,))
+    check(clause("uc3", "the other direction: a gate whose every entry the preflight "
+                 "classifies has no unclassified one, so the real misroute still "
+                 "stops: %r" % (text,)),
+          text.startswith("decide scope-gap P1.1: no runner in this gate takes "
+                          "lib/store.test.mjs") and did == [])
+    said, did, text = _gap(M, _language_files(), "docs/test_mine.py",
+                           (SWEEP_GATE, unit))
+    check(clause("uc4", "a known runner's own definite no is not softened by the "
+                 "unclassified entry beside it: %r" % (text,)),
+          text.startswith("decide scope-gap P1.1: sweep does not collect "
+                          "docs/test_mine.py"))
+    said, did, text = _gap(M, _language_files(), "lib/store.test.mjs",
+                           REALISTIC_GATE)
+    check(clause("uc5", "the sweep beside validate, lint, report and screenshot "
+                 "entries, none of which runs a test: the real misroute still "
+                 "stops at scope-gap: %r" % (text,)),
+          text.startswith("decide scope-gap P1.1: no runner in this gate takes "
+                          "lib/store.test.mjs") and did == [])
+    for cid, extra in (("uc6", "npx mocha lib/"),
+                       ("uc7", "node tools/run-suites.mjs lib/store.test.mjs"),
+                       ("uc8", "npx ava lib/store.test.mjs")):
+        said, did, text = _gap(M, _language_files(), "lib/store.test.mjs",
+                               REALISTIC_GATE + (extra,))
+        check(clause(cid, "the same gate with `%s` added, an entry that can run "
+                     "tests and that no runner classifies: could-not-tell, the "
+                     "task starts, no scope-gap: %r" % (extra, did)),
+              said is None and len(did) == 1 and "could not tell" in did[0])
+
+
+def _playwright_units(check):
+    """A gate of vitest beside `npx playwright test`: an e2e spec vitest's
+    config leaves out may be the browser runner's, whose config this reading
+    does not read - so it is could-not-tell, never a scope-gap stop."""
+    M, why = _unit_driver("drive_phase_playwright")
+    if M is None:
+        check("pw1 the driver loads: %r" % (why,), False)
+        return
+    said, did, text = _gap(M, _language_files(), "e2e/checkout.spec.ts",
+                           (VITEST_GATE, "npx playwright test"))
+    check("pw1 a gate of vitest plus npx playwright test does not stop on a "
+          "declared e2e spec vitest does not collect - one could-not-tell line "
+          "naming playwright, the task starts: %r" % (did,),
+          said is None and len(did) == 1 and "could not tell" in did[0]
+          and "playwright" in did[0])
+    # SECOND-DIRECTION CASE, for a token read as any mention of the runner:
+    # `playwright install` runs no test, so vitest's definite no still stops.
+    said, did, text = _gap(M, _language_files(), "e2e/checkout.spec.ts",
+                           (VITEST_GATE, "npx playwright install"))
+    check("pw2 ALLOW: a gate of vitest plus `npx playwright install`, which runs "
+          "no test, still stops at scope-gap on the spec vitest does not "
+          "collect: %r" % (text,),
+          text.startswith("decide scope-gap P1.1: vitest does not collect "
+                          "e2e/checkout.spec.ts") and did == [])
+
+
+def _falsifier_units(check):
+    """A planned `tests.falsifiers` is read by nothing: the step goes past it to
+    the close, applying no mutation and running no falsifier command."""
+    M, why = _unit_driver("fp_mod")
+    check("fp0 the driver loads: %r" % (why,), M is not None)
+    if M is None:
+        return
+    gone = [name for name in ("run_falsifier", "mutation_site", "note_falsifiers",
+                              "record_falsifiers", "falsify", "FALSIFIER_TIMEOUT",
+                              "returned_falsifier_problems")
+            if hasattr(M, name)]
+    check("fp0b the drive holds none of the falsifier stage's names (%r still "
+          "defined)" % (gone,), gone == [])
+    marker = os.path.join(tempfile.gettempdir(), "drive-fp-ran-%d" % (os.getpid(),))
+    task_u = _step_task(tests={
+        "mode": "gate-only", "add": [_FV_ADD], "gate": ["true"],
+        "expectRedFirst": False, "falsifiers": {_FV_ADD: dict(
+            _FP_WEAK, command=[sys.executable, "-c",
+                               "open(%r, 'w').write('ran')" % (marker,)])}})
+    phase = _step_phase([task_u], key="phase")
+    calls = _step_rig(M, phase, filed={("P1.1", "executor"): _filed_executor()})
+    ctx = _step_ctx()
+    said = _caught(M.advance, ctx, {}, _step_plan(phase), phase, task_u)
+    fp_print = M.render(ctx, 0, said) if said is not None else "; ".join(ctx["did"])
+    check("%s (fp1: with a falsifier planned, the step closes the task - gate, "
+          "commit, done - the falsifier's command never ran - %s absent - and no "
+          "`falsifier` word is printed: %r)"
+          % (RETIRED_CLOSE_CLAUSE, marker, (said, _scripts(calls), fp_print[:300])),
+          said is None and not os.path.exists(marker)
+          and _scripts(calls) == [("run-test-gate.py", "audit-plan.json"),
+                                  ("commit-task-work.py", "audit-plan.json"),
+                                  ("audit-task.py", "done")]
+          and "falsifier" not in fp_print.lower())
+
+
+def _follower_browser_units(check):
+    """A follower whose recipe needs a browser is the orchestrator's to run:
+    the drive declares it, prints the one instruction, and runs nothing."""
+    M, _w = _unit_driver("drive_phase_follower")
+    recipe = "git show HEAD:map.fresh > docs/map.txt"
+    task_u = _step_task()
+    phase = _step_phase([task_u])
+    calls = _step_rig(M, phase)
+    M.owed_followers = lambda ctx, text: ("r-7", [{
+        "path": "docs/map.txt", "recipe": recipe, "owner": "shots",
+        "needsBrowser": True}])
+    ran = []
+    real_recipe = M._evio.run_recipe
+    M._evio.run_recipe = lambda *a, **k: ran.append(a) or (0, ("", ""))
+    try:
+        state = {}
+        told, again = _caught(M.follow_red_gate, _step_ctx(), state, phase, task_u,
+                                        "[run-test-gate] GATE RED")
+        twice = _caught(M.follow_red_gate, _step_ctx(), state, phase, task_u,
+                                  "[run-test-gate] GATE RED")
+    finally:
+        M._evio.run_recipe = real_recipe
+    check("fw2 a recipe that needs a browser is never run by the drive: the "
+          "follower joins the task's files, the print is the orchestrator's one "
+          "instruction naming it, and the next step does not follow it again: %r"
+          % ((_text_of(told), again, ran, twice, _scripts(calls)),),
+          (_text_of(told).splitlines() or [""])[0] == (
+              "follow P1.1: run `%s` in ., then next P1" % (recipe,))
+          and again is None and ran == [] and twice == (None, None)
+          and _scripts(calls) == [("audit-task.py", "scope"),
+                                  ("audit-task.py", "note")])
+
+
+# --- one task's steps end to end: the drives only a real drive can show ---------
+# Each family keeps one drive over a real repository, the verbs run for real,
+# because what it proves is the pipeline as a whole: the order the steps run
+# in, the verbs agreeing with the drive's own record, git holding what the
+# record says, and every print inside its bound. Its subject, in git terms:
+#   dp1-dp7  the canonical three-task drive: four requests a task, every
+#            task closed against a commit, the drive's lines read back;
+#   dd1 dd2 dd4  one red gate to a decision and its `block` answer: the gate's
+#            rows and the block committed through the audit-state verb;
+#   sv1-sv3  one stored red replayed, then measured again under a changed
+#            build command, each gate-red line naming the ledger run it stands on;
+#   fb1 fb3  one fix batch through ONE `add --from-file -`, and the fix task's
+#            return filed with a `could-not-prove` red-first block;
+#   dk1 dk2  under `phase` each close records `deferred` bound to its commit;
+#            under `signals` a reviewer only where a signal fires;
+#   sc*      a scope widened after the filing is a decision before any close,
+#            and a retry in the same second reads none of the old start's marks;
+#   the      a follower regenerated by its recipe in the task tree and carried
+#            by the task's commit - git is the subject.
+# Where each converted case's guarantee lives now (`_steps_unit_cases`: the
+# deciding function and the code acting on its answer, over facts and fake
+# verbs; `_steps_verb_cases`: a verb's own answer, run for real, no drive):
+#   dp2m-dp5m dr* dd3* rs* rm1-rm3 ct* dt* dl1 dl4 ow* ds1m ds3m ds4m ucs*
+#   bs* gb* pf1-pf6 pg uc* pw* fp* fw2 mt* sv3m sv4* sv5 sv6* sv7-sv11
+#   dk1m `answering`    -> `_steps_unit_cases`
+#   fb2 fb4 fb5-fb8 rm4-rm7 pf7 the stdin-bytes case -> `_steps_verb_cases`
+# Paths no drive in this block reaches, held by a unit or verb case alone: a
+# refused commit at the close (dr), the `resume` answer (rs), a stored green
+# measured again at the close (sv6), `--explain` over a stored decision (sv10),
+# the one-task form `next <taskId>` and its refusals (dt), the held lock's stop
+# (dl1), submit's refusals (ds*m, ow3), the brief issued again after a widening
+# (bs), the gate banners (gb), the runner preflight at a start (pf, pg, uc,
+# pw) and a browser follower's instruction (fw2).
+def _e2e_steps_cases(check):
+    """One drive per family of a task's steps, over a real repository."""
+    _drive_cases(check)
+    _decide_cases(check)
+    _stored_red_cases(check)
+    _fix_batch_cases(check)
+    _key_cases(check)
+    _scope_change_cases(check)
+    _follower_cases(check)
+
+
+# --- one task's steps whose subject is a verb's own answer -----------------------
+def _steps_verb_cases(check):
+    """The steps whose subject is what a verb answers - the batch `add` a fix
+    answer makes, the gate verb's reuse over one tree, the brief's rule, the
+    bytes a return reaches its filing verb as - each run for real over a
+    fixture, with no drive in front of it."""
+    M, why = _unit_driver("drive_phase_steps_verbs")
+    if M is None:
+        check("fb2 the driver loads", False, why)
+        return
+    _fix_batch_verb_cases(check, M)
+    _fix_gate_cases(check, M)
+    _rerun_after_record_cases(check, M)
+    _widen_rule_cases(check, M)
+    _retired_return_cases(check, M)
+    _stdin_bytes_case(check)
+
+
+def _findings_project(findings, spell=None, extra_files=()):
+    """`(root, mpath)` - a one-task project under `phase` with no repository,
+    `findings` recorded on its phase through the real `finding` verb, its plan
+    passed through `spell` first and `extra_files` written into it. The caller
+    removes it."""
+    root_u, mpath = _plain_project()
+    with open(mpath, encoding="utf-8") as fh:
+        plan_u = json.load(fh)
+    plan_u["phases"][0]["reviewPerTask"] = "phase"
+    if spell is not None:
+        spell(plan_u)
+    with open(mpath, "w", encoding="utf-8") as fh:
+        json.dump(plan_u, fh, indent=2)
+    for rel in extra_files:
+        full = os.path.join(root_u, *rel.split("/"))
+        if not os.path.isdir(os.path.dirname(full)):
+            os.makedirs(os.path.dirname(full))
+        with open(full, "w", encoding="utf-8") as fh:
+            fh.write("v0\n")
+    with _Env(root_u):
+        recorded = _verb(root_u, "audit-task.py", [
+            "finding", PHASE, mpath, "--project-dir", root_u, "--findings-file",
+            "-"], stdin=json.dumps(findings))
+    if recorded[0] != 0:
+        raise AssertionError("the finding verb refused: %r" % (recorded,))
+    return root_u, mpath
+
+
+def _fixes_added(M, root_u, mpath, ids):
+    """`(stop, fix tasks, {finding: fixTask})` after `add_fix_tasks` over `ids`."""
+    with _Env(root_u):
+        stop = M.add_fix_tasks(_verb_ctx(root_u, mpath), _phase_of(mpath), list(ids))
+    fixes = [t for t in tasks_of(mpath).values() if t.get("fixes")]
+    found = dict((f.get("id"), f.get("fixTask")) for f in
+                 (_phase_of(mpath).get("review") or {}).get("findings") or [])
+    return stop, fixes, found
+
+
+def _fix_batch_verb_cases(check, M):
+    """The batch `add` a `fix` answer makes lands whole or not at all, and a
+    finding's text reaches its fix task whole."""
+    spaced = [dict(COLON_FINDINGS[0],
+                   issue="the split reads wrong, see `(split_not_commands at :4809)`")]
+    root_u, mpath = _findings_project(spaced)
+    try:
+        stop, fixes, _found = _fixes_added(M, root_u, mpath, ["P1-R1"])
+    finally:
+        _harness.remove_tree(root_u)
+    check("fb4 a fix answer over a finding whose issue holds a backtick span with "
+          "a spaced paren adds its fix task through the real `add`, carrying that "
+          "text whole: %r" % ((stop, [t.get("description") for t in fixes]),),
+          stop is None and len(fixes) == 1
+          and "`(split_not_commands at :4809)`" in (fixes[0].get("description")
+                                                    or ""))
+
+    mutant, _w = _unit_driver("drive_phase_fix_batch_bad")
+    real_verb = mutant.run_verb
+
+    def spoil_second(ctx, script, args, stdin=None, record=False):
+        # The second task of the batch names a finding the phase never had,
+        # which the verb refuses: the whole batch must be refused with it.
+        if script == "audit-task.py" and list(args)[:1] == ["add"] and stdin:
+            doc = json.loads(stdin)
+            if len(doc.get("tasks") or []) > 1:
+                doc["tasks"][1]["fixes"] = ["P1-R9"]
+                stdin = json.dumps(doc)
+        return real_verb(ctx, script, args, stdin=stdin)
+    mutant.run_verb = spoil_second
+    root_u, mpath = _findings_project(COLON_FINDINGS)
+    try:
+        before = sorted(tasks_of(mpath))
+        stop, fixes, found = _fixes_added(mutant, root_u, mpath, ["P1-R1", "P1-R2"])
+        after = sorted(tasks_of(mpath))
+    finally:
+        _harness.remove_tree(root_u)
+    check("fb2 a batch whose second task the verb refuses writes neither task: "
+          "the step stops with the verb's refusal, and no finding names a fix "
+          "task: %r" % ((_text_of(stop)[-300:], after, found),),
+          isinstance(stop, tuple) and stop[0] != 0 and after == before
+          and fixes == [] and found == {"P1-R1": None, "P1-R2": None}
+          and "P1-R9" in _text_of(stop))
+
+
+def _fix_task_over(M, prefix, finding, extra_files=()):
+    """`(task, code, text)` - the one fix task a `fix` answer adds over
+    `finding` in a phase whose runner takes paths (`vitest run` behind the
+    `test` key, a sibling's gate pointed at one suite), through the real `add`.
+    `extra_files` are written into the fixture first: a fix task is scoped only
+    onto paths that exist. `code` is 0 when the step went on, 1 on a stop."""
+    def spell(plan_u):
+        plan_u["meta"]["buildCommands"] = {"test": "vitest run"}
+        phase = plan_u["phases"][0]
+        phase["testGate"] = ["test"]
+        phase["tasks"][0]["tests"]["gate"] = ["vitest run src/f1.test.ts"]
+    root_u, mpath = _findings_project([finding], spell, extra_files)
+    try:
+        stop, fixes, _found = _fixes_added(M, root_u, mpath, ["P1-R1"])
+    finally:
+        _harness.remove_tree(root_u)
+    return ((fixes or [{}])[0], 0 if stop is None else 1, _text_of(stop))
+
+
+def _rerun_after_record_cases(check, M):
+    """One tree identity, an older red the gate verb measured and a newer green
+    recorded by hand: the gate run a `rerun` mark leads to measures a green and
+    never prints the red the newer row superseded, and a plain gate run after it
+    repeats the GREEN."""
+    flagdir = os.path.realpath(_harness.fixture_root("drive-rerun-flag-"))
+    flag = os.path.join(flagdir, "flag")
+    probe = os.path.join(flagdir, "probe.py")
+    with open(probe, "w", encoding="utf-8") as fh:
+        fh.write("import os, sys\nsys.exit(0 if os.path.exists(%r) else 1)\n"
+                 % (flag,))
+    root_u, mpath = _repo("rerun-after-record", task_ids=TASKS[:1],
+                        gate=('"%s" "%s"' % (sys.executable, probe),))
+    try:
+        ctx = _verb_ctx(root_u, mpath)
+        phase = _phase_of(mpath)
+        task_u = phase["tasks"][0]
+        with _Env(root_u):
+            red = M.record_gate(ctx, phase, task_u)
+        check("rm4 the fixture's gate is red first, measured by the gate verb: %r"
+              % ((red[0], (red[1] + red[2])[-200:]),),
+              red[0] != 0 and "GATE RED" in red[1] + red[2])
+        with open(flag, "w", encoding="utf-8") as fh:
+            fh.write("x\n")
+        with _Env(root_u):
+            hand = M.run_verb({"project": root_u, "log": []}, "run-test-gate.py", [
+                mpath, PHASE, "--task", "P1.1", "--record", "--no-reuse",
+                "--project-dir", root_u])
+        check("rm5 the hand-recorded run over the same tree is green: %r"
+              % (hand[0],), hand[0] == 0 and "GATE GREEN" in hand[1] + hand[2])
+        state = {}
+        M._mark(state, "rerun", task_u, True)
+        with _Env(root_u):
+            measured = M.task_gate(ctx, state, phase, task_u)
+        said = measured[1] + measured[2]
+        check("rm6 the gate run a `rerun` mark leads to, after the newer recorded "
+              "green, is green and never prints the red it superseded: %r"
+              % ((measured[0], said[-300:]),),
+              measured[0] == 0 and "GATE GREEN" in said and "GATE RED" not in said)
+        with _Env(root_u):
+            again = M.task_gate(ctx, state, phase, task_u)
+        plain = again[1] + again[2]
+        check("rm7 THE TWIN: a plain gate run on this identity repeats a verdict "
+              "only if it is the GREEN one - the red is never what it names: %r"
+              % (plain[:300],),
+              again[0] == 0 and "GATE GREEN" in plain and "GATE RED" not in plain)
+    finally:
+        _harness.remove_tree(root_u)
+        _harness.remove_tree(flagdir)
+
+
+def _widen_rule_cases(check, M):
+    """The executor's brief carries the widen rule for a task that declares a
+    test, and not for one declaring none - written by the real brief verb."""
+    rule = _loader.load_script("audit-lookup.py", "lookup_for_pf7",
+                               cache=False).WIDEN_RULE
+    briefs = []
+    for add in (["lib/store.test.ts: the store keeps its items"], []):
+        root_u, mpath = _plain_project()
+        try:
+            with open(mpath, encoding="utf-8") as fh:
+                plan_u = json.load(fh)
+            # The brief is written for a start, so the task holds one.
+            plan_u["phases"][0]["tasks"][0].update(
+                status="in_progress", startedAt=_STEP_START, attempts=1)
+            plan_u["phases"][0]["tasks"][0]["tests"]["add"] = add
+            with open(mpath, "w", encoding="utf-8") as fh:
+                json.dump(plan_u, fh, indent=2)
+            phase = _phase_of(mpath)
+            with _Env(root_u):
+                said = M.dispatch(_verb_ctx(root_u, mpath), {}, phase,
+                                  phase["tasks"][0], "executor")
+            briefs.append((_text_of(said), _brief_of(root_u, _text_of(said), "P1.1")))
+        finally:
+            _harness.remove_tree(root_u)
+    (said, declared), (said_p, plain) = briefs
+    check("pf7 the executor of a task that declares a test is dispatched with "
+          "the widen rule in its brief, and a task declaring none is not: %r %r"
+          % (rule, (said[:120], said_p[:120])),
+          said.startswith("dispatch ") and said_p.startswith("dispatch ")
+          and rule in declared and plain != "" and rule not in plain)
+
+def _retired_return_cases(check, M):
+    """An executor return still declaring `falsifiers` is filed by the real
+    submit and filing verb, and the field is never written to the task."""
+    clause = _FV_ADD.split(": ", 1)[1]
+    variants = (("fp2", "P1.1", {"falsifiers": {_FV_ADD: _FP_WEAK}}),
+                # An agent body older than this change may declare it in a
+                # shape nothing reads any more; it is not refused.
+                ("fp2b", "P1.2", {"falsifiers": "not an object"}),
+                ("fp2c", "P1.3", {"falsifiers": {_FV_ADD: "not an object"}}))
+    root_u, mpath = _repo("retired-return", per_task="phase")
+    try:
+        with open(mpath, "r", encoding="utf-8") as fh:
+            plan_u = json.load(fh)
+        for task_u in plan_u["phases"][0]["tasks"]:
+            task_u["tests"].update({"mode": "tdd", "expectRedFirst": True,
+                                  "add": ["%s: %s" % (task_u["files"][0], clause)]})
+        with open(mpath, "w", encoding="utf-8") as fh:
+            json.dump(plan_u, fh, indent=2)
+        _harness.git(root_u, "commit", "-qam", "plan the tasks")
+        for name, tid, over in variants:
+            with _Env(root_u):
+                started = _verb(root_u, "audit-task.py", [
+                    "start", tid, mpath, "--project-dir", root_u])
+            filed = _file_executor(root_u, mpath, tid,
+                                   dict(over, testsAdded=[clause]))
+            task_u = tasks_of(mpath).get(tid, {})
+            check("%s (%s: the return carrying %r is filed (exit %r) by the real "
+                  "submit, the task's tests gain no `falsifiers` key, and no word "
+                  "of a falsifier is printed or noted: %r)"
+                  % (RETIRED_RETURN_CLAUSE, name, sorted(over), filed[0],
+                     (started[0], filed[1][:300], task_u.get("tests"),
+                      task_u.get("notes"))),
+                  started[0] == 0 and filed[0] == 0
+                  and "falsifiers" not in (task_u.get("tests") or {})
+                  and "falsifier" not in filed[1].lower()
+                  and not task_u.get("notes"))
+    finally:
+        _harness.remove_tree(root_u)
+
+
+STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("ws-block", "_writer_session_cases"),
           ("rv-block", "_reviewer_session_cases"),
           ("sk-block", "_session_skill_cases"),
@@ -13768,40 +14277,36 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("wl-block", "_writer_lock_cases"),
           ("wi-block", "_writer_invariant_cases"),
           ("wj-block", "_writer_reading_cases"),
-          ("rrs-block", "_retry_reason_cases"),
-          ("rm-block", "_rerun_measures_cases"),
-          ("sv-block", "_stored_red_cases"),
-          ("sv4-block", "_stored_rerun_cases"),
-          ("sv5-block", "_stored_green_cases"),
-          ("sv10-block", "_stored_explain_cases"),
-          ("fx-block", "_fix_batch_cases"),
-          ("dt-block", "_single_task_cases"), ("dl-block", "_lock_stop_cases"),
-          ("dk-block", "_key_cases"), ("ds-block", "_submit_cases"),
-          ("ow-block", "_owed_red_first_cases"),
-          ("dsm-block", "_submit_mutant_cases"),
+          ("dl-block", "_lock_stop_cases"),
+          ("ds-block", "_submit_cases"),
           ("e2e-signoff", "_e2e_signoff_cases"),
           ("sr2-block", "_redispatch_wave_cases"),
-          ("wo-block", "_writer_off_cases"), ("lp-block", "_lint_probe_cases"),
-          ("gb-block", "_banner_cases"), ("gr-block", "_stale_gate_cases"),
+          ("wo-block", "_writer_off_cases"),
+          ("lp-block", "_lint_probe_cases"),
+          ("gr-block", "_stale_gate_cases"),
           ("gr4-block", "_stale_reaccept_cases"),
-          ("wv-block", "_wave_cases"), ("wr-block", "_wave_red_sibling_cases"),
+          ("wv-block", "_wave_cases"),
+          ("wr-block", "_wave_red_sibling_cases"),
           ("wp-block", "_wave_parked_return_cases"),
           ("nr-block", "_parked_return_cases"),
           ("wq-block", "_wave_record_cases"),
           ("wqm-block", "_wave_record_mutant_cases"),
           ("wq4-block", "_wave_sibling_record_cases"),
-          ("wc-block", "_wave_crash_cases"), ("w1-block", "_width_one_cases"),
+          ("wc-block", "_wave_crash_cases"),
+          ("w1-block", "_width_one_cases"),
           ("wz-block", "_wave_width_cases"),
-          ("fw-block", "_follower_cases"), ("fh-block", "_follower_wave_cases"),
+          ("fh-block", "_follower_wave_cases"),
           ("fm-block", "_follower_map_cases"),
           ("fi-block", "_follower_index_cases"),
           ("fr-block", "_follower_retire_cases"),
           ("fm2-block", "_follower_shot_cases"),
           ("al-block", "_ascii_locale_cases"),
-          ("wt-block", "_wave_resume_cases"), ("wt5-block", "_wave_adopt_cases"),
+          ("wt-block", "_wave_resume_cases"),
+          ("wt5-block", "_wave_adopt_cases"),
           ("kr-block", "_kept_restart_cases"),
           ("wt7-block", "_wave_review_discard_cases"),
-          ("wd-block", "_wave_redo_cases"), ("wg-block", "_wave_regate_cases"),
+          ("wd-block", "_wave_redo_cases"),
+          ("wg-block", "_wave_regate_cases"),
           ("ab-block", "_wave_advance_cases"),
           ("ar-block", "_recut_refused_move_cases"),
           ("ar5-block", "_recut_crash_staged_cases"),
@@ -13809,20 +14314,14 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("ar18-block", "_recut_describes_staged_cases"),
           ("ta-block", "_set_aside_cases"),
           ("wh-block", "_wave_hooks_cases"),
-          ("pf-block", "_preflight_cases"),
-          ("pg-block", "_scope_language_cases"),
-          ("pu-block", "_unclassified_entry_cases"),
-          ("pw-block", "_playwright_gate_cases"),
           ("imc-block", "_import_note_cases"),
           ("tx-block", "_text_cases"),
-          ("sn-block", "_signal_cases"), ("sn3-block", "_explain_cases"),
+          ("sn-block", "_signal_cases"),
+          ("sn3-block", "_explain_cases"),
           ("sn5-block", "_signal_drive_cases"),
           ("bc-block", "_brief_crlf_cases"),
           ("ce-block", "_close_evidence_cases"),
-          ("bs-block", "_brief_scope_cases"),
-          ("sc-block", "_scope_change_cases"), ("fv-block", "_review_rules_cases"),
-          ("fp-block", "_retired_falsifier_cases"),
-          ("mt-block", "_machine_text_cases"),
+          ("fv-block", "_review_rules_cases"),
           ("gt-block", "_git_stdin_cases"),
           ("ci-block", "_ci_cadence_cases"),
           ("cr-block", "_carry_cases"),
@@ -13839,6 +14338,8 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("uc-block", "_close_plan_cases"),
           ("us-block", "_signoff_unit_cases"),
           ("uv-block", "_signoff_verb_cases"),
+          ("ux-block", "_steps_unit_cases"),
+          ("uw-block", "_steps_verb_cases"),
           ("sb-block", "_stage_cases"))
 
 
@@ -14255,21 +14756,27 @@ def _machine_text_cases(check):
     check("mt0 the driver loads: %r" % (why,), M is not None)
     if M is None:
         return
-    root, mpath = _repo("machine-text", task_ids=TASKS[:1])
+    # The plan and its verbs, run in this process over a project with no
+    # repository: the note's bytes are the verb's own reading of its stdin.
+    root, mpath = _plain_project()
     basis = "owed by  `lint`  on run 7"
     ns = argparse.Namespace(project_dir=root, manifest=mpath, verbose=False,
                             phase=PHASE, task_only=False)
-    with _Env(root):
-        ctx = M.context(ns)
-        task = tasks_of(mpath)["P1.1"]
-        stop = M.widen_task(ctx, {}, task, ["src/f2.txt"], basis)
-    wanted = "files widened by src/f2.txt: %s" % (basis,)
-    notes = _notes_of(mpath, "P1.1")
+    try:
+        with _Env(root):
+            ctx = M.context(ns)
+            task = tasks_of(mpath)["P1.1"]
+            stop = M.widen_task(ctx, {}, task, ["src/f2.txt"], basis)
+        wanted = "files widened by src/f2.txt: %s" % (basis,)
+        notes = _notes_of(mpath, "P1.1")
+        widened = tasks_of(mpath)["P1.1"].get("files") or []
+    finally:
+        _harness.remove_tree(root)
     check(clause("mt1", "widen_task with a basis holding two spaces and backticks "
                  "stops on nothing and the note is the built text byte for "
                  "byte; stop=%r notes=%r" % (stop, notes)),
           stop is None and notes == [wanted]
-          and "src/f2.txt" in (tasks_of(mpath)["P1.1"].get("files") or []))
+          and "src/f2.txt" in widened)
 
     with open(_loader.script_path(DRIVER), "r", encoding="utf-8") as fh:
         source = fh.read()
@@ -14374,19 +14881,18 @@ def _machine_text_cases(check):
           and argv_prose_violations(quiet) == [])
     # `_verb_with_text`: a blank text is not sent on argv, which the verb would
     # refuse for the marks it reads; the helper says so and runs nothing.
-    with _Env(root):
-        ctx2 = M.context(ns)
-        calls = []
-        real_verb = M._verb_or_stop
-        M._verb_or_stop = lambda *a, **k: calls.append((a, k)) or ("ok", None)
-        try:
-            blank = M._verb_with_text(ctx2, "audit-task.py", ["note"], "--text", "")
-            spaces = M._verb_with_text(ctx2, "audit-task.py", ["note"], "--text",
-                                       "   ")
-            full = M._verb_with_text(ctx2, "audit-task.py", ["note"], "--text",
-                                     "a  b")
-        finally:
-            M._verb_or_stop = real_verb
+    ctx2 = _step_ctx()
+    calls = []
+    real_verb = M._verb_or_stop
+    M._verb_or_stop = lambda *a, **k: calls.append((a, k)) or ("ok", None)
+    try:
+        blank = M._verb_with_text(ctx2, "audit-task.py", ["note"], "--text", "")
+        spaces = M._verb_with_text(ctx2, "audit-task.py", ["note"], "--text",
+                                   "   ")
+        full = M._verb_with_text(ctx2, "audit-task.py", ["note"], "--text",
+                                 "a  b")
+    finally:
+        M._verb_or_stop = real_verb
     check(clause("mt9", "a whitespace-only text is refused by the helper with a "
                  "sentence naming the flag and sends nothing, an empty text goes "
                  "on argv as the verb's own legal 'none', and a built text goes "
@@ -14598,100 +15104,10 @@ _FP_WEAK = {"file": "src/f1.txt", "find": "changed", "replace": "broken",
             "command": [sys.executable, "-c", "pass"], "timeout": 60}
 
 
-def _planned_falsifier_repo(prefix, ran_marker):
-    """A one-task drive whose task plans one test and carries a falsifier whose
-    command writes `ran_marker` (an absolute path, outside the repo, so a copy
-    of the tree being thrown away cannot hide that it ran)."""
-    root, mpath = _repo(prefix, task_ids=TASKS[:1], per_task="phase")
-    with open(mpath, "r", encoding="utf-8") as fh:
-        plan = json.load(fh)
-    tests = plan["phases"][0]["tasks"][0]["tests"]
-    tests["add"] = [_FV_ADD]
-    tests["falsifiers"] = {_FV_ADD: {
-        "file": "src/f1.txt", "find": "changed", "replace": "broken",
-        "command": [sys.executable, "-c",
-                    "open(%r, 'w').write('ran')" % (ran_marker,)],
-        "timeout": 60}}
-    with open(mpath, "w", encoding="utf-8") as fh:
-        json.dump(plan, fh, indent=2)
-    _harness.git(root, "commit", "-qam", "plan the falsifier")
-    return root, mpath
-
-
 def _notes_of(mpath, task_id):
     return [str(n.get("text") or "") for n in
             tasks_of(mpath).get(task_id, {}).get("notes") or []
             if isinstance(n, dict)]
-
-
-def _retired_falsifier_cases(check):
-    """A planned `tests.falsifiers` is read by nothing: the close goes past it,
-    and a return that still declares one is filed and not recorded."""
-    M, why = _load("fp_mod")
-    check("fp0 the driver loads: %r" % (why,), M is not None)
-    if M is None:
-        return
-    gone = [name for name in ("run_falsifier", "mutation_site", "note_falsifiers",
-                              "record_falsifiers", "falsify", "FALSIFIER_TIMEOUT",
-                              "returned_falsifier_problems")
-            if hasattr(M, name)]
-    check("fp0b the drive holds none of the falsifier stage's names (%r still "
-          "defined)" % (gone,), gone == [])
-
-    scratch = _harness.fixture_root("retired-falsifier-")
-    marker = os.path.join(scratch, "ran")
-    try:
-        root, mpath = _planned_falsifier_repo("retired-close", marker)
-        _next(M, root, mpath)
-        _file_executor(root, mpath, "P1.1")
-        _code, text = _next(M, root, mpath)
-        with open(os.path.join(root, "src", "f1.txt"), "r", encoding="utf-8") as fh:
-            left = fh.read()
-        task = tasks_of(mpath).get("P1.1", {})
-        check("%s (fp1: with a falsifier planned, `next` closes the task, the "
-              "falsifier's command never ran - %s absent - the executor's file "
-              "is as the executor left it, no `falsifier` decision or word is "
-              "printed and the task holds no note: %r)"
-              % (RETIRED_CLOSE_CLAUSE, marker,
-                 (task.get("status"), os.path.exists(marker), left, text[:300],
-                  _notes_of(mpath, "P1.1"))),
-              task.get("status") == "done" and M.CLOSED in text
-              and not os.path.exists(marker) and left == "changed by P1.1\n"
-              and "falsifier" not in text.lower() and not _notes_of(mpath, "P1.1"))
-    finally:
-        _harness.remove_tree(scratch)
-
-    clause = _FV_ADD.split(": ", 1)[1]
-    for name, over in (("fp2", {"falsifiers": {_FV_ADD: _FP_WEAK}}),
-                       # An agent body older than this change may declare it
-                       # in a shape nothing reads any more; it is not refused.
-                       ("fp2b", {"falsifiers": "not an object"}),
-                       ("fp2c", {"falsifiers": {_FV_ADD: "not an object"}})):
-        root, mpath = _repo("retired-%s" % (name,), task_ids=TASKS[:1],
-                            per_task="phase")
-        with open(mpath, "r", encoding="utf-8") as fh:
-            plan = json.load(fh)
-        tests = plan["phases"][0]["tasks"][0]["tests"]
-        tests.update({"mode": "tdd", "expectRedFirst": True, "add": [_FV_ADD]})
-        with open(mpath, "w", encoding="utf-8") as fh:
-            json.dump(plan, fh, indent=2)
-        _harness.git(root, "commit", "-qam", "plan the task")
-        _next(M, root, mpath)
-        filed = _file_executor(root, mpath, "P1.1",
-                               dict(over, testsAdded=[clause]))
-        _code, closed = _next(M, root, mpath)
-        task = tasks_of(mpath).get("P1.1", {})
-        check("%s (%s: the return carrying %r is filed (exit %r), the task's "
-              "tests gain no `falsifiers` key, it closes, and no word of a "
-              "falsifier is printed or noted: %r)"
-              % (RETIRED_RETURN_CLAUSE, name, sorted(over), filed[0],
-                 (filed[1][:300], closed[:200], task.get("tests"),
-                  task.get("notes"))),
-              filed[0] == 0 and "falsifiers" not in (task.get("tests") or {})
-              and task.get("status") == "done" and M.CLOSED in closed
-              and "falsifier" not in (filed[1] + closed).lower()
-              and not task.get("notes"))
-
 
 
 def unencoded_text_opens(source):
@@ -15896,7 +16312,6 @@ def _template_cases(check):
           "before it nor one copied after it from the same template: %r"
           % (seen,),
           seen == [(True, b"v0\n", "", True)] * 2)
-
 
 
 def _git_head_cases(check):

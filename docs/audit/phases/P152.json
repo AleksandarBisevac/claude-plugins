@@ -58,9 +58,30 @@
         "file": "tests/test_drive_phase.py:12352-12361",
         "issue": "Plan section 5 requires the executor to say, for each planner arm a converted block used to reach in a drive, which kept scenario still walks it or that none does. Neither the e2e-signoff header comment nor the filed outcome lists them. These arms are now proven only on their facts, with no case showing they are reachable: a return reused at the head after lost drive state (rr), a fresh review dispatched for a task added after the review (sr), a hand-off that satisfies the triage (ht), the round-cap stop (rc1), a decline on boot/gate-coverage/breach inside a drive (db/dc/di), `leave` on a moved parent (nf2), the stalled stop (bk1), and the advance (finding 1).",
         "resolution": "Add the list to the e2e-signoff header comment: each arm with 'walked by <scenario>' or 'walked by no kept scenario'. A reader deciding whether a later change needs a new drive can then see the gap without re-deriving it."
+      },
+      {
+        "id": "P152-R6",
+        "severity": "med",
+        "file": "tests/test_drive_phase.py:13197-13210,13268-13276 (dt1, dt3, dt9); plugins/audit/scripts/governance/drive-phase.py:9312-9313",
+        "issue": "The one-task route is now run by no test. At base, dt1/dt2 drove `target=\"P1.2\"` and dt9 ran `M.main([\"next\", \"P1.2\", ..., \"--task\"])` and checked that P1.2's executor was dispatched. Now dt1/dt2/pf6 call `M.drive_task` directly, and dt9 asks only the planner (`_pending_turn(\"route\", ...)` == (\"drive-task\", None)) and `M.context`. The code that acts on that answer, `if route == \"drive-task\": return drive_task(ctx, state)` in `drive_locked`, has no caller in any test: grep finds no `next <taskId> --task` run and no `target=` drive other than `target=PHASE`. A one-line defect that deletes or misspells that branch would make `next P1.2 --task` (what /audit:run and /audit:next run) drive the whole phase, and dt1, dt3, dt9 and pf6 would all stay green. This is the same class as P152.2's medium finding. The e2e-steps header says \"the one-task form `next <taskId>` and its refusals (dt)\" is held by a unit case, which is true of the refusals only.",
+        "resolution": "In dt9, run the routing code itself. Either call `M.drive_locked(ctx, {}, None, None, ())` with `ctx[\"only\"] == \"P1.2\"`, the plan readers pointed at `_step_plan`, `M.drive_task` replaced by a recorder and `M.drive_phase = _never(\"drive_phase\")`, or run `M.main([\"next\", \"P1.2\", mpath, \"--project-dir\", root_u, \"--task\"])` over `_plain_project` with `_verb_rig` verbs and `drive_task` recorded. Assert with literal values that the recorder ran once for P1.2 and that drive_phase never ran. Then prove it red by deleting the `drive-task` branch, and restore it."
+      },
+      {
+        "id": "P152-R7",
+        "severity": "med",
+        "file": "tests/test_drive_phase.py:13219-13240 (dt5, dt6); plugins/audit/scripts/governance/drive-phase.py:9867,10014",
+        "issue": "dt6's label says \"the print that reports the close says so with the rule for it\", and dt5's says \"no line says one is owed\". Both cases only call `M.ado_echo_lines(ctx)`. The code that puts its answer into the print, `lines.extend(ado_echo_lines(ctx))` in `render` (and the signal basis at 10014), is now run by no test: `ado echo owed` appears in no other suite under tests/. At base, dt6 drove `target=\"P1.2\"` over a boarded plan and read the close's print. A one-line defect that deletes line 9867 would leave every ADO-linked close silent about the owed echo, and dt5 and dt6 would stay green. The labels claim more than the cases assert, and the acting code is untested. This is the same class as finding 1.",
+        "resolution": "Render the step. Call `M.render(ctx, 0, {\"kind\": \"done\", \"lines\": [\"done P1.2: done at abc1234\"]})` with `ctx[\"manifest\"]` pointed at the boarded `_with_manifest` plan and `did == [\"closed P1.2 at abc1234\"]`. Assert that the rendered lines are exactly the did-line, the done line, `ado echo owed: P1.2` and the rule line, all as literals. For the no-board twin, assert that the render holds no `ado echo` line. Prove it red by deleting `lines.extend(ado_echo_lines(ctx))`, and restore it."
+      },
+      {
+        "id": "P152-R8",
+        "severity": "low",
+        "file": "PLUGIN-BUILD-GUIDE.md:4483-4486,4493",
+        "issue": "The guide names only `up-block`, `ut-block`, `uq-block` and `uc-block` as the drive's unit tests. It does not mention ux-block (unit cases over the deciding functions and the code acting on their answers, with fake verbs), uw-block (verb-subject cases with no drive) or e2e-steps. The guide also still says of `next <taskId>` that \"The `dt` cases drive it\". After this diff no dt case drives `next <taskId>` (see finding 1), so the sentence is false until finding 1 is fixed.",
+        "resolution": "Add one sentence after the planner sentence, naming e2e-steps as the kept drives, ux-block as the unit cases over the acting code with fake verbs, and uw-block as the verb-subject cases. Once finding 1 is fixed, word the dt sentence to say what the dt cases run, for example: `drive_task` and the `drive-task` route over fake verbs, and the refusals through `main`."
       }
     ],
-    "outcome": "[findings: 5 - 0 high, 1 med, 4 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 8 - 0 high, 3 med, 5 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -267,7 +288,12 @@
           "waives": "tools/sweep-selftests.py"
         }
       ],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-31T18:58:03Z.f3bd5a",
+        "status": "passed",
+        "at": "2026-10-31T18:58:03Z"
+      }
     },
     {
       "id": "P152.4",
@@ -528,7 +554,7 @@
     {
       "id": "P152.8",
       "title": "The machine-path scan skips a line holding none of a shape's needles, and remembers a file it has scanned",
-      "status": "in_progress",
+      "status": "done",
       "description": "Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.8. _MACHINE_PATH_SHAPES rows become (name, pattern, needles) with a compiled NEEDLE alternation beside the table; both readers unpack three; scan_text skips a line NEEDLE does not match and is memoised per process on (rel, surface, sha256(text)). Cases: stripping each needle from every fixture line stops the shape firing; the full-domain equivalence case (detector rows with the prefilter equal those without, over the real tree) goes red when one needle is removed. Add a prove-gates row for the equivalence case. tests/test__journal_io.py's re-export walk reads the table's shape.",
       "files": [
         "plugins/audit/scripts/_machine_paths.py",
@@ -563,14 +589,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "2010ccb53c17",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Tree claude-plugins-P152.8 (the brief's worktree), base 934df83f, nothing committed. (1) plugins/audit/scripts/_machine_paths.py: _MACHINE_PATH_SHAPES rows are now (name, pattern, needles). Needles, described rather than spelled (the writer refuses their spellings): posix-home - each home word followed by a forward slash; windows-user-path - the Users word followed by one backslash, and a pair of backslashes; session-slug - each home word between two dashes, and the private-tmp slug; escaped-path - the three percent-escaped home spellings its arms take (case-folded, the pattern is re.I); tempdir-session - the claude scratch directory under tmp, the var-folders pair, and the backslashed Temp spelling (case-folded); unexpanded-home - the tilde followed by a slash. The literals are in the table in plugins/audit/scripts/_machine_paths.py. NEEDLE = _needle_alternation(_MACHINE_PATH_SHAPES) - one compiled alternation built from the rows, each needle wrapped in (?i:...) exactly where its row's pattern carries re.IGNORECASE. machine_path_shape unpacks three. A comment above the table states the needle contract. (2) tools/check-committed-pii.py: scan_text memoises on (rel, surface, sha256(text)) in a module-level _SCAN_MEMO and returns a fresh list. Its body moved to _scan_lines(rel, text, surface, needle), which skips the detector loop for a line the needle does not match (needle None means unfiltered). The journal-row and plan-claim contract checks still run on every line. DETECTORS unpacks three. New _prefilter_reading(keep) returns drift/lines/kept/detectorRows. New public gate prefilter_drift(repo=None) returns the drift, or a domain-empty row. The q2i reader of the table was rebuilt from (name, pattern) pairs. New cases in pi-domain: q35 (prefilter rows equal unfiltered rows over the real domain: drift == [], detectorRows > 0, 0 < kept < lines/10; live run: 188011 lines, 418 kept, 42 detector rows, drift []) and q36 (memo keyed on content: one path's two texts get their own rows, and both keys are held). (3) tests/test__machine_paths.py: mp17 (each row has needles; every line firing a shape - a line per arm and spelling, the samples, the bare slugs and the example plan's strings - stops firing once the row's own needles are stripped, repeated until stable and case-folded where the pattern is) and mp18 (NEEDLE accepts every firing line and rejects more than half of the example plan's strings; live: 445 of 445). mp16 reads (name, pattern) pairs. (4) tests/test__journal_io.py ft10 reads (name, pattern) pairs; ft7 already read r[0]/r[1] and is unchanged. (5) tools/prove-gates.py: TABLE row ('prefilter_drift', _machine_paths.py, replace '(\"Users/\", \"home/\")' -> '(\"home/\",)', tools/check-committed-pii.py, 'q35') and an ALLOW_EXEMPT entry with its reason (the guard has no narrowing of its own to remove). (6) PLUGIN-BUILD-GUIDE.md: one paragraph in the _machine_paths.py section on the needle contract. SECURITY.md was grepped (MACHINE_PATH, NEEDLE, needle: no hits) and does not describe the table's columns, so it is unchanged. COMMANDS: own gate 'python3 tools/sweep-selftests.py tests/test__machine_paths.py' exit 0, 23 cases. Verification beyond the own gate: 'python3 tools/sweep-selftests.py tests/test__journal_io.py tools/check-committed-pii.py tests/test__deps.py tests/test__output_lints.py tools/prove-gates.py tests/test__refs.py' exit 0, 6/6 files, 1111 cases. 'python3 tools/prove-gates.py --list' exit 0, printing 'red prefilter_drift plugins/audit/scripts/_machine_paths.py anchored' and 'allow prefilter_drift no allow case; reason recorded'. 'python3 tools/prove-gates.py --only prefilter_drift --red' exit 0: '1 of 1 gates proven red', RED, failing ids q1, q2a, q2i, q2k (the verdict function returns RED only when the named q35 is among the failing labels). ruff check on the six files: all checks passed. vermin -t=3.8- on the plugin module and both tests: exit 0. MUTATIONS, run in a scratch copy (rsync of the tree; a git index for the domain cases, removed with _harness.remove_tree), each restored: home/ needle made non-mandatory -> mp17+mp18 red; UNC backslash pair dropped -> mp17+mp18 red; case folding off -> mp18 red (escaped-path, tempdir-session missed); NEEDLE match-all -> mp18 red (0 of 445), and q35 red (188011 of 188011 lines kept); the private-tmp slug needle dropped -> mp17+mp18 red; memo keyed on (rel, surface) -> q36 red plus the fixture cases; memo never stores -> q36 red; the tilde-slash needle dropped -> q35 red with drift on committed plan shards. The unmutated copy stayed green. TIMES (darwin, serial single runs, wall seconds; before = HEAD's tool run under its real path with HEAD's _machine_paths, measured once, 1-minute load 5.0-6.2; after = two runs about seven minutes apart, 1-minute load 4.3 and 4.8-5.1): pi-domain 10.34 -> 12.93 / 13.08; pi-moving 50.39 -> 2.84 / 2.99; pi-plan-problem 0.20 -> 0.16 / 0.17; pi-contract 0.07 -> 0.08 / 0.08; pi-foreign 10.49 -> 1.99 / 1.99; pi-command-line 0.07 -> 0.07 / 0.07; suite about 71.6 -> about 18.1 / 18.4. One full scan (plain run): 10.14 -> 1.74 / 1.66. pi-domain got slower on purpose: q35 runs the unfiltered reference scan of the whole domain, which costs what a full scan cost before the prefilter. The plan's 3.5 s prediction for that block did not budget the equivalence case. In the sweep run the tool totalled 21.4 slot-seconds over its six blocks at load 6-9. DEPENDANTS: _journal_io.py - still correct: it re-exports MACHINE_PATH_SHAPES as the same object and never iterates it, and its writer reaches the table only through machine_path_shape, which now unpacks three (test__journal_io 276 cases green, including ft7 identity and ft10). tests/test__journal_io.py - changed: ft10 builds {name: pattern} from pairs. Its re-export walk (_row_shape_constants) reads _journal_io's own module-level assigns, where the imported table is not one, so it is unaffected. tools/check-rendered-artifacts.py and tools/capture-screenshots.mjs - still correct: they call --scan-text, which reads scan_text and len(DETECTORS) (still 6). Observed: a home path on stdin -> 'FOUND -:1:posix-home' exit 1; plain words -> OK, 6 detectors, exit 0. tools/prove-gates.py - changed: one RED row and one ALLOW_EXEMPT entry. check-committed-pii.py now holds a derived gate, so it joins GUARD_FILES; prove-gates' own suite (65 cases) is green. The other importers of _machine_paths (_evidence_io, _filed_returns, _manifest_io, audit-task, _panel_write, derive-phase-gate) - still correct: grep for PATH_SHAPES/DETECTORS over plugins, tools, tests and .claude/hooks finds no reader of the table outside the files changed here. tests/test__deps.py (gate) - green, 254 cases. NOT MINE AND NOT TOUCHED: .github/sweep-costs.json still carries the old per-block figures for tools/check-committed-pii.py; re-recording is P152.12's measurement. tests.add binding: the one entry covers mp17 and mp18 (printed by the brief's command) and q35 and q36, which print under tools/check-committed-pii.py --selftest (pi-domain), not under the submit command.",
+        "descriptive": "The committed-PII scan skips lines carrying none of a shape's mandatory needles and remembers each file's rows by content. One full scan drops from about 10 s to about 1.7 s and the tool's suite from about 72 to about 18 slot-seconds. The prefilter is held by a strip-and-assert case and a full-domain equivalence case that prove-gates proves red."
       },
       "startedAt": "2026-10-31T18:02:32Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-31T18:26:37Z",
+      "verifiedBy": [
+        "mp17: every line that fires a shape (one per arm and spelling, plus the samples, the bare slugs and the example plan) stops firing once that row's needles are stripped, and every row carries needles",
+        "mp18: NEEDLE, built from the rows, accepts every firing line and rejects most of the example plan's strings (the match-all direction)",
+        "q35 (tools/check-committed-pii.py pi-domain): prefiltered detector rows equal unfiltered rows over the real committed domain, with non-zero detector rows and a prefilter keeping under a tenth of the lines",
+        "q36 (tools/check-committed-pii.py pi-domain): the scan memo is keyed on (path, surface, sha256 of the text), so an edited text gets its own rows and both readings are held"
+      ],
       "notes": [
         {
           "at": "2026-10-31T15:42:17Z",
@@ -598,6 +629,18 @@
         "runId": "2026-10-31T18:26:33Z.3e430a",
         "status": "passed",
         "at": "2026-10-31T18:26:33Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "2010ccb53c17",
+        "at": "2026-10-31T18:26:37Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-31T18:19:58Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__machine_paths.py` in a throwaway tree at HEAD exited 1 with 2 of 23 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - mp17 (house FAIL), mp18 (house FAIL): SELFTEST FAILED: 21/23 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
