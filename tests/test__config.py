@@ -3751,12 +3751,14 @@ def _sink_table_cases(check):
 
 
 def _runnable_part_cases(check):
-    """EACH PART OF THE RUNNABLE VIEW IS READ FROM A NEUTRAL STATE. The view is
-    the command text, then each shell body, then each interpreter body, joined
-    by newlines. A part that ends inside a quote, a substitution or an escape
-    carried that state into the next part, so a body fed to a shell was read
-    as the inside of the text's quote - and a closing quote in a later line of
-    that body handed the reader a balanced line with the body swallowed."""
+    """A JOINED VIEW IS ONLY AS READABLE AS ITS PARTS. The view is the command
+    text, then each shell body, then each interpreter body, joined raw by
+    newlines. A part that ends inside a quote, a substitution or an escape
+    would carry that state into the next part, so `part_ends_open` is asked of
+    each part and a reader takes its strict reading when any answers yes. No
+    part is closed by hand: a part can end open only in the lexer's reading
+    while the line after it really runs, and a closer made that line the
+    inside of a quote."""
     body = "git push --" + "force origin main"
     shapes = (
         ("the measured shape: an apostrophe line, then a quote the text opens",
@@ -3777,38 +3779,59 @@ def _runnable_part_cases(check):
         ("a shell body opens a quote an interpreter body closes",
          "bash <<'A'\necho '\nA\npython3 - <<'B'\n%s\nprint(\"'\")\nB" % body),
     )
-    swallowed = [(what, M.command_clauses(M.runnable_text(cmd, pipe_data=True)))
-                 for what, cmd in shapes]
-    swallowed = [(what, clauses) for what, clauses in swallowed
-                 if body not in [c.strip() for c in clauses]]
-    check("qv1 a body fed to a shell is a clause of its own in the runnable "
-          "view, whatever quote, substitution or escape the text or an "
-          "earlier body leaves open: %r" % (swallowed,),
-          not swallowed and len(shapes) == 8)
+    unflagged = [what for what, cmd in shapes
+                 if not any(M.part_ends_open(part)
+                            for part in M.runnable_parts(cmd, pipe_data=True))]
+    check("qv1 whatever quote, substitution or escape the text or an earlier "
+          "body leaves open, a part of the runnable view is reported open, "
+          "so no reader takes the joined parse: %r" % (unflagged,),
+          not unflagged and len(shapes) == 8)
 
-    # SECOND DIRECTION, for the fix that closes every part or rewrites a
-    # balanced one: the view of a command with no bodies is the command, open
-    # quote and all, so an unreadable line still goes to the strict reading;
-    # and parts that already end neutral are joined unchanged.
+    # SECOND DIRECTION, for a predicate that calls every part open: the view of
+    # a command with no bodies is the command, open quote and all, so an
+    # unreadable line still goes to the strict reading; and parts that end
+    # neutral are joined unchanged and reported closed.
     alone = "git commit -m \"unterminated"
     plain = "bash <<'EOF'\necho one\nEOF\npython3 - <<'PY'\nprint(2)\nPY\nls"
-    got = (M.runnable_text(alone), M.runnable_text(plain, pipe_data=True))
-    want = (alone, "bash  \npython3 -  \nls\necho one\nprint(2)")
+    got = (M.runnable_text(alone), M.runnable_text(plain, pipe_data=True),
+           [M.part_ends_open(p) for p in M.runnable_parts(plain, pipe_data=True)])
+    want = (alone, "bash  \npython3 -  \nls\necho one\nprint(2)",
+            [False, False, False])
     check("qv2 SECOND DIRECTION: a command with no bodies comes back as given, "
           "an open quote included, and parts that end neutral are joined "
-          "unchanged: %r" % (got,), got == want)
+          "unchanged and read as closed: %r" % (got,), got == want)
 
-    # A COMMENT IS NOT A QUOTE. The shell skips `# don't`, so a closer added for
-    # its apostrophe would open a quote in every reader that knows comments.
-    # The `#` glued to a word is no comment, and its quote is still closed.
+    # A COMMENT IS NOT A QUOTE. The shell skips `# don't`, so its apostrophe
+    # leaves the part closed. The `#` glued to a word is no comment, and its
+    # quote leaves the part open - and in the view as given, with no closer.
     commented = "python3 - <<'PY'\n# don't\nprint(1)\nPY"
     glued = "bash <<'EOF'\necho a#'\nEOF\nls"
-    got = (M.runnable_text(commented), M.runnable_text(glued))
-    want = ("python3 -  \n# don't\nprint(1)", "bash  \nls\necho a#''")
+    got = ([M.part_ends_open(p) for p in M.runnable_parts(commented)],
+           [M.part_ends_open(p) for p in M.runnable_parts(glued)],
+           M.runnable_text(glued))
+    want = ([False, False], [False, True], "bash  \nls\necho a#'")
     check("qv3 a quote inside a comment opens nothing, so a body whose comment "
-          "holds an apostrophe gains no closer - and a `#` glued to a word "
-          "starts no comment, so the quote after it is still closed: %r"
+          "holds an apostrophe reads closed - and a `#` glued to a word starts "
+          "no comment, so the quote after it leaves the part open: %r"
           % (got,), got == want)
+
+    # NO PART IS SEALED. A body that ends open only in the lexer's reading - a
+    # nested quoted heredoc's apostrophe, a Python escape the shell does not
+    # have - runs the verb on its last line, and a closer appended after that
+    # line made the verb the inside of a quote.
+    misread = (
+        "bash <<'EOF'\ncat <<'Y'\nit's\nY\n%s\nEOF" % body,
+        "bash <<'EOF'\ncat >f <<'Y'\nit's\nY\n%s\nEOF" % body,
+        "python3 - <<'PY'\nprint('it\\'s')\nimport os\nos.system(\"%s\")\nPY"
+        % body)
+    got = [(M.runnable_text(cmd, pipe_data=True).rsplit("\n", 1)[-1],
+            [M.part_ends_open(p) for p in M.runnable_parts(cmd, pipe_data=True)])
+           for cmd in misread]
+    want = [(body, [False, True]), (body, [False, True]),
+            ("os.system(\"%s\")" % body, [False, True])]
+    check("qv4 a body the lexer misreads as open is reported open and joined "
+          "as given, its verb line last with nothing appended: %r" % (got,),
+          got == want)
 
 
 def _all_cases(check):

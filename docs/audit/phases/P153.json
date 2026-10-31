@@ -152,18 +152,35 @@
         "severity": "med",
         "file": "plugins/audit/hooks/_config.py",
         "issue": "P153.14 executor, measured on main, HEAD and the fix tree: runnable_text joins the command text first and the shell-fed heredoc bodies after it, so an unclosed single quote at the end of the text swallows a body fed to a shell - bash with a quoted-delimiter heredoc whose body is a force push, a line holding one apostrophe, the delimiter, then a last line opening a quote, is allowed by the history guard (the same command without the apostrophe line is denied); secrets-read blocks it. Pre-existing, not a regression",
-        "resolution": "grade each shell-fed body on its own rather than concatenated after the text, so no quote state crosses from the text into a body; red-first the measured shape and its no-apostrophe twin",
-        "fixTask": "P153.15-34e"
+        "resolution": "fixed in P153.15-34e (cfab9710d047): grade each shell-fed body on its own rather than concatenated after the text, so no quote state crosses from the text into a body; red-first the measured shape and its no-apostrophe twin",
+        "fixTask": "P153.15-34e",
+        "commit": "cfab9710d047",
+        "status": "fixed"
       },
       {
         "id": "P153-R17",
         "severity": "high",
         "file": "plugins/audit/hooks/_config.py:3472,3485-3502 (with .claude/hooks/guard-uncommitted.py:964)",
         "issue": "Deny-to-allow regression in the guards that read runnable_text. _closed_part appends synthetic closers to every part that _context_step reads as ending open. A part can end open because the guards' shell lexer misreads it, not because its shell stops inside a quote. The closers then turn a part the lexer could not tokenize, which HEAD sent to the strict text reading, into a balanced parse, and the destructive line that really runs is read as the inside of a quote. Probed in scratch git-archive exports, HEAD _config.py against the working tree's, by calling guard-history-rewrite decide and guard-uncommitted reading() directly. Shape A, a shell body holding a nested quoted heredoc whose body has an apostrophe: bash <<'EOF' / cat <<'Y' / it's / Y / <VERB> / EOF. The inner shell runs <VERB>. The history guard went from deny to allow for <VERB> = <STASH-DROP> and <FORCE-PUSH>. guard-uncommitted went from (deny, text) to (allow, operation) for <HARD-RESET>. The same happens when the nested heredoc writes a file (cat >f <<'Y'). Shape B, an interpreter body that is valid Python and has an escaped apostrophe: python3 - <<'PY' / print('it\\'s') / import os / os.system(\"<VERB>\") / PY. The history guard went from deny to allow for <STASH-DROP> and <FORCE-PUSH>, and guard-uncommitted went from (deny, text) to (allow, operation) for <HARD-RESET>. Variants with an even number of apostrophes were already allowed at HEAD, so this class existed before. The diff extends it to the odd case, which used to fail closed. The docstring's safety argument at 3463 ('what a closer seals is text its own shell never runs') does not hold in these shapes. The sealed text is a heredoc body or Python source that does run. The diff also re-points gu51 off its heredoc fixture because 'the fix now parses' it, so no case pins that a bodied command the lexer cannot read reaches the text reading.",
-        "resolution": "Stop sealing a part with closers it does not have. Grade each part on its own parse, as the task asked: runnable_text returns the parts, or the callers (git_invocations, command_clauses and the secrets guard's views) iterate them. If any part does not tokenize alone, send the command to the strict text reading over the whole view, as HEAD did. Correct the docstring at 3463. Add deny cases for shapes A and B with each verb, in test_guard_history_rewrite.py and guard-uncommitted's selftest. Restore a gu51-style case that pins a bodied, untokenizable command to the text reading. Prove each new case red against the current _closed_part."
+        "resolution": "Stop sealing a part with closers it does not have. Grade each part on its own parse, as the task asked: runnable_text returns the parts, or the callers (git_invocations, command_clauses and the secrets guard's views) iterate them. If any part does not tokenize alone, send the command to the strict text reading over the whole view, as HEAD did. Correct the docstring at 3463. Add deny cases for shapes A and B with each verb, in test_guard_history_rewrite.py and guard-uncommitted's selftest. Restore a gu51-style case that pins a bodied, untokenizable command to the text reading. Prove each new case red against the current _closed_part.",
+        "fixTask": "P153.16-34e"
+      },
+      {
+        "id": "P153-R18",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-history-rewrite.py:230-244,1000-1001",
+        "issue": "Deny-to-allow against main (the branch point) in the history guard. `parts_read_alone` now sends a command to the text reading whenever any part ends open in `_config`'s walk, including commands whose RAW joined view main tokenized and graded as operations. The text reading cannot see parse-only spellings: a quoted verb or program word, which `_GIT_SUB`/`_STASH` require bare, and `xargs git`, whose STDIN_VERB refusal in `decide` reads `calls or []` and so never fires on the text reading. Measured over scratch exports of main, HEAD and HEAD with this diff, calling `decide` on a repo with a plan and a recorded SHA: deny on main and on HEAD, allow with this diff, for <QUOTED-STASH-DROP> (the stash-drop verb with its verb word double-quoted), <QUOTED-PROGRAM-STASH-DROP> (the program word quoted), <QUOTED-FORCE-PUSH> and <XARGS-GIT> (a verb piped to `xargs git`), placed in the text beside: a shell body whose last line ends in a backslash (`bash <<'X'` / `echo a` + backslash / `X`, verb before or after it); a body that opens a quote a later body closes (single, double, backquote or `$(`); a glued `#'` body plus a closing body; a text ending in a backslash after a body (quoted stash drop only); and an `echo \"$(` body closed by a later body. 98 history rows are weaker than main; once the deliberate allows and the rows HEAD already had are removed, these shapes are what is left, and none of them uses a plain verb. Plain spellings (<STASH-DROP>, <FORCE-PUSH>, <HARD-RESET>, `git -C` forms) are never weaker than main or HEAD. Main parsed these lines correctly because the verb sat in a part the open quote did not reach. The task asked for exactly this routing ('send the command to the strict text reading over the whole view'), so the gap comes from that routing combined with the text reading's existing blindness. Main already allowed the same spellings when the whole line failed to tokenize (`<QUOTED-STASH-DROP>; echo '`). What this diff adds is the set of lines that main read as operations and that now reach that blindness.",
+        "resolution": "Keep the strict reading, and keep the parse of the parts that can be read. When `parts_read_alone` fails, collect `git_calls` of every part that ends closed and tokenizes alone. Grade those calls in each arm's None branch (`always_refused`, `amend_requested`, `stash_operations`, `reset_targets`) and in `decide`'s STDIN_VERB check, in addition to the text patterns, so that a verb main read as an operation is still read as one. Add deny cases to tests/test_guard_history_rewrite.py for <QUOTED-STASH-DROP> and <XARGS-GIT> beside the trailing-backslash body and beside the open/close body pair. Each case should be red on this diff and green on main."
+      },
+      {
+        "id": "P153-R19",
+        "severity": "low",
+        "file": "tests/test_guard_secrets_read.py:3405-3426",
+        "issue": "s81-s83 (added by this task) and s79/s80 (inherited) cannot go red on the behaviour their comments name. The s81 comment says the case guards against 'a closer, which would make the read line the inside of a quote', and the s79 comment says 'the pair locks it through the runnable view'. The secrets arm that refuses them is a regex over the view (BASH_FILE_READ on `_shell_text`), which no quoting state reaches. With HEAD's `_closed_part` still in place, `tests/test_guard_secrets_read.py --selftest` passed 744/744 including s81-s83, and it passes 744/744 with this diff. The executor's own outcome says they 'passed before the fix too'.",
+        "resolution": "Reword the comments: these cases lock the regex arm and are not a guard on part sealing. Alternatively, point a case at a secrets arm that parses the joined view (`_manifest_write_placed`, `_source_write_hit` and `_past_bound_writers` read `runnable`) and show that it goes red when a part's open quote carries into the next."
       }
     ],
-    "outcome": "[findings: 17 - 4 high, 8 med, 5 low; 6 with a recorded fix commit]"
+    "outcome": "[findings: 19 - 4 high, 9 med, 6 low; 7 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1203,7 +1220,7 @@
     {
       "id": "P153.15-34e",
       "title": "fix P153-R16: P153.14 executor, measured on main, HEAD and the fix tree: runn...",
-      "status": "in_progress",
+      "status": "done",
       "description": "P153.14 executor, measured on main, HEAD and the fix tree: runnable_text joins the command text first and the shell-fed heredoc bodies after it, so an unclosed single quote at the end of the text swallows a body fed to a shell - bash with a quoted-delimiter heredoc whose body is a force push, a line holding one apostrophe, the delimiter, then a last line opening a quote, is allowed by the history guard (the same command without the apostrophe line is denied); secrets-read blocks it. Pre-existing, not a regression\n\nResolution asked: grade each shell-fed body on its own rather than concatenated after the text, so no quote state crosses from the text into a body; red-first the measured shape and its no-apostrophe twin",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -1230,14 +1247,22 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "cfab9710d047",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/hooks/_config.py: runnable_text no longer concatenates the parts raw. A command with no shell or interpreter body comes back as split_heredocs gives its text, open quote included, so an unreadable line still reaches each guard's strict reading. When there are bodies, every part (text, each shell body, each interpreter body) goes through the new _closed_part: it walks the part with _context_step (the shared quoting reader) and appends a space when an escape is left pending, then closes every open context innermost first ('  \"  )  `). A shell comment (# opening a word where commands are read, outside quotes; new helper _comment_at) is skipped, because the history guard's own lexer skips comments, and a closer added for an apostrophe inside a comment would open a quote there. That would carry into the next part and send ordinary interpreter bodies to the text reading. Pre-fix runnable view of the measured shape: \"bash  \\necho '\\nBODY\\n'\". Post-fix: three clauses, BODY one of them. Tests: test__config.py qv1 (8 shapes: the measured shape and its twin, text ending in a double quote, a backquote or an escape, a quote crossing between shell bodies, an escape crossing between bodies, a shell body into an interpreter body), qv2 (second direction: a no-body command is returned as given and neutral parts are joined unchanged), qv3 (a comment apostrophe gains no closer; a # glued to a word is no comment). test_guard_history_rewrite.py gk34-gk37 (deny, BODY a force push; the deny comes from tr8b's shell-heredoc cd rule, so these pin the verdict), gk38-gk41 (the same four shapes with the stash verb, denied on the stash itself, which shows the operation was read), gk42 (deny: an apostrophe in an earlier body's comment opens no quote), gk43 (allow: a python body whose comment holds an apostrophe and names the stash verb is still parsed). test_guard_secrets_read.py s79/s80 (block both twins with a secret read; a lock, since that guard already blocked them through a token-anywhere arm). OUTSIDE MY FILES, edited and allowed by the plan gate: .claude/hooks/guard-uncommitted.py. Pre-fix, it read the measured stash shape as (None, operation), i.e. no refusal, so it shared the defect. Added gu54 (both twins refused on a dirty tree; red on reverted code in a scratch copy, 54/55). Replaced gu51's fixture for an untokenizable line (a shell heredoc with an odd quote, which the fix now parses as an operation; the refusal is unchanged) with a lone text line holding an odd quote. Mutations, each in a scratch copy of the tree and restored after: comment skip removed -> qv3, gk42, gk43 red; closing applied to no-body commands too -> qv2, gh25a, gh25b red; pending-escape space removed -> qv1, gk37, gk41 red; fix reverted -> gu54 red. Gate command exit 0, 5/5 files ok, 1591 cases. Also run: bench-hooks --gate exit 0 (only the 3.14 interpreter here; 3.8-3.13 NOT MEASURED); ruff on plugins/audit tools tests exit 0 (a ruff hit at guard-uncommitted.py:707, an unused shutil import, is in HEAD and outside ruff's declared scope); vermin -t=3.8- exit 0; prose_number_claims and house_style_violations report nothing; mv37 green inside test__manifest_vocab.py (68 cases). Running test_guard_secrets_read.py directly, outside the sweep, fails ts19 (strays in the state directory). That case is not mine and passes under the sweep. DEPENDANTS: guard-history-rewrite.py changed behaviour (the fix), 335/335; guard-secrets-read.py reads the closed view through _runnable_text, 741/741 with s73 views unchanged; .claude/hooks/guard-release.py calls command_clauses(runnable_text) and now gets each body as its own clauses, 109/109; detect-plan-skip, guard-bash-writes, guard-capabilities, guard-edits and journal-writes import _config but do not call runnable_text, and their suites are green (46/46, 239/239, 35/35, 47/47, 154/154); test__refs.py 292/292 (its _runnable_text is a different function); tools/bench-hooks.py passes; tests/test__config.py helpers _cases/_selftest/_text are unchanged; .github/sweep-costs.json gets no new file; CONTRIBUTING.md and PLUGIN-BUILD-GUIDE.md are untouched (waived). LEFT, same class, not in my files: guard-secrets-read.py _shell_text (line 1217) and _executed_text (line 1341) join the text and bodies raw. A probe of six secret-shaped bodies across the quote-crossing twins gives the same verdict on pre-fix and fixed code, so no pass was measured, but they cross quote state the way runnable_text did. Should be filed as a fault.",
+        "descriptive": "A quote, substitution or escape left open by the command text or by one heredoc body no longer hides the next shell-fed body from the history, release and uncommitted-work guards."
       },
       "startedAt": "2026-10-31T10:13:26Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-31T10:48:20Z",
+      "verifiedBy": [
+        "qv1: each shell-fed body is its own clause in the runnable view across eight quote/escape crossing shapes",
+        "qv2: second direction: a no-body command is returned as given and neutral parts are joined unchanged",
+        "qv3: a comment apostrophe gains no closer; a glued # is no comment",
+        "gk34-gk41: history guard denies BODY behind each crossing shape, with the stash rows denied on the stash itself",
+        "gk42/gk43: comment apostrophes neither open a quote nor push a python body to the text reading",
+        "s79/s80: secrets guard keeps blocking a secret read in both twins",
+        "gu54 (guard-uncommitted, outside files): stash in a shell body refused in both twins on a dirty tree"
+      ],
       "notes": [
         {
           "at": "2026-10-31T10:13:09Z",
@@ -1261,6 +1286,92 @@
         "runId": "2026-10-31T10:40:19Z.ad39a5",
         "status": "passed",
         "at": "2026-10-31T10:40:19Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "cfab9710d047",
+        "at": "2026-10-31T10:48:20Z",
+        "return": "docs/audit/evidence/returns/P153.15-34e/20261031T101326Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-31T10:26:37Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__config.py tests/test_guard_history_rewrite.py .claude/hooks/guard-uncommitted.py tests/test_guard_secrets_read.py tests/test__manifest_vocab.py` in a throwaway tree at HEAD exited 1 with failing cases qv1 (house FAIL), qv3 (house FAIL), gk34 (house FAIL), gk36 (house FAIL), gk37 (house FAIL), gk38 (house FAIL), gk40 (house FAIL), gk41 (house FAIL), but with the working tree's implementation the task's tests do not all pass (SELFTEST FAILED: 53/54 cases passed; the sweep failed .claude/hooks/guard-uncommitted.py (exited 1)), so the red is not one the fix turns green - SELFTEST FAILED: 329/335 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P153.16-34e",
+      "title": "fix P153-R17: Deny-to-allow regression in the guards that read runnable_text....",
+      "status": "in_progress",
+      "description": "Deny-to-allow regression in the guards that read runnable_text. _closed_part appends synthetic closers to every part that _context_step reads as ending open. A part can end open because the guards' shell lexer misreads it, not because its shell stops inside a quote. The closers then turn a part the lexer could not tokenize, which HEAD sent to the strict text reading, into a balanced parse, and the destructive line that really runs is read as the inside of a quote. Probed in scratch git-archive exports, HEAD _config.py against the working tree's, by calling guard-history-rewrite decide and guard-uncommitted reading() directly. Shape A, a shell body holding a nested quoted heredoc whose body has an apostrophe: bash <<'EOF' / cat <<'Y' / it's / Y / <VERB> / EOF. The inner shell runs <VERB>. The history guard went from deny to allow for <VERB> = <STASH-DROP> and <FORCE-PUSH>. guard-uncommitted went from (deny, text) to (allow, operation) for <HARD-RESET>. The same happens when the nested heredoc writes a file (cat >f <<'Y'). Shape B, an interpreter body that is valid Python and has an escaped apostrophe: python3 - <<'PY' / print('it\\'s') / import os / os.system(\"<VERB>\") / PY. The history guard went from deny to allow for <STASH-DROP> and <FORCE-PUSH>, and guard-uncommitted went from (deny, text) to (allow, operation) for <HARD-RESET>. Variants with an even number of apostrophes were already allowed at HEAD, so this class existed before. The diff extends it to the odd case, which used to fail closed. The docstring's safety argument at 3463 ('what a closer seals is text its own shell never runs') does not hold in these shapes. The sealed text is a heredoc body or Python source that does run. The diff also re-points gu51 off its heredoc fixture because 'the fix now parses' it, so no case pins that a bodied command the lexer cannot read reaches the text reading.\n\nResolution asked: Stop sealing a part with closers it does not have. Grade each part on its own parse, as the task asked: runnable_text returns the parts, or the callers (git_invocations, command_clauses and the secrets guard's views) iterate them. If any part does not tokenize alone, send the command to the strict text reading over the whole view, as HEAD did. Correct the docstring at 3463. Add deny cases for shapes A and B with each verb, in test_guard_history_rewrite.py and guard-uncommitted's selftest. Restore a gu51-style case that pins a bodied, untokenizable command to the text reading. Prove each new case red against the current _closed_part.",
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "tests/test__config.py",
+        "tests/test_guard_history_rewrite.py",
+        "tests/test_guard_secrets_read.py",
+        ".claude/hooks/guard-uncommitted.py",
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/hooks/guard-history-rewrite.py",
+        ".claude/hooks/guard-release.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_guard_history_rewrite.py: Stop sealing a part with closers it does not have"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__config.py tests/test_guard_history_rewrite.py .claude/hooks/guard-uncommitted.py tests/test_guard_secrets_read.py tests/test__manifest_vocab.py .claude/hooks/guard-release.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-31T10:48:50Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-31T10:48:45Z",
+          "text": "scope: plugins/audit/hooks/_config.py, .claude/hooks/guard-uncommitted.py, tests/test_guard_history_rewrite.py, every path the finding(s) P153-R17 name"
+        },
+        {
+          "at": "2026-10-31T10:48:45Z",
+          "text": "scope: tests/test__config.py, the suite that tests plugins/audit/hooks/_config.py (python: its import closure reaches plugins/audit/hooks/_config.py)"
+        },
+        {
+          "at": "2026-10-31T10:48:45Z",
+          "text": "no suite: .claude/hooks/guard-uncommitted.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-31T10:48:45Z",
+          "text": "no test runner in this task's gate for the test P153-R17 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test_guard_history_rewrite.py tests/test__config.py'], derived as narrowed to this task's tests.add paths and the suite(s) its files declare (tests/test__config.py), in the spelling meta.phaseGate.derived.spelling records; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        },
+        {
+          "at": "2026-10-31T10:48:48Z",
+          "text": "its _config and guard sections name modules and public helpers; this fix changes how runnable_text treats an untokenizable part inside an existing function, adding or renaming nothing",
+          "waives": "PLUGIN-BUILD-GUIDE.md"
+        }
+      ],
+      "fixes": [
+        "P153-R17"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-31T11:15:47Z.56af80",
+        "status": "passed",
+        "at": "2026-10-31T11:15:47Z"
       }
     }
   ],

@@ -455,8 +455,9 @@ def _publishers(command, cfg_mod=None, depth=0):
 
     A clause begins where a shell can begin a command. Matching only there
     keeps a `git tag` example inside a quoted argument from reading as a
-    publisher, while `command_clauses` still separates every live publisher.
-    `runnable_text` removes heredoc data before either reader sees it. Within a
+    publisher, while `runnable_clauses` still separates every live publisher:
+    it removes heredoc data and splits the text and each runnable body on its
+    own, so a quote one leaves open does not swallow the next. Within a
     clause the program is found past assignments, wrappers, git's global
     options and `sh -c`; a clause whose quotes do not close falls back to the
     anchored patterns.
@@ -464,7 +465,7 @@ def _publishers(command, cfg_mod=None, depth=0):
     found = []
     cfg_mod = cfg_mod or _hooks_config(project_dir())
     text = str(command or "")
-    clauses = (cfg_mod.command_clauses(cfg_mod.runnable_text(text))
+    clauses = (cfg_mod.runnable_clauses(text)
                if cfg_mod is not None else [text])
     for clause in clauses:
         words = (cfg_mod.shell_words(clause)
@@ -603,7 +604,7 @@ def _shell_moves(cfg_mod, command):
     payload cwd is unknown only when that walk would have had a directory
     change to follow. A comment's apostrophe must not count as one.
     """
-    for clause in cfg_mod.command_clauses(cfg_mod.runnable_text(command or "")):
+    for clause in cfg_mod.runnable_clauses(command or ""):
         parts = clause.split(None, 1)
         if parts and parts[0].lower() in ("cd", "pushd", "popd"):
             return True
@@ -1247,6 +1248,21 @@ def _selftest():
           "delete or quoted text are not a publisher: %r"
           % ([(command, publishing(command)) for command in wrapped_readers],),
           not any(publishing(command) for command in wrapped_readers))
+    # The text and each body fed to a shell are split on their own: a quote
+    # one leaves open no longer swallows the next, and no part is closed by
+    # hand to make the whole parse.
+    _tag = "git " + "tag v9.9.9"
+    split_parts = (
+        "bash <<'EOF'\n%s\nEOF\necho '" % _tag,
+        "bash <<'EOF'\n%s\n'\nEOF\necho '" % _tag,
+        "bash <<'X'\necho 'a\nX\n%s" % _tag,
+        "bash <<'A'\n# it's\nA\nbash <<'B'\n%s\nB" % _tag,
+    )
+    check("gr74 RED-FIRST: a tag in a shell body after a text that opens a "
+          "quote, or in the text after a body that does, is a publisher: %r"
+          % ([(command, publishing(command)) for command in split_parts],),
+          all(publishing(command) == "creates a git tag"
+              for command in split_parts))
 
     # --- the rule, end to end -------------------------------------------------
     tmp = tempfile.mkdtemp(prefix="guard-release-")

@@ -958,16 +958,19 @@ def _selftest():
               "before the parser was asked",
               decide("x=$(git checkout -- .)", dirty) is not None
               and decide("echo \"$(git restore .)\"", dirty) is not None)
-        # The odd quote sits in the command text itself: a shell-fed body is
-        # read on its own parse, its open quote closed, so a quote in one no
-        # longer makes the line untokenizable.
+        # Two untokenizable lines: one whose odd quote is in the command text,
+        # and one whose odd quote is in a shell-fed BODY. A body the lexer
+        # cannot read is never closed by hand into one it can, so both reach
+        # the text reading.
         hd = decide("git stash\necho it's", dirty) or ""
+        bd = decide("bash <<'EOF'\ngit stash\nit's\nEOF", dirty) or ""
         ex = decide(subst_add + "\ngit reset --hard", dirty) or ""
         check("gu51 the two readings say which they are: an untokenizable line "
-              "read as TEXT, and a house-form line - its odd quote lifted with "
-              "its body - read as an operation, with no claim of text: %r"
-              % ((hd, ex),),
+              "and an untokenizable shell body are read as TEXT, and a "
+              "house-form line - its odd quote lifted with its body - read as "
+              "an operation, with no claim of text: %r" % ((hd, bd, ex),),
               "TEXT" in hd and "tokenized" in hd
+              and "TEXT" in bd and "tokenized" in bd
               and ex and "TEXT" not in ex and "tokenized" not in ex)
         # Each line below was measured passing: the reading that took quoted
         # arguments out as data unless a runner list named the command never
@@ -1020,6 +1023,23 @@ def _selftest():
         check("gu54 a stash fed to a shell is refused on a dirty tree when the "
               "text opens a quote a body line closes, and in its twin with no "
               "closing line: %r" % (passed,), not passed and len(shaped) == 2)
+        # A body that ends open only in the lexer's reading - a nested quoted
+        # heredoc's apostrophe, a Python escape the shell does not have - is
+        # not repaired with a closer: that made the verb line the inside of a
+        # quote and the line an allowed operation.
+        _rh = "git reset --" + "hard HEAD~1"
+        misread = []
+        for verb in (_rh, _st):
+            misread += [
+                "bash <<'EOF'\ncat <<'Y'\nit's\nY\n%s\nEOF" % verb,
+                "bash <<'EOF'\ncat >f <<'Y'\nit's\nY\n%s\nEOF" % verb,
+                "python3 - <<'PY'\nprint('it\\'s')\nimport os\n"
+                "os.system(\"%s\")\nPY" % verb]
+        passed = [cmd for cmd in misread if decide(cmd, dirty) is None]
+        check("gu55 a reset and a stash run by a shell body holding a nested "
+              "quoted heredoc with an apostrophe, and by a Python body with an "
+              "escaped apostrophe, are refused on a dirty tree: %r" % (passed,),
+              not passed and len(misread) == 6)
     finally:
         _rmtree_git_safe(tmp)
 

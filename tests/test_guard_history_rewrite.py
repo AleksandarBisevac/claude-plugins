@@ -1126,7 +1126,8 @@ def _cases(check):
         # left open read the shell body as its inside, and an apostrophe line
         # in that body closed it: the force push became a quoted argument and
         # the call was allowed, while the twin with no apostrophe line was
-        # denied. Each part is now read from a neutral state. A shell heredoc
+        # denied. A part that ends open now sends the command to the text
+        # reading, where the verb is refused. A shell heredoc
         # makes the directory unreadable (tr8b), so a force push in one is
         # refused on that ground; the stash, refused wherever it runs, is the
         # body whose own refusal shows the operation itself was read.
@@ -1153,9 +1154,9 @@ def _cases(check):
             check("gk%d deny, on the stash itself: %s" % (38 + _n, _what),
                   v == "deny" and "stash" in why, repr((v, why[:120])))
         # A comment is skipped by the shell and by this guard's lexer, so the
-        # closing must skip it too: a closer added after `# it's` would open a
-        # quote here that swallows the next body (gk42), and would send an
-        # ordinary interpreter body to the text reading (gk43).
+        # per-part reading skips it too: `# it's` leaves its part closed, the
+        # verb in a later body is still read as an operation (gk42), and an
+        # ordinary interpreter body is not sent to the text reading (gk43).
         v, why = _decide(repo, "bash <<'A'\n# it's\necho a\nA\nbash <<'B'\n%s\n'"
                          "\n# it's\necho z\nB" % _D)
         check("gk42 deny, on the stash itself: an apostrophe in an earlier "
@@ -1166,6 +1167,27 @@ def _cases(check):
         check("gk43 allow: an interpreter body whose comment holds an "
               "apostrophe and names the verb is still parsed, not graded as text",
               v == "allow", repr((v, why[:120])))
+        # A part the lexer cannot read is never repaired into one it can. Each
+        # body below runs the verb on a line of its own, and each one ends
+        # open only in the lexer's reading: a nested quoted heredoc's
+        # apostrophe, or a Python escape the shell does not have. Closing
+        # that quote by hand made the body balanced with the verb inside the
+        # quote, and the call was allowed.
+        _misread = (
+            ("a shell body holding a nested quoted heredoc with an apostrophe",
+             "bash <<'EOF'\ncat <<'Y'\nit's\nY\n%s\nEOF"),
+            ("...whose nested heredoc writes a file",
+             "bash <<'EOF'\ncat >f <<'Y'\nit's\nY\n%s\nEOF"),
+            ("a Python body with an escaped apostrophe, the verb in os.system",
+             "python3 - <<'PY'\nprint('it\\'s')\nimport os\nos.system(\"%s\")"
+             "\nPY"))
+        for _n, (_what, _shape) in enumerate(_misread):
+            v, why = _decide(repo, _shape % _D)
+            check("gk%d deny, on the stash itself: %s" % (44 + _n, _what),
+                  v == "deny" and "stash" in why, repr((v, why[:120])))
+            v, why = _decide(repo, _shape % _fp)
+            check("gk%d deny, a force push: %s" % (47 + _n, _what),
+                  v == "deny", repr((v, why[:120])))
         check("gh34 the text the guard grades, per heredoc kind: the body going "
               "into a FILE is gone, the body fed to a shell and the body fed to "
               "an interpreter are both still there. An interpreter body is kept "

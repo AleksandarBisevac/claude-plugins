@@ -227,6 +227,23 @@ def runnable(command):
     return _config.runnable_text(command or "", pipe_data=True)
 
 
+def parts_read_alone(command):
+    """Does every part of `runnable(command)` read on its own parse?
+
+    The parts are the text and each runnable body, inputs to different
+    readers, and the view joins them; a quote, substitution or escape one
+    leaves open would read the next as its inside. So each part must end
+    closed in `_config`'s quoting AND tokenize under this file's own lexer,
+    which reads comments and backquotes its own way. A part that fails either
+    is not repaired: the command goes to the text reading, where each arm's
+    patterns are matched anywhere in the view, quoted or not. One part is the
+    whole command, and its own parse already decides."""
+    parts = _config.runnable_parts(command or "", pipe_data=True)
+    return len(parts) < 2 or all(
+        not _config.part_ends_open(part) and _shell_pieces(part)[1]
+        for part in parts)
+
+
 def shell_words(command):
     """(words, parsed) - the command as shell WORDS, separators marked as None.
 
@@ -975,7 +992,13 @@ def git_calls(command, depth=0):
     contribute a verb. Doing it at this one door rather than at the four arms is
     what makes it impossible for one arm to forget, and the recursion below
     re-enters the same door, so no nesting depth is graded by a different rule.
+
+    The view is the command text and each runnable body joined, and it is read
+    only when every part reads alone (`parts_read_alone`): a part this cannot
+    read on its own makes the whole command unparseable, the strict reading.
     """
+    if not parts_read_alone(command):
+        return None
     text = runnable(command)
     pieces, parsed = _shell_pieces(text)
     if not parsed:
@@ -1585,8 +1608,9 @@ def _shell_moves(command):
     """True when a clause of this command starts with cd, pushd or popd.
 
     The analogous question `guard-release.py`'s `_shell_moves` asks when a
-    payload names no `cwd`. Both readers use `runnable(command)`, which drops
-    a heredoc body destined for a file; their shared `effective_cwd` reader
+    payload names no `cwd`. Both readers use `_config.runnable_clauses`, which
+    drops a heredoc body destined for a file and splits the text and each
+    runnable body on its own; their shared `effective_cwd` reader
     instead accepts raw command text and answers unreadable for the whole
     command whenever any heredoc body is graded shell, because a shell body
     MAY reach the parent through `eval` even where it is more often a child
@@ -1597,7 +1621,7 @@ def _shell_moves(command):
     actual directory - but leaning on that None here would call every
     payload-less command unplaceable, not only the ones that move the shell.
     """
-    for clause in _config.command_clauses(runnable(command) or ""):
+    for clause in _config.runnable_clauses(command or "", pipe_data=True):
         parts = clause.split(None, 1)
         if parts and parts[0].lower() in ("cd", "pushd", "popd"):
             return True

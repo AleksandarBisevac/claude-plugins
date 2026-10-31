@@ -3453,26 +3453,35 @@ def runnable_text(cmd, pipe_data=False):
     `split_heredocs`' own: a guard opts in to reading a quoted body piped to a
     plain script run as data.
 
-    EACH PART IS READ FROM A NEUTRAL STATE. The parts are separate inputs to
-    separate shells - the text to the outer one, each body to whatever it is
-    fed to - but the view is one string, so a quote, a substitution or an
-    escape a part leaves open would carry into the next and read it as quoted:
-    `echo '` ending the text, then a body whose later line is a lone
-    apostrophe, read the body as the inside of a quote and graded nothing in
-    it. So when there is more than one part, each is closed where
-    `_context_step` sees it end: what a closer seals is text its own shell never
-    runs, since that shell stops at the end of its input inside the open quote,
-    and the lines before the quote are graded as the commands they are. A
-    command with no body is one part and comes back as given, so a line a
-    reader cannot parse still reaches the strict reading.
+    THE JOIN IS RAW, AND A JOINED VIEW IS ONLY AS READABLE AS ITS PARTS. The
+    parts are separate inputs to separate readers, so a quote, a substitution
+    or an escape one part leaves open carries into the next in this string: a
+    reader that parses the view must first ask `part_ends_open` of each of
+    `runnable_parts`, and take its strict reading when any part answers yes;
+    a reader of clauses splits each part on its own (`runnable_clauses`).
+    No part is ever closed by hand to make the view parse. A part can end open
+    because the lexer misreads it - a nested quoted heredoc's apostrophe, a
+    Python escape the shell does not have - while the line after it really
+    runs, so a closer would turn that line into the inside of a quote.
     """
+    return "\n".join(runnable_parts(cmd, pipe_data))
+
+
+def runnable_parts(cmd, pipe_data=False):
+    """`[text] + shell bodies + interpreter bodies` - the parts `runnable_text`
+    joins, each one input to a reader of its own."""
     text, code, shell = split_heredocs(cmd, pipe_data)
-    if not code and not shell:
-        return text
-    return "\n".join(_closed_part(p) for p in [text] + shell + code)
+    return [text] + shell + code
 
 
-_CLOSERS = {"'": "'", '"': '"', "(": ")", "`": "`"}
+def runnable_clauses(cmd, pipe_data=False):
+    """`command_clauses` of each of `runnable_parts`, each part split on its
+    own. A part whose quoting does not close comes back as one clause of its
+    own - `command_clauses`' fail-safe - for its reader's strict reading, and
+    the parts beside it are still split; the joined view would have carried
+    the open quote into them."""
+    return [clause for part in runnable_parts(cmd, pipe_data)
+            for clause in command_clauses(part)]
 
 
 def _comment_at(text, i, stack):
@@ -3482,15 +3491,13 @@ def _comment_at(text, i, stack):
             and (i == 0 or text[i - 1] in " \t\n;&|()<>"))
 
 
-def _closed_part(part):
-    """`part` with whatever it leaves open closed: an escape left pending at
-    its end consumes a space rather than the newline that joins the next part,
-    then each open context is closed innermost first.
+def part_ends_open(part):
+    """Does `part`, read alone, end inside a quote, a substitution or a
+    pending escape? Then nothing joined after it can be read on its own parse.
 
     A COMMENT IS SKIPPED, because the shell skips it: `# don't` opens no quote,
-    and a closer added for one would be the opener of a quote in every reader
-    that knows comments - the history guard's lexer among them - carrying into
-    the next part exactly what the closers exist to stop."""
+    and a part whose comment holds an apostrophe is as readable as one whose
+    comment does not."""
     stack, at, i, n = [], [], 0, len(part)
     while i < n:
         if _comment_at(part, i, stack):
@@ -3498,8 +3505,7 @@ def _closed_part(part):
             i = n if end < 0 else end
             continue
         i = _context_step(part, i, stack, at)
-    pending = " " if i > n else ""
-    return part + pending + "".join(_CLOSERS[q] for q in reversed(stack))
+    return bool(stack) or i > n
 
 
 # --- guard config (edits / secrets / tdd) -------------------------------------

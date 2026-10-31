@@ -3413,6 +3413,17 @@ def _cases(check):
             bash("bash <<'EOF'\n%s\n'\nEOF\necho '" % _rd))
     _expect("s80 ...and in its twin with no closing line", "block",
             bash("bash <<'EOF'\n%s\nEOF\necho '" % _rd))
+    # A body that ends open only in the lexer's reading is not repaired with a
+    # closer, which would make the read line the inside of a quote.
+    _expect("s81 a secret read after a nested quoted heredoc with an "
+            "apostrophe, inside a shell body, is refused", "block",
+            bash("bash <<'EOF'\ncat <<'Y'\nit's\nY\n%s\nEOF" % _rd))
+    _expect("s82 ...and after one that writes a file", "block",
+            bash("bash <<'EOF'\ncat >f <<'Y'\nit's\nY\n%s\nEOF" % _rd))
+    _expect("s83 ...and in os.system after a Python escaped apostrophe",
+            "block",
+            bash("python3 - <<'PY'\nprint('it\\'s')\nimport os\n"
+                 "os.system(\"%s\")\nPY" % _rd))
 
     # (s35+) The original symptom - a read-only one-liner refused as a
     # write - is gone, per the fix above. Measuring the same function again found
