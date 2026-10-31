@@ -635,26 +635,23 @@ def _cases(check):
         _views = ("cat > notes.md <<'D'\ngit stash drop databody\nD\n"
                   "bash -s <<'S'\ngit stash drop shellbody\nS\n"
                   "python3 - <<'P'\ngit stash drop codebody\nP")
-        # A LIMIT, MEASURED AND RECORDED RATHER THAN DISCOVERED. The head of the
-        # heredoc line is tested for an interpreter at its END, so a REDIRECT
-        # TARGET ending in one of those names reads as an invocation: `cat >
-        # probe.sh <<EOF` is graded as a script and its content is still refused,
-        # where `cat > probe.py <<EOF` is data. Narrowing it (`sh` may not follow
-        # a dot) takes BOTH patterns, not one - the mutation that changed only
-        # `_STDIN_SHELL` left this case green, because `_STDIN_INTERP` names `sh`
-        # too and went on classifying the body. And it would be a WIDENING of
-        # `guard-secrets-read`, which shares this classification: a file written
-        # by `cat > deploy.sh <<EOF` would stop being graded as a script there
-        # too. That is a security boundary and a decision of its own, so this
-        # case records today's answer instead of quietly changing it.
+        # A FILE NAME IS NOT A PROGRAM. A redirect target ending in a shell's
+        # name (`cat > probe.sh <<EOF`) is the file being written, as
+        # `cat > probe.py <<EOF` always was; reading the dot before `sh` as a
+        # word boundary graded its content as a script. Both patterns of the
+        # head reading name `sh`, so a fix in only one leaves the allow red.
+        # The deny beside it is the same file name in PROGRAM position - a
+        # shell running it, which reads the body from stdin - for the fix that
+        # drops every `.sh` head.
         v, why = _decide(repo, "cat > probe.sh <<'EOF'\ngit push --force origin "
                                "main\nEOF")
-        check("gh35 KNOWN LIMIT, and this case is its record: a heredoc whose "
-              "redirect target ENDS IN an interpreter name (`probe.sh`) is still "
-              "graded as a script, because the head is matched at its end and a "
-              "filename sits there. The conservative direction, kept on purpose - "
-              "the narrowing would widen a secret guard that shares the rule",
-              v == "deny", repr((v, why)))
+        v_sh, why_sh = _decide(repo, "sh probe.sh <<'EOF'\ngit push --force "
+                                     "origin main\nEOF")
+        check("gh35 a heredoc written to a file whose name ENDS IN a shell's "
+              "name (`probe.sh`) is data, while a shell running that file with "
+              "the body on its stdin is still refused",
+              v == "allow" and v_sh == "deny",
+              repr(((v, why), (v_sh, why_sh))))
 
         # --- a `git` counts where the shell RUNS it -----------------------------
         # An emitter's arguments were once read as inert, and each fix of that

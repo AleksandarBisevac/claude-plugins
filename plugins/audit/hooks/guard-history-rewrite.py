@@ -44,11 +44,11 @@ refused before and is allowed now. It is one spelling of a gap that was already
 open - the same two steps written `printf '...' > probe.txt` then `sh probe.txt`
 were allowed before this change and after it, because a quoted argument was never
 a command - and closing it means reading files, which this hook never does. The
-`.sh` spelling of it is still refused, for a reason that is an accident rather
-than a design: the heredoc's head is matched at its END, so a redirect target
-named `probe.sh` reads as an `sh` invocation. `test_guard_history_rewrite.py`'s
-gh35 records that, and says why narrowing it is a decision about
-`guard-secrets-read` and not about this file.
+`.sh` spelling of it is allowed too: a program named in a heredoc's head is a
+word, never the tail of one, so a redirect target named `probe.sh` is the file
+written rather than an `sh` invocation, while `sh probe.sh <<EOF` still feeds
+the body to a shell and is graded. `test_guard_history_rewrite.py`'s gh35 holds
+both directions.
 
 `git reset --hard` shows the other half of the same idea - one spelling is not
 one operation:

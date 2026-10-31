@@ -45,8 +45,10 @@
         "severity": "low",
         "file": "plugins/audit/commands/task.md:39; plugins/audit/reference/verbs-in-full.md:266-267, 1269; README.md:461",
         "issue": "User-visible behaviour changed and the surfaces describing `--gate-clear` still say it is how a task reaches the EMPTY gate ('`--gate-clear` for none'), with no mention that a tdd/regression task (including one whose mode `add` derived from its title) is now refused and must pass `--tests-mode gate-only`. The executor named this follow-up itself; it is outside the task's declared files.",
-        "resolution": "Add one sentence to each surface (or to verbs-in-full.md and point the others at it) stating the refusal and its two remedies, and a CHANGELOG entry for the new refusal.",
-        "fixTask": "P153.10-34e"
+        "resolution": "fixed in P153.10-34e (1529df9d959f): Add one sentence to each surface (or to verbs-in-full.md and point the others at it) stating the refusal and its two remedies, and a CHANGELOG entry for the new refusal.",
+        "fixTask": "P153.10-34e",
+        "commit": "1529df9d959f",
+        "status": "fixed"
       },
       {
         "id": "P153-R4",
@@ -69,9 +71,51 @@
         "file": "plugins/audit/commands/task.md:39",
         "issue": "contradicts task clause: the task asks for one sentence on each surface describing --gate-clear, or for verbs-in-full.md to carry it with the other surfaces pointing at it. commands/task.md still reads '--gate-clear for none' with neither the refusal nor a pointer, so the one surface a user reads first still teaches the spelling that tdd/regression tasks are now refused. The executor's stated reason holds: in the task tree measure-context.py reports '/audit:task add 7989 / 8000', so only 11 bytes of headroom remain and no sentence fits. The clause is nonetheless unmet on that surface.",
         "resolution": "Either accept the narrowing explicitly (the orchestrator records the waiver), or free bytes in commands/task.md (trim other prose on the add path or move a passage to verbs-in-full.md) and add a short caveat after '--gate-clear for none', for example '(refused on tdd/regression; see verbs-in-full)'. Re-run measure-context --gate afterwards."
+      },
+      {
+        "id": "P153-R7",
+        "severity": "high",
+        "file": "plugins/audit/hooks/_config.py:3029-3078",
+        "issue": "Guard bypass. `_argument_runs` and `_substitution_runs_body` only ask how the carrying command treats its argument. They never ask where that command's OUTPUT goes. With an emitter as the carrier, the body is dropped as data even when the emitter's output is then run. Both guards' own direct readings refuse the quoted spelling of the same command. Notation in this return: FORCEPUSH is a force push of main, STASHDROP is a stash drop, KEYREAD is `cat` of an ssh private key; the literal spellings are left out because this repo's guards grade the return's own text. Measured with each guard's decide() in a scratch repo carrying a recorded trail. guard-history-rewrite: `echo \"$(cat <<'EOF'` / FORCEPUSH / `EOF` / `)\" | sh` was deny at base 1529df9d and is allow now. The direct `echo \"FORCEPUSH\" | sh` is still deny. git_invocations goes from the stash verb to [] for an `echo \"$(cat <<'EOF' ...STASHDROP...)\"` carrier whose output goes to `| sh`, `| bash`, `|& sh`, `> .git/hooks/pre-commit`, `>> <home>/.bashrc`, `> f; sh f`, `| tee .git/hooks/post-checkout` or `> >(sh)`. The direct-quoted twin of every row is still caught by `_printed`/`_output_runs`. guard-secrets-read: the same echo carrier with a KEYREAD body piped to sh was block and is allow now; the direct spelling still blocks. The emitter-output machinery cannot see the body because runnable() strips it before `_expand_printed` runs, so the heredoc spelling skips every output-run rule the guard has. This is not the stated KNOWN LIMIT, which is about a program that runs its operand. No row in hb9/hb11 covers a carrier whose output is run.",
+        "resolution": "Keep the body as shell unless the carrying command's clause ends at the substitution's closing quote. The remainder of that clause after the closing quote is the text on the lines after the terminator, up to the next `;`/`&&`/`||`/newline. If it has a pipe (`|`, `|&`), an output redirect (`>`, `>>`, `>|`) or a `>(`, return \"shell\". The narrower alternative is to apply that rule to emitters only (echo, printf, `cat` with a here-string), but those are the carriers `_printed` reads. Add deny rows to hb11 for `echo \"$(...)\" | sh`, `printf '%s' \"$(...)\" | bash`, `echo \"$(...)\" > .git/hooks/pre-commit` and `echo \"$(...)\" > >(sh)`. Add one deny each through guard-history-rewrite's decide (FORCEPUSH body) and guard-secrets-read's decide (KEYREAD body)."
+      },
+      {
+        "id": "P153-R8",
+        "severity": "med",
+        "file": "plugins/audit/hooks/_config.py:3029-3045",
+        "issue": "A program word that is an expansion now passes as a command that does not run its argument. `_NOT_LITERAL` is applied to `partial` only. `$SHELL -c \"$(cat <<'EOF' ...)\"`, `\"$SHELL\" -c ...` and `${BASH} -c ...` reach `_word_runs_argument` with a program `$SHELL`, which is in no table, so the body is data. Measured: guard-history-rewrite went from deny to allow on `$SHELL -c` with a STASHDROP body, and guard-secrets-read went from block to allow on `$SHELL -c` with a KEYREAD body. guard-secrets-read still blocks the direct `$SHELL -c \"KEYREAD\"`. The invariant says 'unless that command runs what it is handed', and a program the reader cannot name cannot be shown not to. `_runs_input` in guard-history-rewrite already treats a `$` or a backquote in rest[0] as a runner, for exactly this reason.",
+        "resolution": "In `_argument_runs`, after `program_candidates`, return True when `rest[0]` (and any candidate word) contains a character from `_NOT_LITERAL`, which matches `_runs_input`'s rule. Add `$SHELL -c \"$(...)\"` and `\"${BASH}\" -c \"$(...)\"` to hb11's runners."
+      },
+      {
+        "id": "P153-R9",
+        "severity": "med",
+        "file": "plugins/audit/hooks/_config.py:2989-2997",
+        "issue": "The KNOWN LIMIT is judged differently per guard, and the comment states only one of the two. Before this diff the default was deny (two vouched carriers). Now it is allow, minus `_SHELL_PROGRAMS`/`_RUNS_AN_OPERAND`/interpreters, so the completeness of those lists decides denials. Shells that take `-c` or `/c` are missing: csh, tcsh, pwsh, powershell, cmd, nu. So are common operand runners: nix-shell --run, npx -c, entr -s, hyperfine, nodemon --exec, tar --to-command, rsync -e and psql. Each was measured as kept-as-shell at base and data now. For guard-history-rewrite this is acceptable: its direct reading of a quoted argument to these programs also allows ('a quoted argument was never a command'), so the heredoc spelling opens no new route. guard-secrets-read is different: its direct reading blocks `csh -c \"KEYREAD\"` and `nix-shell --run \"KEYREAD\"`, both measured, and the heredoc spelling of each is now allowed. The shared rule therefore makes the heredoc spelling a bypass of the stricter guard. The comment does not say this, and the filed outcome says secrets-read is narrowed only for a body written to a `.sh` file.",
+        "resolution": "Give `_word_runs_argument` its own tuple of argument-running shells: `_SHELL_PROGRAMS` plus csh, tcsh, pwsh, powershell, cmd, nu, xonsh, elvish and yash. A separate tuple leaves `is_shell` callers unchanged. Add the operand runners nix-shell, npx, entr, hyperfine, nodemon, tar and rsync to `_RUNS_AN_OPERAND`. Extend the KNOWN LIMIT comment to say that the limit widens guard-secrets-read relative to its quoted-text reading. Add at least one deny row through guard-secrets-read's decide (csh -c over a KEYREAD heredoc body) to a suite in this task's gate."
+      },
+      {
+        "id": "P153-R10",
+        "severity": "low",
+        "file": "plugins/audit/hooks/_config.py:2330",
+        "issue": "The lookbehind in `_PROGRAM_WORD` leaves out `=`, which the `\\b` it replaced covered. `env --split-string=bash <<'EOF'` runs bash on the body. It was shell at base and is data now: measured deny to allow in guard-history-rewrite with a STASHDROP body. `_head_runs_body` does not recover it, because `_wrapper_rest` gives up on `--split-string=` and the fallback strips it. `x --shell=bash <<EOF` changed the same way.",
+        "resolution": "Add `=` to the `_PROGRAM_WORD` class. A file name after `=` (`--out=report.sh`) puts a dot before `sh`, not `=`, so hb6 stays data. Add `env --split-string=bash <<'EOF'` to hb7."
+      },
+      {
+        "id": "P153-R11",
+        "severity": "low",
+        "file": "plugins/audit/hooks/_config.py:2343-2350",
+        "issue": "The comment justifies the `_PROGRAM_WORD` narrowing only for a body WRITTEN to `deploy.sh`. It also turns `./deploy.sh <<'EOF'`, a RUN of a shell script with the body on stdin, from shell into data in both guards: measured deny to allow and block to allow. `_head_runs_body`'s own docstring says 'a script reading its stdin is one `read` and `eval` from running it' for a shell, and `sh deploy.sh <<EOF` stays shell (hb7). No row pins `./deploy.sh <<EOF` either way, so the change is an unstated decision.",
+        "resolution": "Pick one and pin it in hb6/hb7. Either treat a program-position word with a shell-script extension (`.sh`, `.bash`, `.zsh`) as a shell in `_head_runs_body`, which is consistent with `sh deploy.sh` and keeps the redirect-target fix, or say in this comment that a directly executed `.sh` script reading stdin is graded as `./deploy.py` is."
+      },
+      {
+        "id": "P153-R12",
+        "severity": "low",
+        "file": "tests/test__config.py:3276-3311",
+        "issue": "The inherited hb4 comment says 'the substitution's output is text only to the two consumers vouched for. Every other enclosing command may run it', and hb4's title says 'any other consumer could run is still kept'. This diff replaced exactly that allow-list with the invariant, so both texts now describe code that no longer exists.",
+        "resolution": "Rewrite the comment and the check title to name the invariant above `_argument_runs`: the body is kept when the carrier runs its argument by one of the listed routes."
       }
     ],
-    "outcome": "[findings: 6 - 0 high, 4 med, 2 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 12 - 1 high, 6 med, 5 low; 1 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -606,7 +650,7 @@
     {
       "id": "P153.10-34e",
       "title": "fix P153-R3: User-visible behaviour changed and the surfaces describing `--ga...",
-      "status": "in_progress",
+      "status": "done",
       "description": "User-visible behaviour changed and the surfaces describing `--gate-clear` still say it is how a task reaches the EMPTY gate ('`--gate-clear` for none'), with no mention that a tdd/regression task (including one whose mode `add` derived from its title) is now refused and must pass `--tests-mode gate-only`. The executor named this follow-up itself; it is outside the task's declared files.\n\nResolution asked: Add one sentence to each surface (or to verbs-in-full.md and point the others at it) stating the refusal and its two remedies, and a CHANGELOG entry for the new refusal.",
       "files": [
         "plugins/audit/commands/task.md",
@@ -638,13 +682,13 @@
       "dependsOn": [],
       "attempts": 3,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "1529df9d959f",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Retry: reverted the commands/task.md change entirely (git checkout of that file from the base; the file is back to its base size, no diff left), because the base has no headroom under the /audit:task add context ceiling. The refusal stays described in reference/verbs-in-full.md (a paragraph after the empty-gate paragraph: scope/add --gate-clear and --tests-mode tdd over a cleared gate refuse with nothing written, both remedies --gate <command> and --tests-mode gate-only, title-derived mode included, done asks the same of a plan already holding the state), plugins/audit/README.md (one sentence in the /audit:task row after the --gate-clear sentence) and CHANGELOG.md (an Unreleased Changed entry). Corrected the CHANGELOG entry's closing sentence, which still named commands/task.md; it now names only the README row and verbs-in-full.md. Gates, each run from the task tree: python3 tools/measure-context.py --gate exit 0 (GATE OK, every entry within its ceiling); python3 tools/measure-context.py --selftest exit 0 (40/40 cases passed, mc24 and mc34 among them); python3 tools/sweep-selftests.py tests/test_audit_task.py exit 0 (1/1 files ok, 1191 cases, fb15 included); python3 tools/check-rendered-artifacts.py --before-commit exit 0 (3 committed artifacts match a fresh render). No numbers written in prose, no machine paths, no ids. Dependants: verbs-in-full.md readers (_areas.py, test__areas.py, test__manifest_vocab.py, test_audit_task.py, guide.md, execute-task.md, PLUGIN-BUILD-GUIDE.md) - still correct, one added paragraph with no heading, table key or quoted sentence altered, and test_audit_task passes under the sweep; commands/task.md readers (_refs.py, prove-gates.py, _journal_io.py, run-test-gate.py, audit-task.py, audit-status.py, test__journal_io.py, pipeline-cost-design.md) - still correct, the file is byte-identical to the base so nothing changed for them; README.md and CHANGELOG.md readers (_invariants.py, verify-invariants.py, usage scripts, test__deps/_output_lints/_refs/_output/_panel_settings, tools/affected.py, check-release-published.py, _deps.py, _output_lints.py) - still correct, sentences added only, rendered-artifact check green; the full dependant lists were not each opened, only the named gates were run. Not run: the task's wider gate list (full sweep, validate, lint, shots, vitest), left to the orchestrator.",
+        "descriptive": "The refusal of the empty gate on tdd/regression tasks and its two remedies are now documented in the verbs reference, README and CHANGELOG, with commands/task.md left untouched so the context ceiling holds."
       },
       "startedAt": "2026-10-31T07:51:11Z",
-      "completedAt": null,
+      "completedAt": "2026-10-31T08:06:35Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -686,6 +730,16 @@
         "runId": "2026-10-31T08:05:03Z.394f1b",
         "status": "passed",
         "at": "2026-10-31T08:05:03Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "1529df9d959f",
+        "at": "2026-10-31T08:06:35Z",
+        "return": "docs/audit/evidence/returns/P153.10-34e/20261031T075111Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only docs task, tests.expectRedFirst false, no tests added"
       }
     },
     {
@@ -809,7 +863,12 @@
       "fixes": [
         "P153-R5"
       ],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-31T08:12:55Z.9934fc",
+        "status": "passed",
+        "at": "2026-10-31T08:12:55Z"
+      }
     }
   ],
   "reviewPerTask": "signals",

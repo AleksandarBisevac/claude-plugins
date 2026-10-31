@@ -612,15 +612,20 @@ Each hook does `sys.path.insert(0, dirname(__file__)); import _config`. `--selft
 `split_heredocs` is the shared door to a heredoc body: `guard-history-rewrite`,
 `guard-secrets-read` and this repo's `guard-release` read it through `runnable_text` or directly,
 so how it grades a body is how each of them does. A marker inside a
-`$( )` is read from the **innermost** open substitution: that command's stdin is the body, so it
-is the head, and the `$(` around it is only the route the output takes. The output is then a word
-of the enclosing command, and it stays data only in the house form — the substitution the whole of
-one double-quoted argument of a plain script run, or of `git commit`/`git tag` as a message
-option's value (`_holds_output_as_text`). A shell's `-c`, `eval`, command position, an
-assignment, a nested substitution or any other consumer keeps the body as shell. Script words are
-read as the shell hands them over (`shell_words`), so a quoted script path is the file the
-interpreter runs, not a reason to grade the body as code. `tests/test__config.py`'s `hb` group
-holds both directions.
+`$( )` or a backquote is read from the **innermost** open substitution: that command's stdin is
+the body, so it is the head, and the opener around it is only the route the output takes. The
+output is then a word of the enclosing command, and one invariant decides it, stated once above
+`_argument_runs`: a heredoc whose substitution is the whole or part of one double-quoted argument
+is data whatever command carries the argument, unless that command runs what it is handed. No
+carrying command is listed; what is listed is the ways a command runs an argument — command
+position or an assignment's value, a wrapper's program operand, a shell or a non-script-run
+interpreter anywhere in its words, a program whose operand is a command line
+(`_RUNS_AN_OPERAND`), and git's arguments other than a commit or tag message. So
+`git commit -m`, a script's `--description` and `gh pr create --body` are accepted by the same
+rule, while an unquoted or nested substitution keeps the body as shell. A program named in a
+head is a word, never the tail of one, so a file named `notes.sh` is not a shell. Script words
+are read as the shell hands them over (`shell_words`), so a quoted script path is the file the
+interpreter runs. `tests/test__config.py`'s `hb` group holds both directions of each route.
 
 `hook_plugin_root()` / `hook_plugin_version()` / `stamp_running_plugin()` /
 `running_plugin_stamps()` are the writer and the reader of the running-copy stamp.

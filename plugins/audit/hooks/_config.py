@@ -2319,8 +2319,18 @@ _HEREDOC_START = re.compile(
 # bucket, where it left the scanned text entirely and no rule saw it at all. A body
 # the guards cannot place is the one they must keep, so the spelling is named here
 # rather than left to be discovered by whoever types it.
+#
+# A PROGRAM IS A WORD, NOT THE TAIL OF ONE. Each name below must start a word -
+# the head's start, a blank, a separator, a quote, a substitution's opener, or a
+# path's last slash (`/bin/sh`) - so a FILE whose name ends in one (`cat >
+# notes.sh`, `python3 x.py --out report.sh -`) is the file it is. A `\b` bound
+# read the dot before `sh` as a word boundary, so every body written to a `.sh`
+# file, or handed beside one to `cat` or a script, was graded as shell - in the
+# house commit form too.
+_PROGRAM_WORD = r"(?:^|(?<=[\s;&|(/\"'`]))"
 _STDIN_INTERP = re.compile(
-    r"\b(?:python3?|python3\.\d+|node|nodejs|deno|bun|ruby|perl|php|bash|sh|zsh)\b"
+    _PROGRAM_WORD +
+    r"(?:python3?|python3\.\d+|node|nodejs|deno|bun|ruby|perl|php|bash|sh|zsh)\b"
     r"(?:\s+-[A-Za-z-]+)*\s*(?:-|/dev/stdin)?\s*$",
     re.IGNORECASE,
 )
@@ -2330,20 +2340,16 @@ _STDIN_INTERP = re.compile(
 # `python3 -` is a program in another language, where a shell READ VERB is a word
 # inside a string and the interpreter arms are what grade it.
 #
-# THE NAMED PROGRAMS STAY `\b`-BOUNDED ONLY, ON PURPOSE - matched anywhere a
-# word boundary allows, including a REDIRECT TARGET's own extension
-# (`cat > probe.sh`). That is gh35's pinned case: narrowing it to the head's
-# command-verb position would also narrow `guard-secrets-read`, which shares
-# this classification, and the conservative direction for a secret-reading
-# guard is to over-match, never under-match. The bare `.` added below carries
-# no such history - nothing before it relied on a trailing, unanchored dot -
-# so IT ALONE requires start-of-head or a real separator (the same class
-# `_last_command` already splits a head's simple commands on) immediately
-# before it: `git add .` ends in an argument, not the dot-source builtin, and
-# reads as one without this anchor, grading an unrelated heredoc body as live
-# shell it was never going to be.
+# THE NAMED PROGRAMS START A WORD (`_PROGRAM_WORD`), for the reason above. That
+# narrows `guard-secrets-read` as well, which shares this classification, and
+# the narrowing is the consistent one rather than a widening of its boundary:
+# a body WRITTEN to `deploy.sh` reads nothing, exactly as one written to
+# `deploy.py` or `notes.txt` already did, and the file is graded when a later
+# command runs it, as every file is. The bare `.` is the dot-source builtin
+# only after start-of-head or a real separator (the class `_last_command`
+# splits a head's simple commands on): `git add .` ends in an argument.
 _STDIN_SHELL = re.compile(
-    r"(?:\b(?:bash|sh|zsh|source)\b|(?:^|[;&|(\n])\s*\.)"
+    r"(?:" + _PROGRAM_WORD + r"(?:bash|sh|zsh|source)\b|(?:^|[;&|(\n])\s*\.)"
     r"(?:\s+-[A-Za-z-]+)*\s*(?:-|/dev/stdin)?\s*$",
     re.IGNORECASE)
 
@@ -2898,10 +2904,11 @@ def join_continuations(text):
 def _scan_quotes(text, stack, stop_at_marker=False):
     """(marker match or None, the quoting open after the scan) for `text`.
 
-    `stack` is the quoting open when `text` begins, as a tuple of "'", '"' and
-    "(" - the last one is innermost. A `$(` opens a context where the shell
-    reads commands again, inside double quotes too, so a heredoc there is a
-    heredoc: `-m "$(cat <<'EOF' ... EOF\n)"` is the house commit-message form.
+    `stack` is the quoting open when `text` begins, as a tuple of "'", '"',
+    "(" and "`" - the last one is innermost. A `$(` or a backquote opens a
+    context where the shell reads commands again, inside double quotes too, so
+    a heredoc there is a heredoc: `-m "$(cat <<'EOF' ... EOF\n)"` is the house
+    commit-message form, and the backquoted spelling of it is the same form.
     A backslash outside single quotes escapes the next character. With
     `stop_at_marker`, the scan stops at the first `<<` marker read where the
     shell reads one, and the quoting returned is the one open at that point."""
@@ -2927,6 +2934,13 @@ def _scan_contexts(text, stack, stop_at_marker=False):
             stack.append("(")
             at.append(i)
             i += 1
+        elif ch == "`":
+            if top == "`":
+                stack.pop()
+                at.pop()
+            else:
+                stack.append("`")
+                at.append(i)
         elif top == '"':
             if ch == '"':
                 stack.pop()
@@ -2948,8 +2962,41 @@ def _scan_contexts(text, stack, stop_at_marker=False):
     return None, tuple(stack), tuple(at)
 
 
+# --- a substitution's output as an argument: the invariant ----------------------
+# A HEREDOC WHOSE SUBSTITUTION IS THE WHOLE OR PART OF ONE DOUBLE-QUOTED ARGUMENT
+# IS DATA TO EVERY GUARD, WHATEVER COMMAND CARRIES THE ARGUMENT, UNLESS THAT
+# COMMAND RUNS WHAT IT IS HANDED. The body is the substitution's output, the
+# output is one word of the carrying command, and a word is text to every
+# program that does not execute it. So no carrying command is vouched for by
+# name: `git commit -m`, a script's `--description`, `gh pr create --body` and a
+# program nobody listed are accepted by the same rule. What is named instead is
+# the ways a command executes an argument, each a property of a program:
+#
+#   * command position, or an assignment's value (`A="$(...)"`, `export A=`,
+#     `make A=`) - the shell runs it, or exports it to programs that may;
+#   * a wrapper's program operand (`sudo "$(...)"`, `env -S`), read through
+#     `program_candidates`, which leaves no program past the wrapper;
+#   * a shell ANYWHERE in the command's words - its `-c`, a script's `eval`,
+#     or behind a wrapper no table names (`chroot /x bash -c`, `find -exec sh`);
+#   * an interpreter anywhere in its words that is not a plain script run - an
+#     inline flag runs the argument - or any interpreter at all when an option
+#     it reads from the environment is assigned anywhere in the command;
+#   * a program whose operand is a command line by definition
+#     (`_RUNS_AN_OPERAND`);
+#   * git, whose arguments are its operation (`-c core.pager=`, an alias) - all
+#     but the value of a commit or tag message option, which git stores.
+#
+# Unquoted, nested in another substitution, or opened after a separator, the
+# output is not one argument and the body stays shell. KNOWN LIMIT, stated
+# rather than hidden: a program that runs an operand and is none of the above
+# reads as one that does not. The list is of capabilities, and the house forms
+# are derived from it rather than enumerated beside it.
+_RUNS_AN_OPERAND = ("eval", "trap", "find", "ssh", "su", "runuser", "pkexec",
+                    "watch", "script", "parallel", "chroot", "nsenter",
+                    "unshare", "flock", "systemd-run", "fc", "alias", "tmux",
+                    "screen", "expect")
 # The options of a git verb whose VALUE is a message git stores and runs
-# nothing from - where the house form hands a commit or tag its body.
+# nothing from.
 _GIT_MESSAGE_OPTIONS = {"commit": ("-m", "--message"),
                         "tag": ("-m", "--message")}
 # Characters that make a word more than literal text to the shell that reads
@@ -2957,59 +3004,78 @@ _GIT_MESSAGE_OPTIONS = {"commit": ("-m", "--message"),
 _NOT_LITERAL = "'\"$`()<>"
 
 
-def _holds_output_as_text(words, partial, cmd):
-    """Does the command whose words before the substitution are `words` take
-    that substitution's output - one double-quoted argument, `partial` the
-    unquoted text glued in front of it - as text it runs nothing from?
-
-    Two consumers are vouched for: a plain script run (`_plain_script_run`,
-    with no interpreter option assigned anywhere in `cmd`), and git's commit or
-    tag given it as the value of a message option. No words is command
-    position, where the output is the program the shell runs."""
-    if not words or any(ch in partial for ch in _NOT_LITERAL):
+def _word_runs_argument(words, at, partial, cmd):
+    """Does the program `words[at]` names execute the argument that follows
+    `words` (glued to `partial`)? One word of `_argument_runs`' reading."""
+    program = _program_of(words[at])
+    if program in _SHELL_PROGRAMS:
+        return program != "." or at == 0
+    if program in _RUNS_AN_OPERAND:
+        return True
+    if _ANY_INTERPRETER.match(program):
+        return (not _plain_script_run(words[at:at + 2])
+                or bool(_INTERP_ENV_OPTION.search(cmd or "")))
+    if program != "git":
         return False
-    if _plain_script_run(words):
-        return not _INTERP_ENV_OPTION.search(cmd or "")
-    options = (_GIT_MESSAGE_OPTIONS.get(words[1])
-               if len(words) > 1 and _program_of(words[0]) == "git" else None)
+    options = (_GIT_MESSAGE_OPTIONS.get(words[at + 1])
+               if at + 1 < len(words) else None)
     if options is None:
-        return False
+        return True
     if partial:
-        return partial == "-m" or partial == "--message="
-    return words[-1] in options
+        return partial not in ("-m", "--message=")
+    return words[-1] not in options
+
+
+def _argument_runs(words, partial, cmd):
+    """Could the command whose words before the substitution are `words` run
+    the substitution's output - one double-quoted argument, `partial` the
+    unquoted text glued in front of it? The invariant above, read word by word.
+
+    No words is command position. A `partial` that is not literal text, or that
+    makes the word an assignment, hands the output to something that may run
+    it; so does a prefix of assignments and wrappers with no program past it."""
+    if not words or any(ch in partial for ch in _NOT_LITERAL):
+        return True
+    if _ASSIGNMENT.match(partial):
+        return True
+    rest, _candidates = program_candidates(words)
+    if not rest:
+        return True
+    return any(_word_runs_argument(words, at, partial, cmd)
+               for at in range(len(words)))
 
 
 def _substitution_runs_body(prefix, cmd):
     """"shell", "code" or None for a heredoc whose marker `prefix` (the command
-    up to the marker) leaves inside a `$( )`; False when it is in none.
+    up to the marker) leaves inside a `$( )` or a backquote; False when it is in
+    none.
 
     The body is the stdin of the INNERMOST substitution's own command, so the
-    head is read from there - the `$(` enclosing it is the route the output
+    head is read from there - the opener enclosing it is the route the output
     takes, not something that runs the body. When that head runs its stdin, it
-    answers. When it does not, the body becomes the substitution's output, a
-    word of the enclosing command, and stays data only for the house form: the
-    one substitution open, the whole of one double-quoted argument, of a command
-    `_holds_output_as_text` vouches for. Anything else - a shell's `-c`,
-    `eval`, command position after a separator, an assignment, a substitution
-    nested in another - may run that output, so the body stays shell."""
+    answers. When it does not, the body becomes the substitution's output, and
+    the invariant above decides: one substitution open, inside one
+    double-quoted argument, of a command `_argument_runs` says does not run it,
+    is data. Anything else stays shell."""
     _m, opens, at = _scan_contexts(prefix, ())
-    if "(" not in opens:
+    subs = [k for k, ctx in enumerate(opens) if ctx in "(`"]
+    if not subs:
         return False
-    inner = at[len(opens) - 1 - opens[::-1].index("(")]
+    inner = at[subs[-1]]
     start = inner + (2 if prefix.startswith("$(", inner) else 1)
     runs = _head_runs_body(prefix[start:].strip())
     if runs is not None:
         return runs
-    if opens != ('"', "(") or at[1] != at[0] + 1:
+    if len(opens) != 2 or opens[0] != '"' or opens[1] not in "(`":
         return "shell"
     lead = prefix[:at[0]]
     partial = re.search(r"\S*$", lead).group(0)
     before = lead[:len(lead) - len(partial)]
-    if not before.strip() or re.search(r"[;&|(\n]\s*$", before):
+    if not before.strip() or re.search(r"[;&|(`\n]\s*$", before):
         return "shell"
     words = shell_words(command_clauses(before)[-1])
-    return None if words and _holds_output_as_text(words, partial, cmd) \
-        else "shell"
+    return "shell" if words is None or _argument_runs(words, partial, cmd) \
+        else None
 
 
 def _unquoted_heredoc_start(line, stack):
@@ -3086,10 +3152,13 @@ def split_heredocs(cmd, pipe_data=False):
     The head is read by program too (`_head_runs_body`), so a wrapper or an
     option in front of an interpreter does not turn its program into data.
 
-    A MARKER INSIDE A `$( )` IS READ FROM THE INNERMOST SUBSTITUTION
-    (`_substitution_runs_body`). Matching the `$(` that encloses `cat` as
-    indirection graded every house-form commit or description body as shell,
-    and a body line opening with a git verb became a refused command.
+    A MARKER INSIDE A `$( )` OR A BACKQUOTE IS READ FROM THE INNERMOST
+    SUBSTITUTION (`_substitution_runs_body`). Matching the `$(` that encloses
+    `cat` as indirection graded every house-form commit or description body as
+    shell, and a body line opening with a git verb became a refused command.
+    Whether the output is then data is the invariant stated above
+    `_argument_runs`, which names how a command runs an argument rather than
+    which commands may carry one.
 
     A MARKER COUNTS ONLY OUTSIDE QUOTES, as the shell reads it, with the quote
     state carried across lines: a `<<` inside a quoted string opens nothing, and

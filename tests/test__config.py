@@ -1660,11 +1660,10 @@ def _cases(check):
                     M.effective_cwd(_cp_dot, str(wprim)),
                     M.effective_cwd(_ls_dotdot, str(wprim)),
                     M.effective_cwd(_rsync_dot, str(wprim)))))
-        # NOT widened the same way: an interpreter NAME ending a redirect
-        # target (`cat > probe.sh`) stays classified as code/shell on purpose
-        # - narrowing it would also narrow `guard-secrets-read`, which shares
-        # this classification and must stay conservative. See gh35 in
-        # test_guard_history_rewrite.py, which pins that case.
+        # The named programs are anchored the same way, to the start of a word:
+        # a redirect target ENDING IN a shell's name (`cat > probe.sh`) is a
+        # file, not the shell. `hb6`/`hb7` below hold both directions, and
+        # test_guard_history_rewrite.py's gh35 holds it through that guard.
     finally:
         _harness.remove_tree(str(wroot))
 
@@ -3320,12 +3319,158 @@ def _house_body_cases(check):
           all(_rm not in "\n".join([p[0]] + p[1] + p[2]) for p in quoted))
 
 
+def _argument_body_cases(check):
+    """THE INVARIANT, ONE CASE PER ROUTE IT WAS BROKEN BY: a heredoc whose
+    substitution is the whole or part of one double-quoted argument is data,
+    whichever command carries the argument - unless that command runs what it
+    is handed. Three routes graded such a body as shell: a FILE NAME ending in
+    a shell's name read as the shell, a backquote substitution the quote
+    scanner did not see, and a carrying command no list vouched for. Each
+    allow below has a deny beside it, for the fix that reads every body as
+    data."""
+    import _loader
+    hist = _loader.load(os.path.join(_harness.HOOKS_DIR,
+                                     "guard-history-rewrite.py"),
+                        modname="guard_history_rewrite_argument")
+    _qg = "git " + "stash"
+    line = _qg + " drop"
+    body = "A body line can open with the verb.\n%s\nEOF" % line
+
+    def kept(parts):
+        return line in "\n".join([parts[0]] + parts[1] + parts[2])
+
+    def split_all(rows, pipe_data=False):
+        return [(what, M.split_heredocs(cmd, pipe_data)) for what, cmd in rows]
+
+    # Route one: a file name is not a program. A word ending in a shell's
+    # name after a dot is a file the head names - a redirect target, a file
+    # `cat` reads, an argument of a script run - and the body stays data.
+    files = (
+        ("a redirect target", "cat > notes.sh <<'EOF'\n%s" % body),
+        ("a file cat reads before stdin, in the house form",
+         "git commit -m \"$(cat notes.sh - <<'EOF'\n%s\n)\"" % body),
+        ("an argument of a plain script run reading stdin",
+         "python3 x.py --out report.sh - <<'EOF'\n%s" % body),
+        ("a zsh file", "cat > env.zsh <<'EOF'\n%s" % body),
+    )
+    wrong = [(what, parts) for what, parts in split_all(files) if kept(parts)]
+    check("hb6 a word that ENDS IN a shell's name after a dot is a file, not "
+          "the shell: a body written to it, or handed with it to cat or a "
+          "script, is data: %r" % (wrong,), not wrong and len(files) == 4)
+    shells = (
+        ("a shell running a script reads stdin",
+         "sh notes.sh <<'EOF'\n%s" % body),
+        ("a shell reading its program", "bash -s <<'EOF'\n%s" % body),
+        ("a shell by path", "/bin/sh <<'EOF'\n%s" % body),
+        ("after a reserved word", "if true; then sh <<'EOF'\n%s\nfi" % body),
+        ("dot-sourcing a file", ". ./env.sh <<'EOF'\n%s" % body),
+        ("a pipe into a shell running a .sh file",
+         "cat <<'EOF' | sh deploy.sh\n%s" % body),
+        ("the interpreter reading its program", "python3 - <<'EOF'\n%s" % body),
+    )
+    lost = [(what, parts) for what, parts in split_all(shells, True)
+            if not kept(parts)]
+    check("hb7 ...while a shell in PROGRAM position - by name, by path, after a "
+          "reserved word, dot-sourcing, at a pipe's far side - still runs the "
+          "body, and so does an interpreter reading its program: %r" % (lost,),
+          not lost and len(shells) == 7)
+
+    # Route two: a backquote substitution is a substitution, inside double
+    # quotes too, so its heredoc is read from its own head as a `$(`'s is.
+    _bq = "`"
+    script = "/opt/audit/scripts/manifest/audit-task.py"
+    quoted_bq = (
+        ("a commit message",
+         "git commit -m \"%scat <<'EOF'\n%s\n%s\"" % (_bq, body, _bq)),
+        ("a description",
+         "python3 \"%s\" add P1 --description \"%scat <<'EOF'\n%s\n%s\""
+         % (script, _bq, body, _bq)),
+        ("a pull request body",
+         "gh pr create --title t --body \"%scat <<'EOF'\n%s\n%s\""
+         % (_bq, body, _bq)),
+    )
+    wrong = [(what, parts) for what, parts in split_all(quoted_bq)
+             if kept(parts)]
+    invs = [(what, hist.git_invocations(cmd)) for what, cmd in quoted_bq]
+    leaked = [(what, inv) for what, inv in invs
+              if inv is None or any(verb == "stash" for verb, _a in inv)]
+    check("hb8 a backquoted house form's body is data, at the split and "
+          "through a guard's git_invocations: %r" % ((wrong, leaked),),
+          not wrong and not leaked and len(quoted_bq) == 3)
+    run_bq = (
+        ("a shell's -c",
+         "bash -c \"%scat <<'EOF'\n%s\n%s\"" % (_bq, body, _bq)),
+        ("eval", "eval \"%scat <<'EOF'\n%s\n%s\"" % (_bq, body, _bq)),
+        ("command position", "\"%scat <<'EOF'\n%s\n%s\"" % (_bq, body, _bq)),
+        ("unquoted",
+         "python3 x.py --d %scat <<'EOF'\n%s\n%s" % (_bq, body, _bq)),
+        ("a shell as the backquote's own head",
+         "python3 x.py \"%sbash <<'EOF'\n%s\n%s\"" % (_bq, body, _bq)),
+    )
+    lost = [(what, parts) for what, parts in split_all(run_bq)
+            if not kept(parts)]
+    after = hist.git_invocations("git commit -m \"%scat <<'EOF'\n%s\n%s\" && %s"
+                                 % (_bq, body, _bq, line))
+    check("hb9 ...while a backquoted body a shell, eval, command position or "
+          "word splitting may run is kept, and a stash after the backquoted "
+          "form is returned once: %r" % ((lost, after),),
+          not lost and len(run_bq) == 5 and after is not None
+          and [verb for verb, _a in after].count("stash") == 1)
+
+    # Route three: no list of carrying commands. The argument is data to any
+    # program that does not run its arguments - gh, a file run by path, a
+    # program behind a wrapper - as part of the argument as well as all of it.
+    sub = "\"$(cat <<'EOF'\n%s\n)\"" % body
+    carried = (
+        ("gh pr create", "gh pr create --title t --body " + sub),
+        ("gh issue comment, short option", "gh issue comment 5 -b " + sub),
+        ("glued to an option", "gh pr create --body=" + sub),
+        ("part of the argument",
+         "gh pr create --body \"Summary: $(cat <<'EOF'\n%s\n) - end\"" % body),
+        ("a program run by path", "./tools/notify --text " + sub),
+        ("a program behind a wrapper", "timeout 60 gh pr edit 3 --body " + sub),
+        ("a git commit message", "git commit -m " + sub),
+    )
+    wrong = [(what, parts) for what, parts in split_all(carried) if kept(parts)]
+    invs = [(what, hist.git_invocations(cmd)) for what, cmd in carried]
+    leaked = [(what, inv) for what, inv in invs
+              if inv is None or any(verb == "stash" for verb, _a in inv)]
+    check("hb10 a house-form body is data whichever program carries the "
+          "argument - gh, a file run by path, a wrapped program - and when it "
+          "is part of the argument: %r" % ((wrong, leaked),),
+          not wrong and not leaked and len(carried) == 7)
+    runners = (
+        # A wrapper named in no table: only the reading of EVERY word finds
+        # the shell behind it, so this row is red under a program-position-only
+        # reading.
+        ("a shell behind a wrapper no table names",
+         "taskset 1 bash -c " + sub),
+        ("chroot's program operand", "chroot /x " + sub),
+        ("find's -exec", "find . -exec sh -c " + sub + " \\;"),
+        ("a remote command line", "ssh host " + sub),
+        ("an assignment argument", "export PROMPT_COMMAND=" + sub),
+        ("a make variable", "make CMD=" + sub),
+        ("trap", "trap " + sub + " EXIT"),
+        ("a wrapper's program operand", "sudo " + sub),
+        ("env -S", "env -S " + sub),
+        ("watch", "watch " + sub),
+        ("an interpreter's inline program", "node -e " + sub),
+    )
+    lost = [(what, parts) for what, parts in split_all(runners)
+            if not kept(parts)]
+    check("hb11 ...while a carrying command that runs its argument - a shell "
+          "or an interpreter anywhere in its words, find -exec, ssh, trap, "
+          "watch, a wrapper's program, an assignment's value - keeps the body "
+          "as shell: %r" % (lost,), not lost and len(runners) == 11)
+
+
 def _all_cases(check):
     _cases(check)
     _shared_payload_cases(check)
     _git_path_pair_cases(check)
     _git_standing_cases(check)
     _house_body_cases(check)
+    _argument_body_cases(check)
 
 
 def _selftest():
