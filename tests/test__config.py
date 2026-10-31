@@ -3215,11 +3215,117 @@ def _git_standing_cases(check):
         _harness.remove_tree(str(root))
 
 
+def _house_body_cases(check):
+    """A house-form body - `--description "$(cat <<'EOF' ... EOF )"` - is the
+    text of an argument, whichever program the substitution's output is handed
+    to. The guards share `split_heredocs`, so these are graded through one of
+    them, `guard-history-rewrite`'s `git_invocations`, where a body line read as
+    a command turns into a refused git verb."""
+    import _loader
+    hist = _loader.load(os.path.join(_harness.HOOKS_DIR,
+                                     "guard-history-rewrite.py"),
+                        modname="guard_history_rewrite_house")
+    _qg = "git " + "stash"
+    body = "Measured: a body line can open with the verb.\n%s drop\nEOF" % _qg
+    script = "/opt/audit/scripts/manifest/audit-task.py"
+    adds = (
+        ("quoted script path",
+         "python3 \"%s\" add P1 --title t --description \"$(cat <<'EOF'\n%s\n)\""
+         % (script, body)),
+        ("bare script path",
+         "python3 %s add P1 --title t --description \"$(cat <<'EOF'\n%s\n)\""
+         % (script, body)),
+        ("single-quoted script path, -m form",
+         "python3 '%s' add P1 -m \"$(cat <<'EOF'\n%s\n)\"" % (script, body)),
+        ("a commit message, the form that was already lifted",
+         "git commit -m \"$(cat <<'EOF'\n%s\n)\"" % body),
+    )
+    got = [(what, hist.git_invocations(cmd)) for what, cmd in adds]
+    leaked = [(what, inv) for what, inv in got
+              if inv is None or any(verb == "stash" for verb, _a in inv)]
+    check("hb1 git_invocations on an audit-task add whose house-form "
+          "description body has a line opening with the stash verb returns no "
+          "stash invocation: %r" % (leaked,), not leaked and len(got) == 4)
+    # SECOND DIRECTION, for a fix that reads every substitution's body as data:
+    # a stash run outside the body - after the add, or inside a live `$( )` in
+    # the add's own arguments - is still a stash this command runs.
+    outside = (
+        ("after the add",
+         "python3 \"%s\" add P1 --description \"$(cat <<'EOF'\n%s\n)\" && "
+         "%s drop" % (script, body, _qg)),
+        ("before it",
+         "%s pop; python3 \"%s\" add P1 --description \"$(cat <<'EOF'\n%s\n)\""
+         % (_qg, script, body)),
+        ("the body piped to a shell",
+         "cat <<'EOF' | bash\n%s\n" % body),
+    )
+    kept = [(what, hist.git_invocations(cmd)) for what, cmd in outside]
+    lost = [(what, inv) for what, inv in kept
+            if inv is None or [verb for verb, _a in inv].count("stash") != 1]
+    check("hb2 ...while a real stash outside the body - before or after the add, "
+          "or a body piped to a shell - is still returned, once: %r" % (lost,),
+          not lost and len(kept) == 3)
+    # The same reading, at the shared door every guard calls: the body is lifted
+    # out of the command text and is not returned as shell.
+    split = [(what, M.split_heredocs(cmd)) for what, cmd in adds]
+    as_shell = [(what, parts) for what, parts in split
+                if (_qg + " drop") in parts[0]
+                or any((_qg + " drop") in b for b in parts[2])]
+    check("hb3 split_heredocs lifts each house-form body out of the command "
+          "text and returns none of it as shell: %r" % (as_shell,),
+          not as_shell and len(split) == 4)
+    # SECOND DIRECTION for the narrowing itself: the substitution's output is
+    # text only to the two consumers vouched for. Every other enclosing
+    # command may run it, so its body stays shell - including the one whose
+    # `$(` opened on an earlier line than the marker, which no head reading
+    # on the marker's own line can see.
+    _rm = "rm -rf " + "x"
+    hb_body = "\n%s\nEOF\n)\"" % _rm
+    runs_it = (
+        ("a shell's -c", "bash -c \"$(cat <<'EOF'" + hb_body),
+        ("eval", "eval \"$(cat <<'EOF'" + hb_body),
+        ("an interpreter's -c", "python3 -c \"$(cat <<'EOF'" + hb_body),
+        ("command position", "\"$(cat <<'EOF'" + hb_body),
+        ("command position after a script run",
+         "python3 x.py a; \"$(cat <<'EOF'" + hb_body),
+        ("an assignment", "GIT_EDITOR=\"$(cat <<'EOF'" + hb_body + " git commit"),
+        ("git with an option before its verb",
+         "git -c core.pager=x commit -m \"$(cat <<'EOF'" + hb_body),
+        ("a git verb that is no message", "git log --grep \"$(cat <<'EOF'"
+         + hb_body),
+        ("unquoted", "python3 x.py --d $(cat <<'EOF'\n%s\nEOF\n)" % _rm),
+        ("nested", "python3 x.py --d \"$(echo \"$(cat <<'EOF'" + hb_body + ")\""),
+        ("opened on an earlier line", "bash -c \"$(\ncat <<'EOF'" + hb_body),
+        ("an interpreter option set elsewhere",
+         "export NODE_OPTIONS=x; node e.js \"$(cat <<'EOF'" + hb_body),
+        # A shell running a script file reads its stdin too; no pattern over
+        # the marker's line spells that, so only the innermost head answers.
+        ("a shell as the substitution's own head",
+         "python3 x.py \"$(bash ./go <<'EOF'" + hb_body),
+    )
+    dropped = [(what, M.split_heredocs(cmd)) for what, cmd in runs_it]
+    dropped = [(what, parts) for what, parts in dropped
+               if _rm not in "\n".join([parts[0]] + parts[1] + parts[2])]
+    check("hb4 ...while a body whose substitution output a shell, eval, an "
+          "interpreter's -c, command position, an assignment or any other "
+          "consumer could run is still kept: %r" % (dropped,),
+          not dropped and len(runs_it) == 13)
+    # A quoted script path is the file the interpreter is handed, as a heredoc
+    # head and as the far side of a pipe.
+    quoted = (M.split_heredocs("python3 \"x.py\" --t - <<'EOF'\n%s\nEOF" % _rm),
+              M.split_heredocs("cat <<'EOF' | python3 'x.py' -\n%s\nEOF" % _rm,
+                               pipe_data=True))
+    check("hb5 a quoted script path no longer disqualifies a plain script run, "
+          "as a head or as a pipe's far side: %r" % (quoted,),
+          all(_rm not in "\n".join([p[0]] + p[1] + p[2]) for p in quoted))
+
+
 def _all_cases(check):
     _cases(check)
     _shared_payload_cases(check)
     _git_path_pair_cases(check)
     _git_standing_cases(check)
+    _house_body_cases(check)
 
 
 def _selftest():

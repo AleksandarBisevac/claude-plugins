@@ -12030,7 +12030,8 @@
       "P131.1"
     ],
     "tests/test_guard_history_rewrite.py": [
-      "P131.1"
+      "P131.1",
+      "P153.7-34e"
     ],
     "tests/test_guard_secrets_read.py": [
       "P131.1",

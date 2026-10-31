@@ -2389,7 +2389,11 @@ def _plain_script_run(words):
     No leading assignment, no option before the script, a script operand that
     is a real file name with that interpreter's extension - never `-`, a
     `/dev/` or `/proc/` path - and no word carrying a quote, an expansion or a
-    redirection. That is the only invocation `_DATA_SCRIPT_EXTS` vouches for."""
+    redirection. That is the only invocation `_DATA_SCRIPT_EXTS` vouches for.
+
+    `words` are the shell's words, quotes already removed by `shell_words`, so
+    a quoted script path is the file name the interpreter is handed; a quote
+    character still inside a word is one the shell kept, and refuses."""
     if len(words) < 2:
         return False
     if any(ch in w for w in words for ch in "'\"$`()<>"):
@@ -2404,8 +2408,12 @@ def _plain_script_run(words):
 
 
 def _last_command(text):
-    """The words of the last simple command in `text` (after `;` `&` `|` `(`)."""
-    return re.split(r"[;&|(\n]", text)[-1].split()
+    """The words of the last simple command in `text` (after `;` `&` `|` `(`),
+    as the shell hands them to the program - quotes removed - or split on
+    blanks when the quoting there never closes."""
+    last = re.split(r"[;&|(\n]", text)[-1]
+    words = shell_words(last)
+    return last.split() if words is None else words
 
 
 def is_interpreter(word):
@@ -2897,32 +2905,111 @@ def _scan_quotes(text, stack, stop_at_marker=False):
     A backslash outside single quotes escapes the next character. With
     `stop_at_marker`, the scan stops at the first `<<` marker read where the
     shell reads one, and the quoting returned is the one open at that point."""
+    found, opened, _at = _scan_contexts(text, stack, stop_at_marker)
+    return found, opened
+
+
+def _scan_contexts(text, stack, stop_at_marker=False):
+    """`_scan_quotes`' answer plus where in `text` each open context began -
+    None for one already open when `text` began. One scanner, so the quoting a
+    marker is read under and the substitution it sits in cannot disagree."""
     stack, i, n = list(stack), 0, len(text)
+    at = [None] * len(stack)
     while i < n:
         ch, top = text[i], (stack[-1] if stack else None)
         if top == "'":
             if ch == "'":
                 stack.pop()
+                at.pop()
         elif ch == "\\":
             i += 1
         elif text.startswith("$(", i):
             stack.append("(")
+            at.append(i)
             i += 1
         elif top == '"':
             if ch == '"':
                 stack.pop()
+                at.pop()
         elif ch in "'\"":
             stack.append(ch)
+            at.append(i)
         elif ch == "(" and top == "(":
             stack.append("(")
+            at.append(i)
         elif ch == ")" and top == "(":
             stack.pop()
+            at.pop()
         elif stop_at_marker and ch == "<":
             m = _HEREDOC_START.match(text, i)
             if m:
-                return m, tuple(stack)
+                return m, tuple(stack), tuple(at)
         i += 1
-    return None, tuple(stack)
+    return None, tuple(stack), tuple(at)
+
+
+# The options of a git verb whose VALUE is a message git stores and runs
+# nothing from - where the house form hands a commit or tag its body.
+_GIT_MESSAGE_OPTIONS = {"commit": ("-m", "--message"),
+                        "tag": ("-m", "--message")}
+# Characters that make a word more than literal text to the shell that reads
+# it: a quote, an expansion, a redirection or a process substitution.
+_NOT_LITERAL = "'\"$`()<>"
+
+
+def _holds_output_as_text(words, partial, cmd):
+    """Does the command whose words before the substitution are `words` take
+    that substitution's output - one double-quoted argument, `partial` the
+    unquoted text glued in front of it - as text it runs nothing from?
+
+    Two consumers are vouched for: a plain script run (`_plain_script_run`,
+    with no interpreter option assigned anywhere in `cmd`), and git's commit or
+    tag given it as the value of a message option. No words is command
+    position, where the output is the program the shell runs."""
+    if not words or any(ch in partial for ch in _NOT_LITERAL):
+        return False
+    if _plain_script_run(words):
+        return not _INTERP_ENV_OPTION.search(cmd or "")
+    options = (_GIT_MESSAGE_OPTIONS.get(words[1])
+               if len(words) > 1 and _program_of(words[0]) == "git" else None)
+    if options is None:
+        return False
+    if partial:
+        return partial == "-m" or partial == "--message="
+    return words[-1] in options
+
+
+def _substitution_runs_body(prefix, cmd):
+    """"shell", "code" or None for a heredoc whose marker `prefix` (the command
+    up to the marker) leaves inside a `$( )`; False when it is in none.
+
+    The body is the stdin of the INNERMOST substitution's own command, so the
+    head is read from there - the `$(` enclosing it is the route the output
+    takes, not something that runs the body. When that head runs its stdin, it
+    answers. When it does not, the body becomes the substitution's output, a
+    word of the enclosing command, and stays data only for the house form: the
+    one substitution open, the whole of one double-quoted argument, of a command
+    `_holds_output_as_text` vouches for. Anything else - a shell's `-c`,
+    `eval`, command position after a separator, an assignment, a substitution
+    nested in another - may run that output, so the body stays shell."""
+    _m, opens, at = _scan_contexts(prefix, ())
+    if "(" not in opens:
+        return False
+    inner = at[len(opens) - 1 - opens[::-1].index("(")]
+    start = inner + (2 if prefix.startswith("$(", inner) else 1)
+    runs = _head_runs_body(prefix[start:].strip())
+    if runs is not None:
+        return runs
+    if opens != ('"', "(") or at[1] != at[0] + 1:
+        return "shell"
+    lead = prefix[:at[0]]
+    partial = re.search(r"\S*$", lead).group(0)
+    before = lead[:len(lead) - len(partial)]
+    if not before.strip() or re.search(r"[;&|(\n]\s*$", before):
+        return "shell"
+    words = shell_words(command_clauses(before)[-1])
+    return None if words and _holds_output_as_text(words, partial, cmd) \
+        else "shell"
 
 
 def _unquoted_heredoc_start(line, stack):
@@ -2960,8 +3047,8 @@ def _pipes_to_script_run(tail, cmd):
         return False
     if _INTERP_ENV_OPTION.search(cmd or ""):
         return False
-    far = re.split(r"[;&\n]", tail.split("|", 1)[1])[0]
-    return _plain_script_run(far.split())
+    far = shell_words(re.split(r"[;&\n]", tail.split("|", 1)[1])[0])
+    return far is not None and _plain_script_run(far)
 
 
 def split_heredocs(cmd, pipe_data=False):
@@ -2998,6 +3085,11 @@ def split_heredocs(cmd, pipe_data=False):
     stricter reading, and a secret path in such a body is still a read there.
     The head is read by program too (`_head_runs_body`), so a wrapper or an
     option in front of an interpreter does not turn its program into data.
+
+    A MARKER INSIDE A `$( )` IS READ FROM THE INNERMOST SUBSTITUTION
+    (`_substitution_runs_body`). Matching the `$(` that encloses `cat` as
+    indirection graded every house-form commit or description body as shell,
+    and a body line opening with a git verb became a refused command.
 
     A MARKER COUNTS ONLY OUTSIDE QUOTES, as the shell reads it, with the quote
     state carried across lines: a `<<` inside a quoted string opens nothing, and
@@ -3047,6 +3139,10 @@ def split_heredocs(cmd, pipe_data=False):
             continue
         head = line[:m.start()].strip()
         tail = line[m.end():]
+        runs = _substitution_runs_body("\n".join(kept + [line[:m.start()]]),
+                                       cmd)
+        if runs is False:
+            runs = _head_runs_body(head)
         quote = _quote_after(tail, after)
         # THE REST OF THE HEAD LINE IS COMMAND TEXT, and it was dropped with
         # the body: `cat <<'EOF' && git stash` kept only `cat`, so whatever
@@ -3054,7 +3150,6 @@ def split_heredocs(cmd, pipe_data=False):
         kept.append(line[:m.start()] + " " + tail)
         body = "\n".join(lines[i + 1:end])
         live = not m.group(1) and _LIVE_SUBSTITUTION.search(body)
-        runs = _head_runs_body(head)
         if _STDIN_SHELL.search(head) or runs == "shell":
             shell.append(body)
         elif _STDIN_INTERP.search(head) or runs == "code":

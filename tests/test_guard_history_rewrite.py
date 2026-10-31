@@ -1223,10 +1223,18 @@ def _cases(check):
                  "an apostrophe in a trailing comment is not a directory "
                  "change, so the amend is judged in the session"),
                 ("gw14e", _wt["main"],
-                 "git commit --amend -m \"$(cat <<'EOF'\nit's ready\nEOF\n)\"",
+                 "git commit --amend -m \"$(bash ./msg <<'EOF'\nit's ready\n"
+                 "EOF\n)\"",
                  "deny",
-                 "the house commit-message form carries a shell heredoc, "
-                 "whose effect on the current shell cannot be established"),
+                 "a substitution whose own command is a shell carries a shell "
+                 "heredoc, whose effect on the current shell cannot be "
+                 "established"),
+                ("gw14i", _wt["main"],
+                 "git commit --amend -m \"$(cat <<'EOF'\nit's ready\nEOF\n)\"",
+                 "allow",
+                 "...while the house commit-message form's body is the "
+                 "message - data - so its apostrophe opens no quote and the "
+                 "amend is judged in the session, as gw14c's is"),
                 ("gw14a", _wt["main"], "git -C %s status '" % _q_wt, "allow",
                  "an unparseable command that is not a rewrite stays allowed "
                  "- the mutation that denies every unreadable command"),
@@ -1240,7 +1248,7 @@ def _cases(check):
                                "tool_input": {"command": _cmd}})
             check("%s %s: %s" % (_cid, _want, _what), v == _want,
                   repr((v, why[:160])))
-        _house = "git commit --amend -m \"$(cat <<'EOF'\nit's ready\nEOF\n)\""
+        _house = "git commit --amend -m \"$(bash ./msg <<'EOF'\nit's ready\nEOF\n)\""
         v, why = M.decide({"tool_name": "Bash", "cwd": _wt["wt"],
                            "tool_input": {"command": _house}})
         check("gw14d a shell heredoc in an amend makes its directory "

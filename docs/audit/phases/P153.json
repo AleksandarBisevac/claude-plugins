@@ -359,7 +359,7 @@
     {
       "id": "P153.6",
       "title": "A task that deletes, renames or changes a file other files read cannot be dispatched until each such dependant is declared or waived with a reason, and scope can add files without restating the held list",
-      "status": "in_progress",
+      "status": "done",
       "description": "Register F792 (verified open 2026-10-31 at ad838231; recurred twice in P151 and three times in P143 as undeclared edits). The brief already lists \"Who depends on this\" (audit-lookup.dependant_lines) but only asks the executor to answer each dependant, and nothing grades it. Do: from the same dependants data, list at dispatch every tracked file that reads a declared file (by path, by import, or by text anchor, e.g. tools/prove-gates.py rows anchored on ci.yml and gate-parity.py text) that the task does not declare, and refuse dispatch until each is declared or waived with a recorded reason. Also let scope take an incremental +a,b spelling. Keep the refusal precise: a dependant that cannot be affected by the declared change shape must not be demanded (measure the false-positive rate over the last phases P143 and P151 and report it).",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -393,30 +393,47 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a2ee0c961048",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "RETRY FIX (attempt 2): plugins/audit/scripts/manifest/audit-task.py _unanswered_readers - the two direct os.path.relpath calls the previous attempt added (plan_dir, and the per-reader remedy path) now go through _output.posix_rel, the anchor's one publishing spelling; the second dropped its own .replace(os.sep, '/') since posix_rel already spells '/'. Class check: `git diff -U0 -- plugins/audit/scripts tests | grep '^+.*relpath'` -> no hits (grep exit 1), so no other added relpath in this task's diff. Evidence: `python3 tests/test__output.py --selftest` exit 0, ALL PASS 91/91, px2 PASS. Task gate `python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test_audit_lookup.py tests/test__impact.py tests/test_drive_phase.py` exit 0, `4/4 files ok, 2046 cases`. RED-FIRST NARROWING: attempt 1's helper found HEAD's own files red under the four-suite command (687/688, case ta9 in tests/test_drive_phase.py, a file this task does not edit); in a `git archive HEAD` export under <scratchpad>/headx each HEAD suite run alone was green (test_audit_task 1180 cases, test_audit_lookup 144, test__impact 18, test_drive_phase 688, each exit 0), so ta9's red is particular to the helper's tree and not this task's; the red-first command is narrowed to the suite tests.add names, `python3 tools/sweep-selftests.py tests/test_audit_task.py`. `--stage dd-block` was not used because HEAD's suite has no such label and the harness fails an unknown stage, which would redden the baseline. Everything else is as attempt 1 filed it and is unchanged this attempt: _impact.owed (suite / text-anchor / section readers an edit can reach), `start` refusing an undeclared owed reader unless declared or waived (--force --reason for an unreadable scan), `scope --files +a,b` and `scope --waive '<path>: <why>'`; dd1-dd10 and xp5/xp6 in tests/test_audit_task.py, ow1-ow5 in tests/test__impact.py. FALSE-POSITIVE MEASUREMENT as attempt 1 filed it (measured once, at each task's base commit over P143 and P151's 21 committed tasks): 49 readers demanded, 5 edited by the task, so 44 of 49 demanded-but-unedited, each reachable by an edit by construction (a waiver line, not a wrong demand); 5 of the 6 mid-run reader widenings caught, tests/test_commit_task_work.py missed. Out-of-scope files attempt 1 edited (plan gate allowed each): plugins/audit/reference/verbs-in-full.md, plugins/audit/commands/task.md argument-hint, plugins/audit/README.md - check-rendered-artifacts was NOT run, so the orchestrator should check whether the README edit owes a re-render. DEPENDANT ANSWERS: audit-task.py - tests/test__output.py was the reader this retry answers (px2 now green); .claude/hooks/guard-uncommitted.py, tools/affected.py, docs/research/*.md name its path only, path unchanged: still correct; PLUGIN-BUILD-GUIDE.md changed in attempt 1 (start refusal, scope +/--waive); names imported by tests/test_audit_task.py unchanged. audit-lookup.py - only a comment changed; its readers still correct. _impact.py - audit-lookup.py and tests/test_audit_lookup.py import unchanged names: still correct; tests/test__impact.py changed (ow-block); PLUGIN-BUILD-GUIDE.md _impact section changed. drive-phase.py - not edited; it relays audit-task.py start's non-zero exit, so the refusal reaches the operator unchanged; test_drive_phase green in the gate. tests/test_audit_task.py - test_commit_task_work.py and test__filed_returns.py import unchanged helpers; .github/sweep-costs.json has no dd-block figure, weighed by suite figure over blocks: still correct. tests/test_audit_lookup.py, tests/test_drive_phase.py - not edited. PLUGIN-BUILD-GUIDE.md - no heading changed; basename readers still correct.\n\nclaims:\n1 audit-task.py _unanswered_readers: plan_dir and the remedy path now call _output.posix_rel, the helper _output.py documents as the spelling for published paths\n2 px2 was red on attempt 1's diff (the orchestrator's recorded run 2026-10-31T06:06:25Z.5ba894: test__output 90/91); with the two calls replaced it is PASS, 91/91 exit 0; dd/xp red-first by the helper on the narrowed command\n3 grep for the bare shape over the task's added lines: `git diff -U0 -- plugins/audit/scripts tests | grep '^+.*relpath'` -> 0 hits; the pre-existing posix_rel sites in audit-task.py are untouched\n4 n/a - no rule to an agent written this attempt\n5 false-positive figures measured once, as filed in attempt 1, stated so above\n6 the start refusal reads the declared files' readers from git grep plus _impact.owed's kinds, not command text; dd10 is the allow case (path-only / import / basename readers start with no waiver)\n7 the 44 of 49 figure is attempt 1's measurement over P143 and P151 at their base commits, measured once - history, not a live count",
+        "descriptive": "start refuses to dispatch a task while an edit-reachable reader of its declared files is neither declared nor waived, scope takes +a,b and --waive; this retry routes the two new published paths through _output.posix_rel so test__output px2 is green"
       },
       "startedAt": "2026-10-31T06:07:15Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-31T06:32:00Z",
+      "verifiedBy": [
+        "tests/test_audit_task.py dd1-dd10: start refused naming an undeclared suite/text-anchor/section reader, passes once declared via scope +a,b or waived with a reason, reasonless waiver refused, unreadable scan refused unless forced, and the allow case where only path/import/basename readers exist",
+        "tests/test_audit_task.py xp5 rewritten and xp6: scope --files + adds, and a + value beside a plain one is refused",
+        "tests/test__impact.py ow1-ow5: owed keeps only the reader kinds an edit can reach, skips a not-yet-existing file, reports a failed git grep as an error, and does not leak SyntaxWarning"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-31T06:31:51Z.ac0a2a",
         "status": "passed",
         "at": "2026-10-31T06:31:51Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "a2ee0c961048",
+        "at": "2026-10-31T06:32:00Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-31T06:17:59Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_audit_task.py` in a throwaway tree at HEAD exited 1 with 7 of 1191 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - xp6 (house FAIL), dd1 (house FAIL), dd3 (house FAIL), dd4 (house FAIL), dd5 (house FAIL), dd7 (house FAIL), dd9 (house FAIL): SELFTEST FAILED: 1184/1191 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P153.7-34e",
       "title": "The shared heredoc split reads a house-form commit or description body as data, so no guard grades it as shell",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Register F822. _config._head_runs_body: _HEAD_INDIRECTION matches the command substitution that encloses the cat heredoc, so every guard sharing split_heredocs grades house-form bodies as commands (measured by P153.3: a stash invocation with args is banned here). Read the head from the innermost open substitution, and stop letting a quoted script path disqualify a plain script run. Hooks are importless of scripts/; keep the hook import budget (tools/bench-hooks.py --gate). Check every guard that shares split_heredocs and tools/prove-gates.py rows anchored in _config.py; name any undeclared file that must change.",
       "files": [
         "plugins/audit/hooks/_config.py",
         "tests/test__config.py",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "tests/test_guard_history_rewrite.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -434,16 +451,22 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-31T06:32:01Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-31T06:57:50Z.d4844b",
+        "status": "passed",
+        "at": "2026-10-31T06:57:50Z"
+      }
     }
   ],
   "reviewPerTask": "signals",
