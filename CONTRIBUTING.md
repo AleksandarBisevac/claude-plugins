@@ -585,6 +585,23 @@ slice is `python3 tools/gate-parity.py --list`.
   walks the directories rather than listing them, and fails a module that has
   neither. Adding a file and remembering to register it were once two separate
   acts, and one suite went unrun for two releases as a result.
+- **A test conversion keeps the reach it had, and `tools/reach-diff.py` is the
+  check it owes.** When end-to-end drives are replaced by unit cases over a decision
+  function, the decisions stay tested while the code that ACTS on a decision — the
+  branch that routes on the answer, the line that prints it — can stop being run by
+  anything, with every case green. Reading for that finds the instances a reviewer
+  thinks to look for, so a change that converts a suite runs
+  `python3 tools/reach-diff.py <module> <suite> --base <the commit before it> --head HEAD`
+  and answers its output: the suite runs at both revisions in scratch exports with a
+  line tracer on the module, in every Python process the suite starts, and the tool
+  exits 1 naming each line of the module reached before and not after, grouped by
+  function and matched by function and text, so a change that only moves code stays
+  green. Each line it names is reached again by a case, or named in the change as
+  deliberately left. It refuses with 2 rather than passing when a block failed or a
+  revision reached no line of the module, and its docstring says what the tracer
+  cannot see. Nothing runs it for you: it is no slice of `verify.sh` and no hook asks
+  for it, so it runs where a task names it in its gate, and otherwise a review is
+  where a missing run is found.
 - **Every `.py` under `hooks/` and `scripts/` is scanned wherever it sits.** The
   selftest sweep — one runner, run by verify.sh's sweep slices here and in CI —
   walks the tree through `_output.py_files()`, the single recursive walk behind

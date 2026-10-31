@@ -79,9 +79,44 @@
         "file": "PLUGIN-BUILD-GUIDE.md:4483-4486,4493",
         "issue": "The guide names only `up-block`, `ut-block`, `uq-block` and `uc-block` as the drive's unit tests. It does not mention ux-block (unit cases over the deciding functions and the code acting on their answers, with fake verbs), uw-block (verb-subject cases with no drive) or e2e-steps. The guide also still says of `next <taskId>` that \"The `dt` cases drive it\". After this diff no dt case drives `next <taskId>` (see finding 1), so the sentence is false until finding 1 is fixed.",
         "resolution": "Add one sentence after the planner sentence, naming e2e-steps as the kept drives, ux-block as the unit cases over the acting code with fake verbs, and uw-block as the verb-subject cases. Once finding 1 is fixed, word the dt sentence to say what the dt cases run, for example: `drive_task` and the `drive-task` route over fake verbs, and the refusals through `main`."
+      },
+      {
+        "id": "P152-R9",
+        "severity": "med",
+        "file": "tools/reach-diff.py:99,105-188 (hook delivery); tests/test_drive_phase.py:278-321 (the shadowing side)",
+        "issue": "Children can go untraced without anything noticing, and it happens in the suite this tool is built for. The hook reaches a child only as the FIRST `sitecustomize` on PYTHONPATH. tests/test_drive_phase.py's `_pinned_clock` (line 286) and `_windows_stdout` (line 313) put a fixture directory holding its own `sitecustomize.py` ahead of it. Python imports only one `sitecustomize`, and the fixture's does not chain, so every drive-phase.py verb child started inside those blocks runs untraced at BOTH revisions. Those verbs are the stamped and CRLF routes: `_pinned_clock(` appears 5 times and `_windows_stdout(` twice, at both 92c399f5 and HEAD. The tool cannot detect this. The empty-reach refusal is per revision (line 522), and the printed `processes traced` counts only processes that dumped (read_traces, line 363). A child that never ran the hook, or ran it and ended through os._exit or a kill, is in no number. The counts also cannot separate 'fewer processes because drives were converted', which is the expected effect of the conversions this tool gates, from 'processes untraced'. A conversion at P152.4, P152.11 or P152.13 that drops a pinned-clock drive loses lines that were never in the base reach, and the tool exits 0. The docstring lists 'another sitecustomize earlier on its path' generically, but neither the docstring nor the filed outcome says that the target suite has that shape.",
+        "resolution": "Also write the hook as `usercustomize.py` in the same directory, guarded so it installs once per process. site.py imports usercustomize independently of which sitecustomize won wherever user site is enabled; say where it is not (-s, PYTHONNOUSERSITE, a venv without system site). Have the hook write a start marker when it installs. read_traces then prints started against dumped per revision, which makes os._exit and kills visible, plus a count of processes reached only through the usercustomize entry, which makes shadowing visible. Add a selftest case whose fixture suite starts the module's child under a non-chaining `sitecustomize` planted first on PYTHONPATH, and assert that the child's lines are measured. Prove it red against the current single entry point."
+      },
+      {
+        "id": "P152-R10",
+        "severity": "med",
+        "file": "tools/reach-diff.py:252-253,533 (gone excluded from the exit code); docstring 46-52",
+        "issue": "contradicts task clause 'prints every line reached at the base revision and not reached at the head revision ... exit 1 when any such line exists and 0 otherwise'. A base-reached line whose (function, text, occurrence) key the head module no longer holds is listed as `gone` and never decides the exit code (`result[\"code\"] = 1 if found[\"gaps\"] else 0`). So when a conversion renames a function, or extracts a planner and moves lines out of a route function, every moved line the head suite no longer reaches leaves the exit code 0. Its text can still be in the module, unreached. The gates P152.4, P152.11 and P152.13 read the exit code, so this is a pass that measured a loss. rd16 pins the reworded-and-still-reached case. No case covers moved-to-another-function-and-unreached.",
+        "resolution": "Before declaring a key gone, match it again by (stripped text, occurrence in the whole module) at the head. A match the head did not reach is a gap, which exits 1. Only text the head module no longer holds anywhere stays `gone`. Add a fixture tag that moves `return \"positive\"` into a renamed helper and drops its case, and assert exit 1. Alternatively, if `gone` is meant to stay non-deciding, amend the task description and the CONTRIBUTING bullet to say so. The current code does not do what the clause asked."
+      },
+      {
+        "id": "P152-R11",
+        "severity": "med",
+        "file": "tools/reach-diff.py:222-236 (line_keys occurrence index), 247-251",
+        "issue": "A lost line can hide behind an identical line in the same function whenever the module changes in that function, and this is neither documented nor tested. `occurrence` counts the earlier identical lines in the function. Inserting or removing one identical line above (`return 0`, `return code`, `continue`; the short route lines this tool exists to keep reached) shifts every later occurrence. Example: base f reaches A=`return 0` (occ0) and B=`return 0` (occ1). The head adds N=`return 0` above both, so N is occ0, A is occ1 and B is occ2, and the head reaches N and A. Base occ0 matches N and base occ1 matches A, both reached. B's loss is hidden and the exit is 0. When the module is byte-identical, as drive-phase.py was in the executor's real run, keys coincide and nothing hides. A conversion that also edits the module is exposed. rd10 proves only that two occurrences are distinct keys, not that an insertion leaves them stable.",
+        "resolution": "Align the base and head lines of each function with difflib.SequenceMatcher over stripped text instead of an occurrence index, so an inserted or deleted duplicate does not renumber the others. Add a fixture tag that inserts an identical earlier line and drops reach to the later one, and assert exit 1 naming it. At minimum, state the limitation in the docstring's matching section."
+      },
+      {
+        "id": "P152-R12",
+        "severity": "low",
+        "file": "CONTRIBUTING.md:597-601",
+        "issue": "The bullet says the tool 'exits 1 naming each line of the module reached before and not after' and that the tracer runs 'in every Python process the suite starts'. Both overclaim. Reached lines whose function or text changed are listed as gone and leave it at 0 (finding 2), and children behind a non-chaining sitecustomize are not traced (finding 1). The pointer to the docstring for what the tracer cannot see is present, but the sentence itself states the stronger claim.",
+        "resolution": "Say that lines whose function or text changed are listed apart as gone and do not fail it, unless finding 2 is fixed. Replace 'in every Python process' with 'in every Python process that imports its hook', next to the existing docstring pointer."
+      },
+      {
+        "id": "P152-R13",
+        "severity": "low",
+        "file": "tools/reach-diff.py:325-345; tests/test_drive_phase.py:347-354,494,509",
+        "issue": "The tool changes the route of the run it measures. Its hook directory holds a `sitecustomize.py` on PYTHONPATH, and `_needs_process()` returns True for any PYTHONPATH entry holding one. Under reach-diff, every verb tests/test_drive_phase.py would run in-process therefore runs as a process: that accounts for the thousands of traced processes and the 717 s wall in the real run. drive-phase.py's real `run_verb` subprocess route is then reached because of the tool, not the suite. The effect is the same at both revisions, so it creates no false gap while the routing stays the same. It is still a measured reach that differs from what the sweep runs, and nothing says so.",
+        "resolution": "The usercustomize entry from finding 1 also removes this, because the detector looks only for sitecustomize.py. Otherwise, name this effect in the docstring's WHAT IT CANNOT SEE section."
       }
     ],
-    "outcome": "[findings: 8 - 0 high, 3 med, 5 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 13 - 0 high, 6 med, 7 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -669,7 +704,7 @@
     {
       "id": "P152.9",
       "title": "The dependency lints index each scope, module and file once",
-      "status": "in_progress",
+      "status": "done",
       "description": "Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.9. (a) _scope_normalisers(scope) built in one walk, _name_normalisers a lookup in it; (b) _wrapper_map computes the loader and alias name sets once per module; (c) register_citation_violations parses each file once and hands the tree to its readers (text form kept for unit cases); (d) dict_key_contracts builds a per-module scope index. No lint changes its answer. Cases: each index equals a recomputation on a fixture module with a poisoned entry; _name_normalisers still answers the ck3 pair. prove-gates row ck3's anchor follows its line.",
       "files": [
         "tools/lints/_deps.py",
@@ -700,14 +735,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c12794395e9b",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/lints/_deps.py: (a) _scope_normalisers(scope) builds {local: normalisers} in one walk; _name_normalisers is a lookup in it; _scope_config_reads(..., index=None) builds the index for the scope it was handed and looks up locals in it. (b) _loader_facts(tree, siblings) holds module/function loader names, own wrappers, sibling aliases and borrow candidates once per parsed file; _borrowed_from_facts answers _borrowed_wrapper_names from them; _wrapper_map(trees, facts=None) and _runtime_loaded_sibling_names(..., facts=None) read them; _scan_edges_once takes facts per parsed tree (a basename collision keeps each copy's own facts). (c) _literal_index(tree) gives doc ids, label ids and string nodes in walk order from one walk; the three readers take (text, index=None) and keep the text form; register_citation_violations parses each .py once and hands the index to all three. (d) dict_key_contracts is split into _contract_scan (each function's _scope_nodes walked once, shared by _module_producers(tree, nodes), _mutated_parameters(node, nodes) and scan['nodes']) and the judge; _scope_index/_build_scope_index memoise per scope (keyed by the scope node) the assigned/added/unknown/calls/reads that _scope_key_sets, _call_sites and the report loop read every round. tools/prove-gates.py row ck3 anchor re-pointed to `normalisers = normalisers | index.get(local, frozenset())`; --list shows every row anchored. PLUGIN-BUILD-GUIDE.md ### tools/lints/_deps.py has one new paragraph on the one-walk-per-scope rule. That section held no memo paragraph, so the new paragraph names the memos itself. tests/test__deps.py gains ix1-ix12 and a module-level _CK3_PAIR that ck3 and ix4 share. Equivalence on the live tree, comparing HEAD's module (exec'd from git show) with the new one in one process: config_key_reads (134 keys), config_divergences, config_read_violations, register_citation_violations, _scan_edges_once (749 static/19 runtime), layer_violations, tests_import_violations, dict_key_contracts (296 producers, 1974 reads), dict_key_violations all SAME; the three citation readers compared file by file over 356 tracked .py files (112 hits) gave 0 differences. Each of `prove-gates.py --only config_read_violations | register_citation_violations | dict_key_violations | layer_violations | tests_import_violations` exited 0, with every red row red and every allow row red under over-fire. Block times, before -> after, one run each: dg-config-memo 24.8 -> 12.9 s, dg-config-key 8.5 -> 4.5, dg-citation 18.6 -> 7.4, dg-scan-memo 16.5 -> 8.8, dg-dict-key 13.2 -> 9.1. The 1-minute load average was 4.6-6.0 before and 7.3-10.2 after, so the after runs had the noisier machine. Gates: sweep tests/test__deps.py exit 0 (266 cases); sweep tests/test__output_lints.py + tests/test__refs.py exit 0 (173 + 292 cases); prove-gates --list exit 0; ruff and vermin clean on the changed .py. Dependants: the importers of _deps (_manifest_rules, _manifest_vocab, _doctor_policy, test__manifest_vocab, test__output, test__panel_paths, evals.json, tools/affected.py, tools/sweep-selftests.py) still hold, because only private helpers changed, every public answer is equal on the live tree, and git grep finds no caller of a changed helper outside the task files. tests/test__deps.py's uses of _check_label_citations/_py_docstring_citations keep the text form (rc8-rc14 pass). The _block_accessor and _fault_hits rows in prove-gates are untouched and anchored. PLUGIN-BUILD-GUIDE.md dependants: the new paragraph sits inside an existing section, so guide_enumeration is unaffected, and dg-guide passed in the sweep. P152.10's work (one parse per file in _output_lints/prove-gates) was not touched.",
+        "descriptive": "The dependency lints now index each scope, module and file once and look facts up; every lint answers exactly as before on the live tree, and the five profiled test__deps blocks run in roughly half the time."
       },
       "startedAt": "2026-10-31T19:08:01Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-31T19:44:07Z",
+      "verifiedBy": [
+        "ix1-ix4: per-scope normaliser index equals a per-name recomputation for the module and each function of a fixture whose `name` is trimmed in one function and taken as typed in another; the config scan attributes each read its own scope's normalisers; a poisoned index does not leak into the next build; _name_normalisers answers the ck3 pair",
+        "ix5-ix6: per-file loader facts equal the one-question helpers for every file of a fixture with a two-hop borrowed wrapper and a basename collision (one copy binds _loader as L); the runtime edges equal a recomputation and the concrete expected set",
+        "ix7-ix9: per-file literal index equals _docstring_constant_ids/_check_label_constant_ids/walk-ordered strings on a fixture with an if-body string, a fault-shaped label and a helper-handed label; each reader answers the same from index and text; register_citation_violations parses each .py once",
+        "ix10-ix12: dict-key per-scope index equals a fresh build over each scope's own nodes on a fixture binding `row` in the module, a function and a nested function; a poisoned entry is read for its scope only; the contract scan reports exactly the outer-scope finding carrying only `a`"
+      ],
       "notes": [
         {
           "at": "2026-10-31T15:42:19Z",
@@ -730,12 +770,24 @@
         "runId": "2026-10-31T19:44:02Z.8044d4",
         "status": "passed",
         "at": "2026-10-31T19:44:02Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "c12794395e9b",
+        "at": "2026-10-31T19:44:07Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-31T19:37:21Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__deps.py` in a throwaway tree at HEAD exited 1 on \"AttributeError: module '_deps' has no attribute '_contract_scan'\" (read as python), and the task introduces '_contract_scan': absent from HEAD's module-level bindings of tools/lints/_deps.py and bound in the working tree's; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P152.10",
       "title": "Each file is parsed once per process for the tree lints and the gate prover, keyed on its content",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.10. _output_lints.parsed_sources(dirs) returns [(rel, path, src, tree)] memoised on (path, sha256(bytes)) - content, never mtime and size, because prove-gates mutates and restores inside one process. The fifteen _output_lints parse sites and prove-gates _gate_sources read it; parsed_sources gets a NOT_A_GATE row. Cases: a rewritten file re-parses, an identical rewrite does not, a poisoned tree is nobody else's. Optional test-side _tree_answer memo. Every prove-gates anchor quoting an ast.parse line is re-pointed; the whole prove-gates table runs once.",
       "files": [
         "tools/lints/_output_lints.py",
@@ -767,14 +819,14 @@
         "P152.9"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-31T19:44:11Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -798,7 +850,8 @@
           "text": "it quotes a verdict label prove-gates prints; this task adds or re-points prove-gates rows and does not change that label",
           "waives": "tests/_harness.py"
         }
-      ]
+      ],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P152.11",
@@ -873,7 +926,7 @@
     {
       "id": "P152.12-6jb",
       "title": "A test conversion is checked mechanically: the lines of a module its suite reached before are still reached after",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Two reviews in a row (P152.2 and P152.3) found the same class: an end-to-end block converted to unit cases over a planner left the code that ACTS on the planner's answer run by no test (the advance sign-off route, the one-task route in drive_locked, the ADO echo in render). Finding these by reading is enumeration; close the class with an invariant. Add tools/reach-diff.py: given a module path, a suite path and two git revisions, it runs the suite's blocks (each STAGES block, or the whole file) at each revision in a scratch export with a line tracer restricted to that module's code objects, and prints every line reached at the base revision and not reached at the head revision, grouped by enclosing function, exit 1 when any such line exists and 0 otherwise; a line that moved is matched by its function and text, not its number. It never writes the checkout. Its own --selftest proves both directions on a fixture module and suite: dropping the only case that reaches a branch goes red and names the line; a pure refactor that only moves code stays green. CONTRIBUTING.md: one paragraph where test conversions are described, naming the tool as the check a conversion owes.",
       "files": [
         "tools/reach-diff.py",
@@ -900,16 +953,34 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-31T19:44:31Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-31T19:44:29Z",
+          "text": "the task adds one paragraph about test conversions; the passages these readers quote are elsewhere in the file and are not edited",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-10-31T19:44:29Z",
+          "text": "the task adds one paragraph about test conversions; the passages these readers quote are elsewhere in the file and are not edited",
+          "waives": "tools/sweep-selftests.py"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-31T20:30:12Z.327a9e",
+        "status": "passed",
+        "at": "2026-10-31T20:30:12Z"
+      }
     },
     {
       "id": "P152.13-6jb",
