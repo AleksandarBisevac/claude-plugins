@@ -3726,6 +3726,57 @@ def _worktree_writer_cases(check):
     check("wk16 a None is never kept: a path that was not a worktree when first "
           "asked, and is one now, gets its key",
           _none_first is None and bool(_then), repr((_none_first, _then)))
+    # wk18/wk19: a project that is a SUBDIRECTORY of a linked worktree has no
+    # `.git` of its own, so the per-root key above keeps nothing for it; the
+    # git dirs are asked through the process's place memo instead, which keeps
+    # them while the worktree's `.git` entry is the same entry.
+    _sw = os.path.join(pair["root"], "sub-wt")
+    _harness.git(main, "worktree", "add", "-q", _sw, "-b", "chore/sub-wt",
+                 prefix=git, timeout=30)
+    _deep = os.path.join(_sw, "deep", "er")
+    os.makedirs(_deep)
+    _sw_first = M.worktree_key(_deep)
+    _real_run3 = _sp.run
+    _calls3 = []
+
+    def _count3(argv, *a, **k):
+        if list(argv[:1]) == ["git"]:
+            _calls3.append(tuple(argv))
+        return _real_run3(argv, *a, **k)
+    _sp.run = _count3
+    try:
+        _sw_keys = [M.worktree_key(_deep) for _i in range(3)]
+    finally:
+        _sp.run = _real_run3
+    check("wk18 a subdirectory of a linked worktree asked again starts no git "
+          "process - the git dirs are kept beside the worktree's `.git` entry: %r"
+          % (_calls3,), bool(_sw_first) and _sw_keys == [_sw_first] * 3
+          and _sw_first == M.worktree_key(_sw) and _calls3 == [],
+          repr((_sw_first, _sw_keys, _calls3)))
+    _harness.git(main, "worktree", "remove", "--force", _sw, prefix=git,
+                 timeout=30)
+    _harness.git(main, "worktree", "add", "-q", _sw, "-b", "chore/sub-wt-2",
+                 prefix=git, timeout=30)
+    os.makedirs(_deep)
+    _sw_again = M.worktree_key(_deep)
+    check("wk19 SECOND DIRECTION: the worktree removed and added back at the same "
+          "path - a new `.git` entry, a fresh git dir with no token - gives the "
+          "subdirectory a NEW key, not the kept one",
+          bool(_sw_again) and _sw_again != _sw_first, repr((_sw_first, _sw_again)))
+    _swap = os.path.join(pair["root"], "swap")
+    _harness.git(None, "init", "-q", _swap, prefix=git, timeout=30)
+    _swap_deep = os.path.join(_swap, "deep")
+    os.makedirs(_swap_deep)
+    _as_main = M.worktree_key(_swap_deep)
+    _harness.remove_tree(_swap)
+    _harness.git(main, "worktree", "add", "-q", _swap, "-b", "chore/swap",
+                 prefix=git, timeout=30)
+    os.makedirs(_swap_deep)
+    _as_linked = M.worktree_key(_swap_deep)
+    check("wk20 SECOND DIRECTION: a main checkout replaced at the same path by a "
+          "linked worktree - its `.git` directory now a `gitdir:` file - gives the "
+          "subdirectory a key; the git dirs kept for the old `.git` are not reused",
+          _as_main is None and bool(_as_linked), repr((_as_main, _as_linked)))
     check("wk7 ...and the merged trail verifies",
           M.verify(main)["ok"], repr(M.verify(main).get("findings")))
 

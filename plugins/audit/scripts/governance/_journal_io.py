@@ -715,18 +715,21 @@ def worktree_key(project, config=None):
 
 
 def _worktree_key_uncached(where):
-    """`worktree_key`'s answer for the git root `where`, asked of git."""
-    import subprocess
+    """`worktree_key`'s answer for the git root `where`: the two git dirs asked
+    through `_config.git_place`, whose process memo keeps them while the
+    `.git` entry of the top git named is the same entry - so a project below
+    that top, which `worktree_key`'s own memo cannot key, asks git once per
+    process rather than once per append. Only the place is kept: the token
+    file is read again on every call that reaches here. None when `_config` will not load, beside every
+    other way git cannot be asked."""
+    mod = _config_mod()
+    if mod is None:
+        return None
     try:
-        out = subprocess.run(["git", "-C", where, "rev-parse", "--git-dir",
-                              "--git-common-dir"], capture_output=True,
-                             text=True, encoding="utf-8",
-                             errors="surrogateescape", timeout=5)
+        lines = mod.git_place(where, ["--git-dir", "--git-common-dir"])[0]
     except Exception:
         return None
-    lines = [ln.strip() for ln in out.stdout.splitlines()] \
-        if out.returncode == 0 else []
-    if len(lines) != 2:
+    if not lines or len(lines) != 2:
         return None
     git_dir = os.path.realpath(os.path.join(where, lines[0]))
     common = os.path.realpath(os.path.join(where, lines[1]))

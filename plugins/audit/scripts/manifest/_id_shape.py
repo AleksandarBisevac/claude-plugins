@@ -55,6 +55,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _branch  # noqa: E402  (parent_branch: the one answer to "which branch is the trunk")
+import _loader  # noqa: E402  (load_hooks_config: the discovery variables git_place reads)
 import _manifest_vocab  # noqa: E402  (ID_SUFFIX: the suffix's one spelling)
 import _manifest_io as _mio  # noqa: E402  (moved_from_ids: the ids a moved task held)
 
@@ -100,11 +101,128 @@ def branch_suffix(branch, manifest, origin_head=None, branches=None):
     return "".join(chars)
 
 
+# --- the branch, kept while its HEAD file holds -------------------------------
+# A verb asks which branch it stands on more than once (the record it writes,
+# the suffix it mints), so git's answer is kept per directory together with the
+# exact bytes of the HEAD file git read it from, and reused only while that file
+# still holds those bytes. The file is found on every call the way git's own
+# discovery finds it, walking up from the directory: the first `.git` directory
+# shaped like a git dir, or the directory a `.git` file's `gitdir:` line names -
+# where a linked worktree's own HEAD lives, so that pointer is read every time
+# too - or a bare git dir met on the way. The walk costs a few `stat` calls and
+# no process, which is the point: the first ask in a process costs one git
+# process, as it did before the memo. No timer and no modification time: a
+# branch switched within the same second rewrites the bytes, and the bytes are
+# what is compared. A walk that meets no repository at all is a witness too:
+# git's None outside a repository is kept while the walk still meets none, so
+# a `git init` on the way up is seen on the next ask. An environment steering
+# discovery (`GIT_DIR` and its family, `_config._DISCOVERY_ENV`, the list
+# `git_place` reads) keeps nothing, since the walk is then not the one git
+# makes.
+#
+# KEPT ONLY WHEN GIT AGREES WITH THE FILE. git's answer is stored when it is the
+# name the HEAD bytes spell (`ref: refs/heads/<name>`), or None beside a HEAD
+# holding an object name (detached) or where the walk met no HEAD at all.
+# Anything else - the stub HEAD of a reftable repository, an answer git
+# shortened differently because another ref shares the name, a repository git
+# refused, or one it found elsewhere than the walk did and whose answer the
+# walked file does not spell - is answered by git and not kept. The limits,
+# stated: a ref of another kind created later under a kept branch's name is not
+# seen, and the plain branch name goes on being answered where git would now
+# print `heads/<name>`; and a git dir git accepts in a shape the walk does not,
+# holding a detached HEAD, is kept as None until the walk meets something.
+#
+# MODULE STATE, deliberately, in the form `_scoped_commit._HEADS` and
+# `_config._STANDING` use: the point is that the callers in one process share it.
+_BRANCHES = {}
+_UNJUDGED = object()
+_OBJECT_NAME = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+_HEAD_REF = "ref: refs/heads/"
+
+
+def _read_bytes(path):
+    try:
+        with open(path, "rb") as fh:
+            return fh.read()
+    except OSError:
+        return None
+
+
+def _is_git_dir(path):
+    """True when `path` has the shape git's discovery accepts as a git dir: a
+    HEAD file beside `objects` and `refs`, or beside a `commondir` naming where
+    those live (a linked worktree's own git dir)."""
+    return (os.path.isfile(os.path.join(path, "HEAD"))
+            and ((os.path.isdir(os.path.join(path, "objects"))
+                  and os.path.isdir(os.path.join(path, "refs")))
+                 or os.path.isfile(os.path.join(path, "commondir"))))
+
+
+def _head_file(cwd):
+    """The HEAD file git reads for `cwd`, found by git's own discovery walk;
+    None when no repository stands anywhere on the way up; `_UNJUDGED` when the
+    disk cannot say - an environment steering discovery, a directory that is
+    not there, a `.git` file that is no `gitdir:` pointer."""
+    try:
+        steering = _loader.load_hooks_config(modname="audit__config")._DISCOVERY_ENV
+        at = os.path.realpath(str(cwd))
+    except Exception:
+        return _UNJUDGED
+    if any(os.environ.get(name) for name in steering) or not os.path.isdir(at):
+        return _UNJUDGED
+    while True:
+        dot = os.path.join(at, ".git")
+        if os.path.isdir(dot) and _is_git_dir(dot):
+            return os.path.join(dot, "HEAD")
+        if os.path.isfile(dot):
+            text = (_read_bytes(dot) or b"").decode("utf-8", "replace").strip()
+            if not text.startswith("gitdir: "):
+                return _UNJUDGED
+            return os.path.join(os.path.realpath(
+                os.path.join(at, text[len("gitdir: "):])), "HEAD")
+        if _is_git_dir(at):
+            return os.path.join(at, "HEAD")
+        parent = os.path.dirname(at)
+        if parent == at:
+            return None
+        at = parent
+
+
+def _agrees(head, answer):
+    """True when git's `answer` is the one the HEAD bytes `head` spell - or,
+    where there are none (no repository on the way up, or no HEAD file where
+    the walk ended), when git named no branch either."""
+    if head is None:
+        return answer is None
+    text = head.decode("utf-8", "replace").strip()
+    if answer is None:
+        return bool(_OBJECT_NAME.match(text))
+    return text == _HEAD_REF + answer
+
+
 def current_branch(cwd):
     """The checked-out branch, or None when detached, unborn-and-unnamed, or not in
     a repository. `symbolic-ref` rather than `rev-parse --abbrev-ref`, because the
     second fails on a branch with no commit yet and that is where a first plan is
-    written."""
+    written. git's answer, reused while its HEAD file holds (the block above)."""
+    path = _head_file(cwd)
+    if path is _UNJUDGED:
+        return _ask_branch(cwd)
+    witness = (path, _read_bytes(path) if path is not None else None)
+    key = os.path.realpath(str(cwd))
+    held = _BRANCHES.get(key)
+    if held is not None and held[0] == witness:
+        return held[1]
+    answer = _ask_branch(cwd)
+    if _agrees(witness[1], answer):
+        _BRANCHES[key] = (witness, answer)
+    else:
+        _BRANCHES.pop(key, None)
+    return answer
+
+
+def _ask_branch(cwd):
+    """`git symbolic-ref --short -q HEAD` in `cwd`: git's answer, or None."""
     try:
         r = subprocess.run(["git", "-C", cwd, "symbolic-ref", "--short", "-q", "HEAD"],
                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)

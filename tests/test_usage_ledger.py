@@ -42,6 +42,162 @@ from _output import safe_stdio                     # noqa: E402
 import usage_ledger as M                           # noqa: E402
 
 
+# --- the identity memo ----------------------------------------------------------
+def _git_spawns(fn, *args, **kwargs):
+    """`(fn's answer, the argv of every git process started while it ran)`,
+    counted at `subprocess.Popen`, which `run` reaches through the module
+    attribute."""
+    import subprocess
+    real = subprocess.Popen
+    seen = []
+
+    def counting(argv, *a, **k):
+        words = [argv] if isinstance(argv, str) else list(argv)
+        if words and os.path.basename(str(words[0])).startswith("git"):
+            seen.append(tuple(str(w) for w in words))
+        return real(argv, *a, **k)
+    subprocess.Popen = counting
+    try:
+        return fn(*args, **kwargs), seen
+    finally:
+        subprocess.Popen = real
+
+
+def _same_second_rewrite(path, text):
+    """Rewrite `path` with `text` - the same length as what it held - and put
+    its modification time back, so only its bytes tell the two apart."""
+    st = os.stat(path)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns))
+
+
+def _author_memo_cases(check):
+    """`resolve_author` keeps git's answer beside the bytes of every config file
+    git reads for the repository - and the environment naming them - and asks
+    again the moment any of them moves. Each SECOND DIRECTION case changes one
+    witness and requires the new answer; each reuse case requires no git."""
+    import tempfile
+    root = tempfile.mkdtemp(prefix="usage-ledger-memo-")
+    keys = ("GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_SYSTEM",
+            "XDG_CONFIG_HOME", "USER", "USERNAME", "HOME")
+    saved = dict((k, os.environ.get(k)) for k in keys)
+    try:
+        glob_a = os.path.join(root, "global-a")
+        os.environ.update({"GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": glob_a,
+                           "XDG_CONFIG_HOME": os.path.join(root, "xdg"),
+                           "HOME": os.path.join(root, "home"),
+                           "USER": "memo-user", "USERNAME": "memo-user"})
+        os.environ.pop("GIT_CONFIG_SYSTEM", None)
+        repo = os.path.join(root, "repo")
+        _harness.git(None, "init", "-q", repo, prefix=("git",), timeout=30)
+        named, spawned = _git_spawns(M.resolve_author, repo, "email")
+        check("am1 an uncached resolve is ONE git process even when the email is "
+              "missing and the name decides - not one per key: %r" % (spawned,),
+              named == "memo-user" and len(spawned) == 1, repr((named, spawned)))
+        with open(glob_a, "w", encoding="utf-8") as fh:
+            fh.write("[user]\n\tname = Global Name\n")
+        named, _s = _git_spawns(M.resolve_author, repo, "email")
+        check("am2 SECOND DIRECTION: a global config that did not EXIST when the "
+              "answer was kept is seen the moment it appears",
+              named == "Global Name", repr(named))
+        again, spawned = _git_spawns(M.resolve_author, repo, "email")
+        check("am3 the second ask with nothing moved starts no git process and "
+              "hands back the same answer: %r" % (spawned,),
+              again == "Global Name" and spawned == [], repr((again, spawned)))
+        _harness.git(repo, "config", "user.email", "aaaa@example.com",
+                     prefix=("git",), timeout=30)
+        local, _s = _git_spawns(M.resolve_author, repo, "email")
+        check("am4 SECOND DIRECTION: the repository's own config changed is seen",
+              local == "aaaa@example.com", repr(local))
+        cfg = os.path.join(repo, ".git", "config")
+        with open(cfg, "r", encoding="utf-8") as fh:
+            held = fh.read()
+        M.resolve_author(repo, "email")
+        _same_second_rewrite(cfg, held.replace("aaaa@example.com",
+                                               "bbbb@example.com"))
+        swapped, _s = _git_spawns(M.resolve_author, repo, "email")
+        check("am5 SECOND DIRECTION: a same-length rewrite with its modification "
+              "time put back is still seen - the bytes are compared, not the stat",
+              swapped == "bbbb@example.com", repr(swapped))
+        inc = os.path.join(root, "included")             # absent for now
+        _harness.git(repo, "config", "--unset", "user.email", prefix=("git",),
+                     timeout=30)
+        _harness.git(repo, "config", "include.path", inc, prefix=("git",),
+                     timeout=30)
+        before_inc = M.resolve_author(repo, "email")
+        with open(inc, "w", encoding="utf-8") as fh:
+            fh.write("[user]\n\temail = inc@example.com\n")
+        included, _s = _git_spawns(M.resolve_author, repo, "email")
+        check("am6 SECOND DIRECTION: an include TARGET - a path only git's answer "
+              "names, absent when the answer was kept - is watched too, and the "
+              "identity it brings once written is seen",
+              before_inc == "Global Name" and included == "inc@example.com",
+              repr((before_inc, included)))
+        glob_b = os.path.join(root, "global-b")
+        with open(glob_b, "w", encoding="utf-8") as fh:
+            fh.write("[user]\n\tname = Other Global\n")
+        _harness.git(repo, "config", "--unset", "include.path", prefix=("git",),
+                     timeout=30)
+        M.resolve_author(repo, "email")
+        os.environ["GIT_CONFIG_GLOBAL"] = glob_b
+        moved, _s = _git_spawns(M.resolve_author, repo, "email")
+        check("am7 SECOND DIRECTION: GIT_CONFIG_GLOBAL pointed elsewhere changes "
+              "the answer - the environment is part of the witness, by value",
+              moved == "Other Global", repr(moved))
+        wt = os.path.join(root, "wt")
+        _harness.git(repo, "commit", "-q", "--allow-empty", "-m", "b",
+                     prefix=("git", "-c", "user.name=t", "-c", "user.email=t@t"),
+                     timeout=30)
+        _harness.git(repo, "config", "extensions.worktreeConfig", "true",
+                     prefix=("git",), timeout=30)
+        _harness.git(repo, "worktree", "add", "-q", wt, prefix=("git",), timeout=30)
+        M.resolve_author(wt, "email")
+        kept, spawned = _git_spawns(M.resolve_author, wt, "email")
+        _harness.git(wt, "config", "--worktree", "user.email", "wt@example.com",
+                     prefix=("git",), timeout=30)
+        per_wt, _s = _git_spawns(M.resolve_author, wt, "email")
+        check("am8 a linked worktree's answer is kept (no git on the second ask), "
+              "and SECOND DIRECTION: its own config.worktree - behind the `.git` "
+              "file's gitdir, absent when the answer was kept - is seen once "
+              "written: %r" % ((kept, spawned, per_wt),),
+              kept == "Other Global" and spawned == []
+              and per_wt == "wt@example.com", repr((kept, spawned, per_wt)))
+        real_ask = M._ask_identity
+
+        def edited_during(where):
+            got = real_ask(where)
+            with open(glob_b, "w", encoding="utf-8") as fh:
+                fh.write("[user]\n\tname = Edited During\n")
+            return got
+        with open(glob_b, "w", encoding="utf-8") as fh:
+            fh.write("[user]\n\tname = Before Race\n")
+        M._ask_identity = edited_during
+        try:
+            raced = M.resolve_author(repo, "email")
+        finally:
+            M._ask_identity = real_ask
+        after_race, _s = _git_spawns(M.resolve_author, repo, "email")
+        check("am10 a config file edited while git was being asked is not kept "
+              "under the edited bytes: the answer git gave is returned, and the "
+              "next ask goes to git and sees the edit",
+              raced == "Before Race" and after_race == "Edited During",
+              repr((raced, after_race)))
+        M.resolve_author(wt, "email")                   # a kept answer to ignore
+        fresh, spawned = _git_spawns(M.resolve_author, wt, "email", cache=False)
+        check("am9 cache=False asks git even with a kept answer standing - the "
+              "caller keeping its own answer under its own token is not answered "
+              "from this one", fresh == "wt@example.com" and len(spawned) == 1,
+              repr((fresh, spawned)))
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        _harness.remove_tree(root)
+
+
 # --- cases --------------------------------------------------------------------
 def _cases(check):
     import shutil
@@ -184,6 +340,7 @@ def _cases(check):
           "which is what makes the digest above a claim about the repository "
           "rather than about sha256",
           M.resolve_author(authroot, "email") == _author_email)
+    _author_memo_cases(check)
 
     tmp = tempfile.mkdtemp(prefix="usage-ledger-selftest-")
     try:

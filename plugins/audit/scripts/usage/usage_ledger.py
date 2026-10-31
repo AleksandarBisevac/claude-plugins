@@ -176,27 +176,188 @@ from _usage_spend import (  # noqa: E402,F401  (re-exported, see above)
 
 
 # --- author ---------------------------------------------------------------------
-def resolve_author(repo_root, mode="email"):
-    """Who spent the tokens. `git config user.email` -> `user.name` -> $USER ->
-    'unknown'. Called ONCE per session (the result is cached in the cursor), so the
-    single subprocess never shows up in the hook's hot path.
+# git's identity answer for a repository, kept for the process beside the
+# witness it rests on: the bytes of every file that can decide it, and the
+# environment naming those files, by value. A reuse compares both; any byte or
+# variable moved means git is asked again. No timer and no modification time -
+# a same-second rewrite of a config file changes its bytes, and the bytes are
+# what is compared.
+#
+# THE FILES (`identity_files`): the global, XDG and system configs where the
+# environment puts them, whether they exist or not; for the repository's
+# directory and every directory above it, the `.git` entry itself (a `gitdir:`
+# file's bytes are its pointer), the config and config.worktree beside it, its
+# HEAD (an `includeIf "onbranch:"` reads it), and behind a `gitdir:` pointer the
+# linked worktree's own config.worktree, HEAD and `commondir` and the shared
+# config that `commondir` names; plus every file git's own answer names - the
+# origin of each entry it returned and each include target, so an included file
+# is watched although no rule could predict its path. An absent file is
+# witnessed as absent, so one appearing is a change.
+#
+# THE RACE, closed for every file known before git is asked: those are read
+# before AND after the question, and an answer whose files moved under it is
+# returned but not kept. A file only git's answer names is read after it, so
+# an edit landing between git reading it and this reading it is the one window
+# left. The limit, stated: a file git reads that holds neither an identity nor
+# an include entry and sits where no rule names it - a system config at a
+# build-specific path, an include target added later inside such a file - is
+# not watched.
+#
+# MODULE STATE, deliberately, the form `_config._STANDING` uses: the point is
+# that the callers in one process share the answer. `cache=False` asks git and
+# keeps nothing, for a caller holding its own answer under its own token.
+_IDENTITIES = {}
+_IDENTITY_ENV = ("HOME", "XDG_CONFIG_HOME", "USER", "USERNAME")
+_IDENTITY_KEYS = r"^(user\.(email|name)|include\.path|includeif\..+\.path)$"
+_AS_DIRECTORY = "<directory>"
+
+
+def identity_env():
+    """The environment git's identity answer moves with, as sorted `(name,
+    value)` pairs: every `GIT_` variable - the family deciding which repository
+    git finds and which config files it opens, and able to carry config with no
+    file at all (`GIT_CONFIG_COUNT`) - matched by prefix so a variable a later git
+    adds is covered; HOME and XDG_CONFIG_HOME, which place the global files; and
+    USER/USERNAME, the answer when git has none."""
+    return sorted((k, v) for k, v in os.environ.items()
+                  if k.startswith("GIT_") or k in _IDENTITY_ENV)
+
+
+def file_witness(paths):
+    """`{path: bytes}` for each path - `None` when absent or unreadable, a marker
+    for a directory - the token a kept identity answer is compared against."""
+    out = {}
+    for path in paths:
+        try:
+            with open(path, "rb") as fh:
+                out[path] = fh.read()
+        except IsADirectoryError:
+            out[path] = _AS_DIRECTORY
+        except OSError:
+            out[path] = _AS_DIRECTORY if os.path.isdir(path) else None
+    return out
+
+
+def _pointer(path):
+    """The directory a `gitdir:` file at `path` names, or None."""
+    try:
+        with open(path, "rb") as fh:
+            text = fh.read().decode("utf-8", "replace").strip()
+    except OSError:
+        return None
+    if not text.startswith("gitdir: "):
+        return None
+    return os.path.realpath(os.path.join(os.path.dirname(path),
+                                         text[len("gitdir: "):]))
+
+
+def identity_files(root):
+    """Every file whose bytes can decide git's identity answer for `root` that
+    a rule can name without asking git - existing or not (the block above)."""
+    home = os.environ.get("HOME") or os.path.expanduser("~")
+    xdg = os.environ.get("XDG_CONFIG_HOME") or os.path.join(home, ".config")
+    out = [os.environ.get("GIT_CONFIG_GLOBAL") or os.path.join(home, ".gitconfig"),
+           os.path.join(xdg, "git", "config"),
+           os.environ.get("GIT_CONFIG_SYSTEM") or "/etc/gitconfig"]
+    seen = set()
+    node = os.path.realpath(str(root))
+    while node not in seen:
+        seen.add(node)
+        dot = os.path.join(node, ".git")
+        out.extend([dot] + [os.path.join(dot, name)
+                            for name in ("config", "config.worktree", "HEAD")])
+        own = _pointer(dot) if os.path.isfile(dot) else None
+        if own is not None:
+            common = os.path.join(own, "commondir")
+            out.extend([os.path.join(own, "config.worktree"),
+                        os.path.join(own, "HEAD"), common])
+            back = file_witness([common])[common]
+            if isinstance(back, bytes) and back.strip():
+                out.append(os.path.join(os.path.realpath(os.path.join(
+                    own, back.decode("utf-8", "replace").strip())), "config"))
+        node = os.path.dirname(node)
+    return out
+
+
+def _ask_identity(repo_root):
+    """`(values, named)` from ONE `git config --get-regexp`: the last
+    `user.email` and `user.name` git holds, and the absolute files its answer
+    names - each entry's origin and each include target. None when git could not
+    be asked or answered something unreadable."""
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(repo_root), "config", "-z", "--show-origin",
+             "--get-regexp", _IDENTITY_KEYS],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=5)
+    except Exception:
+        return None
+    if out.returncode not in (0, 1):
+        return None
+    fields = (out.stdout or b"").decode("utf-8", "replace").split("\0")
+    if fields and fields[-1] == "":
+        fields.pop()
+    if len(fields) % 2:
+        return None
+    home = os.environ.get("HOME") or os.path.expanduser("~")
+    values, named = {}, []
+    for origin, entry in zip(fields[0::2], fields[1::2]):
+        key, _nl, value = entry.partition("\n")
+        source = origin[len("file:"):] if origin.startswith("file:") else ""
+        if os.path.isabs(source):
+            named.append(source)
+        if key in ("user.email", "user.name"):
+            values[key] = value.strip()
+            continue
+        if value.startswith("~/"):
+            named.append(os.path.join(home, value[2:]))
+        elif os.path.isabs(value):
+            named.append(value)
+        elif os.path.isabs(source):
+            named.append(os.path.join(os.path.dirname(source), value))
+    return values, named
+
+
+def _identity(repo_root, cache=True):
+    """git's `{user.email, user.name}` for `repo_root` - kept while its witness
+    holds (the block above); `{}` when git could not be asked."""
+    key = os.path.realpath(str(repo_root))
+    env = identity_env()
+    held = _IDENTITIES.get(key) if cache else None
+    if held is not None and held["env"] == env \
+            and file_witness(held["watch"]) == held["witness"]:
+        return dict(held["values"])
+    known = sorted(set(identity_files(repo_root))
+                   | set(held["watch"] if held is not None else ()))
+    before = file_witness(known)
+    got = _ask_identity(repo_root)
+    if got is None:
+        _IDENTITIES.pop(key, None)
+        return {}
+    values, named = got
+    if cache:
+        watch = sorted(set(known) | set(named))
+        after = file_witness(watch)
+        if identity_env() == env and all(after[p] == before[p] for p in known):
+            _IDENTITIES[key] = {"env": env, "watch": watch, "witness": after,
+                                "values": dict(values)}
+        else:
+            _IDENTITIES.pop(key, None)
+    return values
+
+
+def resolve_author(repo_root, mode="email", cache=True):
+    """Who spent the tokens. `user.email` -> `user.name` -> $USER -> 'unknown',
+    the two git keys read by one `git config` process and kept for the process
+    while the files and environment deciding them hold (the block above), so a
+    caller asking per row pays git once.
 
     modes: email | name | hash (short sha256 — pseudonymous but still groupable) |
     none (drops author attribution entirely)."""
     if mode == "none":
         return None
+    values = _identity(repo_root, cache)
     order = ["user.name"] if mode == "name" else ["user.email", "user.name"]
-    value = ""
-    for key in order:
-        try:
-            out = subprocess.run(
-                ["git", "-C", str(repo_root), "config", "--get", key],
-                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=5)
-            value = (out.stdout or b"").decode("utf-8", "replace").strip()
-        except Exception:
-            value = ""
-        if value:
-            break
+    value = next((values[k] for k in order if values.get(k)), "")
     if not value:
         value = os.environ.get("USER") or os.environ.get("USERNAME") or "unknown"
     if mode == "hash":

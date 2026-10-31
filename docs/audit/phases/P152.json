@@ -154,7 +154,7 @@
     {
       "id": "P152.2",
       "title": "Sign-off, answers and findings are tested as unit cases over the planners, with one end-to-end drive per family",
-      "status": "in_progress",
+      "status": "done",
       "description": "Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.2. Convert the 25 blocks listed there (sg sgf sq sq3 sa da cv lf rc hr sh rb db sf sr rr lr ht nf dc dc4 di of bk cn) to unit cases over _triage_plan and _pending_turn with the same label text and id; keep one e2e-signoff block (sign-off clean, one findings round to a fix task and its close, one decline, one boot, one high-risk confirmed in advance). gr/gr4 stay. Each expected value is a literal, never recomputed from the planner. Remove the dropped labels from .github/sweep-costs.json blocks for the suite; re-record nothing.",
       "files": [
         "tests/test_drive_phase.py",
@@ -184,14 +184,16 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "31c556b82076",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "CHANGES. tests/test_drive_phase.py: the 25 drive blocks (sg sgf sq sq3 sa da cv lf rc hr sh rb db sf sr rr lr ht nf dc dc4 di of bk cn) are gone from STAGES and replaced by three: e2e-signoff (_e2e_signoff_cases: real drives - clean sign-off sg1 sg2 sq1; one findings round to a fix task, its re-review and close sg4 sg5 sg6 sf1 sf2 sf3 cv1 cv2 cv3 dw1 dw2; one decline da1 da2; one boot rb1-rb3; one high-risk confirmed in advance hr1 hr2; the late-return refusal lr1 lr2, kept as a drive because the refusal is the filing verb's and no planner decides it), us-block (_signoff_unit_cases: unit cases over _advance_plan/_triage_plan/_pending_turn and the pure sign-off functions with faked verbs and literal expectations - sg3 sg3b sg3m dc4b sq0 sq0m sq2 sq3 sq4 sq5 sq3m sa1 sa1m sa2 sa3s sa3 sa4 sa5 sa5b sg4m sf4 cv4 lf1 lf2 rc1 rc3 rc3m rr1-rr4 sr1 ht1-ht3 db1-db4 dc1-dc3 di1 di2 da3 rb4 nf1 nf2 bk1, plus the already-pure blocks moved in whole: fa1, of1-of5, lw1, cn0-cn2, hr4-hr12 via _same_moment_cases), uv-block (_signoff_verb_cases: the cases whose subject is a real verb's answer, run with no drive in front - rc2 (audit-usage ledger), sh1 sh1a-sh1d (standing approval rows), dc4 dc4p dc4t dc5 (run-test-gate's recorded green), bk2 bk3 (audit-task start/unblock), fs1 fs2 (finding -> add_fix_tasks), hr3 (record-risk-confirmation + audit-task reopen in one pinned second, two writers)). Every old case id is kept exactly once (old-minus-new and new-minus-old id sets both empty, checked by script over the file before and after). Label text is kept verbatim except where the unit case can no longer see a clause the drive printed; those labels were narrowed to what the case checks (e.g. sg3 no longer claims 'records no verdict and no summary', sq2 says 'applied at the triage's advance point', the did-line words now carried by dw1). gr/gr4 untouched. .github/sweep-costs.json: the 25 '<label>-block' rows removed from blocks['tests/test_drive_phase.py'] (25 deletions, JSON valid); ATTEMPT 2 FIX: attempt 1 left costs['tests/test_drive_phase.py'] at 2688.5 while its blocks now sum to 2303.6, breaking the recorder's invariant (a suite with block figures has costs == round(sum(blocks), 1)); tests/test_stamp_verification.py swd7 went red on it. The table was regenerated through sweep_mod.record_costs from its own remaining figures, platform (windows-2025) and workers (4), exactly as swd7 does, and written over the file: the only change beyond the 25 removed block rows is that suite figure, 2688.5 -> 2303.6; a second render from the written file is byte-identical (checked by script). No timing was re-recorded and the three new labels have no row, so the sweep weighs them by the suite figure over its blocks. NOTE FOR LATER TASKS: the plan's 'remove the rows, re-record nothing' instruction must also re-sum the suite figure (regenerate through record_costs) - P152.3/.4/.11 inherit it. Fixes made along the way: a helper named _said collided with an existing _said (renamed _text_of); hr3 first written as a unit over hand-written rows put `root` into the bypass scan's git-bound name chain (_git_bound_names follows names file-wide), which flagged the unrelated _deps --write-map subprocess call at the module-map case - moving hr3 to the real verbs removed it, tests_dir_git_bypasses('tests') now {}; nf1 read state['pending'] with [] so a mutant raised KeyError and killed the block instead of failing the case - now .get; dc5 gained a held_gate_binds pair (held head True, other head False) because the declared-file edit alone also unbinds the run and hid the head clause; hr3 gained the in-advance twin (before reopen -> ('in-advance', None)). MEASUREMENT (single runs each, local darwin, with a sibling executor active on the machine, `python3 tools/sweep-selftests.py --loud tests/test_drive_phase.py` under `time`): before (base 92c399f5) 745 cases, 125 blocks, slot sum 1048.0 s, wall 2:13.81; after 745 cases, 103 blocks, slot sum 948.8 s, wall 2:01.16, exit 0, '1/1 files ok, 745 cases'. The removed blocks summed 154.2 s of slot in the before run; the new blocks took e2e-signoff 26.0 s, us-block 1.6 s, uv-block 4.8 s. An earlier after-run (before the final edits) exited 1 on the bypass-scan case described above and is not counted. RED-FIRST PROBE (<scratchpad>/probe/mutations.py, run in a git-archive export of HEAD 92c399f5 with the two task files copied in, at <scratchpad>/export.6TGon4; each row asserts the anchor occurs once, writes the mutant, re-reads it to confirm it landed, purges __pycache__, runs `python3 tests/test_drive_phase.py --selftest --stage <block>`, reads the FAIL ids, restores and purges again): baselines e2e-signoff 23/23, us-block 69/69, uv-block 15/15. 54 rows, final run '0 row(s) not as wanted', every row landed=True and RED: m01 red gate read as green->sg3; m02 answer keeps pending->sg3b db1 dc1 di1; m03 task-held drive goes on->db2; m04 advance admitted with a task open->sq0; m05 advance applies over anything filed->sq3 sq4 sq5; m06 over a fix after the head->sq5; m07 wrong advance arm->sq2 sq3 sq3m sq4; m08 sign-off drops the summary->sq2 sg3b sf4; m09 forgets unreviewed fixes->sf4; m10 triage lists one answer->sa1; m11 sign-off refused only with nothing waiting->sa2; m12 decline with nothing waiting->da3; m13 accept settles one answer->sa3 sa3s; m14 dispatch mark names no head->sa1m; m15 accept line with nothing to accept->sa4; m16 findings in two calls->sg4m; m17 test-file finding made tdd->cv4; m18/m19 fixed low always/never owes re-review->lf1/lf2; m20/m21 round cap->rc1; m22 rounds from state alone->rc3; m23->rr1 rr4; m24->rr2; m25->sr1; m26->ht1; m27->ht1 ht2; m28->ht3 of4; m29 decline keeps held gate->db1 dc1 di1; m30->db2; m31 head-bound answer outlives head->db3 db4 dc2; m32->db3; m33->dc2; m34->dc3; m35->di2; m36->rb4; m37 moved parent read as refusal->nf1; m38->nf2; m39->nf2 sa3; m40->bk1; m40v->bk2 bk3; m41 same-second tie read as covered->hr3; m42 in-advance never covers->hr3; m43->sh1 sh1c sh1d; m44->sh1 sh1b; m45->dc4 dc5; m46 held green reused at any head->dc5; m47->dc4 dc4p dc4t dc5; m48->dc4t; m49->rc2; m50->dc4b; m51->sa3 sa5b; m52->fs1; m53 re-review answered by signing off (e2e)->cv1 cv2 dw1 sf2 sf3 sg6. The first probe run had three survivors (m37 crashed the block on KeyError, m42 and m46 green) - fixed as described above and the whole table re-run. DEPENDANTS. .github/sweep-costs.json readers - .github/workflows/ci.yml, tools/sweep-selftests.py, plugins/audit/scripts/governance/stamp-verification.py, tests/test_stamp_verification.py: still correct; the file's shape is unchanged, only per-block rows were dropped, and the sweep's own selftest bk_live case picks the top remaining block by figure; stamp-verification sizes from the suite figure, which is now the sum of its remaining blocks (2303.6), as the recorder writes it. CHANGELOG.md, CLAUDE.md, CONTRIBUTING.md, PLUGIN-BUILD-GUIDE.md name the path only: still correct. tests/test_drive_phase.py dependants: names other files use (_actions, _counting, _follower_cases, _git_said) are all still defined once - checked by grep; tests/test__runner_output.py, tests/test_run_test_gate.py, tests/test_stamp_verification.py, tools/affected.py, tools/sweep-selftests.py, ci.yml reference the file path and its encoding case label, both unchanged; no file references any of the 25 removed block labels for this suite (the same labels in other suites are their own). drive-phase.py: its comments at the RISK_CONFIRMED/TASK_REOPEN constants ('the hr cases drive the real verb', 'hr3 drives the real verb') stay true - hr1 drives record-risk-confirmation in e2e-signoff and hr3 now runs record-risk-confirmation and audit-task reopen for real in uv-block; its comment that the bk cases run each printed remedy through the real verb stays true (bk2, bk3). DRIFT OUTSIDE MY FILES, not edited: PLUGIN-BUILD-GUIDE.md's paragraph 'The `sg` cases drive it over the fixture plan: ... a red phase gate never reaches `signoff`, and several findings are one `finding` call - each beside a mutant driver' is now partly inaccurate - sg3/sg3m (red gate) and sg4m (one finding call) are unit cases over run_signoff/record_findings with faked verbs, not drives; sg1/sg2/sg4 are still drives. Its rr1/rr2/rr3/rr4 citations still describe what those cases check. Gates (attempt 2, after the table fix, at the coordinator's request): python3 tools/sweep-selftests.py tests/test_stamp_verification.py exit 0 '1/1 files ok, 356 cases'; python3 tools/sweep-selftests.py --selftest exit 0 'ALL PASS: 160/160 cases passed'; python3 tools/sweep-selftests.py tests/test_drive_phase.py exit 0 '1/1 files ok, 745 cases'; attempt 1 ran only the measurement command above; ruff check and vermin -t=3.8- on the file exit 0; prose_number_claims() and house_style_violations() report nothing for the file.",
+        "descriptive": "The drive suite's 25 sign-off/answer/finding blocks are now one end-to-end block plus unit and verb-level blocks; every case id kept, every converted case proven red by mutation; the suite's slot sum fell from 1048.0 s to 948.8 s (single runs). Attempt 2: the cost table is regenerated through the recorder so the suite figure is its blocks' sum."
       },
       "startedAt": "2026-10-31T17:33:09Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-31T17:50:46Z",
+      "verifiedBy": [
+        "no new case ids: the existing cases were converted; dc5 gained a held_gate_binds head check and hr3 an in-advance twin inside their existing conditions"
+      ],
       "notes": [
         {
           "at": "2026-10-31T16:23:46Z",
@@ -204,6 +206,17 @@
         "runId": "2026-10-31T17:45:07Z.35c8e7",
         "status": "passed",
         "at": "2026-10-31T17:45:07Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "31c556b82076",
+        "at": "2026-10-31T17:50:46Z",
+        "return": "docs/audit/evidence/returns/P152.2/20261031T173309Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "mode regression with expectRedFirst false and tests.add none: no new test owes a red. The converted cases were shown able to fail by the mutation probe instead (54 rows, all RED, table in outcome.technical).",
+        "at": "probe re-run 2026-10-31, after the final edits"
       }
     },
     {
@@ -416,14 +429,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-31T16:23:55Z",
+      "startedAt": "2026-10-31T17:52:19Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -450,9 +463,9 @@
       ],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-31T17:31:15Z.8228c9",
-        "status": "failed",
-        "at": "2026-10-31T17:31:15Z"
+        "runId": "2026-10-31T18:01:56Z.2a2be3",
+        "status": "passed",
+        "at": "2026-10-31T18:01:56Z"
       }
     },
     {

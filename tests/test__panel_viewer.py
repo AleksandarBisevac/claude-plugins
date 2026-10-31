@@ -30,6 +30,26 @@ import _panel_paths as _paths                     # noqa: E402  (the shared base
 import _panel_viewer as M           # noqa: E402
 
 
+def _git_spawns(fn, *args):
+    """`(fn's answer, the argv of every git process started while it ran)`,
+    counted at `subprocess.Popen`, which `run` reaches through the module
+    attribute."""
+    import subprocess
+    real = subprocess.Popen
+    seen = []
+
+    def counting(argv, *a, **k):
+        words = [argv] if isinstance(argv, str) else list(argv)
+        if words and os.path.basename(str(words[0])).startswith("git"):
+            seen.append(tuple(str(w) for w in words))
+        return real(argv, *a, **k)
+    subprocess.Popen = counting
+    try:
+        return fn(*args), seen
+    finally:
+        subprocess.Popen = real
+
+
 # --- cases --------------------------------------------------------------------
 def _cases(check):
     import pathlib                                 # noqa: F401  (used by moved cases)
@@ -82,10 +102,10 @@ def _cases(check):
     def _vwrite(path, email, settled=True):
         """Write a git config carrying one identity.
 
-        Backdated by default because the settle guard is doing its job: a file
-        written this millisecond is deliberately NOT cached, so aging it is the
-        honest way to reach the cached path. `settled=False` is how the guard's
-        own case reaches the other branch."""
+        Backdated by default, which no case needs any more: the token compares
+        BYTES, so a file's age must not matter. `settled=False` leaves the
+        modification time at now, and the cases writing a file that way are
+        the ones proving that it does not."""
         with open(path, "w", encoding="utf-8") as fh:
             fh.write("[user]\n\temail = %s\n" % email)
         if settled:
@@ -160,25 +180,54 @@ def _cases(check):
               "dropped from the token",
               _v6["author"] == "carol@example.com" and _resolves[0] == 1)
 
-        # The settle guard, both ways. A case that only ever saw it accept would be
-        # asserting nothing.
+        # No settle window: the token is the files' BYTES, read before and after
+        # the resolve, so a file written this instant is as safe to keep as one
+        # written an hour ago - and a fixture that has just written its config
+        # still gets its answer kept.
         _vfresh = os.path.join(_vtmp, "gitconfig-fresh")
         os.environ["GIT_CONFIG_GLOBAL"] = _vfresh
         _vwrite(_vfresh, "dave@example.com", settled=False)
         M._viewer(_vproj, {})
         _resolves[0] = 0
-        _v7 = M._viewer(_vproj, {})
-        check("viewer: an identity file written a moment ago is NOT cached — a "
-              "1-second-granular mtime cannot prove the resolve saw the final "
-              "bytes, and serving the pre-edit name forever is the original bug",
-              _v7["author"] == "dave@example.com" and _resolves[0] == 1)
-        _vsettle = time.time() - 5
-        os.utime(_vfresh, (_vsettle, _vsettle))
-        M._viewer(_vproj, {})                                # re-warm, now settled
+        _v7, _v7git = _git_spawns(M._viewer, _vproj, {})
+        check("pv1 viewer: an identity file written a moment ago IS kept - its bytes, "
+              "not a 1-second-granular mtime, decide, so no git process runs on "
+              "the second call: %r" % (_v7git,),
+              _v7["author"] == "dave@example.com" and _resolves[0] == 0
+              and _v7git == [], repr((_v7, _resolves[0], _v7git)))
+        _st = os.stat(_vfresh)
+        with open(_vfresh, "w", encoding="utf-8") as fh:
+            fh.write("[user]\n\temail = erin@example.com\n")
+        os.utime(_vfresh, ns=(_st.st_atime_ns, _st.st_mtime_ns))
         _resolves[0] = 0
         _v8 = M._viewer(_vproj, {})
-        check("viewer: ...and the same file, once it has settled, IS cached",
-              _v8["author"] == "dave@example.com" and _resolves[0] == 0)
+        check("pv2 viewer: SECOND DIRECTION - the same file rewritten to the same "
+              "length with its mtime put back is still seen, which a stat token "
+              "cannot do", _v8["author"] == "erin@example.com"
+              and _resolves[0] == 1, repr((_v8, _resolves[0])))
+
+        # The race the settle window used to stand in for: the identity file
+        # edited WHILE the resolve runs. The answer git gave is returned, and it
+        # must not be kept under the edited bytes.
+        def _edited_during(project, mode):
+            got = _counting_resolve(project, mode)
+            _vwrite(_vfresh, "fran@example.com", settled=False)
+            return got
+        _vwrite(_vfresh, "gina@example.com", settled=False)   # a miss to race
+        M._resolve_viewer = _edited_during
+        _resolves[0] = 0
+        _vrace = M._viewer(_vproj, {})
+        _raced = _resolves[0]
+        M._resolve_viewer = _counting_resolve
+        _resolves[0] = 0
+        _vafter = M._viewer(_vproj, {})
+        check("pv3 viewer: an identity file edited while the resolve ran is not kept "
+              "under the edited bytes - the next call asks again and sees it",
+              _raced == 1 and _vrace["author"] == "gina@example.com"
+              and _vafter["author"] == "fran@example.com" and _resolves[0] == 1,
+              repr((_raced, _vrace, _vafter, _resolves[0])))
+        _vwrite(_vfresh, "dave@example.com", settled=False)
+        M._viewer(_vproj, {})
 
         _vmine = M._viewer(_vproj, {})
         _vmine["author"] = "clobbered"
@@ -200,6 +249,10 @@ def _cases(check):
               in _vwatch
               and os.path.join(os.path.realpath(_vtmp), ".git", "config")
               in _vwatch)
+        check("pv4 viewer: the environment tuple re-exported here is the one "
+              "usage_ledger.identity_env reads - one list, held by this case",
+              M._IDENTITY_ENV == M._ledger()._IDENTITY_ENV,
+              repr((M._IDENTITY_ENV, M._ledger()._IDENTITY_ENV)))
         check("viewer: the origin list carries PATHS only - `--name-only`, because "
               "a plain --list also hands back every value and a git config "
               "routinely holds credential helpers and tokens",

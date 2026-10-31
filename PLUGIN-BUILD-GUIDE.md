@@ -360,7 +360,7 @@ L4:
   _evidence_io -> _journal_io, _loader, _locks, _machine_paths, _manifest_io, _manifest_vocab, _output, _usage_core, _utc_stamp, _worktrees
   _gate_feed -> _journal_io, _loader, _output, _usage_core
   _help -> _areas, _journal_io, _loader, _output, _policy, _ui_theme
-  _id_shape -> _branch, _manifest_io, _manifest_vocab, _output
+  _id_shape -> _branch, _loader, _manifest_io, _manifest_vocab, _output
   _manifest_ado -> _ado_conventions, _ado_fields, _manifest_vocab, _output
   _manifest_crossrefs -> _ado_parent, _id_refs, _json_schema, _manifest_io, _manifest_vocab, _output, _priority
   _manifest_phases -> _ado_parent, _ado_tracked, _areas, _manifest_io, _manifest_vocab, _output, _task_outputs
@@ -405,7 +405,7 @@ L6:
   _panel_policy -> _areas, _config_rules, _manifest_io, _output, _panel_discovery, _panel_paths, _policy
   _panel_runstate -> _doctor_report, _evidence_io, _journal_io, _locks, _output, _panel_paths
   _panel_usage -> _areas, _evidence_io, _manifest_io, _manifest_vocab, _output, _panel_paths
-  _panel_viewer -> _loader, _output, _panel_discovery, _panel_paths
+  _panel_viewer -> _loader, _output, _panel_paths
   _proposals -> _fmt, _id_refs, _id_shape, _journal_io, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output, _utc_stamp
   _usage_detail -> _output, _ui_theme, _usage_economics, _usage_viz
   _usage_load -> _loader, _output, _report_html
@@ -1912,6 +1912,13 @@ modules, and every public name those five define is RE-EXPORTED here: nothing im
 module by name — every
 consumer loads `usage_ledger.py` by path and reads attributes off the module object — so the
 module object has to keep serving all of them, and the `rx` cases assert it does.
+`resolve_author` reads `user.email` and `user.name` with one `git config --get-regexp` and keeps
+the answer for the process; its witness is the bytes of every config file git reads for the
+repository (global, XDG and system where the environment puts them, each ancestor's `.git` entry
+and the config, config.worktree and HEAD beside it, a `gitdir:` pointer's own files, and every
+origin and include target git's answer names - absent ones witnessed as absent) plus every
+`GIT_` variable and HOME/XDG/USER by value, never a timer or a modification time; the `am`
+cases in `tests/test_usage_ledger.py` hold both directions.
 
 ### `plugins/audit/scripts/governance/_journal_io.py` (v0.29.0)
 The trail itself: `journal_dir`, `read_file`/`read_all`/`journal_files`,
@@ -1926,6 +1933,11 @@ where executing an argument parser and four subcommand bodies to resolve one pat
 with no caller. Three of those reaches were `_loader` loads of `audit-journal.py`; the
 fourth, `_panel_state`'s, was the edge `_deps` deliberately could not see (it spelled
 `script_path()` on one line and `load()` on the next) and is now an ordinary import.
+`worktree_key` asks git for the two git dirs through `_config.git_place`, so a project below a
+linked worktree's top - which its own per-root memo cannot key - asks once per process; the
+witness is `git_place`'s, the identity of the top's `.git` entry, and only the place is kept: the
+token file in the worktree's git dir is read again whenever that per-root memo does not answer
+(`wk18`-`wk20` in `tests/test__journal_io.py`).
 
 **A row's actor answers "which agent", and absence there is a reading rather than a gap.**
 `actor.agent` carries the writer inside a session — a subagent's id, or the word the hooks
@@ -5808,8 +5820,13 @@ three-character `[0-9a-z]` suffix drawn from the branch name: `BUG-12-k7m`, `P61
 carrying this branch's suffix does not repeat it. The alphabet is what a lock name, a shard file
 name and a lower-cased branch component all take unchanged. `_manifest_vocab.ID_SUFFIX` is the
 suffix's one spelling, read by `BUG_ID_RE` and by the allocators. What it cannot prevent - two
-clones minting on the development branch itself - reaches the merge, which names it. Cases:
-`tests/test__id_shape.py`.
+clones minting on the development branch itself - reaches the merge, which names it.
+`current_branch` keeps git's answer per directory while the bytes of the HEAD file git reads hold:
+the file is found on every call by git's own discovery walk - a `.git` directory, the directory a
+`.git` file's `gitdir:` pointer names (a linked worktree's own HEAD), or a bare git dir - and an
+answer is kept only when it is the name those bytes spell; a walk meeting no repository keeps git's
+None until one appears on the way up; a `GIT_DIR`-family variable keeps nothing. Cases:
+`tests/test__id_shape.py` (`is16b`, `is18`-`is27` for the memo, both directions).
 
 ### `plugins/audit/scripts/manifest/_id_refs.py`
 **One id renamed everywhere the plan points at it.** `materialize` rewrote the references inside
@@ -6129,10 +6146,12 @@ same tuple in the same order for `_panel_write` and `audit-task`, which read it 
 
 ### `plugins/audit/scripts/panel/_panel_viewer.py`
 Who is driving the panel — the identity `usage_ledger.resolve_author` resolves, and the cache
-that keeps a `git config` shell-out off every `/api/state`. Its token is a fresh stat of every
-file that can decide the answer (including ones that do not exist yet, so creating a
-`~/.gitconfig` invalidates) plus the environment BY VALUE, and a resolve whose files moved as it
-ran is returned but not cached. `test__panel_viewer.py` slices this file between its two
+that keeps a `git config` shell-out off every `/api/state` and every journal row `audit-task`
+writes. Its token is the BYTES of every file that can decide the answer (`usage_ledger.file_witness`
+over the origins git lists and `usage_ledger.identity_files`, including ones that do not exist
+yet, so creating a `~/.gitconfig` invalidates) plus the environment BY VALUE - so a file written a
+moment ago is kept, with no settle window, and the origin listing is asked only when that token
+moved - and a resolve whose known files moved as it ran is returned but not kept. `test__panel_viewer.py` slices this file between its two
 git-config helpers and fails unless the origin listing runs with `--name-only` — a plain
 `--list` also hands back every value, and a git config routinely holds credential helpers and
 tokens.

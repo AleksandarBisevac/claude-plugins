@@ -29,6 +29,103 @@ def _plan(**meta):
             "bugs": [{"id": "BUG-1"}, {"id": "BUG-4-zzz"}, {"id": "BUG-2"}]}
 
 
+def _git_spawns(fn, *args):
+    """`(fn's answer, the argv of every git process started while it ran)`.
+
+    Counted at `subprocess.Popen`, which `run`, `check_output` and a direct
+    `Popen` all reach through the module attribute, so a read that moves from
+    one spelling to another is still counted."""
+    import subprocess
+    real = subprocess.Popen
+    seen = []
+
+    def counting(argv, *a, **k):
+        words = [argv] if isinstance(argv, str) else list(argv)
+        if words and os.path.basename(str(words[0])).startswith("git"):
+            seen.append(tuple(str(w) for w in words))
+        return real(argv, *a, **k)
+    subprocess.Popen = counting
+    try:
+        return fn(*args), seen
+    finally:
+        subprocess.Popen = real
+
+
+def _branch_memo_cases(check, root):
+    """The branch a verb mints under is read from git once per HEAD file: kept
+    while the bytes of the HEAD file git itself reads are unchanged, asked again
+    the moment they change - in a main checkout, from a subdirectory of one, and
+    in a linked worktree, whose HEAD lives behind its `.git` file's `gitdir:`."""
+    repo = os.path.join(root, "memo-repo")
+    _harness.git(None, "init", "-q", "-b", "feature/m", repo)
+    _harness.git(repo, "commit", "-q", "--allow-empty", "-m", "base")
+    sub = os.path.join(repo, "a", "b")
+    os.makedirs(sub)
+    M.current_branch(repo)                         # the first ask may spawn
+    again, spawned = _git_spawns(M.current_branch, repo)
+    check("is18 a second current_branch with the HEAD file unchanged starts no git "
+          "process at all - the kept answer is reused: %r" % (spawned,),
+          again == "feature/m" and spawned == [], repr((again, spawned)))
+    _harness.git(repo, "branch", "feature/n")
+    _harness.git(repo, "symbolic-ref", "HEAD", "refs/heads/feature/n")
+    moved, spawned = _git_spawns(M.current_branch, repo)
+    check("is19 SECOND DIRECTION: once HEAD names another branch the next ask "
+          "answers it, and asked git to - a kept answer never outlives its HEAD file",
+          moved == "feature/n" and len(spawned) >= 1, repr((moved, spawned)))
+    _harness.git(repo, "checkout", "-q", "--detach", "HEAD")
+    detached, _s = _git_spawns(M.current_branch, repo)
+    check("is20 ...and a HEAD detached since the last ask answers None, not the "
+          "branch it used to name", detached is None, repr(detached))
+    _harness.git(repo, "checkout", "-q", "-b", "feature/p")
+    M.current_branch(sub)
+    held, spawned = _git_spawns(M.current_branch, sub)
+    check("is21 from a subdirectory too: the second ask is answered from the "
+          "repository's HEAD file with no git process: %r" % (spawned,),
+          held == "feature/p" and spawned == [], repr((held, spawned)))
+    _harness.git(repo, "checkout", "-q", "-b", "feature/q")
+    turned, _s = _git_spawns(M.current_branch, sub)
+    check("is22 ...and a branch switched from the top is seen from the "
+          "subdirectory at once", turned == "feature/q", repr(turned))
+    wt = os.path.join(root, "memo-wt")
+    _harness.git(repo, "worktree", "add", "-q", "-b", "feature/w", wt)
+    M.current_branch(wt)
+    M.current_branch(repo)
+    pair, spawned = _git_spawns(
+        lambda: (M.current_branch(wt), M.current_branch(repo)))
+    check("is23 a linked worktree and its main checkout each keep their own "
+          "answer, and neither re-asks git while its HEAD file holds: %r"
+          % (spawned,), pair == ("feature/w", "feature/q") and spawned == [],
+          repr((pair, spawned)))
+    _harness.git(wt, "checkout", "-q", "-b", "feature/w2")
+    pair, _s = _git_spawns(
+        lambda: (M.current_branch(wt), M.current_branch(repo)))
+    check("is24 SECOND DIRECTION: a branch switched inside the worktree - its "
+          "HEAD file behind `gitdir:`, not the main checkout's - changes the "
+          "worktree's answer and leaves the main checkout's alone",
+          pair == ("feature/w2", "feature/q"), repr(pair))
+    _harness.git(repo, "tag", "feature/t")
+    _harness.git(repo, "checkout", "-q", "-b", "feature/t")
+    shortened, _s = _git_spawns(M.current_branch, repo)
+    _harness.git(repo, "tag", "-d", "feature/t")
+    plain, _s = _git_spawns(M.current_branch, repo)
+    check("is27 an answer git shortened differently - a tag sharing the branch's "
+          "name makes it print heads/<name> - is not the name the HEAD bytes spell, "
+          "so it is not kept: once the tag is gone the plain name is back",
+          shortened == "heads/feature/t" and plain == "feature/t",
+          repr((shortened, plain)))
+    other = os.path.join(root, "memo-other")
+    _harness.git(None, "init", "-q", "-b", "elsewhere", other)
+    os.environ["GIT_DIR"] = os.path.join(other, ".git")
+    try:
+        steered, spawned = _git_spawns(M.current_branch, repo)
+    finally:
+        os.environ.pop("GIT_DIR", None)
+    check("is26 an environment steering discovery (GIT_DIR) is answered by git, "
+          "never from the answer kept for the directory - the walk is not the one "
+          "git makes then", steered == "elsewhere" and len(spawned) >= 1,
+          repr((steered, spawned)))
+
+
 def _cases(check):
     plan = _plan()
     check("is1 the development branch mints no suffix - today's ids, unchanged",
@@ -144,8 +241,18 @@ def _cases(check):
         loose = tempfile.mkdtemp(prefix="id-shape-nogit-")
         try:
             check("is16 ...and None outside a repository", M.current_branch(loose) is None)
+            outside, spawned = _git_spawns(M.current_branch, loose)
+            check("is16b ...and asked again there, with still no repository on the "
+                  "way up, it starts no git process: %r" % (spawned,),
+                  outside is None and spawned == [], repr((outside, spawned)))
+            _harness.git(None, "init", "-q", "-b", "feature/late", loose)
+            check("is25 SECOND DIRECTION: a repository created where None was the "
+                  "answer is seen on the next ask - a kept refusal holds only while "
+                  "no repository stands above the directory",
+                  M.current_branch(loose) == "feature/late", M.current_branch(loose))
         finally:
             _harness.remove_tree(loose)
+        _branch_memo_cases(check, tmp)
     finally:
         os.environ.clear()
         os.environ.update(held)
