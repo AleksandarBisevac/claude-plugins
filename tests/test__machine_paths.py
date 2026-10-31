@@ -63,6 +63,107 @@ def _bare_slugs():
             "-".join(("", "private", "tmp", "claude", "probe")))
 
 
+def _shape_patterns():
+    """{name: pattern} over the shape table, whatever else a row carries."""
+    return dict((row[0], row[1]) for row in M.MACHINE_PATH_SHAPES)
+
+
+def _needle_lines():
+    """A line firing every ARM of every shape, in each spelling the arm accepts:
+    both home words, a separator kept and cut, a backslash at one escaping depth
+    and at two, a percent escape in either letter case, and the upper-case
+    spelling a case-insensitive shape reads. A needle that one arm can do
+    without is found only by a line that takes that arm, so the arms are listed
+    rather than sampled. Built in pieces, so this file spells no path whole."""
+    bs = chr(92)
+    who = "someone"
+    return (
+        "/".join(("", "Users", who, "x")),
+        "/".join(("", "home", who, "x")),
+        "among them: " + "/".join(("Users", who, "p", "x.js")),
+        "open file://localhost" + "/".join(("", "Users", who, "r.html")),
+        "C:" + bs + "Users" + bs + who,
+        "C:" + bs * 2 + "Users" + bs * 2 + who,
+        bs * 2 + "server" + bs + "share" + bs + "f",
+        bs * 4 + "server" + bs * 2 + "share" + bs * 2 + "f",
+        "/projects/" + "-".join(("", "home", who)) + "/s.jsonl",
+        "D:" + bs + "p" + bs + "C-" + "-".join(("", "Users", who)),
+        "dir C-" + "-".join(("", "Users", who)) + " here",
+        '{"b":"' + "-".join(("", "home", who)) + '"}',
+        "/projects/" + "-".join(("", "private", "tmp", "probe")) + "/s",
+        "%2F".join(("q=", "Users", who, "x")),
+        "%2f".join(("q=", "home", who, "x")),
+        "q=" + "%5C".join(("", "Users", who)),
+        "q=" + "%5c".join(("", "USERS", who)),
+        "/".join(("", "private", "tmp", "claude-501", "p")),
+        "/".join(("", "TMP", "CLAUDE-7", "p")),
+        "/".join(("", "var", "folders", "ab", "T", "x")),
+        "/".join(("", "VAR", "Folders", "ab")),
+        "at C:" + bs + "x" + bs + "Temp" + bs + "claude-1",
+        "at C:" + bs + "x" + bs + "TEMP" + bs + "CLAUDE-1",
+        "cwd=" + "~" + "/probe/notes.md",
+        "(" + "~" + "/x)",
+    )
+
+
+def _strip_needles(line, needles, flags):
+    """`line` with every occurrence of every needle removed, repeated until none
+    is left - one pass can join the halves around a removed needle into a new
+    one - and case-folded exactly where the shape's own pattern is."""
+    spelled = re.compile("|".join(re.escape(n) for n in needles), flags & re.I)
+    while True:
+        cut = spelled.sub("", line)
+        if cut == line:
+            return cut
+        line = cut
+
+
+def _needle_cases(check):
+    """A shape's needles are part of its contract: its pattern cannot match a
+    string holding none of them, so a line `NEEDLE` rejects is a line no shape
+    could have fired on. The prefilter in `tools/check-committed-pii.py` skips
+    such a line, and a needle that is not mandatory would blind that detector
+    on exactly the spelling the needle missed - with every other case green."""
+    rows = M._MACHINE_PATH_SHAPES
+    bare = [row[0] for row in rows
+            if len(row) < 3 or not row[2] or not all(row[2])]
+    samples, real = _corpus()
+    lines = list(_needle_lines()) + samples + real
+    fired, still = {}, []
+    for row in rows:
+        name, pattern = row[0], row[1]
+        needles = row[2] if len(row) > 2 and row[2] else ()
+        hits = [s for s in lines if pattern.search(s)]
+        fired[name] = len(hits)
+        for s in hits:
+            cut = _strip_needles(s, needles, pattern.flags) if needles else s
+            if pattern.search(cut):
+                still.append((name, cut[:60]))
+    check("mp17 a shape whose needles are stripped from a line no longer fires: "
+          "every line that fires a shape - one per arm and spelling, the "
+          "samples and the shipped example plan - is quiet once the shape's own "
+          "needles are cut from it. Rows with no needle %r, lines per shape %r, "
+          "still firing %r" % (bare, fired, still[:6]),
+          not bare and not still
+          and all(fired.get(row[0], 0) > 0 for row in rows))
+
+    needle = getattr(M, "NEEDLE", None)
+    unseen = sorted(set(name for name, count in fired.items()
+                        for s in lines
+                        if needle is not None
+                        and _shape_patterns()[name].search(s)
+                        and not needle.search(s)))
+    rejected = (sum(1 for s in real if not needle.search(s))
+                if needle is not None else 0)
+    # THE SECOND DIRECTION: a NEEDLE matching everything passes the first half by
+    # construction and saves nothing, so the share it rejects is counted.
+    check("mp18 NEEDLE, the one alternation built from every row's needles, "
+          "accepts every line any shape fires on and rejects most of the "
+          "shipped example plan's strings (%d of %d): shapes it missed %r"
+          % (rejected, len(real), unseen),
+          needle is not None and unseen == [] and rejected > len(real) // 2)
+
+
 def _corpus():
     """Every sample, plus every string of the shipped example plan and its shards."""
     strings = list(_bare_slugs())
@@ -210,7 +311,7 @@ def _cases(check):
         # (`shape_fires`): a home directory deep enough still fires with its
         # leading separator cut, and a sentence's words joined by slashes do
         # not pick up a separator from standing nowhere near one.
-        _pattern = dict(M.MACHINE_PATH_SHAPES)["posix-home"]
+        _pattern = _shape_patterns()["posix-home"]
         _cut = "among them: Users/someone/p/x.js"
         _prose = "callers pass home/cwd/project directories"
         check("mp16 shape_fires still finds a cut home path (no leading "
@@ -346,7 +447,8 @@ def _escape_cases(check):
 
 
 def _selftest():
-    return _harness.run(lambda check: (_cases(check), _escape_cases(check)))
+    return _harness.run(lambda check: (_cases(check), _escape_cases(check),
+                                       _needle_cases(check)))
 
 
 if __name__ == "__main__":

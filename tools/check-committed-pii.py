@@ -370,14 +370,40 @@ def plan_claim_host_lines(text):
 
 
 # --- scanning -----------------------------------------------------------------
+# ONE PROCESS SCANS ONE FILE MORE THAN ONCE - `findings()` and `main` each walk
+# the domain, and a case that edits one file in memory rescans every other one -
+# so a file's rows are remembered for the life of the process. The key is what
+# the file SAYS: a path alone, or a modification time, would hand an edited text
+# the rows of the text before it, and an in-memory edit moves no clock.
+_SCAN_MEMO = {}
+
+
 def scan_text(rel, text, surface):
-    """[(rel, line, detector, column)] for one file's contents."""
+    """[(rel, line, detector, column)] for one file's contents.
+
+    Remembered on `(rel, surface, sha256(text))`; a line `_machine_paths.NEEDLE`
+    does not match is skipped before any detector runs, which is sound because
+    a shape's needles are mandatory for it - the note above the shape table."""
+    key = (rel, surface,
+           hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest())
+    held = _SCAN_MEMO.get(key)
+    if held is None:
+        held = tuple(_scan_lines(rel, text, surface, _machine_paths.NEEDLE))
+        _SCAN_MEMO[key] = held
+    return list(held)
+
+
+def _scan_lines(rel, text, surface, needle):
+    """`scan_text`'s rows, computed and never remembered. `needle` None runs
+    every detector over every line: the reading `q35` compares the prefilter
+    against."""
     out = []
     for n, line in enumerate(text.split("\n"), 1):
-        for name, pattern in DETECTORS:
-            for m in pattern.finditer(line):
-                if _machine_paths.shape_fires(name, m):
-                    out.append((rel, n, name, m.start() + 1))
+        if needle is None or needle.search(line):
+            for name, pattern, _needles in DETECTORS:
+                for m in pattern.finditer(line):
+                    if _machine_paths.shape_fires(name, m):
+                        out.append((rel, n, name, m.start() + 1))
         if surface != "journal":
             continue
         stripped = line.strip()
@@ -623,6 +649,41 @@ def findings(repo=None):
     the change rather than the shuffling.
     """
     return scan(repo)["rows"]
+
+
+# --- the prefilter, held to the scan it replaces -------------------------------
+def _prefilter_reading(keep):
+    """`drift`, `lines`, `kept`, `detectorRows` for the files `keep` names: the
+    rows the shipped scan and an unfiltered one disagree on, how many lines
+    there were and how many the needles kept, and how many detector rows the
+    unfiltered scan found - the counts that say the comparison judged
+    something."""
+    shipped, whole, lines, kept = [], [], 0, 0
+    for rel, surface, text in keep:
+        shipped.extend(scan_text(rel, text, surface))
+        whole.extend(_scan_lines(rel, text, surface, None))
+        split = text.split("\n")
+        lines += len(split)
+        kept += sum(1 for line in split if _machine_paths.NEEDLE.search(line))
+    names = set(row[0] for row in DETECTORS)
+    return {"drift": sorted(set(shipped) ^ set(whole)),
+            "lines": lines, "kept": kept,
+            "detectorRows": sum(1 for row in whole if row[2] in names)}
+
+
+def prefilter_drift(repo=None):
+    """Rows the needle prefilter loses or invents over the committed domain.
+
+    A needle that is not mandatory for its shape skips the lines that shape
+    would have fired on, and nothing else notices: the run is only quieter. So
+    the shipped scan is compared with one running every detector over every
+    line, over the bytes the tree commits rather than a fixture. An empty
+    domain is its own row, because "nothing differs" over no files would read
+    as a sound prefilter."""
+    keep, _bad = domain_files(repo)
+    if not keep:
+        return [(".", 0, "domain-empty", 1)]
+    return _prefilter_reading(keep)["drift"]
 
 
 # --- what is already committed, and stays -------------------------------------
@@ -1542,7 +1603,8 @@ def _domain_cases(check):
     # separator was cut (q2a's own case, repeated here against the live
     # DETECTORS pattern rather than a hand-built sample), and it leaves alone
     # a phrase of ordinary words a slash happens to join.
-    _posix_home = dict(_journal_io.MACHINE_PATH_SHAPES)["posix-home"]
+    _posix_home = dict((row[0], row[1]) for row in
+                       _journal_io.MACHINE_PATH_SHAPES)["posix-home"]
     _cut = '{"coverageBasis":"among them: Users/%s/p/x.js"}' % _user
     _prose = ("the review finding says callers pass home/cwd/project "
              "directories, not a path of any machine")
@@ -1701,6 +1763,44 @@ def _domain_cases(check):
           "the filed returns, the plan and the rendered reports - so the cases below are judging "
           "something: %d file(s), %r" % (len(_kept), _surfaces),
           _bad == [] and _surfaces == ["evidence", "journal", "plan", "report", "return"])
+
+    # THE PREFILTER OVER THE REAL DOMAIN, NOT A FIXTURE. A line holding none of
+    # a shape's needles is skipped before any detector runs, which is sound only
+    # while every needle is mandatory for its shape - and a needle that is not
+    # blinds that detector on exactly the spelling it missed, with every fixture
+    # case still green. So the shipped reading is compared with one that runs
+    # every detector over every line, over the bytes this tree commits. The
+    # second half is the direction a prefilter that kept every line would pass:
+    # the share of lines it skips is counted, and so are the rows compared.
+    _pre = _prefilter_reading(_kept)
+    check("q35 prefilter rows equal unfiltered rows over the real domain: "
+          "every detector row a full scan of %d line(s) finds, the prefiltered "
+          "scan finds too and invents none (%d detector row(s) compared, %d "
+          "line(s) kept by the needles), drift %r"
+          % (_pre["lines"], _pre["detectorRows"], _pre["kept"],
+             [render(r) for r in _pre["drift"][:6]]),
+          _pre["drift"] == [] and _pre["detectorRows"] > 0
+          and 0 < _pre["kept"] < _pre["lines"] // 10)
+
+    # THE MEMO IS KEYED ON WHAT A FILE SAYS. A key on the path alone, or on a
+    # modification time, hands an edited file the rows of its old text - and
+    # the in-memory edits `_with_edited_domain` makes never touch a clock.
+    _base = "plain words\n"
+    _leaky = _base + "cwd=" + "/".join(("", "Users", "someone", "x")) + "\n"
+    _first = scan_text("memo.md", _base, "report")
+    _second = scan_text("memo.md", _leaky, "report")
+    _again = scan_text("memo.md", _base, "report")
+    _keyed = [k for k in (("memo.md", "report",
+                           hashlib.sha256(t.encode("utf-8")).hexdigest())
+                          for t in (_base, _leaky))
+              if k in _SCAN_MEMO]
+    check("q36 the scan memo is keyed on (path, surface, sha256 of the text): "
+          "one path's two texts get their own rows, and both readings are "
+          "remembered: first %r, edited %r, again %r, keys held %d"
+          % (_first, _second, _again, len(_keyed)),
+          _first == [] and _again == []
+          and [r[2] for r in _second] == ["posix-home"]
+          and len(_keyed) == 2)
 
     check("q7 every committed artifact is clean except what BASELINE accounts "
           "for: %r" % ([render(r) for r in unbaselined(_live, _anchors)],),

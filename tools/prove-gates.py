@@ -1121,6 +1121,13 @@ TABLE = (
  # empty-vocabulary finding AND the absence of the member findings.
  ("claim_drift", S + "manifest/_areas.py", "replace",
   "        if not members:", "        if False:", ARE, "oa28"),
+ # THE NEEDLE PREFILTER, MUTATED WHERE IT IS SOUND OR NOT: one needle dropped
+ # from one shape. The shape's pattern still matches a home directory spelled
+ # with that word, but `NEEDLE` - built from the rows - no longer lets such a
+ # line through to the detectors, so the committed domain's lines carrying no
+ # other needle go unread. The rows a full scan finds there are the drift.
+ ("prefilter_drift", S + "_machine_paths.py", "replace",
+  '("Users/", "home/")', '("home/",)', "tools/check-committed-pii.py", "q35"),
 )
 
 
@@ -1873,7 +1880,14 @@ ALLOW_EXEMPT = (
   "second front door and report it as a second gate. Its own half is the DOCUMENT "
   "SET, derived off `.gitignore`; over-firing there means reading a file this repo "
   "does not keep, and no case in its suite asserts an ignored document is left "
-  "alone, so there is nothing here to name yet. Revisit when one exists."),)
+  "alone, so there is nothing here to name yet. Revisit when one exists."),
+ ("prefilter_drift",
+  "it has no narrowing of its own to remove: it compares two readings of one "
+  "shape table over the committed domain with no scope, exemption or threshold "
+  "between them, so every mutation that makes it over-fire makes the two "
+  "readings disagree - which is the red row's change seen from the guard's side, "
+  "and `q35` is already the assertion that the live domain is quiet. Revisit if "
+  "it ever grows an exemption or narrows the lines it compares."),)
 
 _MIN_ALLOW_REASON = 80    # a reason short enough to be a label is not a reason
 

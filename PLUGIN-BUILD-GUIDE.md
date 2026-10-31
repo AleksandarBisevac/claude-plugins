@@ -1553,6 +1553,18 @@ whole, a path under the checkout is spelled repo-relative, and under any other r
 word that carries a separator is taken as the rest of the path. Cases in
 `tests/test__machine_paths.py`.
 
+**A shape's needles are part of its contract.** Each row of the shape table is `(name, pattern,
+needles)`: the literals the pattern cannot match without, for every arm and every spelling it
+accepts, folded for case exactly where the pattern is. `NEEDLE` is their one alternation, built
+from the rows, and `tools/check-committed-pii.py` skips a line it does not match before running any
+detector, then remembers each file's rows for the process on `(path, surface, sha256 of the
+text)`. So a needle an arm can do without does not slow the scan; it blinds the detector on that
+arm's spelling, and the run only gets quieter. Widening a pattern means widening its needles in the
+same edit. Two cases hold it: `mp17` strips each row's needles from a line per arm and requires
+the shape to stop firing, and the tool's own `q35` compares the prefiltered rows with an
+unfiltered scan of the tree's committed domain - the case `tools/prove-gates.py`'s
+`prefilter_drift` row turns red by dropping one needle.
+
 ### `plugins/audit/scripts/_fmt.py`
 The one token/cost/count formatter, unifying three copies that had drifted (`audit-usage.py`,
 `render-report.py`, and `audit-status.py`'s importlib re-use of `audit-usage`'s). `fmt_tokens`/

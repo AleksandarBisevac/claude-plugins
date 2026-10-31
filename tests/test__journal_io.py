@@ -4208,7 +4208,8 @@ def _free_text_cases(check):
         # `home/` directory, so the WRITER takes it; the committed-bytes
         # detector still reads it, because a human reviews what that flags.
         rel_home = "/".join(("home", "someone", "notes.md"))
-        detector = dict(M.MACHINE_PATH_SHAPES)["posix-home"]
+        detector = dict((r[0], r[1]) for r in
+                        M.MACHINE_PATH_SHAPES)["posix-home"]
         check("ft10 a relative home/<x> is flagged by the detector's pattern and "
               "NOT refused by the writer's check; the absolute spelling is "
               "refused: %r" % (M.machine_path_shape(rel_home),),

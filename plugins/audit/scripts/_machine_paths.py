@@ -241,9 +241,21 @@ _SLUG_USER = r"-(?:Users|home)-[A-Za-z0-9._]+"
 # the places a value stands rather than a word in a sentence. Whitespace and a
 # backtick are left out, so `-home-dir` in prose or a code span is no slug.
 _SLUG_LONE_LEAD = r"(?<![^\n/\\\"'=:(])"
+# EACH ROW IS (name, pattern, needles), AND THE NEEDLES ARE PART OF THE SHAPE'S
+# CONTRACT: literals the pattern cannot match without - every arm of it, in
+# every spelling it accepts, case-folded exactly where the pattern is. `NEEDLE`
+# below is their one alternation, and the commit-time detector skips a line it
+# does not match before running any pattern, which is most of what that scan
+# costs. So a needle that is not mandatory is not a slower scan; it blinds the
+# detector on exactly the spelling that arm takes, with nothing reporting it.
+# Widening an arm means widening its needles in the same edit. `mp17` in
+# `tests/test__machine_paths.py` strips each row's needles from a line per arm
+# and fails if the shape still fires, and `q35` in the detector's own suite
+# compares its prefiltered rows with an unfiltered scan of the committed tree.
 _MACHINE_PATH_SHAPES = (
     ("posix-home", re.compile(MACHINE_PATH_TOKEN_START
-                              + r"[/\\]?(?:Users|home)/[A-Za-z0-9._-]+")),
+                              + r"[/\\]?(?:Users|home)/[A-Za-z0-9._-]+"),
+     ("Users/", "home/")),
     # The UNC arm reads a share's separators at ONE escaping depth: two then
     # one in raw text, four then two inside a JSON string. No segment holds a
     # backslash, so a run longer than the arm asks for between two segments
@@ -257,7 +269,10 @@ _MACHINE_PATH_SHAPES = (
     ("windows-user-path", re.compile(
         r"[A-Za-z]:\\{1,2}Users\\"
         r"|\\{2}[A-Za-z0-9._-]{2,}\\[A-Za-z0-9._$-]{2,}\\"
-        r"|\\{4}[A-Za-z0-9._-]{2,}\\{2}[A-Za-z0-9._$-]{2,}\\{2}")),
+        r"|\\{4}[A-Za-z0-9._-]{2,}\\{2}[A-Za-z0-9._$-]{2,}\\{2}"),
+     # The drive arm's home word and the share arms' leading pair, at either
+     # escaping depth: a doubled escape still holds one of each.
+     ("Users\\", "\\\\")),
     # A home directory flattened into one directory NAME, the way the
     # harness names a project's scratch and session directories. The slug is
     # a whole path segment, so its leading dash stands at a token start - or
@@ -271,18 +286,40 @@ _MACHINE_PATH_SHAPES = (
         + r"(?:-[A-Za-z0-9._]|(?=[/\\]))"
         r"|" + _SLUG_START + r"[A-Za-z]-" + _SLUG_USER
         + r"|" + _SLUG_LONE_LEAD + r"(?:[A-Za-z]-)?" + _SLUG_USER
-        + r"|" + _SLUG_START + r"-private-tmp-")),
-    ("escaped-path", re.compile(r"%2F(?:Users|home)%2F|%5CUsers%5C", re.I)),
+        + r"|" + _SLUG_START + r"-private-tmp-"),
+     ("-Users-", "-home-", "-private-tmp-")),
+    ("escaped-path", re.compile(r"%2F(?:Users|home)%2F|%5CUsers%5C", re.I),
+     ("%2FUsers%2F", "%2Fhome%2F", "%5CUsers%5C")),
     ("tempdir-session", re.compile(
         MACHINE_PATH_TOKEN_START + r"/?(?:private/)?tmp/claude-\d+"
         r"|" + MACHINE_PATH_TOKEN_START + r"/?var/folders/[A-Za-z0-9_+]{2,}"
-        r"|\\Temp\\claude-", re.I)),
+        r"|\\Temp\\claude-", re.I),
+     ("tmp/claude-", "var/folders/", "\\Temp\\claude-")),
     # Refused at the writer's door even in prose such as `use ~/.config`, by
     # choice: the commit-time detector reads this same pattern and fails the
     # build on it, so a row the writer let through would be one the build then
     # rejects after its hash chain made it permanent.
-    ("unexpanded-home", re.compile(r"(?:^|[\s\"'=:(\[,])~/")),
+    ("unexpanded-home", re.compile(r"(?:^|[\s\"'=:(\[,])~/"), ("~/",)),
 )
+
+
+def _needle_alternation(shapes):
+    """One pattern matching any needle of any row in `shapes`, each folded for
+    case exactly where its own row's pattern is."""
+    def spelled(needle, pattern):
+        literal = re.escape(needle)
+        if pattern.flags & re.IGNORECASE:
+            return "(?i:%s)" % (literal,)
+        return literal
+    return re.compile("|".join(spelled(needle, pattern)
+                               for _name, pattern, needles in shapes
+                               for needle in needles))
+
+
+# A line this does not match is a line no shape can fire on - see the note
+# above the table. Built from the rows, so a needle cannot sit in one and be
+# missing from the other.
+NEEDLE = _needle_alternation(_MACHINE_PATH_SHAPES)
 # THE PUBLIC NAME IS THE DETECTOR'S, and nothing in this module reads it. A row
 # never carries these patterns - a refusal or a redaction is what they produce -
 # so they are not row shape for `audit-journal.py` to re-export, and the
@@ -591,7 +628,7 @@ def machine_path_shape(text, roots=()):
     for root in roots:
         if _root_at(flat, root):
             return _CHECKOUT_ROOT_SHAPE
-    for name, pattern in _MACHINE_PATH_SHAPES:
+    for name, pattern, _needles in _MACHINE_PATH_SHAPES:
         if any(_writer_fires(name, m) for m in pattern.finditer(text)):
             return name
     return None
