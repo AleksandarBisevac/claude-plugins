@@ -2634,6 +2634,19 @@ def _slice_cases(check):
           and any("could not be read" in why or "not there" in why
                   for _s, why in absent["slices"]))
 
+    # Every other verdict `parity()` renders has its own cases call it directly,
+    # and its live claim asks the real tree, which is clean; so a verdict replaced
+    # by an empty list, or asked of this checkout instead of the tree `parity()`
+    # was handed, would leave both green. Over a tree holding none of the files
+    # each one reads, each must arrive carrying a finding.
+    wired = ("failmodes", "job_timeouts", "runner_images", "lint_dirs",
+             "stale_exemptions")
+    check("sv20 every verdict `parity()` renders besides the slices is asked of "
+          "the tree `parity()` is handed and reaches its result: over a tree with "
+          "none of their files, each carries a finding (findings per verdict: %r)"
+          % (dict((k, len(absent[k])) for k in wired),),
+          all(absent[k] for k in wired))
+
     clean = {"slices": [], "failmodes": [], "job_timeouts": [],
              "runner_images": [], "lint_dirs": [],
              "stale_exemptions": [], "counts": {"slices": 3, "jobs": 2}}
@@ -2903,6 +2916,110 @@ def _encoding_leg_cases(check):
           and [_run_tiers("release", a) for a in ("per-run", "release", None)]
           == [(), ("release",), ("release",)]
           and _run_tiers("per-run", None) == ("per-run", "release"))
+
+
+# --- the verdict the command renders carries what each rule it wires finds ------
+# Every rule `slice_verdict()` sums has cases calling it directly, and the live
+# claims assert the real tree is clean. Neither goes red when a rule's term is
+# dropped from the sum: a dropped rule contributes nothing, and nothing is what a
+# clean tree contributes. So each rule is broken once, in a tree of its own built
+# off the live workflow, and the verdict the command renders is asked about it.
+# The tree's runner prints back the real `verify.sh --list` as parsed, so what
+# varies between the trees is the workflow alone.
+_LIST_STUB = ("while IFS= read -r line; do printf '%s\\n' \"$line\"; "
+              "done < tools/verify-list.txt\n")
+
+
+def _list_text(listed):
+    """A parsed `verify.sh --list` printed back in the runner's own layout."""
+    lines = []
+    for name in listed["order"]:
+        lines.append("  %s (%s)" % (name, listed["tiers"][name]))
+        lines.extend("    %s" % (step,) for step in listed["steps"][name])
+        lines.extend("        %s" % (c,) for c in listed["commands"][name])
+    return "\n".join(lines) + "\n"
+
+
+def _write(root, rel, text):
+    path = os.path.join(root, rel)
+    if not os.path.isdir(os.path.dirname(path)):
+        os.makedirs(os.path.dirname(path))
+    with io.open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
+
+
+def _wiring_cases(check):
+    listed, problem = verify_list()
+    try:
+        with io.open(os.path.join(REPO, CI_REL), encoding="utf-8") as fh:
+            text = fh.read()
+    except (IOError, OSError, UnicodeDecodeError) as exc:
+        text, problem = None, problem or "ci.yml could not be read: %s" % (exc,)
+    if listed is None or text is None:
+        check("sv17 the verdict `slice_verdict()` renders over a tree of its own "
+              "(the runner's list or the workflow could not be read, so nothing "
+              "was compared: %r)" % (problem,), False)
+        return
+    drop_last = ("        exclude:\n          - os: windows-2025\n"
+                 "            shard: %d\n" % (WINDOWS_SHARDS,))
+    # (rule, its direct call, anchor, replacement, the subjects only that rule
+    # names). Each anchor must sit in the live workflow exactly once, so an edit
+    # that lands nowhere is a red here rather than a tree identical to the clean one.
+    edits = (("encoding_leg_drift", encoding_leg_drift, _EL_PER_RUN_ARM,
+              "|| 'selftests-cp1252-whole' }}",
+              ["windows selftests-cp1252-whole"]),
+             ("encoding_leg_drift", encoding_leg_drift, _EL_RELEASE_ARM,
+              "'selftests-cp1252' ||", ["windows code-page leg"]),
+             ("slice_drift", lambda t, lst: slice_drift(t, lst["tiers"]),
+              "--only resample", "--only resample,no-such-slice",
+              ["no-such-slice"]),
+             ("shard_matrix_drift", lambda t, _lst: shard_matrix_drift(t),
+              "        exclude:\n", drop_last, None))
+    root = tempfile.mkdtemp(prefix="gate-parity-wiring-")
+    try:
+        _write(root, VERIFY_REL, _LIST_STUB)
+        _write(root, os.path.join("tools", "verify-list.txt"), _list_text(listed))
+        _write(root, CI_REL, text)
+        clean, read, _jobs = slice_verdict(root)
+        broken = []
+        for rule, direct, anchor, repl, own in edits:
+            mutated = text.replace(anchor, repl, 1)
+            _write(root, CI_REL, mutated)
+            names = [s for s, _w in direct(mutated, listed)]
+            broken.append((rule, text.count(anchor), own or names, names,
+                           [s for s, _w in slice_verdict(root)[0]]))
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+    # THE ALLOW CASE for the trees below: the live workflow in a tree of its own,
+    # against the runner's list printed back, reads clean - so a finding in a
+    # broken tree is that tree's edit, not the tree.
+    check("sv17 the verdict `slice_verdict()` renders over a tree holding the live "
+          "workflow and the runner's list printed back is clean, and the list it "
+          "read is the one the runner printed: %r" % (clean,),
+          clean == [] and read == listed)
+
+    def carried(row):
+        _rule, landed, own, names, verdict = row
+        return (landed == 1 and bool(own) and set(own) <= set(names)
+                and set(names) <= set(verdict))
+
+    encoding = [row for row in broken if row[0] == "encoding_leg_drift"]
+    check("sv18 %s, in the verdict `slice_verdict()` renders and not only in the "
+          "rule: a tree whose per-run arm names the whole slice carries `windows "
+          "selftests-cp1252-whole`, one whose release arm names the selection "
+          "carries `windows code-page leg` (rule, anchor hits, wanted, the rule "
+          "named, the verdict carried: %r)" % (_EL_CLAUSE, encoding),
+          len(encoding) == 2 and all(carried(row) for row in encoding))
+
+    others = [row for row in broken if row[0] != "encoding_leg_drift"]
+    check("sv19 %s - and so does the verdict `slice_verdict()` renders: a job "
+          "naming `no-such-slice` and an exclude dropping windows part %d each "
+          "reach it, so neither rule's term can leave the sum unseen (rule, "
+          "anchor hits, wanted, the rule named, the verdict carried: %r)"
+          % (_SLICE_CLAUSE, WINDOWS_SHARDS, others),
+          [row[0] for row in others] == ["slice_drift", "shard_matrix_drift"]
+          and all(carried(row) for row in others))
 
 
 def _verify_stub_bin(root):
@@ -3725,6 +3842,7 @@ def _cases(check):
     _slice_cases(check)
     _ci_shape_cases(check)
     _encoding_leg_cases(check)
+    _wiring_cases(check)
     _verify_slice_run_cases(check)
     _runner_image_cases(check)
     _lint_dir_cases(check)

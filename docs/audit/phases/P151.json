@@ -29,8 +29,10 @@
         "severity": "med",
         "file": "tools/prove-gates.py:931-937 (against .github/workflows/ci.yml:189)",
         "issue": "The diff changed ci.yml's shard axis to `        shard: [1, 2, 3, 4, 5]`. prove-gates' shard_matrix_drift row (case sv7) is anchored on `        shard: [1, 2, 3, 4]`, which now occurs 0 times (it is not a substring of the new line because of the `4]`). The untouched file breaks across the boundary: prove-gates' c2 ('every row's anchor is still in the tree, exactly once') fails, and tools/ is swept, so the sweep goes red. I checked this by evaluating c2's own loop in-process on the task tree (`[r for r in TABLE if mutation(r)[0] is None]`), which printed [('shard_matrix_drift', '.github/workflows/ci.yml', 'anchor occurs 0 time(s)')], exit 1, and it was the only unanchored row. I did not run the whole `prove-gates.py --selftest`, because reviewer rules allow one test run. The executor reports that run as FAIL c2, 64/65.",
-        "resolution": "In tools/prove-gates.py:936-937, anchor the row on `        shard: [1, 2, 3, 4, 5]` and replace it with `        shard: [1, 2, 3, 4]`. Today this anchor occurs exactly once. The mutation leaves windows plain and cp1252 running parts [1..4] of 5, so shard_matrix_drift names both, and sv7 still goes red. The comment at :931-934 stays true. Land it in the same commit as the ci.yml change so no SHA has a red sweep.",
-        "fixTask": "P151.3-3z1"
+        "resolution": "fixed in P151.3-3z1 (8b479b909ccd): In tools/prove-gates.py:936-937, anchor the row on `        shard: [1, 2, 3, 4, 5]` and replace it with `        shard: [1, 2, 3, 4]`. Today this anchor occurs exactly once. The mutation leaves windows plain and cp1252 running parts [1..4] of 5, so shard_matrix_drift names both, and sv7 still goes red. The comment at :931-934 stays true. Land it in the same commit as the ci.yml change so no SHA has a red sweep.",
+        "fixTask": "P151.3-3z1",
+        "commit": "8b479b909ccd",
+        "status": "fixed"
       },
       {
         "id": "P151-R2",
@@ -73,7 +75,7 @@
         "fixTask": "P151.8-3z1"
       }
     ],
-    "outcome": "[findings: 6 - 1 high, 3 med, 2 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 6 - 1 high, 3 med, 2 low; 1 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -209,7 +211,7 @@
     {
       "id": "P151.3-3z1",
       "title": "fix P151-R1: The diff changed ci.yml's shard axis to `        shard: [1, 2, 3...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The diff changed ci.yml's shard axis to `        shard: [1, 2, 3, 4, 5]`. prove-gates' shard_matrix_drift row (case sv7) is anchored on `        shard: [1, 2, 3, 4]`, which now occurs 0 times (it is not a substring of the new line because of the `4]`). The untouched file breaks across the boundary: prove-gates' c2 ('every row's anchor is still in the tree, exactly once') fails, and tools/ is swept, so the sweep goes red. I checked this by evaluating c2's own loop in-process on the task tree (`[r for r in TABLE if mutation(r)[0] is None]`), which printed [('shard_matrix_drift', '.github/workflows/ci.yml', 'anchor occurs 0 time(s)')], exit 1, and it was the only unanchored row. I did not run the whole `prove-gates.py --selftest`, because reviewer rules allow one test run. The executor reports that run as FAIL c2, 64/65.\n\nResolution asked: In tools/prove-gates.py:936-937, anchor the row on `        shard: [1, 2, 3, 4, 5]` and replace it with `        shard: [1, 2, 3, 4]`. Today this anchor occurs exactly once. The mutation leaves windows plain and cp1252 running parts [1..4] of 5, so shard_matrix_drift names both, and sv7 still goes red. The comment at :931-934 stays true. Land it in the same commit as the ci.yml change so no SHA has a red sweep.",
       "files": [
         "tools/prove-gates.py",
@@ -239,14 +241,18 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8b479b909ccd",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "In the task's own worktree, only tools/prove-gates.py was edited (git diff --stat: 1 file, 27+/1-); ci.yml was not touched. Kept attempt 1's shard_matrix_drift re-anchor (`shard: [1, 2, 3, 4, 5]` -> `[1, 2, 3, 4]`, sv7). Added three encoding_leg_drift rows. (1) TABLE (red) row after the shard row: ci.yml `'selftests-cp1252-whole' ||` -> `'selftests-cp1252' ||` (the release arm names the per-run selection), case sv7. I chose the release arm over the suggested per-run arm because the per-run swap is not specific to this lint. Measured in-process on the clean ci.yml with the real verify.sh --list: under the per-run swap slice_drift ALSO reports ('selftests-cp1252', 'a per-run slice no job outside the release tier runs...'), so sv7 would go red even with encoding_leg_drift deleted. Under the release-arm mutation slice_drift=[] and shard_matrix_drift=[], and encoding_leg_drift=[('windows code-page leg', ...)] is the only finding. sv7 is the live parity() -> slice_verdict() claim, the path the gate itself takes. If P151.8's sv17-sv19 land with a slice_verdict case for this lint, the row's case could be revisited to that id (e.g. sv18); sv7 already goes through slice_verdict, so that is optional. (2) ALLOW row: gate-parity.py `    if not release_whole:` -> `    if True:`, case el0 (the live pair). (3) ALLOW row for the other direction: `                if \"per-run\" in run[\"tiers\"]:` -> `if True:`, case el3 (the release-only job fixture). Anchor counts: grep -c on each anchor -> 1, 1, 1. `python3 tools/prove-gates.py --only encoding_leg_drift` -> red half 'encoding_leg_drift RED sv7, el0, el1, el2', '1 of 1 gates proven red'; allow half both rows 'RED sv7, el0, el1, el3', '2 of 2 guards proven to stay quiet on known-good input'; exit 0 (worker trees, checkout not written). el1/el2 also go red under the red mutation because their replace of the release arm becomes a no-op on already-mutated text, which is expected. `python3 tools/prove-gates.py --selftest` -> exit 0, 'ALL PASS: 65/65 cases passed' (c1, c2 and a4 now pass). `python3 tools/gate-parity.py --selftest` -> 'ALL PASS: 103/103'; `python3 tools/gate-parity.py` -> exit 0. `ruff check tools/prove-gates.py` -> 'All checks passed!', exit 0. In-process _output_lints.prose_number_claims() -> 0 findings. `tests/test__refs.py --selftest` -> 292/292. Per the brief (own-tests, no tests.add) there was no gate of my own to run, so gates is {}; the commands above are extra evidence. The full sweep was not run here; the orchestrator's recorded run is the verdict. Dependants: the eight path-dependants of prove-gates.py (.github/sweep-costs.json, guard-bash-writes.py, tests/_harness.py, test__deps.py, test__gate_feed.py, test_drive_phase.py, test_guard_bash_writes.py, tools/affected.py) refer to its path, which did not change, so they are still correct. The names used elsewhere (_under, selector_text, _call_name, changed_paths) were not touched, so they are still correct. The new rows' targets (.github/workflows/ci.yml, tools/gate-parity.py) map through affected.py --changed the same way the neighbouring sv7/sv0 rows do. ci.yml was not edited, so its dependants are unaffected.",
+        "descriptive": "prove-gates now proves gate-parity's encoding_leg_drift in both directions, and its own selftest is green at 65/65."
       },
       "startedAt": "2026-10-31T01:06:07Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-31T01:24:39Z",
+      "verifiedBy": [
+        "prove-gates TABLE row: ci.yml's release arm naming the cp1252 selection must turn gate-parity sv7 red (only encoding_leg_drift sees it)",
+        "prove-gates ALLOW row: encoding_leg_drift's release_whole check forced to fire always must turn el0 red",
+        "prove-gates ALLOW row: encoding_leg_drift reading every windows cell as per-run must turn el3 red"
+      ],
       "notes": [
         {
           "at": "2026-10-31T00:39:31Z",
@@ -273,6 +279,17 @@
         "runId": "2026-10-31T01:22:02Z.3e5dd0",
         "status": "passed",
         "at": "2026-10-31T01:22:02Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8b479b909ccd",
+        "at": "2026-10-31T01:24:39Z",
+        "return": "docs/audit/evidence/returns/P151.3-3z1/20261031T010607Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "tests.expectRedFirst is false on this tdd task: it names no case to prove a red by, so no red-first proof is owed",
+        "at": "2026-10-31T01:10:46Z"
       }
     },
     {
@@ -591,9 +608,9 @@
       ],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-31T01:05:42Z.870926",
-        "status": "failed",
-        "at": "2026-10-31T01:05:42Z"
+        "runId": "2026-10-31T01:35:56Z.be2122",
+        "status": "passed",
+        "at": "2026-10-31T01:35:56Z"
       }
     }
   ],
