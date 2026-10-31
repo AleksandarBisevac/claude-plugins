@@ -11,6 +11,7 @@ sweeps that used to exist.
                                                  # ...or read them off a saved CI log
     tools/sweep-selftests.py --jobs 1            # serial, for a bisect
     tools/sweep-selftests.py --encoding cp1252   # the sweep again on a legacy code page: stdio codec AND, where faithful, a non-UTF-8 locale
+    tools/sweep-selftests.py --encoding cp1252 --encoding-subjects   # ...over only the suites that pass is about, derived from what it sets
     tools/sweep-selftests.py --quiet             # failures and totals; no per-file lines
     tools/sweep-selftests.py --spaced            # TMPDIR and interpreter under a spaced symlink
     tools/sweep-selftests.py --encoding cp1252 --spaced   # both conditions in one execution
@@ -1128,6 +1129,107 @@ def legacy_locale_verdict(environ=None, locale_vars=None, interpreter=None,
     reported = (said[0], said[1])
     return dict(locale_decision(os_name, reported, encoding, locale_vars),
                 reported=reported)
+
+
+# --- the suites an encoding pass is about -------------------------------------
+# `--encoding-subjects` narrows an `--encoding` pass to the suites it is ABOUT, and
+# the narrowing is derived rather than listed, so a suite added later is classified
+# by the same reading and none falls out of a list nobody updated. What the pass
+# changes is what `locale_pins` sets in a child's environment - the stdio codec
+# everywhere, the locale on POSIX - so a suite is in when its own text, or the text
+# of a module it is the suite for, names one of those variables or the code page
+# itself as a whole word. A suite naming none still meets a legacy code page on
+# every run without the flag: a windows sweep's children write to pipes in the
+# machine's code page, and a sweep under `--encoding` alone sweeps them all. What it
+# loses is the run with the pin set, which only a sweep without the flag keeps.
+ENCODING_SUBJECTS_FLAG = "--encoding-subjects"
+
+
+def pass_knobs(encoding):
+    """The words naming what a `--encoding <encoding>` pass turns, sorted: every
+    variable `locale_pins` sets for either platform family, and the code page."""
+    names = set(locale_pins("posix", encoding)) | set(locale_pins("nt", encoding))
+    return sorted(names | set([encoding]))
+
+
+def suite_subjects(repo):
+    """`{suite: [module, ...]}` in repo-relative POSIX paths: the modules each
+    `tests/` suite is the suite for, named the way the coverage classifier names
+    them (`_output_lints._test_name_for`) over the roots it walks.
+
+    `repo` is REQUIRED for the reason `retired_suite_files` gives: this is a walk
+    of the tree that reports nothing, and one taking no argument is read by
+    `prove-gates.py` as a load-bearing gate."""
+    roots = ([_output.SCRIPTS_DIR, _output.HOOKS_DIR]
+             + [d for _k, d in _output_lints.DEV_DIRS])
+    found = []
+    for root in roots:
+        rel_root = os.path.relpath(root, _output.REPO_ROOT).replace(os.sep, "/")
+        directory = os.path.join(repo, rel_root)
+        if os.path.isdir(directory):
+            found.extend((rel, "%s/%s" % (rel_root, rel))
+                         for rel, _path in _output.py_files(directory))
+    for _k, path in _output_lints.DEV_FILES:
+        rel = os.path.relpath(path, _output.REPO_ROOT).replace(os.sep, "/")
+        if os.path.isfile(os.path.join(repo, rel)):
+            found.append((rel, rel))
+    out = {}
+    for rel, module in found:
+        suite = "tests/" + _output_lints._test_name_for(rel)
+        out.setdefault(suite, []).append(module)
+    return dict((suite, sorted(mods)) for suite, mods in out.items())
+
+
+def encoding_subjects(paths, encoding, repo=None, subjects=None):
+    """`(selected, knobs)`: the files of `paths` a `--encoding <encoding>` pass is
+    about, in `paths`' order, and the words that decided it (`pass_knobs`). A file
+    is in when its own text or a subject module's (`subjects`, else
+    `suite_subjects`) names a knob as a whole word. A file or subject module that
+    cannot be read counts as naming one, so a read that failed can never be what
+    dropped a suite from the pass."""
+    repo = repo or REPO
+    subjects = suite_subjects(repo) if subjects is None else subjects
+    knobs = pass_knobs(encoding)
+    pattern = re.compile(r"\b(?:%s)\b" % "|".join(re.escape(k) for k in knobs))
+
+    def names_a_knob(rel):
+        try:
+            with io.open(os.path.join(repo, rel), encoding="utf-8",
+                         errors="replace") as fh:
+                return pattern.search(fh.read()) is not None
+        except (IOError, OSError):
+            return None
+
+    def about(path):
+        return any(names_a_knob(rel) is not False
+                   for rel in [path] + subjects.get(path, []))
+    return [p for p in paths if about(p)], knobs
+
+
+def subjects_refusal(argv, encoding, named):
+    """Why `argv`'s `--encoding-subjects` cannot run, or None: it narrows an
+    `--encoding` pass, so without one it has nothing to be about, and a named
+    list is already the part to run."""
+    if ENCODING_SUBJECTS_FLAG not in argv:
+        return None
+    if not encoding:
+        return ("sweep-selftests: %s narrows an --encoding pass, and none was "
+                "asked for; nothing was run" % (ENCODING_SUBJECTS_FLAG,))
+    if named:
+        return ("sweep-selftests: %s chooses the suites itself and a named list "
+                "is already the part to run - pass one or the other; nothing "
+                "was run" % (ENCODING_SUBJECTS_FLAG,))
+    return None
+
+
+def subjects_line(selected, whole, knobs):
+    """The line `--encoding-subjects` prints with its selection: how many of the
+    swept files it kept, and the words that decided it."""
+    return ("encoding subjects: %d of the %d swept files name what this pass "
+            "turns (%s) in their own text or a subject module's; the other %d "
+            "run under it only in a sweep without %s\n"
+            % (selected, whole, ", ".join(knobs), whole - selected,
+               ENCODING_SUBJECTS_FLAG))
 
 
 def run_one(rel_path, repo=None, encoding=None, timeout=DEFAULT_TIMEOUT,
@@ -2665,10 +2767,23 @@ def main(argv):
     if refusal:
         sys.stderr.write(refusal + "\n")
         return 2
+    refusal = subjects_refusal(argv, encoding, named)
+    if refusal:
+        sys.stderr.write(refusal + "\n")
+        return 2
     costs, cost_problem = load_costs(COSTS_PATH)
     swept = set(paths)
     if named:
         paths = named
+    if ENCODING_SUBJECTS_FLAG in argv:
+        whole = len(paths)
+        paths, knobs = encoding_subjects(paths, encoding)
+        if not paths:
+            sys.stderr.write("sweep-selftests: %s kept none of the %d swept "
+                             "files - refusing to report a green pass over "
+                             "nothing\n" % (ENCODING_SUBJECTS_FLAG, whole))
+            return 2
+        sys.stdout.write(subjects_line(len(paths), whole, knobs))
     block_costs, block_problem = load_block_costs(COSTS_PATH)
     for note in table_notes(costs, paths) + (
             [block_problem] if block_problem and not cost_problem else []):
@@ -3658,11 +3773,118 @@ def _block_cost_cases(check):
           and sd_twice == {"a": 2})
 
 
+def _encoding_subject_cases(check):
+    """`--encoding-subjects`: which suites it keeps, read off what the pass sets,
+    and the wiring that makes the run take the narrowing."""
+    knobs = pass_knobs("cp1252")
+    other = pass_knobs("cp437")
+    check("es1 the words a pass is about are what `locale_pins` sets for either "
+          "platform family plus the code page asked for, and the code page "
+          "follows the pass: %r / %r" % (knobs, other),
+          knobs == ["LANG", "LC_ALL", "PYTHONIOENCODING", "PYTHONUTF8", "cp1252"]
+          and "cp437" in other and "cp1252" not in other
+          and set(knobs) - set(["cp1252"]) == set(other) - set(["cp437"]))
+
+    # Each fixture separates one wrong reading from the right one: `b` is kept
+    # only through its subject module (a reading of the suite alone drops it),
+    # `c` and `d` are dropped (a selection that keeps everything keeps them, and
+    # `d` holds the words only inside longer ones, which a substring match
+    # keeps), and `e` and `f` stand for a read that failed - of the suite, and
+    # of its subject - which must keep the suite rather than drop it. Names carry
+    # no extension, as in the named-list cases.
+    es_box = tempfile.mkdtemp(prefix="sweep-subjects-")
+    try:
+        es_bodies = {
+            "tests/test_a": "env['PYTHONIOENCODING'] = 'x'\n",
+            "tests/test_b": "print('nothing about codecs')\n",
+            "mods/b": "os.environ.pop('LC_ALL', None)\n",
+            "tests/test_c": "print('hello')\n",
+            "mods/c": "print('plain')\n",
+            "tests/test_d": "LANGUAGE = 'xcp1252' + 'cp12520'\n",
+            "tests/test_f": "print('subject unreadable')\n",
+        }
+        for es_rel, es_body in es_bodies.items():
+            os.makedirs(os.path.join(es_box, os.path.dirname(es_rel)),
+                        exist_ok=True)
+            write_file(os.path.join(es_box, es_rel), es_body)
+        es_paths = ["tests/test_a", "tests/test_b", "tests/test_c",
+                    "tests/test_d", "tests/test_e", "tests/test_f"]
+        es_subjects = {"tests/test_b": ["mods/b"], "tests/test_c": ["mods/c"],
+                       "tests/test_f": ["mods/gone"]}
+        es_kept, es_knobs = encoding_subjects(es_paths, "cp1252", repo=es_box,
+                                              subjects=es_subjects)
+    finally:
+        remove_tree(es_box)
+    check("es2 a suite naming a knob is kept, and so is one whose subject module "
+          "names one; a suite naming none, or holding the words only inside "
+          "longer ones, is dropped; and a suite or subject that cannot be read "
+          "is kept: %r" % (es_kept,),
+          es_kept == ["tests/test_a", "tests/test_b", "tests/test_e",
+                      "tests/test_f"] and es_knobs == knobs)
+
+    # THE LIVE SELECTION, over this checkout: a proper, non-empty part of the
+    # tree, holding this runner (which names every knob) and the stdio anchor's
+    # suite, which names none itself and is kept through its subject module -
+    # so the mapping to subject modules is the real classifier's, not a fixture.
+    es_swept = sweep_files()
+    es_live, _knobs = encoding_subjects(es_swept, "cp1252")
+    es_anchor = "tests/test__output.py"
+    es_own, _k = encoding_subjects([es_anchor], "cp1252", subjects={})
+    check("es3 over this checkout the selection keeps %d of the %d swept files, "
+          "this runner among them, and keeps %s only through its subject "
+          "module (alone it is %r)" % (len(es_live), len(es_swept), es_anchor,
+                                       es_own),
+          0 < len(es_live) < len(es_swept)
+          and "tools/sweep-selftests.py" in es_live
+          and es_anchor in es_live and es_own == []
+          and "scripts/_output.py" in " ".join(
+              suite_subjects(REPO).get(es_anchor, [])))
+
+    # THE WIRING. Without an --encoding pass the flag is refused, and so is a
+    # named list beside it; with one, a run narrowed then sharded past its
+    # units prints the selection, splits the SELECTION rather than the tree,
+    # and refuses its empty part before running anything.
+    es_refusals = (subjects_refusal([ENCODING_SUBJECTS_FLAG], None, []),
+                   subjects_refusal(["--encoding", "cp1252",
+                                     ENCODING_SUBJECTS_FLAG], "cp1252",
+                                    ["tools/b"]),
+                   subjects_refusal(["--encoding", "cp1252"], "cp1252", []),
+                   subjects_refusal(["--encoding", "cp1252",
+                                     ENCODING_SUBJECTS_FLAG], "cp1252", []))
+    es_bare = subprocess.run(
+        [sys.executable, os.path.abspath(__file__), ENCODING_SUBJECTS_FLAG],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120)
+    es_far = len(es_swept) * 50
+    es_split = subprocess.run(
+        [sys.executable, os.path.abspath(__file__), "--encoding", "cp1252",
+         ENCODING_SUBJECTS_FLAG, "--shard", "%d/%d" % (es_far, es_far)],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120)
+    es_out = child_text(es_split.stdout)
+    check("es4 the flag without an --encoding pass, or beside a named list, is "
+          "refused, and through `main` a narrowed run splits the selection: "
+          "refusals %r; bare exit %r %r; split exit %r out %r err %r"
+          % (es_refusals, es_bare.returncode, child_text(es_bare.stderr)[-160:],
+             es_split.returncode, es_out[-400:],
+             child_text(es_split.stderr)[-160:]),
+          es_refusals[0] is not None and "--encoding" in es_refusals[0]
+          and es_refusals[1] is not None and "named list" in es_refusals[1]
+          and es_refusals[2] is None and es_refusals[3] is None
+          and es_bare.returncode == 2
+          and ENCODING_SUBJECTS_FLAG in child_text(es_bare.stderr)
+          and es_split.returncode == 2
+          and ("encoding subjects: %d of the %d swept files"
+               % (len(es_live), len(es_swept))) in es_out
+          and ("of the %d swept," % (len(es_live),)) in es_out
+          and "holds no file" in child_text(es_split.stderr)
+          and "budget:" not in es_out)
+
+
 def _cases(check):
     """Every branch of `grade` plus the two refusals, driven without a subprocess."""
     _suite_root_cases(check)
     _claude_watch_cases(check)
     _child_text_cases(check)
+    _encoding_subject_cases(check)
     import _harness
     _harness.stage(check, "bk-block", _block_cost_cases)
     live = "tests/test__output.py"

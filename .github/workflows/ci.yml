@@ -68,9 +68,10 @@ concurrency:
 # estimate made when the windows legs ran four parts: the heaviest part's
 # slot-seconds on the committed .github/sweep-costs.json over four slots, at the
 # lowest share of the slots a windows cell of run 40715565769 kept busy, plus the
-# longest time one of them spent before and after its sweep step. The windows legs
-# now run five parts (the matrix's `parts` row), whose cells that same method puts
-# under a third of the bound - and the bound cannot follow them down: it sits at 33
+# longest time one of them spent before and after its sweep step. The windows plain
+# leg now runs five parts and the code-page leg three (the matrix's `parts` rows),
+# whose cells that same method puts under a third of the bound on a per-run run - and
+# the bound cannot follow them down: it sits at 33
 # because the sweep's deadline must fit inside it (tools/sweep-selftests.py
 # `SWEEP_DEADLINE`, case tt5), and the deadline in turn sits above the heaviest
 # block's calibrated timeout, which no part count changes. So this line is not
@@ -170,8 +171,10 @@ jobs:
   # `selftests-stress` asks a legacy code page AND a spaced, linked TMPDIR in one
   # execution, posix only: symlinks need a privilege the Windows runner does not grant,
   # and the runner refuses `--spaced` there rather than skip silently. Windows runs the
-  # code-page leg alone, `selftests-cp1252`, until the Windows intermittents are shown
-  # absent from its plain cells; that deletion waits on that evidence.
+  # code-page leg alone, until the Windows intermittents are shown absent from its
+  # plain cells; that deletion waits on that evidence. Per run that leg is
+  # `selftests-cp1252`, the suites the pass is about, and on the release tier
+  # `selftests-cp1252-whole` (the `cp1252` include row below says how).
   #
   # A cell is NAMED by its leg (`selftests (<family>, <leg> <shard>)`), which is the shape
   # the CI study's readers parse a run's cells by; each `include` row below adds the
@@ -199,20 +202,42 @@ jobs:
             shard: 4
           - os: ubuntu-24.04
             shard: 5
+          # ...and so does the windows code-page leg.
+          - os: windows-2025
+            leg: cp1252
+            shard: 4
+          - os: windows-2025
+            leg: cp1252
+            shard: 5
         include:
           - leg: plain
             slice: selftests
           - leg: stress
             slice: selftests-stress
+          # THE ONE SLICE THAT DEPENDS ON THE TIER. Per run the code-page leg sweeps
+          # only the suites the pass is about (the runner derives them from what the
+          # pass sets); a release-tier run sweeps the whole tree under it, in the
+          # same cells. tools/gate-parity.py (`encoding_leg_drift`) reads both arms
+          # and fails the build when the per-run arm runs the whole tree or no
+          # release-tier windows cell runs it whole.
           - leg: cp1252
-            slice: selftests-cp1252
+            slice: ${{ inputs.tier == 'release' && 'selftests-cp1252-whole' || 'selftests-cp1252' }}
           # EACH FAMILY'S PART COUNT, the N of `--shard I/N`. A row keyed by `os`
           # joins every cell of that runner, since it overwrites no value the matrix
           # lists; a later row keyed by `os` and `leg` may overwrite it for one leg.
+          # The code-page leg's row is that: per run its selection splits into the
+          # fewest parts that each carry less than a plain windows part (`--shard`
+          # prints every part's load), so its cells end before the plain ones; the
+          # whole tree on the release tier takes longer in the same cells - an
+          # estimate, until a release-tier run of this shape is measured, puts
+          # them inside the job's bound and inside the resample job's run.
           - os: ubuntu-24.04
             parts: 2
           - os: windows-2025
             parts: 5
+          - os: windows-2025
+            leg: cp1252
+            parts: 3
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5

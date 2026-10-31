@@ -94,7 +94,7 @@ Five things beyond the code, and four of them fail CI *by name* if missed:
    underscores (`a-b.py` → `test_a_b.py`, `_x.py` → `test__x.py`). The sweep fails, by name, a
    module with neither a suite nor a row with a reason in `_output_lints.COVERAGE_EXEMPT`;
 2. `safe_stdio()` as the **first** statement in `__main__` — **`scripts/` only**, AST-enforced by
-   `_output_lints.entries_missing_guard()`; hooks stay importless, and CI's cp1252 sweep covers them;
+   `_output_lints.entries_missing_guard()`; hooks stay importless, and CI's cp1252 sweeps cover them (the linux stress leg on every run, the windows code-page leg whole on the release tier);
 3. a layer assignment in `_deps.LAYERS` (`tools/lints/_deps.py`; the import-graph lint fails an
    unplaced file);
 4. a tree line **and** a section in `PLUGIN-BUILD-GUIDE.md` (the enumeration lint);
@@ -200,6 +200,7 @@ commands a change most often reruns by hand, not a second copy of it:
 python3 tools/sweep-selftests.py           # tests/, tools/ AND .claude/hooks/, each in a scratch dir; hooks/ and scripts/ answer for a suite in tests/
 python3 tools/sweep-selftests.py --selftest
 python3 tools/sweep-selftests.py --encoding cp1252   # again, a legacy code page for stdio AND a non-UTF-8 locale only where the pin is Windows-shaped; prints which half ran; --fast skips it
+python3 tools/sweep-selftests.py --encoding cp1252 --encoding-subjects   # ...over the suites that pass is about, derived from what it sets: per-run CI's windows code-page cells; the release tier sweeps the whole tree
 python3 tools/sweep-selftests.py --spaced            # again, TMPDIR spaced + symlinked; posix only; --fast skips it
 python3 tools/gate-parity.py               # ci.yml's slices against verify.sh --list, SECURITY.md's fail modes, job time bounds
 python3 tools/bench-hooks.py --gate        # the hook import budget; no flag prints the measurement

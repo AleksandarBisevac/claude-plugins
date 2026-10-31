@@ -382,7 +382,13 @@ command on a machine whose temp directory or virtualenv sits under one. It is po
 (the runner refuses where symlinks are not granted); a suite it cannot run is listed in
 `SPACED_EXEMPT` with the reason, and the run prints each one. **`selftests-cp1252`** is the
 codec leg alone, for the Windows cells, where `--spaced` is refused and the pipe is already
-a legacy code page.
+a legacy code page. Per run it sweeps only the suites the pass is about
+(`--encoding-subjects`): a suite whose own text, or its subject module's, names a variable
+the pass sets or the code page itself. The words are read off `locale_pins`, not listed,
+so a new suite is classified by the same reading, and the run prints how many it kept and
+the words that decided it. The release tier's **`selftests-cp1252-whole`** sweeps the whole
+tree in the same cells, and `gate-parity.py`'s `encoding_leg_drift()` fails the build when
+a per-run cell sweeps the whole tree or no release-tier cell does.
 
 The mutation probe (`tools/prove-gates.py`) never writes the checkout: every row mutates
 and restores a worker tree of its own — a detached `git worktree` at HEAD carrying the

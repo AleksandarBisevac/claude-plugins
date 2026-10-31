@@ -105,10 +105,15 @@ done
 #
 # `selftests-cp1252` is the legacy-code-page leg alone, for the Windows cells: there
 # the runner refuses `--spaced`, so the stress leg cannot run, and a pipe on Windows is
-# already that code page. It stays a slice of its own until the Windows intermittents
-# are shown gone from the plain cells; the deletion waits on that evidence.
+# already that code page. Per run it sweeps only the suites the pass is about, which
+# the runner derives from what the pass sets (`--encoding-subjects`); the release
+# tier's `selftests-cp1252-whole` sweeps the whole tree under it. gate-parity.py
+# (`encoding_leg_drift`) holds that split in ci.yml. Both stay until the Windows
+# intermittents are shown gone from the plain cells; the deletion waits on that
+# evidence. `--release` here does not add the whole leg: on POSIX the per-run
+# `selftests-stress` already sweeps the whole tree with the codec pinned.
 PER_RUN_SLICES="selftests selftests-stress selftests-cp1252 runner e2e lint js manifests plugin report panel"
-RELEASE_SLICES="release resample"
+RELEASE_SLICES="release resample selftests-cp1252-whole"
 ALL_SLICES="$PER_RUN_SLICES $RELEASE_SLICES"
 
 slice_tier() {
@@ -151,7 +156,7 @@ if [ -n "$SHARD" ]; then
   fi
   for s in $SELECTED; do
     case "$s" in
-      selftests|selftests-stress|selftests-cp1252) ;;
+      selftests|selftests-stress|selftests-cp1252|selftests-cp1252-whole) ;;
       *) echo "verify: --shard splits a sweep slice, and '$s' is not one" >&2; exit 2 ;;
     esac
   done
@@ -410,12 +415,25 @@ slice_selftests_stress() {
 }
 
 # --- slice: selftests-cp1252, the code-page leg alone, for the Windows cells ----------
+# Over the suites the pass is about: the runner keeps a suite whose own text, or its
+# subject module's, names a variable the pass sets or the code page, and prints how
+# many it kept and the words that decided it.
 slice_selftests_cp1252() {
   if [ "$FAST" -eq 1 ]; then
-    skip "selftests on a legacy code page"
+    skip "selftests on a legacy code page, the suites it is about"
     return 0
   fi
-  run "selftests on a legacy code page" \
+  run "selftests on a legacy code page, the suites it is about" \
+    python3 tools/sweep-selftests.py --encoding cp1252 --encoding-subjects $SHARD_ARGS
+}
+
+# --- slice: selftests-cp1252-whole, the same leg over the whole tree (release) --------
+slice_selftests_cp1252_whole() {
+  if [ "$FAST" -eq 1 ]; then
+    skip "selftests on a legacy code page, the whole tree"
+    return 0
+  fi
+  run "selftests on a legacy code page, the whole tree" \
     python3 tools/sweep-selftests.py --encoding cp1252 $SHARD_ARGS
 }
 

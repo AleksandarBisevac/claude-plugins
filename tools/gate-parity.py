@@ -22,7 +22,9 @@ hold it against `verify.sh --list`, asked of the real runner:
 
   * every slice a job names is one the list prints;
   * every per-run slice is run by a job outside the release tier;
-  * a sharded slice's matrix runs every part 1..N on every runner it runs on.
+  * a sharded slice's matrix runs every part 1..N on every runner it runs on;
+  * the windows code-page leg sweeps the suites the pass is about on a per-run
+    run and the whole tree on a release-tier run (`encoding_leg_drift()`).
 
 The documents point at `verify.sh --list` instead of listing commands, so there is
 no document side left to compare.
@@ -599,6 +601,11 @@ _COMMAND_LINE = re.compile(r"^        (\S.*)$")
 # one of them (`... || false`, a `github.event_name` test beside it) is not one.
 _GUARD_TERMS = frozenset(["!cancelled()", "needs.verified.outputs.run==''"])
 _RELEASE_TERM = "inputs.tier=='release'"
+# A VALUE THAT DEPENDS ON THE TIER, spelled the one way the workflow spells it -
+# `${{ inputs.tier == 'release' && 'A' || 'B' }}`, read with its spaces removed:
+# A on a release-tier run, B on every other. A run reading one is two runs, one
+# per arm, each carrying the tier it runs on (`_tier_arms`, `job_slices`).
+_TIER_CHOICE = re.compile(r"\$\{\{inputs\.tier=='release'&&'([^']*)'\|\|'([^']*)'\}\}")
 _EXPR = re.compile(r"\$\{\{\s*(.*?)\s*\}\}")
 _MATRIX_WORD = re.compile(r"\$\{\{matrix\.([A-Za-z0-9_-]+)\}\}")
 _VERIFY_CALL = re.compile(r"(?:^|[\s;&|(])(?:\./)?tools/verify\.sh(?=\s|$)(.*)$",
@@ -862,17 +869,41 @@ def _if_tier(condition):
     return ("release" if _RELEASE_TERM in terms else "per-run"), None
 
 
+def _tier_arms(values):
+    """[(arm, values)] for one cell's resolved verify.sh arguments: one entry,
+    arm None, when no value depends on the tier; else a `release` and a
+    `per-run` entry, each value taking that arm of its `_TIER_CHOICE`."""
+    if not any(v is not None and _TIER_CHOICE.search(v) for v in values):
+        return [(None, values)]
+    return [(arm, [None if v is None
+                   else _TIER_CHOICE.sub(lambda m: m.group(group), v)
+                   for v in values])
+            for arm, group in (("release", 1), ("per-run", 2))]
+
+
+def _run_tiers(job_tier, arm):
+    """The tiers a run executes on, as a tuple: a per-run job's on both, a
+    release-tier job's on the release tier alone, narrowed to its arm when a
+    value depends on the tier - empty for an arm its job never reaches - and
+    `unproved` for a job whose condition cannot be proved."""
+    if job_tier == "unproved":
+        return ("unproved",)
+    on = ("per-run", "release") if job_tier == "per-run" else ("release",)
+    return on if arm is None else tuple(t for t in on if t == arm)
+
+
 def job_slices(text):
     """{"jobs": [...], "problems": [...], "problem": str or None} for a workflow.
 
     One entry per job: its id, its tier (`release` when its `if:` carries
     `inputs.tier == 'release'`, `per-run` when it carries only the guard terms or
     nothing, and `unproved` when a job that calls verify.sh has any other
-    condition - which is also a `problems` row), and one run per verify.sh call
-    per matrix cell - the slices it names (None for a call with no `--only`,
-    which runs every per-run slice), its `--shard` and the matrix keys that
-    produced it. A value a cell cannot resolve is a `problems` row naming the
-    job, never a silently dropped run.
+    condition - which is also a `problems` row), its `runs-on`, and one run per
+    verify.sh call per matrix cell - per arm, when a value depends on the tier
+    (`_tier_arms`) - with the slices it names (None for a call with no `--only`,
+    which runs every per-run slice), its `--shard`, the matrix keys that
+    produced it and the tiers it runs on (`_run_tiers`). A value a cell cannot
+    resolve is a `problems` row naming the job, never a silently dropped run.
     """
     jobs = _workflow_jobs(text)
     if not jobs:
@@ -881,8 +912,10 @@ def job_slices(text):
     out, problems = [], []
     for job, lines in jobs:
         calls = [args for run in _job_runs(lines) for args in _verify_args(run)]
-        tier, why = _if_tier(_job_keys(lines).get("if", ""))
-        entry = {"job": job, "tier": tier or "unproved", "runs": []}
+        keys = _job_keys(lines)
+        tier, why = _if_tier(keys.get("if", ""))
+        entry = {"job": job, "tier": tier or "unproved", "runs": [],
+                 "runs_on": keys.get("runs-on", "")}
         out.append(entry)
         if not calls:
             continue            # a guard job carries no slice, so no condition to prove
@@ -895,19 +928,26 @@ def job_slices(text):
         for words in calls:
             only, shard = _flag(words, "--only"), _flag(words, "--shard")
             for cell in matrix["cells"]:
-                values = [_resolve(w, cell) for w in (only, shard) if w is not None]
-                if any("${{" in v for v in values):
-                    problems.append((job, "a verify.sh argument the matrix cell "
-                                     "%r cannot resolve: %r" % (cell, values)))
-                    continue
-                entry["runs"].append({
-                    "cell": cell,
-                    "slices": (None if only is None
-                               else [s for s in _resolve(only, cell).split(",")
-                                     if s]),
-                    "shard": None if shard is None else _resolve(shard, cell),
-                    "shard_keys": (set(_MATRIX_WORD.findall(shard))
-                                   if shard is not None else set())})
+                resolved = [None if w is None else _collapse(_resolve(w, cell))
+                            for w in (only, shard)]
+                for arm, (only_v, shard_v) in _tier_arms(resolved):
+                    values = [v for v in (only_v, shard_v) if v is not None]
+                    if any("${{" in v for v in values):
+                        problems.append((job, "a verify.sh argument the matrix "
+                                         "cell %r cannot resolve: %r"
+                                         % (cell, values)))
+                        continue
+                    tiers = _run_tiers(entry["tier"], arm)
+                    if not tiers:
+                        continue        # an arm its job never reaches
+                    entry["runs"].append({
+                        "cell": cell,
+                        "slices": (None if only_v is None
+                                   else [s for s in only_v.split(",") if s]),
+                        "shard": shard_v,
+                        "shard_keys": (set(_MATRIX_WORD.findall(shard))
+                                       if shard is not None else set()),
+                        "tiers": tiers})
     return {"jobs": out, "problems": problems, "problem": None}
 
 
@@ -929,7 +969,8 @@ def slice_drift(text, listed):
     for job in got["jobs"]:
         for run in job["runs"]:
             for name in (per_run if run["slices"] is None else run["slices"]):
-                named.setdefault(name, set()).add((job["job"], job["tier"]))
+                named.setdefault(name, set()).update(
+                    (job["job"], tier) for tier in run["tiers"])
     findings = []
     for name in sorted(named):
         if name not in listed:
@@ -1003,6 +1044,77 @@ def shard_matrix_drift(text):
     return findings
 
 
+# --- the windows code-page leg: its selection per run, the whole tree on release ---
+# The windows sweep under a legacy code page costs as much as the plain windows
+# sweep, and on a windows runner it adds only the pin itself - a child's pipe there
+# is already that code page. So a per-run run sweeps it over the suites the pass is
+# about (`sweep-selftests.py --encoding-subjects`, which derives them) and a
+# release-tier run sweeps the whole tree under it. Both halves fail silently in the
+# other direction: a per-run cell sweeping the whole tree is complete, only slow,
+# and a release tier left with the selection is green over every suite it dropped.
+# What a slice sweeps is read off the command `verify.sh --list` prints for it, and
+# which tier a cell runs on off `job_slices`, so the rule holds the runner's half
+# and the workflow's half at once. Linux cells are not asked: the stress leg sweeps
+# the whole tree with the codec pinned on every run.
+_ENCODING_FAMILY = "windows"
+
+
+def encoding_sweep_shape(commands):
+    """`subjects`, `whole`, or None: what a slice's printed `commands` sweep
+    under `--encoding` - its selection, the whole tree, or no such sweep."""
+    for command in commands:
+        words = command.split()
+        if (any(w.endswith("sweep-selftests.py") for w in words)
+                and "--encoding" in words):
+            return "subjects" if "--encoding-subjects" in words else "whole"
+    return None
+
+
+def _family(job, run):
+    """The runner a run's cell lands on: its matrix `os`, else its job's
+    `runs-on`."""
+    return str(run["cell"].get("os") or job.get("runs_on") or "")
+
+
+def encoding_leg_drift(text, listed):
+    """[(subject, why)] when a per-run windows cell sweeps the whole tree under
+    `--encoding`, or no windows cell a release-tier run starts does.
+
+    `listed` is the parsed `verify.sh --list`; a slice's shape is
+    `encoding_sweep_shape` over its printed commands."""
+    got = job_slices(text)
+    if got["problem"] is not None:
+        return [("ci.yml", got["problem"])]
+    every = [n for n in listed["order"] if listed["tiers"][n] == "per-run"]
+    per_run_whole, release_whole = set(), False
+    for job in got["jobs"]:
+        for run in job["runs"]:
+            if not _family(job, run).startswith(_ENCODING_FAMILY):
+                continue
+            for name in (every if run["slices"] is None else run["slices"]):
+                if encoding_sweep_shape(listed["commands"].get(name, [])) \
+                        != "whole":
+                    continue
+                if "per-run" in run["tiers"]:
+                    per_run_whole.add((name, job["job"]))
+                if "release" in run["tiers"]:
+                    release_whole = True
+    findings = [("%s %s" % (_ENCODING_FAMILY, name),
+                 "a %s cell of job %s that a per-run run starts sweeps the whole "
+                 "tree under --encoding, so every run pays for the leg the "
+                 "release tier exists to carry; per run it sweeps the suites "
+                 "the pass is about (--encoding-subjects)"
+                 % (_ENCODING_FAMILY, job))
+                for name, job in sorted(per_run_whole)]
+    if not release_whole:
+        findings.append(("%s code-page leg" % (_ENCODING_FAMILY,),
+                         "no %s cell a release-tier run starts sweeps the whole "
+                         "tree under --encoding, so the release tier has "
+                         "dropped every suite the per-run selection leaves out"
+                         % (_ENCODING_FAMILY,)))
+    return findings
+
+
 # THE MANIFEST-VALIDATION WORK, each piece found by a word its command or label
 # carries in `verify.sh --list` rather than by a slice's name, so moving a piece
 # into a slice of its own changes what is read and not whether it is read. A
@@ -1034,9 +1146,9 @@ def per_run_named(text, listed_tiers):
     every = sorted(n for n, t in listed_tiers.items() if t == "per-run")
     named = {}
     for job in got["jobs"]:
-        if job["tier"] != "per-run":
-            continue
         for run in job["runs"]:
+            if "per-run" not in run["tiers"]:
+                continue
             for name in (every if run["slices"] is None else run["slices"]):
                 named.setdefault(name, set()).add(job["job"])
     return dict((n, sorted(j)) for n, j in named.items())
@@ -1952,7 +2064,8 @@ def slice_verdict(repo=None):
     except (IOError, OSError, UnicodeDecodeError) as exc:
         return [("ci.yml", "could not be read: %s" % (exc,))], listed, 0
     findings = ([("verify.sh --list", problem)] if listed is None
-                else slice_drift(text, listed["tiers"]))
+                else slice_drift(text, listed["tiers"])
+                + encoding_leg_drift(text, listed))
     return (findings + shard_matrix_drift(text), listed,
             len(_workflow_jobs(text)))
 
@@ -2000,7 +2113,8 @@ def render(result, stream=None):
     if not bad:
         out.write("  every slice ci.yml names is one verify.sh lists, every "
                   "per-run slice has a job, every sharded slice runs all its "
-                  "parts, SECURITY.md's fail modes are the ones hooks.json "
+                  "parts, the windows code-page leg sweeps its selection per "
+                  "run and the whole tree on the release tier, SECURITY.md's fail modes are the ones hooks.json "
                   "registers, every CI job carries a time bound two to three "
                   "times its longest recorded run (or the floor for a "
                   "sub-minute job), every CI job pins its runner image "
@@ -2551,11 +2665,19 @@ def _slice_cases(check):
 # matrix narrowed back to fewer parts is still complete, so shard_matrix_drift
 # accepts it, and only this pin names it. The linux legs' count is not pinned -
 # shard_matrix_drift holds each family to every part of its own total either way.
+# The code-page leg (a slice `encoding_sweep_shape` reads as a sweep under
+# `--encoding`) has a count of its own: per run it sweeps a selection, split into
+# the fewest parts that each carry less than a plain part, so its cells end first.
+# Nothing here re-derives that from the cost table; the pin holds the count the
+# split printed when it was chosen.
 WINDOWS_SHARDS = 5
+WINDOWS_ENCODING_SHARDS = 3
 _CI_SHAPE_CLAUSE = ("every slice a per-run job of ci.yml runs is one `verify.sh "
                     "--list` prints, each piece of the manifest-validation work is "
                     "run by one of them, and the Windows sweep cells run parts "
-                    "1..%d of %d of each slice" % (WINDOWS_SHARDS, WINDOWS_SHARDS))
+                    "1..%d of %d of each slice, 1..%d of %d of the code-page leg's"
+                    % (WINDOWS_SHARDS, WINDOWS_SHARDS, WINDOWS_ENCODING_SHARDS,
+                       WINDOWS_ENCODING_SHARDS))
 
 
 def _ci_shape_findings(text, listed):
@@ -2574,13 +2696,15 @@ def _ci_shape_findings(text, listed):
         elif not [s for s in slices if s in named]:
             out.append((piece, "run only by slice(s) %s, which no per-run job "
                         "runs" % (", ".join(slices),)))
-    want = set((i, WINDOWS_SHARDS) for i in range(1, WINDOWS_SHARDS + 1))
     if not windows:
         out.append(("windows", "no sharded sweep cell runs on a windows runner"))
     for name, parts in sorted(windows.items()):
-        if set(parts) != want:
+        total = (WINDOWS_ENCODING_SHARDS
+                 if encoding_sweep_shape(listed["commands"].get(name, []))
+                 else WINDOWS_SHARDS)
+        if set(parts) != set((i, total) for i in range(1, total + 1)):
             out.append(("windows %s" % (name,), "its cells run parts %r, not "
-                        "1..%d of %d" % (parts, WINDOWS_SHARDS, WINDOWS_SHARDS)))
+                        "1..%d of %d" % (parts, total, total)))
     return out
 
 
@@ -2656,6 +2780,129 @@ def _ci_shape_cases(check):
           and narrowed and all(s.startswith("windows ") for s, _w in narrowed)
           and "windows selftests" in [s for s, _w in narrowed]
           and "windows selftests" in [s for s, _w in excluded])
+
+
+_EL_CLAUSE = ("the windows code-page leg sweeps the suites the pass is about on a "
+              "per-run run and the whole tree on a release-tier run, and a "
+              "per-run cell sweeping the whole tree, or a release tier left "
+              "without the whole tree, is named")
+_EL_PER_RUN_ARM = "|| 'selftests-cp1252' }}"
+_EL_RELEASE_ARM = "'selftests-cp1252-whole' ||"
+_EL_RELEASE_JOB = """\
+  cp1252-whole:
+    name: selftests (windows, cp1252-whole)
+    needs: verified
+    if: ${{ !cancelled() && needs.verified.outputs.run == '' && inputs.tier == 'release' }}
+    timeout-minutes: 33
+    runs-on: windows-2025
+    steps:
+      - name: verify slice
+        run: sh tools/verify.sh --only selftests-cp1252-whole
+"""
+
+
+def _encoding_leg_cases(check):
+    listed, problem = verify_list()
+    try:
+        with io.open(os.path.join(REPO, CI_REL), encoding="utf-8") as fh:
+            text = fh.read()
+    except (IOError, OSError, UnicodeDecodeError) as exc:
+        text, problem = None, problem or "ci.yml could not be read: %s" % (exc,)
+    if listed is None or text is None:
+        check("el0 %s (the runner's list or the workflow could not be read, so "
+              "nothing was compared: %r)" % (_EL_CLAUSE, problem), False)
+        return
+    arms = sorted(set(
+        (tuple(run["slices"] or []), run["tiers"])
+        for job in job_slices(text)["jobs"] for run in job["runs"]
+        if _family(job, run).startswith("windows")
+        and any(encoding_sweep_shape(listed["commands"].get(n, []))
+                for n in run["slices"] or [])))
+    stress = encoding_sweep_shape(listed["commands"].get("selftests-stress", []))
+    live = encoding_leg_drift(text, listed)
+    # THE ALLOW CASE, over the real pair: a rule that fired on every workflow
+    # would convict this one, and the linux stress leg - which sweeps the whole
+    # tree under --encoding on every run - is the cell an unscoped rule convicts.
+    check("el0 %s (THE LIVE CLAIM: the windows code-page cells run %r, the "
+          "linux stress leg sweeps %r on every run, and the findings are %r)"
+          % (_EL_CLAUSE, arms, stress, live),
+          live == [] and stress == "whole"
+          and arms == [(("selftests-cp1252",), ("per-run",)),
+                       (("selftests-cp1252-whole",), ("release",))]
+          and encoding_sweep_shape(listed["commands"]["selftests-cp1252"])
+          == "subjects"
+          and encoding_sweep_shape(listed["commands"]["selftests-cp1252-whole"])
+          == "whole")
+
+    # The per-run arm sweeping the whole tree, from either side: the workflow
+    # naming the whole slice there, the arms dropped for the whole slice, or the
+    # runner's per-run slice losing the narrowing flag.
+    swapped = text.replace(_EL_PER_RUN_ARM, "|| 'selftests-cp1252-whole' }}", 1)
+    unarmed = re.sub(r"slice: \$\{\{ inputs\.tier[^\n]*",
+                     "slice: selftests-cp1252-whole", text, count=1)
+    widened = dict(listed, commands=dict(listed["commands"]))
+    widened["commands"]["selftests-cp1252"] = [
+        c.replace(" --encoding-subjects", "")
+        for c in listed["commands"]["selftests-cp1252"]]
+    found = [encoding_leg_drift(t, lst) for t, lst in
+             ((swapped, listed), (unarmed, listed), (text, widened))]
+    check("el1 %s (a per-run windows cell sweeping the whole tree is named, "
+          "whether the workflow's per-run arm names the whole slice, the arms "
+          "give way to the whole slice, or the runner's per-run slice loses "
+          "--encoding-subjects: %r)" % (_EL_CLAUSE, found),
+          swapped != text and unarmed != text
+          and widened["commands"]["selftests-cp1252"]
+          != listed["commands"]["selftests-cp1252"]
+          and [[s for s, _w in f] for f in found]
+          == [["windows selftests-cp1252-whole"],
+              ["windows selftests-cp1252-whole"],
+              ["windows selftests-cp1252"]]
+          and all("per-run" in f[0][1] for f in found))
+
+    # The release tier left without the whole tree: its arm naming the
+    # selection, the arms dropped for the selection (the shape before the
+    # split), or the runner's release slice narrowed too.
+    narrowed = text.replace(_EL_RELEASE_ARM, "'selftests-cp1252' ||", 1)
+    selection_only = re.sub(r"slice: \$\{\{ inputs\.tier[^\n]*",
+                            "slice: selftests-cp1252", text, count=1)
+    trimmed = dict(listed, commands=dict(listed["commands"]))
+    trimmed["commands"]["selftests-cp1252-whole"] = [
+        c + " --encoding-subjects"
+        for c in listed["commands"]["selftests-cp1252-whole"]]
+    dropped = [encoding_leg_drift(t, lst) for t, lst in
+               ((narrowed, listed), (selection_only, listed), (text, trimmed))]
+    check("el2 %s (a release tier no windows cell of which sweeps the whole tree "
+          "is named, whether its arm names the selection, the arms give way to "
+          "the selection, or the runner's release slice is narrowed: %r)"
+          % (_EL_CLAUSE, dropped),
+          narrowed != text and selection_only != text
+          and [[s for s, _w in f] for f in dropped]
+          == [["windows code-page leg"]] * 3)
+
+    # THE SECOND ALLOW CASE: the whole tree moved to a release-only windows job
+    # of its own, with the matrix keeping only the selection, is clean - the rule
+    # reads which tier a cell runs on, not how the workflow spells the choice.
+    moved = selection_only + _EL_RELEASE_JOB
+    check("el3 %s (the whole tree run by a release-only windows job instead of a "
+          "tier arm is clean: %r)" % (_EL_CLAUSE, encoding_leg_drift(moved,
+                                                                   listed)),
+          encoding_leg_drift(moved, listed) == []
+          and "cp1252-whole" in [j for j, _l in _workflow_jobs(moved)])
+
+    # The arms themselves: a value with no choice is one run on its job's
+    # tiers, one with a choice is two, and an arm its job never reaches is none.
+    check("el4 a value with no tier choice is one arm, one with a choice is a "
+          "release and a per-run arm, and a release-tier job keeps only the "
+          "release arm: %r / %r / %r"
+          % (_tier_arms(["a", None]),
+             _tier_arms(["${{inputs.tier=='release'&&'w'||'s'}}", "1/3"]),
+             [_run_tiers("release", a) for a in ("per-run", "release", None)]),
+          _tier_arms(["a", None]) == [(None, ["a", None])]
+          and _tier_arms(["${{inputs.tier=='release'&&'w'||'s'}}", "1/3"])
+          == [("release", ["w", "1/3"]), ("per-run", ["s", "1/3"])]
+          and [_run_tiers("release", a) for a in ("per-run", "release", None)]
+          == [(), ("release",), ("release",)]
+          and _run_tiers("per-run", None) == ("per-run", "release"))
 
 
 def _verify_stub_bin(root):
@@ -3477,6 +3724,7 @@ def _cases(check):
     _verify_cleanup_cases(check)
     _slice_cases(check)
     _ci_shape_cases(check)
+    _encoding_leg_cases(check)
     _verify_slice_run_cases(check)
     _runner_image_cases(check)
     _lint_dir_cases(check)
