@@ -1,0 +1,21 @@
+{
+  "gates": {
+    "check-rendered-artifacts --before-commit": "pass",
+    "tests/test__deps.py --selftest (doc prose-number lint)": "pass",
+    "tests/test__refs.py --selftest": "pass",
+    "tests/test__output_lints.py --selftest": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "gate-only docs task, tests.expectRedFirst false, no tests added"
+  },
+  "outcome": {
+    "technical": "Docs-only edit in the task's worktree. Earlier text did not yet state the refusal (the --gate-clear rows still said 'for none'), so added: commands/task.md - parenthetical after '--gate-clear for none' naming the refusal on tdd/regression (title-derived included) and the two remedies (--gate <command>, --tests-mode gate-only); the operator-words sentence untouched. reference/verbs-in-full.md - new paragraph after the '--gate-clear is how a task reaches the EMPTY gate' paragraph: scope/add --gate-clear and --tests-mode tdd over a cleared gate refuse with nothing written, both remedies, done asks the same of a plan already holding the state. README.md /audit:task row - one sentence after the scope --gate-clear sentence (no heading touched). CHANGELOG.md - new '## [Unreleased]' section (3.7.0 was already finalized) with a Changed entry. No numbers written in prose. Gates run: check-rendered-artifacts.py --before-commit rc=0 (3 artifacts match fresh render); test__deps.py --selftest 254/254; test__refs.py 292/292; test__output_lints.py 173/173. The refusal wording was read from audit-task.py (_owed_case_gate_refusal, called by add, scope and done), line-level behaviour unchanged. Dependants: verbs-in-full.md/README.md/task.md/CHANGELOG.md readers (_areas.py, tests/test__areas.py, test__manifest_vocab.py, test_audit_task.py, guide.md, execute-task.md, prove-gates.py, _refs.py, _journal_io.py, run-test-gate.py, audit-status.py, test__deps.py, test__output.py etc.): still correct - the change only adds sentences; no heading, table row key, quoted operator-words sentence or script name was altered, and the deps/refs/output-lint selftests plus the rendered-artifact check stay green. The full dependant list was not each opened; only the named lint/selftest suites were run. Note: 'done' refuses when the gate is cleared (gateBasis cleared) on tdd/regression, which is what the text says.",
+    "descriptive": "The docs now say that --gate-clear on a tdd/regression task is refused, with its two remedies, and the CHANGELOG records the refusal under Unreleased."
+  },
+  "testsAdded": [],
+  "claims": "claims:\n1 commands/task.md and verbs-in-full.md/README.md sentences match audit-task.py _owed_case_gate_refusal (1478-1503; called at add 4340, scope 10583, done 7742), whose remedy text names --gate and --tests-mode gate-only\n2 n/a - no check touched; docs-only\n3 grep -n -e '--gate-clear' over README, task.md, verbs-in-full.md, CHANGELOG: sites at task.md:39 and verbs-in-full.md (EMPTY-gate paragraph) and README /audit:task row were updated; phase retarget/add rows left because they describe phase gates, which this refusal does not touch\n4 n/a - no rule to an agent; the refusal is enforced by audit-task.py _owed_case_gate_refusal\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written; test__deps.py --selftest 254/254 green (doc_prose_numbers)",
+  "stamp": "audit-stamp: {\"content\":\"sha256:d2266d13b9780df798709c34c7181dba05d3a2b652bbfd78eac7024508ae4932\",\"dirtyDigest\":\"sha256:f55f111cd02e4da1704063a4996675715da3f18896505640d7ac939eb8ea54c5\",\"dirtyPaths\":{\"CHANGELOG.md\":\"4a33d1df126feffa\",\"plugins/audit/README.md\":\"9285c53dd367734b\",\"plugins/audit/commands/task.md\":\"dbd9dd13695d9515\",\"plugins/audit/reference/verbs-in-full.md\":\"822cadba83afa754\"},\"head\":\"5adfe3b5\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"plugins/audit/README.md\",\"plugins/audit/commands/task.md\",\"plugins/audit/reference/verbs-in-full.md\"],\"scopeDigest\":\"sha256:86238b525f7779d4f540a4cc098e85acf80e5e6bee6d9d4042fb7bb4a2c7cbcc\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

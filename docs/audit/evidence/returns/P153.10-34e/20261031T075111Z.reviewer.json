@@ -1,0 +1,19 @@
+{
+ "findings": [
+  {"id": 1, "severity": "med", "file": "plugins/audit/commands/task.md:39",
+   "issue": "contradicts task clause: the task asks for one sentence on each surface describing --gate-clear, or for verbs-in-full.md to carry it with the other surfaces pointing at it. commands/task.md still reads '--gate-clear for none' with neither the refusal nor a pointer, so the one surface a user reads first still teaches the spelling that tdd/regression tasks are now refused. The executor's stated reason holds: in the task tree measure-context.py reports '/audit:task add 7989 / 8000', so only 11 bytes of headroom remain and no sentence fits. The clause is nonetheless unmet on that surface.",
+   "resolution": "Either accept the narrowing explicitly (the orchestrator records the waiver), or free bytes in commands/task.md (trim other prose on the add path or move a passage to verbs-in-full.md) and add a short caveat after '--gate-clear for none', for example '(refused on tdd/regression; see verbs-in-full)'. Re-run measure-context --gate afterwards."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "diverges",
+  "note": "Clause: 'Add one sentence to each surface (or to verbs-in-full.md and point the others at it) stating the refusal and its two remedies, and a CHANGELOG entry'. Diff: adds a paragraph to reference/verbs-in-full.md, one sentence to the README /audit:task row, and an Unreleased/Changed CHANGELOG entry. commands/task.md, which carries the quoted '--gate-clear for none' at line 39, is untouched and has no pointer. The executor's claim describes the diff accurately (it says task.md was left byte-identical because of the ceiling), and the ceiling is real (7989/8000 read by measure-context.py --gate in the task tree), so the divergence is a forced, disclosed narrowing rather than an error. The new text matches audit-task.py. _owed_case_gate_refusal fires when tests.mode is in _OWES_CASE_MODES (tdd, regression: TESTS_MODE minus gate-only) and gate_cleared (gateBasis cleared). It is called from add (the mode may be derived from the title by _change_kind_discipline), from the --from-file batch add, from scope (judged on the block the call leaves, so --gate-clear and --tests-mode over a cleared gate both refuse) and from done (before either close arm). Each refusal ends 'Nothing written'. Add/scope remedies are '--gate <command>' or '--tests-mode gate-only'. done's remedy is the gate only, and the docs say only that done refuses to close until a gate runs the case, which is true. The docs claim no more than the code does.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Docs-only task; the executor filed redFirst not-attempted (tests.expectRedFirst false, no tests added). Nothing was handed to grade.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "tests.gate includes `selftests` -> python3 tools/sweep-selftests.py, which runs the whole tree, so the question has no bound; the diff touches only .md files and adds no behaviour for a test to lose."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

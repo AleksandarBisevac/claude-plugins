@@ -1281,6 +1281,14 @@ task then runs no gate command of its own (`run-test-gate.py --task` reads its
 `gateBasis: cleared` and answers EMPTY), and the phase's `testGate` at sign-off is
 what still grades it.
 
+**A task whose mode owes a case of its own is refused the empty gate.** `tdd` and
+`regression` promise a case the task writes, and nothing would ever run it under a cleared
+gate, so `scope --gate-clear` (and `add --gate-clear`, `--tests-mode tdd` over a gate already
+cleared) refuse with nothing written - a mode `add` derived from the title counts the same.
+The line names both remedies: `--gate <command that runs its case>`, or `--tests-mode
+gate-only` when the task owes no case. `done` asks the same of a plan that already holds the
+state, and refuses to close the task until it has a gate that runs its case.
+
 **Why the verb exists.** `/audit:sync pull sprint` imports tasks with `files: []` and
 tells the reader to scope them before running. Nothing could: `add` creates, `cancel`
 closes, `move` relocates, and the panel's composition card reaches `skills` and `model`

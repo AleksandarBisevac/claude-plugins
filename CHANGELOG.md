@@ -4,6 +4,19 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [Unreleased]
+
+### Changed
+- **A `tdd` or `regression` task can no longer be given the empty gate.** `scope --gate-clear`,
+  `add --gate-clear` and `--tests-mode tdd` over a gate already cleared are refused with nothing
+  written, because such a task owes a case of its own and nothing would run it: it closed with
+  `run-test-gate` answering empty and the record reading `cleared` as though somebody had chosen
+  that. This holds for a mode `add` derived from the title as much as one passed. The refusal
+  names both remedies - `--gate <command that runs its case>`, or `--tests-mode gate-only` when
+  the task owes no case - and `done` asks the same of a plan that already holds the state.
+  The README's `/audit:task` row and `reference/verbs-in-full.md` say so where they describe
+  `--gate-clear`.
+
 ## [3.7.0]
 
 ### Added
