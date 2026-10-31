@@ -3369,7 +3369,11 @@ by that process and by a child that inherited the token through `TOKEN_ENV`
 it - the take-then-run-the-verbs flow the commands prescribe - so parallel calls under a
 hand-held hold are not serialised. A claim taken with `per_call` (the panel's writes, one per
 request on the server's threads) is re-entered by nobody. A claim written before tokens existed
-keeps the session rule.
+keeps the session rule. A hand-off claim whose recorded pid is an ancestor of the caller, under
+a session id other than the caller's, is the caller's own process under an earlier session:
+`acquire` and `release` still refuse it, and their refusal says so and prints the whole
+`audit-lock.py release` command, naming that earlier session and the pid, that lets it go
+(`_own_earlier_session`).
 
 ### `plugins/audit/scripts/governance/audit-lock.py`
 The CLI over `_locks`: `acquire <name>`, `release <name>`, `status`, over the names

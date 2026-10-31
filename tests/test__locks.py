@@ -789,6 +789,159 @@ def _cases(check):
     _harness.stage(check, "hg-block", _gone_cases)
     _harness.stage(check, "rf-block", _refresh_cases)
     _harness.stage(check, "sd-block", _sharing_cases)
+    _harness.stage(check, "ap-block", _ancestor_cases)
+
+
+# --- a claim held by the caller's own process under an earlier session --------
+def _ancestor_cases(check):
+    """A conversation that continues under a new session id keeps its process:
+    the claim the earlier id took names a pid that is this caller's ancestor,
+    and that is said - with the release that lets go - instead of a bare HELD."""
+    if not shutil.which("git"):
+        _harness.skip(check, "ap1 an ancestor's claim is named as the caller's own",
+                      "git provides the shared directory a lock lives in", True)
+        return
+    here = platform.node()
+    # A child of this process is live and is NOT in its ancestry: the stranger.
+    sleeper = subprocess.Popen([sys.executable, "-c",
+                                "import time; time.sleep(120)"])
+    proj = tempfile.mkdtemp(prefix="audit-locks-ancestor-")
+    pid_was = os.environ.pop("CLAUDE_PID", None)
+    try:
+        subprocess.call(["git", "init", "-q", proj])
+        ld = M.lock_dir(proj)
+        os.makedirs(ld, exist_ok=True)
+        path = os.path.join(ld, "phase-P1.lock")
+        stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        holder = os.getppid()
+
+        def plant(pid, session):
+            info = {"sessionId": session, "pid": pid, "hostname": here,
+                    "handedOff": True, "token": "not-carried",
+                    "note": "a phase run", "startedAt": stamp}
+            M._write_lock(path, info)
+            return info
+
+        before = plant(holder, "s-EARLIER")
+        offer = "--session s-EARLIER --pid %d" % holder
+        lines = []
+        code = M.acquire(proj, "phase-P1", note="a start", session="s-LATER",
+                         pid=os.getpid(), handed_off=True, wait=0,
+                         out=lines.append)
+        check("ap1 RED-FIRST: a claim whose pid is an ANCESTOR of the caller, "
+              "under an earlier session id, is reported as the caller's own "
+              "process and the release that lets go is offered by name - not "
+              "a bare HELD by a live run that nothing short of the right flags "
+              "ends. The pid argument is this process, so only the ancestry "
+              "can tell: %r" % ((code, lines),),
+              code == M.E_LIVE and not M.took(code)
+              and any("your own" in x for x in lines)
+              and any(offer in x and "release phase-P1" in x for x in lines))
+        check("ap1b ...and the claim is left exactly as it was: naming the holder "
+              "is not adopting it, so the earlier session's hold is not quietly "
+              "re-labelled as this one's: %r" % (M.read_lock(path),),
+              M.read_lock(path) == before)
+
+        lines = []
+        code = M.acquire(proj, "phase-P1", note="a start", session="s-LATER",
+                         pid=holder, handed_off=True, wait=0, out=lines.append)
+        check("ap1c ...and the same when the caller's $CLAUDE_PID IS the holder's "
+              "pid - the shape a continued conversation actually has: %r"
+              % ((code, lines),),
+              code == M.E_LIVE and any("your own" in x for x in lines)
+              and any(offer in x for x in lines))
+
+        lines = []
+        code = M.release(proj, "phase-P1", session="s-LATER", pid=os.getpid(),
+                         out=lines.append)
+        check("ap1e ...and a RELEASE asked under the later session id is refused "
+              "with the same naming and the same offer, not told it was taken "
+              "over - nobody displaced it, the holder is its own process: %r"
+              % ((code, lines),),
+              code == M.E_LIVE and os.path.exists(path)
+              and any("your own" in x for x in lines)
+              and any(offer in x for x in lines)
+              and not any("taken over" in x for x in lines))
+
+        code = M.release(proj, "phase-P1", session="s-EARLIER", pid=holder,
+                         out=lambda *_a, **_k: None)
+        check("ap1d ...and the release it offers is a route that works: it lets "
+              "the claim go: %r" % ((code, os.path.exists(path)),),
+              code == 0 and not os.path.exists(path))
+
+        # THE OTHER DIRECTION: an ancestry test widened until every live holder
+        # reads as the caller's own is two runs on one phase.
+        plant(sleeper.pid, "s-STRANGER")
+        lines = []
+        code = M.acquire(proj, "phase-P1", note="a start", session="s-LATER",
+                         pid=os.getpid(), handed_off=True, wait=0,
+                         out=lines.append)
+        check("ap2 ALLOW: a claim held by an UNRELATED live pid under another "
+              "session still refuses as live, and is neither called the "
+              "caller's own nor handed a release under its session: %r"
+              % ((code, lines),),
+              code == M.E_LIVE and M.read_lock(path).get("sessionId")
+              == "s-STRANGER"
+              and not any("your own" in x for x in lines)
+              and not any("--session s-STRANGER" in x for x in lines))
+
+        # An ancestor's claim for its OWN write is a parent mid-write: the child
+        # waits for it, and is not handed a release of it.
+        own_write = dict(plant(holder, "s-PARENT"), handedOff=False)
+        M._write_lock(path, own_write)
+        lines = []
+        code = M.acquire(proj, "phase-P1", note="a start", session="s-LATER",
+                         pid=os.getpid(), handed_off=True, wait=0,
+                         out=lines.append)
+        check("ap2b ALLOW: an ancestor's claim taken for its own write (not "
+              "handed off) is refused as a live run and is not offered for "
+              "release - the parent is still writing under it: %r"
+              % ((code, lines),),
+              code == M.E_LIVE and M.read_lock(path) == own_write
+              and not any("your own" in x for x in lines)
+              and not any("--session s-PARENT" in x for x in lines))
+
+        # Sessions of one process share its pid, so a session that SEIZED the
+        # caller's claim is in the caller's ancestry as well: that caller was
+        # displaced, and must be told so rather than offered a release.
+        seized = dict(plant(holder, "s-WINNER"),
+                      takenOverFrom={"sessionId": "s-LATER", "pid": holder})
+        M._write_lock(path, seized)
+        lines = []
+        code = M.release(proj, "phase-P1", session="s-LATER", pid=os.getpid(),
+                         out=lines.append)
+        check("ap2c ALLOW: a claim recording a takeover FROM the caller's "
+              "session, held by an ancestor pid, is still reported as a "
+              "takeover on release - not as the caller's own earlier session: "
+              "%r" % ((code, lines),),
+              code == M.E_LIVE and os.path.exists(path)
+              and any("taken over" in x for x in lines)
+              and not any("your own" in x for x in lines))
+
+        # THE WALK GOES PAST THE PARENT. A drive's lock is asked from a command
+        # several processes below the one the claim records (the conversation,
+        # its shell, the drive, the lock command), so a walk stopping at the
+        # parent would miss the very holder it exists to find.
+        probe = subprocess.run(
+            [sys.executable, "-c",
+             "import sys; sys.path.insert(0, sys.argv[1]); import _locks; "
+             "print(' '.join(str(p) for p in _locks._ancestry()))",
+             os.path.dirname(os.path.abspath(M.__file__))],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            universal_newlines=True)
+        chain = [int(p) for p in probe.stdout.split() if p.isdigit()]
+        check("ap3 the ancestry a command reads reaches past its parent: a child "
+              "of this process lists this process AND this process's parent, "
+              "nearest first: %r" % ((chain, os.getpid(), holder,
+                                      probe.stderr[-300:]),),
+              chain[:2] == [os.getpid(), holder])
+    finally:
+        if pid_was is not None:
+            os.environ["CLAUDE_PID"] = pid_was
+        if sleeper.poll() is None:
+            sleeper.kill()
+        sleeper.wait()
+        shutil.rmtree(proj, ignore_errors=True)
 
 
 # --- a name another process holds open ------------------------------------------

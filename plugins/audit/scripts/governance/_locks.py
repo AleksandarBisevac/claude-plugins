@@ -78,6 +78,15 @@ gets recorded; a command that exits with the lock still held says so with
 for the first shape is what left a killed run holding a lock every gate on the
 machine consults, with nothing dead for `judge` to find.
 
+A HAND-OFF CLAIM NAMES A LONG-LIVED PROCESS, AND IT MAY BE THE CALLER'S OWN. A
+conversation that continues under a new session id keeps its process, so the
+claim its earlier id took reads live to every reader, that conversation
+included. The refusals of `acquire` and `release` read the caller's process
+ancestry, and where the holder is in it they say so and spell out the release
+by name (`_own_earlier_session`). They never adopt the claim: the verdict
+stays the refusal, because one process may host more than one session and
+nothing here observes the earlier one stopping.
+
 A TAKEOVER IS DECIDED BY THE CREATE, AND RECORDED ONLY WHERE IT DISPLACED
 SOMETHING. Read, judge, then write leaves a window wide enough for another taker
 to pass the same judgement, and the later write then replaced a claim that was by
@@ -250,6 +259,158 @@ def _pid_alive_windows(pid):
             k32.CloseHandle(handle)
     except Exception:
         return None
+
+
+def _parent_of(pid):
+    """The parent of `pid` as the process table records it, or None unread.
+
+    This process asks the interpreter. Any other pid is read from /proc where it
+    exists, `ps -o ppid=` elsewhere on POSIX, and a Toolhelp snapshot on Windows,
+    which has neither. Nothing here can make a holder read gone: a parent that
+    cannot be read ends the walk, and the walk only ever adds a sentence to a
+    refusal.
+    """
+    if pid == os.getpid():
+        return os.getppid() or None
+    if os.name == "nt":
+        return _parent_of_windows(pid)
+    try:
+        with open(os.path.join(os.sep, "proc", str(pid), "stat"),
+                  encoding="utf-8", errors="replace") as fh:
+            return int(fh.read().rpartition(")")[2].split()[1])
+    except (OSError, IndexError, ValueError):
+        pass
+    try:
+        out = subprocess.run(["ps", "-o", "ppid=", "-p", str(pid)],
+                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                             encoding="utf-8", errors="replace",
+                             timeout=10).stdout.strip()
+        return int(out) if out else None
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+
+
+def _parent_of_windows(pid):
+    """`th32ParentProcessID` of `pid` from one process snapshot, or None.
+
+    Windows records the pid a process was started by and never updates it, so a
+    parent that exited may have its pid reused by an unrelated process; the walk
+    in `_ancestry` stops on a repeat, and what it finds only ever names a holder
+    in a refusal - it never decides one.
+    """
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class _Entry(ctypes.Structure):     # PROCESSENTRY32W, as tlhelp32.h lays it out
+            _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD),
+                        ("th32ProcessID", wintypes.DWORD),
+                        ("th32DefaultHeapID", ctypes.c_size_t),
+                        ("th32ModuleID", wintypes.DWORD),
+                        ("cntThreads", wintypes.DWORD),
+                        ("th32ParentProcessID", wintypes.DWORD),
+                        ("pcPriClassBase", ctypes.c_long),
+                        ("dwFlags", wintypes.DWORD),
+                        ("szExeFile", ctypes.c_wchar * 260)]
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+        k32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+        k32.Process32FirstW.argtypes = [wintypes.HANDLE, ctypes.POINTER(_Entry)]
+        k32.Process32NextW.argtypes = [wintypes.HANDLE, ctypes.POINTER(_Entry)]
+        k32.CloseHandle.argtypes = [wintypes.HANDLE]
+        snap = k32.CreateToolhelp32Snapshot(0x2, 0)        # TH32CS_SNAPPROCESS
+        if not snap or snap == wintypes.HANDLE(-1).value:
+            return None
+        try:
+            entry = _Entry()
+            entry.dwSize = ctypes.sizeof(_Entry)
+            more = k32.Process32FirstW(snap, ctypes.byref(entry))
+            while more:
+                if entry.th32ProcessID == pid:
+                    return int(entry.th32ParentProcessID) or None
+                more = k32.Process32NextW(snap, ctypes.byref(entry))
+            return None
+        finally:
+            k32.CloseHandle(snap)
+    except Exception:
+        return None
+
+
+def _ancestry(limit=64):
+    """This process's ancestors, nearest first, as far as the table can be read.
+
+    Neither this process nor pid 1 is in it: the first is not an ancestor, and the
+    second is an ancestor of everything, so naming it as "your own process" would
+    be true of every claim it could ever be recorded in. The walk stops on a pid
+    it has already seen, which a reused Windows pid can produce.
+    """
+    chain, seen, pid = [], {os.getpid()}, os.getpid()
+    for _ in range(limit):
+        parent = _parent_of(pid)
+        if not parent or parent <= 1 or parent in seen:
+            break
+        chain.append(parent)
+        seen.add(parent)
+        pid = parent
+    return chain
+
+
+def _own_earlier_session(info, session, pid=None):
+    """The claim's session id when `info` is a hand-off claim recorded by THIS
+    process's ancestor under a session other than the caller's, else None.
+
+    A CONVERSATION THAT CONTINUES UNDER A NEW SESSION ID KEEPS ITS PROCESS. A
+    hand-off claim records that long-lived process, so the claim the earlier id
+    took goes on reading as a live run - the process is alive because it is the
+    caller's own - and the release that lets go has to name the earlier session
+    and that pid, which nothing printed. Asked of the process table rather than of
+    the pid argument: `$CLAUDE_PID` may be unset where the claim recorded it.
+
+    ONLY A HAND-OFF CLAIM. A claim a process took for its own write names that
+    process, and an ancestor holding one is a parent mid-write that its child
+    must wait for, not a hold to give back. And the answer only NAMES the holder:
+    the claim stays refused, because one process may host more than one session
+    and nothing here can tell that the earlier one stopped.
+
+    NOR A CLAIM THAT RECORDS TAKING OVER FROM THE CALLER (`taken_from`). Sessions
+    of one process share its pid, so a session that seized this caller's claim
+    is in the caller's ancestry too - and that caller was displaced, which is
+    the news its refusal exists to carry.
+    """
+    if not isinstance(info, dict) or not info.get("handedOff"):
+        return None
+    if taken_from(info, session):
+        return None
+    sid, _ident = _identity(session, pid)
+    owner = info.get("sessionId")
+    if not owner or not sid or str(owner) == str(sid):
+        return None
+    if str(info.get("hostname") or "") != platform.node():
+        return None
+    try:
+        holder = int(info.get("pid"))
+    except (TypeError, ValueError):
+        return None
+    return str(owner) if holder in _ancestry() else None
+
+
+def _own_release_lines(name, project, owner, holder):
+    """The lines naming the caller's own process as the holder, with the release
+    that lets go spelled out whole.
+
+    `shlex` is imported here because this is a refusal path and the module is
+    resolved by a hook on every tool call."""
+    import shlex
+    return ["             pid %s is an ancestor of this command - a process it runs "
+            "inside, such as the conversation that started it - and the claim "
+            "was taken there under another session id (%s)." % (holder, owner),
+            "             If that session's work is over, give the lock back by "
+            "name:",
+            "               audit-lock.py release %s --project %s --session %s "
+            "--pid %s" % (name, shlex.quote(str(project)), shlex.quote(str(owner)),
+                          holder),
+            "             Leave it if anything of this process still works under "
+            "%s." % (owner,)]
 
 
 def _age_minutes(info, path):
@@ -1296,6 +1457,16 @@ def acquire(project, name, note=None, takeover=False, session=None, pid=None,
     who = _claim_holder(current, path)
     what = current.get("note") or name
     if live and not takeover:
+        earlier = _own_earlier_session(current, session, pid)
+        if earlier:
+            out("[audit-lock] %s is HELD by your own process under an earlier "
+                "session id -- %s" % (name, earlier))
+            out("             doing: %s" % what)
+            out("             basis: %s" % basis)
+            for line in _own_release_lines(name, project, earlier,
+                                           current.get("pid")):
+                out(line)
+            return E_LIVE
         out("[audit-lock] %s is HELD by a live run -- %s" % (name, who))
         out("             doing: %s" % what)
         out("             basis: %s" % basis)
@@ -1422,6 +1593,16 @@ def release(project, name, session=None, pid=None, force=False, out=print):
     # Releasing a lock that is no longer yours is how a session that was taken
     # over finds out -- today it deletes the winner's lock and neither ever knows.
     if conflict["mismatch"] and not force:
+        earlier = _own_earlier_session(held, session, pid)
+        if earlier:
+            # Not a takeover: nobody displaced this caller. The holder is its
+            # own process under the session id it had before.
+            out("[audit-lock] %s is NOT released -- held by your own process "
+                "under an earlier session id (%s)" % (name, earlier))
+            for line in _own_release_lines(name, project, earlier,
+                                           held.get("pid")):
+                out(line)
+            return E_LIVE
         out("[audit-lock] %s is NOT yours to release -- held by %s"
             % (name, conflict["who"]))
         out("             You were taken over. Anything you wrote since may have")
