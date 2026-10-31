@@ -1534,6 +1534,12 @@ def _owed_case_gate_refusal(tid, phase, task, remedy, at_close=False):
 _OWED_CASE_WRITE_REMEDY = ("Pass --gate <a command that runs its case>, or "
                            "--tests-mode gate-only if it owes no case of its own.")
 
+# What a STARTED task does about it: only the gate. `tests.mode` is what an
+# attempt was graded under, so `scope` refuses to move it once a task has
+# started (`_narrowings`), while `tests.gate` is `_FORWARD_ONLY`; a remedy naming
+# the mode would be a refusal's own directions into another refusal.
+_OWED_CASE_STARTED_REMEDY = "Pass --gate <a command that runs its case>."
+
 
 # --- what a gate entry may be, asked where it is written -----------------------
 def _reads_as_plan(path):
@@ -10602,8 +10608,9 @@ def _locked_scope(args, project, config, mpath, tid, out):
     # Asked of the block this call leaves, so the mode and the gate are judged
     # together whichever of the two this call moved - and AFTER the widening
     # guard, so a started task's mode change meets the refusal about the mode.
-    owed = (_owed_case_gate_refusal(tid, phase, node,
-                                    _OWED_CASE_WRITE_REMEDY)
+    owed = (_owed_case_gate_refusal(
+        tid, phase, node,
+        _OWED_CASE_STARTED_REMEDY if started else _OWED_CASE_WRITE_REMEDY)
             if tests_writes else None)
     if owed:
         out(owed)

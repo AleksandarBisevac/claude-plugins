@@ -1,0 +1,29 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_audit_task.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-31T08:45:15Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_audit_task.py` in a throwaway tree at HEAD exited 1 with 2 of 1199 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ocg17 (house FAIL), ocg18 (house FAIL): SELFTEST FAILED: 1197/1199 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "audit-task.py: added _OWED_CASE_STARTED_REMEDY (gate-only remedy: '--gate' alone) beside _OWED_CASE_WRITE_REMEDY; the _locked_scope call site now passes it when _started(node) is true, the write remedy otherwise. The other two _OWED_CASE_WRITE_REMEDY callers are the add paths (single and --from-file), which mint a task that cannot be started, so they keep both halves. tests/test_audit_task.py: in _tdd_gate_clear_cases added ocg17 (started tdd), ocg18 (started regression): scope --gate-clear refused, exit 2, no byte written, '--gate ' present, '--tests-mode gate-only' absent; and ocg19 second-direction: the same refusal on a pending tdd task still names '--tests-mode gate-only'. Red first: before the fix, ocg17 and ocg18 FAILED and ocg19 passed (1197/1199 cases passed, the only two failures mine). After: python3 tools/sweep-selftests.py tests/test_audit_task.py exit 0, 1199 cases ok. ruff check on both files: all checks passed. Dependants (guard-uncommitted.py, test__output.py, affected.py, PLUGIN-BUILD-GUIDE.md, research docs; tests/test_commit_task_work.py, sweep-costs.json, test__filed_returns.py, CHANGELOG.md, etc.): still correct - the change adds one module constant and picks it at one call site; no existing name is renamed, removed or re-signed, and no other file quotes the changed remedy text (grep of both constant names over .py/.md found only audit-task.py). PLUGIN-BUILD-GUIDE.md waived by the caller, not reached.\n\nclaims:\n1 audit-task.py:1541 constant says gate-only remedy for started tasks; audit-task.py:10613 selects it on _started(node); the 'forward-only gate vs refused mode' sentence matches the done arm at the _owed_case_gate_refusal call in _done (comment 'A started task may still move its gate')\n2 ocg17/ocg18 red before the fix (1197/1199), green after (1199/1199); ocg19 is the over-fire direction - it would go red if the mode half were dropped for every caller\n3 grep of both remedy constants over .py/.md: 5 hits in audit-task.py only - two add callers (never started, keep both halves), one scope caller (now started-dependent), the two definitions\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard text-matching; the choice reads _started(node), the task state the write acts on\n7 n/a - no number written",
+    "descriptive": "scope --gate-clear on a started task no longer suggests --tests-mode gate-only, a remedy the same verb refuses."
+  },
+  "testsAdded": [
+    "scope --gate-clear on a started tdd and a started regression task: refused, no byte written, remedy is --gate alone",
+    "second-direction: same refusal on a pending tdd task still names --tests-mode gate-only"
+  ],
+  "casesAdded": [
+    [
+      "ocg17",
+      "ocg18",
+      "ocg19"
+    ]
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:dacc2f01c0a9729cd5be4090c26e09fae4788a4736a69553c4f1ebf4263e4ab1\",\"dirtyDigest\":\"sha256:01cd8367b2dcc2e2f8f38ad8687b19901f019bbf6d48fdabe81a8a21d3211e66\",\"dirtyPaths\":{\"plugins/audit/scripts/manifest/audit-task.py\":\"c0ab1638b25ae3b9\",\"tests/test_audit_task.py\":\"cc760095a820b69b\"},\"head\":\"97b196c5\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/manifest/audit-task.py\",\"tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:613f148a4a584edee344366ed38f2fc14e257f0daba6d9861399d502f4ac5223\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

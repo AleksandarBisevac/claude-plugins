@@ -22047,6 +22047,38 @@ def _tdd_gate_clear_cases(check):
               "in a phase whose testGate is empty still closes: %r"
               % ((code, status_of(mp), txt[-200:]),),
               code == 0 and status_of(mp) == "done")
+
+        # ---- the scope refusal on a STARTED task names only remedies that work
+        # A started task's `tests.mode` is one of the narrowings `scope` refuses
+        # (the fg group pins it), so a remedy sending the caller to
+        # `--tests-mode gate-only` is a dead end with directions on it. The gate
+        # IS forward-only, so `--gate` stays the remedy.
+        for tag, mode in (("ocg17", "tdd"), ("ocg18", "regression")):
+            fx = started(mode)
+            fx["phases"][1]["tasks"][2]["tests"]["gate"] = ["lint"]
+            fx["phases"][1]["tasks"][2]["tests"]["gateBasis"] = "declared"
+            proj, mp = mk("tg-st-%s" % mode, fx)
+            before = bytes_of(mp)
+            code, txt = run(["scope", "P2.4", "--gate-clear",
+                             "--project-dir", proj])
+            check("%s `scope --gate-clear` on a STARTED %s task is refused, "
+                  "writes no byte, and its remedy is the gate alone - never "
+                  "`--tests-mode gate-only`, which the same verb refuses on a "
+                  "started task: %r" % (tag, mode, (code, txt[-300:])),
+                  code == 2 and bytes_of(mp) == before
+                  and "owes a case the task writes" in txt
+                  and "--gate " in txt
+                  and "--tests-mode gate-only" not in txt)
+        # SECOND DIRECTION, for the mutation that drops the mode half from
+        # EVERY caller: the same refusal on a task not yet started keeps both
+        # halves, since the mode is still the caller's to change there.
+        proj, mp = mk("tg-st-pending", plan("tdd", ["lint"]))
+        code, txt = run(["scope", "P2.3", "--gate-clear",
+                         "--project-dir", proj])
+        check("ocg19 SECOND-DIRECTION CASE: the same refusal on a task NOT yet "
+              "started still names `--tests-mode gate-only`: %r"
+              % ((code, txt[-300:]),),
+              code == 2 and "--tests-mode gate-only" in txt)
     finally:
         _harness.remove_tree(tmp)
 

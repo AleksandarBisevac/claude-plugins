@@ -29,8 +29,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/manifest/audit-task.py:1395-1423, 7570-7580",
         "issue": "The new predicate keys on the stored basis (`_mio.gate_cleared(tests)`, i.e. gateBasis == `cleared`) rather than on the gate that actually measures the task. Its own docstring says 'the phase's own gate may be empty too', and in that state the defect the task describes ('A task can close with no gate while the record reads green') is still open by a second shape: a tdd/regression task whose own tests.gate is absent or [] with no basis falls back to its phase (`_manifest_io.gate_entries`, _manifest_io.py:685-692), an empty phase testGate is a designed, validator-accepted state (`_manifest_phases.py:791`, `phase add --gate-clear`), `run-test-gate` answers `empty-gate` with exit 0 (run-test-gate.py:5401-5420), and `done` closes it via `_close_gate`'s arm '%s declares no gate, nor does its phase, so its close rests on its commit alone' (audit-task.py:7289-7313) - `_owed_case_gate_refusal` returns None because gateBasis is not `cleared`. Judged by reading, not run.",
-        "resolution": "Ask the refusal at `done` (and, if wanted, at the writes) of the resolved gate: refuse when tests.mode is tdd/regression and `_mio.gate_entries(phase, node)[0]` is empty, which covers both the cleared gate and the fallback to an empty phase gate; add a case beside ocg8 with a tdd task carrying no own gate in a phase whose testGate is [] (and its gate-only second-direction pair).",
-        "fixTask": "P153.8-34e"
+        "resolution": "fixed in P153.8-34e (97b196c57729): Ask the refusal at `done` (and, if wanted, at the writes) of the resolved gate: refuse when tests.mode is tdd/regression and `_mio.gate_entries(phase, node)[0]` is empty, which covers both the cleared gate and the fallback to an empty phase gate; add a case beside ocg8 with a tdd task carrying no own gate in a phase whose testGate is [] (and its gate-only second-direction pair).",
+        "fixTask": "P153.8-34e",
+        "commit": "97b196c57729",
+        "status": "fixed"
       },
       {
         "id": "P153-R2",
@@ -117,7 +119,7 @@
         "resolution": "Rewrite the comment and the check title to name the invariant above `_argument_runs`: the body is kept when the carrier runs its argument by one of the listed routes."
       }
     ],
-    "outcome": "[findings: 12 - 1 high, 6 med, 5 low; 2 with a recorded fix commit]"
+    "outcome": "[findings: 12 - 1 high, 6 med, 5 low; 3 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -554,7 +556,7 @@
     {
       "id": "P153.8-34e",
       "title": "fix P153-R1: The new predicate keys on the stored basis (`_mio.gate_cleared(t...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The new predicate keys on the stored basis (`_mio.gate_cleared(tests)`, i.e. gateBasis == `cleared`) rather than on the gate that actually measures the task. Its own docstring says 'the phase's own gate may be empty too', and in that state the defect the task describes ('A task can close with no gate while the record reads green') is still open by a second shape: a tdd/regression task whose own tests.gate is absent or [] with no basis falls back to its phase (`_manifest_io.gate_entries`, _manifest_io.py:685-692), an empty phase testGate is a designed, validator-accepted state (`_manifest_phases.py:791`, `phase add --gate-clear`), `run-test-gate` answers `empty-gate` with exit 0 (run-test-gate.py:5401-5420), and `done` closes it via `_close_gate`'s arm '%s declares no gate, nor does its phase, so its close rests on its commit alone' (audit-task.py:7289-7313) - `_owed_case_gate_refusal` returns None because gateBasis is not `cleared`. Judged by reading, not run.\n\nResolution asked: Ask the refusal at `done` (and, if wanted, at the writes) of the resolved gate: refuse when tests.mode is tdd/regression and `_mio.gate_entries(phase, node)[0]` is empty, which covers both the cleared gate and the fallback to an empty phase gate; add a case beside ocg8 with a tdd task carrying no own gate in a phase whose testGate is [] (and its gate-only second-direction pair).",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -581,14 +583,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "97b196c57729",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/scripts/manifest/audit-task.py: `_owed_case_gate_refusal(tid, phase, task, remedy, at_close=False)` now asks `_mio.gate_entries(phase, task)` - the gate that would run the task - instead of `_mio.gate_cleared(tests)`. Empty with source `task` is the cleared route (unchanged wording); empty with source `phase` is the fallback to an empty phase testGate, worded as such ('declares no gate of its own and falls back to phase <id>'s testGate, which is empty') and naming `/audit:phase retarget <id> --gate <command>` beside the caller's remedy. The phase route is refused at `done` only (at_close=True at the done site, both the commit close and --no-change); the writes (add, add --from-file, scope) keep refusing the cleared route alone. Measured reason: a first version refusing the phase route at the writes too turned ag7, pb2, pb4, cb1, cb1b, fp2, fp12, fp13 and h1-h4 red (sweep 1184/1196) - a default tdd `add` into any phase with an empty gate is a designed, announced state; docstring states why. tests/test_audit_task.py: ocg13 (done refuses tdd, no own gate, phase gate []), ocg13b (the line names the phase route and its retarget remedy, and does not claim a `cleared` basis), ocg14 (regression, own gate [] no basis, --no-change refused), ocg15 (second direction: gate-only in the same state closes), ocg16 (second direction: tdd with its own gate in an empty-gate phase closes). Docs: verbs-in-full.md's owed-case paragraph, the README /audit:task row sentence, and the CHANGELOG Unreleased entry each extended with the resolved-gate reading, the phase route, its remedy, and that the writes leave it to the close. commands/task.md untouched. Commands: `python3 tools/sweep-selftests.py tests/test_audit_task.py` exit 0, 1/1 files ok, 1196 cases; `python3 tools/measure-context.py --gate` exit 0 (GATE OK); ruff on both .py files exit 0; `_deps.doc_prose_numbers()`, `_output_lints.prose_number_claims()` and `house_style_violations()` report nothing for the touched files. The doc edits were made with a python replace via Bash (each anchor asserted unique), not Edit; no gate refused anything. Dependants: audit-task.py - .claude/hooks/guard-uncommitted.py, tests/test__output.py, tools/affected.py, PLUGIN-BUILD-GUIDE.md and the docs/research files read it by path, which is unchanged, so still correct; the names tests use (_allocate_phase_id, _cancel_task, _create_then, _done_details) are untouched; `_owed_case_gate_refusal` has no caller outside audit-task.py (git grep), all four call sites updated. test_audit_task.py - test_commit_task_work.py imports `_attempt_cases`, `_close_evidence_cases`, `_remedies_pass`, test__filed_returns.py `_held_cases`: none changed; .github/sweep-costs.json and tools/sweep-selftests.py read it by path, unchanged (the ocg block gains five cases; its cost figure is not re-recorded here); CHANGELOG and docs/research mention it by path only. verbs-in-full.md - test__areas.py (oa38) reads its `## ` sections: no section added; test__manifest_vocab.py reads it for `files-no-suite` sentences: none added; test_audit_task.py reads the unblock paragraph (ub7) and another passage, not this one; _areas.py, guide.md, execute-task.md, CHANGELOG reference it by name, still correct; PLUGIN-BUILD-GUIDE.md waived by the orchestrator. README.md - the listed readers (_invariants.py, verify-invariants.py, _usage_economics.py, audit-usage.py, test__deps.py, test__output_lints.py, test__refs.py, tools/affected.py) read it by path or for rows other than this sentence; prose-number lint clean; tools/prove-gates.py waived. CHANGELOG.md - the listed readers read it by basename (release heading, lints); the Unreleased heading is unchanged; tools/release.py waived.",
+        "descriptive": "`done` now refuses a tdd/regression task whenever the gate that would run it is empty - including no own gate under an empty phase gate - not only when its basis reads `cleared`."
       },
       "startedAt": "2026-10-31T08:23:53Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-31T08:39:35Z",
+      "verifiedBy": [
+        "done refuses a tdd task with no gate of its own in a phase whose testGate is empty, writing nothing and naming the scope remedy",
+        "the refusal names the phase route and the phase retarget remedy, never a `cleared` basis",
+        "done --no-change refuses a regression task whose own gate is [] with no basis in that phase",
+        "second direction: a gate-only task in that phase still closes",
+        "second direction: a tdd task carrying its own gate in an empty-gate phase still closes"
+      ],
       "notes": [
         {
           "at": "2026-10-31T06:58:26Z",
@@ -622,12 +630,24 @@
         "runId": "2026-10-31T08:39:31Z.07895a",
         "status": "passed",
         "at": "2026-10-31T08:39:31Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "97b196c57729",
+        "at": "2026-10-31T08:39:35Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-31T08:32:59Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_audit_task.py` in a throwaway tree at HEAD exited 1 with 3 of 1196 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ocg13 (house FAIL), ocg13b (house FAIL), ocg14 (house FAIL): SELFTEST FAILED: 1193/1196 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P153.9-34e",
       "title": "fix P153-R2: On a STARTED task the scope refusal prints `_OWED_CASE_WRITE_REM...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "On a STARTED task the scope refusal prints `_OWED_CASE_WRITE_REMEDY`, whose second half ('--tests-mode gate-only if it owes no case of its own') is itself refused: a tests.mode change on a started task is a narrowing `_narrowings` blocks (fg6 pins 'already been attempted'), unlike tests.gate which is `_FORWARD_ONLY`. The `done` arm already words its remedy for this ('A started task may still move its gate ... so the remedy is the gate and not the mode'); the scope arm does not, so e.g. `scope <started tdd task> --gate-clear` names a dead-end remedy.\n\nResolution asked: Pass `_started(node)`-dependent remedy text at the _locked_scope call site (the gate-only half only for a task not yet started), and pin it with a case on a started tdd task asserting '--tests-mode gate-only' is absent from the refusal.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -649,14 +669,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-31T08:39:37Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -676,7 +696,13 @@
       ],
       "fixes": [
         "P153-R2"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-31T08:51:43Z.f85bfd",
+        "status": "passed",
+        "at": "2026-10-31T08:51:43Z"
+      }
     },
     {
       "id": "P153.10-34e",
