@@ -1,7 +1,7 @@
 {
   "id": "P152",
   "title": "The full sweep finishes under four minutes on a quiet machine: decisions are tested directly and real git is kept for the git contract",
-  "status": "pending",
+  "status": "in_progress",
   "description": "Owner decision 2026-10-30. P143.8 and P143.10 measured the sweep throughput-bound (about 2500 slot-seconds over 8 workers, 325-327 s quiet on darwin) with about 84% of the drive suite's time in process spawn; per-call git memoisation gave about 2% each and is exhausted. Most cases in tests/test_drive_phase.py, test_commit_task_work.py, test_audit_task.py and test_close_phase.py reach a decision through a real repository and real verbs although only the decision is under test. First measure: classify every case as decision-logic (git is scenery) or git-contract, with slot-seconds per class. Then convert the decision-logic cases suite by suite to call the pure decision functions on built state, keeping a small deliberate end-to-end set. Never re-record .github/sweep-costs.json from darwin.",
   "desiredOutcome": "python3 tools/sweep-selftests.py finishes under 240 s wall on the owner's machine, quiet, twice at least 20 minutes apart; every converted case still goes red on the defect it guards; the end-to-end set names what each case proves about git.",
   "testGate": [
@@ -16,21 +16,30 @@
     "vitest"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "9f714cb502da711f57ee34572974771acab961c8",
+  "branch": "audit/p152-the-full-sweep-finishes-under",
   "mergedAt": null,
   "review": {
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P152-R1",
+        "severity": "low",
+        "file": "PLUGIN-BUILD-GUIDE.md:4447-4448; plugins/audit/scripts/governance/drive-phase.py:3910-3912",
+        "issue": "The guide's opening sentence 'Where a step branches on plain values, the branch is a planner under # --- deciding a step on facts ---' and the section comment's 'So each place a step branches on plain values is a planner here' claim more than the code does. Branches on plain values still decided inline: advance's file-return arm `if stored_green(...) != _evio.STORED_HOLDS` (drive-phase.py:4301), `if tree: integrate_member(...)` (4385), kept_tree_stop / redo_patch at the top of advance, writer_wait/writer_settle, triage's review_due / filed-at-head / owed_tasks branches ahead of the advance point, drive_locked's `pending['decision'] == 'triage'` and `pending.get('task')` note_sessions branches, and sign-off. A reader told every plain-value branch is a planner would look for one that does not exist.",
+        "resolution": "Narrow both sentences to what is true, e.g. 'Four of the drive's branch points are planners under ...: advance's writer/scope/reviewer/gate/risk/close, the triage's advance and tail, drive_locked's stale and route, and close_task's findings/lock/route/commit/answer; the other branches (the file-return arm's stored-green check, integrate_member, kept_tree_stop, the triage's head and owed checks, sign-off) are still decided inline.' Apply the same narrowing to the comment at drive-phase.py:3910-3912."
+      }
+    ],
+    "outcome": "[findings: 1 - 0 high, 0 med, 1 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
     {
       "id": "P152.1",
       "title": "The drive's decisions are made by named planners over fake facts, with no behaviour change",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.1. Extract the decision seams S1-S4 in drive-phase.py into pure planners (_advance_plan, _triage_plan, _pending_turn, _close_plan) reading a facts dict; reads keep their order and their laziness (stored_green spends, note_sessions writes). Add unit blocks up-block, ut-block, uq-block, uc-block to tests/test_drive_phase.py STAGES: one case per arm, both directions, literal expectations, no fixture repository. PLUGIN-BUILD-GUIDE.md drive-phase section gains one paragraph naming the planners and why there is no single decide(). The whole drive suite is green before and after.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -58,16 +67,44 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-31T15:42:25Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-31T15:42:14Z",
+          "text": "the edit is confined to the touched module's own section; the text this reader quotes sits in another section and is not edited",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-10-31T15:42:14Z",
+          "text": "the edit is confined to the touched module's own section; the text this reader quotes sits in another section and is not edited",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-10-31T15:42:14Z",
+          "text": "the edit is confined to the touched module's own section; the text this reader quotes sits in another section and is not edited",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-10-31T15:42:14Z",
+          "text": "the edit is confined to the touched module's own section; the text this reader quotes sits in another section and is not edited",
+          "waives": "tools/prove-gates.py"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-31T16:18:36Z.f65394",
+        "status": "passed",
+        "at": "2026-10-31T16:18:36Z"
+      }
     },
     {
       "id": "P152.2",
@@ -241,7 +278,29 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-31T15:42:15Z",
+          "text": "the edit is confined to the touched module's own section; the text this reader quotes sits in another section and is not edited",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-10-31T15:42:15Z",
+          "text": "the edit is confined to the touched module's own section; the text this reader quotes sits in another section and is not edited",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-10-31T15:42:15Z",
+          "text": "the edit is confined to the touched module's own section; the text this reader quotes sits in another section and is not edited",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-10-31T15:42:15Z",
+          "text": "the edit is confined to the touched module's own section; the text this reader quotes sits in another section and is not edited",
+          "waives": "tools/prove-gates.py"
+        }
+      ]
     },
     {
       "id": "P152.6",
@@ -294,7 +353,29 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-31T15:42:16Z",
+          "text": "the edit is confined to the touched module's own section; the text this reader quotes sits in another section and is not edited",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-10-31T15:42:16Z",
+          "text": "the edit is confined to the touched module's own section; the text this reader quotes sits in another section and is not edited",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-10-31T15:42:16Z",
+          "text": "the edit is confined to the touched module's own section; the text this reader quotes sits in another section and is not edited",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-10-31T15:42:16Z",
+          "text": "the edit is confined to the touched module's own section; the text this reader quotes sits in another section and is not edited",
+          "waives": "tools/prove-gates.py"
+        }
+      ]
     },
     {
       "id": "P152.7",
@@ -380,7 +461,24 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-31T15:42:17Z",
+          "text": "the edit is confined to the touched module's own section; the text this reader quotes sits in another section and is not edited",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-10-31T15:42:17Z",
+          "text": "the edit is confined to the touched module's own section; the text this reader quotes sits in another section and is not edited",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-10-31T15:42:17Z",
+          "text": "the edit is confined to the touched module's own section; the text this reader quotes sits in another section and is not edited",
+          "waives": "tools/lints/_deps.py"
+        }
+      ]
     },
     {
       "id": "P152.9",
@@ -423,7 +521,19 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-31T15:42:19Z",
+          "text": "the edit is confined to the touched module's own section; the text this reader quotes sits in another section and is not edited",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-10-31T15:42:19Z",
+          "text": "the edit is confined to the touched module's own section; the text this reader quotes sits in another section and is not edited",
+          "waives": "tests/test__doctor_trail.py"
+        }
+      ]
     },
     {
       "id": "P152.10",
@@ -469,7 +579,24 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-31T15:42:20Z",
+          "text": "the edit is confined to the touched module's own section; the text this reader quotes sits in another section and is not edited",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-10-31T15:42:20Z",
+          "text": "the edit is confined to the touched module's own section; the text this reader quotes sits in another section and is not edited",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-10-31T15:42:20Z",
+          "text": "the edit is confined to the touched module's own section; the text this reader quotes sits in another section and is not edited",
+          "waives": "tools/lints/_deps.py"
+        }
+      ]
     },
     {
       "id": "P152.11",
@@ -509,7 +636,36 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-31T15:42:21Z",
+          "text": "the edit is confined to the touched module's own section; the text this reader quotes sits in another section and is not edited",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-10-31T15:42:21Z",
+          "text": "the edit is confined to the touched module's own section; the text this reader quotes sits in another section and is not edited",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-10-31T15:42:21Z",
+          "text": "the edit is confined to the touched module's own section; the text this reader quotes sits in another section and is not edited",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-10-31T15:42:21Z",
+          "text": "the edit is confined to the touched module's own section; the text this reader quotes sits in another section and is not edited",
+          "waives": "tools/prove-gates.py"
+        }
+      ]
     }
-  ]
+  ],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "4331b4e9-59c2-4a61-9004-3102aba69ea2",
+    "branch": "audit/p152-the-full-sweep-finishes-under",
+    "at": "2026-10-31T15:42:25Z"
+  },
+  "startedAt": "2026-10-31T15:42:25Z"
 }

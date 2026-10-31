@@ -4444,6 +4444,23 @@ instead of making its own. A stale stamp prints the fields that moved (`moved_fi
 comparison's own `fields`), so nothing is left for the model to look up; a comparison git could
 not answer says so and never reads as unchanged.
 
+**Deciding on facts: named planners, and no single `decide()`.** Where a step branches on plain
+values, the branch is a planner under `# --- deciding a step on facts ---`: `_advance_plan`
+(the points of one task's `advance` - writer, scope, reviewer, gate, risk, close),
+`_triage_plan` (a sign-off sent in advance, then the triage's tail), `_pending_turn` (a waiting
+decision that may no longer apply, then where the answer routes) and `_close_plan` (findings,
+a moved test digest, the commit route, the commit to close on, a reviewer answer). Each is
+called as `planner(point, facts)` and answers `(arm, detail)`; the caller performs the arm. There
+is no one `decide()` because the drive's facts are read lazily and some reads act -
+`stored_green` spends a moved mark, `standing_use` writes a journal row, `review_rounds` writes
+the state, `own_commit` runs git log - so a gather-everything step would spend and write where the
+drive did not. A fact is therefore a value or a zero-argument callable that `_fact` calls only
+when the planner reaches it, and a step that acts between two branches asks its planner once per
+point, in the order it always asked. The planners are pure over values, so `up-block`,
+`ut-block`, `uq-block` and `uc-block` in `tests/test_drive_phase.py` test each arm with a fake
+facts dict and no repository, a fact the arm must not read being one that raises; the order the
+arms are reached in is still the end-to-end blocks' to prove.
+
 **A task id drives that one task.** `next <taskId>` (`drive_task`) starts it when it is
 pending, advances it through the same steps, and prints `done <taskId>` once it is terminal
 (`finish_task`, which says `already` when this call closed nothing), leaving its siblings and the

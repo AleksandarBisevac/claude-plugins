@@ -3902,6 +3902,302 @@ def _opens_task_header(subject, task_id):
     return at > 0 and ": " not in subject[:at]
 
 
+# --- deciding a step on facts ---------------------------------------------------
+# WHY THERE IS NO SINGLE decide(). The drive reads its facts lazily, and some of
+# those reads act: `stored_green` spends a moved `gated` mark, `standing_use`
+# writes a journal row, `review_rounds` writes the drive's state, `own_commit`
+# runs git log. One decide() fed by a gather-everything step would make every
+# one of those reads on every step - spending and writing where the drive did
+# not. So each place a step branches on plain values is a planner here, asked
+# at a named point and answering `(arm, detail)` from a facts dict; its caller
+# reads the facts it always read and performs the arm. A fact is a value or a
+# zero-argument callable, and `_fact` calls the callable only when the planner
+# reaches it: the read happens where it always happened, and an arm that never
+# reaches it never makes it. Where a step acts between two branches (a session
+# stepped, a return filed, a decision dropped), the planner is asked once per
+# point, in the order the step reaches them - so a planner is right about each
+# arm on its facts, and the order the arms are reached in is the caller's.
+
+def _fact(facts, name):
+    """The fact `name`, read now: a callable is called, a value is returned
+    as it is. A fact the caller did not give raises `KeyError` - a planner
+    never answers on a fact it was not handed."""
+    held = facts[name]
+    return held() if callable(held) else held
+
+
+def _at_point(points, planner, point, facts):
+    """`points[point](facts)`; a point the planner does not know raises
+    `ValueError` rather than answering an arm nobody asked for."""
+    turn = points.get(point)
+    if turn is None:
+        raise ValueError("%s has no point %r (it knows %s)"
+                         % (planner, point, ", ".join(sorted(points))))
+    return turn(facts)
+
+
+def _writer_turn(facts):
+    """The executor's return: filed (go on), a writer's proof held whose return
+    is to be filed, a brief printed under an older scope to issue again, a
+    dispatch nobody answered, or the first dispatch. Asked again once a
+    writer's return was filed, with `writerHolds` False."""
+    if _fact(facts, "executorFiled"):
+        return "go-on", None
+    if _fact(facts, "writerHolds"):
+        return "file-return", None
+    if _fact(facts, "staleBrief"):
+        return "redispatch-stale", None
+    if _fact(facts, "dispatched"):
+        return "no-executor-return", None
+    return "dispatch", None
+
+
+def _scope_turn(facts):
+    """A filing stamped under another file list (`changed`, `(was, now)` or
+    None) is the scope-changed decision unless its accept names the list the
+    task holds now."""
+    changed = _fact(facts, "changed")
+    if changed is None:
+        return "go-on", None
+    accepted = _fact(facts, "accepted")
+    if isinstance(accepted, dict) and accepted.get("scope") == changed[1]:
+        return "go-on", None
+    return "decision", changed
+
+
+def _reviewer_turn(facts):
+    """The reviewer: not due or filed (go on), dispatched and not yet stepped
+    (step its session), stepped with the mark still standing and nothing filed
+    (no-reviewer-return), or never dispatched - or its mark spent by the step -
+    which is a dispatch made only once the recorded gate is past."""
+    if not _fact(facts, "due") or _fact(facts, "reviewerFiled"):
+        return "go-on", None
+    if not _fact(facts, "dispatched"):
+        return "dispatch", None
+    if not _fact(facts, "stepped"):
+        return "session-step", None
+    return "no-reviewer-return", None
+
+
+def _gate_turn(facts):
+    """Whether the recorded gate runs: never over a stored green that holds,
+    and past a filed due reviewer only when the green it stood on moved."""
+    green = _fact(facts, "green")
+    if green == _evio.STORED_HOLDS:
+        return "go-on", None
+    if (not _fact(facts, "reviewerFiled") or not _fact(facts, "due")
+            or green == _evio.STORED_MOVED):
+        return "gate", None
+    return "go-on", None
+
+
+def _risk_turn(facts):
+    """A high-risk commit not yet confirmed this start: answered in advance,
+    let through by the standing approval (whose use is its did-line), or the
+    decision. `standing` is read only when no answer was given in advance,
+    because reading it writes the journal row of its use."""
+    if _fact(facts, "risk") != "high" or _fact(facts, "confirmed"):
+        return "skip", None
+    if _fact(facts, "inAdvance"):
+        return "in-advance", None
+    said = _fact(facts, "standing")
+    if said is None:
+        return "decision", None
+    return "standing", said
+
+
+def _close_turn(facts):
+    """Which intent basis the close is asked with: the signals key with no
+    signal due, a fix task under the phase key - whose diff owes a re-review
+    or closes on its own gate - or none."""
+    key = _fact(facts, "key")
+    if key == "signals" and not _fact(facts, "due"):
+        return "signals", ("review.perTask signals: no signal fired - red-first "
+                           "proved and the return's gates agree with the "
+                           "recorded green")
+    if key == _fr.KEY_PHASE and _fact(facts, "isFix"):
+        # A fix task closes `not-asked`, the answer the landing takes from one;
+        # its diff is the triage's to put to a re-review (`fixes_after`) where
+        # it owes one, and a fixed low whose gate never went red owes none.
+        named = ", ".join(str(f) for f in _fact(facts, "fixes") or [])
+        if _fact(facts, "owes"):
+            return "fix-rereview", (
+                "a fix task for %s: the phase review raised the finding; the "
+                "fix's own diff is unreviewed unless sign-off re-reviews it"
+                % (named,))
+        return "fix-own-gate", (
+            "a fix task for %s, every finding it fixes raised low and its gate "
+            "never red: it closes on its own green gate, and no re-review is "
+            "owed" % (named,))
+    return "plain", None
+
+
+ADVANCE_POINTS = {"writer": _writer_turn, "scope": _scope_turn,
+                  "reviewer": _reviewer_turn, "gate": _gate_turn,
+                  "risk": _risk_turn, "close": _close_turn}
+
+
+def _advance_plan(point, facts):
+    """`(arm, detail)` at one point of `advance`, in the order it asks them:
+    `writer`, `scope`, `reviewer`, `gate`, `risk`, `close`."""
+    return _at_point(ADVANCE_POINTS, "_advance_plan", point, facts)
+
+
+def _advance_said(facts):
+    """Whether a sign-off sent in advance applies (`advance`), was sent and
+    does not (`not-applied`, which the drive notes before it reads the
+    rounds), or was not sent (`none`)."""
+    if not _fact(facts, "advance"):
+        return "none", None
+    if _fact(facts, "advanceApplies"):
+        return "advance", None
+    return "not-applied", None
+
+
+def _triage_tail(facts):
+    """The triage's last word: a rounds read that failed (`rounds` is
+    `(rounds, cap, problem)`), the round-cap decision when another round is
+    wanted, the cap is spent and no answer waits on a human, else the
+    triage - each with the sentence it is printed with."""
+    rounds, cap, problem = _fact(facts, "rounds")
+    if problem:
+        return "stop", problem
+    still, after = _fact(facts, "still"), _fact(facts, "after")
+    answers = _fact(facts, "answers")
+    if rounds >= cap and round_wanted(still, after) and not answers:
+        return "round-cap", {"rounds": rounds, "cap": cap, "why": (
+            "%d of %d review round(s) spent; %d finding(s) open%s" % (
+                rounds, cap, len(still), "; %d fix(es) unreviewed" % (
+                    len(after),) if after else ""))}
+    return "triage", {"why": "%s; %s%s" % (
+        _fact(facts, "said"), "%d finding(s) open" % (len(still),) if still
+        else "no finding open", "; %d answer(s) for a human" % (len(answers),)
+        if answers else "")}
+
+
+TRIAGE_POINTS = {"advance": _advance_said, "tail": _triage_tail}
+
+
+def _triage_plan(point, facts):
+    """`(arm, detail)` at one point of `triage`: `advance`, then `tail`."""
+    return _at_point(TRIAGE_POINTS, "_triage_plan", point, facts)
+
+
+def _stale_turn(facts):
+    """A waiting decision that no longer applies is dropped - and an answer
+    to one whose run moved answers nothing, unless it is `rerun`, which is
+    what a moved run owes anyway and so goes on as no answer. `detail` is the
+    answer the drive goes on with."""
+    pending = _fact(facts, "pending")
+    answer = _fact(facts, "answer")
+    if not pending or _fact(facts, "applies"):
+        return "keep", answer
+    moved = _fact(facts, "moved")
+    if moved is not None and answer not in (None, "rerun"):
+        return "usage-moved", moved
+    return "drop", None if moved is not None else answer
+
+
+def _pending_route(facts):
+    """What `next` does with its answer and the decision still waiting: stop a
+    drive held to another task, apply a sign-off in advance (refused without
+    a reason), apply an answer and then drive on, print the waiting decision
+    again, or drive the task or the phase."""
+    pending = _fact(facts, "pending")
+    answer = _fact(facts, "answer")
+    only = _fact(facts, "only")
+    if only and pending and pending.get("task") != only:
+        return "stop-other-task", None
+    if (answer == ADVANCE_ANSWER and pending is None and not only
+            and not _fact(facts, "fixes") and not _fact(facts, "carryTo")
+            and _fact(facts, "admissible")):
+        if not (_fact(facts, "reason") or "").strip():
+            return "advance-no-reason", None
+        return "advance", None
+    onward = "drive-task" if only else "drive-phase"
+    if answer is not None:
+        return "answer", onward
+    if pending:
+        return "render", None
+    return onward, None
+
+
+PENDING_POINTS = {"stale": _stale_turn, "route": _pending_route}
+
+
+def _pending_turn(point, facts):
+    """`(arm, detail)` at one point of `drive_locked`: `stale`, then `route`."""
+    return _at_point(PENDING_POINTS, "_pending_turn", point, facts)
+
+
+def _findings_turn(facts):
+    """A reviewer's findings not yet filed this start are filed."""
+    if _fact(facts, "findings") and not _fact(facts, "marked"):
+        return "file", None
+    return "go-on", None
+
+
+def _lock_turn(facts):
+    """A test file changed since the red proof locked its digest is the
+    tests-moved decision naming it."""
+    changed = _fact(facts, "changed")
+    return ("tests-moved", changed) if changed else ("go-on", None)
+
+
+def _commit_route(facts):
+    """The writer's own commit when the writer path is on and a session is
+    recorded to resume, else the commit verb."""
+    if _fact(facts, "writerPath") and _fact(facts, "session"):
+        return "writer-commit", None
+    return "commit-verb", None
+
+
+def _commit_turn(facts):
+    """The commit the close is made on: the one the step named, else the one
+    this attempt already made (`own`, a git log, read only then), else the
+    no-change decision."""
+    sha = _fact(facts, "sha")
+    if not sha:
+        sha = _fact(facts, "own")
+    if not sha:
+        return "no-change", None
+    return "close", sha
+
+
+def _answer_turn(facts):
+    """A reviewer answer only a human settles (`items`, one clause) is the
+    review-answer decision after the close."""
+    items = _fact(facts, "items")
+    return ("review-answer", items) if items else ("go-on", None)
+
+
+CLOSE_POINTS = {"findings": _findings_turn, "lock": _lock_turn,
+                "route": _commit_route, "commit": _commit_turn,
+                "answer": _answer_turn}
+
+
+def _close_plan(point, facts):
+    """`(arm, detail)` at one point of `close_task`, in the order it asks them:
+    `findings`, `lock`, `route`, `commit`, `answer`."""
+    return _at_point(CLOSE_POINTS, "_close_plan", point, facts)
+
+
+def _writer_facts(state, task, executor, holds):
+    """The `writer` point's facts: the brief's staleness and the dispatch mark
+    are read only when the planner reaches them."""
+    return {"executorFiled": executor is not None, "writerHolds": holds,
+            "staleBrief": lambda: stale_brief(state, task),
+            "dispatched": lambda: _marked(state, "dispatched-executor", task)}
+
+
+def _reviewer_facts(state, task, due, reviewer, stepped):
+    """The `reviewer` point's facts; the dispatch mark is read when reached."""
+    return {"due": due, "reviewerFiled": reviewer is not None,
+            "dispatched": lambda: _marked(state, "dispatched-reviewer", task),
+            "stepped": stepped}
+
+
+# --- a task's close and advance: the facts read, the arm performed ------------
 def close_task(ctx, state, phase, task, intent_basis=None):
     """Findings, commit and close for a task whose returns are filed; None when
     the drive goes on, else the instruction or stop to print."""
@@ -3909,7 +4205,9 @@ def close_task(ctx, state, phase, task, intent_basis=None):
     if problem:
         return E_STOPPED, "%s %s: stopped - %s" % (PREFIX, ctx["phase"], problem)
     findings = (reviewer or {}).get("findings") or []
-    if findings and not _marked(state, "findings", task):
+    filing, _none = _close_plan("findings", {
+        "findings": findings, "marked": lambda: _marked(state, "findings", task)})
+    if filing == "file":
         _out, stop = _verb_or_stop(ctx, "audit-task.py", [
             "finding", phase["id"], ctx["manifest"], "--project-dir", ctx["project"],
             "--findings-file", "-"], stdin=json.dumps(findings))
@@ -3922,11 +4220,14 @@ def close_task(ctx, state, phase, task, intent_basis=None):
     # after the filed proof is not the test that was watched failing, nor the
     # one the review read, so the commit is refused; only a new start proves
     # and files it again.
-    changed = lock_moved(ctx, state, task)
-    if changed:
+    moved, changed = _close_plan("lock", {"changed": lock_moved(ctx, state, task)})
+    if moved == "tests-moved":
         return decision(ctx, state, "tests-moved", task, ", ".join(changed),
                         extra={"changed": changed})
-    if writer_path_on(ctx) and recorded_session(state, task):
+    route, _none = _close_plan("route", {
+        "writerPath": lambda: writer_path_on(ctx),
+        "session": lambda: recorded_session(state, task)})
+    if route == "writer-commit":
         sha, stop = writer_commit(ctx, state, phase, task)
         if stop is not None:
             return stop
@@ -3935,12 +4236,13 @@ def close_task(ctx, state, phase, task, intent_basis=None):
         if stop is not None:
             return stop
         sha = committed_sha(out)
-    if not sha:
-        # A close refused after the commit landed leaves the work committed:
-        # close on that commit through the same verb and checks, rather than
-        # offer no-change (a false outcome) or retry (the work redone).
-        sha = own_commit(ctx, task)
-    if not sha:
+    # A close refused after the commit landed leaves the work committed: close
+    # on that commit through the same verb and checks, rather than offer
+    # no-change (a false outcome) or retry (the work redone). `own` is a git
+    # log, made only when the step named no commit.
+    closing, sha = _close_plan("commit", {"sha": sha,
+                                          "own": lambda: own_commit(ctx, task)})
+    if closing == "no-change":
         return decision(ctx, state, "no-change", task, "")
     extra = ["--commit", sha, "--from-return"]
     done_args = _task_args(ctx, "done", task["id"], *extra)
@@ -3956,8 +4258,8 @@ def close_task(ctx, state, phase, task, intent_basis=None):
     stop = ci_after_close(ctx, state, phase)
     if stop is not None:
         return stop
-    items = review_items(reviewer)
-    if items:
+    asked, items = _close_plan("answer", {"items": review_items(reviewer)})
+    if asked == "review-answer":
         return decision(ctx, state, "review-answer", task, items)
     return None
 
@@ -3990,7 +4292,9 @@ def advance(ctx, state, manifest, phase, task, tree=None):
     executor, problem = filed(ctx, task, "executor")
     if problem:
         return E_STOPPED, "%s %s: stopped - %s" % (PREFIX, ctx["phase"], problem)
-    if executor is None and writer_holds(state, task):
+    turn, _none = _advance_plan("writer", _writer_facts(
+        state, task, executor, lambda: writer_holds(state, task)))
+    if turn == "file-return":
         # A WRITER'S RETURN IS FILED AT ITS GREEN GATE, with the proof held
         # since its session: a red gate goes back to the session, and the
         # return then carries the proof of the bytes it is filed with.
@@ -4004,27 +4308,29 @@ def advance(ctx, state, manifest, phase, task, tree=None):
         executor, problem = filed(ctx, task, "executor")
         if problem:
             return E_STOPPED, "%s %s: stopped - %s" % (PREFIX, ctx["phase"], problem)
-    if executor is None:
-        if stale_brief(state, task):
-            # The brief went out before a scope widening, so no executor holds
-            # the task as it stands: it is issued again, with no decision and
-            # no attempt spent, rather than graded as one that returned nothing.
-            ctx["did"].append("%s's brief issued again: its scope changed after "
-                              "the last one was printed" % (task["id"],))
-            return dispatch(ctx, state, phase, task, "executor", tree)
-        if _marked(state, "dispatched-executor", task):
-            return decision(ctx, state, "no-executor-return", task, "")
+        turn, _none = _advance_plan("writer", _writer_facts(
+            state, task, executor, False))
+    if turn == "redispatch-stale":
+        # The brief went out before a scope widening, so no executor holds
+        # the task as it stands: it is issued again, with no decision and
+        # no attempt spent, rather than graded as one that returned nothing.
+        ctx["did"].append("%s's brief issued again: its scope changed after "
+                          "the last one was printed" % (task["id"],))
         return dispatch(ctx, state, phase, task, "executor", tree)
-    changed = scope_change(executor, task)
-    if changed is not None:
-        # Before the gate mark is read: a gate recorded under the old scope does
-        # not make the new one decided, and the close refuses a changed list
-        # three steps later with a sentence about digests.
-        accepted = _marked(state, "scopeAccepted", task)
-        if not (isinstance(accepted, dict) and accepted.get("scope") == changed[1]):
-            return decision(ctx, state, "scope-changed", task,
-                            scope_change_why(*changed),
-                            extra={"was": changed[0], "now": changed[1]})
+    if turn == "no-executor-return":
+        return decision(ctx, state, "no-executor-return", task, "")
+    if turn == "dispatch":
+        return dispatch(ctx, state, phase, task, "executor", tree)
+    # Before the gate mark is read: a gate recorded under the old scope does
+    # not make the new one decided, and the close refuses a changed list
+    # three steps later with a sentence about digests.
+    turn, changed = _advance_plan("scope", {
+        "changed": scope_change(executor, task),
+        "accepted": lambda: _marked(state, "scopeAccepted", task)})
+    if turn == "decision":
+        return decision(ctx, state, "scope-changed", task,
+                        scope_change_why(*changed),
+                        extra={"was": changed[0], "now": changed[1]})
     key, problem = review_key(ctx, phase, task)
     if problem:
         return E_STOPPED, "%s %s: stopped - %s" % (PREFIX, ctx["phase"], problem)
@@ -4034,61 +4340,59 @@ def advance(ctx, state, manifest, phase, task, tree=None):
         reviewer, problem = filed(ctx, task, "reviewer")
         if problem:
             return E_STOPPED, "%s %s: stopped - %s" % (PREFIX, ctx["phase"], problem)
-        if reviewer is None and _marked(state, "dispatched-reviewer", task):
-            reviewer, stop = reviewer_session_step(ctx, state, manifest, task)
-            if stop is not None:
-                return stop
-            # A session that opened no file spends the dispatch mark, so its
-            # redispatch is the one below, past the stored gate's own check.
-            if reviewer is None and _marked(state, "dispatched-reviewer", task):
-                return decision(ctx, state, "no-reviewer-return", task, "")
+    review_turn, _none = _advance_plan("reviewer", _reviewer_facts(
+        state, task, due, reviewer, False))
+    if review_turn == "session-step":
+        reviewer, stop = reviewer_session_step(ctx, state, manifest, task)
+        if stop is not None:
+            return stop
+        # A session that opened no file spends the dispatch mark, so its
+        # redispatch is the one below, past the stored gate's own check.
+        review_turn, _none = _advance_plan("reviewer", _reviewer_facts(
+            state, task, due, reviewer, True))
+        if review_turn == "no-reviewer-return":
+            return decision(ctx, state, "no-reviewer-return", task, "")
     # THE RECORDED GATE RUNS ONCE PER START, BEFORE THE REVIEWER OR THE CLOSE,
     # whatever the key: a task whose review is carried to the phase still owes
     # the measurement its close and its commit are bound to - and again, past a
     # filed reviewer, when the green it stood on no longer answers the gate.
-    green = stored_green(ctx, state, manifest, task, "gated")
-    if green != _evio.STORED_HOLDS and (reviewer is None or not due
-                                        or green == _evio.STORED_MOVED):
+    # `stored_green` spends a moved mark, so it is read here and nowhere else.
+    turn, _none = _advance_plan("gate", {
+        "green": lambda: stored_green(ctx, state, manifest, task, "gated"),
+        "due": due, "reviewerFiled": reviewer is not None})
+    if turn == "gate":
         stop = gate_step(ctx, state, manifest, phase, task, tree)
         if stop is not None:
             return stop
         ctx["did"].append(grade_stamp(ctx, executor.get("stamp"), tree)
                           if tree else grade_stamp(ctx, executor.get("stamp")))
-    if due and reviewer is None:
+    if review_turn == "dispatch":
         return dispatch(ctx, state, phase, task, "reviewer", tree)
-    if task.get("risk") == "high" and not _marked(state, "confirmed", task):
-        if task["id"] in confirmed_in_advance(ctx, phase["id"]):
-            said = "high-risk %s confirmed in advance" % (task["id"],)
-        else:
-            said = standing_use(ctx, phase, task, tree)
-            if said is None:
-                return decision(ctx, state, "high-risk", task, "")
+    # `standing` writes the journal row of the approval's use, so it is read
+    # only when no answer was given in advance.
+    turn, said = _advance_plan("risk", {
+        "risk": task.get("risk"),
+        "confirmed": lambda: _marked(state, "confirmed", task),
+        "inAdvance": lambda: task["id"] in confirmed_in_advance(ctx, phase["id"]),
+        "standing": lambda: standing_use(ctx, phase, task, tree)})
+    if turn == "decision":
+        return decision(ctx, state, "high-risk", task, "")
+    if turn != "skip":
         _mark(state, "confirmed", task)
         write_state(ctx, state)
-        ctx["did"].append(said)
+        ctx["did"].append("high-risk %s confirmed in advance" % (task["id"],)
+                          if turn == "in-advance" else said)
     if tree:
         said = integrate_member(ctx, state, phase, task)
         if said is not None:
             return said
-    if key == "signals" and not due:
-        return close_task(ctx, state, phase, task, intent_basis=(
-            "review.perTask signals: no signal fired - red-first proved and the "
-            "return's gates agree with the recorded green"))
-    if key == _fr.KEY_PHASE and _fr.is_fix_task(task, phase):
-        # A fix task closes `not-asked`, the answer the landing takes from one;
-        # its diff is the triage's to put to a re-review (`fixes_after`) where
-        # it owes one, and a fixed low whose gate never went red owes none.
-        named = ", ".join(str(f) for f in task.get("fixes") or [])
-        owes = owes_rereview(phase, task, gate_went_red(ctx)
-                             if fixes_only_lows(phase, task) else set())
-        return close_task(ctx, state, phase, task, intent_basis=(
-            "a fix task for %s: the phase review raised the finding; the fix's "
-            "own diff is unreviewed unless sign-off re-reviews it" % (named,)
-            if owes else
-            "a fix task for %s, every finding it fixes raised low and its gate "
-            "never red: it closes on its own green gate, and no re-review is "
-            "owed" % (named,)))
-    return close_task(ctx, state, phase, task)
+    _turn, basis = _advance_plan("close", {
+        "key": key, "due": due,
+        "isFix": lambda: _fr.is_fix_task(task, phase),
+        "fixes": task.get("fixes") or [],
+        "owes": lambda: owes_rereview(phase, task, gate_went_red(ctx)
+                                      if fixes_only_lows(phase, task) else set())})
+    return close_task(ctx, state, phase, task, intent_basis=basis)
 
 
 def gate_step(ctx, state, manifest, phase, task, tree=None):
@@ -7252,34 +7556,34 @@ def triage(ctx, state, manifest, phase):
         # showing them holds only while HEAD is that commit
         # (`pending_still_applies`).
         extra["notedHead"] = (state.get(NOTED_FIELD) or {}).get("head")
-    if ctx.get("advance") is not None:
-        reason = ctx.pop("advance")
-        if advance_applies(review, extra):
-            ctx["did"].append("sign-off answered in advance")
-            return apply_phase_answer(ctx, state, manifest, phase, dict(
-                extra, decision="triage", task=None, start=None, why=said),
-                ADVANCE_ANSWER, reason, ())
+    reason = ctx.pop("advance") if ctx.get("advance") is not None else None
+    sent, _none = _triage_plan("advance", {
+        "advance": reason is not None,
+        "advanceApplies": lambda: advance_applies(review, extra)})
+    if sent == "advance":
+        ctx["did"].append("sign-off answered in advance")
+        return apply_phase_answer(ctx, state, manifest, phase, dict(
+            extra, decision="triage", task=None, start=None, why=said),
+            ADVANCE_ANSWER, reason, ())
+    if sent == "not-applied":
         ctx["did"].append(ADVANCE_NOT_APPLIED % (
             "the triage below has more than one answer",))
-    rounds, cap, problem = review_rounds(ctx, state, phase)
-    if problem:
-        return _stopped(ctx, problem)
-    if rounds >= cap and round_wanted(still, after) and not answers:
+    # `review_rounds` writes the state, so it is read only past the advance.
+    tail, told = _triage_plan("tail", {
+        "rounds": lambda: review_rounds(ctx, state, phase),
+        "still": still, "after": after, "answers": answers, "said": said})
+    if tail == "stop":
+        return _stopped(ctx, told)
+    if tail == "round-cap":
         # THE LOOP STOPS HERE, ONCE: another round is wanted and the cap is
         # spent, so the human is asked whether it is worth one - with what is
         # open and what the rounds cost - rather than offered `fix` and
         # `re-review` again. A reviewer answer waiting on a human is settled
         # at the triage first: no answer here would settle it.
-        return decision(ctx, state, "round-cap", None, (
-            "%d of %d review round(s) spent; %d finding(s) open%s" % (
-                rounds, cap, len(still), "; %d fix(es) unreviewed" % (
-                    len(after),) if after else "")), extra=dict(
-            extra, rounds=rounds, cap=cap,
+        return decision(ctx, state, "round-cap", None, told["why"], extra=dict(
+            extra, rounds=told["rounds"], cap=told["cap"],
             cost=rounds_cost_lines(ctx, phase)))
-    return decision(ctx, state, "triage", None, "%s; %s%s" % (
-        said, "%d finding(s) open" % (len(still),) if still
-        else "no finding open", "; %d answer(s) for a human" % (len(answers),)
-        if answers else ""), extra=extra)
+    return decision(ctx, state, "triage", None, told["why"], extra=extra)
 
 
 def advance_applies(review, triage_fields):
@@ -8949,19 +9253,23 @@ def drive_locked(ctx, state, answer, reason, fixes):
     settle_kept_markers(ctx, state)
     manifest, phase = load_phase(ctx)
     pending = state.get("pending")
-    if pending and not pending_still_applies(ctx, manifest, pending):
+    # `moved` reads the note `pending_still_applies` made, so it is asked only
+    # once the decision was found not to apply. A rerun asks for the
+    # measurement the moved verdict owes anyway, so it goes on as no answer.
+    stale, held = _pending_turn("stale", {
+        "pending": pending, "answer": answer,
+        "applies": lambda: pending_still_applies(ctx, manifest, pending),
+        "moved": lambda: verdict_moved(ctx, pending)})
+    if stale != "keep":
         state.pop("pending", None)
         write_state(ctx, state)
-        moved = verdict_moved(ctx, pending)
-        if moved is not None and answer not in (None, "rerun"):
+        if stale == "usage-moved":
             return E_USAGE, ("%s %s: the %s decision on %s stood on a run that "
                              "no longer answers its gate (%s), so --answer %s "
                              "answers nothing; next measures it again"
                              % (PREFIX, ctx["phase"], pending["decision"],
-                                pending["task"], moved, answer))
-        if moved is not None:
-            # A rerun asks for the measurement the moved verdict owes anyway.
-            answer = None
+                                pending["task"], held, answer))
+        answer = held
         pending = None
     if pending and pending["decision"] == "triage":
         pending = refresh_triage(ctx, state, phase, pending)
@@ -8972,22 +9280,26 @@ def drive_locked(ctx, state, answer, reason, fixes):
         waiting_on = _mio.tasks_by_id(manifest).get(pending["task"])
         if waiting_on is not None:
             note_sessions(ctx, state, waiting_on)
-    if ctx.get("only") and pending and pending.get("task") != ctx["only"]:
+    route, onward = _pending_turn("route", {
+        "pending": pending, "answer": answer, "reason": reason,
+        "only": ctx.get("only"), "fixes": fixes, "carryTo": ctx.get("carryTo"),
+        "admissible": lambda: advance_admissible(phase)})
+    if route == "stop-other-task":
         return E_STOPPED, ("%s %s: stopped - this phase's drive waits on a %s "
                            "decision; answer it with next %s first"
                            % (PREFIX, ctx["phase"], pending["decision"], ctx["phase"]))
-    if (answer == ADVANCE_ANSWER and pending is None and not ctx.get("only")
-            and not fixes and not ctx.get("carryTo")
-            and advance_admissible(phase)):
-        if not (reason or "").strip():
-            return E_USAGE, "%s %s: --answer %s needs --reason: it is recorded " \
-                            "with the phase" % (PREFIX, ctx["phase"], answer)
+    if route == "advance-no-reason":
+        return E_USAGE, "%s %s: --answer %s needs --reason: it is recorded " \
+                        "with the phase" % (PREFIX, ctx["phase"], answer)
+    if route == "advance":
         ctx["advance"] = reason
         code, said = drive_phase(ctx, state, phase)
         if ctx.pop("advance", None) is not None:
             ctx["did"].append(ADVANCE_NOT_APPLIED % ("no triage was reached",))
         return code, said
-    if answer is not None:
+    if route == "render":
+        return E_OK, render_decision(ctx, pending)
+    if route == "answer":
         refused = (answer_refusal(ctx, pending, answer, reason, fixes)
                    or carry_target_refusal(ctx, manifest, phase, answer))
         if refused:
@@ -8996,9 +9308,8 @@ def drive_locked(ctx, state, answer, reason, fixes):
                             fixes)
         if said is not None:
             return _as_result(said)
-    elif pending:
-        return E_OK, render_decision(ctx, pending)
-    if ctx.get("only"):
+        route = onward
+    if route == "drive-task":
         return drive_task(ctx, state)
     return drive_phase(ctx, state, phase)
 

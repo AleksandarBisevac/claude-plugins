@@ -13321,6 +13321,478 @@ def _wave_writer_cases(check, M, bindir, log):
           bool(tree_f) and in_tree == [] and in_project == ["src/f2.txt"])
 
 
+# --- the drive's planners, over facts and nothing else --------------------------
+# Each case names one arm of one planner, the facts that choose it, and a twin
+# with ONE fact flipped that chooses a neighbouring arm: a planner whose arm
+# never fires fails the first half, one whose arm always fires fails the twin.
+# A fact the arm must not reach is `_never(...)`, which raises when read: the
+# drive reads some facts by spending a mark or writing a row, and a planner that
+# reads ahead of its arm would do that where the drive did not. Every expected
+# value is written out here, never recomputed from the planner.
+def _never(name):
+    """A fact the arm under test must not read: reading it raises."""
+    def read():
+        raise AssertionError("fact %r was read" % (name,))
+    return read
+
+
+def _planner(M, name):
+    """`call(*args)` over the driver's planner `name`: its answer, or
+    `("raised", why)` - a planner that is absent or raises is a failed case,
+    never an exception that ends the block before its other cases ran."""
+    fn = getattr(M, name, None) if M is not None else None
+
+    def call(*args):
+        if fn is None:
+            return "raised", "the driver defines no %s" % (name,)
+        try:
+            return fn(*args)
+        except Exception as exc:                               # noqa: BLE001
+            return "raised", "%s: %s" % (type(exc).__name__, exc)
+    return call
+
+
+def _facts(base, **flipped):
+    """A copy of `base` with the named facts replaced."""
+    out = dict(base)
+    out.update(flipped)
+    return out
+
+
+def _advance_plan_cases(check):
+    """`_advance_plan(point, facts)`: each step of one task's advance - the
+    writer's return, a widened scope, the reviewer, the recorded gate, a
+    high-risk commit, and which way the close goes."""
+    M, why = _load("drive_phase_advance_plan")
+    plan = _planner(M, "_advance_plan")
+    if M is None:
+        check("up1 the driver loads", False, why)
+        return
+    writer = {"executorFiled": False, "writerHolds": False, "staleBrief": False,
+              "dispatched": False}
+    got = (plan("writer", {"executorFiled": True, "writerHolds": _never("writerHolds"),
+                           "staleBrief": _never("staleBrief"),
+                           "dispatched": _never("dispatched")}),
+           plan("writer", writer))
+    check("up1 a filed executor return goes on, reading nothing else; the twin "
+          "with none filed and nothing dispatched dispatches: %r" % (got,),
+          got == (("go-on", None), ("dispatch", None)))
+    got = (plan("writer", _facts(writer, writerHolds=True,
+                                 staleBrief=_never("staleBrief"),
+                                 dispatched=_never("dispatched"))),
+           plan("writer", writer))
+    check("up2 a writer's proof held and no return filed files the writer's "
+          "return before any dispatch question; the twin holding none "
+          "dispatches: %r" % (got,),
+          got == (("file-return", None), ("dispatch", None)))
+    got = (plan("writer", _facts(writer, staleBrief=True, dispatched=True)),
+           plan("writer", _facts(writer, dispatched=True)))
+    check("up3 a brief printed under an older scope is issued again, ahead of "
+          "the dispatched mark; the twin whose brief is current reads the mark "
+          "and asks no-executor-return: %r" % (got,),
+          got == (("redispatch-stale", None), ("no-executor-return", None)))
+    got = (plan("writer", _facts(writer, dispatched=True)),
+           plan("writer", writer))
+    check("up4 a dispatched executor that filed nothing is the "
+          "no-executor-return decision; the twin never dispatched is "
+          "dispatched: %r" % (got,),
+          got == (("no-executor-return", None), ("dispatch", None)))
+    got = (plan("writer", writer),
+           plan("writer", _facts(writer, executorFiled=True)))
+    check("up5 nothing filed, held, stale or dispatched dispatches the "
+          "executor; the twin with a filed return goes on: %r" % (got,),
+          got == (("dispatch", None), ("go-on", None)))
+
+    lists = (["src/a.py"], ["src/a.py", "src/b.py"])
+    got = (plan("scope", {"changed": lists, "accepted": None}),
+           plan("scope", {"changed": lists,
+                          "accepted": {"scope": ["src/a.py", "src/b.py"]}}))
+    check("up6 a filing stamped under another scope, not accepted, is the "
+          "scope-changed decision carrying both lists; the twin whose accept "
+          "names the new list goes on: %r" % (got,),
+          got == (("decision", (["src/a.py"], ["src/a.py", "src/b.py"])),
+                  ("go-on", None)))
+    got = (plan("scope", {"changed": None, "accepted": _never("accepted")}),
+           plan("scope", {"changed": lists, "accepted": {"scope": ["src/a.py"]}}))
+    check("up7 no scope change goes on without reading the accept mark; the "
+          "twin whose accept names the OLD list is still the decision: %r"
+          % (got,),
+          got == (("go-on", None),
+                  ("decision", (["src/a.py"], ["src/a.py", "src/b.py"]))))
+
+    reviewer = {"due": True, "reviewerFiled": False, "dispatched": False,
+                "stepped": False}
+    got = (plan("reviewer", {"due": False, "reviewerFiled": _never("reviewerFiled"),
+                             "dispatched": _never("dispatched"),
+                             "stepped": _never("stepped")}),
+           plan("reviewer", reviewer))
+    check("up8 a reviewer not due goes on, reading nothing else; the twin due "
+          "and never dispatched dispatches once the gate is past: %r" % (got,),
+          got == (("go-on", None), ("dispatch", None)))
+    got = (plan("reviewer", _facts(reviewer, reviewerFiled=True,
+                                   dispatched=_never("dispatched"))),
+           plan("reviewer", _facts(reviewer, dispatched=True)))
+    check("up9 a filed reviewer return goes on; the twin with none filed and "
+          "the reviewer dispatched steps its session: %r" % (got,),
+          got == (("go-on", None), ("session-step", None)))
+    got = (plan("reviewer", _facts(reviewer, dispatched=True)),
+           plan("reviewer", _facts(reviewer, dispatched=True, stepped=True)))
+    check("up10 a dispatched reviewer not yet stepped is stepped; the twin "
+          "asked again after its step, still dispatched, is the "
+          "no-reviewer-return decision: %r" % (got,),
+          got == (("session-step", None), ("no-reviewer-return", None)))
+    got = (plan("reviewer", _facts(reviewer, dispatched=True, stepped=True)),
+           plan("reviewer", _facts(reviewer, stepped=True)))
+    check("up11 a step that left the dispatch mark and no return is "
+          "no-reviewer-return; the twin whose step spent the mark is dispatched "
+          "again: %r" % (got,),
+          got == (("no-reviewer-return", None), ("dispatch", None)))
+    got = (plan("reviewer", _facts(reviewer, stepped=_never("stepped"))),
+           plan("reviewer", _facts(reviewer, reviewerFiled=True)))
+    check("up12 due, nothing filed and never dispatched is the dispatch, with "
+          "no step asked; the twin with a filed return goes on: %r" % (got,),
+          got == (("dispatch", None), ("go-on", None)))
+
+    got = (plan("gate", {"green": "holds", "due": _never("due"),
+                         "reviewerFiled": _never("reviewerFiled")}),
+           plan("gate", {"green": "unknown", "due": True, "reviewerFiled": False}))
+    check("up13 a stored green that holds runs no gate, reading nothing else; "
+          "the twin whose green is not established runs it: %r" % (got,),
+          got == (("go-on", None), ("gate", None)))
+    got = (plan("gate", {"green": "moved", "due": True, "reviewerFiled": True}),
+           plan("gate", {"green": "unknown", "due": True, "reviewerFiled": True}))
+    check("up14 a green that moved is measured again past a filed reviewer; "
+          "the twin merely unknown past a filed reviewer is not: %r" % (got,),
+          got == (("gate", None), ("go-on", None)))
+    got = (plan("gate", {"green": "unknown", "due": False, "reviewerFiled": True}),
+           plan("gate", {"green": "unknown", "due": True, "reviewerFiled": True}))
+    check("up15 a gate not established with no review due is run; the twin "
+          "with a due review filed is not: %r" % (got,),
+          got == (("gate", None), ("go-on", None)))
+
+    risk = {"risk": "high", "confirmed": None, "inAdvance": False,
+            "standing": None}
+    got = (plan("risk", {"risk": "low", "confirmed": _never("confirmed"),
+                         "inAdvance": _never("inAdvance"),
+                         "standing": _never("standing")}),
+           plan("risk", _facts(risk, inAdvance=True)))
+    check("up16 a task that is not high-risk skips the question, reading "
+          "nothing else; the high-risk twin confirmed in advance is: %r" % (got,),
+          got == (("skip", None), ("in-advance", None)))
+    got = (plan("risk", _facts(risk, confirmed=True, inAdvance=_never("inAdvance"),
+                               standing=_never("standing"))),
+           plan("risk", _facts(risk, inAdvance=True)))
+    check("up17 a high-risk task already confirmed this start skips, with no "
+          "journal read; the unconfirmed twin is asked: %r" % (got,),
+          got == (("skip", None), ("in-advance", None)))
+    got = (plan("risk", _facts(risk, inAdvance=True, standing=_never("standing"))),
+           plan("risk", _facts(risk, standing="armed approval used")))
+    check("up18 a confirmation given in advance answers it and the standing "
+          "approval is never used (its use writes a row); the twin with none "
+          "given uses the standing approval: %r" % (got,),
+          got == (("in-advance", None), ("standing", "armed approval used")))
+    got = (plan("risk", _facts(risk, standing="armed approval used")),
+           plan("risk", risk))
+    check("up19 a standing approval's use carries its did-line; the twin with "
+          "none armed is the high-risk decision: %r" % (got,),
+          got == (("standing", "armed approval used"), ("decision", None)))
+    got = (plan("risk", risk),
+           plan("risk", _facts(risk, confirmed=True)))
+    check("up20 high-risk, unconfirmed, not answered in advance and no "
+          "standing approval is the decision; the confirmed twin skips: %r"
+          % (got,),
+          got == (("decision", None), ("skip", None)))
+
+    close = {"key": "phase", "due": False, "isFix": True, "owes": True,
+             "fixes": ["P1-R1", "P1-R2"]}
+    signals = ("review.perTask signals: no signal fired - red-first proved and "
+               "the return's gates agree with the recorded green")
+    rereview = ("a fix task for P1-R1, P1-R2: the phase review raised the "
+                "finding; the fix's own diff is unreviewed unless sign-off "
+                "re-reviews it")
+    own_gate = ("a fix task for P1-R1, P1-R2, every finding it fixes raised low "
+                "and its gate never red: it closes on its own green gate, and no "
+                "re-review is owed")
+    got = (plan("close", _facts(close, key="signals", isFix=_never("isFix"),
+                                owes=_never("owes"))),
+           plan("close", _facts(close, key="signals", due=True,
+                                isFix=_never("isFix"), owes=_never("owes"))))
+    check("up21 a `signals` key with no signal due closes on the signals basis; "
+          "the twin with a review due closes plain: %r" % (got,),
+          got == (("signals", signals), ("plain", None)))
+    got = (plan("close", close), plan("close", _facts(close, owes=False)))
+    check("up22 a fix task that owes a re-review closes saying its diff is "
+          "unreviewed; the twin owing none closes on its own gate: %r" % (got,),
+          got == (("fix-rereview", rereview), ("fix-own-gate", own_gate)))
+    got = (plan("close", _facts(close, owes=False)),
+           plan("close", _facts(close, isFix=False, owes=_never("owes"))))
+    check("up23 a fixed low whose gate never went red closes on its own gate; "
+          "the twin that is no fix task closes plain, never asking what it "
+          "owes: %r" % (got,),
+          got == (("fix-own-gate", own_gate), ("plain", None)))
+    got = (plan("close", _facts(close, key="task", isFix=_never("isFix"),
+                                owes=_never("owes"))),
+           plan("close", _facts(close, owes=False)))
+    check("up24 a per-task key closes plain, asking neither whether it is a fix "
+          "task nor what it owes; the phase-key fix twin does not: %r" % (got,),
+          got == (("plain", None), ("fix-own-gate", own_gate)))
+    got = (plan("no-such-point", {}), plan("close", _facts(close, key="task")))
+    check("up25 a point the planner does not know raises rather than answering "
+          "an arm; a known point answers: %r" % (got,),
+          got[0][0] == "raised" and "no-such-point" in str(got[0][1])
+          and got[1] == ("plain", None))
+    # Every other case hands its facts as values, or as a fact that must not be
+    # read; this one is for the reading itself - a callable that returns False
+    # must be called, not taken as the truthy object it is.
+    got = (plan("writer", _facts(writer, executorFiled=lambda: False,
+                                 dispatched=lambda: True)),
+           plan("writer", _facts(writer, executorFiled=lambda: False,
+                                 dispatched=lambda: False)))
+    check("up26 a fact handed as a callable is read by calling it: a filed "
+          "return that answers False and a dispatch mark that answers True is "
+          "no-executor-return; the twin whose mark answers False "
+          "dispatches: %r" % (got,),
+          got == (("no-executor-return", None), ("dispatch", None)))
+
+
+def _triage_plan_cases(check):
+    """`_triage_plan(point, facts)`: whether a sign-off sent in advance applies,
+    then the tail of a triage - a rounds read that failed, the round cap, or the
+    triage itself. Two points, because the drive notes a sign-off it did not
+    apply before it reads the rounds, and that read writes the state."""
+    M, why = _load("drive_phase_triage_plan")
+    plan = _planner(M, "_triage_plan")
+    if M is None:
+        check("ut1 the driver loads", False, why)
+        return
+    got = (plan("advance", {"advance": True, "advanceApplies": True}),
+           plan("advance", {"advance": True, "advanceApplies": False}))
+    check("ut1 a sign-off sent in advance over a triage it applies to is "
+          "applied; the twin it does not apply to is noted as not applied: %r"
+          % (got,),
+          got == (("advance", None), ("not-applied", None)))
+    got = (plan("advance", {"advance": False,
+                            "advanceApplies": _never("advanceApplies")}),
+           plan("advance", {"advance": True, "advanceApplies": True}))
+    check("ut2 a triage sent no sign-off asks nothing about one; the twin sent "
+          "one it admits applies it: %r" % (got,),
+          got == (("none", None), ("advance", None)))
+    returned = "the phase review returned `clean`"
+    base = {"rounds": (1, 3, None), "still": [], "after": [], "answers": [],
+            "said": returned}
+    got = (plan("tail", _facts(base, rounds=(None, None, "review.maxRounds is "
+                                             "not a whole number"))),
+           plan("tail", base))
+    check("ut3 a rounds read that failed stops on its own sentence; the twin "
+          "read whole triages: %r" % (got,),
+          got == (("stop", "review.maxRounds is not a whole number"),
+                  ("triage", {"why": "%s; no finding open" % (returned,)})))
+    high = [{"id": "P1-R1", "severity": "high"}]
+    got = (plan("tail", _facts(base, rounds=(3, 3, None), still=high)),
+           plan("tail", _facts(base, rounds=(2, 3, None), still=high)))
+    check("ut4 a spent cap with a high finding open is the round-cap decision, "
+          "carrying the rounds and the cap; the twin with a round left "
+          "triages: %r" % (got,),
+          got == (("round-cap", {"rounds": 3, "cap": 3, "why":
+                                 "3 of 3 review round(s) spent; 1 finding(s) "
+                                 "open"}),
+                  ("triage", {"why": "%s; 1 finding(s) open" % (returned,)})))
+    got = (plan("tail", _facts(base, rounds=(3, 3, None), after=["P1.4"])),
+           plan("tail", _facts(base, rounds=(3, 3, None), after=["P1.4"],
+                               answers=[{"key": "P1.1", "sha256": "ab"}])))
+    check("ut5 a spent cap with an unreviewed fix is the round-cap decision "
+          "naming it; the twin with an answer waiting on a human triages, "
+          "where the answer is settled: %r" % (got,),
+          got == (("round-cap", {"rounds": 3, "cap": 3, "why":
+                                 "3 of 3 review round(s) spent; 0 finding(s) "
+                                 "open; 1 fix(es) unreviewed"}),
+                  ("triage", {"why": "%s; no finding open; 1 answer(s) for a "
+                                     "human" % (returned,)})))
+    low = [{"id": "P1-R2", "severity": "low"}]
+    got = (plan("tail", _facts(base, rounds=(3, 3, None), still=low)),
+           plan("tail", _facts(base, rounds=(3, 3, None),
+                               still=[{"id": "P1-R2", "severity": "med"}])))
+    check("ut6 a spent cap with only a low open triages - a carried low wants "
+          "no round; the twin with a med open is the round-cap decision: %r"
+          % (got,),
+          got == (("triage", {"why": "%s; 1 finding(s) open" % (returned,)}),
+                  ("round-cap", {"rounds": 3, "cap": 3, "why":
+                                 "3 of 3 review round(s) spent; 1 finding(s) "
+                                 "open"})))
+    got = (plan("tail", _facts(base, answers=[{"key": "a", "sha256": "1"},
+                                              {"key": "b", "sha256": "2"}])),
+           plan("tail", _facts(base, said="no phase review is due")))
+    check("ut7 the triage's sentence counts the answers waiting on a human; "
+          "the twin with none says only what the review returned: %r" % (got,),
+          got == (("triage", {"why": "%s; no finding open; 2 answer(s) for a "
+                                     "human" % (returned,)}),
+                  ("triage", {"why": "no phase review is due; no finding open"})))
+    got = (plan("no-such-point", {}), plan("tail", base))
+    check("ut8 a point the planner does not know raises; a known point "
+          "answers: %r" % (got,),
+          got[0][0] == "raised" and "no-such-point" in str(got[0][1])
+          and got[1] == ("triage", {"why": "%s; no finding open" % (returned,)}))
+
+
+def _pending_turn_cases(check):
+    """`_pending_turn(point, facts)`: what `next` does with a waiting decision
+    that may no longer apply, then with the answer it was given."""
+    M, why = _load("drive_phase_pending_turn")
+    plan = _planner(M, "_pending_turn")
+    if M is None:
+        check("uq1 the driver loads", False, why)
+        return
+    waiting = {"decision": "gate-red", "task": "P1.1"}
+    gone = {"pending": waiting, "applies": False, "moved": None,
+             "answer": "retry"}
+    got = (plan("stale", {"pending": None, "applies": _never("applies"),
+                          "moved": _never("moved"), "answer": "retry"}),
+           plan("stale", gone))
+    check("uq1 no waiting decision is kept as it is with its answer, asking "
+          "nothing; the twin with one that no longer applies drops it: %r"
+          % (got,),
+          got == (("keep", "retry"), ("drop", "retry")))
+    got = (plan("stale", _facts(gone, applies=True, moved=_never("moved"))),
+           plan("stale", gone))
+    check("uq2 a decision that still applies is kept, the moved verdict never "
+          "read; the twin that no longer applies is dropped: %r" % (got,),
+          got == (("keep", "retry"), ("drop", "retry")))
+    why_moved = "the gate's command changed"
+    got = (plan("stale", _facts(gone, moved=why_moved)),
+           plan("stale", _facts(gone, moved=why_moved, answer="rerun")))
+    check("uq3 an answer to a decision whose run moved answers nothing and is "
+          "refused with why; the twin answering rerun is dropped and measured "
+          "again with no answer: %r" % (got,),
+          got == (("usage-moved", why_moved), ("drop", None)))
+    got = (plan("stale", _facts(gone, moved=why_moved, answer=None)),
+           plan("stale", _facts(gone, answer="rerun")))
+    check("uq4 a dropped decision whose run moved goes on with no answer; the "
+          "twin dropped for another reason keeps the answer it was given: %r"
+          % (got,),
+          got == (("drop", None), ("drop", "rerun")))
+
+    route = {"pending": None, "answer": None, "reason": "", "only": None,
+             "fixes": [], "carryTo": None, "admissible": _never("admissible")}
+    advance = _facts(route, answer="sign-off", reason="clean run",
+                     admissible=True)
+    got = (plan("route", _facts(route, pending=waiting, only="P1.2")),
+           plan("route", _facts(route, pending=waiting, only="P1.1")))
+    check("uq5 a drive held to one task while the phase waits on another "
+          "task's decision stops; the twin held to the waiting task prints "
+          "it: %r" % (got,),
+          got == (("stop-other-task", None), ("render", None)))
+    got = (plan("route", advance),
+           plan("route", _facts(advance, admissible=False)))
+    check("uq6 sign-off with nothing pending, a reason, and every task "
+          "terminal is answered in advance; the twin with a task still open "
+          "is an ordinary answer: %r" % (got,),
+          got == (("advance", None), ("answer", "drive-phase")))
+    got = (plan("route", _facts(advance, reason="  ")), plan("route", advance))
+    check("uq7 sign-off in advance with a blank reason is refused for its "
+          "reason; the twin with one is applied: %r" % (got,),
+          got == (("advance-no-reason", None), ("advance", None)))
+    got = (plan("route", _facts(advance, fixes=["P1-R1"],
+                                admissible=_never("admissible"))),
+           plan("route", _facts(advance, carryTo="P2",
+                                admissible=_never("admissible"))))
+    check("uq8 sign-off sent with fixes, or with a carry target, is an "
+          "ordinary answer and never asks whether the phase is terminal: %r"
+          % (got,),
+          got == (("answer", "drive-phase"), ("answer", "drive-phase")))
+    got = (plan("route", _facts(route, pending=waiting, answer="block")),
+           plan("route", _facts(route, pending=waiting, answer="block",
+                                only="P1.1")))
+    check("uq9 an answer goes on to the phase; the twin held to its task goes "
+          "on to that task: %r" % (got,),
+          got == (("answer", "drive-phase"), ("answer", "drive-task")))
+    got = (plan("route", _facts(route, pending=waiting)), plan("route", route))
+    check("uq10 a waiting decision with no answer is printed again; the twin "
+          "with none waiting drives the phase: %r" % (got,),
+          got == (("render", None), ("drive-phase", None)))
+    got = (plan("route", _facts(route, only="P1.1")), plan("route", route))
+    check("uq11 a drive held to one task with nothing waiting drives that "
+          "task; the twin not held drives the phase: %r" % (got,),
+          got == (("drive-task", None), ("drive-phase", None)))
+    got = (plan("route", route),
+           plan("route", _facts(route, answer="sign-off", reason="r",
+                                admissible=True)))
+    check("uq12 nothing waiting and no answer drives the phase, never asking "
+          "whether it is terminal; the twin sent sign-off answers in advance: "
+          "%r" % (got,),
+          got == (("drive-phase", None), ("advance", None)))
+    got = (plan("no-such-point", {}), plan("route", route))
+    check("uq13 a point the planner does not know raises; a known point "
+          "answers: %r" % (got,),
+          got[0][0] == "raised" and "no-such-point" in str(got[0][1])
+          and got[1] == ("drive-phase", None))
+    got = (plan("route", _facts(advance, pending=waiting,
+                                admissible=_never("admissible"))),
+           plan("route", advance))
+    check("uq14 sign-off sent while a decision waits is an answer to that "
+          "decision, never asking whether the phase is terminal; the twin with "
+          "none waiting is answered in advance: %r" % (got,),
+          got == (("answer", "drive-phase"), ("advance", None)))
+
+
+def _close_plan_cases(check):
+    """`_close_plan(point, facts)`: the close of a task whose returns are
+    filed - findings to file, a moved test digest, the commit route, the
+    commit to close on, and a reviewer answer only a human settles."""
+    M, why = _load("drive_phase_close_plan")
+    plan = _planner(M, "_close_plan")
+    if M is None:
+        check("ucl1 the driver loads", False, why)
+        return
+    findings = [{"id": "P1-R1", "severity": "med"}]
+    got = (plan("findings", {"findings": findings, "marked": None}),
+           plan("findings", {"findings": findings, "marked": True}))
+    check("ucl1 a reviewer's findings not yet filed this start are filed; the "
+          "twin already marked goes on: %r" % (got,),
+          got == (("file", None), ("go-on", None)))
+    got = (plan("findings", {"findings": [], "marked": _never("marked")}),
+           plan("findings", {"findings": findings, "marked": None}))
+    check("ucl2 no findings goes on without reading the mark; the twin with "
+          "one files it: %r" % (got,),
+          got == (("go-on", None), ("file", None)))
+    got = (plan("lock", {"changed": ["tests/test_x.py"]}),
+           plan("lock", {"changed": []}))
+    check("ucl3 a test file changed since the red proof is the tests-moved "
+          "decision naming it; the twin with none changed goes on: %r" % (got,),
+          got == (("tests-moved", ["tests/test_x.py"]), ("go-on", None)))
+    got = (plan("route", {"writerPath": True, "session": "s-1"}),
+           plan("route", {"writerPath": True, "session": None}))
+    check("ucl4 the writer path on with a recorded session commits through the "
+          "writer; the twin with no session uses the commit verb: %r" % (got,),
+          got == (("writer-commit", None), ("commit-verb", None)))
+    got = (plan("route", {"writerPath": False, "session": _never("session")}),
+           plan("route", {"writerPath": True, "session": "s-1"}))
+    check("ucl5 the writer path off uses the commit verb, never reading the "
+          "session; the twin with it on and a session commits through the "
+          "writer: %r" % (got,),
+          got == (("commit-verb", None), ("writer-commit", None)))
+    got = (plan("commit", {"sha": "abc1234", "own": _never("own")}),
+           plan("commit", {"sha": "", "own": "def5678"}))
+    check("ucl6 a commit the step named is closed on, the attempt's own commit "
+          "never looked for (that is a git log); the twin naming none closes "
+          "on the commit the attempt already made: %r" % (got,),
+          got == (("close", "abc1234"), ("close", "def5678")))
+    got = (plan("commit", {"sha": "", "own": None}),
+           plan("commit", {"sha": None, "own": "def5678"}))
+    check("ucl7 no commit named and none made this attempt is the no-change "
+          "decision; the twin whose attempt made one closes on it: %r" % (got,),
+          got == (("no-change", None), ("close", "def5678")))
+    got = (plan("answer", {"items": "intent diverges"}),
+           plan("answer", {"items": ""}))
+    check("ucl8 a reviewer answer only a human settles is the review-answer "
+          "decision carrying it; the twin with none goes on: %r" % (got,),
+          got == (("review-answer", "intent diverges"), ("go-on", None)))
+    got = (plan("no-such-point", {}), plan("answer", {"items": ""}))
+    check("ucl9 a point the planner does not know raises; a known point "
+          "answers: %r" % (got,),
+          got[0][0] == "raised" and "no-such-point" in str(got[0][1])
+          and got[1] == ("go-on", None))
+
+
 STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("dr-block", "_refusal_cases"),
           ("ucs-block", "_unchecked_ids_cases"),
@@ -13420,6 +13892,10 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("tcc-block", "_committed_close_cases"),
           ("oc-block", "_own_commit_cases"),
           ("ip-block", "_in_process_runner_cases"),
+          ("up-block", "_advance_plan_cases"),
+          ("ut-block", "_triage_plan_cases"),
+          ("uq-block", "_pending_turn_cases"),
+          ("uc-block", "_close_plan_cases"),
           ("sb-block", "_stage_cases"))
 
 
