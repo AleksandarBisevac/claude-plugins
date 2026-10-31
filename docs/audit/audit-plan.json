@@ -982,6 +982,12 @@
       "title": "The full sweep finishes under four minutes on a quiet machine: decisions are tested directly and real git is kept for the git contract",
       "status": "pending",
       "shard": "phases/P152.json"
+    },
+    {
+      "id": "P153",
+      "title": "The 3.8.0 med defects are fixed: locks, guard false positive, the affected listing, dependants at mint, and the empty task gate",
+      "status": "pending",
+      "shard": "phases/P153.json"
     }
   ],
   "fileIndex": {
@@ -994,7 +1000,8 @@
       "P43.1",
       "P59.12",
       "P123.52-64p",
-      "P125.68-0h5"
+      "P125.68-0h5",
+      "P153.3"
     ],
     ".claude/hooks/require-claim-block.py": [
       "P37.2",
@@ -1449,7 +1456,8 @@
       "P144.7-ttw",
       "P148.15-xpz",
       "P151.2",
-      "P151.7-3z1"
+      "P151.7-3z1",
+      "P153.3"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -1770,7 +1778,10 @@
       "P149.12-hwg",
       "P143.1-6yq",
       "P143.7-z9j",
-      "P143.9-z9j"
+      "P143.9-z9j",
+      "P153.1",
+      "P153.5",
+      "P153.6"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -4065,7 +4076,8 @@
       "P130.8",
       "P131.1",
       "P131.2",
-      "P143.7-z9j"
+      "P143.7-z9j",
+      "P153.1"
     ],
     "plugins/audit/scripts/governance/_policy.py": [
       "P15.4",
@@ -4963,7 +4975,9 @@
       "P149.5-hwg",
       "P149.7-hwg",
       "P143.10-z9j",
-      "P143.11-z9j"
+      "P143.11-z9j",
+      "P153.4",
+      "P153.6"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -5701,7 +5715,8 @@
       "P132.3",
       "P132.4",
       "P138.3-myr",
-      "P148.7"
+      "P148.7",
+      "P153.6"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -9619,7 +9634,8 @@
       "P142.3",
       "P143.2-6yq",
       "P142.10-6yq",
-      "P143.4-6yq"
+      "P143.4-6yq",
+      "P153.5"
     ],
     "docs/audit/phases/P85.json": [
       "P91.1"
@@ -10327,7 +10343,8 @@
       "P149.9-hwg",
       "P143.7-z9j",
       "P143.10-z9j",
-      "P143.14-z9j"
+      "P143.14-z9j",
+      "P153.6"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -10998,7 +11015,8 @@
       "P131.1",
       "P131.2",
       "P143.1-6yq",
-      "P143.2-6yq"
+      "P143.2-6yq",
+      "P153.5"
     ],
     "plugins/audit/tests/test__affected_tests.py": [
       "P125.8",
@@ -11415,7 +11433,8 @@
     "tests/test__affected_tests.py": [
       "P131.1",
       "P143.1-6yq",
-      "P143.2-6yq"
+      "P143.2-6yq",
+      "P153.5"
     ],
     "tests/test__areas.py": [
       "P131.1",
@@ -11554,7 +11573,9 @@
       "P131.1"
     ],
     "tests/test__locks.py": [
-      "P131.1"
+      "P131.1",
+      "P153.1",
+      "P153.2"
     ],
     "tests/test__machine_paths.py": [
       "P131.1"
@@ -11825,7 +11846,8 @@
       "P132.4",
       "P132.5-5mm",
       "P138.3-myr",
-      "P148.7"
+      "P148.7",
+      "P153.6"
     ],
     "tests/test_audit_status.py": [
       "P131.1",
@@ -11866,7 +11888,9 @@
       "P149.4-hwg",
       "P149.5-hwg",
       "P149.7-hwg",
-      "P143.11-z9j"
+      "P143.11-z9j",
+      "P153.4",
+      "P153.6"
     ],
     "tests/test_audit_usage.py": [
       "P131.1"
@@ -11967,7 +11991,8 @@
       "P143.7-z9j",
       "P143.8-z9j",
       "P143.10-z9j",
-      "P143.14-z9j"
+      "P143.14-z9j",
+      "P153.6"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -12247,12 +12272,14 @@
     ],
     "plugins/audit/scripts/status/_impact.py": [
       "P131.18-dau",
-      "P148.6"
+      "P148.6",
+      "P153.6"
     ],
     "tests/test__impact.py": [
       "P131.18-dau",
       "P132.5-5mm",
-      "P148.6"
+      "P148.6",
+      "P153.6"
     ],
     ".claude/audit.config.json": [
       "P132.4"

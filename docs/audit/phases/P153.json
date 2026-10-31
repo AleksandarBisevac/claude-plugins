@@ -1,0 +1,256 @@
+{
+  "id": "P153",
+  "title": "The 3.8.0 med defects are fixed: locks, guard false positive, the affected listing, dependants at mint, and the empty task gate",
+  "status": "pending",
+  "description": "D9: a med defect holds a release. Register entries F754, F800, F809 (open part), F792 (with its P151 recurrences) and F779, each verified open against main on 2026-10-29/31, plus F821's release-tier flake in tests/test__locks.py.",
+  "desiredOutcome": "Each entry's Do is met with a case that goes red on the defect, the register status of each reads FIXED with its commit, and release-tier CI is green on the phase's landing commit.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P153.1",
+      "title": "A phase lock held by the caller's own process under an earlier session id is reported as the caller's, and a dead drive's lock is not read as a live run",
+      "status": "pending",
+      "description": "Register F754. When a Claude Code conversation continues under a new session id in the same process, the phase lock taken under the old id reads as HELD by a live run forever (the holder pid is the long-lived claude process), and only release --session <old> --pid <pid> lets go. Do: when the caller's process ancestry contains the holder pid but the session differs, say so and offer the release by name; and base liveness on the drive command's own pid or a heartbeat rather than the long-lived claude process, so a dead drive releases. A lock held by an unrelated live pid still refuses.",
+      "files": [
+        "plugins/audit/scripts/governance/_locks.py",
+        "tests/test__locks.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__locks.py: a lock held by an ancestor pid under another session id is reported as the caller's own with the release offered by name; a lock held by an unrelated live pid still refuses"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__locks.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P153.2",
+      "title": "wt3's stand-in holder lets go the way a real holder does, so a Windows sharing-denied unlink cannot leave the claim behind",
+      "status": "pending",
+      "description": "Register F821. tests/test__locks.py wt3's timer deletes the claim once through _unlink_quietly (a swallowed os.unlink); on Windows that unlink is refused while the waiter has the claim open in read_lock, so the claim stays and the waiter refuses at the 5 s bound (release-tier run 41161967355 attempt 1, resample pass 3). Have the holder let go through M.release(...), the product path that retries the sharing denial via _output.while_shared, and add a row that injects one denied unlink: the old holder goes red, the fixed one green. Do not widen the margin. Probes: the session scratchpad f821/probe/wt3_forced.py.",
+      "files": [
+        "tests/test__locks.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__locks.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P153.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P153.3",
+      "title": "guard-uncommitted reads a heredoc body or a quoted argument as data, not as a command, so a description that quotes git is not refused",
+      "status": "pending",
+      "description": "Register F800. The guard refused an audit-task.py add whose heredoc description merely quoted git commands: it could not tokenize the command, assumed the widest loss set, and refused; the same description passed on stdin from a file. Bind the evidence to the operation: when the command cannot be tokenized, read only what is outside heredoc bodies and quoted arguments; red-first the allow case and keep the deny case red.",
+      "files": [
+        ".claude/hooks/guard-uncommitted.py",
+        "CONTRIBUTING.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          ".claude/hooks/guard-uncommitted.py: an audit-task add whose heredoc description quotes a stash command and a checkout is allowed; the same commands run outside the heredoc are still refused"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py .claude/hooks/guard-uncommitted.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P153.4",
+      "title": "scope --gate-clear on a tdd or regression task refuses, or falls back to the phase gate, rather than closing the task with no gate",
+      "status": "pending",
+      "description": "Register F779 (verified 2026-10-31 at ad838231): audit-task.py scope <task> --gate-clear on a tdd task exits 0 and writes {gate: [], gateBasis: cleared}; run-test-gate reports empty-gate. A task can close with no gate while the record reads green. Pick the structurally correct answer (refuse on tdd/regression, or fall back to the phase gate with the basis saying so) and check the drive's close path end to end.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_audit_task.py: scope --gate-clear on a tdd task neither writes an empty gate silently nor lets the task close as green"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_task.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P153.5",
+      "title": "A task's related-suite listing keeps the hook and tool gates the affected selection names",
+      "status": "pending",
+      "description": "Register F809, open part (verified 2026-10-31 at ad838231): _related_suite_paths throws away the gates select() names that are not tests/ suites, so \"affected.py --list-related plugins/audit/scripts/manifest/_manifest_vocab.py\" prints only tests/ while \"affected.py --json\" names guard-release.py and arm-release-bypass.py --selftest; a task gate does not run those hooks and the miss measurement (which counts --json gates) cannot see it. Keep scanners out (S3.3) but keep every non-scanner gate select() names.",
+      "files": [
+        "plugins/audit/scripts/governance/_affected_tests.py",
+        "tests/test__affected_tests.py",
+        "tools/affected.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__affected_tests.py: for plugins/audit/scripts/manifest/_manifest_vocab.py the task listing includes .claude/hooks/guard-release.py --selftest and arm-release-bypass.py --selftest, which affected.py --json names"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__affected_tests.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P153.6",
+      "title": "A task that deletes, renames or changes a file other files read cannot be dispatched until each such dependant is declared or waived with a reason, and scope can add files without restating the held list",
+      "status": "pending",
+      "description": "Register F792 (verified open 2026-10-31 at ad838231; recurred twice in P151 and three times in P143 as undeclared edits). The brief already lists \"Who depends on this\" (audit-lookup.dependant_lines) but only asks the executor to answer each dependant, and nothing grades it. Do: from the same dependants data, list at dispatch every tracked file that reads a declared file (by path, by import, or by text anchor, e.g. tools/prove-gates.py rows anchored on ci.yml and gate-parity.py text) that the task does not declare, and refuse dispatch until each is declared or waived with a recorded reason. Also let scope take an incremental +a,b spelling. Keep the refusal precise: a dependant that cannot be affected by the declared change shape must not be demanded (measure the false-positive rate over the last phases P143 and P151 and report it).",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/scripts/status/_impact.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_audit_task.py",
+        "tests/test_audit_lookup.py",
+        "tests/test__impact.py",
+        "tests/test_drive_phase.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_audit_task.py: dispatch of a task whose declared change has an undeclared dependant is refused naming it, and passes once it is declared or waived with a reason; scope --files +a,b adds to the held list"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test_audit_lookup.py tests/test__impact.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}
