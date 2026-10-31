@@ -125,7 +125,7 @@
     {
       "id": "P153.2",
       "title": "wt3's stand-in holder lets go the way a real holder does, so a Windows sharing-denied unlink cannot leave the claim behind",
-      "status": "in_progress",
+      "status": "done",
       "description": "Register F821. tests/test__locks.py wt3's timer deletes the claim once through _unlink_quietly (a swallowed os.unlink); on Windows that unlink is refused while the waiter has the claim open in read_lock, so the claim stays and the waiter refuses at the 5 s bound (release-tier run 41161967355 attempt 1, resample pass 3). Have the holder let go through M.release(...), the product path that retries the sharing denial via _output.while_shared, and add a row that injects one denied unlink: the old holder goes red, the fixed one green. Do not widen the margin. Probes: the session scratchpad f821/probe/wt3_forced.py.",
       "files": [
         "tests/test__locks.py"
@@ -148,19 +148,32 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "1a7037fe94b9",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tests/test__locks.py only. wt3's stand-in holder no longer lets go through _unlink_quietly (a swallowed os.unlink). New _holder_lets_go(proj, said) lets go through M.release(proj, 'index', session='s-HOLD', pid=os.getppid()), the product path that retries a sharing denial via _output.while_shared, and records release's exit in `said` (a Timer's return reaches nobody). New _waited_out(proj, session) runs the timer (unchanged 0.3 s, waiter on the unchanged default bound - margin not widened) plus the waiter's acquire, joins the timer after cancel, and returns (waiter exit, seconds, holder's release exit); wt3 now uses it and prints the holder's exit in its detail. New row wt5 after wt4: clears the name, re-takes it as s-HOLD, patches os.unlink with _unlink_denied_at(real_unlink, path, 1) (one EACCES denial on the claim path only), runs _waited_out, restores os.unlink in finally, and asserts waiter exit 0, holder's release 0 and exactly two unlink attempts on the claim (one = denial swallowed, two = retried). sd2's nested unlink_of was hoisted to module-level _unlink_denied_at and sd2 now uses it (same behaviour, sd2 still PASS with (0, 3, False)). _unlink_quietly's docstring now says it clears a name with nobody reading it and is not a holder stand-in; its remaining callers (sd3, sd4, wt5's start) are fixture clears. Runs: `python3 tests/test__locks.py --selftest` in the worktree -> ALL PASS 148/148; ruff check tests/test__locks.py exit 0; vermin -t=3.8- on the file exit 0; _output_lints.prose_number_claims filtered to this file -> 0 hits. The tests.gate sweep command was not run by me (brief: own-tests, nothing of its own to run); the orchestrator's recorded run is the evidence. Dependants: .github/sweep-costs.json - still correct, it weighs test__locks.py and its blocks for sharding/timeouts and wt-block gains roughly one extra holder round trip (wt5 green ran in about 0.35 s); re-recording is optional, not required. plugins/audit/scripts/governance/_locks.py - unchanged and still correct; the test now exercises its release()/while_shared path instead of bypassing it. tools/verify.sh - unchanged, names the file by path. plugins/audit/scripts/governance/audit-lock.py - unchanged, a basename reference. Class sweep: grep -rn \"_unlink_quietly\\|Timer(\\|threading.Thread(\" tests/ -> the only timer/thread letting go of a lock claim was wt3; other hits (test__panel_write _race, test_audit_usage replace wrapper, test_usage_ledger lk thread, test_panel_server servers) are not lock-claim holders. grep os.unlink/os.remove in the lock suites: test__locks pz2 (line ~541, unlink inside a patched judge on the waiter's own thread, after read_lock closed the file - no concurrent reader) and the sequential fixture clears before _write_lock, test__panel_runstate 97-98 sequential clears - left, no concurrent reader holds the claim open.",
+        "descriptive": "wt3's stand-in holder now lets go through the product's release, so a Windows sharing-denied unlink is retried instead of leaving the claim behind; wt5 injects one denial and goes red on the old holder."
       },
       "startedAt": "2026-10-31T04:52:07Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-31T04:57:58Z",
+      "verifiedBy": [
+        "wt5: wt3's wait-out scenario with the holder's unlink of the claim refused once (EACCES), asserting the waiter gets the lock, the holder's release returns 0, and the claim saw exactly two unlink attempts"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-31T04:57:00Z.853a5e",
         "status": "passed",
         "at": "2026-10-31T04:57:00Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "1a7037fe94b9",
+        "at": "2026-10-31T04:57:58Z",
+        "return": "docs/audit/evidence/returns/P153.2/20261031T045207Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task with tests.expectRedFirst false, so no helper red is owed; and the helper could not show one here, because the fix lives in the test file itself (HEAD's code with this test file copied over it IS the fixed state). The red was watched by hand in a throwaway git-archive export of HEAD under <scratchpad>/p153-2-red/tree with this test file copied in, never in the shared tree: holder mutated back to the swallowed unlink -> FAIL wt5 (exit 3 after 5.023s, holder's release None, unlink attempts on the claim 1), SELFTEST FAILED 147/148, exit 1; second direction, the seam told to deny zero times -> FAIL wt5 (exit 0 after 0.346s, holder's release 0, attempts 1), 147/148, exit 1; restored -> ALL PASS 148/148, exit 0. __pycache__ purged between cycles.",
+        "at": "2026-10-31, by hand in a scratch export; not a helper run"
       }
     },
     {
@@ -320,7 +333,12 @@
       "startedAt": "2026-10-31T04:52:11Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-31T05:17:41Z.11088b",
+        "status": "passed",
+        "at": "2026-10-31T05:17:41Z"
+      }
     },
     {
       "id": "P153.6",

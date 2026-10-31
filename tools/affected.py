@@ -6,12 +6,15 @@ Which checks a change actually needs — and, when it cannot tell, all of them.
     tools/affected.py --base HEAD~3   # ...against another commit
     tools/affected.py <path> <path>   # ...or an explicit list
     tools/affected.py --json          # machine-readable, for verify.sh
-    tools/affected.py --list-related <path> <path>   # one suite path per
-                                       # line, nothing executed -- the shape
+    tools/affected.py --list-related <path> <path>   # one suite, tool or
+                                       # hook path per line, each a file the
+                                       # sweep runs the cases of, nothing
+                                       # executed -- the shape
                                        # meta.phaseGate.derived.listing.related
                                        # records, {paths} filled in
-    tools/affected.py --list-all      # every suite file, one per line,
-                                       # nothing executed -- .listing.all
+    tools/affected.py --list-all      # every suite, tool and hook file
+                                       # the sweep runs the cases of, one per
+                                       # line, nothing executed -- .listing.all
     tools/affected.py --list-scanners # every suite and tool that walks the
                                        # whole tree, one per line
 
@@ -680,31 +683,65 @@ def _suite_path(name):
 
 
 def _all_suite_paths():
-    """Every suite file the runner would collect under `tests`,
-    one per line and never executed -- the FULL listing
-    `meta.phaseGate.derived.listing.all` records. Read off `_output.py_files`
-    (the same recursive walk `sweep-selftests.py` trusts) rather than a
-    second, hand-kept glob, and narrowed to `test*` so a helper module
-    (`_harness.py`, `_suite.py`) is never printed as a suite."""
+    """Every file the runner would collect the cases of, one per line and never
+    executed -- the FULL listing `meta.phaseGate.derived.listing.all` records:
+    each suite under `tests`, and each tool and repository hook whose own cases
+    the sweep runs (`_is_runner`). Read off `_output.py_files` (the same
+    recursive walk `sweep-selftests.py` trusts) rather than a second, hand-kept
+    glob, and narrowed to `test*` under `tests` so a helper beside the suites
+    (`_harness.py`) is never printed as one.
+
+    THE RELATED LISTING IS A SUBSET OF THIS ONE: it names the tools and hooks a
+    change reaches, and the phase gate narrows only to a related listing that is
+    strictly smaller than the full one, so a full listing of `tests` alone would
+    stop every phase that touched a hook or a tool from narrowing at all."""
     names = sorted(relname for relname, _path in
                    _output.py_files(os.path.join(REPO, TESTS))
                    if os.path.basename(relname).startswith("test"))
-    return [_suite_path(name) for name in names]
+    runners = []
+    for top in ("tools", REPO_HOOKS.rstrip("/")):
+        runners.extend(rel for rel in (
+            "%s/%s" % (top, relname.replace(os.sep, "/")) for relname, _path in
+            _output.py_files(os.path.join(REPO, *top.split("/"))))
+            if _is_runner(rel))
+    return sorted([_suite_path(name) for name in names] + runners)
+
+
+def _selftest_path(gate):
+    """The file a `TOOL_SELFTEST` gate runs the cases of, or None for any other
+    gate. Read by splitting the one template rather than by a second pattern, so
+    the two cannot come to disagree about the shape."""
+    head, tail = TOOL_SELFTEST.split("%s")
+    if gate.startswith(head) and gate.endswith(tail) \
+            and len(gate) > len(head) + len(tail):
+        return gate[len(head):len(gate) - len(tail)]
+    return None
 
 
 def _related_suite_paths(paths, graph=None):
-    """The suite paths `--list-related` prints for `paths` -- the SAME
-    selection `select()` already derives (the suites that import or run each
-    path), widened to the full listing the moment `select()` cannot narrow (an
-    unrecognised path, or any other `full` trigger). One path per line, never
-    executed -- the contract `meta.phaseGate.derived.listing.related` holds.
+    """The paths `--list-related` prints for `paths` -- the SAME selection
+    `select()` already derives: the suites that import or run each path, AND
+    every tool or repository hook whose own cases do, which `select()` names as
+    a `TOOL_SELFTEST` gate. Widened to the full listing the moment `select()`
+    cannot narrow (an unrecognised path, or any other `full` trigger). One path
+    per line, never executed -- the contract
+    `meta.phaseGate.derived.listing.related` holds, filled into the sweep's
+    `{paths}`, which runs a hook or a tool by path the same as a suite.
+
+    A gate of any other shape (the parity check, vitest, a browser gate, plugin
+    validation) is a command rather than a file whose cases the sweep runs, so a
+    path listing cannot carry it; a task's gate does not get those from here.
 
     WITHOUT THE TREE SCANNERS: this is the listing a task's gate reads, and the
     gates that run every scanner are the phase gate and the per-run sweep."""
-    suites, _gates, _reasons, full = select(paths, graph, scanners=False)
+    suites, gates, _reasons, full = select(paths, graph, scanners=False)
     if full:
         return _all_suite_paths()
-    return sorted(_suite_path(s) for s in suites)
+    # A deleted tool still selects its own gate in `--json`, but it has no cases
+    # left to run and the sweep refuses a path it does not hold, by name.
+    runners = set(p for p in (_selftest_path(g) for g in gates)
+                  if p and os.path.isfile(os.path.join(REPO, p)))
+    return sorted(set(_suite_path(s) for s in suites) | runners)
 
 
 def _once(gates):
@@ -987,7 +1024,7 @@ def main(argv):
     # THE LISTING MODES FIRST, and returned from before anything below
     # touches git or the `--json`/`--base` flags: two are the contract
     # `derive-phase-gate.py`'s `meta.phaseGate.derived.listing` reads --
-    # one suite path per line, nothing executed -- the third prints the tree
+    # one path per line, nothing executed -- the third prints the tree
     # scanners the same way, and none asks what changed, so none needs
     # `changed_files()` or a git repo at all.
     if "--list-all" in argv:
@@ -1500,15 +1537,34 @@ def _cases(check):
     scanner_tools = [rel for rel in graph["scanners"] if not _is_suite(rel)]
     reached_suites = set(_suite_path(s) for s in _reached_selection(graph, narrow)[0])
     pushed = select([narrow], graph)
-    pushed_paths = set(_suite_path(s) for s in pushed[0])
-    check("a16 `--list-related` with a scripts/ module prints the suites the "
-          "narrowed run selects for it, less the tree scanners nothing reaches it "
-          "through, one path per line, and runs no suite -- the EXIT CODE is 0 and "
-          "nothing but paths came out: %r" % (related_lines,),
+    pushed_paths = set(_suite_path(s) for s in pushed[0]) | (
+        set(_selftest_path(g) for g in pushed[1]) - set((None,)))
+    blanket_all = set(graph["scanners"]) - reached_by(graph, narrow)
+    check("a16 `--list-related` with a scripts/ module prints the suites and the "
+          "tool and hook selftests the narrowed run selects for it, less the "
+          "tree scanners nothing reaches it through, one path per line, and runs "
+          "no suite -- the EXIT CODE is 0 and nothing but paths came out: %r"
+          % (related_lines,),
           related_exit == 0
-          and set(related_lines) == (pushed_paths
-                                     - (set(scanner_suites) - reached_suites))
+          and set(related_lines) == pushed_paths - blanket_all
           and _suite_path("test_record_outside_run.py") in related_lines)
+    # Assembled, because `_refs` reads a module filename written under `tools/`
+    # as a reference to a file that must exist.
+    fixture = "tools/x." + "py"
+    probe = (TOOL_SELFTEST % (fixture,), PARITY, VITEST, TOOL_SELFTEST % ("",))
+    check("a16a a `TOOL_SELFTEST` gate reads back as the file it runs, and a "
+          "command gate - the parity check, vitest, an empty path - as none: %r"
+          % ([_selftest_path(g) for g in probe],),
+          [_selftest_path(g) for g in probe] == [fixture, None, None, None])
+    gone = "tools/no-such-tool-here." + "py"
+    gone_lines, gone_exit = _run_lines(["--list-related", gone])
+    check("a16e a deleted tool selects its own gate in the narrowed run, but the "
+          "listing a task's gate hands the sweep leaves it out - it has no cases "
+          "left and the sweep refuses a path it does not hold: gate %r, listed %r"
+          % (TOOL_SELFTEST % (gone,) in select([gone], graph)[1],
+             [p for p in gone_lines if p == gone]),
+          gone_exit == 0 and TOOL_SELFTEST % (gone,) in select([gone], graph)[1]
+          and gone not in gone_lines)
 
     # --- the tree scanners: once per phase and on push, never in a task's gate ---
     # The listing above is what a task's gate reads; the narrowed run below is what
@@ -1560,6 +1616,19 @@ def _cases(check):
           and set(graph["scanners"]) <= swept
           and tiers is not None and SWEEP in per_run
           and scanner_exit == 0 and scanner_lines == graph["scanners"])
+    full_lines, full_exit = _run_lines(["--list-all"])
+    runners_swept = set(p for p in swept if _is_runner(p))
+    check("a16d THE FULL LISTING IS EVERY FILE THE SWEEP RUNS THE CASES OF - "
+          "suites, tools and repository hooks - so a related listing naming a "
+          "hook or a tool stays a subset of it, which is the only shape the "
+          "phase gate narrows to. Swept runners missing %r; listed but not "
+          "swept %r; hooks listed %d; exit %r"
+          % (sorted(runners_swept - set(full_lines)),
+             sorted(set(full_lines) - swept),
+             len([p for p in full_lines if p.startswith(REPO_HOOKS)]), full_exit),
+          full_exit == 0 and set(full_lines) == runners_swept
+          and any(p.startswith(REPO_HOOKS) for p in full_lines)
+          and any(p.startswith("tools/") for p in full_lines))
 
     unknown_lines, unknown_exit = _run_lines(
         ["--list-related", "some/unknown/place.xyz"])

@@ -427,6 +427,68 @@ def _dogfood_cases(check):
           and "tests/test_record_outside_run.py" in picked
           and not set(picked) & set(blanket))
 
+    # A module the release hooks and the tools import: `--json` names gates
+    # that are not `tests/` suites, and the per-task listing must carry every
+    # one of them that is not a blanket scanner - the hook selftests are what
+    # a task gate would otherwise never run.
+    import json
+    vocab = "plugins/audit/scripts/manifest/_manifest_vocab.py"
+    hooks = [".claude/hooks/guard-release.py",
+             ".claude/hooks/arm-release-bypass.py"]
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        vocab_exit = selector.main(["--list-related", vocab])
+    vocab_listed = [ln.strip() for ln in out.getvalue().splitlines()
+                    if ln.strip()]
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        json_exit = selector.main(["--json", vocab])
+    gates = json.loads(out.getvalue()).get("gates") or []
+    # Only the gates that run a file's own cases: a command gate (the parity
+    # check, vitest, a browser gate) is no path a listing can carry.
+    gate_paths = sorted(set(g.split()[1] for g in gates
+                            if len(g.split()) == 3 and g.split()[0] == "python3"
+                            and g.split()[2] == "--selftest"))
+    vocab_edge = set(selector.reached_by(graph, vocab))
+    vocab_blanket = sorted(set(scanners) - vocab_edge)
+    owed = [p for p in gate_paths if p not in vocab_blanket]
+    vocab_res = M.select([vocab], meta, dict(facts, related={
+        "command": template.replace("{paths}", vocab), "exit": vocab_exit,
+        "paths": vocab_listed}))
+    vocab_picked = [s["path"] for s in vocab_res["suites"]]
+    steps, why = M.entries_for(vocab_res["suites"], {"id": "PX", "tasks": []},
+                               meta, _output.REPO_ROOT)
+    commands = " ".join(cmd for _, cmd in steps)
+    check("af29 A TASK'S LISTING KEEPS THE HOOK AND TOOL GATES --json NAMES: "
+          "for %s, --json names %r, the listing drops %r of the non-scanner "
+          "gates %d, select() drops %r, the step commands lack %r; blanket "
+          "scanners listed %r; exits %r/%r, widen %r, why %r"
+          % (vocab, [g for g in gates if any(h in g for h in hooks)],
+             [p for p in owed if p not in vocab_listed], len(owed),
+             [p for p in owed if p not in vocab_picked],
+             [h for h in hooks if h not in commands],
+             sorted(set(vocab_listed) & set(vocab_blanket)), vocab_exit,
+             json_exit, vocab_res["widen"], why),
+          vocab_exit == 0 and json_exit == 0 and why is None
+          and all(("python3 %s --selftest" % h) in gates for h in hooks)
+          and all(h in owed for h in hooks)
+          and all(p in vocab_listed for p in owed)
+          and all(p in vocab_picked for p in owed)
+          and all(h in commands for h in hooks)
+          and not set(vocab_listed) & set(vocab_blanket)
+          and vocab_res["widen"] is None)
+    # The other direction, on af27's leaf, where scanners reach the module by
+    # no edge: a listing that printed every runner path would pass af29, and
+    # af27 counts only the scanner SUITES. This counts the scanner TOOLS too.
+    leaf_blanket = set(scanners) - set(selector.reached_by(graph, leaf))
+    blanket_tools = sorted(p for p in leaf_blanket if not p.startswith("tests/"))
+    check("af29b ...AND NO BLANKET SCANNER, SUITE OR TOOL, JOINS IT: the listing "
+          "for %s names none of the %d scanners that reach it by no edge "
+          "(tools among them %r); listed %r"
+          % (leaf, len(leaf_blanket), blanket_tools,
+             sorted(set(listed) & leaf_blanket)),
+          blanket_tools and not set(listed) & leaf_blanket)
+
     # The phase gate's half: every phase still to sign off carries an entry whose
     # command is the plan's own path-scoped spelling with the paths taken out - the
     # unscoped sweep - and that sweep runs every scanner, suite or tool.
