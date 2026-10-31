@@ -1,0 +1,17 @@
+{
+ "findings": [],
+ "preExisting": [
+  {"id": 1, "severity": "low", "file": "tools/verify.sh:101-104", "issue": "The comment above PER_RUN_SLICES says RELEASE_SLICES is what a release adds and then names only `release` and `resample`. RELEASE_SLICES also holds selftests-cp1252-whole (line 116), which the next paragraph does describe. The sentence is the same stale two-slice description this task fixed in CONTRIBUTING.md. It is outside this task's two files.", "resolution": "Reword the sentence to name all three slices or point at `sh tools/verify.sh --list`, as CONTRIBUTING.md now does."}
+ ],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clause 1: 'Delete the count from CONTRIBUTING.md:197 and point at `sh tools/verify.sh --list` (or name all three release slices without the number)'. The diff deletes 'adds two', points at `sh tools/verify.sh --list` (slices marked (release)) and names release, selftests-cp1252-whole and resample. `verify.sh --list` does print '(release)' on exactly those three. Task clause 2: reword the ci.yml:28 description so per-run no longer claims every gate and release names the whole code-page leg. The new text is 'per-run (every per-run gate, the code-page leg over its selection) or release (adds the Windows re-sample and the whole code-page leg)', which does both. The claim describes the diff. The unrequested comment rewrite above the `longest` line is disclosed in the claim, and the old text ('the first measured run replaces the line', 'estimate') would have been false next to the measured figure. Every dependant named in the brief reads the workflow's keys, jobs and matrix, or a `longest` line shape, and none of those changed. A grep for 'adds two', 'every gate plus' and 'release tier adds' leaves only the new CONTRIBUTING.md line. `_deps.doc_prose_numbers()` returns [].",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "tests.add is none, and the executor filed redFirst not-attempted ('gate-only task, tests.expectRedFirst false; documentation and comment edits only'). The task owes no red-first.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "The diff touches only CONTRIBUTING.md, one description string and comments in ci.yml, so no behaviour is deleted or added for a test to cover. gate-parity (`encoding_leg_drift` and the job-bound check) reads the `longest` line, and I ran it. It is the only reader whose input changed, and it is not one of tests.gate's entries. tests.gate selects the whole sweep, and a whole-project run answers not-asked."
+ },
+ "verdict": "clean",
+ "tasks": []
+}

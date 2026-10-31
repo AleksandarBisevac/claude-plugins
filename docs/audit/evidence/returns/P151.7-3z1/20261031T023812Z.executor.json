@@ -1,0 +1,21 @@
+{
+  "gates": {
+    "gate-parity": "pass",
+    "gate-parity --selftest": "pass",
+    "tests/test__deps.py --selftest": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "gate-only task, tests.expectRedFirst false; documentation and comment edits only",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "Edits in the task worktree. CONTRIBUTING.md tiers paragraph: removed the 'adds two' count, now points at `sh tools/verify.sh --list` (slices marked (release)) and names all three release slices (release, selftests-cp1252-whole, resample) with what each does. ci.yml: tier input description now reads 'per-run (every per-run gate, the code-page leg over its selection) or release (adds the Windows re-sample and the whole code-page leg)'. ci.yml selftests: replaced '# longest selftests: 13m35s (estimate ... four parts ...)' with '# longest selftests: 7m48s (run 41158896864, windows plain 4, 02:12:07 to 02:19:55)'; derived with the gh run view command from the brief (selftests (windows, plain 4) started 02:12:07Z, completed 02:19:55Z; it is the longest selftests cell in that output, next is linux stress 2 at 7m16s). I also rewrote the comment paragraph above it, which said the longest line was still a four-part estimate and awaited a first measured run: it would have been false next to the new figure. The 'bound selftests: held by the sweep deadline' line is untouched. Commands: python3 tools/gate-parity.py exit 0; python3 tools/gate-parity.py --selftest exit 0 (119/119 cases passed); tests/test__deps.py --selftest ALL PASS 254/254; _deps.doc_prose_numbers() returned []. Dependants (the CONTRIBUTING.md and ci.yml readers listed in the brief, e.g. tools/affected.py, tests/_harness.py, tests/test_drive_phase.py): still correct, because only prose, one description string and a comment changed; no key, job, matrix row or parsed line shape changed (the longest line keeps the '<m>m<ss>s' shape gate-parity reads, and the gate-parity run confirms it). No F/P/BUG ids written. The broad sweep, lint, vitest and shots gates were not run (own-tests reading, nothing of its own to run).",
+    "descriptive": "Two stale descriptions now say only what the code does, the release-tier count is replaced by a pointer to the list command, and the selftests job carries its measured five-part figure."
+  },
+  "testsAdded": [],
+  "claims": "claims:\n1 CONTRIBUTING.md tiers paragraph names the three slices that `sh tools/verify.sh --list` prints under (release): release, resample, selftests-cp1252-whole; ci.yml tier description rewritten to the per-run selection / release whole-leg split the list shows\n2 n/a - no check touched; gate-parity run exit 0 over the edited ci.yml shows the longest-line shape is still read\n3 grep of bare 'two' in the tiers paragraph: the one count fixed; the longest-line neighbouring comment that called the figure a four-part estimate fixed too; other longest lines left because they describe other jobs\n4 n/a - no rule to an agent\n5 figure measured once: the 7m48s is one run (41158896864), stated as that run in the line itself\n6 n/a - no guard\n7 count deleted from CONTRIBUTING.md and replaced by the list command; 7m48s carries its run id and start/end times, re-derivable with gh run view 41158896864 --json jobs --jq '.jobs[]|[.name,.startedAt,.completedAt]|@tsv'",
+  "stamp": "audit-stamp: {\"content\":\"sha256:b7c2efb61ffaf1206323926d493d45ce55a10639e8afdcff1998cf3c01a065a0\",\"dirtyDigest\":\"sha256:2881b57b34356ea99142c69649b6cf0f7169f01ed7e21906db08cd7d5aa97542\",\"dirtyPaths\":{\".github/workflows/ci.yml\":\"74def2c48e5d0559\",\"CONTRIBUTING.md\":\"7a9efaaf6ff4ed2c\"},\"head\":\"98ae866f\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".github/workflows/ci.yml\",\"CONTRIBUTING.md\"],\"scopeDigest\":\"sha256:c26fa734183ec46cd4afb8214eafc07848d8f3ee8e6627b29963259570a3b1a5\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

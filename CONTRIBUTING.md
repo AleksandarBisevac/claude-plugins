@@ -195,8 +195,10 @@ skips the legacy-code-page and spaced sweeps. It prints what it skipped and refu
 the preconditions hold, and it is never what CI runs.
 
 **The tiers.** The per-run slices are what every CI run and every plain `verify.sh` run.
-The release tier adds two: `release`, the preflight a version bump owes (`--release`
-here), and `resample`, which CI runs on a Windows runner when it is dispatched with
+The release tier adds the slices `sh tools/verify.sh --list` marks `(release)`:
+`release`, the preflight a version bump owes (`--release` here); `selftests-cp1252-whole`,
+the whole code-page sweep where a per-run run sweeps only its selection; and `resample`,
+which CI runs on a Windows runner when it is dispatched with
 `-f tier=release` (`tools/release.py` does that) and which draws the suites with a Windows
 intermittent record again and again, at the counts verify.sh's `RESAMPLE` table gives
 them. A red draw on a green SHA is a finding to file with `/audit:bug`; nothing files it

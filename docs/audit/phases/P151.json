@@ -49,8 +49,10 @@
         "severity": "low",
         "file": ".github/workflows/ci.yml:194-215,260-271; tools/gate-parity.py:2549-2554",
         "issue": "The phase's outcome ('no job held by the concurrent-job cap') rests on the per-run job count staying at or under 20. The diff gets it there, as I re-derived: 2 os x 3 legs x 5 shards = 30 cells; minus 5 (windows stress), 5 (ubuntu cp1252) and 6 (ubuntu shards 3-5) leaves 14; plus e2e, lint and the two browser jobs makes 18 per-run, and 19 with resample on the release tier. But that count is still prose only. The new WINDOWS_SHARDS comment deliberately leaves the linux part count unpinned. Raising linux to 3 parts (parts: 3, one exclude removed) passes shard_matrix_drift, sv13 and every gate-parity case while asking for 20 per-run and 21 release-tier jobs, so one would be held. The ci.yml comment says so ('Nothing checks the job count against the cap').",
-        "resolution": "Add a gate-parity check counting the jobs a per-run and a release-tier run start concurrently, with jobs gated by `needs: verified` counted together and `verified` itself excluded. Count from job_slices' expanded cells, against a named JOB_CAP = 20 constant, with a red-first case. Once that check exists, the linux part count needs no pin.",
-        "fixTask": "P151.5-3z1"
+        "resolution": "fixed in P151.5-3z1 (98ae866f9baa): Add a gate-parity check counting the jobs a per-run and a release-tier run start concurrently, with jobs gated by `needs: verified` counted together and `verified` itself excluded. Count from job_slices' expanded cells, against a named JOB_CAP = 20 constant, with a red-first case. Once that check exists, the linux part count needs no pin.",
+        "fixTask": "P151.5-3z1",
+        "commit": "98ae866f9baa",
+        "status": "fixed"
       },
       {
         "id": "P151-R4",
@@ -86,7 +88,7 @@
         "resolution": "Drop the release > per-run conjunct from jc0. If the tier split on the live workflow needs a pin, keep it in jc3, which already requires the live resample anchor to occur once."
       }
     ],
-    "outcome": "[findings: 7 - 1 high, 3 med, 3 low; 3 with a recorded fix commit]"
+    "outcome": "[findings: 7 - 1 high, 3 med, 3 low; 4 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -397,7 +399,7 @@
     {
       "id": "P151.5-3z1",
       "title": "fix P151-R3: The phase's outcome ('no job held by the concurrent-job cap') re...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The phase's outcome ('no job held by the concurrent-job cap') rests on the per-run job count staying at or under 20. The diff gets it there, as I re-derived: 2 os x 3 legs x 5 shards = 30 cells; minus 5 (windows stress), 5 (ubuntu cp1252) and 6 (ubuntu shards 3-5) leaves 14; plus e2e, lint and the two browser jobs makes 18 per-run, and 19 with resample on the release tier. But that count is still prose only. The new WINDOWS_SHARDS comment deliberately leaves the linux part count unpinned. Raising linux to 3 parts (parts: 3, one exclude removed) passes shard_matrix_drift, sv13 and every gate-parity case while asking for 20 per-run and 21 release-tier jobs, so one would be held. The ci.yml comment says so ('Nothing checks the job count against the cap').\n\nResolution asked: Add a gate-parity check counting the jobs a per-run and a release-tier run start concurrently, with jobs gated by `needs: verified` counted together and `verified` itself excluded. Count from job_slices' expanded cells, against a named JOB_CAP = 20 constant, with a red-first case. Once that check exists, the linux part count needs no pin.",
       "files": [
         ".github/workflows/ci.yml",
@@ -428,14 +430,22 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "98ae866f9baa",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/gate-parity.py: new section 'how many jobs one run asks GitHub for at once' - JOB_CAP = 20 with its basis in a comment (GitHub's documented Free-plan figure as the finding states it, plus the measurement ci.yml's lint-job comment records: release-tier runs of twenty-two jobs, exactly two started late; the cap is the account's, so the count is one run's least ask, not a promise). concurrent_jobs(text) counts per tier (per-run, release) each job's matrix cells via _matrix_cells (after exclude/include), on the tiers _if_tier reaches (an unproved condition is counted on both); a job tied by `needs` (transitively, either direction) to every other job of its tier runs alone and is listed in `alone`, not counted (this is `verified` on both tiers); every other job is counted as concurrent - an over-count when a deeper needs-chain keeps two apart, never an under-count, said in the docstring. Unreadable matrix, block-form `needs`, `needs` naming no job, and no jobs block are each findings. job_cap_drift(text, cap=JOB_CAP) reports '<tier> tier' over the cap with count, per-job breakdown, cap, and the excess. job_cap_verdict(repo) wires it into parity() as key 'job_cap' (unreadable ci.yml is a finding); render() prints 'CI job cap (<tier>)' and the clean sentence names the rule; module docstring bullet added; WINDOWS_SHARDS comment says job_cap_drift holds the linux count. Cases: jc0 live claim (real ci.yml: per-run 16 = selftests 12 + e2e + lint + browser-panel + browser-report, release 17 with resample, alone == ['verified'] both tiers, findings []); jc1 one over the cap (21) names both tiers with 21 and 20 in the why; jc2 ALLOW exactly at cap (20) behind a needs-gated verified is clean, alone == ['verified']; jc3 a release-only job past the cap names the release tier alone, in a fixture and in the live ci.yml with resample given a matrix of the cap's size; jc4 a job needing nothing beside the gate makes the gate counted (alone == []); jc5 block-form needs / unknown needs / unresolvable matrix / no jobs each a single named finding. sv20 and sv9 extended with 'job_cap'. gate-parity --selftest 119/119 (was 65 cases' worth of body before + new). tools/prove-gates.py (scope widened by the orchestrator): one red row job_cap_drift on .github/workflows/ci.yml, kind 'after', anchor '    name: resample (windows)\\n', payload a strategy/matrix 'draw: [1..21]' -> expected red jc0; two allow rows on tools/gate-parity.py: '        if row[\"count\"] <= cap:' -> '< cap' (expected red jc2), and '        alone = [job for job in on\\n' -> '... on if False\\n' (gate job counted; expected red jc2). Each anchor occurs exactly once (grep -c: 1, 1, 1). Mutation probe output, `python3 tools/prove-gates.py --only job_cap` exit 0: 'job_cap_drift RED jc0, jc3' / '1 of 1 gates proven red'; allow 'job_cap_drift RED jc2, jc3' and 'job_cap_drift RED jc0, jc1, jc2, jc3' / '2 of 2 guards proven to stay quiet on known-good input'. prove-gates --list shows the three rows 'anchored'; prove-gates --selftest ALL PASS 65/65 (baseline before the change: 65/65). .github/workflows/ci.yml: the lint-job comment's 'Nothing checks the job count against the cap' replaced by what now checks it (job_cap_drift, JOB_CAP, jc0 prints the counts, one run counted). Measured over the live ci.yml with the linux `parts` row raised and its excludes removed: linux 3 parts -> per-run 18 / release 19, no finding (the finding's 20/21 was before P151.3 cut the windows code-page leg to 3 parts, leaving 12 cells); linux 4 -> 20/21, release tier reported; linux 5 -> 22/23, both tiers reported; shard_matrix_drift [] in all three, so only job_cap_drift sees it. Dependants: ci.yml's 37 path-dependants (audit-task.py, tests/_harness.py, test__impact, test__manifest_phases, test__refs, test_audit_task, test_drive_phase, tools/affected.py) reference the path or fixtures of their own, not the comment text changed - still correct; test__refs, test__impact, test__manifest_phases, affected.py selftests pass. gate-parity.py's dependants: no existing function, signature or name changed (floating_runners, image_in_job_names, job_bound_evidence, launcher_contract untouched); parity() gained a key, render() reads it - its only callers are main() and its own cases; sweep-costs.json, _areas.py, bench-hooks.py, _output_lints.py, measure-affected-miss.py, test_audit_task.py unaffected (bench-hooks, output_lints suites pass; test_audit_task/test_drive_phase only name the path in fixtures - not run, too slow, nothing they read changed).",
+        "descriptive": "gate-parity now counts the jobs each CI tier's run starts at once against a named JOB_CAP of 20 and fails the build on a tier over it, proven both directions by prove-gates rows."
       },
       "startedAt": "2026-10-31T02:11:50Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-31T02:38:07Z",
+      "verifiedBy": [
+        "jc0 live claim: real ci.yml per-run 16 / release 17 jobs at once, verified alone, under the cap",
+        "jc1 one job over the cap reported on both tiers with count and cap",
+        "jc2 allow: exactly the cap behind a needs-gated gate job is clean",
+        "jc3 release-only job past the cap reports the release tier alone (fixture and live resample matrix)",
+        "jc4 a job needing nothing beside the gate makes the gate counted",
+        "jc5 block-form needs, unknown needs, unresolvable matrix, no jobs are each a named finding",
+        "sv9/sv20 extended: a job_cap finding alone exits 1 and the verdict is asked of the tree parity() is handed"
+      ],
       "notes": [
         {
           "at": "2026-10-31T00:39:43Z",
@@ -462,12 +472,23 @@
         "runId": "2026-10-31T02:35:14Z.6048f8",
         "status": "passed",
         "at": "2026-10-31T02:35:14Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "98ae866f9baa",
+        "at": "2026-10-31T02:38:07Z",
+        "return": "docs/audit/evidence/returns/P151.5-3z1/20261031T021150Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "tests.expectRedFirst is false on this tdd task: it names no case to prove a red by, so no red-first proof is owed",
+        "at": "2026-10-31T02:23:39Z"
       }
     },
     {
       "id": "P151.6-3z1",
       "title": "fix P151-R4: The diff adds a gate whose name ends in `_drift`, which prove-ga...",
-      "status": "pending",
+      "status": "done",
       "description": "The diff adds a gate whose name ends in `_drift`, which prove-gates' name arm derives as a load-bearing lint (_GATE_SHAPES includes `_drift`), and adds no mutation row and no allow row for it (`grep encoding_leg_drift tools/prove-gates.py` finds nothing). prove-gates' c1 (every derived lint has a row) and a4 (every lint has an ALLOW row) therefore go red; the executor's own return records `python3 tools/prove-gates.py --selftest` as fail, 62/65. tools/prove-gates.py is in the sweep, so every per-run selftests cell that is dealt it goes red - the tests.gate did not include it, so the recorded green gate run does not show this. It is a consequence of the diff crossing into a file outside the task's scope, and it is new beyond the already-filed stale sv7 anchor (`        shard: [1, 2, 3, 4]`, count 0).\n\nResolution asked: Add the two rows the executor proposed (both anchors counted once on the task tree by this review): mutation (\"encoding_leg_drift\", \".github/workflows/ci.yml\", \"replace\", \"|| 'selftests-cp1252' }}\", \"|| 'selftests-cp1252-whole' }}\", \"tools/gate-parity.py\", \"el0\") and allow (\"encoding_leg_drift\", \"tools/gate-parity.py\", \"replace\", \"    if not release_whole:\\n\", \"    if True:\\n\", \"tools/gate-parity.py\", \"el3\"), in this phase, before sign-off; then show prove-gates --selftest green apart from the filed c2/sv7 anchor.",
       "files": [
         "tools/gate-parity.py",
@@ -495,15 +516,19 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": null,
+        "noChange": {
+          "reason": "P151-R4 (the missing prove-gates rows for encoding_leg_drift) was fixed in P151.3-3z1's retry, commit 8b479b90, since both lived in tools/prove-gates.py; prove-gates --only encoding_leg_drift exit 0, gate red and both allow rows red under over-fire.",
+          "examinedAt": "98ae866f9baab76312198b042f260179a151c9eb"
+        }
       },
-      "startedAt": null,
-      "completedAt": null,
+      "startedAt": "2026-10-31T02:38:09Z",
+      "completedAt": "2026-10-31T02:38:22Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -525,12 +550,13 @@
       ],
       "fixes": [
         "P151-R4"
-      ]
+      ],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P151.7-3z1",
       "title": "fix P151-R5: The diff adds a third release-tier slice (verify.sh RELEASE_SLIC...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The diff adds a third release-tier slice (verify.sh RELEASE_SLICES now `release resample selftests-cp1252-whole`), which makes two descriptions false. CONTRIBUTING.md:197 says 'The release tier adds two: `release` ... and `resample`' - a count in prose, now wrong (the class CLAUDE.md calls this repo's most frequent defect). The dispatch input's description at ci.yml:28 says 'per-run (every gate) or release (every gate plus the Windows re-sample)', but per run the code-page leg now sweeps only a selection, and the release tier also adds the whole code-page leg. Both files are in the diff, but these lines were left unchanged.\n\nResolution asked: Delete the count from CONTRIBUTING.md:197 and point at `sh tools/verify.sh --list` (or name all three release slices without the number). Reword the ci.yml:28 description so per-run no longer claims every gate and release names the whole code-page leg, e.g. 'per-run (the code-page leg over its selection) or release (adds the Windows re-sample and the whole code-page leg)'.",
       "files": [
         "CONTRIBUTING.md",
@@ -558,14 +584,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-31T02:38:12Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -588,7 +614,13 @@
       ],
       "fixes": [
         "P151-R5"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-31T02:52:02Z.cffa7b",
+        "status": "passed",
+        "at": "2026-10-31T02:52:02Z"
+      }
     },
     {
       "id": "P151.8-3z1",

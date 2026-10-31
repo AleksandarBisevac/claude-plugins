@@ -25,7 +25,7 @@ on:
   workflow_dispatch:
     inputs:
       tier:
-        description: "per-run (every gate) or release (every gate plus the Windows re-sample)"
+        description: "per-run (every per-run gate, the code-page leg over its selection) or release (adds the Windows re-sample and the whole code-page leg)"
         type: choice
         default: per-run
         options:
@@ -64,18 +64,14 @@ concurrency:
 #   gh run view <id> --json jobs --jq '.jobs[] | [.name, .conclusion, .startedAt, .completedAt]'
 # and rewrite its line when a job grows.
 #
-# The selftests job is a NEW SHAPE too, and its figure an ESTIMATE until its first
-# measured run replaces it. Its history: run 38379717433 (ci/p127 at 544576f) took
-# 9m18s at most in a cell, run 38929591548 14m43s, and run 40715565769 (f06f113f)
-# 23m43s, in the cell whose part held tests/test_drive_phase.py alone, because a part
-# then held whole files. The parts now deal a staged suite's blocks
-# (tools/sweep-selftests.py `shard_units`). The `longest` line below is still the
-# estimate made when the windows legs ran four parts: the heaviest part's
-# slot-seconds on the committed .github/sweep-costs.json over four slots, at the
-# lowest share of the slots a windows cell of run 40715565769 kept busy, plus the
-# longest time one of them spent before and after its sweep step. The windows plain
-# leg now runs five parts and the code-page leg three (the matrix's `parts` rows),
-# and the first measured run of that shape replaces the line. The bound does not
+# The selftests job's figure is measured, on the shape it has now. Its history: run
+# 38379717433 (ci/p127 at 544576f) took 9m18s at most in a cell, run 38929591548
+# 14m43s, and run 40715565769 (f06f113f) 23m43s, in the cell whose part held
+# tests/test_drive_phase.py alone, because a part then held whole files. The parts
+# now deal a staged suite's blocks (tools/sweep-selftests.py `shard_units`). The
+# windows plain leg runs five parts and the code-page leg three (the matrix's
+# `parts` rows); the `longest` line below is the longest cell of the per-run run
+# 41158896864 (head ef0ec287), `selftests (windows, plain 4)`. The bound does not
 # follow the parts down: the sweep's deadline must fit inside it
 # (tools/sweep-selftests.py `SWEEP_DEADLINE`, case tt5), and the deadline in turn
 # sits above the heaviest block's calibrated timeout, which no part count changes.
@@ -99,7 +95,7 @@ concurrency:
 # The resample figure is measured: its first finished run, run 40715565769 (f06f113f,
 # success), took 22m00s, past half the bound of 40 its estimate had set, so the bound
 # moved to twice the measurement.
-#   longest selftests: 13m35s (estimate, the heaviest of four parts, run 40715565769's windows cells)
+#   longest selftests: 7m48s (run 41158896864, windows plain 4, 02:12:07 to 02:19:55)
 #   bound selftests: held by the sweep deadline (tools/sweep-selftests.py SWEEP_DEADLINE)
 #   longest e2e: 1m41s (estimate, run 38902667892)
 #   longest lint: 3m14s (run 41112221437, 19:04:54 to 19:08:08)
