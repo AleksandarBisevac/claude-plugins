@@ -4492,12 +4492,17 @@ instead of making its own. A stale stamp prints the fields that moved (`moved_fi
 comparison's own `fields`), so nothing is left for the model to look up; a comparison git could
 not answer says so and never reads as unchanged.
 
-**Deciding on facts: named planners, and no single `decide()`.** Where a step branches on plain
-values, the branch is a planner under `# --- deciding a step on facts ---`: `_advance_plan`
+**Deciding on facts: named planners, and no single `decide()`.** The drive's planners sit
+under `# --- deciding a step on facts ---`: `_advance_plan`
 (the points of one task's `advance` - writer, scope, reviewer, gate, risk, close),
 `_triage_plan` (a sign-off sent in advance, then the triage's tail), `_pending_turn` (a waiting
 decision that may no longer apply, then where the answer routes) and `_close_plan` (findings,
-a moved test digest, the commit route, the commit to close on, a reviewer answer). Each is
+a moved test digest, the commit route, the commit to close on, a reviewer answer). The other
+branches on plain values are still decided inline where they act: `advance`'s file-return arm
+(the stored-green check), the wave member's `integrate_member`, `kept_tree_stop` and the redo
+patch at the top of `advance`, the writer's wait and settle, the triage's head checks ahead of
+the advance point (`review_due`, `filed_at_head`, `owed_tasks`), `drive_locked`'s refresh of a
+pending triage and its session note, and sign-off's own steps (`run_signoff`). Each planner is
 called as `planner(point, facts)` and answers `(arm, detail)`; the caller performs the arm. There
 is no one `decide()` because the drive's facts are read lazily and some reads act -
 `stored_green` spends a moved mark, `standing_use` writes a journal row, `review_rounds` writes
@@ -4506,15 +4511,22 @@ drive did not. A fact is therefore a value or a zero-argument callable that `_fa
 when the planner reaches it, and a step that acts between two branches asks its planner once per
 point, in the order it always asked. The planners are pure over values, so `up-block`,
 `ut-block`, `uq-block` and `uc-block` in `tests/test_drive_phase.py` test each arm with a fake
-facts dict and no repository, a fact the arm must not read being one that raises; the order the
-arms are reached in is still the end-to-end blocks' to prove.
+facts dict and no repository, a fact the arm must not read being one that raises. The code
+acting on their answers is tested the same way, over a plan written out and verbs answered by a
+fake that records what it was asked: `ux-block` for one task's steps and `us-block` for
+sign-off's, while `uw-block` and `uv-block` run a verb for real, over a fixture with no drive,
+where the verb's own answer is the subject. The order the arms are reached in, and what git holds
+after them, are the kept drives' to prove: `e2e-steps` for one task's steps and `e2e-signoff` for
+sign-off, whose header lists the arms no kept drive walks.
 
 **A task id drives that one task.** `next <taskId>` (`drive_task`) starts it when it is
 pending, advances it through the same steps, and prints `done <taskId>` once it is terminal
 (`finish_task`, which says `already` when this call closed nothing), leaving its siblings and the
 phase's sign-off alone - the run `/audit:run` and `/audit:next` make. A `blocked` task stops it
 with its recorded reason and the rule for it; a decision pending about another task in the
-phase's drive stops it too, naming the phase drive that answers it. The `dt` cases drive it.
+phase's drive stops it too, naming the phase drive that answers it. The `dt` cases run
+`drive_task` and the `drive-task` route of `drive_locked` over fake verbs, the blocked stop
+among them, and the refusals through `main`.
 
 **One task at a time, in id order.** `next_task` takes the task in progress, else the first
 ready one - a ready task whose `tests.add` names a suite the newest run that tested HEAD itself
@@ -4590,10 +4602,11 @@ filed at the current head (`filed_at_head`) rather than paying for a review whos
 `file-return` would refuse at that head (`rr1`, `rr2`), and marks its findings recorded only where
 the plan's review already holds each of them (`findings_held`), since `finding` appends rather than
 deduplicates (`rr3`, `rr4`). Every reason still held, a `continue`'s included, is kept in the
-summary (`signoff_summary`). The `sg` cases
-drive it over the fixture plan: sign-off's model-facing steps are the review's dispatch, the
-triage and the final step, a red phase gate never reaches `signoff`, and several findings are one
-`finding` call - each beside a mutant driver that breaks it.
+summary (`signoff_summary`). The `sg1`, `sg2` and `sg4` cases drive it over the fixture plan:
+sign-off's model-facing steps are the review's dispatch, the triage and the final step, the
+sign-off is committed, and several findings are recorded in one `finding` call. The `sg3`,
+`sg3m` and `sg4m` cases ask `run_signoff` and `record_findings` over faked verbs: a red phase
+gate never reaches `signoff`, and a driver recording one call per finding is caught.
 
 **Where the text and the seams are.** Every line the model is shown is rendered from `STEPS`,
 one entry per step, whose `rule` lines print under its instruction when it has any. **That is

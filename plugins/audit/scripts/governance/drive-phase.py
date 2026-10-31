@@ -3908,9 +3908,15 @@ def _opens_task_header(subject, task_id):
 # writes a journal row, `review_rounds` writes the drive's state, `own_commit`
 # runs git log. One decide() fed by a gather-everything step would make every
 # one of those reads on every step - spending and writing where the drive did
-# not. So each place a step branches on plain values is a planner here, asked
-# at a named point and answering `(arm, detail)` from a facts dict; its caller
-# reads the facts it always read and performs the arm. A fact is a value or a
+# not. So the drive's planners are here - `_advance_plan`, `_triage_plan`,
+# `_pending_turn` and `_close_plan` - each asked at a named
+# point and answering `(arm, detail)` from a facts dict; its caller reads the
+# facts it always read and performs the arm. The other branches on plain
+# values are still decided inline where they act: `advance`'s stored-green
+# check on a filed return, `integrate_member`, `kept_tree_stop` and the redo
+# patch, the writer's wait and settle, the triage's head checks ahead of its
+# advance point, `drive_locked`'s refresh and session note for a pending
+# decision, and sign-off's own steps. A fact is a value or a
 # zero-argument callable, and `_fact` calls the callable only when the planner
 # reaches it: the read happens where it always happened, and an arm that never
 # reaches it never makes it. Where a step acts between two branches (a session

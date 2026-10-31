@@ -1,0 +1,52 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py": "pass",
+    "python3 tools/sweep-selftests.py tests/test_stamp_verification.py": "pass",
+    "python3 tools/reach-diff.py plugins/audit/scripts/governance/drive-phase.py tests/test_drive_phase.py --base 92c399f5 --head WORKTREE": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-31T23:12:47Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD exited 1 with failing cases ta9 (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 744/745 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 761/762 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "reach-diff final (exit 0, one run, 287.7s): base 92c399f5 reached 5808 lines of drive-phase.py; head WORKTREE over 376d08cbb1ec reached 5821; 'lost: 0 lines reached at 92c399f5 and not at WORKTREE, in 0 functions'. Before this task it listed 35 lines in 13 functions. Cases added to tests/test_drive_phase.py. ux-block: dt5/dt6 now call M.render over the boarded plan and its no-board twin and compare the whole printed text literally (R7). dt9 runs M.drive_locked with ctx only=P1.2, drive_task recorded and drive_phase recorded as a different route; dt9b runs the same with only=None (R6). _step_branch_units: dt10 (drive_task over a blocked task), pf9 (a gate naming no runner), ucl10 (close_task stops at review-answer after commit and done), gf1 (gate_step returns the follower print), sw1 (answer_refusal of widen with no config, plus its config twin). pf10 in _preflight_units: a widen already answered, with vitest.config.ts in the task's files, asks nothing; this is the scope_gap continue at 1727. _gap gained a declared= argument. us-block: sq6 in _advance_units runs drive_locked's advance route and its taken twin. _signoff_branch_units: lf3 (gate_went_red over a real evidence-ledger file), rr5 (findings_held of an empty set), rc4 (rounds_cost_lines with nothing attributed, with and without a ledger), rc5 (M.triage reaching the round-cap decision with its cost line), ftm1 (add_fix_tasks sends the regression tests block in the batch stdin), so1 (run_signoff's --accept-open P1-R1=<summary>), pa1 (apply_phase_answer accept-on-breach / no-ff / leave). e2e-signoff: new _e2e_advance drive, sq7 (a filed clean review, then one `next P1 --answer sign-off --reason`: exit 0, done, one signoff verb call, did-line 'sign-off answered in advance;', signedOff/landed/released). The findings round's on_dispatch now sends the same advance once after the first review is filed: sq8 checks the triage, the not-applied note with its reason, zero signoff calls and an unsigned phase (R2). R3 labels narrowed: sq3/sq4, rr2, rr4, sr1. R5: the e2e-signoff header lists each converted arm as walked by a named kept scenario or by none; the e2e-steps header lists the new unit-only paths. R1/R4/R8: PLUGIN-BUILD-GUIDE.md now names the planners and the branches still inline, names ux/us/uw/uv and e2e-steps/e2e-signoff, says what the dt cases run, and splits sg1/sg2/sg4 (drives) from sg3/sg3m/sg4m (unit). The section comment in drive-phase.py is narrowed the same way; that comment is the only change there, and git diff shows only '#' lines changed. Every new unit call goes through _caught. Expected values are literals. Fixtures are removed with remove_tree, or rmtree as the neighbouring cases do. bare_git_calls(test source) == []; ruff and vermin -t=3.8- are clean; prose_number_claims and doc_prose_numbers report nothing for these files. Suite time (back to back, measured once each, quiet): HEAD export 100.75s wall / 745 cases, worktree 99.02s wall / 762 cases. e2e-signoff block went from 24.9s to 26.6s (one added one-task drive). .github/sweep-costs.json is not changed: it keeps no per-block figures for this suite. Gates: sweep test_drive_phase.py exit 0 (1/1 files ok, 762 cases); sweep test_stamp_verification.py, test__deps.py and test__output_lints.py exit 0 (3/3 files ok, 804 cases); the reach-diff above exit 0. Dependants. sweep-costs.json and ci.yml are unchanged and still correct: the suite still runs as one staged file. tests/test__runner_output.py, test_run_test_gate.py (_counting, _follower_cases) and test_stamp_verification.py (_actions) are unchanged and still correct: those helpers were not edited, and the stamp suite passed. tools/affected.py and tools/reach-diff.py are unchanged; their paths still resolve. PLUGIN-BUILD-GUIDE.md's basename dependants are unaffected: no heading or tree line changed, and test__deps/test__output_lints passed. drive-phase.py's dependants are unaffected: comment-only change. No line is left that only another suite reaches.",
+    "descriptive": "Every drive-phase.py line the converted drive suite stopped reaching is reached again and asserted (reach-diff exits 0, and each of 32 mutation rows goes red). The one-task route, the advance sign-off and the ADO echo in render are run end to end or through the acting code. The stale guide and comment prose is corrected."
+  },
+  "testsAdded": [
+    "dt5/dt6 rewritten: render over a boarded and a board-less plan, whole print compared",
+    "dt9 + dt9b: drive_locked routes a named task to drive_task and no task to drive_phase",
+    "dt10: the one-task drive of a blocked task stops with the blocked print",
+    "pf9: a gate naming no runner asks nothing at task start",
+    "pf10: a widen already answered (runner config in the task's files) asks nothing",
+    "ucl10: close_task stops at review-answer after commit and done",
+    "gf1: gate_step returns the red gate's follower print",
+    "sw1: widen refused with no config to declare; the config twin takes it",
+    "sq6: drive_locked carries the advance and notes 'no triage was reached' when untaken",
+    "sq7: e2e - a clean filed review answered in advance signs off in one call",
+    "sq8: e2e - the advance over an open finding prints the triage, notes not applied, runs no signoff",
+    "lf3: gate_went_red reads failed rows off the evidence ledger",
+    "rr5: findings_held of an empty set is False",
+    "rc4: rounds_cost_lines says not known when nothing is attributed, naming a missing ledger",
+    "rc5: triage at the round cap asks round-cap with its cost line",
+    "ftm1: add_fix_tasks sends the regression tests block for a test-only finding",
+    "so1: run_signoff records an unanswered open finding with --accept-open and the summary",
+    "pa1: apply_phase_answer binds breach accept, sets noFf, keeps leave's reason"
+  ],
+  "casesAdded": [
+    [
+      "dt9",
+      "dt9b",
+      "sq6",
+      "sq7",
+      "sq8",
+      "dt6",
+      "dt5"
+    ]
+  ],
+  "claims": "claims:\n1 PLUGIN-BUILD-GUIDE.md and drive-phase.py comment: the planners named are the four defined under the section (_advance_plan/_triage_plan/_pending_turn/_close_plan); inline branches checked against advance() (kept_tree_stop, redo_patch, writer_wait, writer_settle, stored_green != STORED_HOLDS, integrate_member are its own calls), triage() (review_due, filed_at_head, owed_tasks before the advance point), drive_locked (refresh_triage, note_sessions); the dt sentence matches dt9/dt9b (drive_locked route) and dt7/dt8 (main refusals); the sg sentence matches sg1/sg2/sg4 in _e2e_clean/_e2e_findings_round and sg3/sg3m/sg4m in us-block\n2 scratchpad/mutations.py: 32 rows, each anchor asserted count==1 and landed, __pycache__ purged, restored byte-for-byte; all 32 RED on their wanted ids (table in outcome); both directions where a branch is conditional: route-drop/route-always (dt9/dt9b), locked-note/locked-pop-always (sq6 and its taken twin), cost-no-slots/cost-none-found (rc4 pair), widen-config (sw1 twin)\n3 the class is 'a converted case asks the planner but not the acting code': reach-diff over the whole module is the sweep (35 lines -> 0); R3 labels were each read against their condition and narrowed; grep for 'is a planner'/'The `dt` cases'/'The `sg` cases'/'up-block' over tracked files: the only hits are the edited guide paragraphs, the edited comment and the STAGES table\n4 n/a - no rule to an agent\n5 suite wall time measured once each, back to back (100.75s HEAD export vs 99.02s worktree); said as measured once here, no document records it; reach-diff run once (287.7s)\n6 n/a - no guard\n7 no number written into prose: the 'four' first drafted for the planners was removed in both the guide and the comment; the planners are named instead",
+  "stamp": "audit-stamp: {\"content\":\"sha256:07120677da98a73366507bbd7d90802b4fc44783230a2019eaaaed19d99f5b78\",\"dirtyDigest\":\"sha256:c0d99c7ee977d7831c08df63b38b1c701c3c2ae1651c7e6ac59a0b42f502767e\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"a5482900ee023c4a\",\"plugins/audit/scripts/governance/drive-phase.py\":\"5aba28bb091feda0\",\"tests/test_drive_phase.py\":\"7b1fa3f8bd7e1615\"},\"head\":\"376d08cb\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".github/sweep-costs.json\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:4b6175d4cc5490de53e130b0e004880b9c4578d5dcd00c6c6813062a63a6de6f\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

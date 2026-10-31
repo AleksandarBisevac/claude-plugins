@@ -11021,11 +11021,26 @@ def _close_plan_cases(check):
 # reached in the order the drive takes them, that the verbs' own printed
 # answers reach the drive as it parses them, and that the plan, the journal,
 # the evidence, the drive's state and git agree after a sequence. One scenario
-# per family: a clean sign-off, one findings round to a fix and its
-# re-review, one decline, one runtime boot, one high-risk commit confirmed in
-# advance, and a review that arrives after the verdict. Every other case of
-# these families is asked of the function that decides it
-# (`_signoff_unit_cases`, `_signoff_verb_cases`).
+# per family: a clean sign-off, a clean sign-off answered in advance, one
+# findings round to a fix and its re-review, one decline, one runtime boot,
+# one high-risk commit confirmed in advance, and a review that arrives after
+# the verdict. Every other case of these families is asked of the function
+# that decides it (`_signoff_unit_cases`, `_signoff_verb_cases`).
+# Which of the arms the converted cases used to drive a kept scenario still
+# walks:
+#   the advance applied (sq7)                -> walked by the advance scenario
+#   the advance over an open finding (sq8)   -> walked by the findings round
+#   the advance reaching no triage (sq6)     -> walked by no kept scenario
+#   a fresh review for a task added after it -> walked by the decline
+#     (sr1)                                     scenario's second drive, which
+#                                               does not assert it
+#   a return reused at the head after the drive state was lost (rr),
+#   a hand-off that satisfies the triage (ht), the round-cap stop (rc1, rc5),
+#   a decline of the boot, the gate coverage or a breach (db, dc, di), `leave`
+#   on a moved parent (nf2), the stalled stop (bk1)
+#                                            -> walked by no kept scenario
+# A later change to one of the unwalked arms owes a drive of its own if what
+# it changes is the order of the steps or what git holds after them.
 ADVANCE_CALL = "next %s --answer sign-off --reason <the summary>" % (PHASE,)
 NOT_APPLIED = "sign-off answered in advance, not applied"
 
@@ -11037,6 +11052,7 @@ def _e2e_signoff_cases(check):
         check("sg1 the driver loads", False, why)
         return
     _e2e_clean(check, M)
+    _e2e_advance(check, M)
     _e2e_findings_round(check, M)
     _e2e_decline(check, M)
     _e2e_boot(check, M)
@@ -11084,6 +11100,35 @@ def _e2e_clean(check, M):
           and len(text[0].encode("utf-8")) <= BOUND)
 
 
+def _e2e_advance(check, M):
+    """The call sq1 prints, sent once a clean review is filed: the same one
+    call signs the phase off. The route, the carry of the answer to the triage
+    and the act on it are the drive's own, so only a drive sends them through
+    together."""
+    root, mpath, text = _at_phase_review(M, "advance")
+    try:
+        _file_phase_review(root, mpath, text)
+        seen = _counting(M)
+        code, out = _next(M, root, mpath, "--answer", "sign-off", "--reason",
+                          SUMMARY)
+        ran = seen.get(("audit-task.py", "signoff"), 0)
+        did = M.did_events(out)
+        phase = _phase_of(mpath)
+    finally:
+        _harness.remove_tree(root)
+    check("sq7 a clean review answered in advance signs off in that one call: "
+          "exit 0, `done`, the sign-off verb ran once, the summary is the one "
+          "given, its did-line says answered in advance, signed off, landed and "
+          "released, and nothing says not applied: %r"
+          % ((code, out, ran, phase.get("summary")),),
+          code == 0 and instruction(out) == DONE and ran == 1
+          and (phase.get("review") or {}).get("status") == "passed"
+          and phase.get("summary") == SUMMARY
+          and "sign-off answered in advance;" in out
+          and bool(did["signedOff"]) and bool(did["landed"])
+          and bool(did["released"]) and NOT_APPLIED not in out)
+
+
 def _e2e_findings_round(check, M):
     """One med and two lows: the findings recorded in one call, ONE fix task
     for the med, a re-review over that fix's diff alone, the lows carried to a
@@ -11093,9 +11138,18 @@ def _e2e_findings_round(check, M):
     seen = _counting(M)
     live = list(FINDINGS)
     seen_at = {}
+    advanced = []
 
     def cleared(role, tid):
         # The re-review finds nothing new: only the first review's findings.
+        # Once the first review is filed, the call its dispatch printed is
+        # sent as the main loop would, over the findings it holds.
+        if tid == PHASE and not advanced:
+            before = seen.get(("audit-task.py", "signoff"), 0)
+            code, text = _next(M, root, mpath, "--answer", "sign-off",
+                               "--reason", SUMMARY)
+            advanced.append((code, text, seen.get(("audit-task.py", "signoff"),
+                                                  0) - before, _signed(mpath)))
         if tid == PHASE:
             del live[:]
 
@@ -11112,6 +11166,14 @@ def _e2e_findings_round(check, M):
         return ["--answer", "sign-off", "--reason", SUMMARY]
     run = drive(M, root, mpath, findings=live, on_dispatch=cleared,
                 answer=answer, cap=30)
+    sent = advanced[0] if advanced else (None, "", None, None)
+    check("sq8 the advance sent over a review holding an open finding prints "
+          "the triage under a did-line saying it was not applied for the "
+          "triage's other answers, and runs no sign-off: %r" % (sent,),
+          sent[0] == 0 and instruction(sent[1]) == TRIAGE
+          and "%s: the triage below has more than one answer" % (NOT_APPLIED,)
+          in sent[1].splitlines()[0]
+          and sent[2] == 0 and sent[3] is False)
     triages = [t for (_c, t), s in zip(run["prints"], run["steps"]) if s == TRIAGE]
     first = triages[0] if triages else ""
     phase = _phase_of(mpath)
@@ -11470,11 +11532,152 @@ def _signoff_unit_cases(check):
     _findings_units(check, M)
     _decline_units(check, M)
     _landing_units(check, M)
+    _signoff_branch_units(check)
     _same_moment_cases(check, M)
     _rereview_scope_cases(check)
     _landing_word_cases(check)
     _open_finding_cases(check)
     _chain_next_cases(check)
+
+
+def _signoff_branch_units(check):
+    """The sign-off branches the drives once walked and no kept drive reaches:
+    the ledger's red gates, an empty set of findings to mark, a usage ledger
+    that attributes nothing, the round cap reached inside the triage, a fix
+    task over a test file, a finding accepted open by the summary, and the
+    breach, no-ff and leave answers - each run through the code that acts on
+    it, on a driver of its own."""
+    M, _w = _unit_driver("drive_phase_signoff_branches")
+    tmp = tempfile.mkdtemp(prefix="signoff-ledger-")
+    try:
+        ledger = M._evio.evidence_dir(tmp, {})
+        os.makedirs(ledger)
+        rows = [{"taskId": "P1.1", "status": "failed"},
+                {"taskId": "P1.2", "status": "passed"},
+                {"taskId": "P1.3", "status": "failed"},
+                {"status": "failed"}]
+        _write_lf(os.path.join(ledger, "t.jsonl"),
+                  "".join(json.dumps(r) + "\n" for r in rows))
+        red = _caught(M.gate_went_red, _unit_ctx(project=tmp))
+    finally:
+        _harness.remove_tree(tmp)
+    check("lf3 the gates that ever came back red are read off the evidence "
+          "ledger: every task with a failed row, none with only a passed one, "
+          "and no row without a task: %r" % (sorted(red, key=str),),
+          red == set(["P1.1", "P1.3"]))
+    recorded = [dict(FINDINGS[0], id="P1-R1")]
+    got = (_caught(M.findings_held, _unit_phase(findings=recorded), []),
+           _caught(M.findings_held, _unit_phase(findings=recorded),
+                   ["not a finding"]))
+    check("rr5 an empty set of findings is never held - there is nothing to "
+          "mark recorded - even over a plan that records some: %r" % (got,),
+          got == (False, False))
+
+    M.run_verb, _calls = _verb_rig({"audit-usage.py": (0, json.dumps(
+        {"byTask": {}}), "")})
+    none_found = _caught(M.rounds_cost_lines, _unit_ctx(), _unit_phase())
+    M.run_verb, _calls = _verb_rig({"audit-usage.py": (0, json.dumps(
+        {"ledgerDir": "/nowhere/usage", "byTask": {"P1.1": {
+            "msgs": 3, "tokens": 900, "costUSD": 1.5}}}), "")})
+    unattributed = _caught(M.rounds_cost_lines, _unit_ctx(), _unit_phase())
+    check("rc4 a usage ledger that attributes nothing to the phase's reviews or "
+          "fix tasks says the cost is not known, and whether a ledger was found "
+          "at all - the original task's own spend is not the rounds': %r"
+          % ((none_found, unattributed),),
+          none_found == ["  rounds' cost: not known - the usage ledger (none "
+                         "found) attributes nothing to P1's reviews or fix "
+                         "tasks"]
+          and unattributed == ["  rounds' cost: not known - the usage ledger "
+                               "attributes nothing to P1's reviews or fix "
+                               "tasks"])
+
+    still = {"id": "P1-R2", "severity": "med", "file": "src/f1.txt",
+             "issue": "the fix left f1 half said"}
+    capped = _unit_phase(findings=[still])
+    evidence = _evidence_with({_HEAD_A: {"verdict": "findings",
+                                         "findings": [still]}})
+    try:
+        M.load_phase = lambda ctx: ({"meta": {}, "phases": [capped]}, capped)
+        M.owed_tasks = lambda ctx, phase: ([], None)
+        M.fixes_after = lambda ctx, phase, head: []
+        M.review_rounds = lambda ctx, state, phase: (2, 2, None)
+        M.run_verb, _calls = _verb_rig({"audit-usage.py": (0, json.dumps(
+            {"byTask": {}}), "")})
+        state = {"phaseReview": {"head": _HEAD_A, "findings": True}}
+        said = _caught(M.triage, _step_ctx(evidence=evidence), state, {}, capped)
+    finally:
+        shutil.rmtree(evidence, ignore_errors=True)
+    pending = state.get("pending") or {}
+    check("rc5 the triage at the round cap asks the round-cap decision, carrying "
+          "the rounds spent, the cap and what the rounds cost: %r"
+          % ((_text_of(said), pending),),
+          pending.get("decision") == "round-cap"
+          and (pending.get("rounds"), pending.get("cap")) == (2, 2)
+          and pending.get("cost") == [
+              "  rounds' cost: not known - the usage ledger (none found) "
+              "attributes nothing to P1's reviews or fix tasks"]
+          and (_text_of(said).splitlines() or [""])[0]
+          == "decide round-cap P1: 2 of 2 review round(s) spent; 1 finding(s) "
+             "open")
+
+    over_test = {"id": "P1-R1", "severity": "low", "file": "tests/test_f1.py:3",
+                 "issue": "no case pins f1", "resolution": "add one"}
+    M.run_verb, calls = _verb_rig({("audit-task.py", "add"): (0, json.dumps(
+        {"tasks": [{"id": "P1.4"}]}), "")})
+    stop = _caught(M.add_fix_tasks, _unit_ctx(), _unit_phase(findings=[over_test]),
+                   ["P1-R1"])
+    sent = [json.loads(i) for s, a, i in calls if s == "audit-task.py"
+            and a[:1] == ["add"]]
+    check("ftm1 a fix task over a finding that names only a test file is added "
+          "with the regression mode in the one batch `add` sends: %r"
+          % ((stop, sent),),
+          stop is None and sent == [{"phase": {"id": "P1"}, "tasks": [{
+              "title": "fix P1-R1: no case pins f1",
+              "description": "no case pins f1\n\nResolution asked: add one",
+              "fixes": ["P1-R1"],
+              "tests": {"mode": "regression", "add": [
+                  "tests/test_f1.py: the case P1-R1 asks for, locking the "
+                  "behaviour at HEAD"]}}]}])
+
+    opened = _unit_phase(findings=[dict(FINDINGS[0], id="P1-R1")])
+    tmp, mfile = _with_manifest(opened)
+    try:
+        M.git_head = lambda ctx: _HEAD_A
+        M.phase_gate = lambda ctx, phase: (
+            0, "[run-test-gate] GATE GREEN: true\n", "")
+        M.lint_probe = lambda ctx, state, phase, head: None
+        M.run_verb, calls = _verb_rig()
+        state = {"summary": SUMMARY}
+        said = _caught(M.run_signoff, _unit_ctx(manifest=mfile, project=tmp,
+                                                gitRoot=tmp), state, opened)
+    finally:
+        _harness.remove_tree(tmp)
+    signed = [a for s, a, _i in calls if s == "audit-task.py"
+              and a[:1] == ["signoff"]]
+    accepted = [a[i:i + 2] for a in signed for i in range(len(a))
+                if a[i] == "--accept-open"]
+    check("so1 a sign-off over a finding no fix, carry or note answered records "
+          "it accepted open with the summary as its reason, in the one "
+          "`signoff` call: %r" % ((said, accepted),),
+          said is None and len(signed) == 1
+          and accepted == [["--accept-open", "P1-R1=%s" % (SUMMARY,)]])
+
+    states = []
+    M.git_head = lambda ctx: _HEAD_B
+    M.signoff_step = lambda ctx, state, phase: states.append(dict(state))
+    for name, answer in (("invariant-breach", "accept"), ("not-fast-forward",
+                                                          "no-ff"),
+                         ("not-fast-forward", "leave")):
+        _caught(M.apply_phase_answer, _unit_ctx(), {}, {}, _unit_phase(),
+                {"decision": name, "task": None, "why": "w"}, answer,
+                "the human: %s" % (answer,), ())
+    check("pa1 accept on a breach binds the human's words at the head, no-ff "
+          "marks the landing a merge, and leave keeps the reason - each reaching "
+          "the sign-off step with only its own field set: %r" % (states,),
+          states == [{"breachAccepted": {"reason": "the human: accept",
+                                         "head": _HEAD_B}},
+                     {"noFf": True},
+                     {"leave": "the human: leave"}])
 
 
 def _signoff_with_gate(M, phase, gate, verbs=None):
@@ -11602,8 +11805,9 @@ def _advance_units(check, M):
             "advance": True,
             "advanceApplies": lambda: M.advance_applies(
                 review, _triage_pending(**fields))})
-        check("%s, the advance point answers not-applied, so the triage is "
-              "printed, noted not applied, and no sign-off runs: %r"
+        check("%s, the advance point answers not-applied, and the note it "
+              "prints says not applied - sq8 drives what follows over an open "
+              "finding: %r"
               % (label, (got, M.ADVANCE_NOT_APPLIED)),
               got == ("not-applied", None)
               and M.ADVANCE_NOT_APPLIED.startswith(NOT_APPLIED))
@@ -11627,6 +11831,35 @@ def _advance_units(check, M):
     check("sq3m RED TWIN: a driver that applies the advance answer over an open "
           "finding answers sq3's facts with the advance - the sign-off sq3's "
           "reading refuses: %r" % (got_m,), got_m == ("advance", None))
+
+    # The locked drive carries the advance to the triage on the context and
+    # says, after the phase's steps, when none of them took it.
+    R, _w = _unit_driver("drive_phase_advance_route")
+    closed = _unit_phase()
+    R.load_phase = lambda ctx: ({"meta": {}, "phases": [closed]}, closed)
+    carried = []
+    for takes in (False, True):
+        def steps(ctx, state, phase, takes=takes):
+            carried.append(ctx.get("advance"))
+            if takes:
+                ctx.pop("advance")
+            return 0, {"kind": "done", "lines": ["done P1"]}
+        R.drive_phase = steps
+        ctx = _unit_ctx()
+        went = _caught(R.drive_locked, ctx, {}, "sign-off", SUMMARY, ())
+        carried.append((went, ctx["did"], "advance" in ctx))
+    check("sq6 a sign-off sent once every task is closed reaches the phase's "
+          "steps carried on the context with its reason; when none of them "
+          "takes it (no triage was reached) the drive says it was not applied "
+          "and why, and the twin whose triage took it says nothing: %r"
+          % (carried,),
+          carried == [
+              SUMMARY,
+              ((0, {"kind": "done", "lines": ["done P1"]}),
+               ["sign-off answered in advance, not applied: no triage was "
+                "reached"], False),
+              SUMMARY,
+              ((0, {"kind": "done", "lines": ["done P1"]}), [], False)])
 
 
 def _answer_units(check, M):
@@ -11868,8 +12101,8 @@ def _findings_units(check, M):
           "recorded at that head - no second dispatch: %r" % (marks[1],),
           marks[1] == ({"head": _HEAD_A}, {"phaseReview": {"head": _HEAD_A}}))
     check("rr2 THE TWIN: with no return filed at the current head, nothing is "
-          "marked, and the phase review is dispatched - a reuse that read any "
-          "filed return would mark one here: %r" % ((none, none_state),),
+          "marked - a reuse that read any filed return would mark one here: %r"
+          % ((none, none_state),),
           none == {} and none_state == {})
     check("rr3 the return reused at the head holds findings the plan already "
           "records: they are marked recorded, so none is recorded again: %r"
@@ -11877,8 +12110,9 @@ def _findings_units(check, M):
           marks[0][0] == {"head": _HEAD_A, "findings": True}
           and M.findings_held(_unit_phase(findings=recorded), FINDINGS[:2]))
     check("rr4 THE TWIN: the same reused return with the plan holding none of "
-          "its findings is not marked recorded, so each is recorded once - a "
-          "mark set whenever a return is reused would record none: %r"
+          "its findings is not marked recorded, and the plan is read as holding "
+          "none of them - a mark set whenever a return is reused would mark it: "
+          "%r"
           % ((marks[1][0], M.findings_held(_unit_phase(), FINDINGS[:2])),),
           "findings" not in marks[1][0]
           and M.findings_held(_unit_phase(), FINDINGS[:2]) is False)
@@ -11895,9 +12129,8 @@ def _findings_units(check, M):
     finally:
         shutil.rmtree(evidence, ignore_errors=True)
     check("sr1 after a task added with no --fixes closes, the phase review "
-          "filed before it owes that task its answers - so sign-off dispatches "
-          "a new review rather than a triage over one that never saw it; the "
-          "twin with no task added owes nothing: %r" % (got,),
+          "filed before it owes that task its answers; the twin with no task "
+          "added owes nothing: %r" % (got,),
           got == ((["P1.2"], None), ([], None)))
 
     # Findings handed to a fix task by hand.
@@ -12550,6 +12783,7 @@ def _steps_unit_cases(check):
     _key_units(check)
     _continue_units(check)
     _single_task_units(check)
+    _step_branch_units(check)
     _lock_units(check)
     _owed_red_first_units(check)
     _submit_mutant_units(check)
@@ -13218,24 +13452,33 @@ def _single_task_units(check):
           and len(first.encode("utf-8")) <= BOUND)
     boarded = _step_plan(_step_phase([_step_task("P1.2", ado={"id": 4242})]),
                          {"ado": {"organization": "o", "project": "p"}})
+    # The print itself is rendered: `render` is what puts the echo under the
+    # close, so a render that dropped it reads as dt6 failing, not as a list
+    # nobody prints.
     echo = []
     for meta_plan in (_step_plan(_step_phase([_step_task("P1.2")])), boarded):
         tmp, mfile = _with_manifest(meta_plan["phases"][0], meta_plan["meta"])
         try:
-            echo.append(M.ado_echo_lines(_step_ctx(
-                manifest=mfile, did=["closed P1.2 at abc1234"])))
+            echo.append(_caught(M.render, _step_ctx(
+                manifest=mfile, did=["closed P1.2 at abc1234"]), 0,
+                {"kind": "done", "lines": ["done P1.2: done at abc1234"]}))
         finally:
             _harness.remove_tree(tmp)
     check("dt5 THE ALLOW TWIN: a plan with no board owes no ADO echo for a task "
-          "the drive closed, and no line says one is owed: %r" % (echo[0],),
-          echo[0] == [])
+          "the drive closed, and the rendered print holds no line saying one is "
+          "owed: %r" % (echo[0],),
+          echo[0] == "[drive-phase] P1: closed P1.2 at abc1234\n"
+                     "done P1.2: done at abc1234")
     check("dt6 a linked task the drive closed owes the board its echo, and the "
-          "print that reports the close says so with the rule for it - no verb "
-          "sends it, so the instruction is the whole of it: %r" % (echo[1],),
-          echo[1] == ["ado echo owed: P1.2",
-                      "Update each item's board state only: never create one, "
-                      "never ask, no retry; a failure is one report line - "
-                      "/audit:sync push mends it."])
+          "rendered print that reports the close says so under it with the rule "
+          "for it - no verb sends it, so the instruction is the whole of it: %r"
+          % (echo[1],),
+          echo[1] == "[drive-phase] P1: closed P1.2 at abc1234\n"
+                     "done P1.2: done at abc1234\n"
+                     "ado echo owed: P1.2\n"
+                     "Update each item's board state only: never create one, "
+                     "never ask, no retry; a failure is one report line - "
+                     "/audit:sync push mends it.")
     root_u, mpath = _plain_project(TASKS)
     try:
         refused = []
@@ -13275,14 +13518,116 @@ def _single_task_units(check):
           "verb runs them in waves: %r" % (errs.getvalue(),),
           "in waves of up to 3" in errs.getvalue()
           and "one at a time" not in errs.getvalue())
-    route = M._pending_turn("route", {
-        "pending": None, "answer": None, "reason": None, "only": scoped["only"],
-        "fixes": [], "carryTo": None, "admissible": _never("admissible")})
+    # The route is run, not only asked: `drive_locked` is what acts on the
+    # planner's `drive-task`, so a body that dropped the branch would drive the
+    # whole phase for `next P1.2 --task` - which the recorders below tell apart.
+    R, _w = _unit_driver("drive_phase_single_route")
+    routed = []
+    _step_rig(R, _step_phase([_step_task(t) for t in TASKS]))
+
+    def one(ctx, state):
+        routed.append(("drive_task", ctx["only"]))
+        return 0, {"kind": "done", "lines": ["done P1.2: done at abc1234"]}
+
+    def whole(ctx, state, phase_u):
+        routed.append(("drive_phase", ctx["only"]))
+        return 0, {"kind": "done", "lines": ["done P1"]}
+    R.drive_task, R.drive_phase = one, whole
+    went = _caught(R.drive_locked, _step_ctx(only=scoped["only"]), {}, None,
+                   None, ())
+    task_routed = list(routed)
+    del routed[:]
+    went_phase = _caught(R.drive_locked, _step_ctx(only=None), {}, None, None,
+                         ())
     check("dt9 THE TWIN: a task id with the one-task flag is no refusal: the "
-          "context scopes the drive to that task, and `next` drives it alone: %r"
-          % ((scoped["only"], scoped["phase"], route),),
+          "context scopes the drive to that task, and the locked drive runs that "
+          "task's steps alone, never the phase's: %r"
+          % ((scoped["only"], scoped["phase"], went, task_routed),),
           scoped["only"] == "P1.2" and scoped["phase"] == "P1"
-          and route == ("drive-task", None))
+          and went == (0, {"kind": "done",
+                           "lines": ["done P1.2: done at abc1234"]})
+          and task_routed == [("drive_task", "P1.2")])
+    check("dt9b THE OTHER DIRECTION: with no task named the same locked drive "
+          "runs the phase's steps and never the one-task route - a body that "
+          "always took that route would read P1's drive as one task's: %r"
+          % ((went_phase, routed),),
+          went_phase == (0, {"kind": "done", "lines": ["done P1"]})
+          and routed == [("drive_phase", None)])
+
+
+def _step_branch_units(check):
+    """The step branches the drives once walked and no kept drive reaches: a
+    blocked task under the one-task drive, a gate with no runner to ask, a
+    reviewer answer a human settles at the close, a red gate whose followers
+    printed, and a widen with no config to declare - each run through the
+    code that acts on it."""
+    M, _w = _unit_driver("drive_phase_step_branches")
+    blocked = _step_task("P1.2", status="blocked", blockedReason="the gate is red")
+    _step_rig(M, _step_phase([_step_task("P1.1", status="done"), blocked]))
+    ctx = _step_ctx(only="P1.2")
+    said = _caught(M.drive_task, ctx, {})
+    check("dt10 the one-task drive of a blocked task stops on it with the "
+          "blocked print, naming its remedy and its reason: %r"
+          % ((said, ctx.get("stop")),),
+          ctx.get("stop") == "stop-blocked" and said == (
+              1, "[drive-phase] P1: stopped - P1.2 is blocked: the gate is red\n"
+                 "remedy (audit-task.py): start P1.2\n"
+                 "A blocked task moves only on a human's yes, then next again; "
+                 "each task's remedy is named above."))
+
+    # A gate whose entries name no runner this reading knows has nothing to ask
+    # about a declared suite: the start goes on with no decision and no line.
+    said, did, text = _gap(M, {}, "tests/test_store.py", ("true",))
+    check("pf9 a declared suite under a gate that names no runner (`true`) asks "
+          "nothing: the start goes on, with no scope-gap and no did-line: %r"
+          % ((said, did, text),),
+          said is None and did == [] and text == "")
+
+    task_u = _step_task()
+    phase = _step_phase([task_u], key="phase")
+    M2, _w = _unit_driver("drive_phase_review_answer")
+    calls = _step_rig(M2, phase, filed={("P1.1", "reviewer"): {
+        "findings": [], "intent": {"answer": "diverges",
+                                   "note": "it edits f2, not f1"}}})
+    state = {}
+    said = _caught(M2.close_task, _step_ctx(), state, phase, task_u)
+    check("ucl10 a reviewer answer only a human settles stops the close, after "
+          "the commit and the done verb, at the review-answer decision carrying "
+          "it: %r" % ((said, _scripts(calls), state.get("pending")),),
+          _text_of(said).splitlines() == [
+              "decide review-answer P1.1: intent diverges - a human action item",
+              "Ask the human (AskUserQuestion); continue only on their yes, "
+              "their words verbatim as --reason.",
+              "answer: next P1 --answer continue (continue needs --reason)"]
+          and _scripts(calls) == [("commit-task-work.py", "audit-plan.json"),
+                                  ("audit-task.py", "done")]
+          and (state.get("pending") or {}).get("decision") == "review-answer"
+          and (state.get("pending") or {}).get("why") == "intent diverges")
+
+    M3, _w = _unit_driver("drive_phase_followed")
+    task_u = _step_task()
+    phase = _step_phase([task_u])
+    _step_rig(M3, phase, answers={"run-test-gate.py": (
+        1, "[run-test-gate] GATE RED: true\n", "")})
+    told = M3.instruction("dispatch", ["regenerate the followers in a browser"])
+    M3.follow_red_gate = lambda ctx, state, phase_, task_, text, tree=None: (
+        told, None)
+    said = _caught(M3.gate_step, _step_ctx(), {}, _step_plan(phase), phase, task_u)
+    check("gf1 a red gate whose owed followers printed an instruction returns "
+          "that print, ahead of the red gate's own decision: %r" % (said,),
+          said is told)
+
+    pending = {"decision": "scope-gap", "task": "P1.1", "config": None}
+    got = (_caught(M.answer_refusal, _step_ctx(), pending, "widen",
+                   "the human: widen"),
+           _caught(M.answer_refusal, _step_ctx(),
+                   dict(pending, config="vitest.config.ts"), "widen",
+                   "the human: widen"))
+    check("sw1 widen on a scope gap with no runner config to declare is refused "
+          "with the remedy of block; the twin naming a config takes it: %r"
+          % (got,),
+          got == ("no runner config file exists to widen, so --answer widen has "
+                  "nothing to declare; answer block", None))
 
 
 def _lock_units(check):
@@ -13636,12 +13981,15 @@ def _scope_project(files):
     return root_u
 
 
-def _gap(M, files, add, gate, task_status="pending", build=None):
+def _gap(M, files, add, gate, task_status="pending", build=None, declared=None):
     """`(result, did, text)` of `scope_gap` over a task declaring `add` under
-    `gate`, in a project holding `files`."""
+    `gate`, in a project holding `files`; `declared` is the task's own `files`
+    when it names more than its one source file."""
     task_u = _step_task(status=task_status, startedAt=None, tests={
         "mode": "tdd", "add": ["%s: it holds" % (add,)], "gate": list(gate),
         "expectRedFirst": True})
+    if declared is not None:
+        task_u["files"] = list(declared)
     phase = _step_phase([task_u])
     root_u = _scope_project(files)
     try:
@@ -13678,6 +14026,13 @@ def _preflight_units(check):
               "decide scope-gap P1.1: vitest does not collect lib/store.test.ts")
           and "widen adds vitest.config.ts" in (text.splitlines() or [""])[0]
           and "widen|block" in text and did == [])
+    said, did, text = _gap(M, _preflight_files("['tests/unit/**/*.test.ts']"),
+                           "lib/store.test.ts", _PF_GATE,
+                           declared=["src/f1.txt", _VITEST_TS])
+    check("pf10 THE TWIN: the same include with vitest.config.ts already in the "
+          "task's files - a widen answered - asks nothing again: the start goes "
+          "on, with no scope-gap and no did-line: %r" % ((said, did, text),),
+          said is None and did == [] and text == "")
     task_u = _step_task(status="pending", startedAt=None)
     phase = _step_phase([task_u])
     calls = _step_rig(M, phase)
@@ -14007,10 +14362,14 @@ def _follower_browser_units(check):
 # Paths no drive in this block reaches, held by a unit or verb case alone: a
 # refused commit at the close (dr), the `resume` answer (rs), a stored green
 # measured again at the close (sv6), `--explain` over a stored decision (sv10),
-# the one-task form `next <taskId>` and its refusals (dt), the held lock's stop
-# (dl1), submit's refusals (ds*m, ow3), the brief issued again after a widening
-# (bs), the gate banners (gb), the runner preflight at a start (pf, pg, uc,
-# pw) and a browser follower's instruction (fw2).
+# the one-task form `next <taskId>`, its route and its refusals (dt), a
+# blocked task under it (dt10), the held lock's stop (dl1), submit's refusals
+# (ds*m, ow3), the brief issued again after a widening (bs), the gate banners
+# (gb), the runner preflight at a start (pf, pg, uc, pw), a gate naming no
+# runner (pf9), a widen already answered (pf10), a widen with no config to
+# declare (sw1), a reviewer answer
+# stopping the close (ucl10), a red gate whose followers printed (gf1) and a
+# browser follower's instruction (fw2).
 def _e2e_steps_cases(check):
     """One drive per family of a task's steps, over a real repository."""
     _drive_cases(check)

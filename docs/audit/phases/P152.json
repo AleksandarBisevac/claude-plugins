@@ -171,9 +171,16 @@
         "file": "tools/reach-diff.py:277-281 (HOOK_SOURCE dump)",
         "issue": "The hook reads the block label in the atexit handler (`os.environ.get(\"REACH_DIFF_BLOCK\")` inside dump()), not when it installs. A suite process that clears or replaces os.environ before exiting has its untraced children filed under '(whole file)'. In a staged run that label ran at neither side, so the run refuses with 2 and names the wrong block. This fails safe, but the refusal is misattributed. `parent` is already captured at install time.",
         "resolution": "Capture `block = os.environ.get(\"REACH_DIFF_BLOCK\")` beside `parent` in _reach_diff_install() and write that value in dump()."
+      },
+      {
+        "id": "P152-R20",
+        "severity": "low",
+        "file": "PLUGIN-BUILD-GUIDE.md:4500-4505; plugins/audit/scripts/governance/drive-phase.py:3914-3919",
+        "issue": "R1's narrowing swapped one over-claim for an enumeration. 'The other branches on plain values are still decided inline where they act: <list>' reads as the complete set of inline branches, but it leaves some out. drive_task's status arms (drive-phase.py:9124-9136: terminal, blocked, not in_progress) are inline plain-value branches, and this task's own dt10 tests one of them. gate_step's exit-code arms (4414-4423) and answer_refusal's checks (6551-6580) are others. A reader who takes the list as the whole set will think drive_task's blocked stop is a planner arm or covered by one, and the next new inline branch makes the list false again without anyone touching the sentence. This is the same class R1 recorded: fixed once by listing places, with the class left open.",
+        "resolution": "In both places, say it as a class rather than a list. For example: 'Every other branch on plain values is decided inline where it acts. Among them are advance's stored-green check on a filed return, integrate_member, ...' Keep the named examples, but drop the reading that the list is exhaustive."
       }
     ],
-    "outcome": "[findings: 19 - 0 high, 8 med, 11 low; 5 with a recorded fix commit]"
+    "outcome": "[findings: 20 - 0 high, 8 med, 12 low; 5 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -405,7 +412,7 @@
     {
       "id": "P152.4",
       "title": "Wave decisions and the CI cadence are tested as unit cases, with three end-to-end drives",
-      "status": "blocked",
+      "status": "pending",
       "description": "Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.4. Convert ci wv wz wc wr wp nr wh wt wt5 wo sk to unit cases over ci_due/ci_settle/ci_after_close, wave_width/hooks_width, parked-return and sibling-red routing; keep e2e-wave (two disjoint tasks in one next wv1, one parked return nr, one full cadence cycle with the fake gh ci). wqm and wj stay end-to-end. Do not widen _ci_fake. drive-phase.py changes only if ci_settle's decision is not separable from its gh call, then as one more seam ci_turn(run_state, counter, cadence). Remove dropped labels from .github/sweep-costs.json.",
       "files": [
         "tests/test_drive_phase.py",
@@ -457,8 +464,7 @@
           "text": "it reads drive-phase.py's section; this task edits drive-phase.py only if ci_settle needs one more seam, and then the guide's planner paragraph is reconciled at the phase review",
           "waives": "PLUGIN-BUILD-GUIDE.md"
         }
-      ],
-      "blockedReason": "waits on P152.13-6jb: the drive suite's lost reach is closed and the reach check exists before a third conversion"
+      ]
     },
     {
       "id": "P152.5",
@@ -1104,7 +1110,7 @@
     {
       "id": "P152.13-6jb",
       "title": "Every line of the driver the converted drive suite stopped reaching is reached again or named as reached elsewhere",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Run tools/reach-diff.py over plugins/audit/scripts/governance/drive-phase.py and tests/test_drive_phase.py from 92c399f5 (planners extracted, before any conversion) to HEAD. For every line reported, add or extend a case that runs it and asserts what it does, proven red by deleting the line in a scratch export; or, where the line is reached by another suite, name that suite in the e2e header comment and show its run. Covers the review findings of P152.2 and P152.3: the advance sign-off route (one advance call in e2e-signoff, clean and over an open finding), the one-task route (dt9 runs drive_locked or main with drive_phase failing if called), the ADO echo in render (dt5/dt6 call render and assert literal lines), labels that claim more than their case checks (sq3/sq4, rr2, rr4, sr1), and the unwalked-paths list in the e2e-signoff header. Also correct the prose the conversions left stale: PLUGIN-BUILD-GUIDE.md's drive-phase paragraphs (the planners paragraph and the drive-phase.py section comment claim every plain-value branch is a planner; the sg paragraph says sg3/sg3m/sg4m drive; the unit-block paragraph names only up/ut/uq/uc; 'The dt cases drive it'). The task ends with reach-diff exiting 0 over the same range, its output quoted in the return. If .github/sweep-costs.json changes, regenerate it through record_costs.",
       "files": [
         "tests/test_drive_phase.py",
@@ -1136,16 +1142,49 @@
         "P152.15-6jb"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-31T22:40:00Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-31T22:39:58Z",
+          "text": "the task edits only the drive-phase.py section; the text this reader quotes sits in another section and is not edited",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-10-31T22:39:58Z",
+          "text": "the task edits only the drive-phase.py section; the text this reader quotes sits in another section and is not edited",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-10-31T22:39:58Z",
+          "text": "the task edits only the drive-phase.py section; the text this reader quotes sits in another section and is not edited",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-10-31T22:39:58Z",
+          "text": "the task edits only the drive-phase.py section; the text this reader quotes sits in another section and is not edited",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-10-31T22:39:58Z",
+          "text": "the table is regenerated through record_costs; its shape and the runner's fallback are unchanged",
+          "waives": "tools/sweep-selftests.py"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-31T23:21:46Z.c1415e",
+        "status": "passed",
+        "at": "2026-10-31T23:21:46Z"
+      }
     },
     {
       "id": "P152.14-6jb",
@@ -1223,7 +1262,7 @@
     {
       "id": "P152.15-6jb",
       "title": "reach-diff measures uncommitted work: --head can name the working tree",
-      "status": "in_progress",
+      "status": "done",
       "description": "The drive runs a task's gate on the task's uncommitted work, but tools/reach-diff.py exports revisions with git archive, so --head HEAD measures the last commit, not the task's change: a gate naming it is vacuous for a conversion (HEAD equals the base) and permanently red for a fix (the committed loss is still there). Add a head that names the working tree (e.g. --head WORKTREE): materialise it by copying the tracked files as they are on disk plus untracked files git does not ignore (git ls-files -co --exclude-standard), into the same scratch layout, never writing the checkout; deleted tracked files are absent. Refuse (exit 2) a --base WORKTREE. Selftest: an uncommitted change that drops a branch's only reaching case exits 1 under --head WORKTREE and 0 under --head HEAD, proving the head really is the working tree; an untracked new suite file is seen. CONTRIBUTING.md bullet: say a gate on a task's change names --head WORKTREE. Then re-point the gates of P152.4, P152.11 and P152.13-6jb from --head HEAD to --head WORKTREE (scope --gate with the full list - --gate replaces the list).",
       "files": [
         "tools/reach-diff.py",
@@ -1252,14 +1291,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "376d08cbb1ec",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/reach-diff.py. (1) `--head WORKTREE`, that exact spelling: export_worktree() copies what `git ls-files -z --cached --others --exclude-standard` lists. Tracked files are copied as they are on disk, untracked files git does not ignore are copied, tracked files deleted on disk are skipped, symlinks are copied as links, and gitlink directories are not copied, as git archive does not copy them. The checkout and its index are never written: in the real WORKTREE run below, `git status --porcelain` was byte-identical before and after (cmp). `--base WORKTREE` refuses with 2, checked inside compare() so a direct call refuses too. The revision line shows 'the working tree over <HEAD sha>'. (2) The killed-child rule. The hook records the block label (REACH_DIFF_BLOCK, set per job), and untraced_children() now counts per block. blind_spots() rule: an untraced module child is a refusal (exit 2) unless its block ran at both revisions with the same untraced count; such a matched block is printed as a blind spot and the comparison goes on. I picked this over `--allow-untraced`: it needs no input, and a block deleted at head, whose children were untraced at base, cannot pass. Its counts differ by construction (base n, head 0), so it is unmatched and refuses. An allow flag naming that block would pass it. The rule is stated in the docstring's untraced paragraph. Docstring: a new 'THE HEAD A GATE NAMES IS THE WORKING TREE' section, usage `--head <rev|WORKTREE>`, the measuring sentence and the refusal summary updated. CONTRIBUTING.md bullet: the example now uses `--head WORKTREE`, says a gate on a task's change names `--head WORKTREE` and why (`--head HEAD` measures the last commit), says the head is copied as git lists it, and names the matched blind spot. I did NOT edit the plan or other tasks' gates: the brief's description asks for that re-pointing, the coordinator's message says not to, and those files are outside this task's scope. Selftest 28/28 (new rd25-rd30). Sweep: `8/8 files ok, 1088 cases`, exit 0, over tools/reach-diff.py (28), tests/test__output_lints.py (182), tools/gate-parity.py (119), tests/test__refs.py (292), tests/test__deps.py (266), tests/test__areas.py (130), tests/test_derive_phase_gate.py (36), tools/_suite.py (35). ruff clean; vermin -t=3.8- clean. REAL RUN as asked: `python3 tools/reach-diff.py plugins/audit/scripts/governance/stamp-verification.py tests/test_stamp_verification.py --base 234c87ad --head HEAD` exit 0, real 49.82 s, 8 jobs, measured once. Base 234c87ad: 2459 lines, 79 blocks, 104 processes started the hook and 98 wrote, 1 module child untraced. Head 6c164a9615cb: 2459 lines, 40 blocks, 65 started and 59 wrote, 1 untraced. 'blind spot, the same at both revisions: block sr-sigterm started 1 module children that never wrote what they reached'. Lost: 0 lines. The same comparison with `--head WORKTREE` (over 6c164a96 plus the uncommitted tree): exit 0, real 48.57 s, identical figures, checkout status unchanged. NOT MINE, FOUND: <tmpdir>/reach-wzo96pcj (the system temp directory), created 22:54, holds a stamp-verification run's traces (204 entries at base, 126 at head). No reach-diff process is alive. It is most likely the earlier gate run that hit the sr-sigterm refusal, killed before its `finally` removed the scratch (a SIGKILL skips `finally`). I left it in place for the orchestrator to remove.",
+        "descriptive": "reach-diff can now measure a task's uncommitted work with `--head WORKTREE`. A killed child is accepted only as a blind spot that matches block-for-block at both revisions. P152.11's stamp-verification conversion lost no line."
       },
       "startedAt": "2026-10-31T22:20:16Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-31T22:39:37Z",
+      "verifiedBy": [
+        "rd25: under --head WORKTREE, an uncommitted suite change that drops the positive block exits 1 naming `return \"positive\"`. rd26: the same checkout under --head HEAD exits 0, which proves rd25's head was the working tree. rd27: the materialised working tree holds the modified suite as it is on disk and the untracked new suite file, and does not hold the ignored file, the deleted tracked file or .git; the checkout status is unchanged. rd28: --base WORKTREE exits 2. rd29: a killed module child in a block present at both revisions with equal counts is a printed blind spot, and the dropped branch still exits 1. rd30: a block with an untraced child at base that the head no longer runs exits 2 naming it."
+      ],
       "notes": [
         {
           "at": "2026-10-31T21:32:32Z",
@@ -1277,6 +1318,18 @@
         "runId": "2026-10-31T22:34:18Z.985bba",
         "status": "passed",
         "at": "2026-10-31T22:34:18Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "376d08cbb1ec",
+        "at": "2026-10-31T22:39:37Z",
+        "return": "docs/audit/evidence/returns/P152.15-6jb/20261031T222016Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-31T22:30:33Z",
+        "basis": "`python3 tools/sweep-selftests.py tools/reach-diff.py` in a throwaway tree at HEAD exited 1 with failing cases rd17 (house FAIL), rd29 (house FAIL), rd30 (house FAIL), rd21 (house FAIL), rd25 (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 20/22 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 23/28 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     }
   ],
