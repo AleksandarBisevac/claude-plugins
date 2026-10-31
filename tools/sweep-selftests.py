@@ -243,7 +243,11 @@ TIMEOUT_PER_COST = 3
 # estimate and its basis). A lighter heaviest block is what lets both come
 # back down. Case tt5 reads the job's
 # figure out of ci.yml and the table off disk, and fails when any of the
-# three stops fitting.
+# three stops fitting. The other side is tools/gate-parity.py's: a job ci.yml
+# declares held by this deadline may carry a bound up to the smallest whole
+# minute these two sum strictly under, read out of this file's AST
+# (`sweep_deadline_basis`) - so both stay whole-number literals assigned here,
+# under these names, or that check reports it cannot read them.
 SWEEP_DEADLINE = 1800
 CI_SETUP_ALLOWANCE = 120
 # ...AND PAST IT NO JOB STARTS, except a replay, which is given at least this

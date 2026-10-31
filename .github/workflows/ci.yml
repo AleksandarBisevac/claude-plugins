@@ -54,6 +54,11 @@ concurrency:
 # failure; a cancelled job measures the cancel, not the job - and a job whose three
 # times is under five minutes may sit at five: a sub-minute measurement samples none
 # of the runner provisioning and install variance its bound still has to cover.
+# A job that runs the sweep may instead be held up by the sweep's deadline: one
+# `# bound <job>: held by the sweep deadline (...)` line lets its bound reach the
+# smallest whole minute that tools/sweep-selftests.py's SWEEP_DEADLINE plus
+# CI_SETUP_ALLOWANCE fits strictly inside, both read out of that file, and only
+# when verify.sh --list says the job's slices sweep the tree.
 # gate-parity.py (`job_bound_evidence`) fails the build when a job has no `longest`
 # line or its bound is outside that range. Re-derive a figure with
 #   gh run view <id> --json jobs --jq '.jobs[] | [.name, .conclusion, .startedAt, .completedAt]'
@@ -70,13 +75,13 @@ concurrency:
 # lowest share of the slots a windows cell of run 40715565769 kept busy, plus the
 # longest time one of them spent before and after its sweep step. The windows plain
 # leg now runs five parts and the code-page leg three (the matrix's `parts` rows),
-# whose cells that same method puts under a third of the bound on a per-run run - and
-# the bound cannot follow them down: it sits at 33
-# because the sweep's deadline must fit inside it (tools/sweep-selftests.py
-# `SWEEP_DEADLINE`, case tt5), and the deadline in turn sits above the heaviest
-# block's calibrated timeout, which no part count changes. So this line is not
-# replaced by a five-part estimate or measurement until either the heaviest block
-# gets lighter or job_bound_evidence learns a bound held up by a deadline.
+# and the first measured run of that shape replaces the line. The bound does not
+# follow the parts down: the sweep's deadline must fit inside it
+# (tools/sweep-selftests.py `SWEEP_DEADLINE`, case tt5), and the deadline in turn
+# sits above the heaviest block's calibrated timeout, which no part count changes.
+# So the job declares its bound held by that deadline (the `bound selftests` line
+# below), and a measured run three times would not reach still passes. A lighter
+# heaviest block is what lets the deadline and the bound come down.
 # `--shard I/N` prints every part's load, so an estimate re-derives from the line
 # it prints.
 #
@@ -95,6 +100,7 @@ concurrency:
 # success), took 22m00s, past half the bound of 40 its estimate had set, so the bound
 # moved to twice the measurement.
 #   longest selftests: 13m35s (estimate, the heaviest of four parts, run 40715565769's windows cells)
+#   bound selftests: held by the sweep deadline (tools/sweep-selftests.py SWEEP_DEADLINE)
 #   longest e2e: 1m41s (estimate, run 38902667892)
 #   longest lint: 3m14s (run 41112221437, 19:04:54 to 19:08:08)
 #   longest browser-panel: 6m24s (estimate, run 38929591548)

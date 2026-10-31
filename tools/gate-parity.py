@@ -46,7 +46,10 @@ here was a second reader of the same files:
     says why that document's drift is a security claim rather than a stale
     paragraph, and why the second direction is what makes the first worth having.
   * every CI job carries a time bound, two to three times the longest run its
-    `longest` line records (`untimed_jobs()`, `job_bound_evidence()`).
+    `longest` line records (`untimed_jobs()`, `job_bound_evidence()`) - or, for
+    a job that runs the sweep and declares it, up to the whole minute past the
+    sweep's deadline read off `tools/sweep-selftests.py`
+    (`sweep_deadline_basis()`).
   * every CI job pins its runner image: no `runs-on`, and no value of a matrix it
     reads, is a floating `*-latest` label (`floating_runners()`).
   * ruff and vermin are pointed at the directories the code lives in: the suites
@@ -1712,14 +1715,108 @@ BOUND_FACTOR = 2
 BOUND_CEILING_FACTOR = 3
 BOUND_FLOOR_MINUTES = 5
 
+# --- ...or held up by the sweep's own deadline, declared and checked
+# A job that runs the sweep cannot be bounded below the sweep's deadline plus the
+# time its cell spends outside the sweep, or the runner kills the job before the
+# sweep can name the file that hung (`tools/sweep-selftests.py` case tt5 holds
+# that side). When the heaviest block's calibrated timeout sets that deadline, a
+# job split into more parts runs well under a third of it, and three times its
+# measured run no longer reaches the bound tt5 forces. So such a job may declare
+# `# bound <job>: held by the sweep deadline (...)`, and its ceiling is then also
+# the smallest whole minute M with SWEEP_DEADLINE + CI_SETUP_ALLOWANCE < M * 60 -
+# both read out of the runner's source, never copied here - provided the job
+# really runs a sweep by what `verify.sh --list` prints for its slices. A
+# declaration none of that can be checked for is a finding and holds nothing up.
+_BOUND_HELD_LINE = re.compile(
+    r"^\s*#\s+bound\s+([A-Za-z0-9_-]+):\s+held by the sweep deadline\b", re.M)
+SWEEP_REL = os.path.join("tools", "sweep-selftests.py")
+_DEADLINE_NAMES = (("deadline", "SWEEP_DEADLINE"),
+                   ("setup", "CI_SETUP_ALLOWANCE"))
 
-def job_bound_evidence(text):
+
+def sweep_deadline_basis(repo=None):
+    """{"deadline", "setup", "problem"}: the sweep's deadline and setup
+    allowance in seconds, read as the whole-number literals the runner's source
+    assigns them at module level - or both None and a `problem` saying why
+    they could not be read. Read off the AST rather than imported, so the
+    runner's import-time work is never this check's."""
+    path = os.path.join(repo or REPO, SWEEP_REL)
+    missing = {"deadline": None, "setup": None}
+    try:
+        with io.open(path, encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
+    except (IOError, OSError, UnicodeDecodeError, SyntaxError) as exc:
+        return dict(missing, problem="%s could not be read: %s" % (SWEEP_REL, exc))
+    found = {}
+    for node in tree.body:
+        if not (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)):
+            continue
+        found[node.targets[0].id] = node.value
+    got = {}
+    for key, name in _DEADLINE_NAMES:
+        value = found.get(name)
+        if not (isinstance(value, ast.Constant) and type(value.value) is int):
+            return dict(missing, problem="%s assigns %s no whole-number literal "
+                                         "at module level" % (SWEEP_REL, name))
+        got[key] = value.value
+    return dict(got, problem=None)
+
+
+def deadline_ceiling_minutes(basis):
+    """The smallest whole minute M with deadline + setup < M * 60."""
+    return (basis["deadline"] + basis["setup"]) // 60 + 1
+
+
+def sweep_running_jobs(text, listed):
+    """The ids of the workflow's jobs with a run whose slices print a sweep of
+    the tree in `listed` (the parsed `verify.sh --list`) - a call with no
+    `--only` runs every per-run slice - or None when the jobs could not be
+    read. The runner's own `--selftest` is not a sweep: the deadline does not
+    bound it."""
+    got = job_slices(text)
+    if got["problem"] is not None:
+        return None
+    every = [n for n in listed["order"] if listed["tiers"][n] == "per-run"]
+
+    def sweeps(name):
+        for command in listed["commands"].get(name, []):
+            words = command.split()
+            if (any(w.endswith("sweep-selftests.py") for w in words)
+                    and "--selftest" not in words):
+                return True
+        return False
+
+    return set(job["job"] for job in got["jobs"] for run in job["runs"]
+               if any(sweeps(n) for n in (every if run["slices"] is None
+                                          else run["slices"])))
+
+
+def _held_basis_problem(job, deadline, sweep_jobs):
+    """Why `job`'s declared deadline basis cannot hold its bound up, or None."""
+    if deadline is None:
+        return "no sweep deadline was read to check it against"
+    if deadline["problem"] is not None:
+        return deadline["problem"]
+    if sweep_jobs is None:
+        return ("which jobs run the sweep could not be read off "
+                "`verify.sh --list`")
+    if job not in sweep_jobs:
+        return "the job runs no sweep, so the sweep's deadline bounds nothing in it"
+    return None
+
+
+def job_bound_evidence(text, deadline=None, sweep_jobs=None):
     """[(job, why)] for every job whose bound is not backed by a `longest` line.
 
     A job with a readable bound needs exactly one `# longest <job>: <m>m<ss>s`
     line, and `timeout-minutes` must be at least BOUND_FACTOR times it and at
     most BOUND_CEILING_FACTOR times it, or `BOUND_FLOOR_MINUTES` when that is
-    more. A line
+    more, or - for a job carrying one `# bound <job>: held by the sweep
+    deadline` line - `deadline_ceiling_minutes(deadline)` when that is more.
+    `deadline` is `sweep_deadline_basis()`'s answer and `sweep_jobs` is
+    `sweep_running_jobs()`'s; a declaration either cannot vouch for is a
+    finding and raises no ceiling. A `longest` or `bound` line
     naming a job the workflow does not have is reported too: it is a
     measurement of nothing, and it would let a renamed job keep a figure that
     no longer describes it. Jobs with no readable bound are `untimed_jobs`'
@@ -1740,6 +1837,16 @@ def job_bound_evidence(text):
     for job in sorted(set(longest) - set(got["names"])):
         findings.append((job, "a `longest` line names a job this workflow "
                               "does not have"))
+    held = {}
+    for match in _BOUND_HELD_LINE.finditer(text):
+        job = match.group(1)
+        if job in held:
+            findings.append((job, "two `bound ... held by the sweep deadline` "
+                                  "lines for one job"))
+        held[job] = True
+    for job in sorted(set(held) - set(got["names"])):
+        findings.append((job, "a `bound ... held by the sweep deadline` line "
+                              "names a job this workflow does not have"))
     for job, minutes in sorted(got["bounds"].items()):
         if job not in longest:
             findings.append((job, "%s is %d with no `# longest %s: <m>m<ss>s` "
@@ -1755,24 +1862,44 @@ def job_bound_evidence(text):
                                      need // 60, need % 60)))
         allowed = max(BOUND_CEILING_FACTOR * longest[job],
                       BOUND_FLOOR_MINUTES * 60)
+        held_by = ""
+        if job in held:
+            problem = _held_basis_problem(job, deadline, sweep_jobs)
+            if problem is not None:
+                findings.append((job, "declares its bound held by the sweep "
+                                      "deadline, which cannot be checked: %s"
+                                      % (problem,)))
+            else:
+                ceiling = deadline_ceiling_minutes(deadline) * 60
+                allowed = max(allowed, ceiling)
+                held_by = (" and over the %d minutes the sweep deadline holds "
+                           "it to (%s %ds + %s %ds)"
+                           % (ceiling // 60, _DEADLINE_NAMES[0][1],
+                              deadline["deadline"], _DEADLINE_NAMES[1][1],
+                              deadline["setup"]))
         if minutes * 60 > allowed:
             findings.append((job, "%s is %d, over %d times its longest recorded "
-                                  "run of %dm%02ds and over the %d-minute floor "
-                                  "(%dm%02ds allowed) - a hung job holds its "
+                                  "run of %dm%02ds and over the %d-minute floor"
+                                  "%s (%dm%02ds allowed) - a hung job holds its "
                                   "runner until the bound"
                                   % (_JOB_TIMEOUT_KEY, minutes,
                                      BOUND_CEILING_FACTOR,
                                      longest[job] // 60, longest[job] % 60,
-                                     BOUND_FLOOR_MINUTES,
+                                     BOUND_FLOOR_MINUTES, held_by,
                                      allowed // 60, allowed % 60)))
     return findings
 
 
-def job_timeout_verdict(repo=None):
-    """`untimed_jobs()` over ci.yml as [(job, why)], with an unreadable workflow
-    or one with no jobs in it AS a finding - a question nobody could ask must not
-    reach `render()` as an empty list."""
-    path = os.path.join(repo or REPO, CI_REL)
+def job_timeout_verdict(repo=None, listed=None):
+    """`untimed_jobs()` and `job_bound_evidence()` over ci.yml as [(job, why)],
+    with an unreadable workflow or one with no jobs in it AS a finding - a
+    question nobody could ask must not reach `render()` as an empty list.
+
+    `listed` is the parsed `verify.sh --list` when the caller already holds it;
+    otherwise it is asked only when a job declares a deadline-held bound, the
+    one reading that needs it."""
+    root = repo or REPO
+    path = os.path.join(root, CI_REL)
     try:
         with io.open(path, encoding="utf-8") as fh:
             text = fh.read()
@@ -1781,7 +1908,14 @@ def job_timeout_verdict(repo=None):
     got = untimed_jobs(text)
     if got["problem"] is not None:
         return [("ci.yml", got["problem"])]
-    return got["findings"] + job_bound_evidence(text)
+    deadline, sweep_jobs = None, None
+    if _BOUND_HELD_LINE.search(text):
+        deadline = sweep_deadline_basis(root)
+        if listed is None:
+            listed = verify_list(root)[0]
+        if listed is not None:
+            sweep_jobs = sweep_running_jobs(text, listed)
+    return got["findings"] + job_bound_evidence(text, deadline, sweep_jobs)
 
 
 # --- every CI job pins its runner image -------------------------------------------
@@ -2081,7 +2215,7 @@ def parity(repo=None):
     slices, listed, jobs = slice_verdict(repo)
     return {"slices": slices,
             "failmodes": failmode_table_verdict(repo),
-            "job_timeouts": job_timeout_verdict(repo),
+            "job_timeouts": job_timeout_verdict(repo, listed),
             "runner_images": runner_image_verdict(repo),
             "lint_dirs": lint_dir_verdict(repo),
             "stale_exemptions": exemption_audit_drift(repo),
@@ -2117,7 +2251,8 @@ def render(result, stream=None):
                   "run and the whole tree on the release tier, SECURITY.md's fail modes are the ones hooks.json "
                   "registers, every CI job carries a time bound two to three "
                   "times its longest recorded run (or the floor for a "
-                  "sub-minute job), every CI job pins its runner image "
+                  "sub-minute job, or the sweep's deadline for a sweep job "
+                  "declaring it), every CI job pins its runner image "
                   "instead of a floating `-latest` label, ruff and vermin are "
                   "pointed at the directories the code now lives in, and every "
                   "exemption table names who audits it\n")
@@ -3756,7 +3891,11 @@ def _cases(check):
 
     with io.open(os.path.join(REPO, CI_REL), encoding="utf-8") as fh:
         _jb_live_text = fh.read()
-    _jb_live = job_bound_evidence(_jb_live_text)
+    _jb_live_list0 = verify_list()[0]
+    _jb_live = job_bound_evidence(
+        _jb_live_text, sweep_deadline_basis(),
+        None if _jb_live_list0 is None
+        else sweep_running_jobs(_jb_live_text, _jb_live_list0))
     _jb_lines = _LONGEST_LINE.findall(_jb_live_text)
     check("jb0 THE LIVE CLAIM: every bounded job in ci.yml carries one `longest` "
           "line and a bound at least %d and at most %d times it (or the floor), "
@@ -3819,6 +3958,138 @@ def _cases(check):
           and "74m57s allowed" in _jb_cap[1][0][1]
           and [job for job, _w in _jb_cap[2]] == ["two"]
           and "5m00s allowed" in _jb_cap[2][0][1])
+
+    # THE SECOND BASIS: a job that runs the sweep and says so may sit at the
+    # smallest whole minute its deadline plus setup allowance fits strictly
+    # inside. 1800s + 120s is exactly 32 minutes, so the strict inequality puts
+    # the ceiling at 33: a `<=`, or a ceiling division, would put it at 32 and
+    # turn the at-the-ceiling run red. The measured run is 7m00s, so three
+    # times it (21m00s) is far under 33 and only the deadline can hold it.
+    _jb_held = ("#   bound one: held by the sweep deadline "
+                "(tools/sweep-selftests.py SWEEP_DEADLINE)\n")
+    _jb_fast = ("# measured\n#   longest one: 7m00s (run 1)\n"
+                "#   longest two: 1m12s (run 1)\n")
+    _jb_dl = {"deadline": 1800, "setup": 120, "problem": None}
+    _jb_sweeps = set(["one"])
+    _jb_dlrun = [job_bound_evidence(_jb_fast + held + _jb_wf % m, _jb_dl,
+                                    _jb_sweeps)
+                 for held, m in ((_jb_held, "33"), (_jb_held, "34"), ("", "33"))]
+    check("jb5 a bound the sweep's deadline holds may sit at the smallest whole "
+          "minute the deadline plus the setup allowance fits strictly inside, "
+          "over a measured run three times would not reach - and not one minute "
+          "past it, and not at all without the declaration: %r" % (_jb_dlrun,),
+          _jb_dlrun[0] == []
+          and [job for job, _w in _jb_dlrun[1]] == ["one"]
+          and "33m00s allowed" in _jb_dlrun[1][0][1]
+          and [job for job, _w in _jb_dlrun[2]] == ["one"]
+          and "21m00s allowed" in _jb_dlrun[2][0][1])
+
+    _jb_text = _jb_fast + _jb_held + _jb_wf % "33"
+    _jb_unread = job_bound_evidence(
+        _jb_text, {"deadline": None, "setup": None,
+                   "problem": "tools/sweep-selftests.py is not there"},
+        _jb_sweeps)
+    _jb_unasked = job_bound_evidence(_jb_text, None, _jb_sweeps)
+    _jb_nosweep = job_bound_evidence(_jb_text, _jb_dl, set(["two"]))
+    _jb_unlisted = job_bound_evidence(_jb_text, _jb_dl, None)
+    _jb_hghost = job_bound_evidence(
+        _jb_text.replace("bound one:", "bound gone:"), _jb_dl, _jb_sweeps)
+    _jb_htwice = job_bound_evidence(_jb_held + _jb_text, _jb_dl, _jb_sweeps)
+    check("jb6 a declared deadline basis nobody could check is a finding, never "
+          "a ceiling: a deadline that could not be read, or was never handed "
+          "in, a declaring job that runs no sweep, a workflow whose sweep jobs "
+          "could not be asked, a declaration for a job the workflow does not "
+          "have, and a job declared twice: %r / %r / %r / %r / %r / %r"
+          % (_jb_unread, _jb_unasked, _jb_nosweep, _jb_unlisted, _jb_hghost,
+             _jb_htwice),
+          [job for job, _w in _jb_unread] == ["one", "one"]
+          and "is not there" in _jb_unread[0][1]
+          and [job for job, _w in _jb_unasked] == ["one", "one"]
+          and [job for job, _w in _jb_nosweep] == ["one", "one"]
+          and "runs no sweep" in _jb_nosweep[0][1]
+          and [job for job, _w in _jb_unlisted] == ["one", "one"]
+          and sorted(job for job, _w in _jb_hghost) == ["gone", "one"]
+          and [job for job, _w in _jb_htwice] == ["one"])
+
+    # The two constants are read off the sweep runner's own source, so values
+    # no other file holds - 1500 and 300, a ceiling of 31 - tell a reader of
+    # that file from one carrying its own copy of the live figures.
+    _jb_dtree = tempfile.mkdtemp(prefix="gate-parity-dl-")
+    try:
+        _jb_none = sweep_deadline_basis(_jb_dtree)
+        _write(_jb_dtree, os.path.join("tools", "sweep-selftests.py"),
+               "SWEEP_DEADLINE = 1500\nCI_SETUP_ALLOWANCE = 300\n")
+        _jb_read = sweep_deadline_basis(_jb_dtree)
+        _write(_jb_dtree, os.path.join("tools", "sweep-selftests.py"),
+               "SWEEP_DEADLINE = 25 * 60\nCI_SETUP_ALLOWANCE = 300\n")
+        _jb_expr = sweep_deadline_basis(_jb_dtree)
+    finally:
+        shutil.rmtree(_jb_dtree, ignore_errors=True)
+    _jb_ceil = [job_bound_evidence(_jb_fast + _jb_held + _jb_wf % m, _jb_read,
+                                   _jb_sweeps) for m in ("31", "32")]
+    check("jb7 the deadline and the setup allowance are read off the sweep "
+          "runner's own source - a file that is missing, or that spells a "
+          "figure as anything but a whole number, is a problem rather than a "
+          "default - and the ceiling follows what was read: %r / %r / %r / %r"
+          % (_jb_none, _jb_read, _jb_expr, _jb_ceil),
+          _jb_none["problem"] is not None and _jb_none["deadline"] is None
+          and (_jb_read["deadline"], _jb_read["setup"], _jb_read["problem"])
+          == (1500, 300, None)
+          and _jb_expr["problem"] is not None and _jb_expr["deadline"] is None
+          and _jb_ceil[0] == [] and "31m00s allowed" in _jb_ceil[1][0][1])
+
+    # THE LIVE HALF: the workflow as committed, with the selftests job's
+    # `longest` figure rewritten to a short measured run, stays clean - so
+    # recording a real measurement of the job's current shape cannot turn this
+    # gate red - and the same text without the declaration is red, naming the
+    # job. The basis and the sweep jobs are the ones `parity()` uses.
+    _jb_live_basis = sweep_deadline_basis()
+    _jb_live_list, _jb_live_problem = verify_list()
+    _jb_live_sweeps = (None if _jb_live_list is None
+                       else sweep_running_jobs(_jb_live_text, _jb_live_list))
+    _jb_measured = re.sub(r"(?m)^(\s*#\s+longest selftests:\s+)\S+.*$",
+                          r"\g<1>7m00s (run 1)", _jb_live_text)
+    _jb_m_clean = job_bound_evidence(_jb_measured, _jb_live_basis,
+                                     _jb_live_sweeps)
+    _jb_m_bare = job_bound_evidence(
+        re.sub(r"(?m)^\s*#\s+bound selftests:.*\n", "", _jb_measured),
+        _jb_live_basis, _jb_live_sweeps)
+    check("jb8 THE LIVE CLAIM, MEASURED: ci.yml with a short measured `longest "
+          "selftests` figure in place of the one it carries is clean under the "
+          "deadline read off tools/sweep-selftests.py (%r) and the sweep jobs "
+          "read off verify.sh --list (%r, problem %r), and red without its "
+          "declaration: %r / %r"
+          % (_jb_live_basis, sorted(_jb_live_sweeps or []), _jb_live_problem,
+             _jb_m_clean, _jb_m_bare),
+          _jb_measured != _jb_live_text and _jb_m_clean == []
+          and _jb_live_basis["problem"] is None
+          and "selftests" in (_jb_live_sweeps or set())
+          and [job for job, _w in _jb_m_bare] == ["selftests"])
+
+    # Which jobs sweep is read off what each slice PRINTS: the runner's own
+    # cases are not a sweep, a slice that runs neither is not one, and a call
+    # with no `--only` runs every per-run slice - the sweep among them.
+    _jb_sw_list = {"order": ["sweep", "runner", "other"],
+                   "tiers": {"sweep": "per-run", "runner": "per-run",
+                             "other": "release"},
+                   "steps": {},
+                   "commands": {"sweep": ["python3 tools/sweep-selftests.py"],
+                                "runner": ["python3 tools/sweep-selftests.py "
+                                           "--selftest"],
+                                "other": ["npx vitest run"]}}
+    _jb_sw_wf = "".join(
+        "  %s:\n    timeout-minutes: 5\n    runs-on: x\n    steps:\n"
+        "      - run: sh tools/verify.sh%s\n" % (job, only)
+        for job, only in (("a", " --only sweep"), ("b", " --only runner"),
+                          ("c", ""), ("d", " --only other")))
+    _jb_sw = sweep_running_jobs("name: ci\njobs:\n" + _jb_sw_wf, _jb_sw_list)
+    _jb_sw_none = sweep_running_jobs("name: ci\non:\n  push:\n", _jb_sw_list)
+    check("jb9 a job sweeps when a slice it runs prints a sweep of the tree - "
+          "not the runner's own `--selftest`, not a slice running neither - and "
+          "a call with no `--only` sweeps through the per-run slices; a "
+          "workflow with no jobs is None, not an empty set: %r / %r"
+          % (sorted(_jb_sw or []), _jb_sw_none),
+          _jb_sw == set(["a", "c"]) and _jb_sw_none is None)
 
     _jt_none = untimed_jobs("name: ci\non:\n  push:\n")
     _jt_absent = job_timeout_verdict(os.path.join(REPO, "no-such-repo-dir"))

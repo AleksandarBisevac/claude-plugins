@@ -71,11 +71,13 @@
         "severity": "low",
         "file": "tools/gate-parity.py:2068 (slice_verdict wiring); tools/gate-parity.py:2622 (sv7); tools/gate-parity.py:2804-2900 (el0-el4)",
         "issue": "Every new el case calls encoding_leg_drift directly. The only case that reaches slice_verdict/parity, sv7, asserts the live verdict is clean, so if `+ encoding_leg_drift(text, listed)` were deleted from slice_verdict, sv7 and every el case would still pass while `python3 tools/gate-parity.py` stopped holding the split. The same applies to the proposed prove-gates mutation row, which names el0 (a direct call). The wiring is the only thing that puts the rule in the build, and it can be deleted without any case going red.",
-        "resolution": "Add a case that runs slice_verdict (or parity) against a fixture tree whose ci.yml per-run arm names `selftests-cp1252-whole`, and asserts that the verdict carries the `windows selftests-cp1252-whole` finding. Or point the prove-gates mutation row at that case instead of el0.",
-        "fixTask": "P151.8-3z1"
+        "resolution": "fixed in P151.8-3z1 (0301641813a5): Add a case that runs slice_verdict (or parity) against a fixture tree whose ci.yml per-run arm names `selftests-cp1252-whole`, and asserts that the verdict carries the `windows selftests-cp1252-whole` finding. Or point the prove-gates mutation row at that case instead of el0.",
+        "fixTask": "P151.8-3z1",
+        "commit": "0301641813a5",
+        "status": "fixed"
       }
     ],
-    "outcome": "[findings: 6 - 1 high, 3 med, 2 low; 1 with a recorded fix commit]"
+    "outcome": "[findings: 6 - 1 high, 3 med, 2 low; 2 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -295,7 +297,7 @@
     {
       "id": "P151.4-3z1",
       "title": "fix P151-R2: The selftests job's bound now rests on a figure for a shape that...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The selftests job's bound now rests on a figure for a shape that no longer runs, and an honest figure for the new shape cannot be recorded. `longest selftests: 13m35s (estimate, the heaviest of four parts ...)` is what backs `timeout-minutes: 33` under job_bound_evidence, which needs 3 x longest >= 33 min, so longest >= 11m00s (BOUND_CEILING_FACTOR 3, floor 5). tt5 requires SWEEP_DEADLINE 1800 + CI_SETUP_ALLOWANCE 120 < timeout-minutes x 60. That inequality is strict, so 32 fails and 33 is the lowest bound tt5 accepts. The executor predicts five-part windows cells at about 6.9-8.5 min. Once the phase's own next step records that measurement, job_bound_evidence reports 'timeout-minutes is 33, over 3 times its longest recorded run' (allowed about 20m42s-25m30s). The bound cannot drop without turning tt5 red. So yes, gate-parity goes red the moment the line is re-recorded, unless the line is kept stale on purpose. That is the outcome the ci.yml comment at :67-78 now commits to, with gate-parity passing on a measurement of nothing current. It is disclosed, not hidden, but it blocks recording the phase's own measured figures.\n\nResolution asked: The structurally correct fix is to give job_bound_evidence the deadline as a second, checked basis for a bound, instead of keeping a stale estimate. Let the ceiling for `selftests` be max(3 x longest, BOUND_FLOOR_MINUTES, the smallest whole minute M with SWEEP_DEADLINE + CI_SETUP_ALLOWANCE < M x 60). Read both constants out of tools/sweep-selftests.py, the same facts tt5 reads, rather than copying them. Declare it explicitly with a ci.yml line such as `# bound selftests: held by the sweep deadline (tools/sweep-selftests.py SWEEP_DEADLINE)`, which job_bound_evidence verifies. Add a selftest case with both directions: a deadline-held bound over a short measured longest passes, and the same bound with no deadline basis is red. Then replace the four-part estimate with the measured five-part figure. Making the heaviest block (ar-block of test_drive_phase.py) lighter is the lever that lowers both the deadline and the bound, but it is separate CPU work and does not remove the need for the rule.",
       "files": [
         ".github/workflows/ci.yml",
@@ -324,14 +326,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-31T01:41:06Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -358,7 +360,13 @@
       ],
       "fixes": [
         "P151-R2"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-31T02:02:33Z.222639",
+        "status": "passed",
+        "at": "2026-10-31T02:02:33Z"
+      }
     },
     {
       "id": "P151.5-3z1",
@@ -552,7 +560,7 @@
     {
       "id": "P151.8-3z1",
       "title": "fix P151-R6: Every new el case calls encoding_leg_drift directly. The only ca...",
-      "status": "in_progress",
+      "status": "done",
       "description": "Every new el case calls encoding_leg_drift directly. The only case that reaches slice_verdict/parity, sv7, asserts the live verdict is clean, so if `+ encoding_leg_drift(text, listed)` were deleted from slice_verdict, sv7 and every el case would still pass while `python3 tools/gate-parity.py` stopped holding the split. The same applies to the proposed prove-gates mutation row, which names el0 (a direct call). The wiring is the only thing that puts the rule in the build, and it can be deleted without any case going red.\n\nResolution asked: Add a case that runs slice_verdict (or parity) against a fixture tree whose ci.yml per-run arm names `selftests-cp1252-whole`, and asserts that the verdict carries the `windows selftests-cp1252-whole` finding. Or point the prove-gates mutation row at that case instead of el0.",
       "files": [
         "tools/gate-parity.py"
@@ -581,14 +589,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "0301641813a5",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Only tools/gate-parity.py changed (+118 lines; git diff --stat in the worktree). Added _wiring_cases(check), called from _cases right after _encoding_leg_cases. It builds a scratch tree with tempfile.mkdtemp and removes it in finally. In that tree, tools/verify.sh is a POSIX-sh stub that prints back the real `verify.sh --list` (serialised by the new _list_text from the parsed list; sv17 asserts the parsed result equals the runner's), and ci.yml is the live workflow with one edit at a time. Each edit's anchor must hit exactly once. sv17 is the allow case: the live workflow in the scratch tree gives slice_verdict == [], and the list read equals the list printed. sv18 runs slice_verdict on the per-run arm swapped to 'selftests-cp1252-whole' and on the release arm narrowed to 'selftests-cp1252'. Its findings must carry `windows selftests-cp1252-whole` and `windows code-page leg` respectively, plus every subject the direct encoding_leg_drift call names. sv19 does the same for slice_drift (a job naming `no-such-slice`) and shard_matrix_drift (an exclude dropping windows part WINDOWS_SHARDS). sv20 sits beside sv8 and reuses its parity() over an absent tree: each of failmodes, job_timeouts, runner_images, lint_dirs and stale_exemptions must carry at least one finding (observed 1, 1, 1, 1, 44). Suite: python3 tools/gate-parity.py --selftest exits 0, ALL PASS 107/107 (run twice, before and after the probe, same tally). ruff exits 0; vermin exits 0 (minimum 3.5). _output_lints.prose_number_claims('.') and house_style_violations(['tools']) report nothing for gate-parity.py. The live `python3 tools/gate-parity.py` exits 0. Blind-spot survey (each claim backed by M1-M9 failing only the new case, so no existing case caught it): all three terms slice_verdict sums had the reported blind spot. encoding_leg_drift (the reported one) is now caught by sv18; slice_drift and shard_matrix_drift by sv19. All five other verdicts parity() wires had the same blind spot: their cases call the verdict functions directly (jb3 calls job_timeout_verdict despite its text naming parity()), and the parity() checks (sv7, ri6, ld6) assert only a clean live tree. sv20 now catches each of them being replaced by [] or asked of this checkout instead of the tree it was handed. What sv20 does not prove: that a specific broken-content finding flows through parity() for those five. It proves the call is made with the handed repo and its result reaches the key, which for a dict entry is all the wiring there is. Dependants: .github/sweep-costs.json, .github/workflows/ci.yml, plugins/audit/scripts/manifest/_areas.py, tests/test_audit_task.py, tools/affected.py, tools/bench-hooks.py, tools/lints/_output_lints.py and tools/measure-affected-miss.py refer to this file by path, which is unchanged. They are still correct, though sweep-costs.json's recorded cost for this suite grows by roughly the cost of three extra slice_verdict runs over a stub runner (not measured separately). floating_runners, image_in_job_names, job_bound_evidence and launcher_contract are untouched. No public function's behaviour changed; only cases and private helpers (_LIST_STUB, _list_text, _write, _wiring_cases) were added. tools/prove-gates.py was not touched; its sibling task's el0 mutation row could instead point at sv18, which goes red on that deletion where el0 does not.",
+        "descriptive": "gate-parity now has cases that go red when any rule is dropped from slice_verdict() or parity(), proven by deleting each wiring term in turn"
       },
       "startedAt": "2026-10-31T00:40:03Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-31T01:41:02Z",
+      "verifiedBy": [
+        "sv17: allow case. slice_verdict over a scratch tree holding the live ci.yml and the runner's list printed back is clean, and the list it read is the runner's",
+        "sv18: slice_verdict over a scratch tree whose per-run cp1252 arm names the whole slice carries `windows selftests-cp1252-whole`, and over one whose release arm names the selection carries `windows code-page leg`",
+        "sv19: slice_verdict carries slice_drift's finding for a job naming an unlisted slice, and shard_matrix_drift's for an exclude dropping a windows part",
+        "sv20: parity() over a tree with none of the files gives every non-slice verdict at least one finding, so none can be replaced by [] or asked of the wrong tree unseen"
+      ],
       "notes": [
         {
           "at": "2026-10-31T00:39:57Z",
@@ -611,6 +624,17 @@
         "runId": "2026-10-31T01:35:56Z.be2122",
         "status": "passed",
         "at": "2026-10-31T01:35:56Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "0301641813a5",
+        "at": "2026-10-31T01:41:02Z",
+        "return": "docs/audit/evidence/returns/P151.8-3z1/20261031T004003Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "tests.expectRedFirst is false on this tdd task: it names no case to prove a red by, so no red-first proof is owed",
+        "at": "2026-10-31T00:51:02Z"
       }
     }
   ],
