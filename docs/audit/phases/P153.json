@@ -39,8 +39,10 @@
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/audit-task.py:1427-1428, 10390-10398",
         "issue": "On a STARTED task the scope refusal prints `_OWED_CASE_WRITE_REMEDY`, whose second half ('--tests-mode gate-only if it owes no case of its own') is itself refused: a tests.mode change on a started task is a narrowing `_narrowings` blocks (fg6 pins 'already been attempted'), unlike tests.gate which is `_FORWARD_ONLY`. The `done` arm already words its remedy for this ('A started task may still move its gate ... so the remedy is the gate and not the mode'); the scope arm does not, so e.g. `scope <started tdd task> --gate-clear` names a dead-end remedy.",
-        "resolution": "Pass `_started(node)`-dependent remedy text at the _locked_scope call site (the gate-only half only for a task not yet started), and pin it with a case on a started tdd task asserting '--tests-mode gate-only' is absent from the refusal.",
-        "fixTask": "P153.9-34e"
+        "resolution": "fixed in P153.9-34e (59dabddbf9d5): Pass `_started(node)`-dependent remedy text at the _locked_scope call site (the gate-only half only for a task not yet started), and pin it with a case on a started tdd task asserting '--tests-mode gate-only' is absent from the refusal.",
+        "fixTask": "P153.9-34e",
+        "commit": "59dabddbf9d5",
+        "status": "fixed"
       },
       {
         "id": "P153-R3",
@@ -81,7 +83,8 @@
         "severity": "high",
         "file": "plugins/audit/hooks/_config.py:3029-3078",
         "issue": "Guard bypass. `_argument_runs` and `_substitution_runs_body` only ask how the carrying command treats its argument. They never ask where that command's OUTPUT goes. With an emitter as the carrier, the body is dropped as data even when the emitter's output is then run. Both guards' own direct readings refuse the quoted spelling of the same command. Notation in this return: FORCEPUSH is a force push of main, STASHDROP is a stash drop, KEYREAD is `cat` of an ssh private key; the literal spellings are left out because this repo's guards grade the return's own text. Measured with each guard's decide() in a scratch repo carrying a recorded trail. guard-history-rewrite: `echo \"$(cat <<'EOF'` / FORCEPUSH / `EOF` / `)\" | sh` was deny at base 1529df9d and is allow now. The direct `echo \"FORCEPUSH\" | sh` is still deny. git_invocations goes from the stash verb to [] for an `echo \"$(cat <<'EOF' ...STASHDROP...)\"` carrier whose output goes to `| sh`, `| bash`, `|& sh`, `> .git/hooks/pre-commit`, `>> <home>/.bashrc`, `> f; sh f`, `| tee .git/hooks/post-checkout` or `> >(sh)`. The direct-quoted twin of every row is still caught by `_printed`/`_output_runs`. guard-secrets-read: the same echo carrier with a KEYREAD body piped to sh was block and is allow now; the direct spelling still blocks. The emitter-output machinery cannot see the body because runnable() strips it before `_expand_printed` runs, so the heredoc spelling skips every output-run rule the guard has. This is not the stated KNOWN LIMIT, which is about a program that runs its operand. No row in hb9/hb11 covers a carrier whose output is run.",
-        "resolution": "Keep the body as shell unless the carrying command's clause ends at the substitution's closing quote. The remainder of that clause after the closing quote is the text on the lines after the terminator, up to the next `;`/`&&`/`||`/newline. If it has a pipe (`|`, `|&`), an output redirect (`>`, `>>`, `>|`) or a `>(`, return \"shell\". The narrower alternative is to apply that rule to emitters only (echo, printf, `cat` with a here-string), but those are the carriers `_printed` reads. Add deny rows to hb11 for `echo \"$(...)\" | sh`, `printf '%s' \"$(...)\" | bash`, `echo \"$(...)\" > .git/hooks/pre-commit` and `echo \"$(...)\" > >(sh)`. Add one deny each through guard-history-rewrite's decide (FORCEPUSH body) and guard-secrets-read's decide (KEYREAD body)."
+        "resolution": "Keep the body as shell unless the carrying command's clause ends at the substitution's closing quote. The remainder of that clause after the closing quote is the text on the lines after the terminator, up to the next `;`/`&&`/`||`/newline. If it has a pipe (`|`, `|&`), an output redirect (`>`, `>>`, `>|`) or a `>(`, return \"shell\". The narrower alternative is to apply that rule to emitters only (echo, printf, `cat` with a here-string), but those are the carriers `_printed` reads. Add deny rows to hb11 for `echo \"$(...)\" | sh`, `printf '%s' \"$(...)\" | bash`, `echo \"$(...)\" > .git/hooks/pre-commit` and `echo \"$(...)\" > >(sh)`. Add one deny each through guard-history-rewrite's decide (FORCEPUSH body) and guard-secrets-read's decide (KEYREAD body).",
+        "fixTask": "P153.13-34e"
       },
       {
         "id": "P153-R8",
@@ -119,7 +122,7 @@
         "resolution": "Rewrite the comment and the check title to name the invariant above `_argument_runs`: the body is kept when the carrier runs its argument by one of the listed routes."
       }
     ],
-    "outcome": "[findings: 12 - 1 high, 6 med, 5 low; 3 with a recorded fix commit]"
+    "outcome": "[findings: 12 - 1 high, 6 med, 5 low; 4 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -647,7 +650,7 @@
     {
       "id": "P153.9-34e",
       "title": "fix P153-R2: On a STARTED task the scope refusal prints `_OWED_CASE_WRITE_REM...",
-      "status": "in_progress",
+      "status": "done",
       "description": "On a STARTED task the scope refusal prints `_OWED_CASE_WRITE_REMEDY`, whose second half ('--tests-mode gate-only if it owes no case of its own') is itself refused: a tests.mode change on a started task is a narrowing `_narrowings` blocks (fg6 pins 'already been attempted'), unlike tests.gate which is `_FORWARD_ONLY`. The `done` arm already words its remedy for this ('A started task may still move its gate ... so the remedy is the gate and not the mode'); the scope arm does not, so e.g. `scope <started tdd task> --gate-clear` names a dead-end remedy.\n\nResolution asked: Pass `_started(node)`-dependent remedy text at the _locked_scope call site (the gate-only half only for a task not yet started), and pin it with a case on a started tdd task asserting '--tests-mode gate-only' is absent from the refusal.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -671,14 +674,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "59dabddbf9d5",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task.py: added _OWED_CASE_STARTED_REMEDY (gate-only remedy: '--gate' alone) beside _OWED_CASE_WRITE_REMEDY; the _locked_scope call site now passes it when _started(node) is true, the write remedy otherwise. The other two _OWED_CASE_WRITE_REMEDY callers are the add paths (single and --from-file), which mint a task that cannot be started, so they keep both halves. tests/test_audit_task.py: in _tdd_gate_clear_cases added ocg17 (started tdd), ocg18 (started regression): scope --gate-clear refused, exit 2, no byte written, '--gate ' present, '--tests-mode gate-only' absent; and ocg19 second-direction: the same refusal on a pending tdd task still names '--tests-mode gate-only'. Red first: before the fix, ocg17 and ocg18 FAILED and ocg19 passed (1197/1199 cases passed, the only two failures mine). After: python3 tools/sweep-selftests.py tests/test_audit_task.py exit 0, 1199 cases ok. ruff check on both files: all checks passed. Dependants (guard-uncommitted.py, test__output.py, affected.py, PLUGIN-BUILD-GUIDE.md, research docs; tests/test_commit_task_work.py, sweep-costs.json, test__filed_returns.py, CHANGELOG.md, etc.): still correct - the change adds one module constant and picks it at one call site; no existing name is renamed, removed or re-signed, and no other file quotes the changed remedy text (grep of both constant names over .py/.md found only audit-task.py). PLUGIN-BUILD-GUIDE.md waived by the caller, not reached.\n\nclaims:\n1 audit-task.py:1541 constant says gate-only remedy for started tasks; audit-task.py:10613 selects it on _started(node); the 'forward-only gate vs refused mode' sentence matches the done arm at the _owed_case_gate_refusal call in _done (comment 'A started task may still move its gate')\n2 ocg17/ocg18 red before the fix (1197/1199), green after (1199/1199); ocg19 is the over-fire direction - it would go red if the mode half were dropped for every caller\n3 grep of both remedy constants over .py/.md: 5 hits in audit-task.py only - two add callers (never started, keep both halves), one scope caller (now started-dependent), the two definitions\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard text-matching; the choice reads _started(node), the task state the write acts on\n7 n/a - no number written",
+        "descriptive": "scope --gate-clear on a started task no longer suggests --tests-mode gate-only, a remedy the same verb refuses."
       },
       "startedAt": "2026-10-31T08:39:37Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-31T08:51:47Z",
+      "verifiedBy": [
+        "scope --gate-clear on a started tdd and a started regression task: refused, no byte written, remedy is --gate alone",
+        "second-direction: same refusal on a pending tdd task still names --tests-mode gate-only"
+      ],
       "notes": [
         {
           "at": "2026-10-31T06:58:30Z",
@@ -702,6 +708,18 @@
         "runId": "2026-10-31T08:51:43Z.f85bfd",
         "status": "passed",
         "at": "2026-10-31T08:51:43Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "59dabddbf9d5",
+        "at": "2026-10-31T08:51:47Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-31T08:45:15Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_audit_task.py` in a throwaway tree at HEAD exited 1 with 2 of 1199 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ocg17 (house FAIL), ocg18 (house FAIL): SELFTEST FAILED: 1197/1199 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -942,6 +960,86 @@
         "basis": "`python3 tests/test__config.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 381 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - hb6 (house FAIL), hb8 (house FAIL), hb10 (house FAIL): SELFTEST FAILED: 378/381 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
         "status": "proved",
         "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P153.13-34e",
+      "title": "fix P153-R7: Guard bypass. `_argument_runs` and `_substitution_runs_body` onl...",
+      "status": "in_progress",
+      "description": "Fixes P153-R7..R12 together (one redesign, not six patches). The previous change flipped the heredoc-in-argument default from deny to allow: a body is data unless the carrier is known to run it. That is fail-open for a guard, and the review measured bypasses: (R7) an emitter whose OUTPUT is then run - piped to a shell, or the substitution itself in command position; (R8) an expansion as the program word ($SHELL -c, \"${BASH}\" -c); (R9) shells/runners missing from the lists (csh, tcsh, pwsh, cmd, nu, nix-shell --run, npx -c, rsync -e, tar --to-command...); (R10) env --split-string=bash / --shell=bash lost by the _PROGRAM_WORD lookbehind; (R11) ./deploy.sh <<EOF now data. Redesign fail-closed: a heredoc body is data ONLY when (a) the substitution is a whole or partial quoted argument of a carrier from ONE table of text sinks (program + the flag whose value is text: git commit -m/-F, git tag -m, audit-task add/scope --description/--title, gh pr/issue create|edit --body/--title, ...), (b) the carrier is a literal word (no expansion), and (c) the carrier output does not feed a pipe, a command position, or another substitution. Everything else stays graded as shell. Keep the real parser fixes (backquote tracking; x.sh as a redirect TARGET is a file, not a shell; a heredoc fed to ./script.sh stays shell). Red-first: one deny case per R7-R11 bypass in BOTH guards (history-rewrite and secrets-read decide()), the gh pr create/backquote/house-form allow cases from the previous task stay green, and fix the stale hb4 comment (R12). Hooks stay importless; tools/bench-hooks.py --gate.",
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "tests/test__config.py",
+        "tests/test_guard_history_rewrite.py",
+        "tests/test_guard_secrets_read.py",
+        "plugins/audit/hooks/guard-history-rewrite.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tools/prove-gates.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__config.py: Keep the body as shell unless the carrying command's clause ends at the substitution's closing quote"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__config.py tests/test_guard_history_rewrite.py .claude/hooks/guard-uncommitted.py tests/test_guard_secrets_read.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 2,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-31T09:17:43Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-31T08:52:06Z",
+          "text": "scope: plugins/audit/hooks/_config.py, every path the finding(s) P153-R7 name"
+        },
+        {
+          "at": "2026-10-31T08:52:06Z",
+          "text": "scope: tests/test__config.py, the suite that tests plugins/audit/hooks/_config.py (python: its import closure reaches plugins/audit/hooks/_config.py)"
+        },
+        {
+          "at": "2026-10-31T08:52:36Z",
+          "text": "it quotes the related-listing sentence of the guide; this task edits only the _config section",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-10-31T08:52:37Z",
+          "text": "it quotes the doctor-trail sentence of the guide; this task edits only the _config section",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-10-31T08:52:38Z",
+          "text": "it reads the generated module-map heading; this task adds no module",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-10-31T08:52:48Z",
+          "text": "it quotes the RED, WRONG CASE verdict wording of prove-gates.py; this task may add rows, never reword that verdict",
+          "waives": "tests/_harness.py"
+        }
+      ],
+      "fixes": [
+        "P153-R7"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-31T09:27:38Z.c4e7da",
+        "status": "passed",
+        "at": "2026-10-31T09:27:38Z"
       }
     }
   ],

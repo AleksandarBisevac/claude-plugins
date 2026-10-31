@@ -615,15 +615,16 @@ so how it grades a body is how each of them does. A marker inside a
 `$( )` or a backquote is read from the **innermost** open substitution: that command's stdin is
 the body, so it is the head, and the opener around it is only the route the output takes. The
 output is then a word of the enclosing command, and one invariant decides it, stated once above
-`_argument_runs`: a heredoc whose substitution is the whole or part of one double-quoted argument
-is data whatever command carries the argument, unless that command runs what it is handed. No
-carrying command is listed; what is listed is the ways a command runs an argument — command
-position or an assignment's value, a wrapper's program operand, a shell or a non-script-run
-interpreter anywhere in its words, a program whose operand is a command line
-(`_RUNS_AN_OPERAND`), and git's arguments other than a commit or tag message. So
-`git commit -m`, a script's `--description` and `gh pr create --body` are accepted by the same
-rule, while an unquoted or nested substitution keeps the body as shell. A program named in a
-head is a word, never the tail of one, so a file named `notes.sh` is not a shell. Script words
+`_TEXT_SINKS`, and it fails closed: a heredoc whose substitution is the whole or part of one
+double-quoted argument is data **only** when `sink_carries` finds a text sink storing it — a
+program, verb and option from the one table `_TEXT_SINKS` (a git commit or tag message, gh's body
+or title, an audit-task prose option, which `hb14` holds to the script's own `_PROSE_HELP`
+options), every word naming it literal, nothing at the command's level redefining a word, and its
+clause ending without handing the sink's output to a pipe, a process substitution or an enclosing
+group. Every other carrier keeps the body as shell — a runner nobody listed, an expansion as the
+program word, a script run by path — and so does an unquoted or nested substitution, or one whose
+own command is not `cat`. A program named in a head is a word, never the tail of one, so a file
+named `notes.sh` is not a shell, while a `.sh` script in program position is. Script words
 are read as the shell hands them over (`shell_words`), so a quoted script path is the file the
 interpreter runs. `tests/test__config.py`'s `hb` group holds both directions of each route.
 

@@ -48,7 +48,23 @@ a command - and closing it means reading files, which this hook never does. The
 word, never the tail of one, so a redirect target named `probe.sh` is the file
 written rather than an `sh` invocation, while `sh probe.sh <<EOF` still feeds
 the body to a shell and is graded. `test_guard_history_rewrite.py`'s gh35 holds
-both directions.
+both directions. A script file in a shell's language run by path
+(`./deploy.sh <<EOF`) is that shell reading the script, so its body is graded
+too (gk11).
+
+A BODY INSIDE A QUOTED ARGUMENT - the house form, `-m "$(cat <<'EOF' ... )"` - is
+data ONLY when `_config.sink_carries` says a text sink stores it: a program,
+verb and option from the one table `_config._TEXT_SINKS` (a git commit or tag
+message, gh's body or title, an audit-task prose option), every word naming it
+literal, and its clause ending without handing its output to a pipe, a process
+substitution or an enclosing group. The reading fails closed: what it gives up is
+every other carrier. A house-form body handed to a program the table does not
+name - a script run by path, `gh` behind a wrapper, a runner nobody listed - is
+graded as shell, so a body line there opening with a refused verb is refused. An
+earlier reading went the other way, data unless the carrier was known to run it,
+and every runner, expansion or piped output its lists missed was a pass
+(gk1-gk10 are those spellings). The way past the cost is a row in the table, for
+a program whose option stores text.
 
 `git reset --hard` shows the other half of the same idea - one spelling is not
 one operation:

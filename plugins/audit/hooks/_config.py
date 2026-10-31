@@ -2370,7 +2370,12 @@ _HEAD_WRAPPERS = ("env", "sudo", "doas", "xargs", "timeout", "nice", "ionice",
                   "nohup", "command", "builtin", "exec", "time", "stdbuf", "chrt",
                   "setsid")
 _SHELL_PROGRAMS = ("sh", "bash", "zsh", "dash", "ksh", "fish", "mksh", "ash",
-                   "source", ".")
+                   "csh", "tcsh", "yash", "posh", "pwsh", "powershell", "cmd",
+                   "nu", "xonsh", "elvish", "source", ".")
+# A program word naming a script FILE in a shell's language: run by path, it is
+# that shell reading the script, and the script may run its stdin.
+_SHELL_SCRIPT = re.compile(r"\.(?:sh|bash|zsh|ksh|dash|csh|tcsh|fish)$",
+                           re.IGNORECASE)
 _ANY_INTERPRETER = re.compile(
     r"^(?:python(?:3(?:\.\d+)?)?|node|nodejs|deno|bun|ruby|perl|php|awk|gawk"
     r"|lua|tclsh|Rscript|osascript)$")
@@ -2838,7 +2843,7 @@ def _head_runs_body(head):
     words, candidates = program_candidates(_last_command(head))
     for word in candidates:
         program = _program_of(word)
-        if program in _SHELL_PROGRAMS:
+        if program in _SHELL_PROGRAMS or _SHELL_SCRIPT.search(program):
             return "shell"
         if _ANY_INTERPRETER.match(program):
             at = words.index(word) if word in words else None
@@ -2916,6 +2921,45 @@ def _scan_quotes(text, stack, stop_at_marker=False):
     return found, opened
 
 
+def _context_step(text, i, stack, at):
+    """The index after the character at `i`, with `stack` and `at` - the
+    quoting open and where each context began - advanced past it in place.
+    The one reading of the shell's quoting every scanner below walks with, so
+    none of them can disagree about where a quote or a substitution ends."""
+    ch, top = text[i], (stack[-1] if stack else None)
+    if top == "'":
+        if ch == "'":
+            stack.pop()
+            at.pop()
+    elif ch == "\\":
+        return i + 2
+    elif text.startswith("$(", i):
+        stack.append("(")
+        at.append(i)
+        return i + 2
+    elif ch == "`":
+        if top == "`":
+            stack.pop()
+            at.pop()
+        else:
+            stack.append("`")
+            at.append(i)
+    elif top == '"':
+        if ch == '"':
+            stack.pop()
+            at.pop()
+    elif ch in "'\"":
+        stack.append(ch)
+        at.append(i)
+    elif ch == "(" and top == "(":
+        stack.append("(")
+        at.append(i)
+    elif ch == ")" and top == "(":
+        stack.pop()
+        at.pop()
+    return i + 1
+
+
 def _scan_contexts(text, stack, stop_at_marker=False):
     """`_scan_quotes`' answer plus where in `text` each open context began -
     None for one already open when `text` began. One scanner, so the quoting a
@@ -2923,159 +2967,219 @@ def _scan_contexts(text, stack, stop_at_marker=False):
     stack, i, n = list(stack), 0, len(text)
     at = [None] * len(stack)
     while i < n:
-        ch, top = text[i], (stack[-1] if stack else None)
-        if top == "'":
-            if ch == "'":
-                stack.pop()
-                at.pop()
-        elif ch == "\\":
-            i += 1
-        elif text.startswith("$(", i):
-            stack.append("(")
-            at.append(i)
-            i += 1
-        elif ch == "`":
-            if top == "`":
-                stack.pop()
-                at.pop()
-            else:
-                stack.append("`")
-                at.append(i)
-        elif top == '"':
-            if ch == '"':
-                stack.pop()
-                at.pop()
-        elif ch in "'\"":
-            stack.append(ch)
-            at.append(i)
-        elif ch == "(" and top == "(":
-            stack.append("(")
-            at.append(i)
-        elif ch == ")" and top == "(":
-            stack.pop()
-            at.pop()
-        elif stop_at_marker and ch == "<":
+        if (stop_at_marker and text[i] == "<"
+                and (not stack or stack[-1] in "(`")):
             m = _HEREDOC_START.match(text, i)
             if m:
                 return m, tuple(stack), tuple(at)
-        i += 1
+        i = _context_step(text, i, stack, at)
     return None, tuple(stack), tuple(at)
 
 
-# --- a substitution's output as an argument: the invariant ----------------------
+def _shell_level(text):
+    """`text` with every character inside a quote or a substitution, and every
+    quoting character itself, blanked: what is left is the command's own level,
+    where a separator, a group or a definition is one the shell acts on."""
+    out, stack, at, i, n = [], [], [], 0, len(text)
+    while i < n:
+        was_open = bool(stack)
+        nxt = _context_step(text, i, stack, at)
+        plain = not was_open and not stack and nxt == i + 1
+        out.append(text[i] if plain else " " * (nxt - i))
+        i = nxt
+    return "".join(out)[:n]
+
+
+# --- a substitution's output as an argument: data only to a text sink -----------
 # A HEREDOC WHOSE SUBSTITUTION IS THE WHOLE OR PART OF ONE DOUBLE-QUOTED ARGUMENT
-# IS DATA TO EVERY GUARD, WHATEVER COMMAND CARRIES THE ARGUMENT, UNLESS THAT
-# COMMAND RUNS WHAT IT IS HANDED. The body is the substitution's output, the
-# output is one word of the carrying command, and a word is text to every
-# program that does not execute it. So no carrying command is vouched for by
-# name: `git commit -m`, a script's `--description`, `gh pr create --body` and a
-# program nobody listed are accepted by the same rule. What is named instead is
-# the ways a command executes an argument, each a property of a program:
+# IS DATA ONLY WHEN A TEXT SINK CARRIES IT, AND EVERYTHING ELSE STAYS SHELL. A
+# guard fails closed, so the question is never "does this carrier run what it is
+# handed" - a list of the ways a program runs an argument is never finished
+# (a runner nobody listed, an expansion as the program word, a script whose
+# output is then run) - but "is this carrier one that is known to store it as
+# text". Three things must all hold:
 #
-#   * command position, or an assignment's value (`A="$(...)"`, `export A=`,
-#     `make A=`) - the shell runs it, or exports it to programs that may;
-#   * a wrapper's program operand (`sudo "$(...)"`, `env -S`), read through
-#     `program_candidates`, which leaves no program past the wrapper;
-#   * a shell ANYWHERE in the command's words - its `-c`, a script's `eval`,
-#     or behind a wrapper no table names (`chroot /x bash -c`, `find -exec sh`);
-#   * an interpreter anywhere in its words that is not a plain script run - an
-#     inline flag runs the argument - or any interpreter at all when an option
-#     it reads from the environment is assigned anywhere in the command;
-#   * a program whose operand is a command line by definition
-#     (`_RUNS_AN_OPERAND`);
-#   * git, whose arguments are its operation (`-c core.pager=`, an alias) - all
-#     but the value of a commit or tag message option, which git stores.
+#   * the carrier is a sink in `_TEXT_SINKS` - a program, the words that select
+#     its verb, and the options whose VALUE is text it stores - and the
+#     substitution's argument is the value of one of those options, as the next
+#     word or glued to it (`--body=`, `-m`);
+#   * every word naming the sink is literal - no expansion can stand in for the
+#     program - and nothing in the command at the shell's own level redefines a
+#     word (`alias`, a function, `PATH=`, `eval`, `source`);
+#   * the sink's own output reaches nothing that may run it: its clause is at the
+#     command's top level - in no subshell, group, compound command or other
+#     substitution - and ends in `&&`, `||`, `;`, `&`, a newline or the command's
+#     end, never a pipe or a process substitution. A sink prints what it stored
+#     (a commit its subject, gh a title), so a pipe to a shell runs the body.
 #
-# Unquoted, nested in another substitution, or opened after a separator, the
-# output is not one argument and the body stays shell. KNOWN LIMIT, stated
-# rather than hidden: a program that runs an operand and is none of the above
-# reads as one that does not. The list is of capabilities, and the house forms
-# are derived from it rather than enumerated beside it.
-_RUNS_AN_OPERAND = ("eval", "trap", "find", "ssh", "su", "runuser", "pkexec",
-                    "watch", "script", "parallel", "chroot", "nsenter",
-                    "unshare", "flock", "systemd-run", "fc", "alias", "tmux",
-                    "screen", "expect")
-# The options of a git verb whose VALUE is a message git stores and runs
-# nothing from.
-_GIT_MESSAGE_OPTIONS = {"commit": ("-m", "--message"),
-                        "tag": ("-m", "--message")}
+# The substitution's own command must be `cat` with literal words, so what the
+# argument receives is the body itself. KNOWN COST, stated rather than hidden: a
+# body handed to a program the table does not name is graded as shell, so a
+# house-form body there whose line opens with a refused verb is refused. The way
+# past it is a row in `_TEXT_SINKS`, for a program whose option stores text.
+_GH_BODY_TITLE = ("-b", "--body", "-t", "--title")
+_GH_BODY = ("-b", "--body")
+_GH_NOTES_TITLE = ("-n", "--notes", "-t", "--title")
+# `audit-task.py`'s free-text options: every option it declares with
+# `_PROSE_HELP`. test__config's `hb14` holds this tuple to that set.
+_AUDIT_TASK_PROSE = ("--actual", "--description", "--descriptive",
+                     "--expected", "--intent-basis", "--issue",
+                     "--no-evidence-reason", "--outcome", "--override-verdict",
+                     "--reason", "--rename", "--repro", "--resolution",
+                     "--review-outcome", "--summary", "--technical", "--text")
+# (the words that name the sink, the options whose value it stores as text),
+# every word matched exactly.
+_TEXT_SINKS = (
+    (("git", "commit"), ("-m", "--message")),
+    (("git", "tag"), ("-m", "--message")),
+    (("gh", "pr", "create"), _GH_BODY_TITLE),
+    (("gh", "pr", "edit"), _GH_BODY_TITLE),
+    (("gh", "pr", "comment"), _GH_BODY),
+    (("gh", "pr", "review"), _GH_BODY),
+    (("gh", "issue", "create"), _GH_BODY_TITLE),
+    (("gh", "issue", "edit"), _GH_BODY_TITLE),
+    (("gh", "issue", "comment"), _GH_BODY),
+    (("gh", "release", "create"), _GH_NOTES_TITLE),
+    (("gh", "release", "edit"), _GH_NOTES_TITLE),
+)
+# The same, for a python script run by its interpreter: (the script's file
+# name without its extension, the options whose value it stores as text). Keyed
+# by the stem so no module file name is spelled here: a literal file name in a
+# hook reads, to the import-graph lint, as a hook loading that module.
+_SCRIPT_TEXT_SINKS = (
+    ("audit-task", _AUDIT_TASK_PROSE),
+)
+_PYTHON_PROGRAM = re.compile(r"^python(?:3(?:\.\d+)?)?$")
+_PYTHON_SCRIPT_STEM = re.compile(r"^(?P<stem>.+)\.py$")
 # Characters that make a word more than literal text to the shell that reads
 # it: a quote, an expansion, a redirection or a process substitution.
 _NOT_LITERAL = "'\"$`()<>"
+# What, at the shell's own level, changes which program a word names.
+_REDEFINES_A_WORD = re.compile(
+    r"(?:^|[\s;&|])(?:alias|unalias|function|eval|source|enable|hash)"
+    r"(?=[\s;&|]|$)"
+    r"|(?:^|[;&|\n])\s*\.(?=\s)"
+    r"|\bPATH\s*\+?="
+    r"|[A-Za-z_][\w.:-]*\s*\(\s*\)")
+_GROUP_OPENS = ("{", "if", "case", "while", "until", "for", "select")
+_GROUP_CLOSES = ("}", "fi", "esac", "done")
 
 
-def _word_runs_argument(words, at, partial, cmd):
-    """Does the program `words[at]` names execute the argument that follows
-    `words` (glued to `partial`)? One word of `_argument_runs`' reading."""
-    program = _program_of(words[at])
-    if program in _SHELL_PROGRAMS:
-        return program != "." or at == 0
-    if program in _RUNS_AN_OPERAND:
+def _sink_options(words, cmd):
+    """(options whose value the sink stores, how many words name it) for the
+    command whose words are `words`, or None when no sink in `_TEXT_SINKS` or
+    `_SCRIPT_TEXT_SINKS` is named by them literally."""
+    for path, options in _TEXT_SINKS:
+        if tuple(words[:len(path)]) == path:
+            return options, len(path)
+    if (len(words) < 2 or not _PYTHON_PROGRAM.match(words[0])
+            or any(ch in words[1] for ch in _NOT_LITERAL)
+            or _INTERP_ENV_OPTION.search(cmd)):
+        return None
+    script = _PYTHON_SCRIPT_STEM.match(_program_of(words[1]))
+    for stem, options in _SCRIPT_TEXT_SINKS:
+        if script and script.group("stem") == stem:
+            return options, 2
+    return None
+
+
+def _group_depth(level):
+    """How many subshells, groups and compound commands are open at the end of
+    `level` (a `_shell_level` text), or -1 when one closes that never opened."""
+    depth = 0
+    for token in re.findall(r"[^\s;&|()]+|[()]", level):
+        depth += ((token in _GROUP_OPENS or token == "(")
+                  - (token in _GROUP_CLOSES or token == ")"))
+        if depth < 0:
+            return -1
+    return depth
+
+
+def _clause_feeds_output(text, start):
+    """Does the clause holding the quoted argument that opens at `text[start]`
+    hand its output to something - a pipe, a process substitution, or the end
+    of a group it sits in? Read from the argument's close to the separator that
+    ends the clause; a clause that never closes its argument is read as one
+    that does."""
+    stack, at, i, n = [], [], start, len(text)
+    i = _context_step(text, i, stack, at)
+    while i < n and stack:
+        i = _context_step(text, i, stack, at)
+    if stack:
         return True
-    if _ANY_INTERPRETER.match(program):
-        return (not _plain_script_run(words[at:at + 2])
-                or bool(_INTERP_ENV_OPTION.search(cmd or "")))
-    if program != "git":
+    while i < n:
+        if not stack:
+            if text.startswith(("&&", "||"), i) or text[i] in ";\n":
+                return False
+            if text.startswith((">(", "<("), i) or text[i] in "|(){}":
+                return True
+            if (text[i] == "&" and not text.startswith("&>", i)
+                    and text[i - 1:i] not in ("<", ">")):
+                return False
+        i = _context_step(text, i, stack, at)
+    return False
+
+
+def sink_carries(text, start, cmd):
+    """Is the double-quoted argument opening at `text[start]` - a heredoc body
+    by way of `cat`'s substitution - the text a sink in `_TEXT_SINKS` stores,
+    in a clause whose output reaches nothing that runs it? `text` is the command
+    with its heredoc bodies taken out, so no body is read as syntax here. The
+    invariant above, in one place for every guard."""
+    level = _shell_level(text)
+    if _REDEFINES_A_WORD.search(level):
         return False
-    options = (_GIT_MESSAGE_OPTIONS.get(words[at + 1])
-               if at + 1 < len(words) else None)
-    if options is None:
-        return True
+    lead = text[:start]
+    partial = re.search(r"\S*$", lead).group(0)
+    before = lead[:len(lead) - len(partial)]
+    if any(ch in partial for ch in _NOT_LITERAL) or _group_depth(
+            level[:len(before)]) != 0:
+        return False
+    if not before.strip() or re.search(r"[;&|(`\n]\s*$", before):
+        return False
+    words = shell_words(command_clauses(before)[-1])
+    sink = _sink_options(words or [], text) if words else None
+    if sink is None:
+        return False
+    options, named = sink
     if partial:
-        return partial not in ("-m", "--message=")
-    return words[-1] not in options
+        glued = partial[:-1] if partial.startswith("--") else partial
+        flag_ok = glued in options and (partial.endswith("=")
+                                        or not partial.startswith("--"))
+    else:
+        flag_ok = len(words) > named and words[-1] in options
+    return flag_ok and not _clause_feeds_output(text, start)
 
 
-def _argument_runs(words, partial, cmd):
-    """Could the command whose words before the substitution are `words` run
-    the substitution's output - one double-quoted argument, `partial` the
-    unquoted text glued in front of it? The invariant above, read word by word.
-
-    No words is command position. A `partial` that is not literal text, or that
-    makes the word an assignment, hands the output to something that may run
-    it; so does a prefix of assignments and wrappers with no program past it."""
-    if not words or any(ch in partial for ch in _NOT_LITERAL):
-        return True
-    if _ASSIGNMENT.match(partial):
-        return True
-    rest, _candidates = program_candidates(words)
-    if not rest:
-        return True
-    return any(_word_runs_argument(words, at, partial, cmd)
-               for at in range(len(words)))
-
-
-def _substitution_runs_body(prefix, cmd):
-    """"shell", "code" or None for a heredoc whose marker `prefix` (the command
-    up to the marker) leaves inside a `$( )` or a backquote; False when it is in
-    none.
+def _substitution_runs_body(prefix):
+    """(verdict, where the argument opens) for a heredoc whose marker `prefix`
+    (the command up to the marker) leaves inside a `$( )` or a backquote;
+    (False, None) when it is in none.
 
     The body is the stdin of the INNERMOST substitution's own command, so the
     head is read from there - the opener enclosing it is the route the output
     takes, not something that runs the body. When that head runs its stdin, it
-    answers. When it does not, the body becomes the substitution's output, and
-    the invariant above decides: one substitution open, inside one
-    double-quoted argument, of a command `_argument_runs` says does not run it,
-    is data. Anything else stays shell."""
+    answers ("shell" or "code"). When the head is `cat` with literal words, one
+    substitution open inside one double-quoted argument, the verdict is "sink":
+    data if `sink_carries` says so of the finished text. Anything else is
+    "shell"."""
     _m, opens, at = _scan_contexts(prefix, ())
     subs = [k for k, ctx in enumerate(opens) if ctx in "(`"]
     if not subs:
-        return False
+        return False, None
     inner = at[subs[-1]]
     start = inner + (2 if prefix.startswith("$(", inner) else 1)
-    runs = _head_runs_body(prefix[start:].strip())
+    head = prefix[start:].strip()
+    runs = _head_runs_body(head)
     if runs is not None:
-        return runs
+        return runs, None
     if len(opens) != 2 or opens[0] != '"' or opens[1] not in "(`":
-        return "shell"
-    lead = prefix[:at[0]]
-    partial = re.search(r"\S*$", lead).group(0)
-    before = lead[:len(lead) - len(partial)]
-    if not before.strip() or re.search(r"[;&|(`\n]\s*$", before):
-        return "shell"
-    words = shell_words(command_clauses(before)[-1])
-    return "shell" if words is None or _argument_runs(words, partial, cmd) \
-        else None
+        return "shell", None
+    words = shell_words(head)
+    if (not words or words[0] != "cat"
+            or any(ch in head for ch in _NOT_LITERAL)):
+        return "shell", None
+    return "sink", at[0]
 
 
 def _unquoted_heredoc_start(line, stack):
@@ -3157,8 +3261,9 @@ def split_heredocs(cmd, pipe_data=False):
     `cat` as indirection graded every house-form commit or description body as
     shell, and a body line opening with a git verb became a refused command.
     Whether the output is then data is the invariant stated above
-    `_argument_runs`, which names how a command runs an argument rather than
-    which commands may carry one.
+    `_TEXT_SINKS`: only a literal text sink, whose clause hands its output to
+    nothing that runs it, makes it data, and that is read once the whole
+    command is, by `sink_carries`.
 
     A MARKER COUNTS ONLY OUTSIDE QUOTES, as the shell reads it, with the quote
     state carried across lines: a `<<` inside a quoted string opens nothing, and
@@ -3184,7 +3289,7 @@ def split_heredocs(cmd, pipe_data=False):
     if "<<" not in (cmd or ""):
         return (cmd or ""), [], []
     lines = (cmd or "").split("\n")
-    kept, code, shell, i, quote = [], [], [], 0, ()
+    kept, code, shell, pending, i, quote = [], [], [], [], 0, ()
     while i < len(lines):
         line = lines[i]
         m, after = _unquoted_heredoc_start(line, quote)
@@ -3208,8 +3313,8 @@ def split_heredocs(cmd, pipe_data=False):
             continue
         head = line[:m.start()].strip()
         tail = line[m.end():]
-        runs = _substitution_runs_body("\n".join(kept + [line[:m.start()]]),
-                                       cmd)
+        runs, opens_at = _substitution_runs_body(
+            "\n".join(kept + [line[:m.start()]]))
         if runs is False:
             runs = _head_runs_body(head)
         quote = _quote_after(tail, after)
@@ -3219,7 +3324,14 @@ def split_heredocs(cmd, pipe_data=False):
         kept.append(line[:m.start()] + " " + tail)
         body = "\n".join(lines[i + 1:end])
         live = not m.group(1) and _LIVE_SUBSTITUTION.search(body)
-        if _STDIN_SHELL.search(head) or runs == "shell":
+        if runs == "sink":
+            # Data only once the whole command is read: whether the sink's
+            # clause ends cleanly is in text that comes after this body.
+            if live:
+                shell.append(body)
+            else:
+                pending.append((body, opens_at))
+        elif _STDIN_SHELL.search(head) or runs == "shell":
             shell.append(body)
         elif _STDIN_INTERP.search(head) or runs == "code":
             code.append(body)
@@ -3235,7 +3347,10 @@ def split_heredocs(cmd, pipe_data=False):
         elif live:
             shell.append(body)
         i = end + 1
-    return "\n".join(kept), code, shell
+    text = "\n".join(kept)
+    shell.extend(body for body, opens_at in pending
+                 if not sink_carries(text, opens_at, text))
+    return text, code, shell
 
 
 def runnable_text(cmd, pipe_data=False):

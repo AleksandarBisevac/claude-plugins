@@ -1020,6 +1020,59 @@ def _cases(check):
             v, why = _decide(repo, _cmd)
             check("%s %s: %s" % (_cid, _want, _what), v == _want,
                   repr((v, why[:120])))
+        # --- a body in an argument is data only to a literal text sink -------
+        # A heredoc inside a quoted argument is data ONLY when a sink from the
+        # one table carries it (a git message, gh's body, an audit-task
+        # description), the sink is a literal word, and its clause ends in a
+        # separator that runs nothing with its output. Every row in the deny
+        # half is a spelling a carrier-runs-it list missed; the allow half is
+        # the house form in each sink, which a deny-everything fix reddens.
+        _bq = "`"
+
+        def _hb(body):
+            return "\"$(cat <<'EOF'\n%s\nEOF\n)\"" % body
+
+        _hx = _hb(_D)
+        # The allow rows' body has a line OPENING with the verb, so a fix that
+        # grades every sink's body as shell reddens them; `_body` alone would
+        # not, since its verb sits mid-sentence.
+        _hd = "An attempt was refused.\n" + _D
+        for _cid, _cmd, _want, _what in (
+                ("gk1", "gh pr create --body " + _hx + " | sh", "deny",
+                 "a sink whose output is piped to a shell"),
+                ("gk2", "printf '%s' " + _hx + " | bash", "deny",
+                 "an emitter whose output is piped to a shell"),
+                ("gk3", "\"$(echo " + _hx + ")\"", "deny",
+                 "an emitter's substitution in command position"),
+                ("gk4", "$SHELL -c " + _hx, "deny",
+                 "an expansion as the program word"),
+                ("gk5", "\"${BASH}\" -c " + _hx, "deny",
+                 "a braced expansion as the program word"),
+                ("gk6", "csh -c " + _hx, "deny", "a shell no list named"),
+                ("gk7", "pwsh -Command " + _hx, "deny",
+                 "...nor this one"),
+                ("gk8", "nix-shell --run " + _hx, "deny",
+                 "a runner whose option takes a command line"),
+                ("gk9", "tar -xf a.tar --to-command=" + _hx, "deny",
+                 "...glued to its option"),
+                ("gk10", "env --split-string=bash -c " + _hx, "deny",
+                 "env's split string naming a shell"),
+                ("gk11", "./deploy.sh <<'EOF'\n%s\nEOF" % _D, "deny",
+                 "a heredoc fed to a script run by path"),
+                ("gk12", "git commit -m " + _hb(_hd), "allow",
+                 "the house commit form"),
+                ("gk13", "python3 \"/opt/audit/scripts/manifest/audit-task.py\" "
+                 "add P1 --description " + _hb(_hd), "allow",
+                 "the house description form"),
+                ("gk14", "gh pr create --title t --body " + _hb(_hd)
+                 + " --base main", "allow", "a pull request body"),
+                ("gk15", "git commit -m \"%scat <<'EOF'\n%s\nEOF\n%s\""
+                 % (_bq, _hd, _bq), "allow", "the backquoted form"),
+                ("gk16", "git add x && git commit -m " + _hb(_hd)
+                 + " && git log -1", "allow", "the house form between clauses")):
+            v, why = _decide(repo, _cmd)
+            check("%s %s: %s" % (_cid, _want, _what), v == _want,
+                  repr((v, why[:120])))
         check("gh34 the text the guard grades, per heredoc kind: the body going "
               "into a FILE is gone, the body fed to a shell and the body fed to "
               "an interpreter are both still there. An interpreter body is kept "

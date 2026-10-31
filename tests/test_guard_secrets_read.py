@@ -4897,6 +4897,50 @@ def _cases(check):
                 "command": "python3 x.py --technical - <<'EOF'\n%s\nEOF"
                 % _hp_read}})
 
+    # (hk) A BODY IN AN ARGUMENT IS DATA ONLY TO A LITERAL TEXT SINK whose
+    # clause ends in a separator that runs nothing with its output - the
+    # reading the history guard shares through `_config.split_heredocs`. Each
+    # deny is a spelling a carrier-runs-it list missed; each allow is the house
+    # form a deny-everything fix reddens.
+    def _hk_sub(body):
+        return "\"$(cat <<'EOF'\n%s\nEOF\n)\"" % body
+
+    _hk = _hk_sub(_hp_read)
+    _hk_bq = "`"
+    for _hid, _want, _hcmd, _what in (
+            ("hk1", "block", "gh pr create --body " + _hk + " | sh",
+             "a sink whose output is piped to a shell"),
+            ("hk2", "block", "printf '%s' " + _hk + " | bash",
+             "an emitter whose output is piped to a shell"),
+            ("hk3", "block", "\"$(echo " + _hk + ")\"",
+             "an emitter's substitution in command position"),
+            ("hk4", "block", "$SHELL -c " + _hk,
+             "an expansion as the program word"),
+            ("hk5", "block", "\"${BASH}\" -c " + _hk,
+             "a braced expansion as the program word"),
+            ("hk6", "block", "csh -c " + _hk, "a shell no list named"),
+            ("hk7", "block", "cmd /c " + _hk, "...nor this one"),
+            ("hk8", "block", "npx -c " + _hk,
+             "a runner whose option takes a command line"),
+            ("hk9", "block", "rsync -e " + _hk + " a b:",
+             "...and another"),
+            ("hk10", "block", "env --split-string=bash -c " + _hk,
+             "env's split string naming a shell"),
+            ("hk11", "block", "./deploy.sh <<'EOF'\n%s\nEOF" % _hp_read,
+             "a heredoc fed to a script run by path"),
+            ("hk12", "allow", "git commit -m " + _hk, "the house commit form"),
+            ("hk13", "allow",
+             "python3 \"/opt/audit/scripts/manifest/audit-task.py\" add P1 "
+             "--description " + _hk, "the house description form"),
+            ("hk14", "allow", "gh pr create --title t --body " + _hk
+             + " --base main", "a pull request body"),
+            ("hk15", "allow", "git commit -m \"%scat <<'EOF'\n%s\nEOF\n%s\""
+             % (_hk_bq, _hp_read, _hk_bq), "the backquoted form")):
+        _expect("%s a body naming a secret read, %s: %s" % (_hid, _what,
+                                                             _want),
+                _want, {"tool_name": "Bash", "cwd": str(tmp),
+                        "tool_input": {"command": _hcmd}})
+
     # (lw) A SHELL WRITE INTO A LINKED WORKTREE IS JUDGED AGAINST THAT
     # WORKTREE'S PLAN. The Edit arm (require-plan) re-rooted onto the worktree
     # while this arm skipped every target outside CLAUDE_PROJECT_DIR - so an

@@ -3234,8 +3234,9 @@ def _house_body_cases(check):
         ("bare script path",
          "python3 %s add P1 --title t --description \"$(cat <<'EOF'\n%s\n)\""
          % (script, body)),
-        ("single-quoted script path, -m form",
-         "python3 '%s' add P1 -m \"$(cat <<'EOF'\n%s\n)\"" % (script, body)),
+        ("single-quoted script path, --reason form",
+         "python3 '%s' block P1.1 --reason \"$(cat <<'EOF'\n%s\n)\""
+         % (script, body)),
         ("a commit message, the form that was already lifted",
          "git commit -m \"$(cat <<'EOF'\n%s\n)\"" % body),
     )
@@ -3274,7 +3275,7 @@ def _house_body_cases(check):
           "text and returns none of it as shell: %r" % (as_shell,),
           not as_shell and len(split) == 4)
     # SECOND DIRECTION for the narrowing itself: the substitution's output is
-    # text only to the two consumers vouched for. Every other enclosing
+    # text only to a sink in `_config._TEXT_SINKS`. Every other enclosing
     # command may run it, so its body stays shell - including the one whose
     # `$(` opened on an earlier line than the marker, which no head reading
     # on the marker's own line can see.
@@ -3320,12 +3321,14 @@ def _house_body_cases(check):
 
 
 def _argument_body_cases(check):
-    """THE INVARIANT, ONE CASE PER ROUTE IT WAS BROKEN BY: a heredoc whose
-    substitution is the whole or part of one double-quoted argument is data,
-    whichever command carries the argument - unless that command runs what it
-    is handed. Three routes graded such a body as shell: a FILE NAME ending in
-    a shell's name read as the shell, a backquote substitution the quote
-    scanner did not see, and a carrying command no list vouched for. Each
+    """THE INVARIANT, ONE CASE PER ROUTE: a heredoc whose substitution is the
+    whole or part of one double-quoted argument is data ONLY when a literal
+    text sink from `_config._TEXT_SINKS` stores it and its clause hands the
+    sink's output to nothing that runs it; every other carrier keeps the body
+    as shell. Two routes graded a sink's body as shell wrongly - a FILE NAME
+    ending in a shell's name read as the shell, and a backquote substitution
+    the quote scanner did not see - and the carrier, its identity and its
+    clause's end are each a route by which a body could pass as data. Each
     allow below has a deny beside it, for the fix that reads every body as
     data."""
     import _loader
@@ -3417,9 +3420,10 @@ def _argument_body_cases(check):
           not lost and len(run_bq) == 5 and after is not None
           and [verb for verb, _a in after].count("stash") == 1)
 
-    # Route three: no list of carrying commands. The argument is data to any
-    # program that does not run its arguments - gh, a file run by path, a
-    # program behind a wrapper - as part of the argument as well as all of it.
+    # Route three: the carrier. The argument is data to a sink in the one
+    # table - git's message, gh's body or title - as part of the argument as
+    # well as all of it, and to nothing else: a program the table does not
+    # name may run what it is handed.
     sub = "\"$(cat <<'EOF'\n%s\n)\"" % body
     carried = (
         ("gh pr create", "gh pr create --title t --body " + sub),
@@ -3427,18 +3431,25 @@ def _argument_body_cases(check):
         ("glued to an option", "gh pr create --body=" + sub),
         ("part of the argument",
          "gh pr create --body \"Summary: $(cat <<'EOF'\n%s\n) - end\"" % body),
-        ("a program run by path", "./tools/notify --text " + sub),
-        ("a program behind a wrapper", "timeout 60 gh pr edit 3 --body " + sub),
         ("a git commit message", "git commit -m " + sub),
+        ("a git commit message, long and glued",
+         "git commit --message=" + sub),
+        ("an annotated tag", "git tag -a v1 -m " + sub),
+        ("gh issue create", "gh issue create --title t --body " + sub),
+        ("a later argument after it", "gh pr create --body " + sub
+         + " --base main"),
+        ("a clause after it", "git add x && git commit -m " + sub
+         + " && git log -1"),
     )
     wrong = [(what, parts) for what, parts in split_all(carried) if kept(parts)]
     invs = [(what, hist.git_invocations(cmd)) for what, cmd in carried]
     leaked = [(what, inv) for what, inv in invs
               if inv is None or any(verb == "stash" for verb, _a in inv)]
-    check("hb10 a house-form body is data whichever program carries the "
-          "argument - gh, a file run by path, a wrapped program - and when it "
-          "is part of the argument: %r" % ((wrong, leaked),),
-          not wrong and not leaked and len(carried) == 7)
+    check("hb10 a house-form body is data when a text sink from the one "
+          "table carries it - git commit/tag's message, gh's body or title - "
+          "glued to its flag, part of the argument, or followed by more "
+          "arguments and clauses: %r" % ((wrong, leaked),),
+          not wrong and not leaked and len(carried) == 10)
     runners = (
         # A wrapper named in no table: only the reading of EVERY word finds
         # the shell behind it, so this row is red under a program-position-only
@@ -3455,13 +3466,153 @@ def _argument_body_cases(check):
         ("env -S", "env -S " + sub),
         ("watch", "watch " + sub),
         ("an interpreter's inline program", "node -e " + sub),
+        # Neither is in the table: a program run by path is whatever that file
+        # does, and a wrapper hands its operand to a program it names.
+        ("a program run by path", "./tools/notify --text " + sub),
+        ("a sink behind a wrapper", "timeout 60 gh pr edit 3 --body " + sub),
     )
     lost = [(what, parts) for what, parts in split_all(runners)
             if not kept(parts)]
     check("hb11 ...while a carrying command that runs its argument - a shell "
           "or an interpreter anywhere in its words, find -exec, ssh, trap, "
-          "watch, a wrapper's program, an assignment's value - keeps the body "
-          "as shell: %r" % (lost,), not lost and len(runners) == 11)
+          "watch, a wrapper's program, an assignment's value, a program run by "
+          "path - keeps the body as shell: %r" % (lost,),
+          not lost and len(runners) == 13)
+
+    # THE CARRIER'S OWN OUTPUT. A text sink prints what it was handed - a
+    # commit prints its subject, gh echoes a title - so a sink whose clause
+    # feeds a pipe, a process substitution, an enclosing substitution or a
+    # group whose output is piped hands the body to whatever reads it. The
+    # body is data only when the clause ends in a separator that runs nothing
+    # with its output.
+    fed = (
+        ("piped to a shell", "gh pr create --body " + sub + " | sh"),
+        ("piped with stderr", "git commit -m " + sub + " |& bash"),
+        ("a later argument, then a pipe",
+         "gh pr create --body " + sub + " --base main | sh"),
+        ("into a process substitution", "git commit -m " + sub + " > >(sh)"),
+        ("the sink in command position", "\"$(gh pr create --body " + sub
+         + ")\""),
+        ("the sink inside an assignment's substitution",
+         "x=$(git commit -m " + sub + ")"),
+        ("the sink backquoted", "`git commit -m " + sub + "`"),
+        ("a subshell piped", "( git commit -m " + sub + " ) | sh"),
+        ("a group piped", "{ git commit -m " + sub + "; } | sh"),
+        ("a compound piped",
+         "if true; then git commit -m " + sub + "; fi | sh"),
+        ("a pipe on the next line after a continuation",
+         "git commit -m " + sub + " \\\n  | sh"),
+        # The sink is the group's SECOND command, so its own clause opens on
+        # no group word and only the depth of the text before it says so.
+        ("a group piped, the sink not its first command",
+         "{ true; git commit -m " + sub + "; } | sh"),
+        ("a loop piped, the sink not its first command",
+         "while true; do true; git commit -m " + sub + "; done | sh"),
+    )
+    lost = [(what, parts) for what, parts in split_all(fed) if not kept(parts)]
+    ends = (
+        ("end of the command", "git commit -m " + sub),
+        ("and-list", "git commit -m " + sub + " && git log -1"),
+        ("or-list", "git commit -m " + sub + " || git status"),
+        ("semicolon", "git commit -m " + sub + "; git status"),
+        ("newline", "git commit -m " + sub + "\ngit status"),
+        ("a file redirect", "git commit -m " + sub + " > commit.log"),
+    )
+    wrong = [(what, parts) for what, parts in split_all(ends) if kept(parts)]
+    check("hb12 a sink's body stays shell unless the carrying command's clause "
+          "ends in a separator that runs nothing with its output - a pipe, a "
+          "process substitution, an enclosing substitution or a piped group "
+          "keeps it - while the clause ending at the command's end, `&&`, "
+          "`||`, `;`, a newline or a file redirect is data: %r"
+          % ((lost, wrong),),
+          not lost and not wrong and len(fed) == 13 and len(ends) == 6)
+
+    # THE CARRIER'S IDENTITY. A data reading is owed only to a literal sink
+    # word: a program word that is an expansion, a runner the shell lists
+    # never named, an option that names a shell, a file run by path, or a
+    # sink name the command itself redefines may run what it is handed.
+    _rd = "cat " + ".env"
+    rd_sub = "\"$(cat <<'EOF'\n%s\nEOF\n)\"" % _rd
+    identity = (
+        ("$SHELL as the program", "$SHELL -c " + sub),
+        ("a braced expansion as the program", "\"${BASH}\" -c " + sub),
+        ("an expansion inside the sink word", "g$x commit -m " + sub),
+        ("csh", "csh -c " + sub),
+        ("tcsh", "tcsh -c " + sub),
+        ("pwsh", "pwsh -Command " + sub),
+        ("cmd", "cmd /c " + sub),
+        ("nu", "nu -c " + sub),
+        ("nix-shell --run", "nix-shell --run " + sub),
+        ("npx -c", "npx -c " + sub),
+        ("rsync -e", "rsync -e " + sub + " a b:"),
+        ("tar --to-command", "tar -xf a.tar --to-command=" + sub),
+        ("env --split-string", "env --split-string=bash -c " + sub),
+        ("--shell=", "script --shell=bash -c " + sub),
+        ("a script run by path", "./deploy.sh " + sub),
+        ("an alias over the sink", "alias git='sh -c'; git commit -m " + sub),
+        ("a function over the sink",
+         "git() { sh -c \"$3\"; }; git commit -m " + sub),
+        ("a secret read, the same way", "$SHELL -c " + rd_sub),
+        ("a substitution whose own command is a program run by path",
+         "git commit -m \"$(./tools/emit <<'EOF'\n%s\n)\"" % body),
+    )
+    lost = [(what, parts) for what, parts in split_all(identity)
+            if not kept(parts) and _rd not in "\n".join(
+                [parts[0]] + parts[1] + parts[2])]
+    heads = (
+        ("a script by path reading the heredoc", "./deploy.sh <<'EOF'\n%s"
+         % body),
+        ("a script by path after a separator",
+         "true; ./deploy.sh --go <<'EOF'\n%s" % body),
+        ("a shell no list named, reading the heredoc", "csh <<'EOF'\n%s" % body),
+        ("...nor this one", "pwsh -NoProfile <<'EOF'\n%s" % body),
+    )
+    lost += [(what, parts) for what, parts in split_all(heads)
+             if not kept(parts)]
+    check("hb13 a body stays shell when its carrier is no literal sink - an "
+          "expansion as the program, csh/tcsh/pwsh/cmd/nu/nix-shell/npx/rsync/"
+          "tar, env's split string, a --shell option, a script run by path, a "
+          "substitution not run by cat - or the command redefines the sink, "
+          "and a heredoc fed to a shell no list named or to a script "
+          "run by path is shell: %r" % (lost,),
+          not lost and len(identity) == 19 and len(heads) == 4)
+
+
+def _audit_task_prose_options():
+    """Every option string `audit-task.py` declares with `help=_PROSE_HELP`,
+    read from its AST - the set `_config._AUDIT_TASK_PROSE` must equal."""
+    import ast
+    path = os.path.join(_output.SCRIPTS_DIR, "manifest", "audit-task.py")
+    with open(path, encoding="utf-8") as fh:
+        tree = ast.parse(fh.read())
+    found = set()
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "add_argument"):
+            continue
+        prose = any(k.arg == "help" and isinstance(k.value, ast.Name)
+                    and k.value.id == "_PROSE_HELP" for k in node.keywords)
+        if prose:
+            found.update(a.value for a in node.args
+                         if isinstance(a, ast.Constant)
+                         and isinstance(a.value, str)
+                         and a.value.startswith("-"))
+    return found
+
+
+def _sink_table_cases(check):
+    """The audit-task row of the text-sink table is the script's own prose
+    options, not a list typed beside them: an option added there with
+    `_PROSE_HELP` and missing here would turn its house form into shell, and
+    one listed here that stores no text would vouch for an option nobody
+    checked."""
+    declared = _audit_task_prose_options()
+    table = set(M._AUDIT_TASK_PROSE)
+    check("hb14 the audit-task row of the text-sink table equals the options "
+          "audit-task.py declares with _PROSE_HELP: missing %r, extra %r"
+          % (sorted(declared - table), sorted(table - declared)),
+          len(declared) > 1 and declared == table)
 
 
 def _all_cases(check):
@@ -3471,6 +3622,7 @@ def _all_cases(check):
     _git_standing_cases(check)
     _house_body_cases(check)
     _argument_body_cases(check)
+    _sink_table_cases(check)
 
 
 def _selftest():
