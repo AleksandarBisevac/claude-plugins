@@ -2421,6 +2421,54 @@ def _slice_cases(check):
           and shard_matrix_drift(by_leg) == []
           and alone["cells"] == [{"os": "a"}, {"os": "b"}, {"os": "c", "extra": "x"}])
 
+    # A PART COUNT PER RUNNER FAMILY, the shape ci.yml has once the two families
+    # stop sharing one: the total is a matrix value an `include` row keyed by `os`
+    # adds, and an `exclude` drops the parts the smaller family does not have. Each
+    # family is still held to every part of ITS total - a reader taking one total
+    # for the whole job would call the smaller family short, and a forgotten
+    # exclude, or a family's total raised with no part added, must each be named.
+    per_family = _SLICE_CI.replace(
+        "          - os: windows-latest\n            slice: selftests-stress\n",
+        "          - os: windows-latest\n            slice: selftests-stress\n"
+        "          - os: ubuntu-latest\n            shard: 3\n"
+        "        include:\n          - os: ubuntu-latest\n            parts: 2\n"
+        "          - os: windows-latest\n            parts: 3\n").replace(
+        "${{ matrix.shard }}/3", "${{ matrix.shard }}/${{ matrix.parts }}")
+    no_exclude = per_family.replace(
+        "          - os: ubuntu-latest\n            shard: 3\n", "")
+    raised = per_family.replace("            parts: 3\n", "            parts: 4\n")
+    unset = per_family.replace(
+        "          - os: windows-latest\n            parts: 3\n", "")
+    fam_clean = slice_drift(per_family, _SLICE_LISTED) + shard_matrix_drift(
+        per_family)
+    fam_parts = (family_shard_parts(per_family, "ubuntu"),
+                 family_shard_parts(per_family, "windows"))
+    fam_over, fam_short = (shard_matrix_drift(no_exclude),
+                           shard_matrix_drift(raised))
+    fam_unset = slice_drift(unset, _SLICE_LISTED)
+    check("sv16 %s (a part count per runner family - two on one, three on the "
+          "other - is clean and each family runs every part of its own total; a "
+          "missing exclude asks the smaller family for a part it does not have, a "
+          "raised total leaves a part unrun, and a family with no total is a "
+          "named job problem: %r / %r / %r / %r / %r)"
+          % (_SLICE_CLAUSE, fam_clean, fam_parts, fam_over, fam_short, fam_unset),
+          per_family.count("matrix.parts") == 1 and no_exclude != per_family
+          and raised != per_family and unset != per_family
+          and fam_clean == []
+          and fam_parts == ({"selftests": [(1, 2), (2, 2)],
+                             "selftests-stress": [(1, 2), (2, 2)]},
+                            {"selftests": [(1, 3), (2, 3), (3, 3)]})
+          and sorted(s for s, _w in fam_over)
+          == ["selftests (os=ubuntu-latest, slice=selftests, --only selftests)",
+              "selftests (os=ubuntu-latest, slice=selftests-stress, "
+              "--only selftests-stress)"]
+          and all("part(s) [3] of 2" in w for _s, w in fam_over)
+          and [s for s, _w in fam_short]
+          == ["selftests (os=windows-latest, slice=selftests, --only selftests)"]
+          and "part(s) [4] never run" in fam_short[0][1]
+          and len(fam_unset) == 3
+          and set(s for s, _w in fam_unset) == set(["selftests (job)"]))
+
     # A job's `if:` is held to what it reduces to, not to whether it mentions the
     # release tier: a condition that is false, or true on a push only, leaves its
     # slices unrun on an ordinary run while the job still reads as per-run.
@@ -2498,11 +2546,16 @@ def _slice_cases(check):
           and "3 slice(s)" in buf.getvalue())
 
 
+# THE WINDOWS PART COUNT, pinned rather than read, because the windows sweep cells
+# are the run's critical path and the count is what its wall clock rests on: a
+# matrix narrowed back to fewer parts is still complete, so shard_matrix_drift
+# accepts it, and only this pin names it. The linux legs' count is not pinned -
+# shard_matrix_drift holds each family to every part of its own total either way.
+WINDOWS_SHARDS = 5
 _CI_SHAPE_CLAUSE = ("every slice a per-run job of ci.yml runs is one `verify.sh "
                     "--list` prints, each piece of the manifest-validation work is "
                     "run by one of them, and the Windows sweep cells run parts "
-                    "1..4 of 4 of each slice")
-WINDOWS_SHARDS = 4
+                    "1..%d of %d of each slice" % (WINDOWS_SHARDS, WINDOWS_SHARDS))
 
 
 def _ci_shape_findings(text, listed):
@@ -2578,22 +2631,28 @@ def _ci_shape_cases(check):
           and sorted(s for s, _w in released)
           == sorted(p for p, _w in MANIFEST_WORK))
 
-    # The windows cells held to four parts: the matrix narrowed to three parts
-    # of three, and an exclude dropping part 4 on windows alone, are each named
-    # by the windows slice they leave short - shard_matrix_drift accepts the
-    # first, since three of three is complete.
-    three = text.replace("shard: [1, 2, 3, 4]", "shard: [1, 2, 3]").replace(
-        "--shard ${{ matrix.shard }}/4", "--shard ${{ matrix.shard }}/3")
-    holed = text.replace(
-        "        exclude:\n",
-        "        exclude:\n          - os: windows-2025\n            shard: 4\n", 1)
-    narrowed, excluded = (_ci_shape_findings(three, listed),
+    # The windows cells held to their pinned part count: the windows family
+    # narrowed to one part fewer, complete in itself, and an exclude dropping the
+    # last part on windows alone, are each named by the windows slice they leave
+    # short - shard_matrix_drift accepts the first, since N-1 of N-1 is complete.
+    # Built off the live text, so the windows `parts` row must be there to edit.
+    last = WINDOWS_SHARDS
+    row = "          - os: windows-2025\n            parts: %d\n" % (last,)
+    drop_last = ("        exclude:\n          - os: windows-2025\n"
+                 "            shard: %d\n" % (last,))
+    fewer = text.replace(row, row.replace("parts: %d" % (last,),
+                                          "parts: %d" % (last - 1,)), 1)
+    fewer = fewer.replace("        exclude:\n", drop_last, 1)
+    holed = text.replace("        exclude:\n", drop_last, 1)
+    narrowed, excluded = (_ci_shape_findings(fewer, listed),
                           _ci_shape_findings(holed, listed))
-    check("sv15 %s (the matrix narrowed to three parts of three, and an exclude "
-          "dropping part 4 on windows, are each named by a windows slice: "
-          "%r / %r)" % (_CI_SHAPE_CLAUSE, narrowed, excluded),
-          three != text and holed != text
-          and shard_matrix_drift(three) == []
+    check("sv15 %s (the windows family narrowed to %d parts of %d, and an "
+          "exclude dropping part %d on windows, are each named by a windows "
+          "slice: %r / %r)" % (_CI_SHAPE_CLAUSE, last - 1, last - 1, last,
+                               narrowed, excluded),
+          text.count(row) == 1 and fewer != text and holed != text
+          and shard_matrix_drift(fewer) == []
+          and shard_matrix_drift(holed) != []
           and narrowed and all(s.startswith("windows ") for s, _w in narrowed)
           and "windows selftests" in [s for s, _w in narrowed]
           and "windows selftests" in [s for s, _w in excluded])

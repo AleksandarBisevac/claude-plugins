@@ -1,7 +1,7 @@
 {
   "id": "P151",
   "title": "CI finishes under eight minutes wall inside GitHub's concurrent-job cap",
-  "status": "pending",
+  "status": "in_progress",
   "description": "Carried out of P143, whose drive answered only sign-off after its reviews and would not run a task added by hand: the Windows sweep on five parts per leg runs as its own phase after P143 lands.",
   "desiredOutcome": "A per-run CI run on main finishes under eight minutes wall with no job held by the concurrent-job cap, measured on GitHub, with gate-parity green.",
   "testGate": [
@@ -16,21 +16,44 @@
     "vitest"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "b538f8ec83d0828fc234d656380caa682d3fe1b4",
+  "branch": "audit/p151-ci-finishes-under-eight-minute",
   "mergedAt": null,
   "review": {
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P151-R1",
+        "severity": "med",
+        "file": "tools/prove-gates.py:931-937 (against .github/workflows/ci.yml:189)",
+        "issue": "The diff changed ci.yml's shard axis to `        shard: [1, 2, 3, 4, 5]`. prove-gates' shard_matrix_drift row (case sv7) is anchored on `        shard: [1, 2, 3, 4]`, which now occurs 0 times (it is not a substring of the new line because of the `4]`). The untouched file breaks across the boundary: prove-gates' c2 ('every row's anchor is still in the tree, exactly once') fails, and tools/ is swept, so the sweep goes red. I checked this by evaluating c2's own loop in-process on the task tree (`[r for r in TABLE if mutation(r)[0] is None]`), which printed [('shard_matrix_drift', '.github/workflows/ci.yml', 'anchor occurs 0 time(s)')], exit 1, and it was the only unanchored row. I did not run the whole `prove-gates.py --selftest`, because reviewer rules allow one test run. The executor reports that run as FAIL c2, 64/65.",
+        "resolution": "In tools/prove-gates.py:936-937, anchor the row on `        shard: [1, 2, 3, 4, 5]` and replace it with `        shard: [1, 2, 3, 4]`. Today this anchor occurs exactly once. The mutation leaves windows plain and cp1252 running parts [1..4] of 5, so shard_matrix_drift names both, and sv7 still goes red. The comment at :931-934 stays true. Land it in the same commit as the ci.yml change so no SHA has a red sweep."
+      },
+      {
+        "id": "P151-R2",
+        "severity": "med",
+        "file": ".github/workflows/ci.yml:96,183; tools/gate-parity.py:1604-1656 (job_bound_evidence); tools/sweep-selftests.py:246-247,5602-5615 (tt5)",
+        "issue": "The selftests job's bound now rests on a figure for a shape that no longer runs, and an honest figure for the new shape cannot be recorded. `longest selftests: 13m35s (estimate, the heaviest of four parts ...)` is what backs `timeout-minutes: 33` under job_bound_evidence, which needs 3 x longest >= 33 min, so longest >= 11m00s (BOUND_CEILING_FACTOR 3, floor 5). tt5 requires SWEEP_DEADLINE 1800 + CI_SETUP_ALLOWANCE 120 < timeout-minutes x 60. That inequality is strict, so 32 fails and 33 is the lowest bound tt5 accepts. The executor predicts five-part windows cells at about 6.9-8.5 min. Once the phase's own next step records that measurement, job_bound_evidence reports 'timeout-minutes is 33, over 3 times its longest recorded run' (allowed about 20m42s-25m30s). The bound cannot drop without turning tt5 red. So yes, gate-parity goes red the moment the line is re-recorded, unless the line is kept stale on purpose. That is the outcome the ci.yml comment at :67-78 now commits to, with gate-parity passing on a measurement of nothing current. It is disclosed, not hidden, but it blocks recording the phase's own measured figures.",
+        "resolution": "The structurally correct fix is to give job_bound_evidence the deadline as a second, checked basis for a bound, instead of keeping a stale estimate. Let the ceiling for `selftests` be max(3 x longest, BOUND_FLOOR_MINUTES, the smallest whole minute M with SWEEP_DEADLINE + CI_SETUP_ALLOWANCE < M x 60). Read both constants out of tools/sweep-selftests.py, the same facts tt5 reads, rather than copying them. Declare it explicitly with a ci.yml line such as `# bound selftests: held by the sweep deadline (tools/sweep-selftests.py SWEEP_DEADLINE)`, which job_bound_evidence verifies. Add a selftest case with both directions: a deadline-held bound over a short measured longest passes, and the same bound with no deadline basis is red. Then replace the four-part estimate with the measured five-part figure. Making the heaviest block (ar-block of test_drive_phase.py) lighter is the lever that lowers both the deadline and the bound, but it is separate CPU work and does not remove the need for the rule."
+      },
+      {
+        "id": "P151-R3",
+        "severity": "low",
+        "file": ".github/workflows/ci.yml:194-215,260-271; tools/gate-parity.py:2549-2554",
+        "issue": "The phase's outcome ('no job held by the concurrent-job cap') rests on the per-run job count staying at or under 20. The diff gets it there, as I re-derived: 2 os x 3 legs x 5 shards = 30 cells; minus 5 (windows stress), 5 (ubuntu cp1252) and 6 (ubuntu shards 3-5) leaves 14; plus e2e, lint and the two browser jobs makes 18 per-run, and 19 with resample on the release tier. But that count is still prose only. The new WINDOWS_SHARDS comment deliberately leaves the linux part count unpinned. Raising linux to 3 parts (parts: 3, one exclude removed) passes shard_matrix_drift, sv13 and every gate-parity case while asking for 20 per-run and 21 release-tier jobs, so one would be held. The ci.yml comment says so ('Nothing checks the job count against the cap').",
+        "resolution": "Add a gate-parity check counting the jobs a per-run and a release-tier run start concurrently, with jobs gated by `needs: verified` counted together and `verified` itself excluded. Count from job_slices' expanded cells, against a named JOB_CAP = 20 constant, with a red-first case. Once that check exists, the linux part count needs no pin."
+      }
+    ],
+    "outcome": "[findings: 3 - 0 high, 2 med, 1 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
     {
       "id": "P151.1-z9j",
       "title": "CI finishes under eight minutes wall: the Windows sweep runs on five parts per leg inside GitHub's 20-concurrent-job cap",
-      "status": "pending",
+      "status": "in_progress",
       "description": "P143.12 measured GitHub's 20-concurrent-job cap over seven release-tier runs and merged the manifests job into lint so a per-run run holds no job. Its arithmetic from run 41070108164 and .github/sweep-costs.json (7978 slot-seconds): Windows on four parts per leg is ~521 s per cell (~8.7 min); five parts per leg is 7978/20 = ~399 s + ~22 s job overhead = ~421 s (~7.0 min), with the Linux legs on two parts each to stay at or under the cap (10 Windows + 4 Linux + e2e + lint + 2 browser = 18 jobs), making browser (report) at ~429 s the critical path (~7.2 min). That needs tools/gate-parity.py: WINDOWS_SHARDS and its cases sv13 and sv15, and shard_matrix_drift's every-part-on-every-runner rule for a per-family part count. Make the change, keep gate-parity green both ways, and state the predicted wall and runner-minutes with the arithmetic; the orchestrator dispatches CI and records the measured figures. Runner-minutes stay near 106 against 55: that target needs sweep CPU cuts and is not this task's.",
       "files": [
         "tools/gate-parity.py",
@@ -53,20 +76,26 @@
       "dependsOn": [
         "P143.12-z9j"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-30T23:40:46Z",
       "completedAt": null,
       "verifiedBy": [],
       "movedFrom": {
         "id": "P143.13-z9j",
         "phase": "P143",
         "at": "2026-10-30T19:04:24Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-30T23:56:17Z.5be455",
+        "status": "passed",
+        "at": "2026-10-30T23:56:17Z"
       }
     },
     {
@@ -109,5 +138,12 @@
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "4331b4e9-59c2-4a61-9004-3102aba69ea2",
+    "branch": "audit/p151-ci-finishes-under-eight-minute",
+    "at": "2026-10-30T23:40:46Z"
+  },
+  "startedAt": "2026-10-30T23:40:46Z"
 }
