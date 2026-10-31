@@ -61,7 +61,8 @@ Usage:
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py cancel <id> --reason "<why>|-" [manifest]
                 [--project-dir DIR] [--takeover] [--json]
-  audit-task.py scope <taskId> [manifest] [--files f1,f2]
+  audit-task.py scope <taskId> [manifest] [--files [+]f1,f2]
+                [--waive "PATH: WHY" ...]
                 [--tests-mode tdd|regression|gate-only] [--tests-add TEXT ...]
                 [--gate CMD ... | --gate-clear | --gate-set entry ...
                  | --gate-drop entry ...] [--description TEXT|-]
@@ -168,6 +169,12 @@ Usage:
   a flag added to it cannot be added to a prose enumeration nobody updates.
   STDIN IS ONE STREAM, so at most one flag per call may claim it and a call
   where two do is refused before anything is read, naming the two.
+  `start` refuses a task while a tracked file an edit to one of its declared
+  files can reach - the file's own suite, a file quoting its text beside its
+  path, a document section headed by its path (`_impact.owed`) - is neither in
+  its `files` nor waived. `scope --files +a,b` adds to the list a task holds
+  instead of replacing it; `scope --waive "<path>: <why>"` records, as a dated
+  note, why the change cannot reach a reader the task will not edit.
   `done` closes a task the way `start` opens one, and it is the only verb
   here whose flag is REQUIRED for the record rather than for the field:
   `--commit` is the SHA the work landed in, without which the close is the
@@ -432,6 +439,10 @@ import _scope_companions      # noqa: E402  (derive: the files a change cannot a
                               # manifest and lockfile, the locale files, the runner
                               # config - read off the repo and never guessed, so
                               # `--introduces` and a fix task's scope add them)
+import _impact                # noqa: E402  (owed: the readers of a declared file an edit
+#                                            can reach, which `start` refuses over until
+#                                            each is declared or waived - the same scan
+#                                            the brief's dependant listing reads)
 import _id_refs               # noqa: E402  (rename: one id rewritten everywhere the plan
                               # points at it - `move`'s references, from the one list of
                               # fields that hold an id)
@@ -527,8 +538,9 @@ def _split_csv(val):
 # path both resolve outside the repository the index is keyed on, and a parent
 # segment resolves to a file the plan cannot name twice the same way.
 _FILE_REFUSALS = (
-    ("+", "a leading `+` is an incremental spelling this verb does not have"),
-    ("-", "a leading `-` is an incremental spelling this verb does not have"),
+    ("+", "a leading `+` adds to a held list only where it opens a whole "
+          "`--files` value on `scope`, and is not part of a filename"),
+    ("-", "a leading `-` is a removal spelling no verb here has"),
     ("/", "a leading `/` is an absolute path, and `files` is read relative to "
           "the project root"),
     ("~", "a leading `~` is a home path, and `files` is read relative to the "
@@ -644,10 +656,81 @@ def _files_refusal(values, project=None):
     if not bad:
         return None
     return ("[audit-task] --files takes the REPLACEMENT list of "
-            "repository-relative paths, and %s. Pass the whole list the task "
-            "should end up with; a file that does not exist yet is fine and is "
+            "repository-relative paths (or, on `scope`, `+a,b` to add to the "
+            "list the task holds), and %s. Pass the whole list the task "
+            "should end up with, or the additions after one `+`; a file that "
+            "does not exist yet is fine and is "
             "reported as a note, which is the reassurance this refusal used to "
             "be mistaken for." % ("; ".join(bad),))
+
+
+_WAIVER = re.compile(r"^\s*(\S.*?):\s+(\S.*)$", re.S)
+
+
+def _waivers_of(raw):
+    """`([(path, reason)], refusal)` for `scope --waive` values.
+
+    EACH VALUE IS `<path>: <why the change cannot reach it>`, the `tests.add`
+    shape: the path ends at the first colon followed by whitespace, so a
+    `:5-9` line suffix stays part of it. A value with no reason is refused
+    whole - an unexplained waiver is the unanswered reader `start` refused over,
+    with the refusal switched off.
+    """
+    found, bad = [], []
+    for value in (raw or []):
+        match = _WAIVER.match(value or "")
+        if not match or not match.group(2).strip():
+            bad.append("%r: no reason after `<path>: `" % (value,))
+            continue
+        path = _vocab._strip_line_suffix(match.group(1).strip())
+        problems = _path_problems([path])
+        if problems:
+            bad.extend(problems)
+            continue
+        found.append((path, match.group(2).strip()))
+    if bad:
+        return [], ("[audit-task] --waive takes `<path>: <why this task's change "
+                    "cannot reach it>`, and %s. Nothing written." % ("; ".join(bad),))
+    return found, None
+
+
+def _waived_paths(node):
+    """The readers a task has waived, in the order the waivers were recorded."""
+    paths = []
+    for note in (node.get("notes") or []):
+        path = note.get("waives") if isinstance(note, dict) else None
+        if isinstance(path, str) and path not in paths:
+            paths.append(path)
+    return paths
+
+
+def _files_delta(raw):
+    """`(additive, paths, refusal)` for `scope --files` as argparse handed it.
+
+    A VALUE OPENING WITH `+` ADDS TO THE HELD LIST, so a caller widening a task
+    by one file no longer restates every file it already declares - the
+    restated list is where a held entry got dropped by a typo. The `+` belongs
+    to the VALUE, so `+a,b` adds both; a `+` on a later part of an additive value
+    is the same intent written twice and is taken off too. Additive and plain
+    values in one call are refused: one asks to replace the list and the other
+    to keep it, and no reading of both is the caller's.
+    """
+    values = [v for v in (raw or []) if isinstance(v, str)]
+    adds = [v for v in values if v.strip().startswith("+")]
+    if not adds:
+        return False, _split_csv(values), None
+    if len(adds) != len([v for v in values if v.strip()]):
+        return False, [], ("[audit-task] --files mixes a `+` value, which adds "
+                            "to the list the task holds, with a plain value, "
+                            "which replaces it - pass one spelling: %s"
+                            % (", ".join(repr(v) for v in values),))
+    paths = []
+    for value in adds:
+        for part in _split_csv(value.strip()[1:]):
+            part = part[1:].strip() if part.startswith("+") else part
+            if part:
+                paths.append(part)
+    return True, paths, None
 
 
 def _outputs_refusal(values):
@@ -1708,7 +1791,10 @@ def _readiness_lines(waiting, tid):
 # THE OLD REFUSAL WAS NOT WRONG, IT WAS TOO WIDE, and the vocabulary below is what
 # narrows it to the changes its reason actually covers.
 #
-_WIDENABLE = ("files", "tests.add")
+# `waivers` is the set of readers a task has answered with a reason rather than a
+# declaration (`--waive`, kept as dated notes): it is append-only like the notes
+# that hold it, and a waiver added mid-run releases nothing.
+_WIDENABLE = ("files", "tests.add", "waivers")
 
 # ...AND `tests.gate` IS NOT ONE OF THEM, BECAUSE IT IS NOT A SCOPE CLAIM.
 # Every field above is graded BACKWARDS against work already recorded, which is
@@ -5335,6 +5421,9 @@ def _forced_past(forced):
     if forced.get("kept"):
         parts.append("claim of session %s, kept: no session id to replace it "
                      "with" % (forced["kept"].get("sessionId") or "(none)"))
+    if forced.get("readersUnread"):
+        parts.append("readers not searched: %s"
+                     % ", ".join(forced["readersUnread"]))
     return parts
 
 
@@ -6127,6 +6216,72 @@ def _held_dirt_refusal(tid, held, git_root):
                else "", root, spelled, root, message, spelled, tid))
 
 
+# --- the readers a dispatch cannot leave unanswered ------------------------------
+# The brief lists every tracked file that names a declared file and asks the
+# executor to answer each; nothing graded those answers, and an edit to a reader
+# the task never declared kept arriving mid-run as a widening. `start` is the
+# dispatch - the drive starts a task through it - so it refuses while a reader an
+# EDIT can reach (`_impact.owed`: the file's own suite, a file quoting its text
+# beside its path, a document section headed by its path) is neither declared nor
+# waived. Which readers that is, and why the rest of the listing is not demanded,
+# is `_impact`'s comment above `owed`.
+def _unanswered_readers(project, config, mpath, node):
+    """`(unanswered, unread)` for a task about to start: the owed readers its
+    `files` do not cover and its waivers do not name, and the declared files
+    whose readers could not be searched. A project that is not a git work tree
+    tracks nothing, so nothing there reads anything and both come back empty."""
+    git_root = os.path.abspath(os.path.join(project,
+                                            (config or {}).get("gitRoot") or "."))
+    code, inside = _git_answer(git_root, "rev-parse", "--is-inside-work-tree")
+    if code != 0 or inside != "true":
+        return [], []
+    hc = _loader.load_hooks_config(modname="audit__config")
+
+    def spec_of(entry):
+        return hc.plan_to_git(_vocab._strip_line_suffix(entry), git_root, project)
+
+    declared = [s for s in (spec_of(f) for f in (node.get("files") or [])
+                            if isinstance(f, str)) if s]
+    waived = [s for s in (spec_of(p) for p in _waived_paths(node)) if s]
+    plan_dir = _output.posix_rel(os.path.dirname(os.path.abspath(mpath)), project)
+    exclude = [s for s in [spec_of(plan_dir)] if s and s not in (".", "./")]
+    found = _impact.owed(git_root, declared, exclude=exclude)
+    unanswered = [row for row in found["owed"]
+                  if not any(_touts.covers(entry, row["file"])
+                             for entry in declared + waived)]
+    # Readers are found relative to the checkout's top and `--files` is read
+    # relative to the project, so the remedy spells each the way `scope` reads it.
+    for row in unanswered:
+        rel = _output.posix_rel(os.path.join(git_root, *row["file"].split("/")),
+                                project)
+        row["entry"] = row["file"] if rel.startswith("..") else rel
+    return unanswered, found["errors"]
+
+
+def _unanswered_refusal(tid, unanswered, unread):
+    """The refusal naming each reader `start` will not dispatch over, and how
+    each is answered."""
+    lines = ["[audit-task] REFUSED: %s is not started - a file it declares is "
+             "read by a tracked file it neither declares nor waives, and an "
+             "edit to the declared file can reach that reader:" % (tid,)]
+    lines += ["  - %s reads %s - %s" % (row["file"], row["reads"], row["basis"])
+              for row in unanswered]
+    lines += ["  - %s: its readers could not be searched: %s"
+              % (row["path"], row["error"]) for row in unread]
+    if unanswered:
+        lines.append(
+            "Declare them - /audit:task scope %s --files +%s - or waive each "
+            "with the reason this task's change cannot reach it - /audit:task "
+            "scope %s --waive \"<path>: <why>\" - then start again."
+            % (tid, ",".join(row["entry"] for row in unanswered), tid))
+    if unread:
+        lines.append("A scan that could not be read is passed only by "
+                     "--force --reason \"<why>\", which the task.start row "
+                     "records.")
+    lines.append("Nothing written.")
+    return "\n".join(lines)
+
+
 def _locked_start(args, project, config, mpath, tid, out):
     """Promote one task to `in_progress`, under the lock, with a row and a
     revalidation -- the path every mutating verb in this file takes.
@@ -6229,6 +6384,17 @@ def _locked_start(args, project, config, mpath, tid, out):
             "`tdd` or `regression`, or names its deliverables in `outputs`." % (tid, tid))
         return E_USAGE
 
+    # THE READERS AN EDIT CAN REACH, asked before anything is claimed or locked.
+    # A retry of a running task is exempt for readiness's reason: its first start
+    # already answered the question. `--force --reason` passes only a scan that
+    # could not be read, never a reader it found - that one is answered by a
+    # declaration or a waiver, which is the record the reviewer checks.
+    unanswered, unread = (([], []) if status == "in_progress"
+                          else _unanswered_readers(project, config, mpath, node))
+    if unanswered or (unread and not args.force):
+        out(_unanswered_refusal(tid, unanswered, unread))
+        return E_USAGE
+
     # The PHASE's key, never the task's: a task moved in with its own keeps it,
     # and the phase it joined still records what the config read at its start.
     start_key, _source, refusal = _review_key_for(config, None, phase)
@@ -6308,10 +6474,12 @@ def _locked_start(args, project, config, mpath, tid, out):
     # write claimed, and one after the write landed a claim no lock stood behind.
     try:
         forced = None
-        if args.force and (unmet or contested):
+        if args.force and (unmet or contested or unread):
             forced = {"reason": args.reason.strip(), "waitingOn": unmet,
                       "replaced": _claim_replaced(claim) if contested else None,
-                      "kept": _claim_kept(claim) if contested else None}
+                      "kept": _claim_kept(claim) if contested else None,
+                      "readersUnread": ["%s (%s)" % (row["path"], row["error"])
+                                        for row in unread]}
 
         was = _start_task(node, now)
         # `review.perTask`, ONCE PER PHASE AND KEPT BY THE TASK: the phase's first
@@ -10103,12 +10271,20 @@ def _locked_scope(args, project, config, mpath, tid, out):
             "the gate with `--gate CMD [--gate CMD ...]` or empty it with "
             "`--gate-clear`." % (tid, node.get("status")))
         return E_USAGE
-    files = _split_csv(args.files)
+    additive, files, refusal = _files_delta(args.files)
+    if refusal:
+        out(refusal)
+        return E_USAGE
     # Asked BEFORE the no-op check below and before any mutation, in
     # `_gate_contradiction`'s position: a string that cannot be a path must
     # never reach `files`, `fileIndex` or a journal row, and a refusal is worth
-    # more than a rollback.
+    # more than a rollback. On a `+` value only the additions are asked: the
+    # held entries were accepted by the call that wrote them.
     refusal = _files_refusal(files, project)
+    if refusal:
+        out(refusal)
+        return E_USAGE
+    waivers, refusal = _waivers_of(args.waive)
     if refusal:
         out(refusal)
         return E_USAGE
@@ -10137,15 +10313,18 @@ def _locked_scope(args, project, config, mpath, tid, out):
             and not args.gate and not args.gate_clear and not args.description \
             and args.gate_set is None and not args.gate_drop \
             and args.risk is None and args.blocked_by is None \
-            and args.depends_on is None and not args.introduces:
+            and args.depends_on is None and not args.introduces \
+            and not waivers:
         out("[audit-task] scope needs --files (and may take --tests-mode / "
             "--tests-add / --gate / --gate-clear / --gate-set / --gate-drop / "
             "--description / --risk / "
-            "--blocked-by / --depends-on / --introduces) -- a "
+            "--blocked-by / --depends-on / --introduces / --waive) -- a "
             "scope call that changes nothing is a lock taken for no reason")
         return E_USAGE
 
     was_files = list(node.get("files") or [])
+    if additive:
+        files = _union_paths(was_files, files)
     # READ BEFORE ANY WRITE, and that ordering IS the repair rather than a
     # tidier spelling: the `tests.add` and `tests.gate` branches below write the
     # field first and append the journal row second, so reading it inside the
@@ -10365,6 +10544,17 @@ def _locked_scope(args, project, config, mpath, tid, out):
             changes.append({"id": tid, "field": field,
                             "from": was_refs, "to": now_refs})
         node[field] = now_refs
+    if waivers:
+        was_waived = _waived_paths(node)
+        fresh = [(path, why) for path, why in waivers if path not in was_waived]
+        if fresh:
+            stamp = _utc_stamp.utc_stamp()
+            node["notes"] = list(node.get("notes") or []) + [
+                {"at": stamp, "text": why, "waives": path}
+                for path, why in fresh]
+            changes.append({"id": tid, "field": "waivers",
+                            "from": was_waived,
+                            "to": was_waived + [path for path, _w in fresh]})
     if not changes:
         return _unchanged(args, out, tid)
 
@@ -15139,7 +15329,8 @@ VERB_FLAGS = {
     # was computed at, which keys the file, and the tasks that brief showed.
     "file-return": ("role", "head", "shown"),
     "scope": ("files", "tests_mode", "tests_add", "gate", "gate_clear",
-              "gate_set", "gate_drop", "description", "risk", "blocked_by", "depends_on", "introduces"),
+              "gate_set", "gate_drop", "description", "risk", "blocked_by", "depends_on", "introduces",
+              "waive"),
     "retarget": ("gate", "gate_clear", "gate_drop", "gate_set", "area",
                  "outcome", "description", "rename", "parent_branch"),
     # `seed` writes where nothing exists yet, so it has no target to describe,
@@ -15289,6 +15480,14 @@ def build_parser():
                         "package manifest and the lockfile on disk) or "
                         "`user-strings` (every locale file); the flag may repeat")
     p.add_argument("--outputs", default=None)
+    # `scope` only. A reader of a declared file that `start` would refuse over,
+    # answered with the reason the task's change cannot reach it instead of a
+    # declaration; recorded as a dated note. Repeatable, one value per flag.
+    p.add_argument("--waive", action="append", default=None,
+                   metavar="PATH: WHY",
+                   help="scope: `<path>: <why this task's change cannot reach "
+                        "it>` - a reader `start` names that the task will not "
+                        "edit; the flag may repeat")
     p.add_argument("--risk", choices=["low", "med", "high"], default=None)
     p.add_argument("--blocked-by", dest="blocked_by", action="append", default=None,
                    help=_list_help("task, phase or decision ids",

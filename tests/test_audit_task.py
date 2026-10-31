@@ -120,7 +120,8 @@ def _stderr_of(call, *args):
 # cz (`--introduces` companions, and the scope, discipline and per-runner
 # gate of a fix task), ff (`add --failing-from <runId>`
 # gates a fix task on the suites a red sign-off run's own steps NAMED as
-# failing).
+# failing), dd (`start` refuses a task whose declared file has a reader it
+# neither declares nor waives, and `scope --files +a,b` adds to the held list).
 def _at_kit(tmp):
     """The helpers every slice of the add-and-close cases builds on, each
     bound to `tmp`, the slice's own scratch directory.
@@ -826,13 +827,24 @@ def _add_cases(check):
               M._files_refusal(["src/not-yet.ts", "tests/a..b.py",
                                 "a-b/c-d.ts", "src/x.ts"]) is None
               and M._files_refusal([]) is None)
+        # `scope` has the `+` spelling now (the dd group), so what this door
+        # still refuses is the removal half and a part that is not a path.
         _xp_code2, _xp_txt2 = run(["scope", "P2.3", "--project-dir", proj,
-                                   "--files", "+src/keep.ts"])
+                                   "--files", "src/keep.ts,-src/drop.ts"])
         check("xp5 ...and the refusal belongs to the FLAG rather than to the "
               "verb the defect was measured on: `scope` writes the same field "
               "into the same index off the same flag, so both doors ask: %r"
               % (_xp_txt2[:120],),
               _xp_code2 == 2 and "REPLACEMENT list" in _xp_txt2)
+        _xp_before3 = open(mpath, "rb").read()
+        _xp_code3, _xp_txt3 = run(["scope", "P2.3", "--project-dir", proj,
+                                   "--files", "+src/keep.ts",
+                                   "--files", "src/other.ts"])
+        check("xp6 a `+` value and a plain one in one `scope` call are refused "
+              "before any write - one asks to keep the held list and the other "
+              "to replace it: %r" % (_xp_txt3[:160],),
+              _xp_code3 == 2 and "mixes a `+` value" in _xp_txt3
+              and open(mpath, "rb").read() == _xp_before3)
 
         # ---- (r) validator rollback ----------------------------------------
         before = open(mpath, "rb").read()
@@ -21962,6 +21974,176 @@ def _tdd_gate_clear_cases(check):
         _harness.remove_tree(tmp)
 
 
+def _dependant_dispatch_cases(check):
+    """A task cannot be dispatched over a reader of its declared files that it
+    neither declares nor waives - but only a reader the change can reach.
+
+    The fixture is a real git repository, because the readers are found among
+    TRACKED files and a stub of that search would be the suite agreeing with
+    the code about git. `src/a.py` has a reader of each kind the refusal must
+    name: its own suite (`tests/test_a.py`), a file
+    pinning its text beside its path (`tools/pins.py`), and a document with a
+    section headed by its path (`docs/guide.md`). Its other readers the refusal
+    must NOT name, each a reference an edit that keeps the path cannot break or a
+    near miss of a demanded kind: a script that only runs it by path, a
+    document mentioning its basename in passing, a module importing it that is
+    not its suite, and a file quoting one of its identifiers - a bare word, not
+    a pinned passage - beside its path.
+    """
+    tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
+    (run, _run_on_stdin, base_manifest, mk, _mk_empty, task_in, _pin, _unpin,
+     _PD_SHA, _pd_fixture, _pd_repo, git) = _at_kit(tmp)
+    owed = ("tests/test_a.py", "tools/pins.py", "docs/guide.md")
+    not_owed = ("tools/run.sh", "docs/notes.md", "src/b.py", "tools/other.py")
+    sources = {
+        "src/a.py": ("alpha_answer_value = 1\n\n\ndef alpha():\n"
+                     "    return \"the alpha answer stands here\"\n"),
+        "tests/test_a.py": "import a\n\nassert a.alpha()\n",
+        "tools/pins.py": ("ROWS = (\n    (\"src/a.py\",\n"
+                          "     \"the alpha answer stands here\"),\n)\n"),
+        "docs/guide.md": "# Guide\n\n## `src/a.py`\n\nWhat alpha answers.\n",
+        "tools/run.sh": "python3 src/a.py\n",
+        "docs/notes.md": "The a.py module is small.\n",
+        "src/b.py": "import a\n\nprint(a.alpha())\n",
+        "tools/other.py": "PAIR = (\"src/a.py\", \"alpha_answer_value\")\n",
+        # The over-fire fixture's file: read only in the ways that are not
+        # demanded, so a task declaring it must start at once.
+        "src/c.py": "def gamma():\n    return \"the gamma answer stands here\"\n",
+        "tools/runc.sh": "python3 src/c.py\n",
+        "src/d.py": "import c\n\nprint(c.gamma())\n",
+        "docs/more.md": "See c.py for gamma.\n",
+    }
+
+    def task(tid, files):
+        return {"id": tid, "title": "change %s" % (files[0],),
+                "status": "pending", "description": "", "files": list(files),
+                "tests": {"mode": "gate-only", "add": [],
+                          "expectRedFirst": False, "gate": ["test"]},
+                "model": "sonnet", "skills": [], "risk": "low",
+                "blockedBy": [], "dependsOn": [], "attempts": 0,
+                "maxAttempts": 3, "commit": None,
+                "outcome": {"technical": None, "descriptive": None},
+                "startedAt": None, "completedAt": None, "verifiedBy": []}
+
+    def fixture():
+        fx = base_manifest()
+        fx["phases"][1]["tasks"][1] = task("P2.3", ["src/a.py"])
+        fx["phases"][1]["tasks"].append(task("P2.5", ["src/c.py"]))
+        fx["fileIndex"]["src/a.py"] = ["P2.3"]
+        fx["fileIndex"]["src/c.py"] = ["P2.5"]
+        return fx
+
+    def bytes_of(mp):
+        with open(mp, "rb") as fh:
+            return fh.read()
+
+    def said(argv):
+        (code, txt), err = _stderr_of(run, argv)
+        return code, txt + "\n" + err
+
+    try:
+        proj, mp = mk("dd-repo", fixture(), git=True)
+        for rel, text in sources.items():
+            full = os.path.join(proj, *rel.split("/"))
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            with open(full, "w", encoding="utf-8") as fh:
+                fh.write(text)
+        git(proj, "add", "-A")
+        git(proj, "commit", "-qm", "seed")
+
+        before = bytes_of(mp)
+        code, txt = said(["start", "P2.3", "--project-dir", proj])
+        t = task_in(mp, "P2.3") or {}
+        check("dd1 `start` REFUSES a task whose declared file has readers it "
+              "neither declares nor waives, writes no byte, and names each "
+              "one - its own suite, a file pinning its text, a document "
+              "section headed by its path: %r"
+              % ((code, t.get("status"), [p for p in owed if p not in txt],
+                  txt[-400:]),),
+              code != 0 and bytes_of(mp) == before
+              and t.get("status") == "pending" and t.get("attempts") == 0
+              and all(p in txt for p in owed))
+        check("dd2 SECOND-DIRECTION CASE: the refusal is precise - a script "
+              "that only runs the file by path, a passing mention of its "
+              "basename, an importer that is not its suite and an identifier "
+              "quoted beside its path are not demanded, since an edit that "
+              "keeps the path cannot break them by being made: %r"
+              % ([p for p in not_owed if p in txt],),
+              not any(p in txt for p in not_owed))
+        check("dd3 ...and the refusal names both remedies, the incremental "
+              "`--files +` and a `--waive` carrying a reason: %r"
+              % (txt[-400:],),
+              "scope P2.3 --files +" in txt and "--waive" in txt)
+
+        code, txt = said(["scope", "P2.3", "--files",
+                          "+tests/test_a.py,tools/pins.py",
+                          "--project-dir", proj])
+        t = task_in(mp, "P2.3") or {}
+        index = _mio.load_manifest(mp).get("fileIndex") or {}
+        check("dd4 `scope --files +a,b` ADDS to the held list without "
+              "restating it: the declared file stays first, both additions "
+              "land, and each gets its fileIndex row: %r"
+              % ((code, t.get("files"), index.get("tools/pins.py"),
+                  txt[-200:]),),
+              code == 0 and t.get("files") == ["src/a.py", "tests/test_a.py",
+                                               "tools/pins.py"]
+              and index.get("tests/test_a.py") == ["P2.3"]
+              and index.get("tools/pins.py") == ["P2.3"])
+
+        code, txt = said(["start", "P2.3", "--project-dir", proj])
+        check("dd5 ...and a start after it is still refused, naming only the "
+              "reader left undeclared: %r" % ((code, txt[-300:]),),
+              code != 0 and "docs/guide.md" in txt
+              and "tools/pins.py" not in txt
+              and (task_in(mp, "P2.3") or {}).get("status") == "pending")
+
+        before = bytes_of(mp)
+        code, txt = said(["scope", "P2.3", "--waive", "docs/guide.md",
+                          "--project-dir", proj])
+        check("dd6 a waiver with NO reason is refused and writes nothing - an "
+              "unexplained waiver is the unanswered dependant again: %r"
+              % ((code, txt[-200:]),),
+              code != 0 and bytes_of(mp) == before)
+
+        reason = "the section describes the CLI, which this change keeps"
+        code, txt = said(["scope", "P2.3", "--waive",
+                          "docs/guide.md: %s" % (reason,),
+                          "--project-dir", proj])
+        notes = (task_in(mp, "P2.3") or {}).get("notes") or []
+        waivers = [n for n in notes if isinstance(n, dict)
+                   and n.get("waives") == "docs/guide.md"]
+        check("dd7 a waiver WITH a reason is recorded on the task, path and "
+              "reason both, in one dated note: %r" % ((code, notes),),
+              code == 0 and len(waivers) == 1
+              and reason in str(waivers[0].get("text"))
+              and isinstance(waivers[0].get("at"), str))
+
+        code, txt = said(["start", "P2.3", "--project-dir", proj])
+        check("dd8 ...and once every demanded reader is declared or waived, "
+              "the task starts: %r" % ((code, txt[-300:]),),
+              code == 0
+              and (task_in(mp, "P2.3") or {}).get("status") == "in_progress")
+
+        code, txt = said(["scope", "P2.3", "--files", "+src/b.py",
+                          "--project-dir", proj])
+        check("dd9 the incremental spelling is a widening, so a STARTED task "
+              "takes it too, the held list intact: %r"
+              % ((code, (task_in(mp, "P2.3") or {}).get("files"),
+                  txt[-200:]),),
+              code == 0 and (task_in(mp, "P2.3") or {}).get("files")
+              == ["src/a.py", "tests/test_a.py", "tools/pins.py", "src/b.py"])
+
+        code, txt = said(["start", "P2.5", "--project-dir", proj])
+        check("dd10 SECOND-DIRECTION CASE: a task whose file is read only in "
+              "ways an edit cannot break - run by path, imported by a module "
+              "that is not its suite, mentioned by basename - starts at once, "
+              "with no waiver asked: %r" % ((code, txt[-300:]),),
+              code == 0
+              and (task_in(mp, "P2.5") or {}).get("status") == "in_progress")
+    finally:
+        _harness.remove_tree(tmp)
+
+
 STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("at3-block", "_flag_cases"), ("at4-block", "_start_cases"),
           ("at5-block", "_close_cases"), ("at6-block", "_group_cases"),
@@ -21990,7 +22172,8 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("rf-block", "_retired_flag_cases"),
           ("gx-block", "_gate_entry_cases"),
           ("sh-block", "_start_head_cases"),
-          ("ocg-block", "_tdd_gate_clear_cases"))
+          ("ocg-block", "_tdd_gate_clear_cases"),
+          ("dd-block", "_dependant_dispatch_cases"))
 
 
 if __name__ == "__main__":

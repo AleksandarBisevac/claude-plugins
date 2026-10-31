@@ -26,12 +26,16 @@ reads a file a task is about to change.
   through the injected runner rather than assumed; `im8` refuses the PCRE form
   the way a git built without it does and asserts the same answer, with the
   fixed-string retry made once and never offered again.
+- **The readers a dispatch demands stand beside their near misses** (`ow1`-`ow4`):
+  a passage quoted beside the path is a pin and each shape one step off it is
+  not, a heading naming the full path is a section and a longer path is not.
 
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 import os
 import sys
 import time
+import warnings
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
@@ -378,12 +382,71 @@ def _budget_cases(check):
         _harness.remove_tree(os.path.dirname(root))
 
 
+_PINNED = "the refund is split evenly here"
+_SOURCE = "def split():\n    return \"%s\"\n\nsplit_refund_total = 1\n" % (_PINNED,)
+
+
+def _owed_cases(check):
+    """The readers an edit can reach, each beside its near miss; the
+    readers are found among tracked files, so `owed` itself is driven by the
+    `dd` group of `test_audit_task.py` over a real repository."""
+    path = "pkg/refund.py"
+    pin = 'ROWS = (\n    ("%s",\n     "%s"),\n)\n' % (path, _PINNED)
+    far = ('ROWS = ("%s",)\n' % (path,)) + "\n" * (M.ANCHOR_WINDOW + 2) \
+        + ('X = "%s"\n' % (_PINNED,))
+    check("ow1 a passage of the file quoted within the window of its path is a "
+          "pin, and the passage is what is returned: %r"
+          % (M.pinned_passage(pin, path, _SOURCE),),
+          M.pinned_passage(pin, path, _SOURCE) == _PINNED)
+    misses = {
+        "outside the window": far,
+        "an identifier, no whitespace":
+            'PAIR = ("%s", "split_refund_total")\n' % (path,),
+        "a path": 'PAIR = ("%s", "pkg/other refund.py here")\n' % (path,),
+        "text the file does not hold":
+            'PAIR = ("%s", "a sentence nobody wrote there")\n' % (path,),
+        "the basename only": 'PAIR = ("refund.py", "%s")\n' % (_PINNED,),
+    }
+    got = dict((k, M.pinned_passage(v, path, _SOURCE)) for k, v in misses.items())
+    check("ow2 THE OVER-FIRE TWINS: none of these is a pin - a passage past the "
+          "window, an identifier, a path, text the file does not hold, a reader "
+          "naming the basename alone: %r" % (got,),
+          all(v is None for v in got.values()))
+    check("ow3 a Markdown heading naming the full path is a section; the "
+          "basename in a heading, the path in a sentence, and a longer path in "
+          "a heading are not: %r"
+          % ([M.heads_section(t, path) for t in (
+              "## `pkg/refund.py`\n", "## refund.py\n",
+              "It lives in pkg/refund.py.\n", "## pkg/refund.py.bak\n")],),
+          M.heads_section("## `pkg/refund.py`\n", path)
+          and not M.heads_section("## refund.py\n", path)
+          and not M.heads_section("It lives in pkg/refund.py.\n", path)
+          and not M.heads_section("## pkg/refund.py.bak\n", path))
+    regex_reader = 'ROWS = ("%s",\n    r"x", "\\d+ refunds split here")\n' % (path,)
+    with warnings.catch_warnings(record=True) as seen:
+        warnings.simplefilter("always")
+        M.pinned_passage(regex_reader, path, _SOURCE)
+    check("ow5 a reader quoting a regex (an invalid escape to the parser) is "
+          "read without a warning reaching stderr - the parser's complaint is "
+          "about the reader's source, not this scan: %r"
+          % ([str(w.message) for w in seen],),
+          not [w for w in seen
+               if issubclass(w.category, (SyntaxWarning, DeprecationWarning))])
+    stems = M.suite_stems("scripts/run-gate.py")
+    check("ow4 a suite is named after the file in each convention, a hyphen "
+          "read as Python's underscore: %r" % (sorted(stems),),
+          "test_run_gate" in stems and "run_gate_test" in stems
+          and "run-gate.test" in stems and "run-gate.spec" in stems
+          and "test_run" not in stems)
+
+
 def _selftest():
     def body(check):
         _harness.stage(check, "im-block", _cases)
         _harness.stage(check, "js-block", _js_cases)
         _harness.stage(check, "rk-block", _ranking_cases)
         _harness.stage(check, "bd-block", _budget_cases)
+        _harness.stage(check, "ow-block", _owed_cases)
     return _harness.run(body)
 
 

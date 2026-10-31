@@ -432,7 +432,7 @@ L9:
   audit-logs -> _claude_home, _gate_feed, _output
   audit-lookup -> _areas, _claude_home, _clause_coverage, _config_rules, _evidence_io, _excerpt, _filed_returns, _gate_feed, _impact, _journal_io, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output
   audit-status -> _areas, _claude_home, _cli_fmt, _evidence_io, _filed_returns, _fmt, _invariants, _live_copy, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
-  audit-task -> _affected_tests, _areas, _branch, _claude_home, _commit_trail, _config_rules, _evidence_io, _filed_returns, _gate_derive, _id_refs, _id_shape, _invariants, _journal_io, _loader, _locks, _machine_paths, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proc_group, _proposals, _scope_companions, _scoped_commit, _status_facts, _task_outputs, _tree_stamp, _utc_stamp, _verdict_binding, _warning_groups, _worktrees
+  audit-task -> _affected_tests, _areas, _branch, _claude_home, _commit_trail, _config_rules, _evidence_io, _filed_returns, _gate_derive, _id_refs, _id_shape, _impact, _invariants, _journal_io, _loader, _locks, _machine_paths, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proc_group, _proposals, _scope_companions, _scoped_commit, _status_facts, _task_outputs, _tree_stamp, _utc_stamp, _verdict_binding, _warning_groups, _worktrees
   audit-usage -> _areas, _claude_home, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme, _usage_economics
   audit-version -> _claude_home, _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
@@ -3346,7 +3346,14 @@ most `FILE_BUDGET` files in `scan_order` (those the description names, then sour
 documents), renders at most `LINE_BUDGET` lines, and closes a cut with the counts and the
 command it is given. `render(results)` is the unbounded text. A file nothing names says what it
 was searched by — and, for JS/TS, that aliased or dynamic imports are not seen. What else it
-cannot see is listed in its docstring. Stdlib and git only. Its cases are `tests/test__impact.py`.
+cannot see is listed in its docstring. `owed(root, paths, exclude)` is the narrower question a
+dispatch asks: which of those readers an EDIT to an existing declared file can reach — the
+file's own suite by name, a code file quoting a passage of its text within `ANCHOR_WINDOW`
+lines of its full path, and a document with a Markdown heading naming its full path. A reader
+that only runs or names the path, an importer that is not the suite, and a passing basename
+mention are not demanded: an edit that keeps the path cannot break them, and no field a
+dispatch reads says a task deletes or renames. `audit-task.py start` refuses over what `owed`
+returns. Stdlib and git only. Its cases are `tests/test__impact.py`.
 
 ### `plugins/audit/scripts/governance/_locks.py`
 The lock library: where a lock lives (`lock_dir`), what it may be called
@@ -5382,7 +5389,11 @@ and deletes the per-task narrowing the gate's decision order exists for. It is d
 NOT idempotent — `attempts` counts spawns, and a call on a running task is the retry step 4
 prescribes — and it refuses a terminal task, a phase id, and a start that would pass
 `maxAttempts` (the `blocked` transition owes an ADO echo and a human, so it stays the
-orchestrator's).
+orchestrator's). It also refuses a first start while a reader `_impact.owed` finds for a
+declared file is neither in `files` nor waived, naming each reader and its answers —
+`scope <id> --files +<reader>` or `scope <id> --waive "<reader>: <why>"`; the brief already
+listed every dependant for the executor to answer, and this is the subset graded before the
+work begins. A scan git could not complete is passed only by `--force --reason`, on the row.
 
 **`done <taskId> --commit <sha>` is `start`'s twin at the other end**, and it exists for the
 same reason: the conventions prescribed the close as a pair of hand `Edit`s, which is how one
@@ -5430,7 +5441,10 @@ inert. On a task that has already STARTED what is graded is the SHAPE of the cha
 the call: `files` and `tests.add` may gain entries and nothing may lose one, which is the one
 change that cannot re-judge what already happened — `_invariants.commit_scope` reads
 `task.files` live, so growing the list can only turn a breach into a pass, and the plan gate
-reads it forward, so growing it only ever allows an edit it was refusing. That is the recovery
+reads it forward, so growing it only ever allows an edit it was refusing. `--files +a,b` adds
+to the list a task holds instead of replacing it (a `+` value beside a plain one is refused),
+and `--waive "<path>: <why>"` records a reader the task answers with a reason rather than an
+edit, as a dated note carrying `waives` — append-only, like the list. That is the recovery
 `reference/orchestrator.md` prescribes for a plan-gate refusal, and until the shape rule
 replaced a pair of independent signal checks the task the remedy names failed the gate by
 construction.

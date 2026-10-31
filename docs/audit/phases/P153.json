@@ -299,7 +299,7 @@
     {
       "id": "P153.5",
       "title": "A task's related-suite listing keeps the hook and tool gates the affected selection names",
-      "status": "in_progress",
+      "status": "done",
       "description": "Register F809, open part (verified 2026-10-31 at ad838231): _related_suite_paths throws away the gates select() names that are not tests/ suites, so \"affected.py --list-related plugins/audit/scripts/manifest/_manifest_vocab.py\" prints only tests/ while \"affected.py --json\" names guard-release.py and arm-release-bypass.py --selftest; a task gate does not run those hooks and the miss measurement (which counts --json gates) cannot see it. Keep scanners out (S3.3) but keep every non-scanner gate select() names.",
       "files": [
         "plugins/audit/scripts/governance/_affected_tests.py",
@@ -325,25 +325,41 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e16b1763d4bd",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/affected.py: _related_suite_paths now keeps every gate select(scanners=False) names in the TOOL_SELFTEST shape, read back to a path by a new _selftest_path() that splits the one template; only files that exist are kept, because a deleted tool still selects its own gate but the sweep refuses a path it does not hold. Command gates (parity, vitest, browser gates, plugin validate) are not file paths, so a path listing cannot carry them; the docstring says so. _all_suite_paths (--list-all) widened from tests/ suites to every file the sweep runs the cases of (tests suites + _is_runner tools + .claude/hooks), sorted as one list. This is required, not optional: _gate_derive's phase-gate narrowing takes the related listing only when it is a strict subset of the full listing, so a related listing naming hooks/tools against a tests-only full listing silently stopped narrowing (tests/test_derive_phase_gate.py's repo-listing case went red on exactly that, set(named) < every). Usage text and the main() comment updated. Own cases: a16 now expects suites + runner selftests less every blanket scanner (suites and tools); new a16a (_selftest_path reads TOOL_SELFTEST back, None for PARITY/VITEST/empty path), a16d (--list-all == the sweep's runner set, hooks and tools included), a16e (a deleted tool's gate is in select() but not in the listing). tests/test__affected_tests.py: af29 (for _manifest_vocab.py, --json names both release-hook selftests; every non-blanket-scanner selftest gate --json names is in --list-related, survives _affected_tests.select(), and both hook paths reach entries_for's step commands) and af29b (on af27's leaf, no blanket scanner, suite OR tool, joins the listing; af27 counted only scanner suites). First red, before the fix: af29 FAIL, 33/34 cases, the listing dropped all 26 non-scanner gates including both hooks. Mutation probes in a throwaway copy (not the worktree), pycache purged per cycle, restore verified: M1 (listing drops runner gates) -> af29 red; M2 (listing takes the scanners=True gates) -> a16 and af29b red; M3 (full listing tests-only) -> a16d red; M4 (no existence filter) -> a16e red. Runs on the final tree: gate command exit 0, 35 cases; tools/affected.py --selftest 57/57; sweep over the dependants tests/test__gate_derive.py, test_derive_phase_gate.py, test__refs.py, test__filed_returns.py, test_run_test_gate.py, test_audit_task.py, test__output_lints.py, test__deps.py, test__manifest_phases.py, tools/measure-affected-miss.py, tools/bench-hooks.py, tools/prove-gates.py: all ok (the last four-file rerun after the final edits exit 0); ruff and vermin -t=3.8- clean on both files. These extra runs are evidence for the dependant answers, not gate claims. plugins/audit/scripts/governance/_affected_tests.py and PLUGIN-BUILD-GUIDE.md were NOT edited: the consumer's related arm already keeps every path the listing names (af29's select() and step halves pass with no change), and the guide describes listings generically, not this repo's shape. Left, with reason: (a) the listing still cannot carry command gates (python3 tools/gate-parity.py, npx vitest run, browser gates, claude plugin validate) that --json names for workflow/ui/tools/verify.sh changes; a path listing filled into the sweep has no spelling for a command, so a task gate gets those only from its own declared entries. That is a remaining gap of the same family, worth its own register entry. (b) A deleted tests/ suite is still printed by the listing, as before this change, and the sweep refuses it by name; only the runner half got the existence filter. Dependants: tools/affected.py's dependants - .github/sweep-costs.json (path): still correct, no file added/renamed; tests/test__affected_tests.py: changed (af29, af29b added); tests/test__gate_derive.py: still correct, 62 ok, it builds listings by hand; tests/test__refs.py: still correct, 292 ok (tb1 went red on a probe literal mid-work and was fixed by assembling the fixture name); tests/test_derive_phase_gate.py: still correct with no edit, 36 ok, because --list-all widened; tools/bench-hooks.py: still correct, 25 ok; tools/lints/_refs.py: still correct, reads paths only; tools/measure-affected-miss.py: still correct, 27 ok, reads --json, which is unchanged; tools/prove-gates.py (_call_name, reach_graph, _rel users): still correct, 65 ok, no signature changed. _affected_tests.py's dependants (run-test-gate.py, audit-task.py, test__gate_derive.py, test_derive_phase_gate.py, test__filed_returns.py, PLUGIN-BUILD-GUIDE.md): the module is unchanged; run-test-gate's suite 578 ok and audit-task's 1180 ok, now fed a listing with hook/tool paths, which the sweep spelling accepts (checked: all paths --list-related prints for _manifest_vocab.py are in sweep_files(), none missing). test__affected_tests.py's dependants: sweep-costs.json unchanged (no rename); test__gate_derive.py uses _cases/_selftest names only, ok; tools/affected.py references the test path, ok; CONTRIBUTING.md's paragraph on the listing ('a scanner joins only when it imports or runs a changed file') stays true, so no edit. PLUGIN-BUILD-GUIDE.md: no edit, see above. Operational note: the dogfood plan's recorded listing.all is the same command, so this repo's phase-gate derivation now compares a related and full listing that both include hooks and tools.",
+        "descriptive": "A task's related-suite listing now carries the hook and tool selftests the affected selection names, without the tree scanners, and the full listing widens to match so phase-gate narrowing still applies."
       },
       "startedAt": "2026-10-31T04:52:11Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-31T05:17:46Z",
+      "verifiedBy": [
+        "af29: for _manifest_vocab.py the listing a task gate reads names both release-hook selftests and every non-scanner selftest gate --json names, through select() and into the step commands",
+        "af29b: the listing for a leaf module names no blanket scanner, suite or tool",
+        "a16a/a16d/a16e in tools/affected.py: the selftest-gate reader, the full listing as the sweep's runner set, and a deleted tool left out of the listing"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-31T05:17:41Z.11088b",
         "status": "passed",
         "at": "2026-10-31T05:17:41Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "e16b1763d4bd",
+        "at": "2026-10-31T05:17:46Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-31T05:14:38Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__affected_tests.py` in a throwaway tree at HEAD exited 1 with 1 of 35 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - af29 (house FAIL): SELFTEST FAILED: 34/35 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P153.6",
       "title": "A task that deletes, renames or changes a file other files read cannot be dispatched until each such dependant is declared or waived with a reason, and scope can add files without restating the held list",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Register F792 (verified open 2026-10-31 at ad838231; recurred twice in P151 and three times in P143 as undeclared edits). The brief already lists \"Who depends on this\" (audit-lookup.dependant_lines) but only asks the executor to answer each dependant, and nothing grades it. Do: from the same dependants data, list at dispatch every tracked file that reads a declared file (by path, by import, or by text anchor, e.g. tools/prove-gates.py rows anchored on ci.yml and gate-parity.py text) that the task does not declare, and refuse dispatch until each is declared or waived with a recorded reason. Also let scope take an incremental +a,b spelling. Keep the refusal precise: a dependant that cannot be affected by the declared change shape must not be demanded (measure the false-positive rate over the last phases P143 and P151 and report it).",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -354,7 +370,10 @@
         "tests/test_audit_lookup.py",
         "tests/test__impact.py",
         "tests/test_drive_phase.py",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/README.md",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/reference/verbs-in-full.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -372,16 +391,22 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-31T06:07:15Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-31T06:31:51Z.ac0a2a",
+        "status": "passed",
+        "at": "2026-10-31T06:31:51Z"
+      }
     },
     {
       "id": "P153.7-34e",

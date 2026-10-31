@@ -1342,9 +1342,10 @@ neither a widening nor a gate, a `--files` entry that cannot be a repository-rel
 and a call that would change nothing — a lock taken for no
 reason is worth saying out loud.
 
-**`--files` is the replacement list, and it is not a delta.** The incremental spelling
-neighbouring tools offer — a `+` or `-` in front of each path — is refused rather than
-written, on both this verb and `add`: measured live, those prefixes went into the task's
+**`--files` is the replacement list, or on `scope` an addition.** A value opening with one
+`+` — `--files +a,b` — adds `a` and `b` to the list the task holds without restating it; a
+`+` value beside a plain one in the same call is refused. Any other `+` or `-` in front of a
+path is refused rather than written, on both this verb and `add`: measured live, those prefixes went into the task's
 `files` as part of the filenames, into `fileIndex`, into a journal row that recorded it as
 legitimate, and the only output was the not-on-disk note below. A leading `/` or `~` and a
 `..` segment are refused for the same reason — none of them is a path the plan can key an

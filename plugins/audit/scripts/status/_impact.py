@@ -28,6 +28,12 @@ naming the module's internals describes them rather than calls them. The declare
 dependant, and `exclude` drops whole directories (the plan's own state names
 every file it indexes and reads none of them).
 
+WHICH READERS A DISPATCH DEMANDS. `owed` narrows the dependants to the ones an
+edit to the declared file can reach - its own suite, a file quoting its text
+beside its path, a document section headed by its path - and `audit-task.py
+start` refuses a task until each is declared or waived. The comment above
+`owed` says why the rest of the listing is not demanded.
+
 WHAT IT CANNOT SEE. Only `git grep` over TRACKED files is read, so an untracked
 or gitignored file is never a dependant - by design, since neither ships. A
 reference spelled in pieces (`os.path.join("status", name)`), an aliased or
@@ -60,6 +66,7 @@ import posixpath
 import re
 import subprocess
 import sys
+import warnings
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -382,6 +389,161 @@ def dependants(root, paths, cap=CAP, exclude=(), git=None):
         result, pcre = _file_dependants(root, path, cap, exclude, run, pcre)
         results.append(result)
     return results
+
+
+# --- the readers an edit can reach ------------------------------------------------
+# `dependants` answers "who names this file"; a task's dispatch asks a narrower
+# question - which of those readers an EDIT to the file can break - because it
+# refuses to start until each is declared or waived, and a refusal that demanded
+# every name would be routed around inside a day. The kinds demanded
+# (`OWED_KINDS`) each read the file's content rather than its name:
+#
+#   suite    - the file's own test suite by name (`test_<stem>`, `<stem>_test`,
+#              `<stem>.test`, `<stem>.spec`, `<stem>_spec`), among its dependants:
+#              it asserts on the behaviour the edit changes;
+#   text     - a code file quoting, within ANCHOR_WINDOW lines of the file's
+#              full path, a passage of the file's own text: a literal of at least
+#              ANCHOR_MIN characters holding whitespace and naming no path, found
+#              verbatim in the file - the shape of a mutation row or a source pin;
+#   section  - a document with a Markdown heading naming the file's full path:
+#              prose that describes this file specifically.
+#
+# NOT DEMANDED, because an edit that keeps the path cannot break them by being
+# made: a file that only runs or names the path, an importer that is not the
+# suite, a passing basename mention, and a quoted identifier (no whitespace) or
+# path beside the path. A delete or a rename breaks every one of those - and no
+# field a dispatch reads says a task deletes or renames, so those readers stay in
+# the brief's listing, answered by the executor, and are not refused over. A
+# declared file that does not exist yet is a creation, and nothing reads it.
+ANCHOR_WINDOW = 4
+ANCHOR_MIN = 12
+_QUOTED = re.compile(r'"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\'')
+_PATHISH = re.compile(r"[\w.-]+/[\w.-]|\w\.(?:py|md|json|ya?ml|sh|mjs|cjs|js|"
+                      r"ts|tsx|jsx|txt|toml|cfg|ini|html|css)\b")
+OWED_KINDS = ("suite", "text", "section")
+
+
+def suite_stems(path):
+    """The names, extension off, a test suite of `path` goes by."""
+    stem = posixpath.splitext(posixpath.basename(path))[0]
+    snake = stem.replace("-", "_")
+    return set(["test_%s" % snake, "%s_test" % snake, "%s.test" % stem,
+                "%s.spec" % stem, "%s_spec" % snake])
+
+
+def _literals(line):
+    """The string values quoted on one line; a token Python cannot read as a
+    literal (a JS template, an unbalanced escape) is taken between its quotes."""
+    found = []
+    for match in _QUOTED.finditer(line):
+        token = match.group(0)
+        # A regex in a reader (`"\d+"`) is an invalid escape to the parser, which
+        # newer Pythons report as a SyntaxWarning on stderr - output about the
+        # reader's source, not this scan, so it is not let through.
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                value = ast.literal_eval(token)
+        except (ValueError, SyntaxError):
+            value = token[1:-1]
+        if isinstance(value, str):
+            found.append(value)
+    return found
+
+
+def _is_passage(value, path):
+    """Whether a quoted value is a passage of text rather than a name: long
+    enough, holding whitespace, and naming no path - this file's or another's."""
+    text = value.strip()
+    return (len(text) >= ANCHOR_MIN and re.search(r"\s", text) is not None
+            and path not in value
+            and posixpath.basename(path) not in value
+            and _PATHISH.search(text) is None)
+
+
+def pinned_passage(reader_text, path, file_text):
+    """The first passage of `file_text` that `reader_text` quotes within
+    ANCHOR_WINDOW lines of a line naming `path`, or None."""
+    if path not in reader_text:
+        return None
+    lines = reader_text.split("\n")
+    for i, line in enumerate(lines):
+        if path not in line:
+            continue
+        for near in lines[max(0, i - ANCHOR_WINDOW):i + ANCHOR_WINDOW + 1]:
+            for value in _literals(near):
+                if _is_passage(value, path) and value in file_text:
+                    return value
+    return None
+
+
+def heads_section(doc_text, path):
+    """Whether a document has a Markdown heading naming `path` in full."""
+    if path not in doc_text:
+        return False
+    word = re.compile(r"(?<![\w./-])%s(?![\w-]|\.\w)" % re.escape(path))
+    return any(line.lstrip().startswith("#") and word.search(line)
+               for line in doc_text.split("\n"))
+
+
+def _read_text(root, path):
+    """A tracked file's text off the working tree, or "" when it cannot be read."""
+    try:
+        with open(os.path.join(root, *path.split("/")), "r", encoding="utf-8",
+                  errors="replace") as fh:
+            return fh.read()
+    except OSError:
+        return ""
+
+
+def _owed_reason(root, path, reader, file_text, read):
+    """`(kind, basis)` when `reader` is a reader an edit to `path` can reach,
+    else None."""
+    stem = posixpath.splitext(posixpath.basename(reader))[0]
+    if stem in suite_stems(path):
+        return "suite", "its own suite"
+    text = read(root, reader)
+    if is_doc(reader):
+        if heads_section(text, path):
+            return "section", "a section headed by its path"
+        return None
+    passage = pinned_passage(text, path, file_text)
+    if passage is not None:
+        shown = passage.strip()
+        shown = shown if len(shown) <= 60 else shown[:57] + "..."
+        return "text", "quotes its text beside its path: %r" % (shown,)
+    return None
+
+
+def owed(root, paths, exclude=(), git=None, read=None):
+    """The readers an edit to the declared `paths` can reach:
+    `{"owed": [{"file", "reads", "kind", "basis"}], "errors": [{"path",
+    "error"}]}`, one row per reader (the first declared path it reads), in the
+    order `dependants` ranks them. A path not on disk is a creation and is
+    skipped; a path whose references could not be read is an error, never an
+    empty answer."""
+    run = git if git is not None else run_git
+    read = read if read is not None else _read_text
+    rows, errors, seen = [], [], set()
+    for raw in paths:
+        path = _norm(raw)
+        if not os.path.isfile(os.path.join(root, *path.split("/"))):
+            continue
+        refs, error = _references(root, path, exclude, run)
+        if error is not None:
+            errors.append({"path": path, "error": error})
+            continue
+        file_text = read(root, path)
+        for ref in refs:
+            reader = ref["file"]
+            if reader in seen:
+                continue
+            reason = _owed_reason(root, path, reader, file_text, read)
+            if reason is not None:
+                seen.add(reader)
+                rows.append({"file": reader, "reads": path, "kind": reason[0],
+                             "basis": reason[1]})
+    return {"owed": rows, "errors": errors}
 
 
 # --- the rendering --------------------------------------------------------------

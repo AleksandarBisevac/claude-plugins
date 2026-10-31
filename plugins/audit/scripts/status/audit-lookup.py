@@ -739,8 +739,11 @@ def compose_executor_brief(manifest, phase, task, ctx, files, gate):
 # --- who depends on this ---------------------------------------------------------
 # The tracked files that read a task's files, from `_impact`, in the executor's
 # brief, the writer's prompt and the reviewer's brief. The two writing roles are
-# asked to answer each one; the reviewer is asked to check those answers. Nothing
-# grades the answers mechanically - the reviewer's verdict is the check.
+# asked to answer each one; the reviewer is asked to check those answers. The
+# subset an edit can reach (`_impact.owed`) is graded before this brief exists:
+# `audit-task.py start` refuses the task until each of those is declared or
+# waived with a reason. The rest of the listing is graded by nothing mechanical -
+# the reviewer's verdict is the check.
 DEPENDANTS_TITLE = "Who depends on this"
 _DEPENDANT_ANSWER = ("still correct, and why - or changed, and what changed in "
                      "it or in this task's change.")

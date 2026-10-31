@@ -2241,7 +2241,8 @@
       "P131.2",
       "P132.3",
       "P132.4",
-      "P142.1"
+      "P142.1",
+      "P153.6"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -2688,7 +2689,8 @@
       "P130.6",
       "P130.13-ywo",
       "P130.16-ywo",
-      "P130.39-ywo"
+      "P130.39-ywo",
+      "P153.6"
     ],
     "plugins/audit/commands/usage.md": [
       "P26.2",
@@ -10610,7 +10612,8 @@
       "P142.19-6yq",
       "P148.5",
       "P148.10-xpz",
-      "P148.21-xpz"
+      "P148.21-xpz",
+      "P153.6"
     ],
     "docs/research/pipeline-cost-results.md": [
       "P118.19-v7t",
