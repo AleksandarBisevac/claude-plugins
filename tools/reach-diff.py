@@ -22,43 +22,75 @@ dir). The suite is run there the way the sweep runs it - the sweep's own `run_on
 and `grade`, loaded rather than copied, so the child's cwd, temp, home, git config and
 session filtering are the sweep's - one job per `STAGES` block (`--selftest --stage
 LABEL`), or the whole file when the sweep cannot read a table, with the jobs of both
-revisions in one pool sized by the sweep's `default_jobs`. A line tracer is installed
-in EVERY Python process that run starts, children included, by a `sitecustomize`
-module in a scratch directory put first on `PYTHONPATH`; it runs the sitecustomize it
-shadows (a Homebrew Python has one), and it records only lines whose code object's
-file is the module, by resolved path - `sys.monitoring` where the interpreter has it,
-each location disabled after its first event so the cost elsewhere is one call per
+revisions in one pool sized by the sweep's `default_jobs`.
+
+THE HOOK. A line tracer is installed in every Python process the run starts that
+imports the hook, a module in a scratch directory put first on `PYTHONPATH`. It is
+written as `usercustomize`, which `site` imports after whichever `sitecustomize`
+won - so a suite that plants its own sitecustomize ahead of everything (the drive
+suite's pinned clock and Windows-shaped stdout both do) still runs it - and only
+when this interpreter, asked once under the sweep's filtered environment, has its user
+site off (`-s`, `PYTHONNOUSERSITE`, a venv without system site packages) is it
+written as `sitecustomize` instead, which the output's `hook:` line says along with
+what that costs. Either way it runs the module of its own name that it shadows, and
+installs once per process. It records only lines whose code object's file is the
+module, by resolved path - `sys.monitoring` where the interpreter has it, each
+location disabled after its first event so the cost elsewhere is one call per
 location, and `sys.settrace` plus `threading.settrace` on the 3.8 floor, which hands
-a line tracer only to the module's frames. Each process writes its lines at exit.
+a line tracer only to the module's frames. Each process writes a start marker when
+it installs and its lines when it exits.
 
-WHAT IT CANNOT SEE, SAID RATHER THAN IMPLIED. A process that does not run the hook:
-one started with `-I`, `-E` or `-S`, one handed an environment without
-`PYTHONPATH` or the two variables naming the module and the output directory, and
-one whose interpreter has another `sitecustomize` earlier on its path. A process
-that never reaches its exit handlers: `os._exit`, a kill, a timeout, a fork that
-ends without returning. Lines reached in those processes are absent at BOTH
-revisions alike when the suite's shape is the same, and absent at one only when the
-conversion changed how the module is run - so the count of processes traced at each
-revision is printed beside the lines, and a big difference there is the first thing
-to read. A suite that reads the repository's own git (history, `ls-files`) sees an
-export with none.
+THE ROUTE IS THE SWEEP'S. A suite may decide how to run something by what is on
+`PYTHONPATH` - the drive suite runs a verb as a process rather than in its own
+interpreter when a `sitecustomize` sits there, since only a fresh interpreter imports
+one. The `usercustomize` entry adds none, so such a suite takes the route it takes
+under the sweep. The `sitecustomize` fallback does add one, and under it every verb
+that suite would run in-process runs as a process, at both revisions alike: the
+reach measured is then the process route's, not the sweep's.
 
-HOW A LINE IS MATCHED ACROSS REVISIONS. By its enclosing function (dotted, from the
-AST, `<module>` outside any), its stripped text, and which occurrence of that text in
-that function it is - never by its number, so a change that only moves code compares
-equal. A line reached at the base whose key the head's module no longer holds was
-changed or deleted rather than left unreached; such lines are listed apart as gone,
-and do not decide the exit code - a renamed function therefore hides its lines from
-the comparison, and the gone list is where that shows.
+UNTRACED MODULE CHILDREN DECIDE THE EXIT. Each traced process counts the children it
+starts through `subprocess.Popen` with the module's path among their arguments, and
+hands each child a token naming itself in the environment; each traced process
+records whether it is running the module and the token of its parent. A child
+started on the module that never wrote its lines - one handed an environment that
+drops the hook, one started with `-I`, `-E`, `-S` or (under the `usercustomize`
+entry) `-s`, one that ended through
+`os._exit`, a kill or a timeout - is one its parent counted and nothing answered. A
+revision with any such child, or with a trace file that cannot be read, refuses with
+2: its reach is short by lines nothing measured, and a comparison over it could
+hide a loss or invent one.
+
+WHAT IT CANNOT SEE, SAID RATHER THAN IMPLIED. A child that runs the module without
+naming its path among `subprocess.Popen`'s arguments - started through a shell
+string, `os.system`, `os.spawn*`, `os.posix_spawn` or `-m`, or a script that imports
+the module rather than running it - is not counted, so if it is untraced nothing says
+so. A child of an untraced process is not counted either, and a traced process that
+itself ended without writing takes its count with it; the start markers make those
+visible as the gap between processes that started the hook and processes that
+wrote, printed per revision, without deciding the exit. A `Popen` that fails to
+start its child is counted as an untraced one. A suite that reads the repository's
+own git (history, `ls-files`) sees an export with none.
+
+HOW A LINE IS MATCHED ACROSS REVISIONS. Never by its number. Each function's code
+lines at the base are aligned with the same function's at the head
+(`difflib.SequenceMatcher` over their stripped text), so an identical line inserted
+or deleted beside another does not re-pair it; what is left in the whole module is
+aligned again in line order, which finds a body moved into a renamed or a new
+function; what is still left is paired by text alone. A line reached at the base and
+paired with a head line the head did not reach is lost, whichever function it is in
+now. Only a reached line whose text the head's module no longer holds anywhere is
+listed apart as gone, and gone lines do not decide the exit code: a line that was
+rewritten and left unreached is not seen.
 
 A RUN THAT MEASURED NOTHING IS NOT A PASS. Any block that failed - a red case, a
-crash, a timeout, no contract line - or a revision at which no line of the module
-was reached at all, refuses with 2 and says which: a reach measured over a suite
-that did not finish is not the suite's reach.
+crash, a timeout, no contract line - an untraced module child, or a revision at
+which no line of the module was reached at all, refuses with 2 and says which: a
+reach measured over a suite that did not finish is not the suite's reach.
 
 Exit codes: 0 no line lost - 1 a line lost - 2 usage error, or no comparison made.
 """
 import ast
+import difflib
 import io
 import json
 import os
@@ -96,18 +128,45 @@ TIMEOUT_FACTOR = 2
 ENV_MODULE = "REACH_DIFF_MODULE"
 ENV_OUT = "REACH_DIFF_OUT"
 ENV_TRACER = "REACH_DIFF_TRACER"
-HOOK_MODULE = "sitecustomize"
+ENV_PARENT = "REACH_DIFF_PARENT"
+# The module names the hook is written as. `usercustomize` is imported by `site`
+# after whichever `sitecustomize` won, so a suite that plants its own sitecustomize
+# first on PYTHONPATH still runs the hook, and the hook adds no sitecustomize for a
+# suite to see. Where the interpreter's user site is off it is never imported, and
+# the hook falls back to being the `sitecustomize`.
+HOOK_USER = "usercustomize"
+HOOK_SITE = "sitecustomize"
+USER_SITE_PROBE = "import site; print(site.ENABLE_USER_SITE)"
 
-# The hook, written into a scratch directory as the module above. It runs in every
-# Python process the measured suite starts, so it is 3.8 syntax, stdlib only, and
-# inert unless both variables are set. It writes one file per process, renamed
-# into place, so a process killed mid-write leaves a `.part` the reader skips.
+
+def hook_line(entry):
+    """What the output says about the module the hook was written as."""
+    if entry == HOOK_USER:
+        return ("usercustomize (no sitecustomize is added to PYTHONPATH, so the "
+                "suite's processes run as the sweep runs them)")
+    return ("sitecustomize, because this interpreter's user site is off - a suite "
+            "that plants its own sitecustomize ahead of it hides its children from "
+            "the hook, and one that routes on a sitecustomize being present runs "
+            "differently than under the sweep")
+
+# The hook, written into a scratch directory as one of the modules above. It runs
+# in every Python process that imports it, so it is 3.8 syntax, stdlib only, and
+# inert unless both variables are set. Per process it writes a start marker when it
+# installs and the lines when the process exits, each renamed into place, so a
+# process killed mid-write leaves a `.part` the reader skips. Both name the process
+# by a token it also hands its children in the environment, and the lines file
+# counts the children it started on the module's path - an audit hook on
+# `subprocess.Popen` - so the reader can tell a module child that was traced from
+# one that was started and never wrote.
 HOOK_SOURCE = '''import json
 import os
 import sys
 
 
 def _reach_diff_install():
+    if getattr(sys, "_reach_diff_hooked", False):
+        return
+    sys._reach_diff_hooked = True
     target = os.environ.get("REACH_DIFF_MODULE")
     out_dir = os.environ.get("REACH_DIFF_OUT")
     if not target or not out_dir:
@@ -118,6 +177,36 @@ def _reach_diff_install():
     want = norm(target)
     verdicts = {}
     lines = set()
+    spawned = []
+    token = "%d-%s" % (os.getpid(), os.urandom(6).hex())
+    parent = os.environ.get("REACH_DIFF_PARENT")
+    os.environ["REACH_DIFF_PARENT"] = token
+    script = sys.argv[0] if getattr(sys, "argv", None) else ""
+    is_module = bool(script) and not script.startswith("-") and norm(script) == want
+
+    def write(suffix, record):
+        path = os.path.join(out_dir, token + suffix)
+        with open(path + ".part", "w") as fh:
+            json.dump(record, fh)
+        os.replace(path + ".part", path)
+    write(".start", {"parent": parent, "module": is_module})
+
+    def names_module(args):
+        if isinstance(args, (str, bytes)):
+            return False
+        for arg in args or ():
+            try:
+                arg = os.fsdecode(arg)
+            except TypeError:
+                continue
+            if arg and not arg.startswith("-") and norm(arg) == want:
+                return True
+        return False
+
+    def on_event(event, args):
+        if event == "subprocess.Popen" and names_module(args[1]):
+            spawned.append(1)
+    sys.addaudithook(on_event)
 
     def ours(filename):
         hit = verdicts.get(filename)
@@ -163,11 +252,9 @@ def _reach_diff_install():
         threading.settrace(calls)
 
     def dump():
-        path = os.path.join(out_dir, "%d-%s.json" % (
-            os.getpid(), os.urandom(6).hex()))
-        with open(path + ".part", "w") as fh:
-            json.dump({"tracer": used, "lines": sorted(lines)}, fh)
-        os.replace(path + ".part", path)
+        write(".json", {"tracer": used, "lines": sorted(lines),
+                        "parent": parent, "module": is_module,
+                        "spawned": len(spawned)})
     import atexit
     atexit.register(dump)
 
@@ -177,7 +264,7 @@ def _reach_diff_chain():
     import importlib.util
     here = os.path.dirname(os.path.abspath(__file__))
     rest = [p for p in sys.path if os.path.abspath(p or os.curdir) != here]
-    spec = importlib.machinery.PathFinder.find_spec("sitecustomize", rest)
+    spec = importlib.machinery.PathFinder.find_spec(__name__, rest)
     if spec is None or spec.loader is None:
         return
     shadowed = importlib.util.module_from_spec(spec)
@@ -219,40 +306,92 @@ def _scope_spans(tree):
     return spans
 
 
-def line_keys(source):
-    """`{line number: (function, stripped text, occurrence)}` for every line of
-    `source`. `occurrence` counts the earlier lines of that function carrying the
-    same text, so two identical lines in one function are two keys."""
+def code_lines(source):
+    """`[(line number, function, stripped text)]` for every line of `source` that
+    holds code - a blank or comment-only line is never reached and anchors
+    nothing. `function` is the innermost enclosing one, dotted, or `<module>`."""
     lines = _source_lines(source)
     owner = ["<module>"] * (len(lines) + 1)
     for first, last, name in _scope_spans(ast.parse(source)):
         for n in range(first, min(last, len(lines)) + 1):
             owner[n] = name
-    seen, keys = {}, {}
-    for n, text in enumerate(lines, 1):
-        pair = (owner[n], text.strip())
-        keys[n] = pair + (seen.get(pair, 0),)
-        seen[pair] = seen.get(pair, 0) + 1
-    return keys
+    return [(n, owner[n], text.strip()) for n, text in enumerate(lines, 1)
+            if text.strip() and not text.strip().startswith("#")]
+
+
+def _aligned(base_rows, head_rows):
+    """`(base line, head line)` for each row the two sequences share, by an
+    order-preserving alignment of their texts."""
+    matcher = difflib.SequenceMatcher(None, [r[2] for r in base_rows],
+                                      [r[2] for r in head_rows], autojunk=False)
+    return [(base_rows[block.a + k][0], head_rows[block.b + k][0])
+            for block in matcher.get_matching_blocks() for k in range(block.size)]
+
+
+def _by_function(rows):
+    grouped = {}
+    for row in rows:
+        grouped.setdefault(row[1], []).append(row)
+    return grouped
+
+
+def match_lines(base_source, head_source):
+    """`{base line: head line}` for every code line of the base the head still
+    holds, in three passes, each over what the earlier ones left:
+
+      1. per function present at both, the two functions' lines aligned - so an
+         identical line inserted or deleted beside another does not re-pair it;
+      2. the rest of the module at both, aligned in line order - a body moved
+         into a renamed or a new function;
+      3. the rest by text alone, each base line taking the first head line of
+         that text no pass has taken - a move that crossed another.
+
+    A base line left unpaired has a text the head no longer holds anywhere."""
+    base, head = code_lines(base_source), code_lines(head_source)
+    pairs, taken = {}, set()
+
+    def keep(found):
+        for b, h in found:
+            if b not in pairs and h not in taken:
+                pairs[b] = h
+                taken.add(h)
+    base_fns, head_fns = _by_function(base), _by_function(head)
+    for name in base_fns:
+        if name in head_fns:
+            keep(_aligned(base_fns[name], head_fns[name]))
+    keep(_aligned([r for r in base if r[0] not in pairs],
+                  [r for r in head if r[0] not in taken]))
+    spare = {}
+    for n, _fn, text in head:
+        if n not in taken:
+            spare.setdefault(text, []).append(n)
+    keep((n, spare[text].pop(0)) for n, _fn, text in base
+         if n not in pairs and spare.get(text))
+    return pairs
 
 
 def reach_gaps(base_source, base_lines, head_source, head_lines):
     """`{"gaps": [...], "gone": [...]}`, each a list of `(function, line, text)`.
 
-    `gaps` are lines reached at the base whose key the head's module still holds
-    and the head's suite did not reach, numbered as the head numbers them; `gone`
-    are lines reached at the base whose key the head's module no longer holds,
-    numbered as the base did. Both in line order."""
-    base_keys, head_keys = line_keys(base_source), line_keys(head_source)
-    reached = dict((base_keys[n], n) for n in base_lines if n in base_keys)
-    where = dict((key, n) for n, key in head_keys.items())
-    head_reached = set(head_keys[n] for n in head_lines if n in head_keys)
-    gaps = sorted((key[0], where[key], key[1]) for key in reached
-                  if key in where and key not in head_reached)
-    gone = sorted((key[0], n, key[1]) for key, n in reached.items()
-                  if key not in where)
-    return {"gaps": sorted(gaps, key=lambda g: g[1]),
-            "gone": sorted(gone, key=lambda g: g[1])}
+    `gaps` are lines reached at the base that `match_lines` pairs with a head
+    line the head's suite did not reach, named and numbered as the head has
+    them; `gone` are lines reached at the base whose text the head's module no
+    longer holds anywhere, named and numbered as the base had them. Both in line
+    order."""
+    pairs = match_lines(base_source, head_source)
+    base_rows = dict((r[0], r) for r in code_lines(base_source))
+    head_rows = dict((r[0], r) for r in code_lines(head_source))
+    reached_now = set(head_lines)
+    gaps, gone = [], []
+    for n in sorted(set(base_lines)):
+        if n not in base_rows:
+            continue
+        if n not in pairs:
+            gone.append(base_rows[n][1:2] + (n, base_rows[n][2]))
+        elif pairs[n] not in reached_now:
+            row = head_rows[pairs[n]]
+            gaps.append((row[1], row[0], row[2]))
+    return {"gaps": sorted(gaps, key=lambda g: g[1]), "gone": gone}
 
 
 # --- materialising a revision -------------------------------------------------
@@ -322,9 +461,27 @@ def suite_blocks(sweep, source):
     return labels, None
 
 
-def write_hook(directory):
-    """The hook module, written into `directory`; the path written."""
-    path = os.path.join(directory, HOOK_MODULE + os.extsep + "py")
+def hook_entry(environ):
+    """`HOOK_USER` when this interpreter, under `environ`, imports a
+    usercustomize module; else `HOOK_SITE`, or None with the reason when the
+    interpreter cannot be asked."""
+    try:
+        done = subprocess.run([sys.executable, "-c", USER_SITE_PROBE], env=environ,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              universal_newlines=True, timeout=60)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, "the interpreter could not be asked about its user site: %s" % (
+            exc,)
+    answer = done.stdout.strip()
+    if done.returncode != 0 or answer not in ("True", "False", "None"):
+        return None, "the interpreter's user-site probe exited %d saying %r" % (
+            done.returncode, (answer or done.stderr.strip())[:200])
+    return (HOOK_USER if answer == "True" else HOOK_SITE), None
+
+
+def write_hook(directory, entry):
+    """The hook, written into `directory` as the module `entry`; the path."""
+    path = os.path.join(directory, entry + os.extsep + "py")
     with io.open(path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(HOOK_SOURCE)
     return path
@@ -338,6 +495,7 @@ def traced_env(hook_dir, module_path, out_dir, tracer, environ=None):
     env["PYTHONPATH"] = hook_dir + (os.pathsep + prior if prior else "")
     env[ENV_MODULE] = module_path
     env[ENV_OUT] = out_dir
+    env.pop(ENV_PARENT, None)
     if tracer:
         env[ENV_TRACER] = tracer
     else:
@@ -345,23 +503,51 @@ def traced_env(hook_dir, module_path, out_dir, tracer, environ=None):
     return env
 
 
+def _read_json(path):
+    with io.open(path, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def untraced_children(dumps):
+    """How many module children the traced processes started that never wrote
+    their lines: for each process that wrote, the children it started on the
+    module's path, less the module processes that wrote naming it as parent."""
+    written = {}
+    for token, data in dumps.items():
+        if data.get("module") and data.get("parent"):
+            written[data["parent"]] = written.get(data["parent"], 0) + 1
+    return sum(max(0, int(data.get("spawned") or 0) - written.get(token, 0))
+               for token, data in dumps.items())
+
+
 def read_traces(out_dir):
-    """`{"lines": set, "processes": n, "tracers": [..], "unreadable": [..]}`
-    from every file the hook wrote into `out_dir`."""
-    lines, tracers, unreadable, processes = set(), set(), [], 0
+    """What the hook wrote into `out_dir`: `{"lines", "tracers", "started",
+    "written", "silent", "untraced", "unreadable"}`. `started` counts processes
+    that installed the hook, `written` those that also wrote their lines, and
+    `silent` the difference - a process that ended without its exit handlers.
+    `untraced` is `untraced_children()` over what was written."""
+    starts, dumps, unreadable = set(), {}, []
     for name in sorted(os.listdir(out_dir)):
-        if not name.endswith(".json"):
+        token, ext = os.path.splitext(name)
+        if ext == ".start":
+            starts.add(token)
+            continue
+        if ext != ".json":
             continue
         try:
-            with io.open(os.path.join(out_dir, name), encoding="utf-8") as fh:
-                data = json.load(fh)
-            lines.update(int(n) for n in data["lines"])
-            tracers.add("%s" % (data["tracer"],))
+            data = _read_json(os.path.join(out_dir, name))
+            data["lines"] = set(int(n) for n in data["lines"])
+            data["tracer"] = "%s" % (data["tracer"],)
         except (OSError, ValueError, KeyError, TypeError) as exc:
             unreadable.append("%s: %s" % (name, exc))
             continue
-        processes += 1
-    return {"lines": lines, "processes": processes, "tracers": sorted(tracers),
+        dumps[token] = data
+    lines = set()
+    for data in dumps.values():
+        lines.update(data["lines"])
+    return {"lines": lines, "tracers": sorted(set(d["tracer"] for d in dumps.values())),
+            "started": len(starts | set(dumps)), "written": len(dumps),
+            "silent": len(starts - set(dumps)), "untraced": untraced_children(dumps),
             "unreadable": unreadable}
 
 
@@ -461,15 +647,20 @@ def compare(repo, module, suite, base, head, jobs=None, timeout=None,
     began = time.monotonic()
     module, suite = _repo_relative(repo, module), _repo_relative(repo, suite)
     result = {"code": 2, "gaps": [], "gone": [], "reached": {}, "tracers": [],
-              "processes": {}, "blocks": {}}
+              "processes": {}, "blocks": {}, "untraced": {}, "hook": None}
     sweep = _sweep()
     jobs = jobs if jobs is not None else sweep.default_jobs()
     timeout = timeout if timeout is not None else (
         TIMEOUT_FACTOR * sweep.DEFAULT_TIMEOUT)
+    entry, why = hook_entry(sweep.ambient_env(os.environ))
+    if entry is None:
+        out.write("reach-diff: no comparison made - %s\n" % (why,))
+        return result
+    result["hook"] = entry
     scratch = tempfile.mkdtemp(prefix="reach-")
     try:
         os.makedirs(os.path.join(scratch, "hook"))
-        write_hook(os.path.join(scratch, "hook"))
+        write_hook(os.path.join(scratch, "hook"), entry)
         sides = []
         for name, rev in (("base", base), ("head", head)):
             side, why = _prepare(repo, name, rev, module, suite, scratch, tracer,
@@ -479,6 +670,7 @@ def compare(repo, module, suite, base, head, jobs=None, timeout=None,
                 return result
             sides.append(side)
         out.write("reach-diff: %s under %s\n" % (module, suite))
+        out.write("  hook: %s\n" % (hook_line(entry),))
         rows = _measure(sweep, sides, suite, jobs, timeout, scratch)
         return _judge(sides, rows, result, out, began, jobs)
     finally:
@@ -494,14 +686,17 @@ def _judge(sides, rows, result, out, began, jobs):
         trace = traces[side["name"]]
         mine = [r for r in rows if r["side"] == side["name"]]
         result["reached"][side["name"]] = sorted(trace["lines"])
-        result["processes"][side["name"]] = trace["processes"]
+        result["processes"][side["name"]] = trace["written"]
+        result["untraced"][side["name"]] = trace["untraced"]
         result["blocks"][side["name"]] = len(mine)
         out.write("  %s %s (%s): %d lines of the module reached; %d blocks run%s; "
-                  "%d processes traced (%s)\n" % (
+                  "%d processes started the hook and %d wrote their lines (%s); "
+                  "%d module children untraced\n" % (
                       side["name"], side["rev"], side["sha"][:12],
                       len(trace["lines"]), len(mine),
                       " - %s" % (side["whole"],) if side["whole"] else "",
-                      trace["processes"], ", ".join(trace["tracers"]) or "none"))
+                      trace["started"], trace["written"],
+                      ", ".join(trace["tracers"]) or "none", trace["untraced"]))
         for bad in trace["unreadable"]:
             out.write("    a trace file could not be read: %s\n" % (bad,))
     result["tracers"] = sorted(set(t for tr in traces.values()
@@ -516,6 +711,21 @@ def _judge(sides, rows, result, out, began, jobs):
                                                row["why"]))
             for line in _tail(row["output"], 12):
                 out.write("      %s\n" % (line,))
+        out.write("took %.1fs with %d jobs\n" % (seconds, jobs))
+        return result
+    blind = [side for side in sides if traces[side["name"]]["untraced"]
+             or traces[side["name"]]["unreadable"]]
+    if blind:
+        for side in blind:
+            trace = traces[side["name"]]
+            out.write("reach-diff: no comparison made - at %s (%s) %d module "
+                      "children were started and never wrote what they reached, "
+                      "and %d trace files could not be read: a child started on "
+                      "the module's path with an environment that drops the hook, "
+                      "or one that ended without its exit handlers (os._exit, a "
+                      "kill, a timeout), ran lines no count holds\n" % (
+                          side["name"], side["rev"], trace["untraced"],
+                          len(trace["unreadable"])))
         out.write("took %.1fs with %d jobs\n" % (seconds, jobs))
         return result
     for side in sides:
@@ -539,8 +749,8 @@ def _judge(sides, rows, result, out, began, jobs):
     for line in _render_lines(found["gaps"], "  "):
         out.write(line + "\n")
     if found["gone"]:
-        out.write("gone: %d lines reached at %s are no longer in the module at %s "
-                  "by function and text, so they are not judged (numbered as %s "
+        out.write("gone: %d lines reached at %s whose text the module at %s no "
+                  "longer holds anywhere, so they are not judged (numbered as %s "
                   "numbers them)\n" % (len(found["gone"]), base["rev"],
                                        head["rev"], base["rev"]))
         for line in _render_lines(found["gone"], "  "):
@@ -655,8 +865,10 @@ if __name__ == "__main__":
 
 _SUITE_HEAD = '''import importlib.util
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MODULE = os.path.join(HERE, "fixmod" + ".py")
@@ -678,13 +890,47 @@ def _other_cases(check):
 
 
 def _child_cases(check):
-    out = subprocess.run([sys.executable, MODULE], stdout=subprocess.PIPE,
-                         universal_newlines=True).stdout
+    out = subprocess.run([sys.executable, MODULE] + %(child_args)s,
+                         stdout=subprocess.PIPE, universal_newlines=True).stdout
     check("c1", out.strip() == "seen in a child")
 
 
 def _nothing_cases(check):
     check("z1", True)
+
+
+def _shadowed_child_cases(check):
+    planted = tempfile.mkdtemp()
+    try:
+        with open(os.path.join(planted, "sitecustomize" + ".py"), "w") as fh:
+            fh.write("import sys\\n")
+        held = os.environ.get("PYTHONPATH")
+        env = dict(os.environ, PYTHONPATH=planted + (
+            os.pathsep + held if held else ""))
+        out = subprocess.run([sys.executable, MODULE], stdout=subprocess.PIPE,
+                             universal_newlines=True, env=env).stdout
+    finally:
+        shutil.rmtree(planted)
+    check("s1", out.strip() == "seen in a child")
+
+
+def _stripped_child_cases(check):
+    env = dict((k, v) for k, v in os.environ.items()
+               if not k.startswith("REACH_DIFF"))
+    out = subprocess.run([sys.executable, MODULE], stdout=subprocess.PIPE,
+                         universal_newlines=True, env=env).stdout
+    check("t1", out.strip() == "seen in a child")
+
+
+def _route_cases(check):
+    planted = [p for p in os.environ.get("PYTHONPATH", "").split(os.pathsep)
+               if p and os.path.isfile(os.path.join(p, "sitecustomize" + ".py"))]
+    check("r1", not planted)
+
+
+def _grade_cases(check):
+    for value in GRADES:
+        check("g%%d" %% (value,), load().grade(value) in (0, 1))
 
 '''
 
@@ -732,18 +978,58 @@ ALL_ROWS = (("positive", "_positive_cases"), ("other", "_other_cases"),
             ("child", "_child_cases"))
 
 
-def _staged_suite(rows=ALL_ROWS, other='"other"', prelude=""):
+def _suite_head(other='"other"', child_args=(), grades=()):
+    return (_SUITE_HEAD % {"other": other, "child_args": repr(list(child_args))}
+            + "GRADES = %r\n" % (tuple(grades),))
+
+
+def _staged_suite(rows=ALL_ROWS, other='"other"', prelude="", child_args=(),
+                  grades=()):
     """A suite text whose `STAGES` table is `rows`, run block by block."""
-    return (_SUITE_HEAD % {"other": other}
+    return (_suite_head(other, child_args, grades)
             + "STAGES = %r\n" % (tuple(rows),)
             + _SUITE_STAGED_MAIN % {"prelude": prelude})
 
 
 def _plain_suite(fns):
     """A suite text with no `STAGES` table: one run of the whole file."""
-    return (_SUITE_HEAD % {"other": '"other"'}
-            + _SUITE_PLAIN_MAIN % {"fns": repr(list(fns))})
+    return _suite_head() + _SUITE_PLAIN_MAIN % {"fns": repr(list(fns))}
 
+
+# A route line that occurs twice in one function, and a head that inserts a third
+# copy ABOVE both: the head reaches the new copy and the first old one, and not the
+# second old one. Matching by occurrence index pairs the base's two copies with the
+# head's first two, both reached, and hides the loss.
+GRADE_V1 = '''
+
+def grade(x):
+    if x == 1:
+        return 0
+    if x == 2:
+        return 0
+    return 1
+'''
+GRADE_V2 = GRADE_V1.replace("    if x == 1:\n",
+                            "    if x == 0:\n        return 0\n    if x == 1:\n")
+
+# A branch body moved into a new function, whose only case the head then drops:
+# its text is still in the module, in another function, and nothing reaches it.
+MODULE_EXTRACTED = MODULE_BASE.replace(
+    '        return "positive"\n', "        return _positive()\n") + '''
+
+def _positive():
+    return "positive"
+'''
+
+# A child that reaches the module and ends without running its exit handlers, so
+# whatever it reached is never written.
+MODULE_HARD = MODULE_BASE.replace("    print(in_child())\n", (
+    "    print(in_child())\n    import os\n    import sys\n"
+    "    sys.stdout.flush()\n    if sys.argv[1:] == [\"exit-hard\"]:\n"
+    "        os._exit(0)\n"))
+
+SHADOW_ROWS = ALL_ROWS[:2] + (("shadowed", "_shadowed_child_cases"),)
+GRADE_ROWS = ALL_ROWS + (("grade", "_grade_cases"),)
 
 FIXTURE_TAGS = (
     ("base", MODULE_BASE, _staged_suite()),
@@ -758,6 +1044,17 @@ FIXTURE_TAGS = (
     ("plain-base", MODULE_BASE, _plain_suite(
         ["_positive_cases", "_other_cases", "_child_cases"])),
     ("plain-drop", MODULE_BASE, _plain_suite(["_other_cases", "_child_cases"])),
+    ("shadow-base", MODULE_BASE, _staged_suite(SHADOW_ROWS)),
+    ("shadow-drop", MODULE_BASE, _staged_suite(ALL_ROWS[:2])),
+    ("stripped", MODULE_BASE, _staged_suite(
+        ALL_ROWS[:2] + (("child", "_stripped_child_cases"),))),
+    ("hard-exit", MODULE_HARD, _staged_suite(child_args=["exit-hard"])),
+    ("extracted", MODULE_EXTRACTED, _staged_suite(ALL_ROWS[1:])),
+    ("dup-base", MODULE_BASE + GRADE_V1, _staged_suite(GRADE_ROWS,
+                                                       grades=(1, 2, 3))),
+    ("dup-insert", MODULE_BASE + GRADE_V2, _staged_suite(GRADE_ROWS,
+                                                         grades=(0, 1, 3))),
+    ("route", MODULE_BASE, _staged_suite(ALL_ROWS + (("route", "_route_cases"),))),
 )
 
 
@@ -796,22 +1093,26 @@ def _gap_texts(result):
 
 
 def _key_cases(check):
-    dup = ("def f():\n    x = 1\n    x = 1\n\n\ndef g():\n    x = 1\n")
-    keys = line_keys(dup)
-    check("rd10 a line is keyed by its function, its text and which occurrence "
-          "of that text in that function it is - two identical lines in one "
-          "function are told apart, and the same text in another function is "
-          "another key: %r" % (keys,),
-          keys.get(2) == ("f", "x = 1", 0) and keys.get(3) == ("f", "x = 1", 1)
-          and keys.get(7) == ("g", "x = 1", 0))
-    base, moved = line_keys(MODULE_BASE), line_keys(MODULE_MOVED)
-    ret = [n for n, k in base.items() if k[1] == 'return "positive"']
-    now = [n for n, k in moved.items() if k[1] == 'return "positive"']
-    check("rd11 a line that only moved keeps its key and changes its number - "
-          "the property the refactor case below rests on: %r -> %r"
-          % (ret, now),
+    v1, v2 = MODULE_BASE + GRADE_V1, MODULE_BASE + GRADE_V2
+    pairs = match_lines(v1, v2)
+    later = [n for n, text in enumerate(v1.split("\n"), 1) if text == "        return 0"]
+    now = [n for n, text in enumerate(v2.split("\n"), 1) if text == "        return 0"]
+    check("rd10 two identical lines in one function are matched by alignment, "
+          "not by which occurrence they are: a third copy inserted above both "
+          "leaves each old copy paired with itself: %r -> %r, %r"
+          % (later, now, dict((n, pairs.get(n)) for n in later)),
+          len(later) == 2 and len(now) == 3
+          and [pairs.get(n) for n in later] == now[1:])
+    pairs = match_lines(MODULE_BASE, MODULE_MOVED)
+    ret = [n for n, text in enumerate(MODULE_BASE.split("\n"), 1)
+           if text.strip() == 'return "positive"']
+    now = [n for n, text in enumerate(MODULE_MOVED.split("\n"), 1)
+           if text.strip() == 'return "positive"']
+    check("rd11 a line that only moved is paired with its new number - the "
+          "property the refactor case below rests on: %r -> %r"
+          % (ret, [pairs.get(n) for n in ret]),
           len(ret) == 1 and len(now) == 1 and ret != now
-          and base[ret[0]] == moved[now[0]] == ("pick", 'return "positive"', 0))
+          and pairs.get(ret[0]) == now[0])
 
 
 def _compare_cases(check, repo):
@@ -878,6 +1179,55 @@ def _compare_cases(check, repo):
     check("rd8 a suite with no `STAGES` table is run whole, and the same loss "
           "is found: %r\n%s" % (_gap_texts(res), text),
           code == 1 and _gap_texts(res) == [("pick", 'return "positive"')])
+
+    code, res, text = _run(repo, "shadow-drop", base="shadow-base")
+    check("rd17 a child started under a suite's own sitecustomize, planted "
+          "ahead of the hook on PYTHONPATH, is still traced: dropping that "
+          "block exits 1 naming the lines the child ran: %r\n%s"
+          % (_gap_texts(res), text),
+          code == 1 and _gap_texts(res) == [
+              ("<module>", "print(in_child())"),
+              ("in_child", 'return "seen in a child"')])
+
+    code, res, text = _run(repo, "stripped")
+    check("rd18 a child started on the module with an environment that does "
+          "not carry the hook is an untraced module child: exit 2, counted "
+          "for the head and not the base: %r\n%s"
+          % (res.get("untraced"), text),
+          code == 2 and res.get("untraced") == {"base": 0, "head": 1}
+          and "untraced" in text)
+
+    code, res, text = _run(repo, "hard-exit")
+    check("rd22 a module child that ran the hook and ended without its exit "
+          "handlers wrote nothing it reached: it is counted as untraced too, "
+          "exit 2: %r\n%s" % (res.get("untraced"), text),
+          code == 2 and res.get("untraced") == {"base": 0, "head": 1})
+
+    code, res, text = _run(repo, "extracted")
+    check("rd19 a line moved into ANOTHER function and left unreached is "
+          "lost, not gone: matched again by its text, exit 1, named under "
+          "the function it is in now: %r %r\n%s"
+          % (_gap_texts(res), res.get("gone"), text),
+          code == 1 and _gap_texts(res) == [("_positive", 'return "positive"')]
+          and res.get("gone") == [])
+
+    code, res, text = _run(repo, "dup-insert", base="dup-base")
+    v2_lines = (MODULE_BASE + GRADE_V2).split("\n")
+    second = [n for n, t in enumerate(v2_lines, 1) if t == "        return 0"][2]
+    check("rd20 a loss behind an identical line inserted earlier in the same "
+          "function is found: exit 1 naming the later copy at line %d: %r\n%s"
+          % (second, res.get("gaps"), text),
+          code == 1 and res.get("gaps") == [("grade", second, "return 0")])
+
+    # The other direction for rd18 and rd22: a run with every module child
+    # traced counts none untraced, so the count does not fire on its own.
+    code, res, text = _run(repo, "route")
+    check("rd21 the hook changes nothing a suite can see about its path: no "
+          "sitecustomize is put on PYTHONPATH, so a suite that routes on one "
+          "runs as the sweep runs it; exit 0, nothing untraced: %r %r\n%s"
+          % (res.get("untraced"), res.get("hook"), text),
+          code == 0 and res.get("untraced") == {"base": 0, "head": 0}
+          and res.get("hook") == "usercustomize")
 
     code, res, text = _run(repo, "drop-positive", tracer="settrace")
     check("rd9 the settrace tracer the 3.8 floor runs on finds what rd1 found: "

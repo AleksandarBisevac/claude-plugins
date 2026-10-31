@@ -787,7 +787,7 @@
     {
       "id": "P152.10",
       "title": "Each file is parsed once per process for the tree lints and the gate prover, keyed on its content",
-      "status": "in_progress",
+      "status": "done",
       "description": "Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.10. _output_lints.parsed_sources(dirs) returns [(rel, path, src, tree)] memoised on (path, sha256(bytes)) - content, never mtime and size, because prove-gates mutates and restores inside one process. The fifteen _output_lints parse sites and prove-gates _gate_sources read it; parsed_sources gets a NOT_A_GATE row. Cases: a rewritten file re-parses, an identical rewrite does not, a poisoned tree is nobody else's. Optional test-side _tree_answer memo. Every prove-gates anchor quoting an ast.parse line is re-pointed; the whole prove-gates table runs once.",
       "files": [
         "tools/lints/_output_lints.py",
@@ -821,14 +821,25 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "bc1169a88f20",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/lints/_output_lints.py: new section 'one parse per file per process' - _PARSE_MEMO (one entry per path: (sha256 digest, src, tree)), parsed_source(path, filename=None, memo=None) reading the bytes on every call and hitting only when path AND sha256(bytes) match (never mtime/size), raising OSError/UnicodeDecodeError/SyntaxError as the replaced open+ast.parse did so each site keeps its own except and wording, failures never memoised, text-mode newline translation reproduced; parsed_sources(dirs=None, memo=None) -> [(rel, path, src, tree)] over lint_py_files, an unparseable file kept as a row (src None, exception in place of the tree); poisoned_parses(memo=None) compares each memoised tree with an independent fresh parse (ast.dump) and flags attributes hung on nodes; PARSE_ROOTS. All fifteen lint parse sites now read parsed_source (12 open+parse pairs mechanically, path_preamble_violations, text_encoding_violations via a new optional tree= argument on unencoded_text_io, and depth_sensitive_paths, which now reads the memoised tree of the unaltered source and drops the preamble's lines via new _preamble_lines(src) instead of parsing a blanked copy). tools/prove-gates.py: imports _output_lints; _gate_sources keeps its own walk (file set unchanged) and parses each file through _output_lints.parsed_source; 'parsed_sources' added to _TREE_WALKS (a lint written over the memo walk is still derived); NOT_A_GATE row for parsed_sources; ds5 ALLOW row re-pointed to '        inside = _preamble_lines(src)' -> '        inside = set()' (the only anchor quoting an ast.parse line); new selftest case ng4 (derivation reads through the memo and poisons none of it). tests/test__output_lints.py: _parse_memo_cases pm1-pm9; the doubled label+condition lint calls in f2, te11, bc4, nw4, sd3, rj5, rw5, pp1, ds1 bound to one local each. PLUGIN-BUILD-GUIDE.md: one paragraph in the _output_lints section. CONTRIBUTING.md unchanged: grep -n -i parse finds no sentence on how a lint reads the tree. Copy decision: shared tree, no copy (deepcopy of _output_lints.py's tree 41 ms vs parse 13 ms, measured once) - proven by pm8 (all 15 derived no-arg readers run over the real tree, 326 trees fresh-compared, none poisoned) and ng4 (186 trees after the prover's derivations). Optional _tree_answer memo NOT taken: the suite patches L.LINTS_DIR around real-tree calls (lines near 1076-1082), so a cross-case answer memo would serve a stale answer; the label+condition doubles were bound to locals instead. Red-first probe (git archive HEAD + git diff applied in mkdtemp, anchor asserted once and landed, __pycache__ purged each cycle): baseline 9/9 green; key on path only -> pm3,pm4 red; key on mtime+size -> pm3,pm4; drop memo -> pm2,pm5; poisoned_parses dump half dropped -> pm5; attribute half dropped -> pm6; a lint hangs an attribute -> pm8; prover derivation hangs an attribute -> ng4; prover parses around the memo -> ng4; _preamble_lines mid-line whole=True -> pm9; preamble lines not left out -> ds1,ds4,ds5. prove-gates --list: every row anchored (191 anchored, 2 reason-recorded). Whole table: python3 tools/prove-gates.py exit 0, 100 of 100 gates proven red, 91 of 91 guards quiet, wall 1473 s under load 21-59. Times (single runs, load-before in brackets): test__output_lints HEAD 65.4 s [29.1] and 64.4 s [5.0], task 51.2 s [7.8] and 51.0 s [4.5]; prove-gates --selftest HEAD 50.3 s [13.3] -> task 16.8 s [5.6] (once each); gate_names() x10 in-process HEAD 12.72 s -> task 0.28 s (once each). Dependants run green: test__output_lints 182/182, test__deps 266, test__refs 292, test__output 91, test__doctor_hygiene 42, test__panel_settings 78, test__report_page 29, test_drive_phase 745, test_stamp_verification 356, tools/affected.py 57, tools/sweep-selftests.py 160, tools/gate-parity.py 119 (plain run exit 0), prove-gates --selftest 66; ruff and vermin -t=3.8- clean on the three .py files.",
+        "descriptive": "Each file is parsed once per distinct content per process for the tree lints and the gate prover's derivation, keyed on sha256 of the bytes; test__output_lints 64-65 s -> 51 s, prove-gates selftest 50 s -> 17 s."
       },
       "startedAt": "2026-10-31T19:44:11Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-31T21:09:44Z",
+      "verifiedBy": [
+        "pm1 parsed_sources answers (rel, path, src, tree)",
+        "pm2 an identical rewrite (same bytes, times reset) is not re-parsed - same tree object",
+        "pm3 a rewritten file with the same length and times is re-parsed (content key, not stamp)",
+        "pm4 mutate-then-restore in one process: mutated tree during, original after",
+        "pm5 a tree is shared within one memo and poisoned_parses sees a rewritten field",
+        "pm6 poisoned_parses sees an attribute hung on a node with every field intact",
+        "pm7 one memo's poison is not another memo's",
+        "pm8 every derived no-arg reader of parsed_source run over the real tree poisons no memoised tree",
+        "pm9 the preamble line cut agrees with the old blanking read, mid-line occurrence included",
+        "ng4 (tools/prove-gates.py) the derivation reads through the memo and poisons none of it"
+      ],
       "notes": [
         {
           "at": "2026-10-31T15:42:20Z",
@@ -856,6 +867,18 @@
         "runId": "2026-10-31T21:09:16Z.1f0721",
         "status": "passed",
         "at": "2026-10-31T21:09:16Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "bc1169a88f20",
+        "at": "2026-10-31T21:09:44Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-31T20:44:56Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__output_lints.py` in a throwaway tree at HEAD exited 1 on \"AttributeError: module '_output_lints' has no attribute 'parsed_sources'\" (read as python), and the task introduces 'parsed_sources': absent from HEAD's module-level bindings of tools/lints/_output_lints.py and bound in the working tree's; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1050,7 +1073,7 @@
     {
       "id": "P152.14-6jb",
       "title": "reach-diff cannot pass over a child it did not trace, a line that moved to another function, or a line hidden behind an identical one",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fix the five review findings of P152.12 in tools/reach-diff.py. (1) A suite that puts its own sitecustomize first on PYTHONPATH (tests/test_drive_phase.py _pinned_clock, _windows_stdout) leaves its children untraced, silently: install the hook as usercustomize as well, once per process, and record started-versus-written per process so an untraced child is counted and a revision with any untraced child of the module is reported (exit 2 or a printed count the exit reads - decide and state it); selftest plants a fixture sitecustomize ahead of the hook and sees it fail first. (2) A line reached at base whose function or text changed is listed as gone and never changes the exit: match it again by its text anywhere in the module before calling it gone; if head did not reach it, it is lost (exit 1). (3) Occurrence-index matching lets an inserted identical line mask a loss: align each function's lines with difflib.SequenceMatcher; selftest inserts an identical earlier line and drops reach to the later one. (4) CONTRIBUTING.md's bullet promises only what the tool does. (5) State in the docstring that the hook makes in-process verbs run as processes in suites that check for a sitecustomize, and remove that effect if the usercustomize route allows it. Every fix proven red-first by mutation.",
       "files": [
         "tools/reach-diff.py",
@@ -1077,14 +1100,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-31T21:09:55Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -1098,7 +1121,13 @@
           "text": "the task edits one bullet about reach-diff; the passages this reader quotes are elsewhere in CONTRIBUTING.md",
           "waives": "tools/sweep-selftests.py"
         }
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-31T21:31:32Z.d15650",
+        "status": "passed",
+        "at": "2026-10-31T21:31:32Z"
+      }
     }
   ],
   "reviewPerTask": "signals",

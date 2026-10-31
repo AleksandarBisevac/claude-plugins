@@ -593,15 +593,19 @@ slice is `python3 tools/gate-parity.py --list`.
   thinks to look for, so a change that converts a suite runs
   `python3 tools/reach-diff.py <module> <suite> --base <the commit before it> --head HEAD`
   and answers its output: the suite runs at both revisions in scratch exports with a
-  line tracer on the module, in every Python process the suite starts, and the tool
-  exits 1 naming each line of the module reached before and not after, grouped by
-  function and matched by function and text, so a change that only moves code stays
-  green. Each line it names is reached again by a case, or named in the change as
-  deliberately left. It refuses with 2 rather than passing when a block failed or a
-  revision reached no line of the module, and its docstring says what the tracer
-  cannot see. Nothing runs it for you: it is no slice of `verify.sh` and no hook asks
-  for it, so it runs where a task names it in its gate, and otherwise a review is
-  where a missing run is found.
+  line tracer on the module in every Python process that imports its hook, and the
+  tool exits 1 naming each line of the module reached before and not after, grouped
+  by the function it is in now. Lines are paired across the revisions by aligning
+  their text, never by number, so a change that only moves code stays green and a
+  line moved into another function is still judged; a reached line whose text the
+  module no longer holds anywhere is listed apart as gone and does not fail it. Each
+  line it names is reached again by a case, or named in the change as deliberately
+  left. It refuses with 2 rather than passing when a block failed, a revision reached
+  no line of the module, or a child the suite started on the module's path never
+  wrote what it reached; its docstring says what the tracer cannot see, and which
+  children it cannot count. Nothing runs it for you: it is no slice of `verify.sh`
+  and no hook asks for it, so it runs where a task names it in its gate, and
+  otherwise a review is where a missing run is found.
 - **Every `.py` under `hooks/` and `scripts/` is scanned wherever it sits.** The
   selftest sweep — one runner, run by verify.sh's sweep slices here and in CI —
   walks the tree through `_output.py_files()`, the single recursive walk behind
