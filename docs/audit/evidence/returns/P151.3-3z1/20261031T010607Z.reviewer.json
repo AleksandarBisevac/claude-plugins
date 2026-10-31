@@ -1,0 +1,15 @@
+{
+ "findings": [],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clause: 'anchor the row on `        shard: [1, 2, 3, 4, 5]` and replace it with `        shard: [1, 2, 3, 4]`' (prove-gates.py shard_matrix_drift, case sv7). The diff at tools/prove-gates.py:936-939 does exactly that; the anchor occurs once in .github/workflows/ci.yml:192 of the task tree. In-process probe (read-only): the mutated matrix makes shard_matrix_drift report 'runs parts [1, 2, 3, 4] of 5, so part(s) [5] never run', so sv7 still goes red. The executor's claim describes the diff: only tools/prove-gates.py changed (27+/1-), ci.yml untouched, three encoding_leg_drift rows added beyond the re-anchor (the P151-R4 fix the caller named). In-process on the clean ci.yml: slice_drift, encoding_leg_drift and shard_matrix_drift are all []. With the release arm mutated ('selftests-cp1252-whole' || -> 'selftests-cp1252' ||): slice_drift [], shard_matrix_drift [], encoding_leg_drift returns the single 'windows code-page leg' finding, so the comment's 'nothing else sees this one' holds and the chosen mutation is specific to the lint. Anchor counts, each exactly 1: the release-arm text in ci.yml, '    if not release_whole:' and the 'if \"per-run\" in run[\"tiers\"]:' line in gate-parity.py. encoding_leg_drift appears in prove-gates.py three times, once as a TABLE row (:947) and twice as ALLOW rows (:1629, :1636), so each row landed once. python3 tools/prove-gates.py --selftest on the task tree printed 'ALL PASS: 65/65 cases passed' (the exit code was lost to my pipe, so the pass rests on that line). By reading, the el0 mutation ('if True:' for 'if not release_whole:') always appends the finding, so the live pair el0 goes red; the el3 mutation reads every windows cell as per-run, so a release-only whole-tree job lands in per_run_whole and el3 goes red. I did not run prove-gates --only encoding_leg_drift: it opens git worktrees, and my rules bar writes. The executor-reported RED sv7/el0/el1/el2 and RED sv7/el0/el1/el3 colours are therefore unverified by me, supported by reading. Dependants of prove-gates.py and ci.yml (paths and names listed) are unaffected: no path or defined name changed, and ci.yml is not in the diff.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "The executor filed not-attempted: 'tests.expectRedFirst is false on this tdd task: it names no case to prove a red by, so no red-first proof is owed'. That holds, and nothing was handed to grade as a red. The new TABLE row is itself a red-first mutation row, and my in-process mutation probe shows the lint firing on it.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "tests.gate's selftests entry is `python3 tools/sweep-selftests.py`, which runs the whole tree, so the question does not reach a bounded selection. The other entries (validate, plugin-validate, gate, report, lint, shots, interactive, vitest) are not test selections tied to this diff."
+ },
+ "verdict": "clean",
+ "tasks": []
+}

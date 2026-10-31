@@ -29,42 +29,48 @@
         "severity": "med",
         "file": "tools/prove-gates.py:931-937 (against .github/workflows/ci.yml:189)",
         "issue": "The diff changed ci.yml's shard axis to `        shard: [1, 2, 3, 4, 5]`. prove-gates' shard_matrix_drift row (case sv7) is anchored on `        shard: [1, 2, 3, 4]`, which now occurs 0 times (it is not a substring of the new line because of the `4]`). The untouched file breaks across the boundary: prove-gates' c2 ('every row's anchor is still in the tree, exactly once') fails, and tools/ is swept, so the sweep goes red. I checked this by evaluating c2's own loop in-process on the task tree (`[r for r in TABLE if mutation(r)[0] is None]`), which printed [('shard_matrix_drift', '.github/workflows/ci.yml', 'anchor occurs 0 time(s)')], exit 1, and it was the only unanchored row. I did not run the whole `prove-gates.py --selftest`, because reviewer rules allow one test run. The executor reports that run as FAIL c2, 64/65.",
-        "resolution": "In tools/prove-gates.py:936-937, anchor the row on `        shard: [1, 2, 3, 4, 5]` and replace it with `        shard: [1, 2, 3, 4]`. Today this anchor occurs exactly once. The mutation leaves windows plain and cp1252 running parts [1..4] of 5, so shard_matrix_drift names both, and sv7 still goes red. The comment at :931-934 stays true. Land it in the same commit as the ci.yml change so no SHA has a red sweep."
+        "resolution": "In tools/prove-gates.py:936-937, anchor the row on `        shard: [1, 2, 3, 4, 5]` and replace it with `        shard: [1, 2, 3, 4]`. Today this anchor occurs exactly once. The mutation leaves windows plain and cp1252 running parts [1..4] of 5, so shard_matrix_drift names both, and sv7 still goes red. The comment at :931-934 stays true. Land it in the same commit as the ci.yml change so no SHA has a red sweep.",
+        "fixTask": "P151.3-3z1"
       },
       {
         "id": "P151-R2",
         "severity": "med",
         "file": ".github/workflows/ci.yml:96,183; tools/gate-parity.py:1604-1656 (job_bound_evidence); tools/sweep-selftests.py:246-247,5602-5615 (tt5)",
         "issue": "The selftests job's bound now rests on a figure for a shape that no longer runs, and an honest figure for the new shape cannot be recorded. `longest selftests: 13m35s (estimate, the heaviest of four parts ...)` is what backs `timeout-minutes: 33` under job_bound_evidence, which needs 3 x longest >= 33 min, so longest >= 11m00s (BOUND_CEILING_FACTOR 3, floor 5). tt5 requires SWEEP_DEADLINE 1800 + CI_SETUP_ALLOWANCE 120 < timeout-minutes x 60. That inequality is strict, so 32 fails and 33 is the lowest bound tt5 accepts. The executor predicts five-part windows cells at about 6.9-8.5 min. Once the phase's own next step records that measurement, job_bound_evidence reports 'timeout-minutes is 33, over 3 times its longest recorded run' (allowed about 20m42s-25m30s). The bound cannot drop without turning tt5 red. So yes, gate-parity goes red the moment the line is re-recorded, unless the line is kept stale on purpose. That is the outcome the ci.yml comment at :67-78 now commits to, with gate-parity passing on a measurement of nothing current. It is disclosed, not hidden, but it blocks recording the phase's own measured figures.",
-        "resolution": "The structurally correct fix is to give job_bound_evidence the deadline as a second, checked basis for a bound, instead of keeping a stale estimate. Let the ceiling for `selftests` be max(3 x longest, BOUND_FLOOR_MINUTES, the smallest whole minute M with SWEEP_DEADLINE + CI_SETUP_ALLOWANCE < M x 60). Read both constants out of tools/sweep-selftests.py, the same facts tt5 reads, rather than copying them. Declare it explicitly with a ci.yml line such as `# bound selftests: held by the sweep deadline (tools/sweep-selftests.py SWEEP_DEADLINE)`, which job_bound_evidence verifies. Add a selftest case with both directions: a deadline-held bound over a short measured longest passes, and the same bound with no deadline basis is red. Then replace the four-part estimate with the measured five-part figure. Making the heaviest block (ar-block of test_drive_phase.py) lighter is the lever that lowers both the deadline and the bound, but it is separate CPU work and does not remove the need for the rule."
+        "resolution": "The structurally correct fix is to give job_bound_evidence the deadline as a second, checked basis for a bound, instead of keeping a stale estimate. Let the ceiling for `selftests` be max(3 x longest, BOUND_FLOOR_MINUTES, the smallest whole minute M with SWEEP_DEADLINE + CI_SETUP_ALLOWANCE < M x 60). Read both constants out of tools/sweep-selftests.py, the same facts tt5 reads, rather than copying them. Declare it explicitly with a ci.yml line such as `# bound selftests: held by the sweep deadline (tools/sweep-selftests.py SWEEP_DEADLINE)`, which job_bound_evidence verifies. Add a selftest case with both directions: a deadline-held bound over a short measured longest passes, and the same bound with no deadline basis is red. Then replace the four-part estimate with the measured five-part figure. Making the heaviest block (ar-block of test_drive_phase.py) lighter is the lever that lowers both the deadline and the bound, but it is separate CPU work and does not remove the need for the rule.",
+        "fixTask": "P151.4-3z1"
       },
       {
         "id": "P151-R3",
         "severity": "low",
         "file": ".github/workflows/ci.yml:194-215,260-271; tools/gate-parity.py:2549-2554",
         "issue": "The phase's outcome ('no job held by the concurrent-job cap') rests on the per-run job count staying at or under 20. The diff gets it there, as I re-derived: 2 os x 3 legs x 5 shards = 30 cells; minus 5 (windows stress), 5 (ubuntu cp1252) and 6 (ubuntu shards 3-5) leaves 14; plus e2e, lint and the two browser jobs makes 18 per-run, and 19 with resample on the release tier. But that count is still prose only. The new WINDOWS_SHARDS comment deliberately leaves the linux part count unpinned. Raising linux to 3 parts (parts: 3, one exclude removed) passes shard_matrix_drift, sv13 and every gate-parity case while asking for 20 per-run and 21 release-tier jobs, so one would be held. The ci.yml comment says so ('Nothing checks the job count against the cap').",
-        "resolution": "Add a gate-parity check counting the jobs a per-run and a release-tier run start concurrently, with jobs gated by `needs: verified` counted together and `verified` itself excluded. Count from job_slices' expanded cells, against a named JOB_CAP = 20 constant, with a red-first case. Once that check exists, the linux part count needs no pin."
+        "resolution": "Add a gate-parity check counting the jobs a per-run and a release-tier run start concurrently, with jobs gated by `needs: verified` counted together and `verified` itself excluded. Count from job_slices' expanded cells, against a named JOB_CAP = 20 constant, with a red-first case. Once that check exists, the linux part count needs no pin.",
+        "fixTask": "P151.5-3z1"
       },
       {
         "id": "P151-R4",
         "severity": "high",
         "file": "tools/gate-parity.py:1079-1116 (encoding_leg_drift); tools/prove-gates.py:132 (_GATE_SHAPES) and its row tables",
         "issue": "The diff adds a gate whose name ends in `_drift`, which prove-gates' name arm derives as a load-bearing lint (_GATE_SHAPES includes `_drift`), and adds no mutation row and no allow row for it (`grep encoding_leg_drift tools/prove-gates.py` finds nothing). prove-gates' c1 (every derived lint has a row) and a4 (every lint has an ALLOW row) therefore go red; the executor's own return records `python3 tools/prove-gates.py --selftest` as fail, 62/65. tools/prove-gates.py is in the sweep, so every per-run selftests cell that is dealt it goes red - the tests.gate did not include it, so the recorded green gate run does not show this. It is a consequence of the diff crossing into a file outside the task's scope, and it is new beyond the already-filed stale sv7 anchor (`        shard: [1, 2, 3, 4]`, count 0).",
-        "resolution": "Add the two rows the executor proposed (both anchors counted once on the task tree by this review): mutation (\"encoding_leg_drift\", \".github/workflows/ci.yml\", \"replace\", \"|| 'selftests-cp1252' }}\", \"|| 'selftests-cp1252-whole' }}\", \"tools/gate-parity.py\", \"el0\") and allow (\"encoding_leg_drift\", \"tools/gate-parity.py\", \"replace\", \"    if not release_whole:\\n\", \"    if True:\\n\", \"tools/gate-parity.py\", \"el3\"), in this phase, before sign-off; then show prove-gates --selftest green apart from the filed c2/sv7 anchor."
+        "resolution": "Add the two rows the executor proposed (both anchors counted once on the task tree by this review): mutation (\"encoding_leg_drift\", \".github/workflows/ci.yml\", \"replace\", \"|| 'selftests-cp1252' }}\", \"|| 'selftests-cp1252-whole' }}\", \"tools/gate-parity.py\", \"el0\") and allow (\"encoding_leg_drift\", \"tools/gate-parity.py\", \"replace\", \"    if not release_whole:\\n\", \"    if True:\\n\", \"tools/gate-parity.py\", \"el3\"), in this phase, before sign-off; then show prove-gates --selftest green apart from the filed c2/sv7 anchor.",
+        "fixTask": "P151.6-3z1"
       },
       {
         "id": "P151-R5",
         "severity": "med",
         "file": "CONTRIBUTING.md:197; .github/workflows/ci.yml:28",
         "issue": "The diff adds a third release-tier slice (verify.sh RELEASE_SLICES now `release resample selftests-cp1252-whole`), which makes two descriptions false. CONTRIBUTING.md:197 says 'The release tier adds two: `release` ... and `resample`' - a count in prose, now wrong (the class CLAUDE.md calls this repo's most frequent defect). The dispatch input's description at ci.yml:28 says 'per-run (every gate) or release (every gate plus the Windows re-sample)', but per run the code-page leg now sweeps only a selection, and the release tier also adds the whole code-page leg. Both files are in the diff, but these lines were left unchanged.",
-        "resolution": "Delete the count from CONTRIBUTING.md:197 and point at `sh tools/verify.sh --list` (or name all three release slices without the number). Reword the ci.yml:28 description so per-run no longer claims every gate and release names the whole code-page leg, e.g. 'per-run (the code-page leg over its selection) or release (adds the Windows re-sample and the whole code-page leg)'."
+        "resolution": "Delete the count from CONTRIBUTING.md:197 and point at `sh tools/verify.sh --list` (or name all three release slices without the number). Reword the ci.yml:28 description so per-run no longer claims every gate and release names the whole code-page leg, e.g. 'per-run (the code-page leg over its selection) or release (adds the Windows re-sample and the whole code-page leg)'.",
+        "fixTask": "P151.7-3z1"
       },
       {
         "id": "P151-R6",
         "severity": "low",
         "file": "tools/gate-parity.py:2068 (slice_verdict wiring); tools/gate-parity.py:2622 (sv7); tools/gate-parity.py:2804-2900 (el0-el4)",
         "issue": "Every new el case calls encoding_leg_drift directly. The only case that reaches slice_verdict/parity, sv7, asserts the live verdict is clean, so if `+ encoding_leg_drift(text, listed)` were deleted from slice_verdict, sv7 and every el case would still pass while `python3 tools/gate-parity.py` stopped holding the split. The same applies to the proposed prove-gates mutation row, which names el0 (a direct call). The wiring is the only thing that puts the rule in the build, and it can be deleted without any case going red.",
-        "resolution": "Add a case that runs slice_verdict (or parity) against a fixture tree whose ci.yml per-run arm names `selftests-cp1252-whole`, and asserts that the verdict carries the `windows selftests-cp1252-whole` finding. Or point the prove-gates mutation row at that case instead of el0."
+        "resolution": "Add a case that runs slice_verdict (or parity) against a fixture tree whose ci.yml per-run arm names `selftests-cp1252-whole`, and asserts that the verdict carries the `windows selftests-cp1252-whole` finding. Or point the prove-gates mutation row at that case instead of el0.",
+        "fixTask": "P151.8-3z1"
       }
     ],
     "outcome": "[findings: 6 - 1 high, 3 med, 2 low; 0 with a recorded fix commit]"
@@ -136,7 +142,7 @@
     {
       "id": "P151.2",
       "title": "Per-run CI runs the Windows cp1252 leg only over the suites whose subject is stdio or encoding; the release tier runs it whole",
-      "status": "in_progress",
+      "status": "done",
       "description": "Owner decision 2026-10-30: shorten the cp1252 leg on per-run CI. It repeats the whole Windows sweep under a legacy code page (about 35 runner-minutes in run 41070108164). Which suites belong in the per-run cp1252 selection must be derived, not listed by hand: a suite is in when it exercises stdio or a non-UTF-8 locale (decide the mark from what the sweep's --encoding mode actually changes; a suite naming no mark must not silently drop out of the release tier). The release tier keeps the whole leg. gate-parity must hold the per-run/release split (red when the per-run cp1252 cell runs the whole tree, or when the release tier drops it). State the predicted per-run runner-minutes with the arithmetic from run 41070108164's job times.",
       "files": [
         ".github/workflows/ci.yml",
@@ -164,19 +170,430 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "2e5640e8e986",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "SWEEP (tools/sweep-selftests.py): new flag --encoding-subjects narrows an --encoding pass to the suites it is about. pass_knobs(enc) = the env keys locale_pins sets for posix and nt (LANG, LC_ALL, PYTHONIOENCODING, PYTHONUTF8) plus the code page itself. That is derived from what the pass actually sets, not a hand list. encoding_subjects() keeps a swept file when its own text, or a subject module's, names a knob as a whole word. suite_subjects(repo) maps tests/test_<name> to modules through _output_lints._test_name_for over the classifier's roots. An unreadable file or subject counts as naming a knob (the failure direction is to include). main refuses the flag without --encoding or beside a named list (exit 2) and refuses an empty selection. It prints 'encoding subjects: N of the M swept files ...' with the knobs, then shards the selection. Live selection: 16 of 193 files, 3855 slot-s of 7978 on .github/sweep-costs.json. Block-level selection was measured and gains nothing: a shared helper in test_drive_phase reads PYTHONIOENCODING, so 119 of its 121 blocks match. New cases es1-es4. VERIFY (tools/verify.sh): selftests-cp1252 (per-run) now runs '--encoding cp1252 --encoding-subjects'. New release-tier slice selftests-cp1252-whole runs '--encoding cp1252' over the whole tree, and --shard accepts it. Local --release is unchanged, because on POSIX the per-run selftests-stress already sweeps the whole tree with the codec pinned. CI (.github/workflows/ci.yml): the cp1252 include row's slice is ${{ inputs.tier == 'release' && 'selftests-cp1252-whole' || 'selftests-cp1252' }}. The windows cp1252 leg gets parts: 3 (a row keyed by os+leg after the os row) and excludes shards 4 and 5. Job count read through gate-parity's _matrix_cells: per-run 16 (was 18 at HEAD), release 17 (was 19). GATE-PARITY (tools/gate-parity.py): job_slices expands a _TIER_CHOICE value into a release arm and a per-run arm, and each run carries tiers (_tier_arms, _run_tiers). slice_drift and per_run_named now read run-level tiers; the prove-gates anchors 'if \"per-run\" in tiers:\\n continue', 'if name not in listed:' and 'if want - have:' are intact. New lint encoding_leg_drift(text, listed) is wired into slice_verdict. It reports a windows cell a per-run run starts whose slice's --list command sweeps --encoding without --encoding-subjects. It also reports when no windows cell a release-tier run starts sweeps the whole tree. The rule reads both sides at once: the ci.yml arm and verify.sh's printed command. The windows part pin gains WINDOWS_ENCODING_SHARDS = 3 for slices encoding_sweep_shape reads as --encoding sweeps (sv13/sv15 adjusted through _ci_shape_findings). New cases el0-el4 cover the live claim, per-run-whole from three sides, release dropped from three sides, an allow case with the whole leg in a separate release-only job, and arm parsing. Docs: CONTRIBUTING.md selftests-cp1252 paragraph; CLAUDE.md hook-coverage sentence made precise plus a command line. RUNS: gate-parity exit 0; gate-parity --selftest 103/103; sweep --selftest 160/160; ruff and vermin clean on both .py files; prose_number_claims, doc_prose_numbers and house_style_violations show no hit in the changed files. Named sweep over 18 dependants (test__refs, test__output_lints, test__deps, _harness, test__output, test__impact, test__manifest_phases, test__affected_tests, affected, measure-affected-miss, check-prohibitions, ci-verified, release, _suite, count-ui-pins, measure-context, test_derive_phase_gate, test__gate_derive) is 18/18 files ok, 1466 cases. ruby YAML.load_file parses ci.yml and shows the include and exclude rows as intended. PROVE-GATES, NEEDS AN EDIT OUTSIDE MY FILES: python3 tools/prove-gates.py --selftest gives 62/65. c1 and a4 name encoding_leg_drift, which the name arm derives as a gate, so it needs one mutation row and one allow row. Proposed mutation row: (\"encoding_leg_drift\", \".github/workflows/ci.yml\", \"replace\", \"|| 'selftests-cp1252' }}\", \"|| 'selftests-cp1252-whole' }}\", \"tools/gate-parity.py\", \"el0\"). Proposed allow row: (\"encoding_leg_drift\", \"tools/gate-parity.py\", \"replace\", \"    if not release_whole:\\n\", \"    if True:\\n\", \"tools/gate-parity.py\", \"el3\"). Each anchor occurs exactly once (counted), and the probe's M8 is that allow row: el0 and el3 went red. c2 was already red before this task: the sv7 row's anchor '        shard: [1, 2, 3, 4]' occurs 0 times in HEAD's ci.yml (git show HEAD:... | grep -c is 0). suite_subjects was also derived, by the tree-walk arm; it now takes a required repo, following retired_suite_files' documented precedent, and is no longer derived. The prove-gates anchors '        leg: [plain, stress, cp1252]' and 'run: sh tools/verify.sh --only lint,runner,e2e' are intact, and with the leg mutation slice_drift still fires (checked in memory). PREDICTED PER-RUN RUNNER-MINUTES (estimate, measured once, no CI run of this shape yet): cell = overhead + rate x slot-seconds, overhead 45 s/cell (ci.yml's measured 12-41 s before plus under 5 s after the sweep step). Run 41070108164's windows cp1252 cells: 453+502+550+581 = 2086 s = 34.8 runner-min. Rate = (2086 - 4x45)/7978 = 0.239 s per slot-s. Per-run selection 3855 slot-s gives 3855x0.239 + 3x45 = 921 + 135 = 1056 s = 17.6 runner-min, saving 17.2 runner-min per per-run run (-49%). Run 41140529141's cells (337+531+556+381 = 1805 s = 30.1 min) give rate 0.204 and a prediction of 785 + 135 = 920 s = 15.3 runner-min. Wall per cp1252 cell is about 1285x0.239+45 = 352 s (5.9 min), against a plain windows part of about 1602x0.239+45 = 428 s (7.1 min); 2 parts would be 1928 slot-s, more than a plain part, which is why 3. Release tier: the whole leg in 3 cells is about 2670x0.239+45 = 683 s (11.4 min) per cell, under resample's measured 22m00s. UNVERIFIED EXTERNAL ASSUMPTION: GitHub evaluates the inputs context inside strategy.matrix include values; its docs list inputs as available for jobs.<job_id>.strategy. The first dispatch of each tier is the evidence. DEPENDANTS: ci.yml readers (audit-task.py, _harness.py, test__impact, test__manifest_phases, test__refs, test_audit_task, test_drive_phase, affected.py) still correct: they name the path, or the os axis, which did not change. verify.sh readers (.gitattributes, derive-phase-gate.py, test__output, test__refs, affected.py, check-example-pins, check-git-pipeline) still correct: slices were only added, and affected_dispatch's ad0 is green. gate-parity names (floating_runners, image_in_job_names, job_bound_evidence, launcher_contract) are unchanged. sweep-selftests names (budget_line, coverage_findings, file_timeout, load_costs) are unchanged; the cost table's about text and sweep-costs.json were untouched. CONTRIBUTING.md and CLAUDE.md basename readers are covered by the prose and refs lints (test__refs, test__output_lints and test__deps green).",
+        "descriptive": "Per-run CI now runs the Windows cp1252 leg only over the suites the pass is about, derived from the variables the pass sets (16 of 193 files, about half the slot-seconds, on 3 cells instead of 5), and release runs it whole. gate-parity's encoding_leg_drift fails the build if that split breaks. prove-gates still needs two rows for the new lint."
       },
       "startedAt": "2026-10-31T00:00:35Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-31T00:39:14Z",
+      "verifiedBy": [
+        "es1 sweep-selftests: pass_knobs is locale_pins' keys for both platform families plus the code page, and follows the code page",
+        "es2 sweep-selftests: fixture selection keeps a suite naming a knob, one kept through its subject module, and unreadable suites or subjects; drops none-naming and substring-only suites",
+        "es3 sweep-selftests: live selection is a proper non-empty subset holding the runner and tests/test__output.py, the latter only through its subject module",
+        "es4 sweep-selftests: the flag is refused without --encoding or beside a named list; through main, a narrowed run prints the selection and shards the selection, not the tree",
+        "el0 gate-parity: live ci.yml and verify.sh --list give the windows cp1252 per-run arm the selection and the release arm the whole tree; linux stress is not convicted",
+        "el1 gate-parity: per-run whole-tree is named from the workflow arm, from arms replaced by the whole slice, and from verify.sh losing --encoding-subjects",
+        "el2 gate-parity: release tier dropped is named from the arm, from arms replaced by the selection, and from verify.sh narrowing the whole slice",
+        "el3 gate-parity: allow case, the whole leg moved to a separate release-only windows job, is clean",
+        "el4 gate-parity: _tier_arms and _run_tiers arm expansion"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-31T00:32:10Z.7e727f",
         "status": "passed",
         "at": "2026-10-31T00:32:10Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "2e5640e8e986",
+        "at": "2026-10-31T00:39:14Z",
+        "return": "docs/audit/evidence/returns/P151.2/20261031T000035Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "Task is tests.mode regression with expectRedFirst false and tests.add none, so no helper red was owed. The cases live in the same files as the fix (tools/sweep-selftests.py, tools/gate-parity.py), so the helper's copy-the-test-file-over-HEAD shape would carry the fix with it and could not show a red. Instead each new case was proven red by a mutation probe in throwaway git worktrees (HEAD plus this task's six files, removed afterwards, never the shared tree): baselines 160/160 and 103/103; M1 subject reading dropped -> es2,es3 FAIL (158/160); M2 keep-all -> es2,es3 FAIL; M3 substring match -> es2 FAIL; M4 unreadable file dropped -> es2 FAIL; M5 main not narrowing -> es4 FAIL; M6 per-run-whole never reported -> el1 FAIL (102/103); M7 release finding never fires -> el2 FAIL; M8 release finding always fires -> el0,el3 FAIL (99/103); M9 linux cells not filtered out -> el0 FAIL; M10 tier arms ignored -> el0 FAIL (100/103). Probe script: <scratchpad>/probe/mutations.py, output beside it in result.txt.",
+        "at": "2026-10-31, probe run before submit, not through the helper"
+      }
+    },
+    {
+      "id": "P151.3-3z1",
+      "title": "fix P151-R1: The diff changed ci.yml's shard axis to `        shard: [1, 2, 3...",
+      "status": "in_progress",
+      "description": "The diff changed ci.yml's shard axis to `        shard: [1, 2, 3, 4, 5]`. prove-gates' shard_matrix_drift row (case sv7) is anchored on `        shard: [1, 2, 3, 4]`, which now occurs 0 times (it is not a substring of the new line because of the `4]`). The untouched file breaks across the boundary: prove-gates' c2 ('every row's anchor is still in the tree, exactly once') fails, and tools/ is swept, so the sweep goes red. I checked this by evaluating c2's own loop in-process on the task tree (`[r for r in TABLE if mutation(r)[0] is None]`), which printed [('shard_matrix_drift', '.github/workflows/ci.yml', 'anchor occurs 0 time(s)')], exit 1, and it was the only unanchored row. I did not run the whole `prove-gates.py --selftest`, because reviewer rules allow one test run. The executor reports that run as FAIL c2, 64/65.\n\nResolution asked: In tools/prove-gates.py:936-937, anchor the row on `        shard: [1, 2, 3, 4, 5]` and replace it with `        shard: [1, 2, 3, 4]`. Today this anchor occurs exactly once. The mutation leaves windows plain and cp1252 running parts [1..4] of 5, so shard_matrix_drift names both, and sv7 still goes red. The comment at :931-934 stays true. Land it in the same commit as the ci.yml change so no SHA has a red sweep.",
+      "files": [
+        "tools/prove-gates.py",
+        ".github/workflows/ci.yml"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "files-no-suite"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 2,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-31T01:06:07Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-31T00:39:31Z",
+          "text": "scope: tools/prove-gates.py, .github/workflows/ci.yml, every path the finding(s) P151-R1 name"
+        },
+        {
+          "at": "2026-10-31T00:39:31Z",
+          "text": "no suite: tools/prove-gates.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-31T00:39:31Z",
+          "text": "no suite: .github/workflows/ci.yml - a document, so no test of it is inferred; the files that name it, the checks that read it, are plugins/audit/scripts/config/_config_rules.py, plugins/audit/scripts/panel/_panel_settings.py, tests/_harness.py, tests/test__doctor_setup.py and 13 more"
+        },
+        {
+          "at": "2026-10-31T00:39:31Z",
+          "text": "no tests.add clause for P151-R1: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P151-R1"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-31T01:22:02Z.3e5dd0",
+        "status": "passed",
+        "at": "2026-10-31T01:22:02Z"
+      }
+    },
+    {
+      "id": "P151.4-3z1",
+      "title": "fix P151-R2: The selftests job's bound now rests on a figure for a shape that...",
+      "status": "pending",
+      "description": "The selftests job's bound now rests on a figure for a shape that no longer runs, and an honest figure for the new shape cannot be recorded. `longest selftests: 13m35s (estimate, the heaviest of four parts ...)` is what backs `timeout-minutes: 33` under job_bound_evidence, which needs 3 x longest >= 33 min, so longest >= 11m00s (BOUND_CEILING_FACTOR 3, floor 5). tt5 requires SWEEP_DEADLINE 1800 + CI_SETUP_ALLOWANCE 120 < timeout-minutes x 60. That inequality is strict, so 32 fails and 33 is the lowest bound tt5 accepts. The executor predicts five-part windows cells at about 6.9-8.5 min. Once the phase's own next step records that measurement, job_bound_evidence reports 'timeout-minutes is 33, over 3 times its longest recorded run' (allowed about 20m42s-25m30s). The bound cannot drop without turning tt5 red. So yes, gate-parity goes red the moment the line is re-recorded, unless the line is kept stale on purpose. That is the outcome the ci.yml comment at :67-78 now commits to, with gate-parity passing on a measurement of nothing current. It is disclosed, not hidden, but it blocks recording the phase's own measured figures.\n\nResolution asked: The structurally correct fix is to give job_bound_evidence the deadline as a second, checked basis for a bound, instead of keeping a stale estimate. Let the ceiling for `selftests` be max(3 x longest, BOUND_FLOOR_MINUTES, the smallest whole minute M with SWEEP_DEADLINE + CI_SETUP_ALLOWANCE < M x 60). Read both constants out of tools/sweep-selftests.py, the same facts tt5 reads, rather than copying them. Declare it explicitly with a ci.yml line such as `# bound selftests: held by the sweep deadline (tools/sweep-selftests.py SWEEP_DEADLINE)`, which job_bound_evidence verifies. Add a selftest case with both directions: a deadline-held bound over a short measured longest passes, and the same bound with no deadline basis is red. Then replace the four-part estimate with the measured five-part figure. Making the heaviest block (ar-block of test_drive_phase.py) lighter is the lever that lowers both the deadline and the bound, but it is separate CPU work and does not remove the need for the rule.",
+      "files": [
+        ".github/workflows/ci.yml",
+        "tools/gate-parity.py",
+        "tools/sweep-selftests.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "files-no-suite"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-31T00:39:39Z",
+          "text": "scope: .github/workflows/ci.yml, tools/gate-parity.py, tools/sweep-selftests.py, every path the finding(s) P151-R2 name"
+        },
+        {
+          "at": "2026-10-31T00:39:39Z",
+          "text": "no suite: tools/gate-parity.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-31T00:39:39Z",
+          "text": "no suite: tools/sweep-selftests.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-31T00:39:39Z",
+          "text": "no suite: .github/workflows/ci.yml - a document, so no test of it is inferred; the files that name it, the checks that read it, are plugins/audit/scripts/config/_config_rules.py, plugins/audit/scripts/panel/_panel_settings.py, tests/_harness.py, tests/test__doctor_setup.py and 13 more"
+        },
+        {
+          "at": "2026-10-31T00:39:39Z",
+          "text": "no tests.add clause for P151-R2: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P151-R2"
+      ]
+    },
+    {
+      "id": "P151.5-3z1",
+      "title": "fix P151-R3: The phase's outcome ('no job held by the concurrent-job cap') re...",
+      "status": "pending",
+      "description": "The phase's outcome ('no job held by the concurrent-job cap') rests on the per-run job count staying at or under 20. The diff gets it there, as I re-derived: 2 os x 3 legs x 5 shards = 30 cells; minus 5 (windows stress), 5 (ubuntu cp1252) and 6 (ubuntu shards 3-5) leaves 14; plus e2e, lint and the two browser jobs makes 18 per-run, and 19 with resample on the release tier. But that count is still prose only. The new WINDOWS_SHARDS comment deliberately leaves the linux part count unpinned. Raising linux to 3 parts (parts: 3, one exclude removed) passes shard_matrix_drift, sv13 and every gate-parity case while asking for 20 per-run and 21 release-tier jobs, so one would be held. The ci.yml comment says so ('Nothing checks the job count against the cap').\n\nResolution asked: Add a gate-parity check counting the jobs a per-run and a release-tier run start concurrently, with jobs gated by `needs: verified` counted together and `verified` itself excluded. Count from job_slices' expanded cells, against a named JOB_CAP = 20 constant, with a red-first case. Once that check exists, the linux part count needs no pin.",
+      "files": [
+        ".github/workflows/ci.yml",
+        "tools/gate-parity.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "files-no-suite"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-31T00:39:43Z",
+          "text": "scope: .github/workflows/ci.yml, tools/gate-parity.py, every path the finding(s) P151-R3 name"
+        },
+        {
+          "at": "2026-10-31T00:39:43Z",
+          "text": "no suite: tools/gate-parity.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-31T00:39:43Z",
+          "text": "no suite: .github/workflows/ci.yml - a document, so no test of it is inferred; the files that name it, the checks that read it, are plugins/audit/scripts/config/_config_rules.py, plugins/audit/scripts/panel/_panel_settings.py, tests/_harness.py, tests/test__doctor_setup.py and 13 more"
+        },
+        {
+          "at": "2026-10-31T00:39:43Z",
+          "text": "no tests.add clause for P151-R3: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P151-R3"
+      ]
+    },
+    {
+      "id": "P151.6-3z1",
+      "title": "fix P151-R4: The diff adds a gate whose name ends in `_drift`, which prove-ga...",
+      "status": "pending",
+      "description": "The diff adds a gate whose name ends in `_drift`, which prove-gates' name arm derives as a load-bearing lint (_GATE_SHAPES includes `_drift`), and adds no mutation row and no allow row for it (`grep encoding_leg_drift tools/prove-gates.py` finds nothing). prove-gates' c1 (every derived lint has a row) and a4 (every lint has an ALLOW row) therefore go red; the executor's own return records `python3 tools/prove-gates.py --selftest` as fail, 62/65. tools/prove-gates.py is in the sweep, so every per-run selftests cell that is dealt it goes red - the tests.gate did not include it, so the recorded green gate run does not show this. It is a consequence of the diff crossing into a file outside the task's scope, and it is new beyond the already-filed stale sv7 anchor (`        shard: [1, 2, 3, 4]`, count 0).\n\nResolution asked: Add the two rows the executor proposed (both anchors counted once on the task tree by this review): mutation (\"encoding_leg_drift\", \".github/workflows/ci.yml\", \"replace\", \"|| 'selftests-cp1252' }}\", \"|| 'selftests-cp1252-whole' }}\", \"tools/gate-parity.py\", \"el0\") and allow (\"encoding_leg_drift\", \"tools/gate-parity.py\", \"replace\", \"    if not release_whole:\\n\", \"    if True:\\n\", \"tools/gate-parity.py\", \"el3\"), in this phase, before sign-off; then show prove-gates --selftest green apart from the filed c2/sv7 anchor.",
+      "files": [
+        "tools/gate-parity.py",
+        "tools/prove-gates.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "files-no-suite"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-31T00:39:52Z",
+          "text": "scope: tools/gate-parity.py, tools/prove-gates.py, every path the finding(s) P151-R4 name"
+        },
+        {
+          "at": "2026-10-31T00:39:52Z",
+          "text": "no suite: tools/gate-parity.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-31T00:39:52Z",
+          "text": "no suite: tools/prove-gates.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-31T00:39:52Z",
+          "text": "no tests.add clause for P151-R4: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P151-R4"
+      ]
+    },
+    {
+      "id": "P151.7-3z1",
+      "title": "fix P151-R5: The diff adds a third release-tier slice (verify.sh RELEASE_SLIC...",
+      "status": "pending",
+      "description": "The diff adds a third release-tier slice (verify.sh RELEASE_SLICES now `release resample selftests-cp1252-whole`), which makes two descriptions false. CONTRIBUTING.md:197 says 'The release tier adds two: `release` ... and `resample`' - a count in prose, now wrong (the class CLAUDE.md calls this repo's most frequent defect). The dispatch input's description at ci.yml:28 says 'per-run (every gate) or release (every gate plus the Windows re-sample)', but per run the code-page leg now sweeps only a selection, and the release tier also adds the whole code-page leg. Both files are in the diff, but these lines were left unchanged.\n\nResolution asked: Delete the count from CONTRIBUTING.md:197 and point at `sh tools/verify.sh --list` (or name all three release slices without the number). Reword the ci.yml:28 description so per-run no longer claims every gate and release names the whole code-page leg, e.g. 'per-run (the code-page leg over its selection) or release (adds the Windows re-sample and the whole code-page leg)'.",
+      "files": [
+        "CONTRIBUTING.md",
+        ".github/workflows/ci.yml"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "phase-no-paths"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-31T00:39:52Z",
+          "text": "scope: CONTRIBUTING.md, .github/workflows/ci.yml, every path the finding(s) P151-R5 name"
+        },
+        {
+          "at": "2026-10-31T00:39:52Z",
+          "text": "no suite: CONTRIBUTING.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test_derive_phase_gate.py, tools/affected.py, tools/check-committed-pii.py, tools/lints/_deps.py, tools/lints/_refs.py, tools/sweep-selftests.py"
+        },
+        {
+          "at": "2026-10-31T00:39:52Z",
+          "text": "no suite: .github/workflows/ci.yml - a document, so no test of it is inferred; the files that name it, the checks that read it, are plugins/audit/scripts/config/_config_rules.py, plugins/audit/scripts/panel/_panel_settings.py, tests/_harness.py, tests/test__doctor_setup.py and 13 more"
+        },
+        {
+          "at": "2026-10-31T00:39:52Z",
+          "text": "gate-only, not tdd: every file P151-R5 names is a document (CONTRIBUTING.md, .github/workflows/ci.yml) with no test of its own, so there is no case to write first and no red to show; the gate the task carries is its check"
+        }
+      ],
+      "fixes": [
+        "P151-R5"
+      ]
+    },
+    {
+      "id": "P151.8-3z1",
+      "title": "fix P151-R6: Every new el case calls encoding_leg_drift directly. The only ca...",
+      "status": "in_progress",
+      "description": "Every new el case calls encoding_leg_drift directly. The only case that reaches slice_verdict/parity, sv7, asserts the live verdict is clean, so if `+ encoding_leg_drift(text, listed)` were deleted from slice_verdict, sv7 and every el case would still pass while `python3 tools/gate-parity.py` stopped holding the split. The same applies to the proposed prove-gates mutation row, which names el0 (a direct call). The wiring is the only thing that puts the rule in the build, and it can be deleted without any case going red.\n\nResolution asked: Add a case that runs slice_verdict (or parity) against a fixture tree whose ci.yml per-run arm names `selftests-cp1252-whole`, and asserts that the verdict carries the `windows selftests-cp1252-whole` finding. Or point the prove-gates mutation row at that case instead of el0.",
+      "files": [
+        "tools/gate-parity.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "files-no-suite"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-31T00:40:03Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-31T00:39:57Z",
+          "text": "scope: tools/gate-parity.py, every path the finding(s) P151-R6 name"
+        },
+        {
+          "at": "2026-10-31T00:39:57Z",
+          "text": "no suite: tools/gate-parity.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-31T00:39:57Z",
+          "text": "no tests.add clause for P151-R6: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P151-R6"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-31T01:05:42Z.870926",
+        "status": "failed",
+        "at": "2026-10-31T01:05:42Z"
       }
     }
   ],

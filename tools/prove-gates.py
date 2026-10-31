@@ -933,8 +933,20 @@ TABLE = (
  # one, every slice still named by a job. `sv7` reads the real workflow against
  # the real runner's list.
  ("shard_matrix_drift", ".github/workflows/ci.yml", "replace",
+  "        shard: [1, 2, 3, 4, 5]",
   "        shard: [1, 2, 3, 4]",
-  "        shard: [1, 2, 3]",
+  "tools/gate-parity.py", "sv7"),
+ # A RELEASE TIER THAT NO LONGER SWEEPS THE WHOLE TREE UNDER THE CODE PAGE. The
+ # code-page leg's slice depends on the tier, and the mutation is its release arm
+ # naming the per-run selection, so no run of any tier sweeps the suites that
+ # selection leaves out. Chosen over swapping the per-run arm because nothing else
+ # sees this one: a per-run arm naming the whole slice also leaves the per-run
+ # slice with no per-run job, which `slice_drift` reports on its own, so `sv7`
+ # would go red with this lint deleted. `sv7` reads the real workflow through
+ # `slice_verdict()`, the path the gate itself takes.
+ ("encoding_leg_drift", ".github/workflows/ci.yml", "replace",
+  "'selftests-cp1252-whole' ||",
+  "'selftests-cp1252' ||",
   "tools/gate-parity.py", "sv7"),
  # A PER-RUN SLICE NO JOB RUNS ANY MORE. The runner still lists it and every other
  # cell still runs, so nothing else notices that the Windows code-page leg is gone
@@ -1611,6 +1623,20 @@ ALLOW = (
   "        if name not in listed:",
   "        if True:",
   "tools/gate-parity.py", "sv0"),
+ # THE CODE-PAGE RULE'S TWO OVER-FIRES, one per direction it reads. Report a
+ # release tier without the whole tree whether or not one sweeps it, and the real
+ # workflow - whose release arm does - is convicted: `el0` is that live pair.
+ ("encoding_leg_drift", "tools/gate-parity.py", "replace",
+  "    if not release_whole:",
+  "    if True:",
+  "tools/gate-parity.py", "el0"),
+ # ...and read every windows cell as one a per-run run starts, whatever its tier,
+ # and a whole-tree sweep that only the release tier runs is convicted as a
+ # per-run cost. `el3` is a release-only job carrying exactly that sweep.
+ ("encoding_leg_drift", "tools/gate-parity.py", "replace",
+  "                if \"per-run\" in run[\"tiers\"]:",
+  "                if True:",
+  "tools/gate-parity.py", "el3"),
  # THE DERIVATION, WIDENED PAST THE THING IT SEPARATES. A reason is a SENTENCE;
  # the length floor is what tells an excuse from a label, and `{"P1": "done"}` is
  # data. Drop it to nothing and every string-to-string map in the tree becomes an
