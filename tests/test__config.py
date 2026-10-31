@@ -3834,8 +3834,92 @@ def _runnable_part_cases(check):
           got == want)
 
 
+def _written_then_run_cases(check):
+    """A body redirected to a file is data only while nothing in the same
+    command runs that file. Once a later clause runs the path - a shell or an
+    interpreter given it as its script, the path as the program word, or
+    `source`/`.` reading it - the body is the program that clause runs, and
+    the split hands it to the graded view. A `.sh` name once sent every such
+    body there by accident; the rule here reads the run, not the name.
+
+    Each deny row is held beside allow rows that write the same body and then
+    do something to the file other than run it, or run a DIFFERENT file - the
+    two mutations a fix can take (grade nothing written; grade everything
+    written)."""
+    line = "git " + "stash drop"
+    body = "\n%s\nEOF" % line
+
+    def kept(parts):
+        return line in "\n".join([parts[0]] + parts[1] + parts[2])
+
+    def write(head, after=""):
+        return "%s <<'EOF'%s%s" % (head, after, body)
+
+    ran = (
+        ("a shell running it on a later line",
+         write("cat > probe.sh") + "\nsh probe.sh"),
+        ("bash on the heredoc's own line after `;`",
+         write("cat > probe.sh", "; bash probe.sh")),
+        ("the path as the program word after `&&`",
+         write("cat > probe.sh", " && ./probe.sh")),
+        ("a `./` spelling written, the bare name run",
+         write("cat > ./probe.sh", "; sh probe.sh")),
+        ("the program word after a chmod line",
+         write("cat >probe.sh") + "\nchmod +x probe.sh\n./probe.sh"),
+        ("an append, run by bash with `./`",
+         write("cat >> probe.sh") + "\nbash ./probe.sh"),
+        ("tee writing it", write("tee probe.sh") + "\nsh probe.sh"),
+        ("an interpreter given a Python file",
+         write("cat > probe.py") + "\npython3 probe.py"),
+        ("source reading it", write("cat > probe.sh") + "\nsource probe.sh"),
+        ("dot-sourcing it", write("cat > probe.sh") + "\n. ./probe.sh"),
+        ("an expansion written and an expansion run",
+         write("cat > \"$F\"") + "\nsh \"$F\""),
+        ("a path with no extension", write("cat > /tmp/x/p") + "\nbash /tmp/x/p"),
+        ("the redirect after the heredoc operator",
+         "cat <<'EOF' > probe.sh%s\nsh probe.sh" % body),
+        ("a shell option before the operand",
+         write("cat > probe.sh") + "\nsh -x probe.sh"),
+        ("a shell reading it as its input", write("cat > probe.sh") + "\nbash < probe.sh"),
+        ("a copy of it run under another name",
+         write("cat > probe.sh") + "\ncp probe.sh run.sh && sh run.sh"),
+    )
+    lost = [what for what, cmd in ran
+            for pipe_data in (False, True)
+            if not kept(M.split_heredocs(cmd, pipe_data))]
+    check("hb15 a body redirected to a path a later clause of the same command "
+          "runs - a shell or interpreter operand, the program word, source or "
+          "`.`, `./` normalised, an expansion on both sides, a `<` input, a copy - is graded: %r"
+          % (lost,), not lost and len(ran) == 16)
+
+    # SECOND DIRECTION, for the fix that grades every body written to a file:
+    # the same writes followed by a read, a chmod, prose naming the run, or a
+    # run of another file stay data - gh35's allow among them.
+    inert = (
+        ("written and nothing else", write("cat > probe.sh")),
+        ("another file run", write("cat > probe.sh") + "\nsh other.sh"),
+        ("the file read back", write("cat > probe.sh") + "\ncat probe.sh"),
+        ("only made executable", write("cat > probe.sh") + "\nchmod +x probe.sh"),
+        ("the run spelled as an echo argument",
+         write("cat > probe.sh") + "\necho sh probe.sh"),
+        ("a document then staged", write("cat > notes.md") + "\ngit add notes.md"),
+        ("the file handed to a script as its data",
+         write("cat > payloads.txt") + "\npython3 run.py payloads.txt"),
+        ("an expansion written, then staged by a bare program",
+         write("cat > \"$OUT\"") + "\ngit add \"$OUT\""),
+    )
+    wrong = [what for what, cmd in inert
+             for pipe_data in (False, True)
+             if kept(M.split_heredocs(cmd, pipe_data))]
+    check("hb16 ...while a body written to a path nothing in the command runs "
+          "stays data - read back, made executable, echoed, handed to a script as"
+          " data, or another file run: %r" % (wrong,),
+          not wrong and len(inert) == 8)
+
+
 def _all_cases(check):
     _cases(check)
+    _written_then_run_cases(check)
     _runnable_part_cases(check)
     _shared_payload_cases(check)
     _git_path_pair_cases(check)

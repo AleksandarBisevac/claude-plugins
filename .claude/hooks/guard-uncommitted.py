@@ -1060,6 +1060,18 @@ def _selftest():
               "quoted heredoc with an apostrophe, and by a Python body with an "
               "escaped apostrophe, are refused on a dirty tree: %r" % (passed,),
               not passed and len(misread) == 6)
+        # A body written to a file is data only while nothing in the command
+        # runs the file: a later clause running it makes the body its program.
+        # Each line parses, so the tokenized reading is the one asked.
+        _wr = "cat > probe.sh <<'EOF'%s\n" + _st + "\nEOF%s"
+        ran = (_wr % ("", "\nsh probe.sh"), _wr % ("; bash probe.sh", ""),
+               _wr % (" && ./probe.sh", ""), _wr % ("", "\n. ./probe.sh"))
+        passed = [cmd for cmd in ran if decide(cmd, dirty) is None]
+        check("gu56 a stash in a body written to a file a later clause runs - "
+              "by a shell, as the program word, dot-sourced - is refused on a "
+              "dirty tree, while the same body only written passes: %r"
+              % (passed,), not passed and len(ran) == 4
+              and decide(_wr % ("", ""), dirty) is None)
     finally:
         _rmtree_git_safe(tmp)
 

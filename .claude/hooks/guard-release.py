@@ -1266,6 +1266,18 @@ def _selftest():
           % ([(command, publishing(command)) for command in split_parts],),
           all(publishing(command) == "creates a git tag"
               for command in split_parts))
+    # A body written to a file is data only while nothing in the command runs
+    # the file; a later clause running it makes the body that clause's program.
+    _wr = "cat > probe.sh <<'EOF'%s\n" + _tag + "\nEOF%s"
+    written_run = (_wr % ("", "\nsh probe.sh"), _wr % ("; bash probe.sh", ""),
+                   _wr % (" && ./probe.sh", ""), _wr % ("", "\nsource probe.sh"))
+    check("gr75 RED-FIRST: a tag in a body written to a file a later clause "
+          "runs - by a shell, as the program word, sourced - is a publisher, "
+          "and the same body only written is not: %r"
+          % ([(command, publishing(command)) for command in written_run],),
+          all(publishing(command) == "creates a git tag"
+              for command in written_run)
+          and not publishing(_wr % ("", "")))
 
     # --- the rule, end to end -------------------------------------------------
     tmp = tempfile.mkdtemp(prefix="guard-release-")

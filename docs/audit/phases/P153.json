@@ -172,8 +172,10 @@
         "severity": "med",
         "file": "plugins/audit/hooks/guard-history-rewrite.py:230-244,1000-1001",
         "issue": "Deny-to-allow against main (the branch point) in the history guard. `parts_read_alone` now sends a command to the text reading whenever any part ends open in `_config`'s walk, including commands whose RAW joined view main tokenized and graded as operations. The text reading cannot see parse-only spellings: a quoted verb or program word, which `_GIT_SUB`/`_STASH` require bare, and `xargs git`, whose STDIN_VERB refusal in `decide` reads `calls or []` and so never fires on the text reading. Measured over scratch exports of main, HEAD and HEAD with this diff, calling `decide` on a repo with a plan and a recorded SHA: deny on main and on HEAD, allow with this diff, for <QUOTED-STASH-DROP> (the stash-drop verb with its verb word double-quoted), <QUOTED-PROGRAM-STASH-DROP> (the program word quoted), <QUOTED-FORCE-PUSH> and <XARGS-GIT> (a verb piped to `xargs git`), placed in the text beside: a shell body whose last line ends in a backslash (`bash <<'X'` / `echo a` + backslash / `X`, verb before or after it); a body that opens a quote a later body closes (single, double, backquote or `$(`); a glued `#'` body plus a closing body; a text ending in a backslash after a body (quoted stash drop only); and an `echo \"$(` body closed by a later body. 98 history rows are weaker than main; once the deliberate allows and the rows HEAD already had are removed, these shapes are what is left, and none of them uses a plain verb. Plain spellings (<STASH-DROP>, <FORCE-PUSH>, <HARD-RESET>, `git -C` forms) are never weaker than main or HEAD. Main parsed these lines correctly because the verb sat in a part the open quote did not reach. The task asked for exactly this routing ('send the command to the strict text reading over the whole view'), so the gap comes from that routing combined with the text reading's existing blindness. Main already allowed the same spellings when the whole line failed to tokenize (`<QUOTED-STASH-DROP>; echo '`). What this diff adds is the set of lines that main read as operations and that now reach that blindness.",
-        "resolution": "Keep the strict reading, and keep the parse of the parts that can be read. When `parts_read_alone` fails, collect `git_calls` of every part that ends closed and tokenizes alone. Grade those calls in each arm's None branch (`always_refused`, `amend_requested`, `stash_operations`, `reset_targets`) and in `decide`'s STDIN_VERB check, in addition to the text patterns, so that a verb main read as an operation is still read as one. Add deny cases to tests/test_guard_history_rewrite.py for <QUOTED-STASH-DROP> and <XARGS-GIT> beside the trailing-backslash body and beside the open/close body pair. Each case should be red on this diff and green on main.",
-        "fixTask": "P153.17-34e"
+        "resolution": "fixed in P153.17-34e (7d595ef4ae79): Keep the strict reading, and keep the parse of the parts that can be read. When `parts_read_alone` fails, collect `git_calls` of every part that ends closed and tokenizes alone. Grade those calls in each arm's None branch (`always_refused`, `amend_requested`, `stash_operations`, `reset_targets`) and in `decide`'s STDIN_VERB check, in addition to the text patterns, so that a verb main read as an operation is still read as one. Add deny cases to tests/test_guard_history_rewrite.py for <QUOTED-STASH-DROP> and <XARGS-GIT> beside the trailing-backslash body and beside the open/close body pair. Each case should be red on this diff and green on main.",
+        "fixTask": "P153.17-34e",
+        "commit": "7d595ef4ae79",
+        "status": "fixed"
       },
       {
         "id": "P153-R19",
@@ -187,10 +189,11 @@
         "severity": "med",
         "file": "plugins/audit/hooks/_config.py",
         "issue": "P153.17 executor, measured against main: a heredoc body written to a file by a redirect and run by a later clause of the same command (a body written to probe.sh then sh probe.sh, bash probe.sh or ./probe.sh) is data to all four guards now; main denied it only because a .sh name read as a shell. Deny to allow on hist, secrets, uncommitted and release",
-        "resolution": "one rule in the shared split: a body redirected to a path that a later clause of the same command runs (as a shell or interpreter operand, or as the program word) is a shell-fed body and is graded; a body written to a path nothing in the command runs stays data. Red-first the written-then-run shapes in all four guards; gh35 allow (written, not run) stays green"
+        "resolution": "one rule in the shared split: a body redirected to a path that a later clause of the same command runs (as a shell or interpreter operand, or as the program word) is a shell-fed body and is graded; a body written to a path nothing in the command runs stays data. Red-first the written-then-run shapes in all four guards; gh35 allow (written, not run) stays green",
+        "fixTask": "P153.18-34e"
       }
     ],
-    "outcome": "[findings: 20 - 4 high, 10 med, 6 low; 8 with a recorded fix commit]"
+    "outcome": "[findings: 20 - 4 high, 10 med, 6 low; 9 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1407,7 +1410,7 @@
     {
       "id": "P153.17-34e",
       "title": "fix P153-R18: Deny-to-allow against main (the branch point) in the history gu...",
-      "status": "in_progress",
+      "status": "done",
       "description": "Deny-to-allow against main (the branch point) in the history guard. `parts_read_alone` now sends a command to the text reading whenever any part ends open in `_config`'s walk, including commands whose RAW joined view main tokenized and graded as operations. The text reading cannot see parse-only spellings: a quoted verb or program word, which `_GIT_SUB`/`_STASH` require bare, and `xargs git`, whose STDIN_VERB refusal in `decide` reads `calls or []` and so never fires on the text reading. Measured over scratch exports of main, HEAD and HEAD with this diff, calling `decide` on a repo with a plan and a recorded SHA: deny on main and on HEAD, allow with this diff, for <QUOTED-STASH-DROP> (the stash-drop verb with its verb word double-quoted), <QUOTED-PROGRAM-STASH-DROP> (the program word quoted), <QUOTED-FORCE-PUSH> and <XARGS-GIT> (a verb piped to `xargs git`), placed in the text beside: a shell body whose last line ends in a backslash (`bash <<'X'` / `echo a` + backslash / `X`, verb before or after it); a body that opens a quote a later body closes (single, double, backquote or `$(`); a glued `#'` body plus a closing body; a text ending in a backslash after a body (quoted stash drop only); and an `echo \"$(` body closed by a later body. 98 history rows are weaker than main; once the deliberate allows and the rows HEAD already had are removed, these shapes are what is left, and none of them uses a plain verb. Plain spellings (<STASH-DROP>, <FORCE-PUSH>, <HARD-RESET>, `git -C` forms) are never weaker than main or HEAD. Main parsed these lines correctly because the verb sat in a part the open quote did not reach. The task asked for exactly this routing ('send the command to the strict text reading over the whole view'), so the gap comes from that routing combined with the text reading's existing blindness. Main already allowed the same spellings when the whole line failed to tokenize (`<QUOTED-STASH-DROP>; echo '`). What this diff adds is the set of lines that main read as operations and that now reach that blindness.\n\nResolution asked: Keep the strict reading, and keep the parse of the parts that can be read. When `parts_read_alone` fails, collect `git_calls` of every part that ends closed and tokenizes alone. Grade those calls in each arm's None branch (`always_refused`, `amend_requested`, `stash_operations`, `reset_targets`) and in `decide`'s STDIN_VERB check, in addition to the text patterns, so that a verb main read as an operation is still read as one. Add deny cases to tests/test_guard_history_rewrite.py for <QUOTED-STASH-DROP> and <XARGS-GIT> beside the trailing-backslash body and beside the open/close body pair. Each case should be red on this diff and green on main.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -1437,14 +1440,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7d595ef4ae79",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "MONOTONE UNION, implemented. (a) guard-history-rewrite.py: git_calls(command, depth, joined=False) - joined=True skips parts_read_alone at every depth, i.e. the reading main had of the raw joined view, kept as a reading rather than deleted. New command_reading(command) -> (calls, strict): when every part reads alone, the joined parse alone, strict False; otherwise the joined view's parse (None-safe) merged with git_calls of every part that ends closed and tokenizes alone, strict True. _merged() is a multiset union so one operation found by two readings is named once. always_refused, amend_requested, stash_operations and reset_targets grade the merged calls, and when strict add their text patterns (union, never either-or); new _reset_target_text and _always_refused_calls factor the pieces. decide: early allow only for calls == [] and not strict; the xargs-git STDIN_VERB check reads the merged calls; the unparsed git -C deny keys on strict; call_trees gets the merged calls plus a session entry for the text reading's answer, appended after so reset indexes still hold. (b) _config.runnable_clauses returns per-part clauses then the joined view's clauses not already present (union); runnable_text docstring rewritten to state the union. That covers guard-release _publishers and _shell_moves and the history guard's _shell_moves. (c) guard-uncommitted reading(): new _parsed_calls uses the parser's command_reading (falls back to git_invocations); on a strict line the text shapes over the lifted view are asked first (widest loss set), then the merged calls' judgement, so neither reading can allow what the other refuses. (d) guard-secrets-read.py: no code change; it reads runnable_text, the joined view, i.e. main's reading over the shared split, and never had a per-part reading. House-template lifting happens inside split_heredocs, before every reading. MATRIX (reviewer probe run.py/cmp.py over cases.json, main export vs this tree): before the change 140 weaker rows (hist 98, sec 6, unc 20, rel 16); after it 96 (hist 54, sec 6, unc 20, rel 16), stronger hist 112. Of the 96: 92 are house-form rows - p153.allow1/allow2/allow3 (commit -m, audit-task --description, gh pr --body, each with every verb), allow4 (backquoted house form, secrets), b11 and b12 (a house-form commit/tag message that a LATER clause runs through bash -c \"$(git log ...)\" or git tag -l | sh: the body is lifted because it matches the template exactly; the guards cannot follow text through git's object store - flagged for a decision, not changed). The other 4 are p153.b2 and p153.b2b with <HARD-RESET> onto HEAD~1 (hist): the marker line `cat <<E'X' )\"` / `cat <<E-X )\"` is not the house form; main denied because its old delimiter regex read the marker as `E`, classed the rest as a shell body and so called the cwd unreadable; this tree reads the delimiter as the shell does, sees the reset run, and the ancestry check finds nothing orphaned (HEAD~1 holds the recorded commit). With a target that orphans the recorded commit (HEAD~2) both shapes deny: gu44, gu45. NOT IN THE REVIEWER'S PROBE, measured separately (11 extra shapes x 7 verbs, same driver): 22 more rows weaker than main, none house-form, from split_heredocs narrowings earlier tasks of this phase made deliberately: a body written to a file named *.sh (with or without a later `sh probe.sh`; hist 10, sec 2, unc 2, rel 2 - this is gh35's pinned allow, from the program-word rule) and a body piped to `python3 \"x.py\"` with the script path quoted (hist 5, unc 1 - the unquoted spelling was already data on main). The union cannot see these because every reading shares the current split. Making them deny means reverting the program-word rule and the quoted-script reading, which turns gh35 red and contradicts the history guard's module docstring - a reversal of a pinned decision, left for the orchestrator. COST: the four arms timed per call (fastest of 30), two runs 20 s apart, HEAD vs this tree: plain 0.19/0.19 ms, house 0.51-0.52/0.51-0.52 ms, a long 40-clause line 9.7-9.8/9.8 ms, a line with a part ending open 0.26/0.94-0.96 ms and a body-pair line 0.35/1.22-1.25 ms; bench-hooks --gate (imports) passes on 3.14 only, it found no 3.8-3.13 interpreter. R19: s79-s83 in tests/test_guard_secrets_read.py could not fail on the quote-crossing their comments named - measured in-process: joining every body inside a quote the text opened left all of them block; dropping shell/interpreter bodies from the split turned all of them allow. Comment and titles reworded to what they pin: the body stays in the view this guard grades. Gate: 6/6 files ok, 1761 cases. ruff (the CLAUDE.md paths) clean; with .claude/hooks added it reports an unused shutil import in guard-uncommitted.py's _selftest and in require-claim-block.py, both already in HEAD. mv37 PASS (68/68). Prose-number and house-style lints: no hit in changed files. DEPENDANTS: .github/sweep-costs.json - path entries for the suites, still correct (suite times unchanged within noise: history 1.5 s, secrets 3.5 s). PLUGIN-BUILD-GUIDE.md and SECURITY.md - waived, unchanged; the guide's mentions are paths and still resolve. tests/test__config.py - names _cases/_selftest by basename only, 393 cases pass; part_ends_open/runnable_parts unchanged. _config.py importers (guard-release, detect-plan-skip, guard-bash-writes, guard-capabilities, guard-edits, guard-history-rewrite, guard-secrets-read, journal-writes): only runnable_clauses changed behaviour, and git grep finds it called only by guard-release (two sites) and guard-history-rewrite - both gated and passing; the other importers do not call it. guard-history-rewrite.py dependants (guard-uncommitted via git_invocations - unchanged semantics, now also command_reading; hooks.json, _areas.py, _commit_trail.py, repair-commits.py, docs/research - basename/path refs, unaffected; tests use git_calls/_substitutions/_substitution_end - git_calls(command) keeps its old meaning, qs4 passes). guard-secrets-read.py dependants: file unchanged. guard-uncommitted.py dependants (settings.json, CONTRIBUTING.md naming executed_text): executed_text unchanged. guard-release.py dependants (arm-release-bypass, settings.json, affected.py, _refs.py, verify.sh): _publishers signature unchanged, 110 cases pass.",
+        "descriptive": "The guards now refuse when ANY reading refuses - the joined view main had, each part read alone, and the text patterns - so the quoted-verb and xargs-git rows near open-ended bodies are refused again; in the reviewer's matrix only house-form rows and two misparse rows remain weaker than main, and a separate probe finds two earlier split narrowings left for decision."
       },
       "startedAt": "2026-10-31T11:28:03Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-31T11:50:05Z",
+      "verifiedBy": [
+        "gu1-gu40: each of <QUOTED-STASH-DROP>, <QUOTED-PROGRAM-STASH-DROP>, <QUOTED-FORCE-PUSH> and <XARGS-GIT> is refused, with its own reason word, beside a shell body ending in a backslash (verb before and after), a single-quote body pair (before and after), a double-quote pair, a backquote pair, a $( pair, a glued #' body plus a closer, a body whose #' follows a carriage return, and an echo \"$( body closed by the verb's body",
+        "gu41-gu43: the quoted spellings refused when the text ends on an escape after a body",
+        "gu44-gu45: a hard reset that orphans the recorded commit, after a substitution marker line that is not the house form (quoted and hyphenated delimiter), is refused",
+        "gu46-gu49: second direction - a quoted read beside the same open-ended bodies is allowed; red under an over-fire mutation (every strict line refused), green restored",
+        "s79-s83 in tests/test_guard_secrets_read.py reworded (no new case): they pin that the body stays in the graded view"
+      ],
       "notes": [
         {
           "at": "2026-10-31T11:27:43Z",
@@ -1477,6 +1486,89 @@
         "runId": "2026-10-31T11:49:48Z.a66acf",
         "status": "passed",
         "at": "2026-10-31T11:49:48Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "7d595ef4ae79",
+        "at": "2026-10-31T11:50:05Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-31T11:43:15Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__config.py tests/test_guard_history_rewrite.py .claude/hooks/guard-uncommitted.py tests/test_guard_secrets_read.py tests/test__manifest_vocab.py .claude/hooks/guard-release.py` in a throwaway tree at HEAD exited 1 with 43 of 390 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - gu1 (house FAIL), gu2 (house FAIL), gu3 (house FAIL), gu4 (house FAIL), gu5 (house FAIL), gu6 (house FAIL), gu7 (house FAIL), gu8 (house FAIL), gu9 (house FAIL) and 34 more: SELFTEST FAILED: 347/390 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P153.18-34e",
+      "title": "fix P153-R20: P153.17 executor, measured against main: a heredoc body written...",
+      "status": "in_progress",
+      "description": "P153.17 executor, measured against main: a heredoc body written to a file by a redirect and run by a later clause of the same command (a body written to probe.sh then sh probe.sh, bash probe.sh or ./probe.sh) is data to all four guards now; main denied it only because a .sh name read as a shell. Deny to allow on hist, secrets, uncommitted and release\n\nResolution asked: one rule in the shared split: a body redirected to a path that a later clause of the same command runs (as a shell or interpreter operand, or as the program word) is a shell-fed body and is graded; a body written to a path nothing in the command runs stays data. Red-first the written-then-run shapes in all four guards; gh35 allow (written, not run) stays green",
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/hooks/guard-history-rewrite.py",
+        "plugins/audit/hooks/guard-secrets-read.py",
+        ".claude/hooks/guard-uncommitted.py",
+        ".claude/hooks/guard-release.py",
+        "tests/test__config.py",
+        "tests/test_guard_history_rewrite.py",
+        "tests/test_guard_secrets_read.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__config.py: one rule in the shared split: a body redirected to a path that a later clause of the same command runs (as a shell or interpreter operand, or as the program ..."
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__config.py tests/test_guard_history_rewrite.py .claude/hooks/guard-uncommitted.py tests/test_guard_secrets_read.py tests/test__manifest_vocab.py .claude/hooks/guard-release.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-31T11:50:28Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-31T11:50:22Z",
+          "text": "scope: plugins/audit/hooks/_config.py, every path the finding(s) P153-R20 name"
+        },
+        {
+          "at": "2026-10-31T11:50:22Z",
+          "text": "scope: tests/test__config.py, the suite that tests plugins/audit/hooks/_config.py (python: its import closure reaches plugins/audit/hooks/_config.py)"
+        },
+        {
+          "at": "2026-10-31T11:50:25Z",
+          "text": "its _config and guard sections name modules and public helpers; this fix adds a condition inside the existing heredoc split, adding or renaming no module or public helper",
+          "waives": "PLUGIN-BUILD-GUIDE.md"
+        },
+        {
+          "at": "2026-10-31T11:50:26Z",
+          "text": "its guard-release section states the fail mode and what it refuses; this fix only makes guards refuse a superset of what they refuse now",
+          "waives": "SECURITY.md"
+        }
+      ],
+      "fixes": [
+        "P153-R20"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-31T12:15:05Z.99570e",
+        "status": "passed",
+        "at": "2026-10-31T12:15:05Z"
       }
     }
   ],

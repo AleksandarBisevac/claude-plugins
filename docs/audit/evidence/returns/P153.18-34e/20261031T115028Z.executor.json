@@ -1,0 +1,36 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__config.py tests/test_guard_history_rewrite.py .claude/hooks/guard-uncommitted.py tests/test_guard_secrets_read.py tests/test__manifest_vocab.py .claude/hooks/guard-release.py": "pass",
+    "python3 tools/bench-hooks.py --gate": "pass",
+    "ruff check plugins/audit tools tests": "pass",
+    "vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-31T12:08:47Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__config.py tests/test_guard_history_rewrite.py .claude/hooks/guard-uncommitted.py tests/test_guard_secrets_read.py tests/test__manifest_vocab.py .claude/hooks/guard-release.py` in a throwaway tree at HEAD exited 1 with 3 of 746 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - hb15 (house FAIL), gh36 (house FAIL), s84 (house FAIL): SELFTEST FAILED: 745/746 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "One rule in the shared split (_config.split_heredocs): a body left as data goes to _written_body_runs, which reads the paths the heredoc's own command writes (redirect targets on its line read outside quotes via a new _plain_mask that _shell_level now uses with identical output; tee operands) against every later clause: the path as program word past wrappers, the script operand or < input of a shell, source, . or interpreter (never an argument the script is handed), the path inside an interpreter's inline program, the same inside eval or a shell -c, and names cp/mv/ln/install/tee give the file. Paths compare by last component; an expansion matches any path except a bare PATH-looked-up program word when the written path is the expansion. Interpreter run puts the body in code, any other run in shell. No guard code changed; runnable_text/parts/clauses unchanged. Cases: hb15 and hb16 (test__config), gh36, s84 and s85, gu56, gr75. Gate sweep 6/6 files, 1768 cases, exit 0; other _config importers and source lints 8/8 files, 1240 cases, exit 0. Probe matrix over main, HEAD and this tree: HEAD to fix weaker 0 in all four guards; main to fix weaker 172 guard-by-case rows: house-form allows allow1-4, replay rows b11/b12, b2/b2b reset rows in hist (allowed already at HEAD; main's deny was a phantom cd reason), and the written-never-run .sh rows wa1/wa2/wa3/wa5 (the gh35 class the rule keeps as data). Every written-then-run shape is graded by all four guards. Dependants: every _config importer still correct (split_heredocs signature and return shape unchanged, more bodies graded only for written-then-run shapes, effective_cwd unreadable for those), their suites green; guard-history-rewrite and guard-secrets-read code unchanged; guard-uncommitted and guard-release gained one selftest case each; test files gained cases only.",
+    "descriptive": "A heredoc written to a file that a later clause of the same command runs is graded as that run's program by all four guards; a body written to a file nothing runs stays data."
+  },
+  "testsAdded": [
+    "hb15: written-then-run shapes keep the body in the graded parts under both pipe_data readings",
+    "hb16: written-but-not-run shapes leave the body as data, including a file handed to a script as its data and an expansion staged by a bare program",
+    "gh36: history guard refuses a destructive verb in a body written then run by sh, bash, the program word, dot-sourcing and python3",
+    "s84/s85: secrets guard blocks a secret read in a body written then run, allows the same body written then read back",
+    "gu56: uncommitted-work guard refuses a stash in a body written then run, passes it only written",
+    "gr75: release guard reads a tag in a body written then run as a publisher, and only written as none"
+  ],
+  "casesAdded": [
+    [
+      "hb15",
+      "hb16"
+    ]
+  ],
+  "claims": "claims:\n1 _config.py split_heredocs final else-branch calls _written_body_runs; the comment block above the new helpers and the split_heredocs docstring paragraph state the positions those helpers read\n2 TDD red on hb15/gh36/s84/gu56/gr75 before the fix; mutations in a scratch copy: grade every written body, read every operand, expansion matches bare program, drop copy-follow, drop < input - each turned named cases red; source restored, cmp verified\n3 probe matrix over the run shapes and verb spellings on main, HEAD and this tree: every run shape graded, HEAD to fix weaker 0; left: a Python body's os.system call is not read by hist/unc/rel in stdin or file form alike, same on main\n4 n/a - no rule to an agent\n5 matrix run once per tree; the delta is deterministic text classification, not a timing\n6 decision reads which files the heredoc's command writes and which files later clauses run, by program position and script operand, not a name suffix; allows hb16, gh35, gh32a, s85 kept green and the over-fire mutations shown red\n7 matrix counts carry the run that produced them; no number written into code or docs",
+  "stamp": "audit-stamp: {\"content\":\"sha256:bcb8cdea3b2923ee912f6c1813321f800bac9fa950432048fa9d5a736c4ef39d\",\"dirtyDigest\":\"sha256:c1761fb0731d1998c971687cf46a612d09f19b129363d8ff5072ac3d5309f73e\",\"dirtyPaths\":{\".claude/hooks/guard-release.py\":\"52dc116df64d5b22\",\".claude/hooks/guard-uncommitted.py\":\"97e3885a56f11752\",\"plugins/audit/hooks/_config.py\":\"f7190124cadcf703\",\"tests/test__config.py\":\"324d5561a2843c21\",\"tests/test_guard_history_rewrite.py\":\"2e7cb3320d92ffca\",\"tests/test_guard_secrets_read.py\":\"43053977d96c77a0\"},\"head\":\"7d595ef4\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".claude/hooks/guard-release.py\",\".claude/hooks/guard-uncommitted.py\",\"plugins/audit/hooks/_config.py\",\"plugins/audit/hooks/guard-history-rewrite.py\",\"plugins/audit/hooks/guard-secrets-read.py\",\"tests/test__config.py\",\"tests/test_guard_history_rewrite.py\",\"tests/test_guard_secrets_read.py\"],\"scopeDigest\":\"sha256:d083d2c38ead122227e5779ab4915d68d93734195860ff01be20b5b20b3611ae\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

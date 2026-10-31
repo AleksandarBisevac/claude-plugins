@@ -3427,6 +3427,18 @@ def _cases(check):
             "Python escaped apostrophe", "block",
             bash("python3 - <<'PY'\nprint('it\\'s')\nimport os\n"
                  "os.system(\"%s\")\nPY" % _rd))
+    # A body written to a file is data only while nothing in the command runs
+    # the file; a later clause running it makes the body that clause's program.
+    _wr = "cat > probe.sh <<'EOF'%s\n" + _rd + "\nEOF%s"
+    _ran = (_wr % ("", "\nsh probe.sh"), _wr % ("; bash probe.sh", ""),
+            _wr % (" && ./probe.sh", ""), _wr % ("", "\nsource probe.sh"))
+    _passed = [c for c in _ran if M.decide(bash(c), cfg=cfg)[0] != "block"]
+    check("s84 a secret read in a body written to a file a later clause runs - "
+          "by a shell, as the program word, sourced - is refused: %r"
+          % (_passed,), not _passed and len(_ran) == 4)
+    _expect("s85 ...while the same body written and never run is a write of "
+            "text, not a read", "allow",
+            bash(_wr % ("", "\ncat probe.sh")))
 
     # (s35+) The original symptom - a read-only one-liner refused as a
     # write - is gone, per the fix above. Measuring the same function again found

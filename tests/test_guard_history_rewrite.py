@@ -652,6 +652,19 @@ def _cases(check):
               "the body on its stdin is still refused",
               v == "allow" and v_sh == "deny",
               repr(((v, why), (v_sh, why_sh))))
+        # ...but the SAME file run by a later clause of the same command is the
+        # program that clause runs. gh35's allow was once a refusal only
+        # because a `.sh` name read as a shell; with that gone, the run itself
+        # is what grades the body, whatever the file is called.
+        _fp = "git push --force origin main"
+        _wr = "cat > probe.sh <<'EOF'%s\n" + _fp + "\nEOF%s"
+        _ran = (_wr % ("", "\nsh probe.sh"), _wr % ("; bash probe.sh", ""),
+                _wr % (" && ./probe.sh", ""), _wr % ("", "\n. ./probe.sh"),
+                "cat > probe.py <<'EOF'\n" + _fp + "\nEOF\npython3 probe.py")
+        passed = [c for c in _ran if _decide(repo, c)[0] != "deny"]
+        check("gh36 a body written to a file a later clause runs - by a shell, "
+              "as the program word, dot-sourced, by an interpreter - is "
+              "refused: %r" % (passed,), not passed and len(_ran) == 5)
 
         # --- a `git` counts where the shell RUNS it -----------------------------
         # An emitter's arguments were once read as inert, and each fix of that

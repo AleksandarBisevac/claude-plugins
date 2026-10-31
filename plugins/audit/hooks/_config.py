@@ -2983,18 +2983,27 @@ def _scan_contexts(text, stack, stop_at_marker=False):
     return None, tuple(stack), tuple(at)
 
 
-def _shell_level(text):
-    """`text` with every character inside a quote or a substitution, and every
-    quoting character itself, blanked: what is left is the command's own level,
-    where a separator, a group or a definition is one the shell acts on."""
+def _plain_mask(text):
+    """One flag per character of `text`: True where it stands at the command's
+    own level - outside every quote and substitution, and no quoting character
+    itself. `_shell_level` and `_redirect_targets` read the same mask, so the
+    two cannot disagree about where a quote ends."""
     out, stack, at, i, n = [], [], [], 0, len(text)
     while i < n:
         was_open = bool(stack)
         nxt = _context_step(text, i, stack, at)
         plain = not was_open and not stack and nxt == i + 1
-        out.append(text[i] if plain else " " * (nxt - i))
+        out.extend([plain] * (nxt - i))
         i = nxt
-    return "".join(out)[:n]
+    return out[:n]
+
+
+def _shell_level(text):
+    """`text` with every character inside a quote or a substitution, and every
+    quoting character itself, blanked: what is left is the command's own level,
+    where a separator, a group or a definition is one the shell acts on."""
+    return "".join(ch if plain else " "
+                   for ch, plain in zip(text, _plain_mask(text)))
 
 
 # --- a substitution's output as an argument: data only to a text sink -----------
@@ -3318,6 +3327,241 @@ def _pipes_to_script_run(tail, cmd):
     return far is not None and _plain_script_run(far)
 
 
+# --- a body written to a file that a later clause runs --------------------------
+# A BODY ON ITS WAY INTO A FILE IS DATA ONLY WHILE NOTHING RUNS THE FILE. `cat >
+# probe.sh <<'EOF'` followed, in the same command, by `sh probe.sh`, `./probe.sh`,
+# `. ./probe.sh` or `python3 probe.py` writes a program and runs it, and the
+# body is that program. A `.sh` name once sent every such body to the graded
+# view by accident - the name read as a shell - and when names stopped being
+# programs the run went unread. So the run is what is read here, whatever the
+# file is called: the paths the heredoc's own command writes (a `>`, `>>` or
+# `>|` target, `tee`'s operands) against every path a LATER clause runs.
+#
+# A PATH IS COMPARED BY ITS LAST COMPONENT, so `./probe.sh`, `probe.sh` and
+# `/abs/dir/probe.sh` are one file here, and a `cd` between the write and the
+# run cannot part them. A component holding an expansion (`"$F"`, `$D/x`'s
+# `x` is literal, `$F`'s is not) may be any name, so it matches the paths on
+# the other side - all but a bare program name, which the shell looks up on
+# PATH rather than opening (`_names_path`): uncertainty about which file runs
+# is graded, not dropped. Both readings over-grade only - a body graded that
+# a stricter reading would leave as data - never the reverse.
+#
+# A RUN IS: the path as the program word (past wrappers, as
+# `program_candidates` reads them); the path as the SCRIPT of a shell,
+# `source`, `.` or an interpreter, or its `<` input - never an argument the
+# script is handed (`_program_operands`); the path named inside an
+# interpreter's inline program; and any of these
+# inside a command handed to `eval` or a shell's `-c`, read again. A name a
+# copy, a move or a link gives the written file is a written name too
+# (`_copied_tails`).
+_RESERVED_LEAD = ("if", "then", "else", "elif", "do", "while", "until", "!",
+                  "{", "(", "time")
+_RUN_DEPTH = 3
+
+
+def _redirect_targets(text):
+    """The words the FIRST simple command of `text` sends its output to: each
+    `>`, `>>` or `>|` (fd-prefixed or `&>`) target at the command's own level,
+    quotes removed. A `>&2` duplicates a descriptor and names no file; a `>(`
+    is a process substitution the heredoc head already grades as shell."""
+    mask, out, i, n = _plain_mask(text), [], 0, len(text)
+    while i < n:
+        ch = text[i]
+        if mask[i] and (ch in ";\n" or (ch == "|" and text[i - 1:i] != ">")
+                        or (ch == "&" and text[i + 1:i + 2] != ">"
+                            and text[i - 1:i] != ">")):
+            break
+        if not (mask[i] and ch == ">") or text[i - 1:i] == ">":
+            i += 1
+            continue
+        j = i + 1
+        if j < n and text[j] in ">|":
+            j += 1
+        if j < n and text[j] in "&(":
+            i = j + 1
+            continue
+        while j < n and mask[j] and text[j] in " \t":
+            j += 1
+        k = j
+        while k < n and not (mask[k] and (text[k].isspace()
+                                          or text[k] in ";&|<>()")):
+            k += 1
+        if k > j:
+            words = shell_words(text[j:k])
+            out.append(words[0] if words else text[j:k])
+        i = k
+    return out
+
+
+def _written_paths(head, tail):
+    """The paths the heredoc's own command writes its stdin to: the redirect
+    targets of the head's last simple command and of the rest of its line up
+    to the next separator, and `tee`'s operands."""
+    last = re.split(r"[;&|(\n]", head)[-1]
+    paths = _redirect_targets(last + " " + tail)
+    words = _last_command(head)
+    rest, _candidates = program_candidates(words)
+    if rest and _program_of(rest[0]) == "tee":
+        paths += [w for w in rest[1:] if not w.startswith("-")]
+    return paths
+
+
+def _path_tail(word):
+    """A path word's last component, as the comparison reads it - or None
+    when an expansion makes that component any name at all."""
+    name = str(word).strip("'\"").lstrip("<").rstrip(")};")
+    name = name.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+    return None if ("$" in name or "`" in name) else name
+
+
+def _names_path(word, tails, program_word=False):
+    """Whether `word` may be one of the written paths whose last components are
+    `tails` (None in `tails` is an expansion: any name). A run word that is an
+    expansion may be any written path. A written expansion may be any run word
+    but a bare program name: `git` with no slash is looked up on PATH, so
+    `git add "$OUT"` runs git, never the file `$OUT` names."""
+    mine = _path_tail(word)
+    if mine is None:
+        return bool(tails)
+    if not mine:
+        return False
+    if mine in tails:
+        return True
+    return None in tails and (not program_word or "/" in str(word))
+
+
+def _clause_runs(clause, tails, depth):
+    """"code", "shell" or None: whether one clause runs a written path, and in
+    which language the body it runs is then read."""
+    words = shell_words(clause.strip().lstrip("(").strip()) \
+        or clause.split()
+    while words and words[0] in _RESERVED_LEAD:
+        words = words[1:]
+    if not words:
+        return None
+    handed = _handed_command(words)
+    if handed is not None and depth < _RUN_DEPTH:
+        ran = _later_runs(handed[1], tails, depth + 1)
+        if ran:
+            return ran
+    rest, candidates = program_candidates(words)
+    if any(_names_path(word, tails, program_word=True) for word in candidates):
+        return "shell"
+    program = _program_of(rest[0]) if rest else ""
+    interpreter = bool(_ANY_INTERPRETER.match(program))
+    if not (program in _SHELL_PROGRAMS or interpreter):
+        return None
+    language = "code" if interpreter else "shell"
+    script, inputs, inline = _program_operands(program, rest[1:])
+    if any(_names_path(word, tails) for word in script + inputs):
+        return language
+    # An interpreter's inline program is code this cannot parse, so a written
+    # name anywhere in it is read as a run; a shell's `-c` command was read
+    # as the command it is, above.
+    if interpreter and inline is not None and (
+            None in tails or any(t and t in inline for t in tails)):
+        return language
+    return None
+
+
+def _program_operands(program, args):
+    """([script operand], [`<` inputs], inline program or None) for a shell's
+    or an interpreter's arguments: the words that are the PROGRAM it runs,
+    never the arguments that program is handed - `python3 run.py data.txt`
+    runs `run.py` and reads `data.txt`. The option table is
+    `_OWN_PROGRAM`'s for an interpreter it knows, `_SHELL_VALUE_OPTIONS` for a
+    shell; an interpreter it does not know has every operand read as a
+    possible program, since which of its options take a value is unknown."""
+    table = [row for row in _OWN_PROGRAM if row[0].match(program)]
+    inline_flags, takes_value = ((table[0][1], table[0][2]) if table else
+                                 ((), _SHELL_VALUE_OPTIONS))
+    known = bool(table) or program in _SHELL_PROGRAMS
+    script, inputs, inline, index = [], [], None, 0
+    while index < len(args):
+        word = args[index]
+        if word == "<" or (word.startswith("<") and not word.startswith("<<")):
+            if word == "<":
+                index += 1
+            inputs.extend(args[index:index + 1] if word == "<" else [word[1:]])
+            index += 1
+            continue
+        if script or (inline is not None and known):
+            index += 1
+            continue
+        if word == "--":
+            script.extend(args[index + 1:index + 2])
+            index += 2
+            continue
+        if word in inline_flags or (not table and len(word) > 1
+                                    and word[0] == "-" and "c" in word[1:]
+                                    and program in _SHELL_PROGRAMS):
+            inline = " ".join(args[index + 1:index + 2])
+            index += 2
+            continue
+        if word in takes_value:
+            index += 2
+            continue
+        if len(word) > 1 and word[0] in "-+":
+            index += 1
+            continue
+        if known:
+            script.append(word)
+        else:
+            script.extend(w for w in args[index:] if not w.startswith("-"))
+            break
+        index += 1
+    return script, inputs, inline
+
+
+def _later_runs(text, tails, depth=0):
+    """"code", "shell" or None: whether any clause of `text` runs a path whose
+    last component is in `tails`. Each line is also split on its own, so a
+    quote one line leaves open - a later body's apostrophe - does not fold the
+    lines after it into one clause whose run is never read."""
+    clauses = command_clauses(text)
+    lines = text.split("\n")
+    if len(lines) > 1:
+        clauses = clauses + [c for line in lines for c in command_clauses(line)]
+    tails = _copied_tails(clauses, tails)
+    found = None
+    for clause in clauses:
+        ran = _clause_runs(clause, tails, depth)
+        if ran == "shell":
+            return ran
+        found = found or ran
+    return found
+
+
+def _copied_tails(clauses, tails):
+    """`tails` grown by every name a copy, a move or a link in `clauses` gives
+    a written file - `cp probe.sh run.sh; sh run.sh` runs the body under
+    another name. Read in any order and until nothing new is added, which can
+    only grow the set the runs are compared against."""
+    tails, grown = list(tails), True
+    while grown:
+        grown = False
+        for clause in clauses:
+            words = shell_words(clause.strip()) or clause.split()
+            dests = copy_destinations(words) or []
+            if not dests or not any(_names_path(w, tails) for w in words[1:]):
+                continue
+            new = [t for t in (_path_tail(d) for d in dests) if t not in tails]
+            tails += new
+            grown = grown or bool(new)
+    return tails
+
+
+def _written_body_runs(head, tail, after):
+    """"code", "shell" or None: the language a data body is read in because a
+    later clause of the same command runs the file the heredoc writes it to.
+    `head` and `tail` are the heredoc line around its marker, `after` the
+    command past its terminator."""
+    tails = [_path_tail(p) for p in _written_paths(head, tail)]
+    if not tails:
+        return None
+    return _later_runs(tail + "\n" + after, tails)
+
+
 def split_heredocs(cmd, pipe_data=False):
     """(text without heredoc bodies, bodies that are CODE, bodies that are SHELL).
 
@@ -3375,6 +3619,12 @@ def split_heredocs(cmd, pipe_data=False):
     body is kept as shell rather than dropped as data; quoting the delimiter is
     what makes the same bytes inert text.
 
+    A BODY WRITTEN TO A FILE A LATER CLAUSE RUNS IS THAT CLAUSE'S PROGRAM.
+    `cat > probe.sh <<'EOF'` then `sh probe.sh` (or `./probe.sh`, `. probe.sh`,
+    `python3 probe.py`) in the same command is graded as the language of the
+    run; the same write with nothing in the command running the file stays
+    data (`_written_body_runs`).
+
     Fail-safe about its own limits: a heredoc whose terminator never arrives is
     left in the text, so an unparseable command is judged exactly as strictly as
     before this existed. The pipe is read on the heredoc's own line only; a
@@ -3424,15 +3674,22 @@ def split_heredocs(cmd, pipe_data=False):
             code.append(body)
         elif tail.rstrip().endswith("\\"):
             shell.append(body)     # the line continues; its far side is unread
-        elif "|" in tail:
+        elif "|" in tail and (not pipe_data or live or not m.group(1)
+                              or head.split() != ["cat"]
+                              or not _pipes_to_script_run(tail, cmd)):
             # Only `cat` is vouched for as passing the body on unchanged: any
-            # other head may run it (awk's system()) or hand it elsewhere.
-            if (not pipe_data or live or not m.group(1)
-                    or head.split() != ["cat"]
-                    or not _pipes_to_script_run(tail, cmd)):
-                shell.append(body)  # what the far side does with it is unread
+            # other head may run it (awk's system()) or hand it elsewhere, so
+            # what the far side does with it is unread.
+            shell.append(body)
         elif live:
             shell.append(body)
+        else:
+            ran = _written_body_runs(line[:m.start()], tail,
+                                     "\n".join(lines[end + 1:]))
+            if ran == "code":
+                code.append(body)
+            elif ran:
+                shell.append(body)
         i = end + 1
     return "\n".join(kept), code, shell
 
