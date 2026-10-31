@@ -1,0 +1,56 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__deps.py": "pass",
+    "python3 tools/sweep-selftests.py tests/test__output_lints.py": "pass",
+    "python3 tools/prove-gates.py --list": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-31T19:37:21Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__deps.py` in a throwaway tree at HEAD exited 1 on \"AttributeError: module '_deps' has no attribute '_contract_scan'\" (read as python), and the task introduces '_contract_scan': absent from HEAD's module-level bindings of tools/lints/_deps.py and bound in the working tree's; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "tools/lints/_deps.py: (a) _scope_normalisers(scope) builds {local: normalisers} in one walk; _name_normalisers is a lookup in it; _scope_config_reads(..., index=None) builds the index for the scope it was handed and looks up locals in it. (b) _loader_facts(tree, siblings) holds module/function loader names, own wrappers, sibling aliases and borrow candidates once per parsed file; _borrowed_from_facts answers _borrowed_wrapper_names from them; _wrapper_map(trees, facts=None) and _runtime_loaded_sibling_names(..., facts=None) read them; _scan_edges_once takes facts per parsed tree (a basename collision keeps each copy's own facts). (c) _literal_index(tree) gives doc ids, label ids and string nodes in walk order from one walk; the three readers take (text, index=None) and keep the text form; register_citation_violations parses each .py once and hands the index to all three. (d) dict_key_contracts is split into _contract_scan (each function's _scope_nodes walked once, shared by _module_producers(tree, nodes), _mutated_parameters(node, nodes) and scan['nodes']) and the judge; _scope_index/_build_scope_index memoise per scope (keyed by the scope node) the assigned/added/unknown/calls/reads that _scope_key_sets, _call_sites and the report loop read every round. tools/prove-gates.py row ck3 anchor re-pointed to `normalisers = normalisers | index.get(local, frozenset())`; --list shows every row anchored. PLUGIN-BUILD-GUIDE.md ### tools/lints/_deps.py has one new paragraph on the one-walk-per-scope rule. That section held no memo paragraph, so the new paragraph names the memos itself. tests/test__deps.py gains ix1-ix12 and a module-level _CK3_PAIR that ck3 and ix4 share. Equivalence on the live tree, comparing HEAD's module (exec'd from git show) with the new one in one process: config_key_reads (134 keys), config_divergences, config_read_violations, register_citation_violations, _scan_edges_once (749 static/19 runtime), layer_violations, tests_import_violations, dict_key_contracts (296 producers, 1974 reads), dict_key_violations all SAME; the three citation readers compared file by file over 356 tracked .py files (112 hits) gave 0 differences. Each of `prove-gates.py --only config_read_violations | register_citation_violations | dict_key_violations | layer_violations | tests_import_violations` exited 0, with every red row red and every allow row red under over-fire. Block times, before -> after, one run each: dg-config-memo 24.8 -> 12.9 s, dg-config-key 8.5 -> 4.5, dg-citation 18.6 -> 7.4, dg-scan-memo 16.5 -> 8.8, dg-dict-key 13.2 -> 9.1. The 1-minute load average was 4.6-6.0 before and 7.3-10.2 after, so the after runs had the noisier machine. Gates: sweep tests/test__deps.py exit 0 (266 cases); sweep tests/test__output_lints.py + tests/test__refs.py exit 0 (173 + 292 cases); prove-gates --list exit 0; ruff and vermin clean on the changed .py. Dependants: the importers of _deps (_manifest_rules, _manifest_vocab, _doctor_policy, test__manifest_vocab, test__output, test__panel_paths, evals.json, tools/affected.py, tools/sweep-selftests.py) still hold, because only private helpers changed, every public answer is equal on the live tree, and git grep finds no caller of a changed helper outside the task files. tests/test__deps.py's uses of _check_label_citations/_py_docstring_citations keep the text form (rc8-rc14 pass). The _block_accessor and _fault_hits rows in prove-gates are untouched and anchored. PLUGIN-BUILD-GUIDE.md dependants: the new paragraph sits inside an existing section, so guide_enumeration is unaffected, and dg-guide passed in the sweep. P152.10's work (one parse per file in _output_lints/prove-gates) was not touched.",
+    "descriptive": "The dependency lints now index each scope, module and file once and look facts up; every lint answers exactly as before on the live tree, and the five profiled test__deps blocks run in roughly half the time."
+  },
+  "testsAdded": [
+    "ix1-ix4: per-scope normaliser index equals a per-name recomputation for the module and each function of a fixture whose `name` is trimmed in one function and taken as typed in another; the config scan attributes each read its own scope's normalisers; a poisoned index does not leak into the next build; _name_normalisers answers the ck3 pair",
+    "ix5-ix6: per-file loader facts equal the one-question helpers for every file of a fixture with a two-hop borrowed wrapper and a basename collision (one copy binds _loader as L); the runtime edges equal a recomputation and the concrete expected set",
+    "ix7-ix9: per-file literal index equals _docstring_constant_ids/_check_label_constant_ids/walk-ordered strings on a fixture with an if-body string, a fault-shaped label and a helper-handed label; each reader answers the same from index and text; register_citation_violations parses each .py once",
+    "ix10-ix12: dict-key per-scope index equals a fresh build over each scope's own nodes on a fixture binding `row` in the module, a function and a nested function; a poisoned entry is read for its scope only; the contract scan reports exactly the outer-scope finding carrying only `a`"
+  ],
+  "casesAdded": [
+    [
+      "ix1",
+      "ix2",
+      "ix3",
+      "ix4",
+      "ix5",
+      "ix6",
+      "ix7",
+      "ix8",
+      "ix9",
+      "ix10",
+      "ix11",
+      "ix12"
+    ]
+  ],
+  "claims": "claims:\n1 tools/lints/_deps.py: _scope_normalisers is the one walk _name_normalisers and _scope_config_reads read; _loader_facts is read by _wrapper_map/_runtime_loaded_sibling_names/_scan_edges_once; _literal_index is built once in register_citation_violations and passed to the three readers; _scope_index is read by _scope_key_sets, _call_sites and the dict_key_contracts report loop. The guide paragraph names exactly these.\n2 probe/mutations.py in a scratch export, 8 mutations, anchors asserted landed, pycache purged: ix2, ix4, ix5, ix6, ix7, ix8, ix9, ix10, ix11, ix12 each PASS->FAIL; restored True. prove-gates --only for config_read/register_citation/dict_key/layer/tests_import: all red rows red, all allow rows red under over-fire, exit 0 each.\n3 n/a - a speed change, not a fault fix; equivalence over the live tree: 10 of 10 answers SAME.\n4 n/a - no rule to an agent\n5 block timings measured once each, before (load 4.6-6.0) and after (load 7.3-10.2); stated as one run, with the load.\n6 n/a - no guard\n7 the docstring count was removed; the guide paragraph holds no number",
+  "stamp": "audit-stamp: {\"content\":\"sha256:b47864e746606f2b5242926432a31588734e8c6de4acf40b8e1fab075371ef71\",\"dirtyDigest\":\"sha256:4f581da0bc388b8f820eb3b117bef451139cbc98f428152f398a31c931ae0913\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"f93786161b2d73b8\",\"tests/test__deps.py\":\"518b272b6fa4c1a3\",\"tools/lints/_deps.py\":\"b8bc1a3607fb862d\",\"tools/prove-gates.py\":\"9209e294dc574281\"},\"head\":\"234c87ad\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"tests/test__deps.py\",\"tools/lints/_deps.py\",\"tools/prove-gates.py\"],\"scopeDigest\":\"sha256:22f09f0a922520f986515b64dbdcc012e67a549e739ef5d74cdf51dfba4bcfa0\",\"v\":2}",
+  "testsAddGaps": [
+    "tests/test__deps.py: each per-scope, per-module and per-file index equals a recomputation over a fixture module with a poisoned entry - bound to `ix1`, which the suite did not print",
+    "tests/test__deps.py: each per-scope, per-module and per-file index equals a recomputation over a fixture module with a poisoned entry - bound to `ix2`, which the suite did not print",
+    "tests/test__deps.py: each per-scope, per-module and per-file index equals a recomputation over a fixture module with a poisoned entry - bound to `ix3`, which the suite did not print",
+    "tests/test__deps.py: each per-scope, per-module and per-file index equals a recomputation over a fixture module with a poisoned entry - bound to `ix4`, which the suite did not print",
+    "tests/test__deps.py: each per-scope, per-module and per-file index equals a recomputation over a fixture module with a poisoned entry - bound to `ix5`, which the suite did not print",
+    "tests/test__deps.py: each per-scope, per-module and per-file index equals a recomputation over a fixture module with a poisoned entry - bound to `ix6`, which the suite did not print",
+    "tests/test__deps.py: each per-scope, per-module and per-file index equals a recomputation over a fixture module with a poisoned entry - bound to `ix7`, which the suite did not print",
+    "tests/test__deps.py: each per-scope, per-module and per-file index equals a recomputation over a fixture module with a poisoned entry - bound to `ix8`, which the suite did not print",
+    "tests/test__deps.py: each per-scope, per-module and per-file index equals a recomputation over a fixture module with a poisoned entry - bound to `ix9`, which the suite did not print",
+    "tests/test__deps.py: each per-scope, per-module and per-file index equals a recomputation over a fixture module with a poisoned entry - bound to `ix10`, which the suite did not print",
+    "tests/test__deps.py: each per-scope, per-module and per-file index equals a recomputation over a fixture module with a poisoned entry - bound to `ix11`, which the suite did not print",
+    "tests/test__deps.py: each per-scope, per-module and per-file index equals a recomputation over a fixture module with a poisoned entry - bound to `ix12`, which the suite did not print"
+  ],
+  "testsAddUnchecked": []
+}

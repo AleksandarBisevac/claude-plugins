@@ -1668,6 +1668,19 @@ a temp name of their own, which is what a fixed `<target>.tmp` shared between tw
 at once did not. `state_write_sites()` prints the corpus the rule judged. A method of the same name
 on a string or a path is not the `os` module's and is not read — the allow row in
 `tools/prove-gates.py` holds that line.
+**One walk per scope, module and file.** The default-tree scans (`_scan_edges`,
+`config_key_reads`) are memoised per process; inside one scan, a fact a scope, a module or a file
+answers on its own is computed once into an index and looked up, never re-derived per question:
+`_scope_normalisers(scope)` is what `_name_normalisers` and `_scope_config_reads` read,
+`_loader_facts(tree)` is what the wrapper fixpoint and the runtime-edge scan read, `_literal_index(tree)`
+is the one parse and walk `register_citation_violations` hands its three literal readers (a reader
+given only text still parses for itself), and `_scope_index` is what every round of the dict-key
+parameter fixpoint reads. An index is built for the unit its answer is attributed to — a config
+read is visited from the module and from its function, and each visit reads its own scope's index;
+two files sharing a basename each keep their own loader facts — because an index read for the
+neighbouring unit hands a name its namesake's facts and a divergence goes quiet. The `ix` cases in
+`tests/test__deps.py` compare each index against a recomputation over a fixture carrying exactly
+that neighbour.
 
 ### `tools/lints/_output_lints.py`, `_ui_theme_lints.py`, `_help_lints.py`, `_config_rules_lints.py`
 The half of four shipped modules that judges the repository rather than serving a user. Each used

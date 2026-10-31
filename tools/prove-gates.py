@@ -880,9 +880,10 @@ TABLE = (
  # line and its whitespace decided two lines down. Stop looking past the
  # expression and the repaired module reads as normalising NOTHING, so the rule
  # goes quiet about the very copy it exists to catch. `ck3` is the pre-fix pair
- # reconstructed as a fixture.
+ # reconstructed as a fixture. The anchor is the read's lookup in its scope's
+ # normaliser index, which is what `_name_normalisers` answers from.
  ("config_read_violations", L + "_deps.py", "replace",
-  "            normalisers = normalisers | _name_normalisers(scope, local)",
+  "            normalisers = normalisers | index.get(local, frozenset())",
   "            normalisers = normalisers", DEP, "ck3"),
  # --- The two lints the name-shaped derivation could not see ------------------
  # THE MUTATED FILE IS A TOOL, not the guard: what `hand_rolled_runners()` watches

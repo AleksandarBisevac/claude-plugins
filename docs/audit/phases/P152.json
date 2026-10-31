@@ -243,7 +243,7 @@
     {
       "id": "P152.3",
       "title": "Task steps, stored verdicts, decisions and submit shapes are tested as unit cases over the advance planners, with one end-to-end drive per family",
-      "status": "in_progress",
+      "status": "done",
       "description": "Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.3. Convert the 35 blocks listed there to unit cases over the advance predicates and _pending_turn; keep e2e-steps (the canonical three-task drive with its request count dp1-dp3, one red gate to a decision and its block answer dd1/dd2, one stored red replayed then measured again sv, one fix batch through one add --from-file - fx, one review.perTask key per value dk, one scope change sc). dl-block's lock cases keep a real audit-lock.py answer. Literal expectations only. Remove dropped labels from .github/sweep-costs.json.",
       "files": [
         "tests/test_drive_phase.py",
@@ -273,14 +273,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "234c87ad8dd1",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tests/test_drive_phase.py: 29 STAGES rows removed (dp dpm dr ucs dd ct dd3 rs rrs rm sv sv4 sv5 sv10 fx dt dk ow dsm gb fw pf pg pu pw bs sc fp mt) and three added. `e2e-steps` (_e2e_steps_cases) keeps the real drives: dp1-dp7, dd1 dd2 dd4, sv1-sv3 (stored red replayed then measured again), fb1 fb3 (one fix batch through one add), dk1 dk2, sc*, and the follower case `the` (git is its subject: the task commit carries the regenerated follower); its header comment carries the guarantee map and the paths no drive in it reaches. `ux-block` (_steps_unit_cases) holds dp2m-dp5m, dr1 dr2 dr2m, dd3 dd3m, rs1-rs5, `answering` (real write_state into a scratch stateDir, read back by audit-lookup.retry_reason), rm1-rm3, sv3m sv4 sv4r sv4m sv4o sv5 sv6 sv6r sv6m sv7-sv9 sv10 sv11 (stored-verdict cases over a scratch ledger written with _evio.append_row), dk1m, ct1 ct1r ct2, dt1-dt9, dl1 dl4, ow1-ow6, ds1m ds3m ds4m, ucs0-ucs2, bs1 bs2, gb1-gb3, pf1-pf6, the pg clauses, uc1-uc8, pw1 pw2, fp0 fp0b fp1, fw2, mt0-mt12: each asks the deciding function AND runs the acting code (advance, close_task, apply_answer, submit, scope_gap, explain, drive_task, wave_step, gate_step, follow_red_gate) over a context pointing at nothing, a plan written in the case and verbs answered by a recording fake; every call that could crash under a defect goes through _caught so a defect fails its case instead of killing the block. `uw-block` (_steps_verb_cases) holds the verb-subject cases with no drive: fb2 fb4 fb5-fb8 (real finding verb + add_fix_tasks over a plain project), rm4-rm7 (run-test-gate over one real git tree identity), pf7 (real brief verb), fp2 fp2b fp2c (real start + submit; the task's tests gain no falsifiers key), the stdin-bytes case. dl-block keeps dl2 dl3 dl5-dl11b. Not converted, kept as their own drive blocks: rw, pv, pv4 (writer-session hand-back and phase-review findings over a task's diff), gt (the harness's git call is its subject), sn5 (a whole drive's per-step signal lines). The mt fixture moved to a plain project with in-process verbs (no repo). Removed helpers left unreferenced: _owed_task_repo, _SV_GREEN_TOO, _planned_falsifier_repo, _preflight_repo, _language_repo, old _fix_task_over (rewritten without a drive). Case ids: the ids the 35 old blocks printed at HEAD and the ids e2e-steps+ux+uw+dl+rw+pv+pv4+gt+sn5 print now are the same multiset (diff of the sorted lists empty). Git-bypass scan: bare_git_calls(test_drive_phase.py) == [] as at HEAD (two new names that chained the file-wide git binding were renamed). .github/sweep-costs.json: the 29 dropped labels' rows removed and the table rewritten by tools/sweep-selftests.py record_costs from its own figures, platform and workers (the swd7 way); suite figure 2303.6 -> 1920.3 = sum of its blocks; no timing re-recorded, so e2e-steps/ux/uw carry no figure. Gates (exit codes read directly, no pipe): sweep tests/test_drive_phase.py 0 (745 cases), tests/_harness.py 0 (98), --selftest 0 (160/160), tests/test__output_lints.py 0 (173), tests/test_stamp_verification.py 0 (356); ruff and vermin -t=3.8- clean on the file. Times, single runs each, `python3 tools/sweep-selftests.py --loud tests/test_drive_phase.py`: before (HEAD) 870.0 slot-s over 103 blocks, wall 111.3 s, load 25.27 at start / 18.32 at end; after 765.7 slot-s over 77 blocks, wall 98.3 s, load 5.64 / 15.84. The converted set: 185.1 slot-s over 35 blocks before; e2e-steps 34.4 + ux 2.9 + uw 6.0 + dl 4.3 + rw 11.0 + pv 8.2 + pv4 5.9 + sn5 6.6 + gt 3.4 after. Measured once each under different load; not a property.",
+        "descriptive": "The step, stored-verdict, decision and submit cases of the drive suite now run mostly as unit cases over the deciding function and its acting code, with one real drive kept per family; every old case id is kept once and each converted case was shown red under a mutation."
       },
       "startedAt": "2026-10-31T18:02:05Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-31T19:05:49Z",
+      "verifiedBy": [
+        "e2e-steps: the kept end-to-end drives of a task's steps, with a header naming what each proves and where every converted case now lives",
+        "ux-block: unit cases over the deciding functions and the acting code, fake verbs, no repository",
+        "uw-block: verb-subject cases run for real with no drive (fix batch add, gate reuse over one tree, the brief's widen rule, a return still declaring falsifiers, stdin bytes)"
+      ],
       "notes": [
         {
           "at": "2026-10-31T16:23:47Z",
@@ -293,12 +297,23 @@
         "runId": "2026-10-31T18:58:03Z.f3bd5a",
         "status": "passed",
         "at": "2026-10-31T18:58:03Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "234c87ad8dd1",
+        "at": "2026-10-31T19:05:49Z",
+        "return": "docs/audit/evidence/returns/P152.3/20261031T180205Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task with tests.expectRedFirst false and no tests.add entry: no red-first proof is owed. The converted cases were instead shown able to fail by a mutation probe (probe/mutations.py in the scratchpad) over a git-archive HEAD export plus this task's two files: 21 defects put into drive-phase.py one at a time, each asserted landed, __pycache__ purged, ux-block run, driver restored byte for byte; all 21 KILLED, ux-block green before and after (probe exit 0).",
+        "at": "2026-10-31T18:45:25Z (the probe's last run finished, scratch tree)"
       }
     },
     {
       "id": "P152.4",
       "title": "Wave decisions and the CI cadence are tested as unit cases, with three end-to-end drives",
-      "status": "pending",
+      "status": "blocked",
       "description": "Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.4. Convert ci wv wz wc wr wp nr wh wt wt5 wo sk to unit cases over ci_due/ci_settle/ci_after_close, wave_width/hooks_width, parked-return and sibling-red routing; keep e2e-wave (two disjoint tasks in one next wv1, one parked return nr, one full cadence cycle with the fake gh ci). wqm and wj stay end-to-end. Do not widen _ci_fake. drive-phase.py changes only if ci_settle's decision is not separable from its gh call, then as one more seam ci_turn(run_state, counter, cadence). Remove dropped labels from .github/sweep-costs.json.",
       "files": [
         "tests/test_drive_phase.py",
@@ -313,7 +328,9 @@
           "python3 tools/sweep-selftests.py tests/test_drive_phase.py",
           "python3 tools/sweep-selftests.py tests/_harness.py",
           "python3 tools/sweep-selftests.py --selftest",
-          "python3 tools/sweep-selftests.py tests/test__output_lints.py"
+          "python3 tools/sweep-selftests.py tests/test__output_lints.py",
+          "python3 tools/sweep-selftests.py tests/test_stamp_verification.py",
+          "python3 tools/reach-diff.py plugins/audit/scripts/governance/drive-phase.py tests/test_drive_phase.py --base 234c87ad --head HEAD"
         ],
         "gateBasis": "declared"
       },
@@ -324,7 +341,7 @@
       ],
       "risk": "med",
       "blockedBy": [
-        "P152.3"
+        "P152.13-6jb"
       ],
       "dependsOn": [],
       "attempts": 0,
@@ -342,8 +359,14 @@
           "at": "2026-10-31T16:23:48Z",
           "text": "the task only deletes block rows for labels it removes; the table's shape and the runner's fallback for an unknown block are unchanged, and the runner's own sb cases are in the gate",
           "waives": "tools/sweep-selftests.py"
+        },
+        {
+          "at": "2026-10-31T19:06:54Z",
+          "text": "it reads drive-phase.py's section; this task edits drive-phase.py only if ci_settle needs one more seam, and then the guide's planner paragraph is reconciled at the phase review",
+          "waives": "PLUGIN-BUILD-GUIDE.md"
         }
-      ]
+      ],
+      "blockedReason": "waits on P152.13-6jb: the drive suite's lost reach is closed and the reach check exists before a third conversion"
     },
     {
       "id": "P152.5",
@@ -646,7 +669,7 @@
     {
       "id": "P152.9",
       "title": "The dependency lints index each scope, module and file once",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.9. (a) _scope_normalisers(scope) built in one walk, _name_normalisers a lookup in it; (b) _wrapper_map computes the loader and alias name sets once per module; (c) register_citation_violations parses each file once and hands the tree to its readers (text form kept for unit cases); (d) dict_key_contracts builds a per-module scope index. No lint changes its answer. Cases: each index equals a recomputation on a fixture module with a poisoned entry; _name_normalisers still answers the ck3 pair. prove-gates row ck3's anchor follows its line.",
       "files": [
         "tools/lints/_deps.py",
@@ -675,14 +698,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-31T19:08:01Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -701,7 +724,13 @@
           "text": "it quotes a verdict label prove-gates prints; this task adds or re-points prove-gates rows and does not change that label",
           "waives": "tests/_harness.py"
         }
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-31T19:44:02Z.8044d4",
+        "status": "passed",
+        "at": "2026-10-31T19:44:02Z"
+      }
     },
     {
       "id": "P152.10",
@@ -788,7 +817,8 @@
         "gate": [
           "python3 tools/sweep-selftests.py tests/test_stamp_verification.py",
           "python3 tools/sweep-selftests.py --selftest",
-          "python3 tools/sweep-selftests.py tests/_harness.py"
+          "python3 tools/sweep-selftests.py tests/_harness.py",
+          "python3 tools/reach-diff.py plugins/audit/scripts/governance/stamp-verification.py tests/test_stamp_verification.py --base 234c87ad --head HEAD"
         ],
         "gateBasis": "declared"
       },
@@ -798,7 +828,9 @@
         "before-you-claim"
       ],
       "risk": "med",
-      "blockedBy": [],
+      "blockedBy": [
+        "P152.12-6jb"
+      ],
       "dependsOn": [],
       "attempts": 0,
       "maxAttempts": 3,
@@ -837,6 +869,93 @@
           "waives": "tools/sweep-selftests.py"
         }
       ]
+    },
+    {
+      "id": "P152.12-6jb",
+      "title": "A test conversion is checked mechanically: the lines of a module its suite reached before are still reached after",
+      "status": "pending",
+      "description": "Two reviews in a row (P152.2 and P152.3) found the same class: an end-to-end block converted to unit cases over a planner left the code that ACTS on the planner's answer run by no test (the advance sign-off route, the one-task route in drive_locked, the ADO echo in render). Finding these by reading is enumeration; close the class with an invariant. Add tools/reach-diff.py: given a module path, a suite path and two git revisions, it runs the suite's blocks (each STAGES block, or the whole file) at each revision in a scratch export with a line tracer restricted to that module's code objects, and prints every line reached at the base revision and not reached at the head revision, grouped by enclosing function, exit 1 when any such line exists and 0 otherwise; a line that moved is matched by its function and text, not its number. It never writes the checkout. Its own --selftest proves both directions on a fixture module and suite: dropping the only case that reaches a branch goes red and names the line; a pure refactor that only moves code stays green. CONTRIBUTING.md: one paragraph where test conversions are described, naming the tool as the check a conversion owes.",
+      "files": [
+        "tools/reach-diff.py",
+        "CONTRIBUTING.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/reach-diff.py: a fixture suite that stops reaching one branch of a fixture module is reported with that line and exits 1; a fixture change that only moves the branch exits 0"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tools/reach-diff.py",
+          "python3 tools/sweep-selftests.py tests/test__output_lints.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P152.13-6jb",
+      "title": "Every line of the driver the converted drive suite stopped reaching is reached again or named as reached elsewhere",
+      "status": "pending",
+      "description": "Run tools/reach-diff.py over plugins/audit/scripts/governance/drive-phase.py and tests/test_drive_phase.py from 92c399f5 (planners extracted, before any conversion) to HEAD. For every line reported, add or extend a case that runs it and asserts what it does, proven red by deleting the line in a scratch export; or, where the line is reached by another suite, name that suite in the e2e header comment and show its run. Covers the review findings of P152.2 and P152.3: the advance sign-off route (one advance call in e2e-signoff, clean and over an open finding), the one-task route (dt9 runs drive_locked or main with drive_phase failing if called), the ADO echo in render (dt5/dt6 call render and assert literal lines), labels that claim more than their case checks (sq3/sq4, rr2, rr4, sr1), and the unwalked-paths list in the e2e-signoff header. Also correct the prose the conversions left stale: PLUGIN-BUILD-GUIDE.md's drive-phase paragraphs (the planners paragraph and the drive-phase.py section comment claim every plain-value branch is a planner; the sg paragraph says sg3/sg3m/sg4m drive; the unit-block paragraph names only up/ut/uq/uc; 'The dt cases drive it'). The task ends with reach-diff exiting 0 over the same range, its output quoted in the return. If .github/sweep-costs.json changes, regenerate it through record_costs.",
+      "files": [
+        "tests/test_drive_phase.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        ".github/sweep-costs.json"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: the one-task route, the advance sign-off and the ADO echo in render are each run by a case that goes red when the acting line is deleted"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py",
+          "python3 tools/sweep-selftests.py tests/test_stamp_verification.py",
+          "python3 tools/reach-diff.py plugins/audit/scripts/governance/drive-phase.py tests/test_drive_phase.py --base 92c399f5 --head HEAD"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [
+        "P152.12-6jb"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "reviewPerTask": "signals",

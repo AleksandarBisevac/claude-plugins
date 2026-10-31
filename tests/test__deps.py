@@ -2498,6 +2498,7 @@ def _citation_cases(check):
           and _output_lints.prose_scan_exemption(
                   "tests/test__output.py", _cs_rows) is None
           and _output_lints.prose_scan_exemption("CHANGELOG.md", _cs_rows) is not None)
+    _ix_citation_cases(check)
 
 
 def _scan_memo_cases(check):
@@ -2663,6 +2664,7 @@ def _scan_memo_cases(check):
         M._scan_edges_once = _real_once
         M._EDGES.clear()
         shutil.rmtree(_mem_tmp, ignore_errors=True)
+    _ix_wrapper_cases(check)
 
 
 def _config_memo_cases(check):
@@ -2737,6 +2739,28 @@ def _config_memo_cases(check):
         M._config_key_reads_once = _cm_real
         M._CONFIG_READS.clear()
         shutil.rmtree(_cm_tmp, ignore_errors=True)
+    _ix_config_cases(check)
+
+
+# The two derivations of `meta.ado.types.bug` as they stood before `bug_type`:
+# `ck3` scans them as a tree, `ix4` asks `_name_normalisers` about each scope.
+_CK3_PAIR = (
+    ("_ado_parent.py",
+     'def inventory(ado):\n'
+     '    types = ado.get("types") or {}\n'
+     '    bug_wit = types.get("bug") or "Bug"\n'
+     '    return bug_wit\n'),
+    ("_ado_conventions.py",
+     'DEFAULT_BUG_TYPE = "Bug"\n'
+     '\n'
+     '\n'
+     'def unparented_types(ado):\n'
+     '    types = ado.get("types") or {}\n'
+     '    named = types.get("bug")\n'
+     '    if isinstance(named, str) and named.strip():\n'
+     '        return (named.strip(),)\n'
+     '    return (DEFAULT_BUG_TYPE,)\n'),
+)
 
 
 def _config_key_cases(check):
@@ -2771,22 +2795,7 @@ def _config_key_cases(check):
           "table written on the day it landed: %r" % (_ck_live,),
           _ck_live == [])
 
-    _ck_dir = _ck_tree((
-        ("_ado_parent.py",
-         'def inventory(ado):\n'
-         '    types = ado.get("types") or {}\n'
-         '    bug_wit = types.get("bug") or "Bug"\n'
-         '    return bug_wit\n'),
-        ("_ado_conventions.py",
-         'DEFAULT_BUG_TYPE = "Bug"\n'
-         '\n'
-         '\n'
-         'def unparented_types(ado):\n'
-         '    types = ado.get("types") or {}\n'
-         '    named = types.get("bug")\n'
-         '    if isinstance(named, str) and named.strip():\n'
-         '        return (named.strip(),)\n'
-         '    return (DEFAULT_BUG_TYPE,)\n')))
+    _ck_dir = _ck_tree(_CK3_PAIR)
     _ck_none = os.path.join(_ck_dir, "no-hooks-here")
     try:
         _ck_div = M.config_divergences(_ck_dir, _ck_none)
@@ -3460,6 +3469,7 @@ def _dict_key_cases(check):
     finally:
         shutil.rmtree(_dk_quiet, ignore_errors=True)
         shutil.rmtree(_dk_torn, ignore_errors=True)
+    _ix_dict_cases(check)
 
 
 def _writer_cases(check):
@@ -3868,6 +3878,368 @@ def _git_path_base_cases(check):
 # per block lets them run side by side: a full run starts one per block, a few
 # at a time, and replays their cases in this order (`_harness.staged_main`).
 # `--stage LABEL` runs only the blocks it names, in this process.
+# --- one walk per scope, per module, per file: the indexes are the walks -------
+# Four lints used to re-walk the same scope, module or file once per question
+# asked of it, and now build one index per scope, module or file and look the
+# answer up. An index is the optimisation that can be WRONG rather than slow,
+# and the way it goes wrong here has one shape: built for the wrong unit - the
+# module's index read for a function, the first file's facts read for a second
+# file of the same name - so a fact attributed to one scope quietly answers for
+# another and a divergence goes quiet. Each fixture below therefore carries one
+# POISONED ENTRY: a name, a module or a literal whose answer differs between
+# the unit it belongs to and the unit next to it, so an index built for the
+# wrong unit returns a different answer than the recomputation does.
+_IX_NORMALISED = (
+    'def trimmed(ado):\n'
+    '    types = ado.get("types") or {}\n'
+    '    name = types.get("bug")\n'
+    '    return name.strip()\n'
+    '\n'
+    '\n'
+    'def typed(ado):\n'
+    '    types = ado.get("types") or {}\n'
+    '    name = types.get("task")\n'
+    '    return name\n'
+    '\n'
+    '\n'
+    'def lowered(value):\n'
+    '    return value.lower().strip()\n')
+
+
+def _ix_walk_normalisers(scope):
+    """`{local: normalisers}` for `scope`, one `ast.walk` per name asked about -
+    the shape `_name_normalisers` had before it became a lookup, kept here as
+    the independent recomputation the index is compared against."""
+    names = set(n.id for n in ast.walk(scope) if isinstance(n, ast.Name))
+    out = {}
+    for name in sorted(names):
+        found = set()
+        for node in ast.walk(scope):
+            if (isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr in M._TEXT_NORMALISERS
+                    and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id == name):
+                found.add(node.func.attr)
+        if found:
+            out[name] = frozenset(found)
+    return out
+
+
+def _ix_config_cases(check):
+    """The per-scope normaliser index the config-read scan looks locals up in."""
+    _ix_tree = ast.parse(_IX_NORMALISED)
+    _ix_scopes = [_ix_tree] + [n for n in ast.walk(_ix_tree)
+                               if isinstance(n, ast.FunctionDef)]
+    _ix_built = [M._scope_normalisers(s) for s in _ix_scopes]
+    _ix_walked = [_ix_walk_normalisers(s) for s in _ix_scopes]
+    _ix_typed = _ix_scopes[[getattr(s, "name", None)
+                            for s in _ix_scopes].index("typed")]
+    check("ix1 the per-scope normaliser index equals a recomputation that "
+          "walks the scope once per name, for the module AND every function "
+          "in it (%d scopes) - and the poisoned entry tells them apart: "
+          "`name` is trimmed in `trimmed` and taken as typed in `typed`, so an "
+          "index built for the module and read for a function answers "
+          "%r where the function's own answer is %r"
+          % (len(_ix_scopes), _ix_built[0].get("name"),
+             M._scope_normalisers(_ix_typed).get("name")),
+          _ix_built == _ix_walked and len(_ix_scopes) == 4
+          and _ix_built[0].get("name") == frozenset(["strip"])
+          and "name" not in M._scope_normalisers(_ix_typed)
+          and _ix_built[0].get("value") == frozenset(["lower"]))
+
+    _ix_reads = M._module_config_reads(
+        _ix_tree, frozenset(["ado"]), frozenset(["ado", "types", "bug", "task"]))
+    check("ix2 ...and the scan reading through it attributes each read the "
+          "normalisers of the scope that holds it: the `task` read in `typed` "
+          "is AS TYPED and the `bug` read in `trimmed` is trimmed. An index "
+          "built once for the module and handed to every scope makes both "
+          "trimmed, and the divergence between two such readers goes quiet: %r"
+          % (_ix_reads,),
+          ("ado.types.bug", 3, ("strip",)) in _ix_reads
+          and ("ado.types.task", 9, ()) in _ix_reads
+          and len([r for r in _ix_reads if r[0] == "ado.types.task"]) == 1)
+
+    _ix_poisoned = M._scope_normalisers(_ix_scopes[0])
+    _ix_poisoned["name"] = frozenset(["poison"])
+    check("ix3 ...and each call builds its OWN index: poisoning one answer "
+          "(the cm1 pattern) leaves the next build equal to the recomputation",
+          M._scope_normalisers(_ix_scopes[0]) == _ix_walked[0])
+
+    _ix_pair = dict((name, ast.parse(body)) for name, body in _CK3_PAIR)
+    _ix_parent = [n for n in ast.walk(_ix_pair["_ado_parent.py"])
+                  if isinstance(n, ast.FunctionDef)][0]
+    _ix_conv = [n for n in ast.walk(_ix_pair["_ado_conventions.py"])
+                if isinstance(n, ast.FunctionDef)][0]
+    check("ix4 `_name_normalisers` still answers the ck3 pair, now as a lookup "
+          "in the scope's index: `bug_wit` in `inventory` is taken as typed and "
+          "`named` in `unparented_types` is trimmed on a LATER line than the "
+          "read - %r / %r"
+          % (M._name_normalisers(_ix_parent, "bug_wit"),
+             M._name_normalisers(_ix_conv, "named")),
+          M._name_normalisers(_ix_parent, "bug_wit") == frozenset()
+          and M._name_normalisers(_ix_conv, "named") == frozenset(["strip"])
+          and M._name_normalisers(_ix_conv, "types") == frozenset())
+
+
+_IX_LOADER_TREE = (
+    ("_loader.py", "def load(name, filename):\n    return name\n\n\n"
+                   "def load_script(filename):\n    return filename\n"),
+    ("_base.py", "import _loader\n\n\ndef _load(name, filename):\n"
+                 "    return _loader.load(name, filename)\n"),
+    ("_mid.py", "import _base\n\n_load = _base._load\n"),
+    ("_user.py", "from _mid import _load\n\n\ndef f():\n"
+                 "    return _load(\"x\", \"_target.py\")\n"),
+    ("_target.py", "pass\n"),
+    ("_other.py", "pass\n"),
+    (os.path.join("a", "_dup.py"),
+     "import _loader\n\n\ndef f():\n"
+     "    return _loader.load_script(\"_target.py\")\n"),
+    (os.path.join("b", "_dup.py"),
+     "import _loader as L\n\n\ndef g():\n"
+     "    return L.load_script(\"_other.py\")\n"),
+)
+
+
+def _ix_wrapper_cases(check):
+    """The per-module loader facts the wrapper map and the runtime scan read."""
+    _ix_root = tempfile.mkdtemp(prefix="audit-deps-ix-")
+    try:
+        for _name, _body in _IX_LOADER_TREE:
+            _path = os.path.join(_ix_root, _name)
+            if not os.path.isdir(os.path.dirname(_path)):
+                os.makedirs(os.path.dirname(_path))
+            with open(_path, "w", encoding="utf-8") as _fh:
+                _fh.write(_body)
+        _ix_modules, _ix_collisions = M._module_files(_ix_root)
+        _ix_sib = set(_ix_modules)
+        _ix_parsed = []
+        _ix_trees = {}
+        for _mod in sorted(_ix_modules):
+            for _rel, _path in _ix_modules[_mod]:
+                with open(_path, "r", encoding="utf-8") as _fh:
+                    _tree = ast.parse(_fh.read())
+                _ix_parsed.append((_mod, _tree))
+                _ix_trees.setdefault(_mod, _tree)
+        _ix_facts = [M._loader_facts(t, _ix_sib) for _m, t in _ix_parsed]
+        _ix_bad = []
+        _ix_plain_map = M._wrapper_map(_ix_trees)
+        for (_mod, _tree), _f in zip(_ix_parsed, _ix_facts):
+            _mn, _fn = M._loader_names(_tree)
+            _want = {"module_names": _mn, "function_names": _fn,
+                     "wrappers": M._loader_wrapper_names(_tree, _mn, _fn),
+                     "aliases": M._sibling_module_aliases(_tree, _ix_sib),
+                     "borrowed": M._borrowed_wrapper_names(
+                         _tree, _ix_sib, _ix_plain_map)}
+            _got = {"module_names": _f["module_names"],
+                    "function_names": _f["function_names"],
+                    "wrappers": _f["wrappers"], "aliases": _f["aliases"],
+                    "borrowed": M._borrowed_from_facts(_f, _ix_plain_map)}
+            if _got != _want:
+                _ix_bad.append((_mod, _got, _want))
+        check("ix5 the per-module loader facts equal a recomputation through "
+              "the one-question helpers, for every parsed file (%d) - the "
+              "collision pair `a/_dup` and `b/_dup` each against ITS OWN tree, "
+              "since one binds `_loader` plainly and the other as `L`: %r"
+              % (len(_ix_parsed), _ix_bad),
+              not _ix_bad and len(_ix_parsed) == 8
+              and _ix_collisions == ["_dup"])
+
+        _ix_runtime = M._scan_edges_once(_ix_root)[1]
+        _ix_recomputed = set()
+        for _mod, _tree in _ix_parsed:
+            for _loaded in M._runtime_loaded_sibling_names(
+                    _tree, _ix_sib, _mod, _ix_plain_map):
+                _ix_recomputed.add((_mod, _loaded))
+        check("ix6 ...and the scan reading those facts finds the same runtime "
+              "edges a recomputation finds, among them the two-hop borrowed "
+              "wrapper and BOTH copies of the colliding module - facts keyed "
+              "by module name hand `b/_dup` the first copy's loader names and "
+              "lose its `L.load_script` edge: %r" % (sorted(_ix_runtime),),
+              _ix_runtime == _ix_recomputed
+              and M._wrapper_map(_ix_trees, dict(
+                  (m, M._loader_facts(t, _ix_sib))
+                  for m, t in _ix_trees.items())) == _ix_plain_map
+              and sorted(_ix_runtime) == [("_dup", "_other"),
+                                          ("_dup", "_target"),
+                                          ("_user", "_target")])
+    finally:
+        shutil.rmtree(_ix_root, ignore_errors=True)
+
+
+# The fault-shaped tokens below are this scanner's own fixtures, which is what
+# `CITATION_SCAN_EXEMPT`'s row for this file is for.
+_IX_CITING = (
+    '"""Module doc.\n\nF21 is the module docstring\'s citation.\n"""\n'
+    '\n'
+    '\n'
+    'class Holder(object):\n'
+    '    """F22 in a class docstring."""\n'
+    '\n'
+    '    def method(self):\n'
+    '        """F23 in a nested method docstring."""\n'
+    '        if self:\n'
+    '            "F24 first in an if body is no docstring"\n'
+    '        return "F25 in a returned message"\n'
+    '\n'
+    '\n'
+    'def _cases(check, expect):\n'
+    '    check("F26 a fault-shaped LABEL is the case id, exempt", True)\n'
+    '    check("zz1 this label cites F27 mid message", True)\n'
+    '    check("zz2 formatted, citing F28 %r" % ("F29 data",), True)\n'
+    '    expect("F30 handed to another helper", True)\n')
+
+
+def _ix_citation_cases(check):
+    """The per-file literal index the three citation readers share."""
+    _ix_tree = ast.parse(_IX_CITING)
+    _ix_index = M._literal_index(_ix_tree)
+    _ix_strings = [n for n in ast.walk(_ix_tree)
+                   if isinstance(n, ast.Constant) and isinstance(n.value, str)]
+    check("ix7 the per-file literal index equals the recomputation each reader "
+          "used to make for itself - the docstring nodes, the check-label "
+          "nodes and every string literal in walk order - over a file whose "
+          "poisoned entries sit one step from a claim: a string first in an "
+          "`if` body (no docstring), a fault-shaped LABEL (claimed, exempt) "
+          "and a label handed to a helper not named `check` (unclaimed)",
+          _ix_index["doc"] == M._docstring_constant_ids(_ix_tree)
+          and _ix_index["label"] == M._check_label_constant_ids(_ix_tree)
+          and [id(n) for n in _ix_index["strings"]]
+          == [id(n) for n in _ix_strings]
+          and len(_ix_index["doc"]) == 3 and len(_ix_index["label"]) == 3)
+
+    _ix_pairs = (
+        ("docstring", M._py_docstring_citations),
+        ("label", M._check_label_citations),
+        ("other", M._py_other_literal_citations))
+    _ix_text = dict((k, f(_IX_CITING)) for k, f in _ix_pairs)
+    _ix_tree_form = dict((k, f(_IX_CITING, _ix_index)) for k, f in _ix_pairs)
+    check("ix8 ...and each reader answers the same from the shared index as "
+          "from the text it parses itself, with every reader finding "
+          "something, so a reader the index starved would show: %r"
+          % (_ix_tree_form,),
+          _ix_text == _ix_tree_form
+          and [t for _l, t in _ix_text["docstring"]] == ["F21", "F22", "F23"]
+          and [t for _l, t in _ix_text["label"]] == ["F27", "F28"]
+          and sorted(t for _l, t in _ix_text["other"])
+          == ["F24", "F25", "F29", "F30"])
+
+    _ix_tmp = tempfile.mkdtemp(prefix="audit-deps-ix-rc-")
+    _ix_parses = []
+    _ix_real_parse = ast.parse
+
+    def _ix_counting_parse(source, *args, **kwargs):
+        _ix_parses.append(1)
+        return _ix_real_parse(source, *args, **kwargs)
+
+    try:
+        with open(os.path.join(_ix_tmp, ".gitignore"), "w",
+                  encoding="utf-8") as _fh:
+            _fh.write("__pycache__/\n")
+        for _name in ("one.py", "two.py"):
+            with open(os.path.join(_ix_tmp, _name), "w", encoding="utf-8") as _fh:
+                _fh.write(_IX_CITING)
+        ast.parse = _ix_counting_parse
+        try:
+            _ix_hits = M.register_citation_violations(_ix_tmp)
+        finally:
+            ast.parse = _ix_real_parse
+        check("ix9 ...and the file walk parses each `.py` ONCE and hands the "
+              "tree to all three readers (%d parse(s) for 2 files), finding "
+              "the same nine citations in each copy: %d hit(s)"
+              % (len(_ix_parses), len(_ix_hits)),
+              len(_ix_parses) == 2
+              and sorted(t for r, _l, t in _ix_hits if r == "one.py")
+              == sorted(t for r, _l, t in _ix_hits if r == "two.py")
+              and len([h for h in _ix_hits if h[0] == "one.py"]) == 9)
+    finally:
+        shutil.rmtree(_ix_tmp, ignore_errors=True)
+
+
+_IX_DICT_TREE = (
+    ("producer.py",
+     'def make():\n'
+     '    return {"a": 1}\n'
+     '\n'
+     '\n'
+     'def other():\n'
+     '    return {"b": 2}\n'),
+    ("consumer.py",
+     'import producer\n'
+     '\n'
+     'row = producer.other()\n'
+     '\n'
+     '\n'
+     'def outer():\n'
+     '    row = producer.make()\n'
+     '\n'
+     '    def inner():\n'
+     '        row = producer.other()\n'
+     '        return row.get("b")\n'
+     '    return row.get("a"), row.get("c"), inner()\n'),
+)
+
+
+def _ix_dict_cases(check):
+    """The per-scope index the dict-key contract scan reads every round."""
+    _ix_root = _ck_tree(_IX_DICT_TREE)
+    try:
+        _ix_none = os.path.join(_ix_root, "no-hooks-here")
+        _ix_scan = M._contract_scan(_ix_root, _ix_none)["scan"]
+        _ix_bad = []
+        _ix_scopes = 0
+        for _rel in sorted(_ix_scan["trees"]):
+            for _owner, _scope in M._scopes_of(_ix_scan, _rel):
+                _ix_scopes += 1
+                _built = M._scope_index(_ix_scan, _rel, _scope)
+                _fresh = M._build_scope_index(_ix_scan, _rel, _scope)
+                _body = _scope.body
+                _nodes = [id(n) for n in M._scope_nodes(_body)]
+                if (_built != _fresh
+                        or [id(n) for n in _built["nodes"]] != _nodes):
+                    _ix_bad.append((_rel, _owner))
+        _ix_outer = [s for o, s in M._scopes_of(_ix_scan, "consumer.py")
+                     if o == "outer"][0]
+        _ix_outer_rows = M._scope_index(_ix_scan, "consumer.py",
+                                        _ix_outer)["assigned"].get("row", [])
+        check("ix10 the per-scope dict-key index equals a fresh build for every "
+              "scope of the fixture (%d), each over that scope's OWN nodes - "
+              "and the poisoned entry holds: `row` is bound in the module, in "
+              "`outer` and in the `inner` nested inside it, and `outer`'s "
+              "index carries its own one binding (%d), not the nested one or "
+              "the module's: %r" % (_ix_scopes, len(_ix_outer_rows), _ix_bad),
+              not _ix_bad and _ix_scopes == 6 and len(_ix_outer_rows) == 1)
+
+        _ix_key = sorted(_ix_scan["index"])[0]
+        _ix_scan["index"][_ix_key] = {"poison": True}
+        _ix_seen = [(M._scope_index(_ix_scan, _rel, _s),
+                     M._build_scope_index(_ix_scan, _rel, _s))
+                    for _rel in sorted(_ix_scan["trees"])
+                    for _o, _s in M._scopes_of(_ix_scan, _rel)]
+        check("ix11 ...and the index is the one the scan READS: the poisoned "
+              "entry is what the next lookup of its scope returns, while every "
+              "other scope (%d) still answers its own fresh build - a memo "
+              "whose key never matched would rebuild instead and pass every "
+              "case above, and one keyed by module would poison its siblings"
+              % (len(_ix_seen) - 1,),
+              len(_ix_seen) == _ix_scopes
+              and len([b for b, _f in _ix_seen if b == {"poison": True}]) == 1
+              and len([b for b, f in _ix_seen if b == f]) == _ix_scopes - 1)
+
+        _ix_picture = M.dict_key_contracts(_ix_root, _ix_none)
+        check("ix12 ...and the contract scan reading it attributes each read "
+              "to its own scope's binding: `row.get(\"c\")` in `outer` is the "
+              "one finding and names only `a` as carried - an index built for "
+              "the module, or walked into `inner`, would carry no key or both: "
+              "%r" % (_ix_picture["findings"],),
+              len(_ix_picture["findings"]) == 1
+              and _ix_picture["findings"][0][0] == "consumer.py:12"
+              and _ix_picture["findings"][0][1].endswith("carry is a")
+              and _ix_picture["reads"] == 3)
+    finally:
+        shutil.rmtree(_ix_root, ignore_errors=True)
+
+
 STAGES = (
     ("dg-graph", "_layer_graph_cases"),
     ("dg-guide", "_guide_cases"),

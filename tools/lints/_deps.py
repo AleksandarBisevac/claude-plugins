@@ -1187,23 +1187,74 @@ def _borrowed_wrapper_names(tree, sibling_names, wrapper_map):
     return names
 
 
-def _wrapper_map(trees):
+def _loader_facts(tree, sibling_names):
+    """Everything about one file's loader use that the wrapper map does not change.
+
+    `{"module_names", "function_names", "wrappers", "aliases", "borrows"}` -
+    `_loader_names`, `_loader_wrapper_names` and `_sibling_module_aliases`, plus
+    `borrows`: every `(owner module, attribute, local name)` that WOULD be a
+    borrowed wrapper if the owner's map held the attribute, which is the part of
+    `_borrowed_wrapper_names` that reads the tree. Those answers depend on the
+    file alone, while the wrapper map grows to a fixpoint and the runtime scan
+    asks again for every file - so each was re-derived once a round and once more
+    per file. Computed once here, and read by `_wrapper_map`,
+    `_borrowed_from_facts` and `_runtime_loaded_sibling_names`.
+
+    ONE TREE'S FACTS, NOT ONE MODULE NAME'S. Two files can share a basename (a
+    collision `layer_violations()` reports), and each copy is scanned for its
+    own runtime edges; a copy read through its namesake's facts would look for
+    the other file's loader aliases in its own calls and lose its edges.
+    """
+    module_names, function_names = _loader_names(tree)
+    aliases = _sibling_module_aliases(tree, sibling_names)
+    borrows = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and not node.level:
+            base = (node.module or "").split(".")[0]
+            for alias in node.names:
+                borrows.append((base, alias.name, alias.asname or alias.name))
+        elif isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target, value = node.targets[0], node.value
+            if not isinstance(target, ast.Name) or not isinstance(value, ast.Attribute):
+                continue
+            if not isinstance(value.value, ast.Name):
+                continue
+            owner = aliases.get(value.value.id)
+            if owner:
+                borrows.append((owner, value.attr, target.id))
+    return {"module_names": module_names, "function_names": function_names,
+            "wrappers": _loader_wrapper_names(tree, module_names, function_names),
+            "aliases": aliases, "borrows": borrows}
+
+
+def _borrowed_from_facts(facts, wrapper_map):
+    """`_borrowed_wrapper_names` answered from one file's `_loader_facts`."""
+    return set(local for owner, attr, local in facts["borrows"]
+               if attr in wrapper_map.get(owner, ()))
+
+
+def _wrapper_map(trees, facts=None):
     """module name -> the loader-wrapper names it can be called through.
 
     Grown to a FIXPOINT rather than in a fixed number of passes: a module that
     borrows a wrapper is itself somewhere the next module can borrow it from
     (`_load = _base._load` is a wrapper under this rule exactly as the original
     `def` is), so a two-pass version would see one hop of a chain and stop.
+
+    `facts` is module name -> `_loader_facts` of THAT module's tree in `trees`,
+    built here when not given.
     """
     sibling_names = set(trees)
+    if facts is None:
+        facts = dict((mod, _loader_facts(tree, sibling_names))
+                     for mod, tree in trees.items())
     wrapper_map = {}
-    for mod, tree in trees.items():
-        module_names, function_names = _loader_names(tree)
-        wrapper_map[mod] = _loader_wrapper_names(tree, module_names, function_names)
+    for mod in trees:
+        wrapper_map[mod] = set(facts[mod]["wrappers"])
     while True:
         grew = False
-        for mod, tree in trees.items():
-            borrowed = _borrowed_wrapper_names(tree, sibling_names, wrapper_map)
+        for mod in trees:
+            borrowed = _borrowed_from_facts(facts[mod], wrapper_map)
             if borrowed - wrapper_map[mod]:
                 wrapper_map[mod] = wrapper_map[mod] | borrowed
                 grew = True
@@ -1230,7 +1281,8 @@ def _py_literal_basenames(node):
     return found
 
 
-def _runtime_loaded_sibling_names(tree, sibling_names, self_name, wrapper_map=None):
+def _runtime_loaded_sibling_names(tree, sibling_names, self_name, wrapper_map=None,
+                                  facts=None):
     """Base module names `tree` loads at RUNTIME through `_loader`.
 
     An edge is counted when a `_loader` loading call - direct, under an alias,
@@ -1254,14 +1306,25 @@ def _runtime_loaded_sibling_names(tree, sibling_names, self_name, wrapper_map=No
     messages and doc strings, and the selftest carries the fixture that goes red the
     day someone tries it. One real call site is invisible for this reason today
     (`_panel_state`'s journal loader), and that is a known gap, not a clean scan.
+
+    `facts` is `_loader_facts(tree, sibling_names)` - of THIS tree - when the
+    caller already holds it; without it the same answers are derived here.
     """
-    module_names, function_names = _loader_names(tree)
-    wrappers = _loader_wrapper_names(tree, module_names, function_names)
+    if facts is None:
+        module_names, function_names = _loader_names(tree)
+        wrappers = _loader_wrapper_names(tree, module_names, function_names)
+    else:
+        module_names = facts["module_names"]
+        function_names = facts["function_names"]
+        wrappers = set(facts["wrappers"])
     aliases = {}
-    if wrapper_map:
+    if wrapper_map and facts is None:
         wrappers = wrappers | _borrowed_wrapper_names(tree, sibling_names,
                                                       wrapper_map)
         aliases = _sibling_module_aliases(tree, sibling_names)
+    elif wrapper_map:
+        wrappers = wrappers | _borrowed_from_facts(facts, wrapper_map)
+        aliases = facts["aliases"]
     if not module_names and not function_names and not wrappers and not aliases:
         return []
 
@@ -1371,8 +1434,11 @@ def _scan_edges_once(script_dir=None):
     # PARSED ONCE, READ TWICE. The wrapper map is a whole-tree fact - which
     # module a borrowed `_load` came from is not answerable from the borrowing
     # file alone - so every file has to be parsed before any edge is judged.
+    # The loader facts are taken once per PARSED FILE and handed to both readers;
+    # the wrapper map reads the first file of each name, as `trees` does.
     parsed = []
     trees = {}
+    facts = {}
     broken = []
     for mod in sorted(modules):
         for rel, path in modules[mod]:
@@ -1382,17 +1448,19 @@ def _scan_edges_once(script_dir=None):
             except (OSError, SyntaxError):
                 broken.append(rel)
                 continue
-            parsed.append((mod, tree))
+            own = _loader_facts(tree, sibling_names)
+            parsed.append((mod, tree, own))
             trees.setdefault(mod, tree)
-    wrapper_map = _wrapper_map(trees)
+            facts.setdefault(mod, own)
+    wrapper_map = _wrapper_map(trees, facts)
 
     static = set()
     runtime = set()
-    for mod, tree in parsed:
+    for mod, tree, own in parsed:
         for imported in _imported_sibling_names(tree, sibling_names, mod):
             static.add((mod, imported))
         for loaded in _runtime_loaded_sibling_names(tree, sibling_names, mod,
-                                                     wrapper_map):
+                                                     wrapper_map, own):
             runtime.add((mod, loaded))
     return static, runtime, sorted(broken)
 
@@ -3577,10 +3645,43 @@ def _docstring_constant_ids(tree):
     reads, shared rather than re-derived so `_py_other_literal_citations` can
     ask "did the docstring scan already claim this literal" without a second
     copy of the same walk."""
+    return _docstring_ids_of(
+        [tree] + [n for n in ast.walk(tree)
+                  if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                    ast.ClassDef))])
+
+
+def _literal_index(tree):
+    """`{"doc", "label", "strings"}` for one parsed file, in ONE walk.
+
+    `doc` is `_docstring_constant_ids(tree)`, `label` is
+    `_check_label_constant_ids(tree)` and `strings` is every string-literal node
+    in `ast.walk` order - what the three literal readers below each used to
+    derive for themselves, each with a parse and walks of its own, from the
+    same file. `register_citation_violations` parses a file once, builds this
+    once and hands it to all three; a reader handed only text builds its own.
+
+    The readers' answers are lists in walk order, and `strings` keeps that order,
+    so a reader iterating it reports what a reader walking the tree reported.
+    """
+    scopes = []
+    calls = []
+    strings = []
+    for node in ast.walk(tree):
+        if node is tree or isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                             ast.ClassDef)):
+            scopes.append(node)
+        elif isinstance(node, ast.Call):
+            calls.append(node)
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            strings.append(node)
+    return {"doc": _docstring_ids_of(scopes), "label": _check_label_ids_of(calls),
+            "strings": strings}
+
+
+def _docstring_ids_of(nodes):
+    """`_docstring_constant_ids` over nodes already collected."""
     out = {}
-    nodes = [tree] + [n for n in ast.walk(tree)
-                      if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef,
-                                        ast.ClassDef))]
     for node in nodes:
         doc = ast.get_docstring(node, clean=False)
         if not doc:
@@ -3594,16 +3695,27 @@ def _docstring_constant_ids(tree):
     return out
 
 
-def _py_docstring_citations(text):
-    """[(lineno, token)] -- a register citation inside a module/class/function
-    docstring. None if `text` will not parse."""
+def _literal_index_of(text, index):
+    """`index` when the caller holds one, else `_literal_index` of `text` parsed
+    here; None if `text` will not parse."""
+    if index is not None:
+        return index
     try:
-        tree = ast.parse(text)
+        return _literal_index(ast.parse(text))
     except SyntaxError:
         return None
-    doc_ids = _docstring_constant_ids(tree)
+
+
+def _py_docstring_citations(text, index=None):
+    """[(lineno, token)] -- a register citation inside a module/class/function
+    docstring. None if `text` will not parse. `index` is `_literal_index` of
+    `text`'s tree when the caller has already parsed it."""
+    index = _literal_index_of(text, index)
+    if index is None:
+        return None
+    doc_ids = index["doc"]
     out = []
-    for node in ast.walk(tree):
+    for node in index["strings"]:
         lineno = doc_ids.get(id(node))
         if lineno is None:
             continue
@@ -3645,9 +3757,14 @@ def _check_label_constant_ids(tree):
     that finds it. A call whose func is not literally named `check`, or
     whose first argument is not a string literal `_call_string_literal`
     recognises, carries none."""
+    return _check_label_ids_of(n for n in ast.walk(tree) if isinstance(n, ast.Call))
+
+
+def _check_label_ids_of(calls):
+    """`_check_label_constant_ids` over call nodes already collected."""
     out = {}
-    for node in ast.walk(tree):
-        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    for node in calls:
+        if not (isinstance(node.func, ast.Name)
                 and node.func.id == "check" and node.args):
             continue
         literal = _call_string_literal(node.args[0])
@@ -3660,21 +3777,21 @@ def _check_label_constant_ids(tree):
     return out
 
 
-def _check_label_citations(text):
+def _check_label_citations(text, index=None):
     """[(lineno, token)] -- a register citation inside a `check(...)` call's
     message, with ONE EXCEPTION: a token that IS the call's own leading label is
     not a citation, it is the identifier `tools/prove-gates.py` attributes a
     mutation by (`_harness.case_id()` reads the same leading token). Only that
     position is exempt -- a citation appearing anywhere else in the same
-    message is still one. None if `text` will not parse.
+    message is still one. None if `text` will not parse; `index` as for
+    `_py_docstring_citations`.
     """
-    try:
-        tree = ast.parse(text)
-    except SyntaxError:
+    index = _literal_index_of(text, index)
+    if index is None:
         return None
-    label_ids = _check_label_constant_ids(tree)
+    label_ids = index["label"]
     out = []
-    for node in ast.walk(tree):
+    for node in index["strings"]:
         lineno = label_ids.get(id(node))
         if lineno is None:
             continue
@@ -3685,7 +3802,7 @@ def _check_label_citations(text):
     return out
 
 
-def _py_other_literal_citations(text):
+def _py_other_literal_citations(text, index=None):
     """[(lineno, token)] -- a register citation inside a python string
     literal that is neither a docstring (`_py_docstring_citations`) nor a
     literal `check(...)` call's own message (`_check_label_citations`) -- a
@@ -3699,18 +3816,14 @@ def _py_other_literal_citations(text):
     not already claim, once each, rather than naming a fourth or fifth
     construct by hand the same way the first three were.
 
-    None if `text` will not parse.
+    None if `text` will not parse; `index` as for `_py_docstring_citations`.
     """
-    try:
-        tree = ast.parse(text)
-    except SyntaxError:
+    index = _literal_index_of(text, index)
+    if index is None:
         return None
-    claimed = (set(_docstring_constant_ids(tree))
-               | set(_check_label_constant_ids(tree)))
+    claimed = set(index["doc"]) | set(index["label"])
     out = []
-    for node in ast.walk(tree):
-        if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
-            continue
+    for node in index["strings"]:
         if id(node) in claimed:
             continue
         for _off, token in _fault_hits(node.value):
@@ -3822,17 +3935,13 @@ def register_citation_violations(repo_root=None, table=None):
             out.append((rel, 0, "will not tokenize"))
         else:
             out.extend((rel, ln, tok) for ln, tok in comments)
-        docstrings = _py_docstring_citations(text)
-        if docstrings is None:
+        index = _literal_index_of(text, None)
+        if index is None:
             out.append((rel, 0, "will not parse"))
-        else:
-            out.extend((rel, ln, tok) for ln, tok in docstrings)
-        labels = _check_label_citations(text)
-        if labels is not None:
-            out.extend((rel, ln, tok) for ln, tok in labels)
-        others = _py_other_literal_citations(text)
-        if others is not None:
-            out.extend((rel, ln, tok) for ln, tok in others)
+            continue
+        for reader in (_py_docstring_citations, _check_label_citations,
+                       _py_other_literal_citations):
+            out.extend((rel, ln, tok) for ln, tok in reader(text, index))
     src_scan = _output_lints.prose_scan_set(tuple(sorted(COMMENT_SYNTAXES)), root,
                                       rows)
     if src_scan["problem"] is not None:
@@ -4426,14 +4535,31 @@ def _name_normalisers(scope, name):
     the alternative is a live-range analysis for a rule whose whole value is that
     it is cheap enough to run on every commit.
     """
-    found = set()
+    return _scope_normalisers(scope).get(name, frozenset())
+
+
+def _scope_normalisers(scope):
+    """`{local name: text normalisers applied to it}` for `scope`, in ONE walk.
+
+    The index `_name_normalisers` answers from. A scope binds dozens of locals to
+    configuration reads and every one of them used to cost a full walk of the
+    scope; this walks once and every later question is a lookup.
+
+    BUILT FOR THE SCOPE IT IS ASKED ABOUT AND READ FOR THAT SCOPE ONLY. A read
+    is visited from the module and from the function holding it (see
+    `_read_bindings`), and the two visits must each see their own scope's
+    normalisers: an index built for the module and read for a function credits a
+    local with a trim another function applies to a namesake, and the two
+    readers of one key stop disagreeing on paper while they still disagree in
+    the code. A name with no normaliser is absent, never an empty entry.
+    """
+    found = {}
     for node in ast.walk(scope):
         if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
                 and node.func.attr in _TEXT_NORMALISERS
-                and isinstance(node.func.value, ast.Name)
-                and node.func.value.id == name):
-            found.add(node.func.attr)
-    return frozenset(found)
+                and isinstance(node.func.value, ast.Name)):
+            found.setdefault(node.func.value.id, set()).add(node.func.attr)
+    return dict((name, frozenset(attrs)) for name, attrs in found.items())
 
 
 def _enclosing_normalisers(parents, node):
@@ -4499,7 +4625,7 @@ def _read_bindings(tree):
     return bound
 
 
-def _scope_config_reads(scope, env, roots, names, bound, parents):
+def _scope_config_reads(scope, env, roots, names, bound, parents, index=None):
     """`{(lineno, col): (path, normalisers)}` for the reads inside one scope.
 
     Two passes, and the order is load-bearing: the bindings first, so a read
@@ -4507,8 +4633,12 @@ def _scope_config_reads(scope, env, roots, names, bound, parents):
     almost never spells a whole path in one expression - it destructures the
     block and reads a key off the local - so a scan without this pass sees a
     handful of chains and none of the reads that matter.
+
+    `index` is `_scope_normalisers(scope)` and is built here when not given; a
+    caller handing one over owes it for THIS scope, never its module's.
     """
     env = dict(env)
+    index = _scope_normalisers(scope) if index is None else index
     for node in ast.walk(scope):
         if not isinstance(node, ast.Assign) or len(node.targets) != 1:
             continue
@@ -4518,7 +4648,7 @@ def _scope_config_reads(scope, env, roots, names, bound, parents):
         if path is None:
             continue
         local = node.targets[0].id
-        env[local] = (path, normalisers | _name_normalisers(scope, local))
+        env[local] = (path, normalisers | index.get(local, frozenset()))
     found = {}
     for node in ast.walk(scope):
         if _keyed_read(node) is None:
@@ -4531,7 +4661,7 @@ def _scope_config_reads(scope, env, roots, names, bound, parents):
         normalisers = normalisers | _enclosing_normalisers(parents, node)
         local = bound.get((node.lineno, node.col_offset))
         if local is not None:
-            normalisers = normalisers | _name_normalisers(scope, local)
+            normalisers = normalisers | index.get(local, frozenset())
         found[(node.lineno, node.col_offset)] = (path, normalisers)
     return found
 
@@ -4919,13 +5049,13 @@ def _scope_nodes(body):
 
 
 def _nodes_of(scan, scope):
-    """`_scope_nodes` memoised, for the passes that walk every scope repeatedly.
+    """`_scope_nodes` memoised on `scan`, keyed by the scope node.
 
-    The parameter fixpoint re-solves every scope once per round, and the AST walk
-    was most of the cost before this existed - measured with `cProfile`, not
-    guessed. The cache rides on `scan` rather than living in module state: this
-    tree keeps none, and a cache outliving one call would answer a fixture tree
-    with another tree's nodes.
+    `_contract_scan` seeds it with every function's nodes - the one walk the
+    producer and mutation tables read too - and a module body is walked on its
+    first ask. The cache rides on `scan` rather than living in module state:
+    this tree keeps none, and a cache outliving one call would answer a fixture
+    tree with another tree's nodes.
     """
     found = scan["nodes"].get(id(scope))
     if found is None:
@@ -4934,20 +5064,25 @@ def _nodes_of(scan, scope):
     return found
 
 
-def _module_producers(tree):
+def _module_producers(tree, nodes=None):
     """`(producers, opaque)` for one parsed module, both keyed by function name.
 
     A producer's key set is the UNION over its returns: a function returning one
     shape on one path and a wider one on another writes every key on some path,
     and a reader asking for a key only one path supplies is reading a `None` the
     author put there. The union is what makes "nobody writes this" true.
+
+    `nodes` is `{id(function): its _scope_nodes}` when the caller already
+    walked them; a function missing from it is walked here.
     """
     producers = {}
     opaque = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.FunctionDef):
             continue
-        returns = [n for n in _scope_nodes(node.body) if isinstance(n, ast.Return)]
+        own = (nodes or {}).get(id(node))
+        own = _scope_nodes(node.body) if own is None else own
+        returns = [n for n in own if isinstance(n, ast.Return)]
         literals = [r.value for r in returns if isinstance(r.value, ast.Dict)]
         if not literals:
             continue
@@ -5006,12 +5141,15 @@ def _call_destination(scan, rel, call):
     return None
 
 
-def _mutated_parameters(node):
-    """The parameter names a function writes INTO, rather than merely reads."""
+def _mutated_parameters(node, nodes=None):
+    """The parameter names a function writes INTO, rather than merely reads.
+
+    `nodes` is the function's `_scope_nodes` when the caller already holds them.
+    """
     names = set(arg.arg for arg in
                 list(node.args.args) + list(node.args.kwonlyargs))
     written = set()
-    for sub in _scope_nodes(node.body):
+    for sub in (_scope_nodes(node.body) if nodes is None else nodes):
         if isinstance(sub, ast.Assign):
             for target in sub.targets:
                 if (isinstance(target, ast.Subscript)
@@ -5097,14 +5235,35 @@ def _value_key_set(scan, rel, known, value, literals):
     return None
 
 
-def _scope_key_sets(scan, rel, scope, owner, literals):
-    """`{local name: key set or None}` for one scope; `None` means UNKNOWN.
+def _scope_index(scan, rel, scope):
+    """`_build_scope_index` memoised on `scan`, keyed by the scope node itself.
 
-    `owner` is the enclosing function's name, or `None` at module level.
-    `literals` says whether a dict literal counts as a source here - it does for
-    the pass that reports, and does not for the pass whose answers cross a call.
+    The parameter fixpoint asks every scope for its key sets once a round, and
+    `_call_sites` and the reporting pass ask again; what they ask about the
+    scope's own nodes does not move between rounds, only the parameter key sets
+    do. So the walk-derived half is built once per scope here and the rounds
+    read it. Keyed by SCOPE, never by module: a module's functions and the
+    module body are separate scopes with separate bindings, and an entry read
+    for the wrong one hands a local the bindings of its namesake.
     """
-    module = scan["module_of"][rel]
+    found = scan["index"].get(id(scope))
+    if found is None:
+        found = _build_scope_index(scan, rel, scope)
+        scan["index"][id(scope)] = found
+    return found
+
+
+def _build_scope_index(scan, rel, scope):
+    """What one scope's own nodes say, independent of the parameter fixpoint.
+
+    `{"nodes", "assigned", "added", "unknown", "calls", "reads"}`: the scope's
+    nodes; `{name: [assigned values]}`; `{name: keys written by subscript}`; the
+    names whose key set nothing here can model; `[(call, destination,
+    readable)]` for every call this scan can attribute; and `[(node, receiver,
+    key)]` for every keyed read. Everything here reads `scan`'s fixed tables
+    (functions, mutations, imports) and never `scan["params"]`, which is what
+    makes it safe to build once and read every round.
+    """
     nodes = _nodes_of(scan, scope)
     assigned = {}
     modelled = set()
@@ -5115,7 +5274,12 @@ def _scope_key_sets(scan, rel, scope, owner, literals):
             modelled.add(id(node.targets[0]))
     added = {}
     unknown = set()
+    calls = []
+    reads = []
     for node in nodes:
+        read = _keyed_read(node)
+        if read is not None:
+            reads.append((node, read[0], read[1]))
         # EVERY OTHER BINDING FORM MAKES THE NAME UNKNOWN. A `Store` this loop did
         # not model is a value this scan cannot read, and treating it as absent
         # would read the name's other bindings as the whole truth.
@@ -5143,8 +5307,30 @@ def _scope_key_sets(scan, rel, scope, owner, literals):
                 and node.func.attr in _DICT_MUTATORS
                 and isinstance(node.func.value, ast.Name)):
             unknown.add(node.func.value.id)
-        if isinstance(node, ast.Call):
-            unknown |= _names_a_call_may_write(scan, rel, node)
+        if not isinstance(node, ast.Call):
+            continue
+        unknown |= _names_a_call_may_write(scan, rel, node)
+        destination = _call_destination(scan, rel, node)
+        if destination is not None:
+            readable = not ([a for a in node.args if isinstance(a, ast.Starred)]
+                            or [k for k in node.keywords if k.arg is None])
+            calls.append((node, destination, readable))
+    return {"nodes": nodes, "assigned": assigned, "added": added,
+            "unknown": frozenset(unknown), "calls": calls, "reads": reads}
+
+
+def _scope_key_sets(scan, rel, scope, owner, literals):
+    """`{local name: key set or None}` for one scope; `None` means UNKNOWN.
+
+    `owner` is the enclosing function's name, or `None` at module level.
+    `literals` says whether a dict literal counts as a source here - it does for
+    the pass that reports, and does not for the pass whose answers cross a call.
+    """
+    module = scan["module_of"][rel]
+    index = _scope_index(scan, rel, scope)
+    assigned = index["assigned"]
+    added = index["added"]
+    unknown = index["unknown"]
     params = {}
     if owner is not None:
         for arg in list(scope.args.args) + list(scope.args.kwonlyargs):
@@ -5204,14 +5390,7 @@ def _call_sites(scan, rel, scope, owner):
     """
     known = _scope_key_sets(scan, rel, scope, owner, False)
     sites = []
-    for node in _nodes_of(scan, scope):
-        if not isinstance(node, ast.Call):
-            continue
-        destination = _call_destination(scan, rel, node)
-        if destination is None:
-            continue
-        readable = not ([a for a in node.args if isinstance(a, ast.Starred)]
-                        or [k for k in node.keywords if k.arg is None])
+    for node, destination, readable in _scope_index(scan, rel, scope)["calls"]:
         positional = [_value_key_set(scan, rel, known, a, False) for a in node.args]
         by_name = dict((k.arg, _value_key_set(scan, rel, known, k.value, False))
                        for k in node.keywords if k.arg)
@@ -5281,51 +5460,10 @@ def dict_key_contracts(script_dir=None, hooks_dir=None):
     `settled` is False when the parameter fixpoint hit its round bound, which
     would mean the key sets below are a lower bound rather than the answer.
     """
-    trees = {}
-    unreadable = []
-    for rel, _kind, path in _real_source_files(script_dir, hooks_dir, lints=True):
-        try:
-            with open(path, "r", encoding="utf-8") as fh:
-                trees[rel] = ast.parse(fh.read(), filename=rel)
-        except (OSError, SyntaxError, UnicodeDecodeError) as exc:
-            unreadable.append((rel, "%s" % (exc,)))
-    homes = {}
-    for rel in trees:
-        homes.setdefault(os.path.basename(rel)[:-3], []).append(rel)
-    module_of = {}
-    shared = []
-    for name in sorted(homes):
-        if len(homes[name]) > 1:
-            shared.append((name, "is the basename of more than one file (%s), so "
-                                 "no call spelled through it can be attributed"
-                           % (", ".join(sorted(homes[name])),)))
-            continue
-        module_of[homes[name][0]] = name
-    sibling_names = frozenset(module_of.values())
-    producers = {}
-    opaque = []
-    functions = {}
-    mutates = {}
-    aliases = {}
-    imported = {}
-    for rel in sorted(module_of):
-        module = module_of[rel]
-        tree = trees[rel]
-        found, unlisted = _module_producers(tree)
-        for name in sorted(found):
-            producers[(module, name)] = found[name]
-        opaque.extend(("%s.%s" % (module, name), why) for name, why in unlisted)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef):
-                functions[(module, node.name)] = node
-                mutates[(module, node.name)] = _mutated_parameters(node)
-        aliases[rel] = _sibling_module_aliases(tree, sibling_names)
-        imported[rel] = _imported_function_names(tree, sibling_names)
-    scan = {"trees": dict((rel, trees[rel]) for rel in module_of),
-            "module_of": module_of, "producers": producers,
-            "functions": functions, "mutates": mutates,
-            "aliases": aliases, "imported": imported, "params": {},
-            "nodes": {}, "scopes": {}}
+    built = _contract_scan(script_dir, hooks_dir)
+    scan = built["scan"]
+    module_of = scan["module_of"]
+    producers = scan["producers"]
     settled = False
     blind = {}
     for _round in range(_CONTRACT_ROUNDS):
@@ -5335,7 +5473,7 @@ def dict_key_contracts(script_dir=None, hooks_dir=None):
             break
         scan["params"] = params
     findings = []
-    unjudged = list(shared)
+    unjudged = list(built["shared"])
     unchecked = {}
     reads = 0
     for rel in sorted(scan["trees"]):
@@ -5344,11 +5482,7 @@ def dict_key_contracts(script_dir=None, hooks_dir=None):
             known = _scope_key_sets(scan, rel, scope, owner, True)
             argnames = frozenset() if owner is None else frozenset(
                 arg.arg for arg in list(scope.args.args) + list(scope.args.kwonlyargs))
-            for node in _nodes_of(scan, scope):
-                read = _keyed_read(node)
-                if read is None:
-                    continue
-                receiver, key = read
+            for node, receiver, key in _scope_index(scan, rel, scope)["reads"]:
                 if isinstance(receiver, ast.Call):
                     destination = _call_destination(scan, rel, receiver)
                     carried = producers.get(destination) if destination else None
@@ -5392,10 +5526,69 @@ def dict_key_contracts(script_dir=None, hooks_dir=None):
             "declared nowhere it can see"
             % (_output.some_of(sorted(unchecked[(rel, owner, name)]),
                                render=repr), missed)))
-    return {"producers": producers, "opaque": sorted(opaque),
-            "unreadable": unreadable, "reads": reads,
+    return {"producers": producers, "opaque": sorted(built["opaque"]),
+            "unreadable": built["unreadable"], "reads": reads,
             "unjudged": sorted(unjudged), "findings": sorted(findings),
             "settled": settled}
+
+
+def _contract_scan(script_dir, hooks_dir):
+    """`{"scan", "unreadable", "shared", "opaque"}` - the parsed tree
+    `dict_key_contracts` judges, before any parameter round has run.
+
+    Every function's own nodes are walked ONCE here, and the producer table, the
+    mutation table and the per-scope index all read that one walk.
+    """
+    trees = {}
+    unreadable = []
+    for rel, _kind, path in _real_source_files(script_dir, hooks_dir, lints=True):
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                trees[rel] = ast.parse(fh.read(), filename=rel)
+        except (OSError, SyntaxError, UnicodeDecodeError) as exc:
+            unreadable.append((rel, "%s" % (exc,)))
+    homes = {}
+    for rel in trees:
+        homes.setdefault(os.path.basename(rel)[:-3], []).append(rel)
+    module_of = {}
+    shared = []
+    for name in sorted(homes):
+        if len(homes[name]) > 1:
+            shared.append((name, "is the basename of more than one file (%s), so "
+                                 "no call spelled through it can be attributed"
+                           % (", ".join(sorted(homes[name])),)))
+            continue
+        module_of[homes[name][0]] = name
+    sibling_names = frozenset(module_of.values())
+    producers = {}
+    opaque = []
+    functions = {}
+    mutates = {}
+    aliases = {}
+    imported = {}
+    nodes = {}
+    for rel in sorted(module_of):
+        module = module_of[rel]
+        tree = trees[rel]
+        defs = [node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)]
+        for node in defs:
+            nodes[id(node)] = _scope_nodes(node.body)
+        found, unlisted = _module_producers(tree, nodes)
+        for name in sorted(found):
+            producers[(module, name)] = found[name]
+        opaque.extend(("%s.%s" % (module, name), why) for name, why in unlisted)
+        for node in defs:
+            functions[(module, node.name)] = node
+            mutates[(module, node.name)] = _mutated_parameters(node, nodes[id(node)])
+        aliases[rel] = _sibling_module_aliases(tree, sibling_names)
+        imported[rel] = _imported_function_names(tree, sibling_names)
+    scan = {"trees": dict((rel, trees[rel]) for rel in module_of),
+            "module_of": module_of, "producers": producers,
+            "functions": functions, "mutates": mutates,
+            "aliases": aliases, "imported": imported, "params": {},
+            "nodes": nodes, "scopes": {}, "index": {}}
+    return {"scan": scan, "unreadable": unreadable, "shared": shared,
+            "opaque": opaque}
 
 
 def dict_key_violations(script_dir=None, hooks_dir=None):
