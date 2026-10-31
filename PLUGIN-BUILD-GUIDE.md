@@ -6441,6 +6441,13 @@ module object. One style that works for all three, and `M.` says which side of t
 name is on. **Case labels move byte-identical** — a changed label is a changed test, and the
 migration proves the multiset before and after.
 
+**A block is a subject, not a function.** Each `STAGES` row of a staged suite is a process of
+its own, and starting one costs more than many case functions take to run, so case functions too
+quick to pay for a process are grouped under the subject they share: the `su-` blocks of
+`tests/test_stamp_verification.py` each run their members under `_harness.stage` with the label
+each had as a block, and call each by name, so `_harness.stage_reach` still finds every case
+function reached exactly once.
+
 **What a move is NOT allowed to carry over literally.** Batch A (13 files) found three shapes
 that mean something different once the code sits one directory over, batch B (8 files) added
 two more, and batch C (the six panel files) added a sixth. Every one of them fails QUIETLY

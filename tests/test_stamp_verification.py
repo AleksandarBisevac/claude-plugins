@@ -35,6 +35,7 @@ import os
 import posixpath
 import re
 import shlex
+import shutil
 import signal
 import subprocess
 import sys
@@ -75,20 +76,37 @@ def _write(path, text):
         fh.write(text)
 
 
+# The one seeded repository this process copies for every case that asks for
+# one: `{"root": path}` once `_seeded_repo` has built it.
+_SEED_TEMPLATE = {}
+
+
 def _seeded_repo(prefix):
     """A committed fixture repository with its line endings pinned in the
     REPOSITORY's own config. The helper drops every GIT_* variable before it
     calls git, the sweep's GIT_CONFIG_NOSYSTEM with them, so without the pin its
     git reads a system config this suite's git never saw - Git for Windows ships
     one setting core.autocrlf - and the two disagree about the bytes a
-    checkout writes."""
+    checkout writes.
+
+    Built ONCE per process and copied for each caller: the init, config, add
+    and commit are the same five git calls every time, and a copy of the
+    finished repository - `.git` and all, file times kept - is the same
+    repository at a fraction of the cost. Each copy is its own: nothing a case
+    does to one reaches the template or another copy. Both live under
+    `fixture_root`, so both are removed at exit through `remove_tree`."""
+    template = _SEED_TEMPLATE.get("root")
+    if template is None:
+        template = _harness.fixture_root("stamp-seed-template-")
+        _harness.git(None, "init", "-q", template, prefix=("git",))
+        _git(template, "config", "core.autocrlf", "false")
+        os.makedirs(os.path.join(template, "src"))
+        _write(os.path.join(template, "src", "mine.py"), "v = 1\n")
+        _git(template, "add", "src/mine.py")
+        _git(template, "commit", "-q", "-m", "seed")
+        _SEED_TEMPLATE["root"] = template
     root = _harness.fixture_root(prefix)
-    _harness.git(None, "init", "-q", root, prefix=("git",))
-    _git(root, "config", "core.autocrlf", "false")
-    os.makedirs(os.path.join(root, "src"))
-    _write(os.path.join(root, "src", "mine.py"), "v = 1\n")
-    _git(root, "add", "src/mine.py")
-    _git(root, "commit", "-q", "-m", "seed")
+    shutil.copytree(template, root, symlinks=True, dirs_exist_ok=True)
     return root
 
 
@@ -733,6 +751,113 @@ def _red(root, man, cmd, *extra):
         return code, {"unparsed": text}
 
 
+def _proof(root, man, cmd, key, *extra):
+    """A real proof (`_red`) when `key` is None, else the shape judged from the
+    runs recorded under `key` (`_judged`) - one call site for both, so a case
+    names which it is by the key it passes."""
+    if key is None:
+        return _red(root, man, cmd, *extra)
+    return _judged(root, man, cmd, key, *extra)
+
+
+# --- a verdict shape, judged from the runs `red` recorded for it ---
+# Many red-first cases here prove a SHAPE of verdict: HEAD's run prints this, the
+# task's run prints that, and the judge credits the red or refuses it. What
+# decides that is `red_verdict` over the runs' transcripts, with `head_tree`'s
+# reading of HEAD - so such a case builds its fixture repository exactly as
+# before, real git and the HEAD contract kept, and hands the judge the runs
+# `red` made for that fixture, recorded in `_RECORDED` at the end of this file.
+# What a RUN is - the throwaway, its resets, the isolated homes, each runner's
+# own printing - is proved by the real proofs kept for every dialect, which the
+# comment above `_RECORDED` names.
+def _ran(record):
+    """`red`'s record of one run that was made, from a recorded `(code, text)`,
+    or None for a run it did not make."""
+    if record is None:
+        return None
+    return {"code": record[0], "text": record[1], "problem": None, "seconds": 0.0}
+
+
+def _judged(root, man, cmd, key, *extra):
+    """`(exit, payload)` in `_red`'s shape - `verdict`, `redFirst`, `note` and
+    `baseline` - for the runs recorded under `_RECORDED[key]`, judged over the
+    fixture's own repository the way `red` reads it: `declared_tests`,
+    `_at_head`, `head_tree` and `new_stages` asked of real git, the project's
+    dependency plan (`dependency_plan`) as `red` makes it without `--deps-from`,
+    a sweep-shaped command's deadline and held-back time read off the fixture's
+    cost table, `--case` and `--introduces` taken from `extra` as `red` takes
+    them. There is no throwaway, so the files the judge weighs a runner's
+    module name against, beside the declared tests, are HEAD's alone - where
+    `red` adds what its throwaway held, which is HEAD's tree with the task's
+    files laid over.
+
+    A record holding a run `red` would not have made, or missing one it would
+    have - the second run `_wants_second` owes, the fix run a red task run on a
+    green baseline owes - is not judged: the exit is None, `record` says which
+    run, and the case reading it fails. So a change to a decision that starts a
+    run cannot leave standing a record that no longer describes what `red`
+    does."""
+    rec = _RECORDED[key]
+    cases = _harness.flag_values(list(extra), "--case")
+    symbols = _harness.flag_values(list(extra), "--introduces")
+    deadline = time.time() + _AMPLE_DEADLINE
+    top, implementation, declared, problem = M.declared_tests(root, man, "P1.1",
+                                                              deadline)
+    if problem is not None:
+        return None, {"record": problem}
+    tests = [t for t in declared if os.path.isfile(os.path.join(top, *t.split("/")))]
+    present, problem = M._at_head(top, declared, deadline)
+    if problem is not None:
+        return None, {"record": problem}
+    deps, problem = M.dependency_plan(os.path.abspath(root), top, deadline)
+    if problem is not None:
+        return None, {"record": problem}
+    new = sorted(set(tests) - present)
+    absent = [rel for rel in new if M._is_js_test_path(rel, set(tests))]
+    stubbed = [rel for rel in new if rel not in absent]
+    files, defs, modules, js = M.head_tree(top, set(tests), deadline)
+    head_texts, unread = M._cat_blobs(top, tests, deadline)
+    stages = M.new_stages(cmd, None if unread else head_texts,
+                          M._test_texts(top, tests))
+    sources = implementation + [rel for rel in tests if M.is_inline_suite(rel)]
+    run = {"cmd": cmd, "problem": None, "withdrawn": None,
+           "code": rec["task"][0], "text": rec["task"][1],
+           "head": _ran(rec["head"]), "fix": _ran(rec.get("fix")),
+           "second": _ran(rec.get("second"))}
+    run["head"]["absent"] = absent
+    owed = {"second": M._wants_second(run["code"], run["text"], symbols, cmd,
+                                      sources, M._roots(top)),
+            "fix": (M.classify_run(run["code"], run["text"], cmd)[0] == M.V_RED
+                    and M.baseline_problem(run["head"], cmd, stages, stubbed)
+                    is None)}
+    wrong = sorted(k for k, want in owed.items() if want != (run[k] is not None))
+    if wrong:
+        return None, {"record": "the record of %s %s the %s run, where `red` now "
+                                "%s" % (key, "holds" if run[wrong[0]] else "lacks",
+                                        wrong[0], "makes one" if owed[wrong[0]]
+                                        else "makes none")}
+    _env, dropped, naming = M.child_env(top)
+    # The deadline and the time held back for the fix run, read off the
+    # fixture's own cost table for a sweep-shaped command, as `red` reads them.
+    costs, blocks, cost_problem = (M.load_sweep_table(top) if M.sweep_suites(cmd)
+                                   else ({}, {}, None))
+    jobs = M.sweep_jobs(cmd)
+    sized = M.sized_deadline(cmd, costs, cost_problem, None, M.DEFAULT_TIMEOUT,
+                             blocks=blocks, jobs=jobs)
+    budget = M.sweep_budget(cmd, costs, cost_problem, sized["seconds"],
+                            blocks=blocks, jobs=jobs)
+    code, verdict, block, note = M.red_verdict(run, {
+        "root": top, "implementation": implementation, "tests": tests,
+        "cases": cases, "symbols": symbols, "dropped": dropped, "naming": naming,
+        "new": new, "absent": absent, "head_files": files, "head_defs": defs,
+        "head_modules": modules, "head_js": js, "path": None, "stages": stages,
+        "deadline": deadline, "deps": deps, "sources": sources, "inline": {},
+        "budget": budget, "sized": sized})
+    return code, {"verdict": verdict, "redFirst": block, "note": note,
+                  "baseline": {"stubbed": stubbed, "absent": absent,
+                               "newStages": stages}}
+
+
 # --- clock bounds: the helper's own figure, a witness, or a ladder ---
 # A bound a slower runner can exhaust turns a correct helper red on a loaded
 # machine, and moving it higher only moves the machine that trips it. So every
@@ -1203,8 +1328,8 @@ def _introduces_cases(check):
         "stamp-red-syntax-",
         _red_test("from newmod import helper_fn", "helper_fn() == 2 )"),
         extra=newmod, files=files)
-    code, got = _red(root, man, [py, "tests/test_mine.py"],
-                     "--introduces", "helper_fn")
+    code, got = _judged(root, man, [py, "tests/test_mine.py"], "sr16",
+                        "--introduces", "helper_fn")
     block = got.get("redFirst") or {}
     check("sr16 a test broken by a SyntaxError WITH the fix present is not a "
           "proved red under --introduces: the error is the test's, it survives "
@@ -1224,10 +1349,10 @@ def _introduces_cases(check):
           "runs - the empty string is a substring of every output: %r"
           % ([empty[0], dotted[0]],),
           [empty[0], dotted[0]] == [M.E_USAGE, M.E_USAGE])
-    code_s, got_s = _red(root_i, man_i, [py, "tests/test_mine.py"],
-                         "--introduces", "newm")
-    code_o, got_o = _red(root_i, man_i, [py, "tests/test_mine.py"],
-                         "--introduces", "helper_fn")
+    code_s, got_s = _judged(root_i, man_i, [py, "tests/test_mine.py"], "sr18.0",
+                            "--introduces", "newm")
+    code_o, got_o = _judged(root_i, man_i, [py, "tests/test_mine.py"], "sr18.1",
+                            "--introduces", "helper_fn")
     check("sr18 the final error must name THE symbol, whole, as the runtime "
           "quotes it: a substring of the missing name is not it, and neither is "
           "another symbol the task adds when the error names its module: "
@@ -1250,8 +1375,8 @@ def _introduces_cases(check):
         _red_test("from newmod import helper_fn\nimport nothere_mod",
                   "helper_fn() == 2"),
         extra=newmod, files=files)
-    code_k, got_k = _red(root_k, man_k, [py, "tests/test_mine.py"],
-                         "--introduces", "newmod")
+    code_k, got_k = _judged(root_k, man_k, [py, "tests/test_mine.py"], "sr20",
+                            "--introduces", "newmod")
     check("sr20 an import error that the fix does NOT remove is not the task's: "
           "with the working tree's implementation copied in the run still fails "
           "to import, so it stays could-not-prove: exit=%r %r"
@@ -2320,8 +2445,9 @@ def _label_cases(check):
           % (code, json.dumps(got.get("redFirst") or got.get("note"))[:400]),
           code == M.E_PROVED and _NEW_LABEL in basis and "/tmp/nope" not in basis
           and "data.json" not in basis)
-    runs = dict((flag, _red(root, man, [py, "tests/test_mine.py"], "--case", flag))
-                for flag in (_NEW_LABEL, "the", _OLD_LABEL))
+    runs = dict((flag, _judged(root, man, [py, "tests/test_mine.py"], "sr51.%d" % (i,),
+                               "--case", flag))
+                for i, flag in enumerate((_NEW_LABEL, "the", _OLD_LABEL)))
     check("sr51 --case names a sentence-labelled case by its full label; its "
           "first word alone is not a name, and the label of a case that passes "
           "is refused: %r" % (dict((k, v[0]) for k, v in runs.items()),),
@@ -2333,9 +2459,10 @@ def _label_cases(check):
     wt_id = _label_suite([(repr(_OLD_LABEL), "mine.v >= 1"),
                           ("'nv2 the new value is two'", "mine.v == 2")])
     root_i, man_i = _red_repo("stamp-red-idlabel-", wt_id, head_test=head)
-    by = dict((flag, _red(root_i, man_i, [py, "tests/test_mine.py"], *flag))
-              for flag in ((), ("--case", "nv2"),
-                           ("--case", "nv2 the new value is two")))
+    by = dict((flag, _judged(root_i, man_i, [py, "tests/test_mine.py"],
+                             "sr52.%d" % (i,), *flag))
+              for i, flag in enumerate(((), ("--case", "nv2"),
+                                        ("--case", "nv2 the new value is two"))))
     check("sr52 an id-led label proves red and the basis names it by its id; "
           "--case takes the id or the full label: %r"
           % (dict((k, (v[0], (v[1].get("redFirst") or {}).get("basis", "")[:160]))
@@ -2364,15 +2491,16 @@ _TRANSCRIPT = ("TRANSCRIPT = 'FAIL: test_new_rule (test_u.T)\\n----\\n"
                "print(TRANSCRIPT)")
 
 
-def _label_red(prefix, head_extra, wt_cases, wt_extra=(), flags=()):
+def _label_red(prefix, head_extra, wt_cases, wt_extra=(), flags=(), key=None):
     """`(exit, basis)` of a red over a HEAD suite holding the old sentence case
-    and `head_extra`, and a working-tree suite adding `wt_cases`."""
+    and `head_extra`, and a working-tree suite adding `wt_cases` - judged from
+    the runs recorded under `key` when one is given (`_proof`)."""
     old = [(repr(_OLD_LABEL), "mine.v >= 1")]
     head = _label_suite(old, extra=head_extra)
     wt = _label_suite(old + list(wt_cases),
                       extra=list(head_extra) + list(wt_extra))
     root, man = _red_repo(prefix, wt, head_test=head)
-    code, got = _red(root, man, [sys.executable, "tests/test_mine.py"], *flags)
+    code, got = _proof(root, man, [sys.executable, "tests/test_mine.py"], key, *flags)
     return code, json.dumps(got.get("redFirst") or got.get("note") or got)
 
 
@@ -2396,7 +2524,7 @@ def _runner_cases(check):
                        ("'the gate reports the unittest failure it ran'",
                         "'FAILED' in TRANSCRIPT")], extra=_TRANSCRIPT)
     root, man = _red_repo("stamp-red-echo-", wt, head_test=head)
-    code, got = _red(root, man, [sys.executable, "tests/test_mine.py"])
+    code, got = _judged(root, man, [sys.executable, "tests/test_mine.py"], "sr56")
     check("sr56 ...so an EXISTING case edited to go red, beside a new passing "
           "case that echoes a unittest `FAIL:`, is not proved on that phantom: "
           "exit=%r %s" % (code, json.dumps(got.get("redFirst"))[:300]),
@@ -2407,14 +2535,15 @@ def _runner_cases(check):
 def _specific_cases(check):
     new = [("'the fix sets the next value'", "mine.v == 2")]
     code, said = _label_red("stamp-red-loose-", ["VIEW = '%dx%d' % (1280, 720)"],
-                            new)
+                            new, key="sr57")
     check("sr57 a genuinely new sentence case PROVES although HEAD's test file "
           "holds a loose literal (`'%%dx%%d'`) the label happens to fit: HEAD's "
           "own run never printed that label: exit=%r %s" % (code, said[:300]),
           code == M.E_PROVED and "the fix sets the next value" in said)
     code_g, said_g = _label_red(
         "stamp-red-generic-", ["check('%s is %s' % ('a', 'b'), True)"],
-        [("'the next value is %r once fixed' % (mine.v,)", "mine.v == 2")])
+        [("'the next value is %r once fixed' % (mine.v,)", "mine.v == 2")],
+        key="sr58")
     check("sr58 ...and although HEAD holds a case whose label template "
           "(`'%%s is %%s'`) would fit it: that case printed its own label, not "
           "this one: exit=%r %s" % (code_g, said_g[:300]),
@@ -2425,7 +2554,8 @@ def _specific_cases(check):
                           "check('the value is two after the fix', mine.v == 2, "
                           "%s)\nn = sum(results)" % (multi,))
     root_m, man_m = _red_repo("stamp-red-multiline-", wt_m, head_test=head_m)
-    code_m, got_m = _red(root_m, man_m, [sys.executable, "tests/test_mine.py"])
+    code_m, got_m = _judged(root_m, man_m, [sys.executable, "tests/test_mine.py"],
+                            "sr60")
     check("sr60 a genuinely new sentence case PROVES when its FAIL detail spans "
           "lines - the printed line keeps ` (` and loses the closing paren: "
           "exit=%r %s" % (code_m, json.dumps(got_m.get("redFirst"))[:300]),
@@ -2465,9 +2595,11 @@ def _unit_echo(tally):
     return "\n".join(lines) + "\n"
 
 
-def _suite_red(prefix, head, wt, cmd=None):
+def _suite_red(prefix, head, wt, cmd=None, key=None):
+    """`(exit, basis)` of a red over `head` and `wt` as tests/test_mine.py -
+    judged from the runs recorded under `key` when one is given (`_proof`)."""
     root, man = _red_repo(prefix, wt, head_test=head)
-    code, got = _red(root, man, cmd or [sys.executable, "tests/test_mine.py"])
+    code, got = _proof(root, man, cmd or [sys.executable, "tests/test_mine.py"], key)
     return code, (got.get("redFirst") or {}).get("basis", json.dumps(got))
 
 
@@ -2475,7 +2607,7 @@ def _exact_cases(check):
     head_p = _label_suite([("'the value'", "mine.v >= 1")])
     wt_p = _label_suite([("'the value'", "mine.v >= 1"),
                          ("'the value (as read)'", "mine.v == 2")])
-    code_p, basis_p = _suite_red("stamp-red-paren-", head_p, wt_p)
+    code_p, basis_p = _suite_red("stamp-red-paren-", head_p, wt_p, key="sr67")
     check("sr67 THE ALLOW CASE for sr65: a genuinely new label holding a "
           "parenthesis still proves beside an older, shorter label HEAD's run "
           "printed, because the task's run prints that older label again: "
@@ -2501,14 +2633,16 @@ def _command_cases(check):
 
 
 def _mixed_cases(check):
-    code, basis = _suite_red("stamp-red-mixed-", _UNIT_HEAD, _unit_echo(True))
+    code, basis = _suite_red("stamp-red-mixed-", _UNIT_HEAD, _unit_echo(True),
+                             key="sr70")
     check("sr70 a unittest run whose new passing test echoes a house FAIL line "
           "and a house tally is not proved on that phantom: the command names no "
           "runner, so the red is could-not-prove and names both tallies: "
           "exit=%r %s" % (code, basis[:400]),
           code == M.E_CANNOT_PROVE and "zz9" not in basis.split(" - ")[0]
           and "SELFTEST FAILED" in basis and "Ran 2 tests" in basis)
-    code_c, basis_c = _suite_red("stamp-red-plain-", _UNIT_HEAD, _unit_echo(False))
+    code_c, basis_c = _suite_red("stamp-red-plain-", _UNIT_HEAD, _unit_echo(False),
+                                 key="sr71")
     check("sr71 THE ALLOW CASE for sr70: the same unittest run with no house "
           "tally echoed is read as unittest, and its edited test_old proves - the "
           "task's own edit against a green baseline: exit=%r %s"
@@ -2529,9 +2663,10 @@ _TMP = ["import atexit, shutil, tempfile", "WHERE = tempfile.mkdtemp(prefix='lbl
         "atexit.register(shutil.rmtree, WHERE, True)"]
 
 
-def _extra_red(prefix, head_extra, wt_extra, siblings=None):
+def _extra_red(prefix, head_extra, wt_extra, siblings=None, key=None):
     """`(exit, basis)` of a red over suites built from `extra` lines alone;
-    `siblings` are further test modules committed at HEAD beside the suite."""
+    `siblings` are further test modules committed at HEAD beside the suite.
+    Judged from the runs recorded under `key` when one is given (`_proof`)."""
     root, man = _red_repo(prefix, _label_suite([], extra=wt_extra),
                           head_test=_label_suite([], extra=head_extra))
     for rel, text in (siblings or {}).items():
@@ -2539,7 +2674,7 @@ def _extra_red(prefix, head_extra, wt_extra, siblings=None):
         _git(root, "add", rel)
     if siblings:
         _git(root, "commit", "-q", "-m", "siblings")
-    code, got = _red(root, man, [sys.executable, "tests/test_mine.py"])
+    code, got = _proof(root, man, [sys.executable, "tests/test_mine.py"], key)
     return code, (got.get("redFirst") or {}).get("basis", json.dumps(got))
 
 
@@ -2549,7 +2684,7 @@ def _green_baseline_cases(check):
         "ROWS = [('the table row is read', 2)]",
         "for lb, want in ROWS:",
         "    check(lb, mine.v == want)"])
-    code_t, basis_t = _suite_red("stamp-red-table-", head_t, wt_t)
+    code_t, basis_t = _suite_red("stamp-red-table-", head_t, wt_t, key="sr74")
     check("sr74 a new case whose label comes from a table proves: HEAD's own tests "
           "are green and the fix turns the new case green: exit=%r %s"
           % (code_t, basis_t[:300]),
@@ -2557,7 +2692,8 @@ def _green_baseline_cases(check):
     code_n, basis_n = _extra_red(
         "stamp-red-others-", ["check('the old one holds', True)"],
         ["check('the old one holds', True)",
-         "ROWS = {'k': 'the dict row is read'}", "check(ROWS['k'], mine.v == 2)"])
+         "ROWS = {'k': 'the dict row is read'}", "check(ROWS['k'], mine.v == 2)"],
+        key="sr88")
     check("sr88 a new case whose label is a dict value proves: exit=%r %s"
           % (code_n, basis_n[:260]),
           code_n == M.E_PROVED and "the dict row is read" in basis_n)
@@ -2572,8 +2708,9 @@ def _green_baseline_cases(check):
             "check('the file under %s is read' % (WHERE,), mine.v >= 1)"],
          _TMP + ["check('the file under %s is read' % (WHERE,), mine.v == 2)"]),
     ]
-    got = dict((how, _extra_red("stamp-red-edit-", head, wt)[0])
-               for how, head, wt in edits)
+    got = dict((how, _extra_red("stamp-red-edit-", head, wt,
+                                key="sr127.%d" % (i,))[0])
+               for i, (how, head, wt) in enumerate(edits))
     check("sr127 THE ALLOW CASE: an EXISTING case edited to go red, however its "
           "label is named, proves against a green baseline - the red is the "
           "task's own edit, and the fix turns it green: %r" % (got,),
@@ -2581,7 +2718,7 @@ def _green_baseline_cases(check):
     code_s, basis_s = _extra_red(
         "stamp-red-stillred-", ["check('the old one holds', True)"],
         ["check('the old one holds', True)",
-         "check('the new case the fix does not fix', mine.v == 3)"])
+         "check('the new case the fix does not fix', mine.v == 3)"], key="sr128")
     check("sr128 a new failing case that still fails with the working tree's "
           "implementation is not proved - the fix run must turn every failure "
           "green: exit=%r %s" % (code_s, basis_s[:300]),
@@ -2608,7 +2745,7 @@ def _wrapper_cases(check):
     ]
     for cid, how, base, new, siblings in shapes:
         code, basis = _extra_red("stamp-red-%s-" % (cid,), base + [_GENERIC],
-                                 base + [_GENERIC, new], siblings)
+                                 base + [_GENERIC, new], siblings, key=cid)
         check("%s a new case named through %s proves, however its label is "
               "written: exit=%r %s" % (cid, how, code, basis[:260]),
               code == M.E_PROVED and _NEW_RULE in basis)
@@ -2639,11 +2776,11 @@ def _unittest_cases(check):
     unit_edit = _unit_suite(["    def test_old(self):",
                              "        self.assertEqual(mine.v, 2)"])
     verbose = [sys.executable, "tests/test_mine.py", "-v"]
-    runs = dict((k, _suite_red("stamp-red-unit-%s-" % (k,), unit_head, wt, cmd))
-                for k, wt, cmd in (("new", unit_new, verbose),
-                                   ("edited", unit_edit, verbose),
-                                   ("quiet", unit_new,
-                                    [sys.executable, "tests/test_mine.py"])))
+    runs = dict((k, _suite_red("stamp-red-unit-%s-" % (k,), unit_head, wt, cmd,
+                               key="sr93.%d" % (i,)))
+                for i, (k, wt, cmd) in enumerate((
+                    ("new", unit_new, verbose), ("edited", unit_edit, verbose),
+                    ("quiet", unit_new, [sys.executable, "tests/test_mine.py"]))))
     check("sr93 THE ALLOW CASE under unittest: with HEAD's own tests green, a new "
           "failing test proves, an existing one edited to fail proves, and so "
           "does a run that names only its failures: %r"
@@ -2661,7 +2798,8 @@ def _unittest_cases(check):
                           "        self.assertEqual(mine.v, 2)\n"
                           "class B(unittest.TestCase):")
     code_q, basis_q = _suite_red("stamp-red-classes-", two, two_new,
-                                 [sys.executable, "tests/test_mine.py", "-v"])
+                                 [sys.executable, "tests/test_mine.py", "-v"],
+                                 key="sr103")
     check("sr103 a new unittest test beside two classes sharing a method name "
           "proves: exit=%r %s" % (code_q, basis_q[:300]),
           code_q == M.E_PROVED and "test_new" in basis_q)
@@ -2730,7 +2868,10 @@ def _red_baseline_cases(check):
          _label_suite([], extra=_quiet_stop(False)), None),
     ]
     for cid, how, head, wt, cmd in shapes:
-        code, basis = _suite_red("stamp-red-%s-" % (cid,), head, wt, cmd)
+        # sr102 stays a real proof: unittest run as a script under -f is the
+        # dialect sr109's and sr121's recorded runs were printed in.
+        code, basis = _suite_red("stamp-red-%s-" % (cid,), head, wt, cmd,
+                                 key=None if cid == "sr102" else cid)
         check("%s %s is not proved: HEAD's own tests are red on HEAD's code, so "
               "the command is already red at HEAD and must be narrowed to the "
               "task's cases: exit=%r %s" % (cid, how, code, basis[:300]),
@@ -2948,8 +3089,9 @@ def _round5_cases(check):
     broken = _label_suite([("'the old broken case'", "mine.v == 2")])
     plus_new = _label_suite([("'the old broken case'", "mine.v == 2"),
                              ("'the new pass'", "True")])
-    got = dict((rel, _path_red("stamp-red-path-", rel, broken, plus_new))
-               for rel in ("tests/test_café.py", "tests/test_cafe.py"))
+    got = dict((rel, _path_red("stamp-red-path-", rel, broken, plus_new,
+                               key="sr107.%d" % (i,)))
+               for i, rel in enumerate(("tests/test_café.py", "tests/test_cafe.py")))
     check("sr107 a declared test file whose path git quotes (not plain ASCII) is "
           "found at HEAD like an ASCII one, so HEAD's red baseline is seen: %r"
           % (dict((k, v[0]) for k, v in got.items()),),
@@ -2957,11 +3099,13 @@ def _round5_cases(check):
               for v in got.values()))
     head_u, wt_u = _unit_suite(_FAILFAST_HEAD), _unit_suite(_FAILFAST_WT)
     runs = dict((" ".join(flags), _suite_red("stamp-red-ff-", head_u, wt_u,
-                                             [py, "tests/test_mine.py"] + flags)[0])
-                for flags in (["-vf"], ["-fv"], ["-v", "-cf"], ["-v", "--failf"]))
+                                             [py, "tests/test_mine.py"] + flags,
+                                             key="sr109.%d" % (i,))[0])
+                for i, flags in enumerate((["-vf"], ["-fv"], ["-v", "-cf"],
+                                           ["-v", "--failf"])))
     runs["sh -c"] = _suite_red("stamp-red-sh-", head_u, wt_u,
                                ["sh", "-c", "%s tests/test_mine.py -v -f"
-                                % (_sh_word(py),)])[0]
+                                % (_sh_word(py),)], key="sr109.4")[0]
     check("sr109 HEAD red under failfast in any spelling, or under a wrapper, is "
           "not proved - the baseline is red whatever stopped it: %r" % (runs,),
           all(c == M.E_CANNOT_PROVE for c in runs.values()))
@@ -2970,7 +3114,7 @@ def _round5_cases(check):
     new_u = _unit_suite(["    def test_old(self):", "        self.assertEqual(mine.v, 3)",
                          "    def test_new(self):", "        self.assertEqual(mine.v, 2)"])
     code_v, basis_v = _suite_red("stamp-red-vv-", old_u, new_u,
-                                 [py, "tests/test_mine.py", "-vv"])
+                                 [py, "tests/test_mine.py", "-vv"], key="sr110")
     check("sr110 a new test beside an existing one already red at HEAD is not "
           "proved under any runner - narrow the command to the task's cases: "
           "exit=%r %s" % (code_v, basis_v[:300]),
@@ -3088,15 +3232,15 @@ def _every_run_cases(check):
           code_t == M.E_NOT_RED and "PASSED in the throwaway" in (got_t.get("note") or ""))
     discover = [py, "-m", "unittest", "discover", "-s", "tests", "-v"]
     root_n, man_n = _new_only_repo("stamp-red-newonly-")
-    code_n, got_n = _red(root_n, man_n, discover)
+    code_n, got_n = _judged(root_n, man_n, discover, "sr136")
     basis_n = json.dumps(got_n.get("redFirst") or got_n.get("note"))
-    check("sr136 every declared test file new at HEAD does not skip HEAD's run when "
-          "the command reaches HEAD's old tests too (a discovery): HEAD's run is "
-          "made, is red, and the red is not credited: exit=%r %s"
+    check("sr136 every declared test file new at HEAD, the command reaching HEAD's "
+          "old tests too (a discovery): HEAD's run, red on those old tests, is "
+          "not a green baseline, and the red is not credited: exit=%r %s"
           % (code_n, basis_n[:300]),
           code_n == M.E_CANNOT_PROVE and "narrow" in basis_n)
     root_1, man_1 = _new_only_repo("stamp-red-newonly1-")
-    code_1, _got_1 = _red(root_1, man_1, discover, "--case", "test_new")
+    code_1, _got_1 = _judged(root_1, man_1, discover, "sr137", "--case", "test_new")
     check("sr137 ...and with --case naming the new test, still not proved: "
           "exit=%r" % (code_1,), code_1 == M.E_CANNOT_PROVE)
     root_o, man_o = _new_only_repo("stamp-red-newonly2-")
@@ -3105,13 +3249,14 @@ def _every_run_cases(check):
         "class New(unittest.TestCase):", "    def test_new(self):",
         "        self.assertEqual(mine.v, 2)",
         "if __name__ == '__main__':", "    unittest.main()"]) + "\n")
-    code_o, got_o = _red(root_o, man_o, [py, "tests/test_new.py", "-v"])
+    code_o, got_o = _judged(root_o, man_o, [py, "tests/test_new.py", "-v"], "sr138")
     basis_o = (got_o.get("redFirst") or {}).get("basis", "")
     check("sr138 THE ALLOW CASE: a command naming ONLY a test file new at HEAD "
-          "proves - HEAD's run is made with that file as an empty stub, is green, "
-          "and the basis says so: exit=%r %s" % (code_o, basis_o[:300]),
+          "proves - the file HEAD lacks is the one stubbed for HEAD's run, that "
+          "run's green record is a green baseline, and the basis says so: "
+          "exit=%r %r %s" % (code_o, got_o.get("baseline"), basis_o[:300]),
           code_o == M.E_PROVED and "laid over as empty files" in basis_o
-          and ((got_o.get("run") or {}).get("head") or {}).get("exit") == 0)
+          and (got_o.get("baseline") or {}).get("stubbed") == ["tests/test_new.py"])
     detail = repr([(i, i + 1) for i in range(20000)])
     long_fail = {"id": None, "label": "the pairs round-trip (saw %s)" % (detail,),
                  "assertion": True, "why": "house FAIL"}
@@ -3252,7 +3397,7 @@ def _moved_cases(check):
     for cid, how, head_files, wt, declared, moves, target in red_shapes:
         root, man = _tree_repo("stamp-red-%s-" % (cid,), head_files, wt, declared,
                                moves)
-        code, got = _red(root, man, unit + [target])
+        code, got = _judged(root, man, unit + [target], cid)
         basis = (got.get("redFirst") or {}).get("basis", "") or json.dumps(got)
         check("%s %s does not get HEAD's red credited - an ast-identical def under "
               "the same class and name anywhere in HEAD's test files is HEAD's "
@@ -3282,7 +3427,7 @@ def _moved_cases(check):
                            {"tests/__init__.py": "", "legacy/test_old.py": legacy},
                            {"tests/test_new.py": reach, "tests/test_old.py": decoy},
                            ["tests/test_new.py", "tests/test_old.py"])
-    code, got = _red(root, man, unit + ["tests/test_new.py"])
+    code, got = _judged(root, man, unit + ["tests/test_new.py"], "sr168")
     basis = (got.get("redFirst") or {}).get("basis", "") or json.dumps(got)
     check("sr168 a module name whose trailing components also name an undeclared "
           "file HEAD has (legacy/test_old.py) is not mapped to the declared one that "
@@ -3305,7 +3450,7 @@ def _moved_cases(check):
     for cid, how, text in rebinds:
         root, man = _tree_repo("stamp-red-%s-" % (cid,), head,
                                {"tests/test_new.py": text}, ["tests/test_new.py"])
-        code, got = _red(root, man, unit + ["tests/test_new.py"])
+        code, got = _judged(root, man, unit + ["tests/test_new.py"], cid)
         basis = (got.get("redFirst") or {}).get("basis", "") or json.dumps(got)
         check("%s %s - the def is not what runs, so it is not credited: exit=%r %s"
               % (cid, how, code, basis[:400]),
@@ -3324,7 +3469,7 @@ def _binding_cases(check):
                          "New.maxDiff = None"]) + "\n"
     root, man = _tree_repo("stamp-red-sr175-", head, {"tests/test_new.py": own_red},
                            ["tests/test_new.py"])
-    code, got = _red(root, man, unit + ["tests/test_new.py"])
+    code, got = _judged(root, man, unit + ["tests/test_new.py"], "sr175")
     basis = (got.get("redFirst") or {}).get("basis", "") or json.dumps(got)
     check("sr175 THE ALLOW CASE: a new red case whose class gets `New.maxDiff = None` "
           "after it proves - an attribute assignment rebinds no name: exit=%r %s"
@@ -3346,7 +3491,7 @@ def _binding_cases(check):
     for cid, how, text in rebinds:
         root, man = _tree_repo("stamp-red-%s-" % (cid,), head,
                                {"tests/test_new.py": text}, ["tests/test_new.py"])
-        code, got = _red(root, man, unit + ["tests/test_new.py"])
+        code, got = _judged(root, man, unit + ["tests/test_new.py"], cid)
         basis = (got.get("redFirst") or {}).get("basis", "") or json.dumps(got)
         check("%s %s rebinds the case to HEAD's function, so the def is not what "
               "runs and HEAD's red is not credited: exit=%r %s"
@@ -3365,7 +3510,7 @@ def _binding_cases(check):
         root, man = _tree_repo("stamp-red-%s-" % (cid,), head,
                                {"tests/test_new.py": "\n".join(passing + [line]) + "\n"},
                                ["tests/test_new.py"])
-        code, got = _red(root, man, unit + ["tests/test_new.py"])
+        code, got = _judged(root, man, unit + ["tests/test_new.py"], cid)
         basis = (got.get("redFirst") or {}).get("basis", "") or json.dumps(got)
         check("%s %s replaces the passing def with HEAD's function, so the def is not "
               "what runs and HEAD's red is not credited: exit=%r %s"
@@ -3387,7 +3532,7 @@ def _binding_cases(check):
                            {"tests/__init__.py": "", "legacy/test_old.py": legacy},
                            {"tests/test_new.py": reach, "test_old.py": decoy},
                            ["tests/test_new.py", "test_old.py"])
-    code, got = _red(root, man, unit + ["tests/test_new.py"])
+    code, got = _judged(root, man, unit + ["tests/test_new.py"], "sr178")
     basis = (got.get("redFirst") or {}).get("basis", "") or json.dumps(got)
     check("sr178 a unittest module that EXACTLY names a declared file is still not "
           "mapped to it when an undeclared file HEAD has (legacy/test_old.py) ends "
@@ -3406,7 +3551,7 @@ def _binding_cases(check):
     for cid, how, head_files, wt, declared, moves, script in house:
         root, man = _tree_repo("stamp-red-%s-" % (cid,), head_files, wt, declared,
                                moves)
-        code, got = _red(root, man, [py, script])
+        code, got = _judged(root, man, [py, script], cid)
         basis = (got.get("redFirst") or {}).get("basis", "") or json.dumps(got)
         check("%s %s is not credited under a house run - the script is identical to "
               "HEAD's tests/test_hold.py: exit=%r %s" % (cid, how, code, basis[:400]),
@@ -3414,7 +3559,7 @@ def _binding_cases(check):
     fresh = _house_test("import mine", [("new1", "mine.v == 2")])
     root, man = _tree_repo("stamp-red-sr181-", {"tests/test_hold.py": suite},
                            {"tests/test_hnew.py": fresh}, ["tests/test_hnew.py"])
-    code, got = _red(root, man, [py, "tests/test_hnew.py"])
+    code, got = _judged(root, man, [py, "tests/test_hnew.py"], "sr181")
     basis = (got.get("redFirst") or {}).get("basis", "") or json.dumps(got)
     check("sr181 THE ALLOW CASE: a NEW house suite with its own red case still proves: "
           "exit=%r %s" % (code, basis[:400]),
@@ -3447,7 +3592,7 @@ def _reach_cases(check):
         root, man = _reach_repo("stamp-red-%s-" % (cid,), new_text=new_text)
         if edit == "delete":
             os.remove(os.path.join(root, "tests", "test_old.py"))
-        code, got = _red(root, man, cmd)
+        code, got = _judged(root, man, cmd, cid)
         basis = json.dumps(got.get("redFirst") or got.get("note"))
         check("%s a new test file that asserts nothing, with %s, does not get HEAD's "
               "red credited: exit=%r %s" % (cid, how, code, basis[:300]),
@@ -3458,7 +3603,7 @@ def _reach_cases(check):
     root, man = _reach_repo("stamp-red-reach-new-", new_text=fixing,
                             old_text=_OLD_RED.replace("assertEqual(mine.v, 2)",
                                                       "assertTrue(mine.v >= 1)"))
-    code_n, got_n = _red(root, man, unit + ["tests/test_new.py"])
+    code_n, got_n = _judged(root, man, unit + ["tests/test_new.py"], "sr149")
     basis_n = (got_n.get("redFirst") or {}).get("basis", "")
     check("sr149 THE ALLOW CASE: a new test file whose own case fails on HEAD's code "
           "and passes with the fix proves - its stub baseline is green, and the "
@@ -3490,7 +3635,7 @@ def _reach_cases(check):
     for cid, how, new_text, declare, why in declared_old:
         root, man = _reach_repo("stamp-red-%s-" % (cid,), new_text=new_text,
                                 declare_old=declare)
-        code, got = _red(root, man, unit + ["tests/test_new.py"])
+        code, got = _judged(root, man, unit + ["tests/test_new.py"], cid)
         basis = (got.get("redFirst") or {}).get("basis", "") or json.dumps(got)
         check("%s a new test file that %s does not get HEAD's red credited, and the "
               "basis says why: exit=%r %s" % (cid, how, code, basis[:400]),
@@ -3508,8 +3653,8 @@ def _reach_cases(check):
     root_d, man_d = _reach_repo("stamp-red-sr161-", new_text=fixing,
                                 old_text=_OLD_RED.replace("assertEqual(mine.v, 2)",
                                                           "assertTrue(mine.v >= 1)"))
-    code_d, got_d = _red(root_d, man_d, [py, "-m", "unittest", "discover", "-s",
-                                         "tests", "-v"])
+    code_d, got_d = _judged(root_d, man_d, [py, "-m", "unittest", "discover", "-s",
+                                            "tests", "-v"], "sr161")
     basis_d = (got_d.get("redFirst") or {}).get("basis", "") or json.dumps(got_d)
     check("sr161 THE ALLOW CASE: `unittest discover -s tests` prints the new module "
           "as `test_new`, which names the one declared tests/test_new.py by its "
@@ -3520,8 +3665,8 @@ def _reach_cases(check):
     root_e, man_e = _reach_repo("stamp-red-reach-edit-", new_text=_NEW_TRIVIAL,
                                 old_text=green_old, declare_old=True,
                                 wt_old=_OLD_RED)
-    code_e, got_e = _red(root_e, man_e, unit + ["tests/test_new.py",
-                                               "tests/test_old.py"])
+    code_e, got_e = _judged(root_e, man_e, unit + ["tests/test_new.py",
+                                                  "tests/test_old.py"], "sr150")
     basis_e = (got_e.get("redFirst") or {}).get("basis", "")
     check("sr150 THE ALLOW CASE: a command naming a new test file AND an edited old "
           "one still gets a green baseline - the new file a stub, the old one "
@@ -3909,8 +4054,9 @@ def _where_unittest():
     return where
 
 
-def _path_red(prefix, rel, head, wt, cmd=None):
-    """`(exit, basis)` of a red whose declared test file is `rel`."""
+def _path_red(prefix, rel, head, wt, cmd=None, key=None):
+    """`(exit, basis)` of a red whose declared test file is `rel` - judged from
+    the runs recorded under `key` when one is given (`_proof`)."""
     root = _seeded_repo(prefix)
     os.makedirs(os.path.join(root, "tests"))
     _write(os.path.join(root, *rel.split("/")), head)
@@ -3924,7 +4070,7 @@ def _path_red(prefix, rel, head, wt, cmd=None):
     task["tests"] = {"mode": "tdd", "add": [rel + ": v is two"]}
     man = os.path.join(_harness.fixture_root(prefix + "man-"), "audit-plan.json")
     _write(man, json.dumps(manifest))
-    code, got = _red(root, man, cmd or [sys.executable, rel])
+    code, got = _proof(root, man, cmd or [sys.executable, rel], key)
     return code, json.dumps(got.get("redFirst") or got.get("note") or got)
 
 
@@ -5175,13 +5321,16 @@ def _deps_cases(check):
 
     root_s, man_s, cmd_s = _deps_repo("stamp-red-deps-st-", [("v is two", "v()", "2")])
     os.symlink(outside, os.path.join(root_s, "node_modules", "stored"))
-    code_s, payload_s = _red(root_s, man_s, cmd_s)
+    code_s, payload_s = _judged(root_s, man_s, cmd_s, "sd3")
     basis_s = _deps_basis(payload_s)
     check("sd3 THE ALLOW CASE for sd2: an entry linking OUTSIDE the project (a "
           "package store), and the `.bin` link resolving inside node_modules "
-          "itself, are linked and the red is proved - the refusal reads where a "
-          "link lands, not that it is a link: exit=%r %s" % (code_s, basis_s[:600]),
-          code_s == M.E_PROVED and "workspace" not in basis_s)
+          "itself, leave node_modules linked by the dependency plan, and the red "
+          "its runs recorded is proved - the refusal reads where a link lands, "
+          "not that it is a link: exit=%r %s" % (code_s, basis_s[:600]),
+          code_s == M.E_PROVED and "workspace" not in basis_s
+          and "dependencies linked from the project root" in basis_s
+          and "node_modules" in basis_s)
 
     root_g, man_g, cmd_g = _deps_repo("stamp-red-deps-green-", [("one is one", "1", "1")])
     _write(os.path.join(root_g, ".npmrc"), "fund=false\n")
@@ -6439,7 +6588,7 @@ def _new_stage_cases(check):
     old = ("aa", [("old1", "mine.v >= 1")])
     root, man = _red_repo("stamp-newstage-", _staged_test(
         [old, ("zz", [("new1", "mine.v == 2")])]), head_test=_staged_test([old]))
-    code, got = _red(root, man, [py, "tests/test_mine.py", "--stage", "zz"])
+    code, got = _judged(root, man, [py, "tests/test_mine.py", "--stage", "zz"], "ns1")
     block = got.get("redFirst") or {}
     check("ns1 a task adding stage `zz`, its one case red on HEAD's code and "
           "green on the fix, PROVES - HEAD's run failing only the unknown-stage "
@@ -6454,7 +6603,8 @@ def _new_stage_cases(check):
     root_r, man_r = _red_repo("stamp-newstage-red-", _staged_test(
         [old, ("zz", [("old2", "mine.v == 2"), ("new1", "mine.v == 2")])]),
         head_test=_staged_test([old, red_zz]))
-    code_r, got_r = _red(root_r, man_r, [py, "tests/test_mine.py", "--stage", "zz"])
+    code_r, got_r = _judged(root_r, man_r, [py, "tests/test_mine.py", "--stage", "zz"],
+                            "ns2")
     block_r = got_r.get("redFirst") or {}
     check("ns2 the same command where HEAD ALREADY holds a red `zz` still grades "
           "already-red - the label exists at HEAD, so its red is HEAD's: "
@@ -6465,8 +6615,8 @@ def _new_stage_cases(check):
     root_m, man_m = _red_repo("stamp-newstage-mixed-", _staged_test(
         [("aa", [("old1", "mine.v == 2")]), ("zz", [("new1", "mine.v == 2")])]),
         head_test=_staged_test([("aa", [("old1", "mine.v == 2")])]))
-    code_m, got_m = _red(root_m, man_m, [py, "tests/test_mine.py", "--stage", "zz",
-                                         "--stage", "aa"])
+    code_m, got_m = _judged(root_m, man_m, [py, "tests/test_mine.py", "--stage", "zz",
+                                            "--stage", "aa"], "ns3")
     block_m = got_m.get("redFirst") or {}
     check("ns3 a new `zz` beside a stage HEAD runs RED is still already-red: "
           "the unknown-stage check is not the ONLY thing HEAD's run failed: "
@@ -6474,7 +6624,8 @@ def _new_stage_cases(check):
           code_m == M.E_CANNOT_PROVE and block_m.get("status") == "could-not-prove"
           and M.NARROW in block_m.get("basis", ""))
 
-    code_t, got_t = _red(root, man, [py, "tests/test_mine.py", "--stage", "qq"])
+    code_t, got_t = _judged(root, man, [py, "tests/test_mine.py", "--stage", "qq"],
+                            "ns4")
     block_t = got_t.get("redFirst") or {}
     check("ns4 a label the task's test files do not introduce - a typo, unknown "
           "in the working tree too - is not read as a new stage: exit=%r %r"
@@ -6496,7 +6647,8 @@ def _new_stage_cases(check):
     task_s["tests"]["add"] = ["tests/test_mine.py: v is two",
                               "tests/test_other.py: names"]
     _write(man_s, json.dumps(manifest_s))
-    code_s, got_s = _red(root_s, man_s, [py, "tests/test_mine.py", "--stage", "zz"])
+    code_s, got_s = _judged(root_s, man_s, [py, "tests/test_mine.py", "--stage", "zz"],
+                            "ns5")
     block_s = got_s.get("redFirst") or {}
     check("ns5 a stage new in one test file is recognised as new even when another "
           "declared test file carries the same name as a string literal, and the "
@@ -6562,86 +6714,133 @@ def _new_stage_unit_cases(check):
 # `--stage LABEL` narrows a run to the blocks it names, run in this process,
 # which is what lets a red-first proof in a throwaway tree fit its deadline.
 STAGES = (
-    ("sd-encoding", "_encoding_cases"),
+    ("su-env", "_su_env_cases"),
     ("sd-deps", "_deps_cases"),
-    ("sw-windows", "_windows_cases"),
-    ("sw-edges", "_edge_cases"),
     ("sd-venv", "_venv_cases"),
-    ("sd-scan", "_scan_cases"),
     ("sb-new-file", "_new_file_cases"),
-    ("sb-none-found", "_none_found_cases"),
-    ("sr-decisive", "_decisive_cases"),
-    ("sr-jest", "_jest_cases"),
-    ("sj-credit", "_jest_credit_cases"),
-    ("sr-crlf", "_crlf_cases"),
-    ("sr-listing", "_listing_cases"),
-    ("sr-leftover", "_leftover_cases"),
-    ("sr-remove-retry", "_remove_retry_cases"),
+    ("su-readers", "_su_readers_cases"),
     ("sr-killed-build", "_killed_build_cases"),
     ("sr-killed-reset", "_killed_reset_cases"),
     ("sr-run-confirm", "_run_confirmation_cases"),
-    ("sr-holder", "_holder_cases"),
-    ("sv-take", "_take_cases"),
-    ("sv-compare", "_compare_cases"),
-    ("sv-shape", "_shape_cases"),
-    ("sv-recorder", "_recorder_cases"),
-    ("sv-nested", "_nested_record_cases"),
-    ("sv-nested-drive", "_nested_drive_cases"),
-    ("sv-nested-files", "_nested_files_cases"),
-    ("sv-recorder-dirty", "_recorder_dirty_cases"),
+    ("su-records", "_su_records_cases"),
     ("sr-red", "_red_cases"),
-    ("sr-tally", "_tally_cases"),
     ("sr-introduces", "_introduces_cases"),
-    ("sm-missing-module", "_missing_module_cases"),
-    ("sm-export-missing", "_export_missing_cases"),
-    ("sr-playwright", "_playwright_credit_cases"),
-    ("sr-playwright-none-found", "_playwright_none_found_cases"),
-    ("sr-vitest-json", "_vitest_json_credit_cases"),
-    ("sr-could-not-start", "_could_not_start_cases"),
     ("sh-house-abort", "_house_abort_cases"),
     ("sh-owner-module", "_owner_module_cases"),
-    ("sh-crlf-abort", "_crlf_abort_cases"),
     ("si-inline", "_inline_suite_cases"),
     ("si-inline-closure", "_inline_closure_cases"),
     ("sr-directory", "_directory_scope_cases"),
-    ("sr-sandbox-words", "_sandbox_words_cases"),
+    ("su-wording", "_su_wording_cases"),
     ("sr-process", "_process_cases"),
     ("sr-sigterm", "_sigterm_cases"),
-    ("sr-new-stage-units", "_new_stage_unit_cases"),
+    ("su-verdict", "_su_verdict_cases"),
     ("sr-own", "_own_case_cases"),
     ("sr-label", "_label_cases"),
-    ("sr-label-id", "_label_id_cases"),
-    ("sr-runner", "_runner_cases"),
     ("sr-specific", "_specific_cases"),
-    ("sr-wording", "_wording_cases"),
-    ("sr-exact", "_exact_cases"),
-    ("sr-command", "_command_cases"),
-    ("sr-mixed", "_mixed_cases"),
     ("sr-green", "_green_baseline_cases"),
     ("sr-wrapper", "_wrapper_cases"),
-    ("sr-pytest-command", "_pytest_command_cases"),
     ("sr-unittest", "_unittest_cases"),
     ("sr-red-baseline", "_red_baseline_cases"),
-    ("sr-baseline-units", "_baseline_unit_cases"),
     ("sr-round5", "_round5_cases"),
-    ("sr-round5-units", "_round5_unit_cases"),
     ("sr-every-run-isolated", "_every_run_cases"),
     ("sr-reach", "_reach_cases"),
-    ("sr-located", "_located_cases"),
     ("sr-moved", "_moved_cases"),
     ("sr-binding", "_binding_cases"),
-    ("sr-env", "_env_cases"),
     ("sr-final", "_final_pass_cases"),
     ("sr-budget", "_budget_cases"),
     ("sl-block", "_success_line_cases"),
-    ("ct-block", "_case_title_cases"),
     ("sdr-block", "_drive_red_cases"),
     ("swc-block", "_sweep_cases"),
     ("swd-block", "_sweep_deadline_cases"),
-    ("swt-wall", "_wall_cases"),
-    ("swp-platform", "_platform_cases"),
+    ("su-sweep-table", "_su_sweep_table_cases"),
     ("swn-block", "_sweep_new_suite_cases"),
 )
+
+
+# The subject blocks: groups of cases that each took less than a block process
+# costs to start, run in ONE process each. A block is a subject, not a
+# function - its members run in order, each under `_harness.stage` with the
+# label it had as a block of its own, so a member whose fixture raises is
+# named and the members after it still run. Each member is called by name
+# (the lambda), because `_harness.stage_reach` reads which case functions a
+# block reaches off its calls.
+
+
+def _su_readers_cases(check):
+    """What a runner's output reads as: tallies, failing cases, missing modules
+    and names, and each runner's own spelling of them."""
+    _harness.stage(check, "sr-tally", lambda c: _tally_cases(c))
+    _harness.stage(check, "sr-decisive", lambda c: _decisive_cases(c))
+    _harness.stage(check, "sr-jest", lambda c: _jest_cases(c))
+    _harness.stage(check, "sj-credit", lambda c: _jest_credit_cases(c))
+    _harness.stage(check, "sb-none-found", lambda c: _none_found_cases(c))
+    _harness.stage(check, "sm-missing-module", lambda c: _missing_module_cases(c))
+    _harness.stage(check, "sm-export-missing", lambda c: _export_missing_cases(c))
+    _harness.stage(check, "sr-playwright", lambda c: _playwright_credit_cases(c))
+    _harness.stage(check, "sr-playwright-none-found", lambda c: _playwright_none_found_cases(c))
+    _harness.stage(check, "sr-vitest-json", lambda c: _vitest_json_credit_cases(c))
+    _harness.stage(check, "sr-could-not-start", lambda c: _could_not_start_cases(c))
+    _harness.stage(check, "sh-crlf-abort", lambda c: _crlf_abort_cases(c))
+    _harness.stage(check, "sr-pytest-command", lambda c: _pytest_command_cases(c))
+    _harness.stage(check, "sr-command", lambda c: _command_cases(c))
+
+
+def _su_verdict_cases(check):
+    """The judge and what feeds it: the green baseline, located failures, new
+    stages, which runner's tally counts, HEAD's file list and the runs'
+    bytecode setting."""
+    _harness.stage(check, "sr-baseline-units", lambda c: _baseline_unit_cases(c))
+    _harness.stage(check, "sr-round5-units", lambda c: _round5_unit_cases(c))
+    _harness.stage(check, "sr-located", lambda c: _located_cases(c))
+    _harness.stage(check, "sr-new-stage-units", lambda c: _new_stage_unit_cases(c))
+    _harness.stage(check, "sr-runner", lambda c: _runner_cases(c))
+    _harness.stage(check, "sr-exact", lambda c: _exact_cases(c))
+    _harness.stage(check, "sr-mixed", lambda c: _mixed_cases(c))
+
+
+def _su_sweep_table_cases(check):
+    """The sweep's cost table read as time: slot-seconds against wall seconds,
+    and a figure read only on the platform it was taken on."""
+    _harness.stage(check, "swt-wall", lambda c: _wall_cases(c))
+    _harness.stage(check, "swp-platform", lambda c: _platform_cases(c))
+
+
+def _su_env_cases(check):
+    """The host the helper runs on and the throwaway it leaves there: the
+    scrubbed environment, temp directories, git's spelling of paths and
+    listings, line endings, junctions, encodings, leftovers and removal."""
+    _harness.stage(check, "sd-encoding", lambda c: _encoding_cases(c))
+    _harness.stage(check, "sd-scan", lambda c: _scan_cases(c))
+    _harness.stage(check, "sw-windows", lambda c: _windows_cases(c))
+    _harness.stage(check, "sw-edges", lambda c: _edge_cases(c))
+    _harness.stage(check, "sr-holder", lambda c: _holder_cases(c))
+    _harness.stage(check, "sr-leftover", lambda c: _leftover_cases(c))
+    _harness.stage(check, "sr-listing", lambda c: _listing_cases(c))
+    _harness.stage(check, "sr-remove-retry", lambda c: _remove_retry_cases(c))
+    _harness.stage(check, "sr-crlf", lambda c: _crlf_cases(c))
+    _harness.stage(check, "sr-env", lambda c: _env_cases(c))
+
+
+def _su_wording_cases(check):
+    """What the helper says: the `--case` wording, case titles and ids, and the
+    sandbox description's words."""
+    _harness.stage(check, "sr-wording", lambda c: _wording_cases(c))
+    _harness.stage(check, "ct-block", lambda c: _case_title_cases(c))
+    _harness.stage(check, "sr-label-id", lambda c: _label_id_cases(c))
+    _harness.stage(check, "sr-sandbox-words", lambda c: _sandbox_words_cases(c))
+
+
+def _su_records_cases(check):
+    """The stamp itself: `take`, `compare`, the recorder's exclusions and nested
+    checkouts."""
+    _harness.stage(check, "sv-take", lambda c: _take_cases(c))
+    _harness.stage(check, "sv-compare", lambda c: _compare_cases(c))
+    _harness.stage(check, "sv-shape", lambda c: _shape_cases(c))
+    _harness.stage(check, "sv-recorder", lambda c: _recorder_cases(c))
+    _harness.stage(check, "sv-nested", lambda c: _nested_record_cases(c))
+    _harness.stage(check, "sv-nested-drive", lambda c: _nested_drive_cases(c))
+    _harness.stage(check, "sv-recorder-dirty", lambda c: _recorder_dirty_cases(c))
+    _harness.stage(check, "sv-nested-files", lambda c: _nested_files_cases(c))
 
 
 def _case_title_cases(check):
@@ -6811,7 +7010,7 @@ def _sweep_cases(check):
 
     bad_root, bad_man = _sweep_repo("stamp-sweep-fail-",
                                     _red_test("import mine", "mine.v == 3"))
-    bad_code, bad = _red(bad_root, bad_man, cmd)
+    bad_code, bad = _judged(bad_root, bad_man, cmd, "swc2")
     bad_block = bad.get("redFirst") or {}
     basis = bad_block.get("basis") or ""
     check("swc2 the same command with a suite that still fails in the task tree "
@@ -6902,11 +7101,11 @@ def _sweep_cases(check):
     cost_root, cost_man = _sweep_repo("stamp-sweep-cost-",
                                       _red_test("import mine", "mine.v == 2"),
                                       costs={"tests/test_mine.py": 7.0})
-    _c, costed = _red(cost_root, cost_man, cmd)
+    _c, costed = _judged(cost_root, cost_man, cmd, "swc8.0")
     free_root, free_man = _sweep_repo("stamp-sweep-nocost-",
                                       _red_test("import mine", "mine.v == 2"),
                                       costs={"tests/other.py": 7.0})
-    _c, free = _red(free_root, free_man, cmd)
+    _c, free = _judged(free_root, free_man, cmd, "swc8.1")
     cost_basis = (costed.get("redFirst") or {}).get("basis") or ""
     free_basis = (free.get("redFirst") or {}).get("basis") or ""
     check("swc8 end to end, the basis of a proved sweep red carries the held-back "
@@ -7537,8 +7736,9 @@ def _sweep_new_suite_cases(check):
     both_root, both_man = _new_suite_repo(
         "stamp-swn-both-", ["src/mine.py", "tests/test_mine.py", _NEW_SUITE],
         wt_extra={_NEW_SUITE: new})
-    both_code, both = _red(both_root, both_man, [py, "tools/sweep-selftests.py",
-                                                 "tests/test_mine.py", _NEW_SUITE])
+    both_code, both = _judged(both_root, both_man, [py, "tools/sweep-selftests.py",
+                                                    "tests/test_mine.py", _NEW_SUITE],
+                              "swn2")
     both_block = both.get("redFirst") or {}
     both_basis = both_block.get("basis") or ""
     check("swn2 ...and beside a suite HEAD already has, which stays green in every "
@@ -7556,14 +7756,15 @@ def _sweep_new_suite_cases(check):
         "stamp-swn-silent-", ["src/mine.py", _NEW_SUITE],
         head_extra={_NEW_SUITE: "print('no contract here')\n"},
         wt_extra={_NEW_SUITE: new})
-    old_code, old = _red(old_root, old_man, [py, "tools/sweep-selftests.py", _NEW_SUITE])
+    old_code, old = _judged(old_root, old_man, [py, "tools/sweep-selftests.py",
+                                                _NEW_SUITE], "swn3.0")
     mix_root, mix_man = _new_suite_repo(
         "stamp-swn-mixed-", ["src/mine.py", _NEW_SUITE, silent],
         head_extra={silent: "print('no contract here')\n"},
         wt_extra={_NEW_SUITE: new, silent: _house_test("import mine",
                                                        [("s1", "mine.v >= 1")])})
-    mix_code, mix = _red(mix_root, mix_man, [py, "tools/sweep-selftests.py",
-                                             _NEW_SUITE, silent])
+    mix_code, mix = _judged(mix_root, mix_man, [py, "tools/sweep-selftests.py",
+                                                _NEW_SUITE, silent], "swn3.1")
     got = [(c, (b.get("redFirst") or {}).get("status"),
             (b.get("redFirst") or {}).get("basis") or "")
            for c, b in ((old_code, old), (mix_code, mix))]
@@ -7582,9 +7783,9 @@ def _sweep_new_suite_cases(check):
                                               for i in range(18)]),
         head_extra={"tests/test_b.py": _house_test("import mine", [("old1", "True")])},
         wt_extra={"tests/test_b.py": _shrinking_test()})
-    s_code, shrunk = _red(shrink_root, shrink_man, [py, "tools/sweep-selftests.py",
-                                                   "tests/test_mine.py",
-                                                   "tests/test_b.py"])
+    s_code, shrunk = _judged(shrink_root, shrink_man, [py, "tools/sweep-selftests.py",
+                                                      "tests/test_mine.py",
+                                                      "tests/test_b.py"], "swn4")
     s_block = shrunk.get("redFirst") or {}
     s_basis = s_block.get("basis") or ""
     check("swn4 the fix run's count of cases is read for the file that was red, not "
@@ -7738,6 +7939,1243 @@ def _success_line_cases(check):
     check("sl6 a red that was NOT proved prints in full - the deny twin of "
           "sl5: %r" % (not_red[1][:160],),
           not_red[0] != M.E_PROVED and len(not_red[1].splitlines()) > 1)
+
+
+# --- the recorded runs ------------------------------------------------------------
+# What `red` handed the judge for each shape case `_judged` grades, captured from
+# that case's own real proof before it was converted: `head`, `task`, `fix` and
+# `second` are the exit code and the output of each run `red` made, as
+# `(code, text)`, and a run it did not make is absent. Captured, never written by
+# hand - a transcript no runner prints would prove a shape that cannot occur. Two
+# things were changed on the way in: the throwaway's directory, which names the
+# machine that made it, reads `<holder>`; and a tally line is built from
+# `_TALLY`, as every tally in this file is. The unittest transcripts were printed
+# by Python 3.14, caret lines and all.
+#
+# Each dialect is still proved by a real run, which is where a runner changing
+# what it prints shows up: the house harness by sr1 and sr50, a staged house suite
+# by swd6, unittest run as a script and its failfast by sr102, `python -m
+# unittest` by sr167, an `sh -c` wrapper by sr160, the jest-shaped runner linked in
+# from node_modules by sd1, the stand-in sweep by swc1 and the real sweep by swn1.
+_U_EQ = "=" * 70 + "\n"
+_U_DASH = "-" * 70 + "\n"
+_RUN_NS1_FIX = ("PASS new1\n"
+                + _TALLY % ("ALL PASS", 1, 1) + "\n")
+_RUN_NS1_HEAD = ("FAIL --stage names a block of this suite: ['zz']\n"
+                 + _TALLY % ("SELFTEST FAILED", 0, 1) + "\n")
+_RUN_NS1_TASK = ("FAIL new1\n"
+                 + _TALLY % ("SELFTEST FAILED", 0, 1) + "\n")
+_RUN_NS4_HEAD = ("FAIL --stage names a block of this suite: ['qq']\n"
+                 + _TALLY % ("SELFTEST FAILED", 0, 1) + "\n")
+_RUN_SR127_0_HEAD = ("PASS the next value is read\n"
+                  + _TALLY % ("ALL PASS", 1, 1) + "\n")
+_RUN_SR107_0_TASK = ("FAIL the old broken case (saw 1)\n"
+                     "PASS the new pass\n"
+                     + _TALLY % ("SELFTEST FAILED", 1, 2) + "\n")
+_RUN_SR109_0_TASK = ("test_a_p (__main__.T.test_a_p) ... ok\n"
+                     "test_b_f (__main__.T.test_b_f) ... FAIL\n"
+                     "\n"
+                     + _U_EQ
+                     + "FAIL: test_b_f (__main__.T.test_b_f)\n"
+                     + _U_DASH
+                     + "Traceback (most recent call last):\n"
+                     '  File "<holder>/tree/tests/test_mine.py", line 8, in test_b_f\n'
+                     "    self.assertEqual(mine.v, 7)\n"
+                     "    ~~~~~~~~~~~~~~~~^^^^^^^^^^^\n"
+                     "AssertionError: 1 != 7\n"
+                     "\n"
+                     + _U_DASH
+                     + "Ran 2 tests in 0.000s\n"
+                     "\n"
+                     "FAILED (failures=1)\n")
+_RUN_SR117_HEAD = ("FAIL the old broken case (saw 1)\n"
+                   + _TALLY % ("SELFTEST FAILED", 0, 1) + "\n")
+_RUN_SR121_HEAD = ("test_a_p (__main__.T.test_a_p) ... FAIL\n"
+                   "\n"
+                   + _U_EQ
+                   + "FAIL: test_a_p (__main__.T.test_a_p)\n"
+                   + _U_DASH
+                   + "Traceback (most recent call last):\n"
+                   '  File "<holder>/tree/tests/test_mine.py", line 6, in test_a_p\n'
+                   "    self.assertEqual(mine.v, 5)\n"
+                   "    ~~~~~~~~~~~~~~~~^^^^^^^^^^^\n"
+                   "AssertionError: 1 != 5\n"
+                   "\n"
+                   + _U_DASH
+                   + "Ran 1 test in 0.000s\n"
+                   "\n"
+                   "FAILED (failures=1)\n")
+_RUN_SR127_0_TASK = ("FAIL the next value is read\n"
+                     + _TALLY % ("SELFTEST FAILED", 0, 1) + "\n")
+_RUN_SR128_TASK = ("PASS the old one holds\n"
+                   "FAIL the new case the fix does not fix\n"
+                   + _TALLY % ("SELFTEST FAILED", 1, 2) + "\n")
+_RUN_SR145_HEAD = ("test_value_is_two (tests.test_old.Old.test_value_is_two) ... FAIL\n"
+                   "\n"
+                   + _U_EQ
+                   + "FAIL: test_value_is_two (tests.test_old.Old.test_value_is_two)\n"
+                   + _U_DASH
+                   + "Traceback (most recent call last):\n"
+                   '  File "<holder>/tree/tests/test_old.py", line 6, in test_value_is_two\n'
+                   "    self.assertEqual(mine.v, 2)\n"
+                   "    ~~~~~~~~~~~~~~~~^^^^^^^^^^^\n"
+                   "AssertionError: 1 != 2\n"
+                   "\n"
+                   + _U_DASH
+                   + "Ran 1 test in 0.000s\n"
+                   "\n"
+                   "FAILED (failures=1)\n")
+_RUN_SR146_FIX = ("test_new (tests.test_new.New.test_new) ... ok\n"
+                  "test_value_is_two (test_old.Old.test_value_is_two) ... ok\n"
+                  "\n"
+                  + _U_DASH
+                  + "Ran 2 tests in 0.000s\n"
+                  "\n"
+                  "OK\n")
+_RUN_SR146_HEAD = ("\n"
+                   + _U_DASH
+                   + "Ran 0 tests in 0.000s\n"
+                   "\n"
+                   "NO TESTS RAN\n")
+_RUN_SR147_HEAD = ("test_value_is_two (test_old.Old.test_value_is_two) ... FAIL\n"
+                   "\n"
+                   + _U_EQ
+                   + "FAIL: test_value_is_two (test_old.Old.test_value_is_two)\n"
+                   + _U_DASH
+                   + "Traceback (most recent call last):\n"
+                   '  File "<holder>/tree/tests/test_old.py", line 6, in test_value_is_two\n'
+                   "    self.assertEqual(mine.v, 2)\n"
+                   "    ~~~~~~~~~~~~~~~~^^^^^^^^^^^\n"
+                   "AssertionError: 1 != 2\n"
+                   "\n"
+                   + _U_DASH
+                   + "Ran 1 test in 0.000s\n"
+                   "\n"
+                   "FAILED (failures=1)\n")
+_RUN_SR147_TASK = ("test_new (test_new.New.test_new) ... ok\n"
+                   "test_value_is_two (test_old.Old.test_value_is_two) ... FAIL\n"
+                   "\n"
+                   + _U_EQ
+                   + "FAIL: test_value_is_two (test_old.Old.test_value_is_two)\n"
+                   + _U_DASH
+                   + "Traceback (most recent call last):\n"
+                   '  File "<holder>/tree/tests/test_old.py", line 6, in test_value_is_two\n'
+                   "    self.assertEqual(mine.v, 2)\n"
+                   "    ~~~~~~~~~~~~~~~~^^^^^^^^^^^\n"
+                   "AssertionError: 1 != 2\n"
+                   "\n"
+                   + _U_DASH
+                   + "Ran 2 tests in 0.000s\n"
+                   "\n"
+                   "FAILED (failures=1)\n")
+_RUN_SR148_TASK = ("test_new (tests.test_new.New.test_new) ... ok\n"
+                   "test_value_is_two (tests.test_old.Old.test_value_is_two) ... FAIL\n"
+                   "\n"
+                   + _U_EQ
+                   + "FAIL: test_value_is_two (tests.test_old.Old.test_value_is_two)\n"
+                   + _U_DASH
+                   + "Traceback (most recent call last):\n"
+                   '  File "<holder>/tree/tests/test_old.py", line 6, in test_value_is_two\n'
+                   "    self.assertEqual(mine.v, 2)\n"
+                   "    ~~~~~~~~~~~~~~~~^^^^^^^^^^^\n"
+                   "AssertionError: 1 != 2\n"
+                   "\n"
+                   + _U_DASH
+                   + "Ran 2 tests in 0.000s\n"
+                   "\n"
+                   "FAILED (failures=1)\n")
+_RUN_SR157_FIX = ("test_new (tests.test_new.New.test_new) ... ok\n"
+                  "test_value_is_two (tests.test_old.Old.test_value_is_two) ... ok\n"
+                  "\n"
+                  + _U_DASH
+                  + "Ran 2 tests in 0.000s\n"
+                  "\n"
+                  "OK\n")
+_RUN_SR164_FIX = ("test_value_is_two (tests.test_moved.Old.test_value_is_two) ... ok\n"
+                  "\n"
+                  + _U_DASH
+                  + "Ran 1 test in 0.000s\n"
+                  "\n"
+                  "OK\n")
+_RUN_SR164_TASK = ("test_value_is_two (tests.test_moved.Old.test_value_is_two) ... FAIL\n"
+                   "\n"
+                   + _U_EQ
+                   + "FAIL: test_value_is_two (tests.test_moved.Old.test_value_is_two)\n"
+                   + _U_DASH
+                   + "Traceback (most recent call last):\n"
+                   '  File "<holder>/tree/tests/test_moved.py", line 6, in test_value_is_two\n'
+                   "    self.assertEqual(mine.v, 2)\n"
+                   "    ~~~~~~~~~~~~~~~~^^^^^^^^^^^\n"
+                   "AssertionError: 1 != 2\n"
+                   "\n"
+                   + _U_DASH
+                   + "Ran 1 test in 0.000s\n"
+                   "\n"
+                   "FAILED (failures=1)\n")
+_RUN_SR168_TASK = ("test_new (tests.test_new.New.test_new) ... ok\n"
+                   "test_value_is_two (test_old.Old.test_value_is_two) ... FAIL\n"
+                   "\n"
+                   + _U_EQ
+                   + "FAIL: test_value_is_two (test_old.Old.test_value_is_two)\n"
+                   + _U_DASH
+                   + "Traceback (most recent call last):\n"
+                   '  File "<holder>/tree/tests/../legacy/test_old.py", line 6, in test_value_is_two\n'
+                   "    self.assertEqual(mine.v, 2)\n"
+                   "    ~~~~~~~~~~~~~~~~^^^^^^^^^^^\n"
+                   "AssertionError: 1 != 2\n"
+                   "\n"
+                   + _U_DASH
+                   + "Ran 2 tests in 0.000s\n"
+                   "\n"
+                   "FAILED (failures=1)\n")
+_RUN_SR169_FIX = ("test_value_is_two (tests.test_new.New.test_value_is_two) ... ok\n"
+                  "\n"
+                  + _U_DASH
+                  + "Ran 1 test in 0.000s\n"
+                  "\n"
+                  "OK\n")
+_RUN_SR169_TASK = ("test_value_is_two (tests.test_new.New.test_value_is_two) ... FAIL\n"
+                   "\n"
+                   + _U_EQ
+                   + "FAIL: test_value_is_two (tests.test_new.New.test_value_is_two)\n"
+                   + _U_DASH
+                   + "Traceback (most recent call last):\n"
+                   '  File "<holder>/tree/tests/test_old.py", line 6, in test_value_is_two\n'
+                   "    self.assertEqual(mine.v, 2)\n"
+                   "    ~~~~~~~~~~~~~~~~^^^^^^^^^^^\n"
+                   "AssertionError: 1 != 2\n"
+                   "\n"
+                   + _U_DASH
+                   + "Ran 1 test in 0.000s\n"
+                   "\n"
+                   "FAILED (failures=1)\n")
+_RUN_SR179_FIX = ("PASS old1\n"
+                  + _TALLY % ("ALL PASS", 1, 1) + "\n")
+_RUN_SR179_TASK = ("FAIL old1\n"
+                   + _TALLY % ("SELFTEST FAILED", 0, 1) + "\n")
+_RUN_SR18_0_TASK = ("Traceback (most recent call last):\n"
+                    '  File "<holder>/tree/tests/test_mine.py", line 3, in <module>\n'
+                    "    from newmod import helper_fn\n"
+                    "ModuleNotFoundError: No module named 'newmod'\n")
+_RUN_SR51_0_FIX = ("ERROR: /tmp/nope is not a directory\n"
+                   "ERROR tests/data.json - the path is missing\n"
+                   "PASS the old value is at least one\n"
+                   "PASS the new value is two, as the fix sets it, read as 2\n"
+                   + _TALLY % ("ALL PASS", 2, 2) + "\n")
+_RUN_SR51_0_HEAD = ("PASS the old value is at least one\n"
+                    + _TALLY % ("ALL PASS", 1, 1) + "\n")
+_RUN_SR51_0_TASK = ("ERROR: /tmp/nope is not a directory\n"
+                    "ERROR tests/data.json - the path is missing\n"
+                    "PASS the old value is at least one\n"
+                    "FAIL the new value is two, as the fix sets it, read as 1 (saw 1)\n"
+                    + _TALLY % ("SELFTEST FAILED", 1, 2) + "\n")
+_RUN_SR52_0_FIX = ("PASS the old value is at least one\n"
+                   "PASS nv2 the new value is two\n"
+                   + _TALLY % ("ALL PASS", 2, 2) + "\n")
+_RUN_SR52_0_TASK = ("PASS the old value is at least one\n"
+                    "FAIL nv2 the new value is two (saw 1)\n"
+                    + _TALLY % ("SELFTEST FAILED", 1, 2) + "\n")
+_RUN_SR81_FIX = ("PASS a is b\n"
+                 "PASS the new rule is honoured\n"
+                 + _TALLY % ("ALL PASS", 2, 2) + "\n")
+_RUN_SR81_HEAD = ("PASS a is b\n"
+                  + _TALLY % ("ALL PASS", 1, 1) + "\n")
+_RUN_SR81_TASK = ("PASS a is b\n"
+                  "FAIL the new rule is honoured (saw 1)\n"
+                  + _TALLY % ("SELFTEST FAILED", 1, 2) + "\n")
+_RUN_SR88_HEAD = ("PASS the old one holds\n"
+                  + _TALLY % ("ALL PASS", 1, 1) + "\n")
+_RUN_SR93_0_HEAD = ("test_old (__main__.T.test_old) ... ok\n"
+                    "\n"
+                    + _U_DASH
+                    + "Ran 1 test in 0.000s\n"
+                    "\n"
+                    "OK\n")
+_RUN_SWC2_HEAD = ("  ok      tests/test_mine.py  %d cases  [0.1s]\n" % (1,)
+                  + "\n"
+                  + _sweep_total(1, 1, 1))
+_RUN_SWC2_TASK = ("  FAILED  tests/test_mine.py  exited 1  [0.1s]\n"
+                  "\n"
+                  "--- tests/test_mine.py: exited 1 ---\n"
+                  "PASS old1\n"
+                  "FAIL new1\n"
+                  + _TALLY % ("SELFTEST FAILED", 1, 2) + "\n"
+                  + "\n"
+                  "FAIL  tests/test_mine.py: exited 1\n"
+                  + _sweep_total(0, 1, 0))
+_RUN_SWC8_0_FIX = ("  ok      tests/test_mine.py  %d cases  [0.1s]\n" % (2,)
+                   + "\n"
+                   + _sweep_total(1, 1, 2))
+_RUN_SWN4_HEAD = ("sweep: 2 files, 1 workers\n"
+                  + "  ok      tests/test_b.py                                            %d cases  [0.1s]\n" % (1,)
+                  + "  ok      tests/test_mine.py                                         %d cases  [0.1s]\n" % (18,)
+                  + "\n"
+                  + _sweep_total(2, 2, 19))
+
+_RECORDED = {
+    # -- house --
+    "sr99": {
+        "head": (1, ("FAIL the object <object object at 0x102d9c320> is kept (saw 1)\n"
+                     + _TALLY % ("SELFTEST FAILED", 0, 1) + "\n")),
+        "task": (1, ("FAIL the object <object object at 0x100638320> is kept (saw 1)\n"
+                     "PASS the new pass\n"
+                     + _TALLY % ("SELFTEST FAILED", 1, 2) + "\n")),
+    },
+    "sr117": {
+        "head": (1, _RUN_SR117_HEAD),
+        "task": (1, ("PASS the old broken case\n"
+                     "FAIL the renamed broken case (saw 1)\n"
+                     + _TALLY % ("SELFTEST FAILED", 1, 2) + "\n")),
+    },
+    "sr118": {
+        "head": (1, _RUN_SR117_HEAD),
+        "task": (1, ("FAIL the old broken case (saw 1)\n"
+                     "FAIL the new failing case (saw 1)\n"
+                     + _TALLY % ("SELFTEST FAILED", 0, 2) + "\n")),
+    },
+    "sr119": {
+        "head": (1, ("FAIL the old broken case (saw 1)\n"
+                     "FAIL the old broken case (saw 1)\n"
+                     + _TALLY % ("SELFTEST FAILED", 0, 2) + "\n")),
+        "task": (1, ("FAIL the renamed case (saw 1)\n"
+                     "FAIL the old broken case (saw 1)\n"
+                     "PASS the old broken case\n"
+                     + _TALLY % ("SELFTEST FAILED", 1, 3) + "\n")),
+    },
+    "sr120": {
+        "head": (1, ("FAIL the value (saw 1)\n"
+                     "FAIL the value (as read) (saw 1)\n"
+                     + _TALLY % ("SELFTEST FAILED", 0, 2) + "\n")),
+        "task": (1, ("FAIL the renamed case (saw 1)\n"
+                     "PASS the value\n"
+                     "FAIL the value (as read) (saw 1)\n"
+                     + _TALLY % ("SELFTEST FAILED", 1, 3) + "\n")),
+    },
+    "sr126": {
+        "head": (1, ("FAIL the value is two (saw 1)\n"
+                     + _TALLY % ("SELFTEST FAILED", 0, 1) + "\n")),
+        "task": (1, ("FAIL the value is two (saw 1)\n"
+                     "FAIL the legacy field is kept (saw 1)\n"
+                     + _TALLY % ("SELFTEST FAILED", 0, 2) + "\n")),
+    },
+    "sr179": {
+        "head": (0, ""),
+        "task": (1, _RUN_SR179_TASK),
+        "fix": (0, _RUN_SR179_FIX),
+    },
+    "sr180": {
+        "head": (0, ""),
+        "task": (1, _RUN_SR179_TASK),
+        "fix": (0, _RUN_SR179_FIX),
+    },
+    "sr181": {
+        "head": (0, ""),
+        "task": (1, _RUN_NS1_TASK),
+        "fix": (0, _RUN_NS1_FIX),
+    },
+    "sr107.0": {
+        "head": (1, _RUN_SR117_HEAD),
+        "task": (1, _RUN_SR107_0_TASK),
+    },
+    "sr107.1": {
+        "head": (1, _RUN_SR117_HEAD),
+        "task": (1, _RUN_SR107_0_TASK),
+    },
+    "sr51.0": {
+        "head": (0, _RUN_SR51_0_HEAD),
+        "task": (1, _RUN_SR51_0_TASK),
+        "fix": (0, _RUN_SR51_0_FIX),
+    },
+    "sr51.1": {
+        "head": (0, _RUN_SR51_0_HEAD),
+        "task": (1, _RUN_SR51_0_TASK),
+        "fix": (0, _RUN_SR51_0_FIX),
+    },
+    "sr51.2": {
+        "head": (0, _RUN_SR51_0_HEAD),
+        "task": (1, _RUN_SR51_0_TASK),
+        "fix": (0, _RUN_SR51_0_FIX),
+    },
+    "sr52.0": {
+        "head": (0, _RUN_SR51_0_HEAD),
+        "task": (1, _RUN_SR52_0_TASK),
+        "fix": (0, _RUN_SR52_0_FIX),
+    },
+    "sr52.1": {
+        "head": (0, _RUN_SR51_0_HEAD),
+        "task": (1, _RUN_SR52_0_TASK),
+        "fix": (0, _RUN_SR52_0_FIX),
+    },
+    "sr52.2": {
+        "head": (0, _RUN_SR51_0_HEAD),
+        "task": (1, _RUN_SR52_0_TASK),
+        "fix": (0, _RUN_SR52_0_FIX),
+    },
+    "sr74": {
+        "head": (0, _RUN_SR51_0_HEAD),
+        "task": (1, ("FAIL the table row is read\n"
+                     "PASS the old value is at least one\n"
+                     + _TALLY % ("SELFTEST FAILED", 1, 2) + "\n")),
+        "fix": (0, ("PASS the table row is read\n"
+                    "PASS the old value is at least one\n"
+                    + _TALLY % ("ALL PASS", 2, 2) + "\n")),
+    },
+    "sr88": {
+        "head": (0, _RUN_SR88_HEAD),
+        "task": (1, ("PASS the old one holds\n"
+                     "FAIL the dict row is read\n"
+                     + _TALLY % ("SELFTEST FAILED", 1, 2) + "\n")),
+        "fix": (0, ("PASS the old one holds\n"
+                    "PASS the dict row is read\n"
+                    + _TALLY % ("ALL PASS", 2, 2) + "\n")),
+    },
+    "sr127.0": {
+        "head": (0, _RUN_SR127_0_HEAD),
+        "task": (1, _RUN_SR127_0_TASK),
+        "fix": (0, _RUN_SR127_0_HEAD),
+    },
+    "sr127.1": {
+        "head": (0, _RUN_SR127_0_HEAD),
+        "task": (1, _RUN_SR127_0_TASK),
+        "fix": (0, _RUN_SR127_0_HEAD),
+    },
+    "sr127.2": {
+        "head": (0, ("PASS the file under <holder>/baseline-tmp-qqk91_7n/lbl-ou0_76jo is read\n"
+                     + _TALLY % ("ALL PASS", 1, 1) + "\n")),
+        "task": (1, ("FAIL the file under <holder>/task-tmp-_3l_aiyg/lbl-5qksiy_x is read\n"
+                     + _TALLY % ("SELFTEST FAILED", 0, 1) + "\n")),
+        "fix": (0, ("PASS the file under <holder>/fix-tmp-trgbuu_t/lbl-0gpflwsh is read\n"
+                    + _TALLY % ("ALL PASS", 1, 1) + "\n")),
+    },
+    "sr128": {
+        "head": (0, _RUN_SR88_HEAD),
+        "task": (1, _RUN_SR128_TASK),
+        "fix": (1, _RUN_SR128_TASK),
+    },
+    "sr16": {
+        "head": (0, _RUN_SR179_FIX),
+        "task": (1, ('  File "<holder>/tree/tests/test_mine.py", line 8\n'
+                     "    ok = bool(helper_fn() == 2 ))\n"
+                     "                                ^\n"
+                     "SyntaxError: unmatched ')'\n")),
+    },
+    "sr18.0": {
+        "head": (0, _RUN_SR179_FIX),
+        "task": (1, _RUN_SR18_0_TASK),
+    },
+    "sr18.1": {
+        "head": (0, _RUN_SR179_FIX),
+        "task": (1, _RUN_SR18_0_TASK),
+    },
+    "sr20": {
+        "head": (0, _RUN_SR179_FIX),
+        "task": (1, _RUN_SR18_0_TASK),
+        "second": (1, ("Traceback (most recent call last):\n"
+                       '  File "<holder>/tree/tests/test_mine.py", line 4, in <module>\n'
+                       "    import nothere_mod\n"
+                       "ModuleNotFoundError: No module named 'nothere_mod'\n")),
+    },
+    "sr81": {
+        "head": (0, _RUN_SR81_HEAD),
+        "task": (1, _RUN_SR81_TASK),
+        "fix": (0, _RUN_SR81_FIX),
+    },
+    "sr82": {
+        "head": (0, _RUN_SR81_HEAD),
+        "task": (1, _RUN_SR81_TASK),
+        "fix": (0, _RUN_SR81_FIX),
+    },
+    "sr83": {
+        "head": (0, _RUN_SR81_HEAD),
+        "task": (1, ("PASS a is b\n"
+                     "FAIL the new rule is honoured\n"
+                     + _TALLY % ("SELFTEST FAILED", 1, 2) + "\n")),
+        "fix": (0, _RUN_SR81_FIX),
+    },
+    "sr84": {
+        "head": (0, _RUN_SR81_HEAD),
+        "task": (1, ("PASS a is b\n"
+                     "FAIL the new rule is honoured (saw False)\n"
+                     + _TALLY % ("SELFTEST FAILED", 1, 2) + "\n")),
+        "fix": (0, _RUN_SR81_FIX),
+    },
+    "sr57": {
+        "head": (0, _RUN_SR51_0_HEAD),
+        "task": (1, ("PASS the old value is at least one\n"
+                     "FAIL the fix sets the next value (saw 1)\n"
+                     + _TALLY % ("SELFTEST FAILED", 1, 2) + "\n")),
+        "fix": (0, ("PASS the old value is at least one\n"
+                    "PASS the fix sets the next value\n"
+                    + _TALLY % ("ALL PASS", 2, 2) + "\n")),
+    },
+    "sr58": {
+        "head": (0, ("PASS a is b\n"
+                     "PASS the old value is at least one\n"
+                     + _TALLY % ("ALL PASS", 2, 2) + "\n")),
+        "task": (1, ("PASS a is b\n"
+                     "PASS the old value is at least one\n"
+                     "FAIL the next value is 1 once fixed (saw 1)\n"
+                     + _TALLY % ("SELFTEST FAILED", 2, 3) + "\n")),
+        "fix": (0, ("PASS a is b\n"
+                    "PASS the old value is at least one\n"
+                    "PASS the next value is 2 once fixed\n"
+                    + _TALLY % ("ALL PASS", 3, 3) + "\n")),
+    },
+    "sr60": {
+        "head": (0, _RUN_SR51_0_HEAD),
+        "task": (1, ("PASS the old value is at least one\n"
+                     "FAIL the value is two after the fix (line one\n"
+                     "line two)\n"
+                     + _TALLY % ("SELFTEST FAILED", 1, 2) + "\n")),
+        "fix": (0, ("PASS the old value is at least one\n"
+                    "PASS the value is two after the fix\n"
+                    + _TALLY % ("ALL PASS", 2, 2) + "\n")),
+    },
+    "sr93.2": {
+        "head": (0, (".\n"
+                     + _U_DASH
+                     + "Ran 1 test in 0.000s\n"
+                     "\n"
+                     "OK\n")),
+        "task": (1, ("F.\n"
+                     + _U_EQ
+                     + "FAIL: test_new (__main__.T.test_new)\n"
+                     + _U_DASH
+                     + "Traceback (most recent call last):\n"
+                     '  File "<holder>/tree/tests/test_mine.py", line 8, in test_new\n'
+                     "    self.assertEqual(mine.v, 2)\n"
+                     "    ~~~~~~~~~~~~~~~~^^^^^^^^^^^\n"
+                     "AssertionError: 1 != 2\n"
+                     "\n"
+                     + _U_DASH
+                     + "Ran 2 tests in 0.001s\n"
+                     "\n"
+                     "FAILED (failures=1)\n")),
+        "fix": (0, ("..\n"
+                    + _U_DASH
+                    + "Ran 2 tests in 0.000s\n"
+                    "\n"
+                    "OK\n")),
+    },
+    "sr70": {
+        "head": (0, ""),
+        "task": (1, (".F\n"
+                     + _U_EQ
+                     + "FAIL: test_old (__main__.T.test_old)\n"
+                     + _U_DASH
+                     + "Traceback (most recent call last):\n"
+                     '  File "<holder>/tree/tests/test_mine.py", line 6, in test_old\n'
+                     "    self.assertEqual(mine.v, 2)\n"
+                     "    ~~~~~~~~~~~~~~~~^^^^^^^^^^^\n"
+                     "AssertionError: 1 != 2\n"
+                     "\n"
+                     + _U_DASH
+                     + "Ran 2 tests in 0.000s\n"
+                     "\n"
+                     "FAILED (failures=1)\n"
+                     "FAIL zz9 the harness names a failing case\n"
+                     + _TALLY % ("SELFTEST FAILED", 1, 2) + "\n")),
+    },
+    "sr71": {
+        "head": (0, ""),
+        "task": (1, (".F\n"
+                     + _U_EQ
+                     + "FAIL: test_old (__main__.T.test_old)\n"
+                     + _U_DASH
+                     + "Traceback (most recent call last):\n"
+                     '  File "<holder>/tree/tests/test_mine.py", line 6, in test_old\n'
+                     "    self.assertEqual(mine.v, 2)\n"
+                     "    ~~~~~~~~~~~~~~~~^^^^^^^^^^^\n"
+                     "AssertionError: 1 != 2\n"
+                     "\n"
+                     + _U_DASH
+                     + "Ran 2 tests in 0.000s\n"
+                     "\n"
+                     "FAILED (failures=1)\n"
+                     "FAIL zz9 the harness names a failing case\n")),
+        "fix": (0, ("..\n"
+                    + _U_DASH
+                    + "Ran 2 tests in 0.000s\n"
+                    "\n"
+                    "OK\n"
+                    "FAIL zz9 the harness names a failing case\n")),
+    },
+    "sr67": {
+        "head": (0, ("PASS the value\n"
+                     + _TALLY % ("ALL PASS", 1, 1) + "\n")),
+        "task": (1, ("PASS the value\n"
+                     "FAIL the value (as read) (saw 1)\n"
+                     + _TALLY % ("SELFTEST FAILED", 1, 2) + "\n")),
+        "fix": (0, ("PASS the value\n"
+                    "PASS the value (as read)\n"
+                    + _TALLY % ("ALL PASS", 2, 2) + "\n")),
+    },
+    "sr56": {
+        "head": (0, _RUN_SR51_0_HEAD),
+        "task": (1, ("FAIL: test_new_rule (test_u.T)\n"
+                     "----\n"
+                     "Ran 3 tests in 0.001s\n"
+                     "\n"
+                     "FAILED (failures=1)\n"
+                     "FAIL the old value is at least one (saw 1)\n"
+                     "PASS the gate reports the unittest failure it ran\n"
+                     + _TALLY % ("SELFTEST FAILED", 1, 2) + "\n")),
+    },
+    # -- stage --
+    "ns1": {
+        "head": (1, _RUN_NS1_HEAD),
+        "task": (1, _RUN_NS1_TASK),
+        "fix": (0, _RUN_NS1_FIX),
+    },
+    "ns2": {
+        "head": (1, ("FAIL old2\n"
+                     + _TALLY % ("SELFTEST FAILED", 0, 1) + "\n")),
+        "task": (1, ("FAIL old2\n"
+                     "FAIL new1\n"
+                     + _TALLY % ("SELFTEST FAILED", 0, 2) + "\n")),
+    },
+    "ns3": {
+        "head": (1, ("FAIL old1\n"
+                     "FAIL --stage names a block of this suite: ['zz']\n"
+                     + _TALLY % ("SELFTEST FAILED", 0, 2) + "\n")),
+        "task": (1, ("FAIL old1\n"
+                     "FAIL new1\n"
+                     + _TALLY % ("SELFTEST FAILED", 0, 2) + "\n")),
+    },
+    "ns4": {
+        "head": (1, _RUN_NS4_HEAD),
+        "task": (1, _RUN_NS4_HEAD),
+    },
+    "ns5": {
+        "head": (1, _RUN_NS1_HEAD),
+        "task": (1, _RUN_NS1_TASK),
+        "fix": (0, _RUN_NS1_FIX),
+    },
+    # -- script-unittest --
+    "sr121": {
+        "head": (1, _RUN_SR121_HEAD),
+        "task": (1, ("test_a_p (__main__.T.test_a_p) ... FAIL\n"
+                     "test_b_f (__main__.T.test_b_f) ... FAIL\n"
+                     "\n"
+                     + _U_EQ
+                     + "FAIL: test_a_p (__main__.T.test_a_p)\n"
+                     + _U_DASH
+                     + "Traceback (most recent call last):\n"
+                     '  File "<holder>/tree/tests/test_mine.py", line 6, in test_a_p\n'
+                     "    self.assertEqual(mine.v, 5)\n"
+                     "    ~~~~~~~~~~~~~~~~^^^^^^^^^^^\n"
+                     "AssertionError: 1 != 5\n"
+                     "\n"
+                     + _U_EQ
+                     + "FAIL: test_b_f (__main__.T.test_b_f)\n"
+                     + _U_DASH
+                     + "Traceback (most recent call last):\n"
+                     '  File "<holder>/tree/tests/test_mine.py", line 8, in test_b_f\n'
+                     "    self.assertEqual(mine.v, 7)\n"
+                     "    ~~~~~~~~~~~~~~~~^^^^^^^^^^^\n"
+                     "AssertionError: 1 != 7\n"
+                     "\n"
+                     + _U_DASH
+                     + "Ran 2 tests in 0.000s\n"
+                     "\n"
+                     "FAILED (failures=2)\n")),
+    },
+    "sr138": {
+        "head": (0, ""),
+        "task": (1, ("test_new (__main__.New.test_new) ... FAIL\n"
+                     "\n"
+                     + _U_EQ
+                     + "FAIL: test_new (__main__.New.test_new)\n"
+                     + _U_DASH
+                     + "Traceback (most recent call last):\n"
+                     '  File "<holder>/tree/tests/test_new.py", line 6, in test_new\n'
+                     "    self.assertEqual(mine.v, 2)\n"
+                     "    ~~~~~~~~~~~~~~~~^^^^^^^^^^^\n"
+                     "AssertionError: 1 != 2\n"
+                     "\n"
+                     + _U_DASH
+                     + "Ran 1 test in 0.000s\n"
+                     "\n"
+                     "FAILED (failures=1)\n")),
+        "fix": (0, ("test_new (__main__.New.test_new) ... ok\n"
+                    "\n"
+                    + _U_DASH
+                    + "Ran 1 test in 0.000s\n"
+                    "\n"
+                    "OK\n")),
+    },
+    "sr110": {
+        "head": (1, ("test_old (__main__.T.test_old) ... FAIL\n"
+                     "\n"
+                     + _U_EQ
+                     + "FAIL: test_old (__main__.T.test_old)\n"
+                     + _U_DASH
+                     + "Traceback (most recent call last):\n"
+                     '  File "<holder>/tree/tests/test_mine.py", line 6, in test_old\n'
+                     "    self.assertEqual(mine.v, 3)\n"
+                     "    ~~~~~~~~~~~~~~~~^^^^^^^^^^^\n"
+                     "AssertionError: 1 != 3\n"
+                     "\n"
+                     + _U_DASH
+                     + "Ran 1 test in 0.000s\n"
+                     "\n"
+                     "FAILED (failures=1)\n")),
+        "task": (1, ("test_new (__main__.T.test_new) ... FAIL\n"
+                     "test_old (__main__.T.test_old) ... FAIL\n"
+                     "\n"
+                     + _U_EQ
+                     + "FAIL: test_new (__main__.T.test_new)\n"
+                     + _U_DASH
+                     + "Traceback (most recent call last):\n"
+                     '  File "<holder>/tree/tests/test_mine.py", line 8, in test_new\n'
+                     "    self.assertEqual(mine.v, 2)\n"
+                     "    ~~~~~~~~~~~~~~~~^^^^^^^^^^^\n"
+                     "AssertionError: 1 != 2\n"
+                     "\n"
+                     + _U_EQ
+                     + "FAIL: test_old (__main__.T.test_old)\n"
+                     + _U_DASH
+                     + "Traceback (most recent call last):\n"
+                     '  File "<holder>/tree/tests/test_mine.py", line 6, in test_old\n'
+                     "    self.assertEqual(mine.v, 3)\n"
+                     "    ~~~~~~~~~~~~~~~~^^^^^^^^^^^\n"
+                     "AssertionError: 1 != 3\n"
+                     "\n"
+                     + _U_DASH
+                     + "Ran 2 tests in 0.001s\n"
+                     "\n"
+                     "FAILED (failures=2)\n")),
+    },
+    "sr93.0": {
+        "head": (0, _RUN_SR93_0_HEAD),
+        "task": (1, ("test_new (__main__.T.test_new) ... FAIL\n"
+                     "test_old (__main__.T.test_old) ... ok\n"
+                     "\n"
+                     + _U_EQ
+                     + "FAIL: test_new (__main__.T.test_new)\n"
+                     + _U_DASH
+                     + "Traceback (most recent call last):\n"
+                     '  File "<holder>/tree/tests/test_mine.py", line 8, in test_new\n'
+                     "    self.assertEqual(mine.v, 2)\n"
+                     "    ~~~~~~~~~~~~~~~~^^^^^^^^^^^\n"
+                     "AssertionError: 1 != 2\n"
+                     "\n"
+                     + _U_DASH
+                     + "Ran 2 tests in 0.000s\n"
+                     "\n"
+                     "FAILED (failures=1)\n")),
+        "fix": (0, ("test_new (__main__.T.test_new) ... ok\n"
+                    "test_old (__main__.T.test_old) ... ok\n"
+                    "\n"
+                    + _U_DASH
+                    + "Ran 2 tests in 0.000s\n"
+                    "\n"
+                    "OK\n")),
+    },
+    "sr93.1": {
+        "head": (0, _RUN_SR93_0_HEAD),
+        "task": (1, ("test_old (__main__.T.test_old) ... FAIL\n"
+                     "\n"
+                     + _U_EQ
+                     + "FAIL: test_old (__main__.T.test_old)\n"
+                     + _U_DASH
+                     + "Traceback (most recent call last):\n"
+                     '  File "<holder>/tree/tests/test_mine.py", line 6, in test_old\n'
+                     "    self.assertEqual(mine.v, 2)\n"
+                     "    ~~~~~~~~~~~~~~~~^^^^^^^^^^^\n"
+                     "AssertionError: 1 != 2\n"
+                     "\n"
+                     + _U_DASH
+                     + "Ran 1 test in 0.000s\n"
+                     "\n"
+                     "FAILED (failures=1)\n")),
+        "fix": (0, _RUN_SR93_0_HEAD),
+    },
+    "sr103": {
+        "head": (0, ("test_x (__main__.A.test_x) ... ok\n"
+                     "test_x (__main__.B.test_x) ... ok\n"
+                     "\n"
+                     + _U_DASH
+                     + "Ran 2 tests in 0.000s\n"
+                     "\n"
+                     "OK\n")),
+        "task": (1, ("test_x (__main__.A.test_x) ... ok\n"
+                     "test_x (__main__.B.test_x) ... ok\n"
+                     "test_new (__main__.C.test_new) ... FAIL\n"
+                     "\n"
+                     + _U_EQ
+                     + "FAIL: test_new (__main__.C.test_new)\n"
+                     + _U_DASH
+                     + "Traceback (most recent call last):\n"
+                     '  File "<holder>/tree/tests/test_mine.py", line 9, in test_new\n'
+                     "    self.assertEqual(mine.v, 2)\n"
+                     "    ~~~~~~~~~~~~~~~~^^^^^^^^^^^\n"
+                     "AssertionError: 1 != 2\n"
+                     "\n"
+                     + _U_DASH
+                     + "Ran 3 tests in 0.000s\n"
+                     "\n"
+                     "FAILED (failures=1)\n")),
+        "fix": (0, ("test_x (__main__.A.test_x) ... ok\n"
+                    "test_x (__main__.B.test_x) ... ok\n"
+                    "test_new (__main__.C.test_new) ... ok\n"
+                    "\n"
+                    + _U_DASH
+                    + "Ran 3 tests in 0.000s\n"
+                    "\n"
+                    "OK\n")),
+    },
+    # -- failfast --
+    "sr109.0": {
+        "head": (1, _RUN_SR121_HEAD),
+        "task": (1, _RUN_SR109_0_TASK),
+    },
+    "sr109.1": {
+        "head": (1, _RUN_SR121_HEAD),
+        "task": (1, _RUN_SR109_0_TASK),
+    },
+    "sr109.2": {
+        "head": (1, _RUN_SR121_HEAD),
+        "task": (1, _RUN_SR109_0_TASK),
+    },
+    "sr109.3": {
+        "head": (1, _RUN_SR121_HEAD),
+        "task": (1, _RUN_SR109_0_TASK),
+    },
+    # -- unittest --
+    "sr145": {
+        "head": (1, _RUN_SR145_HEAD),
+        "task": (1, ("test_new (tests.test_new.New.test_new) ... ok\n"
+                     "test_value_is_two (tests.test_old.Old.test_value_is_two) ... FAIL\n"
+                     "\n"
+                     + _U_EQ
+                     + "FAIL: test_value_is_two (tests.test_old.Old.test_value_is_two)\n"
+                     + _U_DASH
+                     + "Traceback (most recent call last):\n"
+                     '  File "<holder>/tree/tests/test_old.py", line 6, in test_value_is_two\n'
+                     "    self.assertEqual(mine.v, 2)\n"
+                     "    ~~~~~~~~~~~~~~~~^^^^^^^^^^^\n"
+                     "AssertionError: 1 != 2\n"
+                     "\n"
+                     + _U_DASH
+                     + "Ran 2 tests in 0.001s\n"
+                     "\n"
+                     "FAILED (failures=1)\n")),
+    },
+    "sr146": {
+        "head": (5, _RUN_SR146_HEAD),
+        "task": (1, ("test_new (tests.test_new.New.test_new) ... ok\n"
+                     "test_value_is_two (test_old.Old.test_value_is_two) ... FAIL\n"
+                     "\n"
+                     + _U_EQ
+                     + "FAIL: test_value_is_two (test_old.Old.test_value_is_two)\n"
+                     + _U_DASH
+                     + "Traceback (most recent call last):\n"
+                     '  File "<holder>/tree/tests/test_old.py", line 6, in test_value_is_two\n'
+                     "    self.assertEqual(mine.v, 2)\n"
+                     "    ~~~~~~~~~~~~~~~~^^^^^^^^^^^\n"
+                     "AssertionError: 1 != 2\n"
+                     "\n"
+                     + _U_DASH
+                     + "Ran 2 tests in 0.000s\n"
+                     "\n"
+                     "FAILED (failures=1)\n")),
+        "fix": (0, _RUN_SR146_FIX),
+    },
+    "sr148": {
+        "head": (1, _RUN_SR145_HEAD),
+        "task": (1, _RUN_SR148_TASK),
+    },
+    "sr153": {
+        "head": (5, _RUN_SR146_HEAD),
+        "task": (1, ("test_new (tests.test_new.New.test_new) ... ok\n"
+                     "test_value_is_two (tests.test_new.New.test_value_is_two) ... FAIL\n"
+                     "test_value_is_two (test_old.Old.test_value_is_two) ... FAIL\n"
+                     "\n"
+                     + _U_EQ
+                     + "FAIL: test_value_is_two (tests.test_new.New.test_value_is_two)\n"
+                     + _U_DASH
+                     + "Traceback (most recent call last):\n"
+                     '  File "<holder>/tree/tests/test_old.py", line 6, in test_value_is_two\n'
+                     "    self.assertEqual(mine.v, 2)\n"
+                     "    ~~~~~~~~~~~~~~~~^^^^^^^^^^^\n"
+                     "AssertionError: 1 != 2\n"
+                     "\n"
+                     + _U_EQ
+                     + "FAIL: test_value_is_two (test_old.Old.test_value_is_two)\n"
+                     + _U_DASH
+                     + "Traceback (most recent call last):\n"
+                     '  File "<holder>/tree/tests/test_old.py", line 6, in test_value_is_two\n'
+                     "    self.assertEqual(mine.v, 2)\n"
+                     "    ~~~~~~~~~~~~~~~~^^^^^^^^^^^\n"
+                     "AssertionError: 1 != 2\n"
+                     "\n"
+                     + _U_DASH
+                     + "Ran 3 tests in 0.001s\n"
+                     "\n"
+                     "FAILED (failures=2)\n")),
+        "fix": (0, ("test_new (tests.test_new.New.test_new) ... ok\n"
+                    "test_value_is_two (tests.test_new.New.test_value_is_two) ... ok\n"
+                    "test_value_is_two (test_old.Old.test_value_is_two) ... ok\n"
+                    "\n"
+                    + _U_DASH
+                    + "Ran 3 tests in 0.000s\n"
+                    "\n"
+                    "OK\n")),
+    },
+    "sr149": {
+        "head": (5, _RUN_SR146_HEAD),
+        "task": (1, ("test_new (tests.test_new.New.test_new) ... FAIL\n"
+                     "\n"
+                     + _U_EQ
+                     + "FAIL: test_new (tests.test_new.New.test_new)\n"
+                     + _U_DASH
+                     + "Traceback (most recent call last):\n"
+                     '  File "<holder>/tree/tests/test_new.py", line 6, in test_new\n'
+                     "    self.assertEqual(mine.v, 2)\n"
+                     "    ~~~~~~~~~~~~~~~~^^^^^^^^^^^\n"
+                     "AssertionError: 1 != 2\n"
+                     "\n"
+                     + _U_DASH
+                     + "Ran 1 test in 0.000s\n"
+                     "\n"
+                     "FAILED (failures=1)\n")),
+        "fix": (0, ("test_new (tests.test_new.New.test_new) ... ok\n"
+                    "\n"
+                    + _U_DASH
+                    + "Ran 1 test in 0.000s\n"
+                    "\n"
+                    "OK\n")),
+    },
+    "sr157": {
+        "head": (5, _RUN_SR146_HEAD),
+        "task": (1, _RUN_SR148_TASK),
+        "fix": (0, _RUN_SR157_FIX),
+    },
+    "sr158": {
+        "head": (5, _RUN_SR146_HEAD),
+        "task": (1, _RUN_SR148_TASK),
+        "fix": (0, _RUN_SR157_FIX),
+    },
+    "sr159": {
+        "head": (5, _RUN_SR146_HEAD),
+        "task": (1, ("test_new (tests.test_new.New.test_new) ... ok\n"
+                     "test_value_is_two (tests.test_new.New.test_value_is_two) ... FAIL\n"
+                     "test_value_is_two (tests.test_new.Other.test_value_is_two) ... ok\n"
+                     "\n"
+                     + _U_EQ
+                     + "FAIL: test_value_is_two (tests.test_new.New.test_value_is_two)\n"
+                     + _U_DASH
+                     + "Traceback (most recent call last):\n"
+                     '  File "<holder>/tree/tests/test_old.py", line 6, in test_value_is_two\n'
+                     "    self.assertEqual(mine.v, 2)\n"
+                     "    ~~~~~~~~~~~~~~~~^^^^^^^^^^^\n"
+                     "AssertionError: 1 != 2\n"
+                     "\n"
+                     + _U_DASH
+                     + "Ran 3 tests in 0.000s\n"
+                     "\n"
+                     "FAILED (failures=1)\n")),
+        "fix": (0, ("test_new (tests.test_new.New.test_new) ... ok\n"
+                    "test_value_is_two (tests.test_new.New.test_value_is_two) ... ok\n"
+                    "test_value_is_two (tests.test_new.Other.test_value_is_two) ... ok\n"
+                    "\n"
+                    + _U_DASH
+                    + "Ran 3 tests in 0.000s\n"
+                    "\n"
+                    "OK\n")),
+    },
+    "sr161": {
+        "head": (0, ("test_value_is_two (test_old.Old.test_value_is_two) ... ok\n"
+                     "\n"
+                     + _U_DASH
+                     + "Ran 1 test in 0.000s\n"
+                     "\n"
+                     "OK\n")),
+        "task": (1, ("test_new (test_new.New.test_new) ... FAIL\n"
+                     "test_value_is_two (test_old.Old.test_value_is_two) ... ok\n"
+                     "\n"
+                     + _U_EQ
+                     + "FAIL: test_new (test_new.New.test_new)\n"
+                     + _U_DASH
+                     + "Traceback (most recent call last):\n"
+                     '  File "<holder>/tree/tests/test_new.py", line 6, in test_new\n'
+                     "    self.assertEqual(mine.v, 2)\n"
+                     "    ~~~~~~~~~~~~~~~~^^^^^^^^^^^\n"
+                     "AssertionError: 1 != 2\n"
+                     "\n"
+                     + _U_DASH
+                     + "Ran 2 tests in 0.000s\n"
+                     "\n"
+                     "FAILED (failures=1)\n")),
+        "fix": (0, ("test_new (test_new.New.test_new) ... ok\n"
+                    "test_value_is_two (test_old.Old.test_value_is_two) ... ok\n"
+                    "\n"
+                    + _U_DASH
+                    + "Ran 2 tests in 0.000s\n"
+                    "\n"
+                    "OK\n")),
+    },
+    "sr150": {
+        "head": (0, ("test_value_is_two (tests.test_old.Old.test_value_is_two) ... ok\n"
+                     "\n"
+                     + _U_DASH
+                     + "Ran 1 test in 0.000s\n"
+                     "\n"
+                     "OK\n")),
+        "task": (1, _RUN_SR148_TASK),
+        "fix": (0, _RUN_SR157_FIX),
+    },
+    "sr164": {
+        "head": (5, _RUN_SR146_HEAD),
+        "task": (1, _RUN_SR164_TASK),
+        "fix": (0, _RUN_SR164_FIX),
+    },
+    "sr165": {
+        "head": (5, _RUN_SR146_HEAD),
+        "task": (1, _RUN_SR164_TASK),
+        "fix": (0, _RUN_SR164_FIX),
+    },
+    "sr166": {
+        "head": (5, _RUN_SR146_HEAD),
+        "task": (1, ("test_value_is_two (tests.test_new.Old.test_value_is_two) ... FAIL\n"
+                     "\n"
+                     + _U_EQ
+                     + "FAIL: test_value_is_two (tests.test_new.Old.test_value_is_two)\n"
+                     + _U_DASH
+                     + "Traceback (most recent call last):\n"
+                     '  File "<holder>/tree/tests/test_new.py", line 6, in test_value_is_two\n'
+                     "    self.assertEqual(mine.v, 2)\n"
+                     "    ~~~~~~~~~~~~~~~~^^^^^^^^^^^\n"
+                     "AssertionError: 1 != 2\n"
+                     "\n"
+                     + _U_DASH
+                     + "Ran 1 test in 0.000s\n"
+                     "\n"
+                     "FAILED (failures=1)\n")),
+        "fix": (0, ("test_value_is_two (tests.test_new.Old.test_value_is_two) ... ok\n"
+                    "\n"
+                    + _U_DASH
+                    + "Ran 1 test in 0.000s\n"
+                    "\n"
+                    "OK\n")),
+    },
+    "sr168": {
+        "head": (5, _RUN_SR146_HEAD),
+        "task": (1, _RUN_SR168_TASK),
+        "fix": (0, _RUN_SR146_FIX),
+    },
+    "sr169": {
+        "head": (5, _RUN_SR146_HEAD),
+        "task": (1, _RUN_SR169_TASK),
+        "fix": (0, _RUN_SR169_FIX),
+    },
+    "sr170": {
+        "head": (5, _RUN_SR146_HEAD),
+        "task": (1, _RUN_SR169_TASK),
+        "fix": (0, _RUN_SR169_FIX),
+    },
+    "sr175": {
+        "head": (5, _RUN_SR146_HEAD),
+        "task": (1, ("test_new_two (tests.test_new.New.test_new_two) ... FAIL\n"
+                     "\n"
+                     + _U_EQ
+                     + "FAIL: test_new_two (tests.test_new.New.test_new_two)\n"
+                     + _U_DASH
+                     + "Traceback (most recent call last):\n"
+                     '  File "<holder>/tree/tests/test_new.py", line 6, in test_new_two\n'
+                     "    self.assertEqual(mine.v, 2)\n"
+                     "    ~~~~~~~~~~~~~~~~^^^^^^^^^^^\n"
+                     "AssertionError: 1 != 2\n"
+                     "\n"
+                     + _U_DASH
+                     + "Ran 1 test in 0.001s\n"
+                     "\n"
+                     "FAILED (failures=1)\n")),
+        "fix": (0, ("test_new_two (tests.test_new.New.test_new_two) ... ok\n"
+                    "\n"
+                    + _U_DASH
+                    + "Ran 1 test in 0.000s\n"
+                    "\n"
+                    "OK\n")),
+    },
+    "sr176": {
+        "head": (5, _RUN_SR146_HEAD),
+        "task": (1, ("test_value_is_two (tests.test_new.New.test_value_is_two) ... FAIL\n"
+                     "\n"
+                     + _U_EQ
+                     + "FAIL: test_value_is_two (tests.test_new.New.test_value_is_two)\n"
+                     + _U_DASH
+                     + "Traceback (most recent call last):\n"
+                     '  File "<holder>/tree/tests/test_old.py", line 6, in test_value_is_two\n'
+                     "    self.assertEqual(mine.v, 2)\n"
+                     "    ~~~~~~~~~~~~~~~~^^^^^^^^^^^\n"
+                     "AssertionError: 1 != 2\n"
+                     "\n"
+                     + _U_DASH
+                     + "Ran 1 test in 0.003s\n"
+                     "\n"
+                     "FAILED (failures=1)\n")),
+        "fix": (0, _RUN_SR169_FIX),
+    },
+    "sr177": {
+        "head": (5, _RUN_SR146_HEAD),
+        "task": (1, _RUN_SR169_TASK),
+        "fix": (0, _RUN_SR169_FIX),
+    },
+    "sr184": {
+        "head": (5, _RUN_SR146_HEAD),
+        "task": (1, _RUN_SR169_TASK),
+        "fix": (0, _RUN_SR169_FIX),
+    },
+    "sr185": {
+        "head": (5, _RUN_SR146_HEAD),
+        "task": (1, _RUN_SR169_TASK),
+        "fix": (0, _RUN_SR169_FIX),
+    },
+    "sr178": {
+        "head": (5, _RUN_SR146_HEAD),
+        "task": (1, _RUN_SR168_TASK),
+        "fix": (0, _RUN_SR146_FIX),
+    },
+    "sr136": {
+        "head": (1, _RUN_SR147_HEAD),
+        "task": (1, _RUN_SR147_TASK),
+    },
+    "sr137": {
+        "head": (1, _RUN_SR147_HEAD),
+        "task": (1, _RUN_SR147_TASK),
+    },
+    # -- sh --
+    "sr147": {
+        "head": (1, _RUN_SR147_HEAD),
+        "task": (1, _RUN_SR147_TASK),
+    },
+    "sr109.4": {
+        "head": (1, _RUN_SR121_HEAD),
+        "task": (1, _RUN_SR109_0_TASK),
+    },
+    # -- jest --
+    "sd3": {
+        "head": (1, ("No tests found, exiting with code 1\n"
+                     "Run with `--passWithNoTests` to exit with code 0\n")),
+        "task": (1, (" FAIL  tests/new.test.js\n"
+                     "  ● mine › v is two\n"
+                     "\n"
+                     "    expect(received).toBe(expected) // Object.is equality\n"
+                     "\n"
+                     "    Expected: 2\n"
+                     "    Received: 1\n"
+                     "\n"
+                     "Test Suites: 1 failed, 1 total\n"
+                     "Tests:       1 failed, 1 total\n")),
+        "fix": (0, (" PASS  tests/new.test.js\n"
+                    "Test Suites: 0 failed, 1 total\n"
+                    "Tests:       1 passed, 1 total\n")),
+    },
+    # -- sweep --
+    "swc2": {
+        "head": (0, _RUN_SWC2_HEAD),
+        "task": (1, _RUN_SWC2_TASK),
+        "fix": (1, _RUN_SWC2_TASK),
+    },
+    "swc8.0": {
+        "head": (0, _RUN_SWC2_HEAD),
+        "task": (1, _RUN_SWC2_TASK),
+        "fix": (0, _RUN_SWC8_0_FIX),
+    },
+    "swc8.1": {
+        "head": (0, _RUN_SWC2_HEAD),
+        "task": (1, _RUN_SWC2_TASK),
+        "fix": (0, _RUN_SWC8_0_FIX),
+    },
+    "swn2": {
+        "head": (1, ("sweep: 2 files, 1 workers\n"
+                     + "  ok      tests/test_mine.py                                         %d cases  [0.1s]\n" % (1,)
+                     + "  FAILED  tests/test_new.py                                          no --selftest (every test and tool the sweep runs must carry one)  [0.1s]\n"
+                     "\n"
+                     "--- tests/test_new.py: no --selftest (every test and tool the sweep runs must carry one) ---\n"
+                     "(no output)\n"
+                     "\n"
+                     "FAIL  tests/test_new.py: no --selftest (every test and tool the sweep runs must carry one)\n"
+                     + _sweep_total(1, 2, 1))),
+        "task": (1, ("sweep: 2 files, 1 workers\n"
+                     + "  ok      tests/test_mine.py                                         %d cases  [0.1s]\n" % (1,)
+                     + "  FAILED  tests/test_new.py                                          exited 1  [0.1s]\n"
+                     "\n"
+                     "--- tests/test_new.py: exited 1 ---\n"
+                     "FAIL new1\n"
+                     + _TALLY % ("SELFTEST FAILED", 0, 1) + "\n"
+                     + "\n"
+                     "FAIL  tests/test_new.py: exited 1\n"
+                     + _sweep_total(1, 2, 1))),
+        "fix": (0, ("sweep: 2 files, 1 workers\n"
+                    + "  ok      tests/test_mine.py                                         %d cases  [0.1s]\n" % (1,)
+                    + "  ok      tests/test_new.py                                          %d cases  [0.1s]\n" % (1,)
+                    + "\n"
+                    + _sweep_total(2, 2, 2))),
+    },
+    "swn3.0": {
+        "head": (1, ("sweep: 1 files, 1 workers\n"
+                     "  FAILED  tests/test_new.py                                          no --selftest (every test and tool the sweep runs must carry one)  [0.1s]\n"
+                     "\n"
+                     "--- tests/test_new.py: no --selftest (every test and tool the sweep runs must carry one) ---\n"
+                     "no contract here\n"
+                     "\n"
+                     "FAIL  tests/test_new.py: no --selftest (every test and tool the sweep runs must carry one)\n"
+                     + _sweep_total(0, 1, 0))),
+        "task": (1, ("sweep: 1 files, 1 workers\n"
+                     "  FAILED  tests/test_new.py                                          exited 1  [0.1s]\n"
+                     "\n"
+                     "--- tests/test_new.py: exited 1 ---\n"
+                     "FAIL new1\n"
+                     + _TALLY % ("SELFTEST FAILED", 0, 1) + "\n"
+                     + "\n"
+                     "FAIL  tests/test_new.py: exited 1\n"
+                     + _sweep_total(0, 1, 0))),
+    },
+    "swn3.1": {
+        "head": (1, ("sweep: 2 files, 1 workers\n"
+                     "  FAILED  tests/test_new.py                                          no --selftest (every test and tool the sweep runs must carry one)  [0.1s]\n"
+                     "  FAILED  tests/test_silent.py                                       no --selftest (every test and tool the sweep runs must carry one)  [0.1s]\n"
+                     "\n"
+                     "--- tests/test_new.py: no --selftest (every test and tool the sweep runs must carry one) ---\n"
+                     "(no output)\n"
+                     "\n"
+                     "--- tests/test_silent.py: no --selftest (every test and tool the sweep runs must carry one) ---\n"
+                     "no contract here\n"
+                     "\n"
+                     "FAIL  tests/test_new.py: no --selftest (every test and tool the sweep runs must carry one)\n"
+                     "FAIL  tests/test_silent.py: no --selftest (every test and tool the sweep runs must carry one)\n"
+                     + _sweep_total(0, 2, 0))),
+        "task": (1, ("sweep: 2 files, 1 workers\n"
+                     "  FAILED  tests/test_new.py                                          exited 1  [0.1s]\n"
+                     + "  ok      tests/test_silent.py                                       %d cases  [0.1s]\n" % (1,)
+                     + "\n"
+                     "--- tests/test_new.py: exited 1 ---\n"
+                     "FAIL new1\n"
+                     + _TALLY % ("SELFTEST FAILED", 0, 1) + "\n"
+                     + "\n"
+                     "FAIL  tests/test_new.py: exited 1\n"
+                     + _sweep_total(1, 2, 1))),
+    },
+    "swn4": {
+        "head": (0, _RUN_SWN4_HEAD),
+        "task": (1, ("sweep: 2 files, 1 workers\n"
+                     "  FAILED  tests/test_b.py                                            exited 1  [0.1s]\n"
+                     + "  ok      tests/test_mine.py                                         %d cases  [0.1s]\n" % (18,)
+                     + "\n"
+                     "--- tests/test_b.py: exited 1 ---\n"
+                     "PASS old1\n"
+                     "FAIL new1\n"
+                     "FAIL new2\n"
+                     + _TALLY % ("SELFTEST FAILED", 1, 3) + "\n"
+                     + "\n"
+                     "FAIL  tests/test_b.py: exited 1\n"
+                     + _sweep_total(1, 2, 18))),
+        "fix": (0, _RUN_SWN4_HEAD),
+    },
+}
 
 
 if __name__ == "__main__":

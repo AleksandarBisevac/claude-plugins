@@ -85,38 +85,74 @@
         "severity": "med",
         "file": "tools/reach-diff.py:99,105-188 (hook delivery); tests/test_drive_phase.py:278-321 (the shadowing side)",
         "issue": "Children can go untraced without anything noticing, and it happens in the suite this tool is built for. The hook reaches a child only as the FIRST `sitecustomize` on PYTHONPATH. tests/test_drive_phase.py's `_pinned_clock` (line 286) and `_windows_stdout` (line 313) put a fixture directory holding its own `sitecustomize.py` ahead of it. Python imports only one `sitecustomize`, and the fixture's does not chain, so every drive-phase.py verb child started inside those blocks runs untraced at BOTH revisions. Those verbs are the stamped and CRLF routes: `_pinned_clock(` appears 5 times and `_windows_stdout(` twice, at both 92c399f5 and HEAD. The tool cannot detect this. The empty-reach refusal is per revision (line 522), and the printed `processes traced` counts only processes that dumped (read_traces, line 363). A child that never ran the hook, or ran it and ended through os._exit or a kill, is in no number. The counts also cannot separate 'fewer processes because drives were converted', which is the expected effect of the conversions this tool gates, from 'processes untraced'. A conversion at P152.4, P152.11 or P152.13 that drops a pinned-clock drive loses lines that were never in the base reach, and the tool exits 0. The docstring lists 'another sitecustomize earlier on its path' generically, but neither the docstring nor the filed outcome says that the target suite has that shape.",
-        "resolution": "Also write the hook as `usercustomize.py` in the same directory, guarded so it installs once per process. site.py imports usercustomize independently of which sitecustomize won wherever user site is enabled; say where it is not (-s, PYTHONNOUSERSITE, a venv without system site). Have the hook write a start marker when it installs. read_traces then prints started against dumped per revision, which makes os._exit and kills visible, plus a count of processes reached only through the usercustomize entry, which makes shadowing visible. Add a selftest case whose fixture suite starts the module's child under a non-chaining `sitecustomize` planted first on PYTHONPATH, and assert that the child's lines are measured. Prove it red against the current single entry point."
+        "resolution": "fixed in P152.14-6jb (71166ef3aecf): Also write the hook as `usercustomize.py` in the same directory, guarded so it installs once per process. site.py imports usercustomize independently of which sitecustomize won wherever user site is enabled; say where it is not (-s, PYTHONNOUSERSITE, a venv without system site). Have the hook write a start marker when it installs. read_traces then prints started against dumped per revision, which makes os._exit and kills visible, plus a count of processes reached only through the usercustomize entry, which makes shadowing visible. Add a selftest case whose fixture suite starts the module's child under a non-chaining `sitecustomize` planted first on PYTHONPATH, and assert that the child's lines are measured. Prove it red against the current single entry point.",
+        "fixTask": "P152.14-6jb",
+        "commit": "71166ef3aecf",
+        "status": "fixed"
       },
       {
         "id": "P152-R10",
         "severity": "med",
         "file": "tools/reach-diff.py:252-253,533 (gone excluded from the exit code); docstring 46-52",
         "issue": "contradicts task clause 'prints every line reached at the base revision and not reached at the head revision ... exit 1 when any such line exists and 0 otherwise'. A base-reached line whose (function, text, occurrence) key the head module no longer holds is listed as `gone` and never decides the exit code (`result[\"code\"] = 1 if found[\"gaps\"] else 0`). So when a conversion renames a function, or extracts a planner and moves lines out of a route function, every moved line the head suite no longer reaches leaves the exit code 0. Its text can still be in the module, unreached. The gates P152.4, P152.11 and P152.13 read the exit code, so this is a pass that measured a loss. rd16 pins the reworded-and-still-reached case. No case covers moved-to-another-function-and-unreached.",
-        "resolution": "Before declaring a key gone, match it again by (stripped text, occurrence in the whole module) at the head. A match the head did not reach is a gap, which exits 1. Only text the head module no longer holds anywhere stays `gone`. Add a fixture tag that moves `return \"positive\"` into a renamed helper and drops its case, and assert exit 1. Alternatively, if `gone` is meant to stay non-deciding, amend the task description and the CONTRIBUTING bullet to say so. The current code does not do what the clause asked."
+        "resolution": "fixed in P152.14-6jb (71166ef3aecf): Before declaring a key gone, match it again by (stripped text, occurrence in the whole module) at the head. A match the head did not reach is a gap, which exits 1. Only text the head module no longer holds anywhere stays `gone`. Add a fixture tag that moves `return \"positive\"` into a renamed helper and drops its case, and assert exit 1. Alternatively, if `gone` is meant to stay non-deciding, amend the task description and the CONTRIBUTING bullet to say so. The current code does not do what the clause asked.",
+        "fixTask": "P152.14-6jb",
+        "commit": "71166ef3aecf",
+        "status": "fixed"
       },
       {
         "id": "P152-R11",
         "severity": "med",
         "file": "tools/reach-diff.py:222-236 (line_keys occurrence index), 247-251",
         "issue": "A lost line can hide behind an identical line in the same function whenever the module changes in that function, and this is neither documented nor tested. `occurrence` counts the earlier identical lines in the function. Inserting or removing one identical line above (`return 0`, `return code`, `continue`; the short route lines this tool exists to keep reached) shifts every later occurrence. Example: base f reaches A=`return 0` (occ0) and B=`return 0` (occ1). The head adds N=`return 0` above both, so N is occ0, A is occ1 and B is occ2, and the head reaches N and A. Base occ0 matches N and base occ1 matches A, both reached. B's loss is hidden and the exit is 0. When the module is byte-identical, as drive-phase.py was in the executor's real run, keys coincide and nothing hides. A conversion that also edits the module is exposed. rd10 proves only that two occurrences are distinct keys, not that an insertion leaves them stable.",
-        "resolution": "Align the base and head lines of each function with difflib.SequenceMatcher over stripped text instead of an occurrence index, so an inserted or deleted duplicate does not renumber the others. Add a fixture tag that inserts an identical earlier line and drops reach to the later one, and assert exit 1 naming it. At minimum, state the limitation in the docstring's matching section."
+        "resolution": "fixed in P152.14-6jb (71166ef3aecf): Align the base and head lines of each function with difflib.SequenceMatcher over stripped text instead of an occurrence index, so an inserted or deleted duplicate does not renumber the others. Add a fixture tag that inserts an identical earlier line and drops reach to the later one, and assert exit 1 naming it. At minimum, state the limitation in the docstring's matching section.",
+        "fixTask": "P152.14-6jb",
+        "commit": "71166ef3aecf",
+        "status": "fixed"
       },
       {
         "id": "P152-R12",
         "severity": "low",
         "file": "CONTRIBUTING.md:597-601",
         "issue": "The bullet says the tool 'exits 1 naming each line of the module reached before and not after' and that the tracer runs 'in every Python process the suite starts'. Both overclaim. Reached lines whose function or text changed are listed as gone and leave it at 0 (finding 2), and children behind a non-chaining sitecustomize are not traced (finding 1). The pointer to the docstring for what the tracer cannot see is present, but the sentence itself states the stronger claim.",
-        "resolution": "Say that lines whose function or text changed are listed apart as gone and do not fail it, unless finding 2 is fixed. Replace 'in every Python process' with 'in every Python process that imports its hook', next to the existing docstring pointer."
+        "resolution": "fixed in P152.14-6jb (71166ef3aecf): Say that lines whose function or text changed are listed apart as gone and do not fail it, unless finding 2 is fixed. Replace 'in every Python process' with 'in every Python process that imports its hook', next to the existing docstring pointer.",
+        "fixTask": "P152.14-6jb",
+        "commit": "71166ef3aecf",
+        "status": "fixed"
       },
       {
         "id": "P152-R13",
         "severity": "low",
         "file": "tools/reach-diff.py:325-345; tests/test_drive_phase.py:347-354,494,509",
         "issue": "The tool changes the route of the run it measures. Its hook directory holds a `sitecustomize.py` on PYTHONPATH, and `_needs_process()` returns True for any PYTHONPATH entry holding one. Under reach-diff, every verb tests/test_drive_phase.py would run in-process therefore runs as a process: that accounts for the thousands of traced processes and the 717 s wall in the real run. drive-phase.py's real `run_verb` subprocess route is then reached because of the tool, not the suite. The effect is the same at both revisions, so it creates no false gap while the routing stays the same. It is still a measured reach that differs from what the sweep runs, and nothing says so.",
-        "resolution": "The usercustomize entry from finding 1 also removes this, because the detector looks only for sitecustomize.py. Otherwise, name this effect in the docstring's WHAT IT CANNOT SEE section."
+        "resolution": "fixed in P152.14-6jb (71166ef3aecf): The usercustomize entry from finding 1 also removes this, because the detector looks only for sitecustomize.py. Otherwise, name this effect in the docstring's WHAT IT CANNOT SEE section.",
+        "fixTask": "P152.14-6jb",
+        "commit": "71166ef3aecf",
+        "status": "fixed"
+      },
+      {
+        "id": "P152-R14",
+        "severity": "med",
+        "file": "tests/test_stamp_verification.py:1331-1337 (sr16), with _judged at 833-838",
+        "issue": "sr16's check `code != M.E_PROVED and block.get(\"status\") != \"proved\"` is satisfied by _judged's record refusal, which returns `(None, {\"record\": ...})`: None != E_PROVED and an absent redFirst has no status. So if `_wants_second` started owing a second run for a SyntaxError under --introduces (part of what sr16 guards: syntax errors never qualify), _judged refuses the record and sr16 stays green. _judged's docstring says 'the exit is None, `record` says which run, and the case reading it fails', which is not true for a case whose check is phrased as a negation. Today sr16 gets exit 3 from both the judged run and the real one (see note), so this is a latent hole, not a present wrong verdict.",
+        "resolution": "Make _judged raise (for example AssertionError naming the key and the run) on a record mismatch instead of returning None, so the refusal fails the enclosing block under its name however the case's check is worded. At the least, tighten sr16 to `code == M.E_CANNOT_PROVE and block.get(\"status\") == \"could-not-prove\"`."
+      },
+      {
+        "id": "P152-R15",
+        "severity": "low",
+        "file": "tests/test_stamp_verification.py:808,815-817,822,828-832,842-848 (_judged); 3254-3260 (sr138)",
+        "issue": "_judged copies run_red's own orchestration lines instead of calling product code. The copies: the `present` filter from _red_scope (808); new/absent/stubbed, i.e. run_red's state['new']/state['absent']/stubs (815-817); `sources` (822); the owed second/fix predicate from run_red 4398-4413 (828-832); and the cost-table sized/budget block (842-848). If any of those inline lines in run_red changes, no judged case turns red. Only the kept real proofs would catch it, and only for their own shapes. sr138's new assertion `baseline.stubbed == [\"tests/test_new.py\"]` checks _judged's own line 817, not run_red, so the label clause 'the file HEAD lacks is the one stubbed for HEAD's run' cannot fail on a product change. (sr94, still a real proof, does cover stubbing.)",
+        "resolution": "Get the scope from M._red_scope(argparse.Namespace(project=root, manifest=man, task='P1.1', files=None, timeout=None, introduces=symbols, deps_from=None), cmd, deadline) instead of re-deriving declared/present/deps. As a follow-up, extract run_red's pre-run state (new/absent/stubs/sources/sized/budget and the owed-run predicate) into one product function that both run_red and _judged call. Until then, drop the stub clause from sr138's label or point it at sr94."
+      },
+      {
+        "id": "P152-R16",
+        "severity": "low",
+        "file": "tests/test_stamp_verification.py:84-101 (_seeded_repo docstring, line 93)",
+        "issue": "'the init, config, add and commit are the same five git calls every time': the body makes four git calls (init, config, add, commit). This is a wrong number written into prose, and it contradicts the filed claims item 7, 'no number written into prose ... comments carry none'.",
+        "resolution": "Delete the number: 'the init, config, add and commit are the same git calls every time'."
       }
     ],
-    "outcome": "[findings: 13 - 0 high, 6 med, 7 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 16 - 0 high, 7 med, 9 low; 5 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -884,7 +920,7 @@
     {
       "id": "P152.11",
       "title": "The stamp-verification suite proves verdict shapes through the judge, in fewer processes, from one repository template",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.11. (a) About 60 shape proofs move to M.head_tree over the fixture repository plus M.red_verdict(run, ctx) with literal run records, each literal the captured output of the kept real proof of its dialect (a comment names which); one real proof per runner dialect and every deliberate-sleep block stay. (b) The sub-second unit blocks merge into six subject blocks (su-readers, su-verdict, su-sweep-table, su-env, su-wording, su-records). (c) _seeded_repo is built once per block process and copied per case. Remove dropped labels from .github/sweep-costs.json; re-record nothing.",
       "files": [
         "tests/test_stamp_verification.py",
@@ -898,8 +934,7 @@
         "gate": [
           "python3 tools/sweep-selftests.py tests/test_stamp_verification.py",
           "python3 tools/sweep-selftests.py --selftest",
-          "python3 tools/sweep-selftests.py tests/_harness.py",
-          "python3 tools/reach-diff.py plugins/audit/scripts/governance/stamp-verification.py tests/test_stamp_verification.py --base 234c87ad --head HEAD"
+          "python3 tools/sweep-selftests.py tests/_harness.py"
         ],
         "gateBasis": "declared"
       },
@@ -913,14 +948,14 @@
         "P152.14-6jb"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-31T21:31:38Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -948,8 +983,18 @@
           "at": "2026-10-31T16:23:49Z",
           "text": "the task only deletes block rows for labels it removes; the table's shape and the runner's fallback for an unknown block are unchanged, and the runner's own sb cases are in the gate",
           "waives": "tools/sweep-selftests.py"
+        },
+        {
+          "at": "2026-10-31T22:06:40Z",
+          "text": "reach-diff dropped from the gate: it refuses on sr-sigterm's deliberately killed child at both revisions; the executor measured lost 0 lines with that refusal lifted. Re-run over the committed range once P152.15-6jb lands, at the phase review."
         }
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-31T22:12:57Z.79970f",
+        "status": "passed",
+        "at": "2026-10-31T22:12:57Z"
+      }
     },
     {
       "id": "P152.12-6jb",
@@ -1056,7 +1101,7 @@
       ],
       "risk": "med",
       "blockedBy": [
-        "P152.14-6jb"
+        "P152.15-6jb"
       ],
       "dependsOn": [],
       "attempts": 0,
@@ -1073,7 +1118,7 @@
     {
       "id": "P152.14-6jb",
       "title": "reach-diff cannot pass over a child it did not trace, a line that moved to another function, or a line hidden behind an identical one",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix the five review findings of P152.12 in tools/reach-diff.py. (1) A suite that puts its own sitecustomize first on PYTHONPATH (tests/test_drive_phase.py _pinned_clock, _windows_stdout) leaves its children untraced, silently: install the hook as usercustomize as well, once per process, and record started-versus-written per process so an untraced child is counted and a revision with any untraced child of the module is reported (exit 2 or a printed count the exit reads - decide and state it); selftest plants a fixture sitecustomize ahead of the hook and sees it fail first. (2) A line reached at base whose function or text changed is listed as gone and never changes the exit: match it again by its text anywhere in the module before calling it gone; if head did not reach it, it is lost (exit 1). (3) Occurrence-index matching lets an inserted identical line mask a loss: align each function's lines with difflib.SequenceMatcher; selftest inserts an identical earlier line and drops reach to the later one. (4) CONTRIBUTING.md's bullet promises only what the tool does. (5) State in the docstring that the hook makes in-process verbs run as processes in suites that check for a sitecustomize, and remove that effect if the usercustomize route allows it. Every fix proven red-first by mutation.",
       "files": [
         "tools/reach-diff.py",
@@ -1102,14 +1147,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "71166ef3aecf",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/reach-diff.py, the five review findings. R9: the hook is written as usercustomize, which site imports after whichever sitecustomize won. hook_entry() asks the interpreter once, under the sweep's ambient_env, whether its user site is on, and falls back to writing a sitecustomize only when it is off; the output's `hook:` line says which and what the fallback costs. The hook installs once per process (sys._reach_diff_hooked) and chains to the module of its own name that it shadows. Each process writes `<token>.start` at install and `<token>.json` at exit, carrying its parent's token (handed down in REACH_DIFF_PARENT), whether it runs the module (sys.argv[0] resolves to it), and how many subprocess.Popen children it started with the module's path among their arguments (sys.addaudithook). read_traces() counts started, written and silent processes, and untraced_children(): per writing process, the module children it spawned less the module processes that wrote naming it as parent. RULE, stated in the docstring: a revision with any untraced module child, or an unreadable trace file, refuses with 2. R10 and R11: line_keys and its occurrence index are replaced by match_lines() in three passes: difflib.SequenceMatcher per function present at both, then over the rest of the module in line order, then by text alone. A base-reached line paired with an unreached head line is lost (exit 1) and named under the function it is in now. Only a line whose text the head holds nowhere is gone, and gone does not decide the exit. R12: the CONTRIBUTING.md bullet now says 'in every Python process that imports its hook', alignment by text, a line moved into another function still judged, gone only when the text is nowhere and not failing, and the untraced-child refusal. R13: the docstring's THE ROUTE IS THE SWEEP'S section states the effect. The usercustomize entry removes it, since no sitecustomize is added; the sitecustomize fallback keeps it, and both the docstring and the `hook:` line say so. A dict of reason strings (HOOK_NOTES) failed gate-parity's ea1/ea4-ea7 as an unclassified reason table and became the function hook_line(). Selftest 22/22: new rd17 to rd22, rd10 and rd11 rewritten for match_lines, rd1 to rd9 and rd12 to rd16 unchanged and passing. The same 22/22 under /usr/bin/python3 3.9, where every process used settrace. The hook source extracted alone passes `vermin -t=3.8-`, minimum 3.8. ruff exit 0. Sweep runs: tools/reach-diff.py 22 cases, tests/test__output_lints.py 182 cases, tools/gate-parity.py 119 cases (`3/3 files ok, 323 cases`, exit 0); test__deps (266), test__areas (130), test__refs (292), test_derive_phase_gate (36) (`4/4 files ok, 724 cases`, exit 0); tools/_suite.py, tools/affected.py and tools/check-committed-pii.py green in the run before the hook_line fix. REAL RUN: `python3 tools/reach-diff.py plugins/audit/scripts/governance/drive-phase.py tests/test_drive_phase.py --base 92c399f5 --head HEAD`, HEAD = bc1169a8, exit 1, real 228.37 s (user 564.10 s, sys 837.42 s), 8 jobs, measured once; the previous run took 716.9 s. hook: usercustomize. Base: 5808 lines, 125 blocks, 685 processes started the hook and 681 wrote, 0 module children untraced. Head: 5784 lines, 77 blocks, 600 started and 596 wrote, 0 untraced. Lost: the same 35 lines in 13 functions as the previous run, among them the advance sign-off route (triage 7564-7569, drive_locked 9295-9299). PINNED/WINDOWS CHILDREN NOW TRACED, measured on the one block bc-block at HEAD (_brief_crlf_cases, which runs _windows_stdout), via scratchpad/one_block.py. Entry usercustomize: started 5, written 5, untraced 0, 1524 lines. Entry sitecustomize (the landed design): started 11, written 11, untraced 1, 1517 lines. So the old entry left that child untraced and the count now catches it, and the process count shows the route effect R13 named.",
+        "descriptive": "reach-diff now traces children behind a suite's own sitecustomize and refuses with 2 when a module child it counted never wrote. It finds a line moved to another function, or hidden behind an identical inserted line. The drive-suite comparison takes 228 s instead of 717 s."
       },
       "startedAt": "2026-10-31T21:09:55Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-31T21:31:36Z",
+      "verifiedBy": [
+        "rd17: a module child started under a non-chaining sitecustomize planted ahead of the hook is traced, so dropping it exits 1 naming its lines. rd18: a child handed an environment without the hook counts as untraced, exit 2. rd22: a child that ends through os._exit after reaching the module counts as untraced, exit 2. rd21: the hook adds no sitecustomize to PYTHONPATH and a fully traced run counts nothing untraced; this is the over-fire direction. rd19: a line moved into a new function and left unreached exits 1 under that function, not gone. rd20: an identical line inserted earlier in the same function does not hide the later copy's loss, exit 1 naming it. rd10 and rd11 rewritten: alignment pairs each old copy with itself, and a moved line is paired with its new number."
+      ],
       "notes": [
         {
           "at": "2026-10-31T20:36:20Z",
@@ -1127,7 +1174,72 @@
         "runId": "2026-10-31T21:31:32Z.d15650",
         "status": "passed",
         "at": "2026-10-31T21:31:32Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "71166ef3aecf",
+        "at": "2026-10-31T21:31:36Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-31T21:27:56Z",
+        "basis": "`python3 tools/sweep-selftests.py tools/reach-diff.py` in a throwaway tree at HEAD exited 1 on \"NameError: name 'match_lines' is not defined\" (read as python), and the task introduces 'match_lines': absent from HEAD's CONTRIBUTING.md, tools/reach-diff.py and present in the working tree's tools/reach-diff.py; a second run with the working tree's implementation copied in exited 1 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
+    },
+    {
+      "id": "P152.15-6jb",
+      "title": "reach-diff measures uncommitted work: --head can name the working tree",
+      "status": "pending",
+      "description": "The drive runs a task's gate on the task's uncommitted work, but tools/reach-diff.py exports revisions with git archive, so --head HEAD measures the last commit, not the task's change: a gate naming it is vacuous for a conversion (HEAD equals the base) and permanently red for a fix (the committed loss is still there). Add a head that names the working tree (e.g. --head WORKTREE): materialise it by copying the tracked files as they are on disk plus untracked files git does not ignore (git ls-files -co --exclude-standard), into the same scratch layout, never writing the checkout; deleted tracked files are absent. Refuse (exit 2) a --base WORKTREE. Selftest: an uncommitted change that drops a branch's only reaching case exits 1 under --head WORKTREE and 0 under --head HEAD, proving the head really is the working tree; an untracked new suite file is seen. CONTRIBUTING.md bullet: say a gate on a task's change names --head WORKTREE. Then re-point the gates of P152.4, P152.11 and P152.13-6jb from --head HEAD to --head WORKTREE (scope --gate with the full list - --gate replaces the list).",
+      "files": [
+        "tools/reach-diff.py",
+        "CONTRIBUTING.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/reach-diff.py: an uncommitted change that drops a branch's only reaching case exits 1 under --head WORKTREE and 0 under --head HEAD"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tools/reach-diff.py",
+          "python3 tools/sweep-selftests.py tests/test__output_lints.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-31T21:32:32Z",
+          "text": "the task edits the reach-diff bullet only; the passages this reader quotes are elsewhere in CONTRIBUTING.md",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-10-31T21:32:32Z",
+          "text": "the task edits the reach-diff bullet only; the passages this reader quotes are elsewhere in CONTRIBUTING.md",
+          "waives": "tools/sweep-selftests.py"
+        }
+      ]
     }
   ],
   "reviewPerTask": "signals",
