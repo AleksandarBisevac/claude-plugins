@@ -992,7 +992,7 @@
     {
       "id": "P154",
       "title": "The release tier is green again: a large plan's report prints, and reach-diff runs on Windows",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P154.json"
     }
   ],

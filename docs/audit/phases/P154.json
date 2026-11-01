@@ -1,7 +1,7 @@
 {
   "id": "P154",
   "title": "The release tier is green again: a large plan's report prints, and reach-diff runs on Windows",
-  "status": "in_progress",
+  "status": "done",
   "description": "Follow-up to P152's CI run 41281241772. BUG-32: Chrome's printToPDF refuses the rendered report of this repository's own plan (about 10 MB). reach-diff, new in P152, never ran on Windows and fails its child-tracing cases there.",
   "desiredOutcome": "The live-plan browser leg passes on every runner at this repository's plan size with headroom measured, and tools/reach-diff.py's selftest passes on the windows cells, so ci/P152's head can land on main",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "438838a0f21af40def003029ac11a7ce9a3f1af2",
   "branch": "audit/p154-the-release-tier-is-green-agai",
-  "mergedAt": null,
+  "mergedAt": "2026-11-01T15:38:04Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -278,5 +278,6 @@
     "runId": "2026-11-01T15:37:02Z.cd3753",
     "status": "passed",
     "at": "2026-11-01T15:37:02Z"
-  }
+  },
+  "mergedHead": "79f7548791dda32f23d462c08510347145a6f667"
 }
