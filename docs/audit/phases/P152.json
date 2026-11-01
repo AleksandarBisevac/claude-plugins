@@ -22,7 +22,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P152-R1",
@@ -329,7 +329,9 @@
         "severity": "low",
         "file": "docs/audit/phases/P152.json:527,608 (and 1526,1608) vs tools/reach-diff.py:815-831",
         "issue": "The diff changes the exit code of a command the plan's gates name. P152.4's and P152.17's gates are spelled `--base HEAD --head WORKTREE`; their work is committed, so a phase review re-running them now refuses with 2 on a clean tree (a red sign-off) and - per finding 1 - measures nothing and exits 0 on the drive's usual dirty tree. Neither reading measures the conversion those gates exist for.",
-        "resolution": "Re-point those gate entries to the commit before each task (`--base <pre-task sha> --head WORKTREE`, as P152.13's gate does with 92c399f5), which measures the conversion both before and after it is committed; use --allow-same only where identical sides really are the expected answer."
+        "resolution": "Re-point those gate entries to the commit before each task (`--base <pre-task sha> --head WORKTREE`, as P152.13's gate does with 92c399f5), which measures the conversion both before and after it is committed; use --allow-same only where identical sides really are the expected answer.",
+        "status": "accepted-open",
+        "acceptedReason": "every med finding is fixed and resolved; R31 was answered by re-pointing the reach gates of P152.4, .13 and .17 at their commit ranges through scope; R36's one-line header is true as written; R47 is fixed in 687e9ab3 Per-task reviewer answers continued over: P152.2 intent diverges: Each divergence is disclosed and serves the task's goal: labels narrowed to what a unit case checks, one extra kept drive (late return), uv-block keeps real verbs where a fake would hide wording drift, and the suite figure re-summed because the recorder's invariant demands it. The med finding (advance sign-off no longer driven) is filed and is fixed in the phase findings round on the final shape of the suite.; P152.3 intent diverges: The five kept blocks are disclosed with a reason each and the dl1 move matches the task. The two medium findings repeat P152.2's class (acting code left unrun after a conversion); they are fixed together with P152.2's in a task that first adds a mechanical line-reach comparison, so the class is closed by an invariant rather than by finding instances.; P152.12-6jb intent diverges: The divergence is the gone-line and occurrence-matching behaviour the review found; it is fixed by P152.14-6jb, which blocks every task that gates on the tool.; P152.15-6jb intent diverges: The divergences are the gate re-pointing done by the orchestrator in the plan, and the per-block blind-spot rule asked for in the brief. The findings are filed; the identical-sides finding is a reporting gap (a gate runs on uncommitted work, so its two sides differ whenever the task changed anything), handled with the lows in the phase findings round.; P152.4 intent diverges: The only divergence is a one-comment edit in drive-phase.py that the conversion made necessary: the old comment named wc, which became a unit case. The two medium findings (a member base distinct from the wave base, and the red-run bug through the real verb) are filed for the phase findings round.; P152.21-6jb intent diverges: per-task findings R28-R31 recorded; they are answered fix in the phase findings round with the other open findings; P152.30-6jb intent diverges: R34 narrowed on purpose (per-run temp and home must normalise or every run differs) and the docstring says so; the two new findings go to the findings round"
       },
       {
         "id": "P152-R32",
@@ -376,7 +378,9 @@
         "severity": "low",
         "file": "tests/test_drive_phase.py:6166",
         "issue": "The task said delete the header lines; the diff keeps a one-line section header ('a wave member's kept tree is not run in the phase tree') it wrote itself. It is true (the section is _provisioned, _brief_of, _CWD_LOG, KEPT_RESTART_CLAUSE and the kept-restart cases) but is a rewrite, not a deletion. Also casesAdded ['kr1'] names a pre-existing case, not one this task added.",
-        "resolution": "None required; optionally drop the retitle or leave as is. casesAdded is harmless but inaccurate."
+        "resolution": "None required; optionally drop the retitle or leave as is. casesAdded is harmless but inaccurate.",
+        "status": "accepted-open",
+        "acceptedReason": "every med finding is fixed and resolved; R31 was answered by re-pointing the reach gates of P152.4, .13 and .17 at their commit ranges through scope; R36's one-line header is true as written; R47 is fixed in 687e9ab3 Per-task reviewer answers continued over: P152.2 intent diverges: Each divergence is disclosed and serves the task's goal: labels narrowed to what a unit case checks, one extra kept drive (late return), uv-block keeps real verbs where a fake would hide wording drift, and the suite figure re-summed because the recorder's invariant demands it. The med finding (advance sign-off no longer driven) is filed and is fixed in the phase findings round on the final shape of the suite.; P152.3 intent diverges: The five kept blocks are disclosed with a reason each and the dl1 move matches the task. The two medium findings repeat P152.2's class (acting code left unrun after a conversion); they are fixed together with P152.2's in a task that first adds a mechanical line-reach comparison, so the class is closed by an invariant rather than by finding instances.; P152.12-6jb intent diverges: The divergence is the gone-line and occurrence-matching behaviour the review found; it is fixed by P152.14-6jb, which blocks every task that gates on the tool.; P152.15-6jb intent diverges: The divergences are the gate re-pointing done by the orchestrator in the plan, and the per-block blind-spot rule asked for in the brief. The findings are filed; the identical-sides finding is a reporting gap (a gate runs on uncommitted work, so its two sides differ whenever the task changed anything), handled with the lows in the phase findings round.; P152.4 intent diverges: The only divergence is a one-comment edit in drive-phase.py that the conversion made necessary: the old comment named wc, which became a unit case. The two medium findings (a member base distinct from the wave base, and the red-run bug through the real verb) are filed for the phase findings round.; P152.21-6jb intent diverges: per-task findings R28-R31 recorded; they are answered fix in the phase findings round with the other open findings; P152.30-6jb intent diverges: R34 narrowed on purpose (per-run temp and home must normalise or every run differs) and the docstring says so; the two new findings go to the findings round"
       },
       {
         "id": "P152-R37",
@@ -483,20 +487,26 @@
         "severity": "low",
         "file": "tools/reach-diff.py:66-67 (docstring), 1493-1514 (_unsupported)",
         "issue": "The docstring says --selftest fails unless 'every refusal is a call to `_refuse` or `_refusal` naming it there'. Neither the walk nor settle sees a refusal written straight into a result, such as `result['refusal'] = 'usage'; return result` from a path no case reaches. Probed: the walk is clean. settle then accepts it, because the code is 2 and the refusal is listed, so the process exits 2 under a listed name and prints no `reach-diff: no comparison made (NAME)` line, which breaks EXIT CODES' 'Each refusal prints a line'. HEAD's walk did not hold this either, but the new sentence claims it does.",
-        "resolution": "Report any write of the `refusal` key outside `_refuse` and `fresh_result` (a subscript store, a dict-literal key, a `refusal=` keyword, `.update`/`.setdefault` with that key), or have `_refuse` record the names it printed in the result and have `settle` refuse a `refusal` it did not print. Failing both, narrow the docstring sentence to what is actually held: every CALL to `_refuse`/`_refusal` names a listed refusal."
+        "resolution": "fixed in P152.42-6jb (687e9ab37811): Report any write of the `refusal` key outside `_refuse` and `fresh_result` (a subscript store, a dict-literal key, a `refusal=` keyword, `.update`/`.setdefault` with that key), or have `_refuse` record the names it printed in the result and have `settle` refuse a `refusal` it did not print. Failing both, narrow the docstring sentence to what is actually held: every CALL to `_refuse`/`_refusal` names a listed refusal.",
+        "fixTask": "P152.42-6jb",
+        "commit": "687e9ab37811",
+        "status": "fixed"
       },
       {
         "id": "P152-R48",
         "severity": "med",
         "file": "tools/reach-diff.py:70-105,200-204,330,361-367,1493",
         "issue": "An escape outside the two blind spots the rewritten docstring now names as exact: under PYTHONOPTIMIZE=2 (or python3 -OO) `__doc__` is None, so `REFUSALS = tuple(doc_refusals(__doc__))` is (), and every `_refuse` raises ValueError - the run's own refusal, main's handler, `_escaped`'s stdout attempt AND its StringIO fallback alike - so the ValueError escapes `_entry` and Python exits 1 with a traceback. Probed in a scratch mirror: `PYTHONOPTIMIZE=2 python3 tools/reach-diff.py x ''` exits 1 (`ValueError: refusal 'internal' is not one the docstring names`), the plain run exits 2 under `usage`; `python3 -OO tools/reach-diff.py --help` exits 1 too. That is the module imported successfully, so 'a failure while the module is being imported' does not cover it, and EXIT CODES' '1 - a line lost, and nothing else ... never left to exit 1 with a traceback' is false for it. HEAD behaved the same but its docstring carved it out ('a failure inside main's own handlers ... ends the process with Python's own code'); this diff removed that carve-out. The gate's selftest (run unoptimised) stays green.",
-        "resolution": "Read the refusal list (and --help's text) from the file's source rather than from `__doc__` - e.g. `ast.get_docstring(ast.parse(<source of __file__>))`, which -OO cannot strip - so `REFUSALS` is never empty; add a case running the CLI as a child under PYTHONOPTIMIZE=2 asserting exit 2 under `usage`, and prove it red against the `__doc__` reading.",
-        "fixTask": "P152.42-6jb"
+        "resolution": "fixed in P152.42-6jb (687e9ab37811): Read the refusal list (and --help's text) from the file's source rather than from `__doc__` - e.g. `ast.get_docstring(ast.parse(<source of __file__>))`, which -OO cannot strip - so `REFUSALS` is never empty; add a case running the CLI as a child under PYTHONOPTIMIZE=2 asserting exit 2 under `usage`, and prove it red against the `__doc__` reading.",
+        "fixTask": "P152.42-6jb",
+        "commit": "687e9ab37811",
+        "status": "fixed"
       }
     ],
-    "outcome": "[findings: 48 - 0 high, 18 med, 30 low; 44 with a recorded fix commit]"
+    "outcome": "[findings: 48 - 0 high, 18 med, 30 low; 46 with a recorded fix commit]",
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "every med finding is fixed and resolved; R31 was answered by re-pointing the reach gates of P152.4, .13 and .17 at their commit ranges through scope; R36's one-line header is true as written; R47 is fixed in 687e9ab3 Per-task reviewer answers continued over: P152.2 intent diverges: Each divergence is disclosed and serves the task's goal: labels narrowed to what a unit case checks, one extra kept drive (late return), uv-block keeps real verbs where a fake would hide wording drift, and the suite figure re-summed because the recorder's invariant demands it. The med finding (advance sign-off no longer driven) is filed and is fixed in the phase findings round on the final shape of the suite.; P152.3 intent diverges: The five kept blocks are disclosed with a reason each and the dl1 move matches the task. The two medium findings repeat P152.2's class (acting code left unrun after a conversion); they are fixed together with P152.2's in a task that first adds a mechanical line-reach comparison, so the class is closed by an invariant rather than by finding instances.; P152.12-6jb intent diverges: The divergence is the gone-line and occurrence-matching behaviour the review found; it is fixed by P152.14-6jb, which blocks every task that gates on the tool.; P152.15-6jb intent diverges: The divergences are the gate re-pointing done by the orchestrator in the plan, and the per-block blind-spot rule asked for in the brief. The findings are filed; the identical-sides finding is a reporting gap (a gate runs on uncommitted work, so its two sides differ whenever the task changed anything), handled with the lows in the phase findings round.; P152.4 intent diverges: The only divergence is a one-comment edit in drive-phase.py that the conversion made necessary: the old comment named wc, which became a unit case. The two medium findings (a member base distinct from the wave base, and the red-run bug through the real verb) are filed for the phase findings round.; P152.21-6jb intent diverges: per-task findings R28-R31 recorded; they are answered fix in the phase findings round with the other open findings; P152.30-6jb intent diverges: R34 narrowed on purpose (per-run temp and home must normalise or every run differs) and the docstring says so; the two new findings go to the findings round",
   "tasks": [
     {
       "id": "P152.1",
@@ -3585,7 +3595,7 @@
     {
       "id": "P152.42-6jb",
       "title": "fix P152-R48: An escape outside the two blind spots the rewritten docstring n...",
-      "status": "in_progress",
+      "status": "done",
       "description": "An escape outside the two blind spots the rewritten docstring now names as exact: under PYTHONOPTIMIZE=2 (or python3 -OO) `__doc__` is None, so `REFUSALS = tuple(doc_refusals(__doc__))` is (), and every `_refuse` raises ValueError - the run's own refusal, main's handler, `_escaped`'s stdout attempt AND its StringIO fallback alike - so the ValueError escapes `_entry` and Python exits 1 with a traceback. Probed in a scratch mirror: `PYTHONOPTIMIZE=2 python3 tools/reach-diff.py x ''` exits 1 (`ValueError: refusal 'internal' is not one the docstring names`), the plain run exits 2 under `usage`; `python3 -OO tools/reach-diff.py --help` exits 1 too. That is the module imported successfully, so 'a failure while the module is being imported' does not cover it, and EXIT CODES' '1 - a line lost, and nothing else ... never left to exit 1 with a traceback' is false for it. HEAD behaved the same but its docstring carved it out ('a failure inside main's own handlers ... ends the process with Python's own code'); this diff removed that carve-out. The gate's selftest (run unoptimised) stays green.\n\nResolution asked: Read the refusal list (and --help's text) from the file's source rather than from `__doc__` - e.g. `ast.get_docstring(ast.parse(<source of __file__>))`, which -OO cannot strip - so `REFUSALS` is never empty; add a case running the CLI as a child under PYTHONOPTIMIZE=2 asserting exit 2 under `usage`, and prove it red against the `__doc__` reading.",
       "files": [
         "tools/reach-diff.py"
@@ -3614,14 +3624,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "687e9ab37811",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/reach-diff.py only. R48 (med): the docstring is read from the file's own source by source_docstring() - compile(..., ast.PyCF_ONLY_AST, dont_inherit=True, optimize=0) + ast.get_docstring - into DOC; REFUSALS and --help read DOC, never __doc__. Plain ast.parse was not enough: on python 3.14 under -OO it also drops the docstring (probed: None), while compile at optimize=0 keeps it on 3.14 and 3.9. _escaped's last resort is now settle(_UNREPORTED, io.StringIO()): _UNREPORTED is a Refusal made once at import by _refusal('internal', ...), pinned in _PINNED, and settle answers it with 2 and its line without reading the list or the exception. Probe: PYTHONOPTIMIZE=2 python3 tools/reach-diff.py x '' -> exit 2 under usage; python3 -OO tools/reach-diff.py --help -> exit 0 with the list. R47 (low): _refuse(result, name, why) no longer prints (out parameter dropped at every site, the walk reads the name at index 1); it records (name, why) under result['refused'] and names the first as refusal. settle is the one printer: one line per recorded refusal, or one for a refusal named with nothing recorded, so an exit-2 result always prints its line exactly once. _unsupported also refuses as internal recorded refusals that are not pairs of a listed name and a reason, or whose first is not the refusal named. Output order consequence: refusal lines now come after everything else the run printed; the 'failed' reason now says the blocks are listed above, and internal says its traceback is printed above. Test helpers _run and _judged go through settle. Docstring updated (contract, ONE PATH TO AN EXIT, _PINNED, EXIT CODES, [internal]). Cases added: rd88 (R47 bare + recorded, once each), rd89 (an exception whose __str__ raises: both attempts fail, still 2), rd90 (R48: child under PYTHONOPTIMIZE=2, usage exit 2 and --help exit 0), rd91 (two recorded refusals, each once, in order); rd77 extended with five malformed or mismatched recorded-refusal shapes. Selftest 160/160; sweep over reach-diff, test__output_lints, test__deps exit 0 (3/3 files ok). Dependants: CONTRIBUTING.md names the path and points at --help, which is unchanged and now also holds under -OO - still correct. hook_line/rebound/parse_args/settle elsewhere are other modules' own definitions sharing a name (a hyphenated file is not imported by name) - unaffected. Left as-is (same class, not in scope): ast.parse at lines 629/1056 (module under test) and refusal_sites' parse of its own source would also drop docstrings if the tool itself ran under -OO on 3.13+; reach and the walk are unaffected in practice since docstring lines are not traced and function_shape skips a leading docstring either way.",
+        "descriptive": "reach-diff no longer exits 1 with a traceback under -OO, and every exit-2 result prints its refusal line exactly once, from settle."
       },
       "startedAt": "2026-11-01T05:37:45Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-01T06:04:59Z",
+      "verifiedBy": [
+        "rd88 a result naming a listed refusal prints that line exactly once, recorded by _refuse or not",
+        "rd89 an exception that cannot be described still exits 2 through _escaped's last resort",
+        "rd90 under PYTHONOPTIMIZE=2 the CLI refuses a bad command line with exit 2 under usage and --help exits 0 with the list",
+        "rd91 each recorded refusal prints its own line once, in order",
+        "rd77 extended: malformed or mismatched recorded refusals are refused as internal"
+      ],
       "notes": [
         {
           "at": "2026-11-01T05:37:39Z",
@@ -3644,6 +3660,17 @@
         "runId": "2026-11-01T06:01:55Z.a0511b",
         "status": "passed",
         "at": "2026-11-01T06:01:55Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "687e9ab37811",
+        "at": "2026-11-01T06:04:59Z",
+        "return": "docs/audit/evidence/returns/P152.42-6jb/20261101T053745Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "tests.expectRedFirst is false on this tdd task: it names no case to prove a red by, so no red-first proof is owed",
+        "at": "2026-11-01T05:50:38Z"
       }
     },
     {
@@ -3706,10 +3733,10 @@
     }
   ],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "4331b4e9-59c2-4a61-9004-3102aba69ea2",
-    "branch": "audit/p152-the-full-sweep-finishes-under",
-    "at": "2026-10-31T15:42:25Z"
-  },
-  "startedAt": "2026-10-31T15:42:25Z"
+  "startedAt": "2026-10-31T15:42:25Z",
+  "testEvidence": {
+    "runId": "2026-11-01T06:16:13Z.8b9e57",
+    "status": "passed",
+    "at": "2026-11-01T06:16:13Z"
+  }
 }
