@@ -29,7 +29,7 @@
         "source": "github",
         "repo": "AleksandarBisevac/claude-archmap"
       },
-      "description": "Evidence-backed architecture maps for any repo: C4-style application graph, ER diagram, sequence diagrams, CRUD matrix and data lineage in one offline HTML viewer, updated incrementally from git diffs with a stable layout and an optional issues overlay. Pre-release (0.x).",
+      "description": "Maps a repository's architecture into one evidence-backed model and renders it as a self-contained, offline HTML viewer: application graph, ER diagram, sequence diagrams, CRUD matrix and data lineage, updated incrementally from git diffs.",
       "category": "documentation",
       "tags": [
         "architecture",
@@ -38,7 +38,8 @@
         "er-diagram",
         "sequence-diagrams",
         "documentation",
-        "data-lineage"
+        "data-lineage",
+        "crud-matrix"
       ],
       "homepage": "https://github.com/AleksandarBisevac/claude-archmap",
       "strict": true
