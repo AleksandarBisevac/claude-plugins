@@ -1,0 +1,24 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_audit_lookup.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task with expectRedFirst false: the behaviour is already correct at HEAD, so HEAD's code holds no red for the helper to find. The case was instead proven by mutation of the code under test: audit-lookup.wave_tree's return mutated to `return tree, wave.get(\"base\")` (landed-assert, __pycache__ purged, restored in the same script, git diff --quiet after = clean) -> `tests/test_drive_phase.py --selftest --stage uy-block` exit 1, `FAIL wt6r ...`, 42/43; restored -> 43/43.",
+    "at": "2026-11-01, mutation probe run in the task's own worktree before submit"
+  },
+  "outcome": {
+    "technical": "tests/test_drive_phase.py only, edited in the task's worktree. The wt6 rig in _adopt_units now loads the driver with `_load` (real write_state) and points ctx stateDir at `_harness.fixture_root(\"drive-adopt-state-\")`, so add_tree's own write lands on disk. New case wt6r reads that file back with `_fr.drive_state` (asserts wave.base == d*40 and wave.bases == {P1.1: c*40}, so the fixture separates the two bases) and asks audit-lookup's `wave_tree` and `wave_tree_lines` for P1.1, expecting `(_WAVE_TREE, _WAVE_BASE)` and exactly one `base:` line naming c*40. Corrected the e2e-wave header sentence (the brief half was attributed to test_audit_lookup.py; now names wt6r) and the 'context pointing at nothing on disk' sentence, and added wt6r to the guarantee map. Gate: `python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_audit_lookup.py` exit 0, `2/2 files ok, 906 cases`. uy-block alone: 43/43 in 0.79 s wall, so its cost did not change materially and .github/sweep-costs.json was not regenerated. ruff check exit 0, vermin -t=3.8- clean. Dependants: tests/test_audit_lookup.py untouched, so its own dependants are unchanged and still correct. test_drive_phase.py's dependants (sweep-costs.json, ci.yml, drive-phase.py, test__runner_output.py, test_run_test_gate.py, test_stamp_verification.py, affected.py, reach-diff.py) are still correct: no helper name was added, renamed or removed, the STAGES table is the same, and drive-phase.py and audit-lookup.py were not edited. The claim the finding names ('the brief half is test_audit_lookup's') is corrected: the brief half is wt6r's.",
+    "descriptive": "wt6r restores coverage across the drive-to-audit-lookup boundary for a wave member whose base differs from the wave's base"
+  },
+  "testsAdded": [
+    "wt6r: the drive's written state for an adopted member, read back through audit-lookup.wave_tree and wave_tree_lines, names the member's own base (c*40) and not the later wave's base (d*40)"
+  ],
+  "casesAdded": [
+    "wt6r"
+  ],
+  "claims": "claims:\n1 tests/test_drive_phase.py header: wt6r is the case in _adopt_units that calls lookup.wave_tree / wave_tree_lines on the state add_tree wrote (drive-phase.py add_tree records bases and calls write_state; audit-lookup.py wave_tree returns bases.get(id) or wave.base)\n2 wave_tree mutated to `return tree, wave.get(\"base\")` -> uy-block exit 1, FAIL wt6r, 42/43 -> restored 43/43; pycache purged both ways\n3 grep 'test_audit_lookup.py' in the e2e header: one attribution sentence, rewritten; wt7 left as is because the finding asks only for a case where the bases differ, and wt6r is that case\n4 n/a - no rule to an agent\n5 n/a - no property recorded (the 0.79 s wall is one run and is used only to decide not to re-record costs)\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:b14576648e4c875b5e879390adc8f89e836a6a201446a9fb25c00119ec3e55c7\",\"dirtyDigest\":\"sha256:1808bb0f638266519c691f870c399c131e8dd8e29a20c542c81367291ea15994\",\"dirtyPaths\":{\"tests/test_drive_phase.py\":\"4a21964242617580\"},\"head\":\"20498ee3\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tests/test_audit_lookup.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:690bed1ac692b16b0d4c644a232cedf11a2846e5f6feff47a219ce1f135348af\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

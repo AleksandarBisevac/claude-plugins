@@ -1,0 +1,15 @@
+{
+ "findings": [],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Clause: 'Or put one in uy-block that writes the state[\"wave\"] wt6 records to a temp state dir and asks audit-lookup's wave_tree for P1.1, expecting (_WAVE_TREE, _WAVE_BASE), not _WAVE_NEW_BASE. Then correct the claim and the e2e-wave header sentence.' Diff: _adopt_units now loads the driver with `_load` and `ctx = _step_ctx(stateDir=held)` (held = _harness.fixture_root), and wt6r asserts `disk_wave.get(\"base\") == _WAVE_NEW_BASE and disk_wave.get(\"bases\") == {\"P1.1\": _WAVE_BASE} and read == (_WAVE_TREE, _WAVE_BASE) and named == [\"base: %s\" % (_WAVE_BASE,)]`; the e2e header sentence attributing the brief half to test_audit_lookup.py is rewritten to name wt6r. The claim ('wt6r reads that file back ... asks audit-lookup's wave_tree and wave_tree_lines for P1.1'; test_drive_phase.py only; drive-phase.py and audit-lookup.py not edited) describes the diff. Driver side also covered: in a scratch export of the tree (HEAD + this diff), drive-phase.py:4650 `base = made.get(\"base\") or wave[\"base\"]` mutated to `base = wave[\"base\"]` (landed-assert by grep, __pycache__ purged) -> `tests/test_drive_phase.py --selftest --stage uy-block` exit 1, FAIL wt6 and FAIL wt6r (bases {'P1.1': 'ddd...'}), 41/43; restored, purged, git diff --quiet clean; unmutated baseline 43/43 exit 0. The task-add `--base` the driver passes (the wave's) is held by wt6's `adds[0][2:5] == [\"P1.1\", \"--base\", _WAVE_NEW_BASE]`; adoption at the tree's own base on disk is test_manage_worktrees.py's.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "tests.mode regression, tests.expectRedFirst false (docs/audit/phases/P152.json), so no red at HEAD is owed. Executor's basis: 'audit-lookup.wave_tree's return mutated to `return tree, wave.get(\"base\")` ... -> uy-block exit 1, FAIL wt6r ..., 42/43; restored -> 43/43'. Reviewer's own mutation of the driver's base choice (drive-phase.py:4650) also turned wt6 and wt6r red, exit 1, 41/43.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "Gate command `python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_audit_lookup.py` selects those two files whole. Read for the behaviour this task names (a member's base differing from the wave's, across drive writer and audit-lookup reader): bf40 (tests/test_audit_lookup.py:1765) carries no `bases` and wt7 reads `base:` only where member base equals wave base, so neither alone distinguishes the two - but wt6r now does, and both the reader mutation (executor) and the writer mutation (reviewer) turn it red; no selected case found that would still pass with that behaviour deleted and is the only holder of it."
+ },
+ "verdict": "clean",
+ "tasks": []
+}

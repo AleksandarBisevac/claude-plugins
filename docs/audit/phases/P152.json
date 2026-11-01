@@ -211,8 +211,10 @@
         "severity": "low",
         "file": "PLUGIN-BUILD-GUIDE.md:4500-4505; plugins/audit/scripts/governance/drive-phase.py:3914-3919",
         "issue": "R1's narrowing swapped one over-claim for an enumeration. 'The other branches on plain values are still decided inline where they act: <list>' reads as the complete set of inline branches, but it leaves some out. drive_task's status arms (drive-phase.py:9124-9136: terminal, blocked, not in_progress) are inline plain-value branches, and this task's own dt10 tests one of them. gate_step's exit-code arms (4414-4423) and answer_refusal's checks (6551-6580) are others. A reader who takes the list as the whole set will think drive_task's blocked stop is a planner arm or covered by one, and the next new inline branch makes the list false again without anyone touching the sentence. This is the same class R1 recorded: fixed once by listing places, with the class left open.",
-        "resolution": "In both places, say it as a class rather than a list. For example: 'Every other branch on plain values is decided inline where it acts. Among them are advance's stored-green check on a filed return, integrate_member, ...' Keep the named examples, but drop the reading that the list is exhaustive.",
-        "fixTask": "P152.24-6jb"
+        "resolution": "fixed in P152.24-6jb (20498ee3d1d3): In both places, say it as a class rather than a list. For example: 'Every other branch on plain values is decided inline where it acts. Among them are advance's stored-green check on a filed return, integrate_member, ...' Keep the named examples, but drop the reading that the list is exhaustive.",
+        "fixTask": "P152.24-6jb",
+        "commit": "20498ee3d1d3",
+        "status": "fixed"
       },
       {
         "id": "P152-R21",
@@ -305,7 +307,7 @@
         "resolution": "Re-point those gate entries to the commit before each task (`--base <pre-task sha> --head WORKTREE`, as P152.13's gate does with 92c399f5), which measures the conversion both before and after it is committed; use --allow-same only where identical sides really are the expected answer."
       }
     ],
-    "outcome": "[findings: 31 - 0 high, 12 med, 19 low; 18 with a recorded fix commit]"
+    "outcome": "[findings: 31 - 0 high, 12 med, 19 low; 19 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -554,7 +556,7 @@
           "python3 tools/sweep-selftests.py --selftest",
           "python3 tools/sweep-selftests.py tests/test__output_lints.py",
           "python3 tools/sweep-selftests.py tests/test_stamp_verification.py",
-          "python3 tools/reach-diff.py plugins/audit/scripts/governance/drive-phase.py tests/test_drive_phase.py --base HEAD --head WORKTREE"
+          "python3 tools/reach-diff.py plugins/audit/scripts/governance/drive-phase.py tests/test_drive_phase.py --base 025f279e --head 3b692227"
         ],
         "gateBasis": "declared"
       },
@@ -1297,7 +1299,7 @@
         "gate": [
           "python3 tools/sweep-selftests.py tests/test_drive_phase.py",
           "python3 tools/sweep-selftests.py tests/test_stamp_verification.py",
-          "python3 tools/reach-diff.py plugins/audit/scripts/governance/drive-phase.py tests/test_drive_phase.py --base 92c399f5 --head WORKTREE"
+          "python3 tools/reach-diff.py plugins/audit/scripts/governance/drive-phase.py tests/test_drive_phase.py --base 92c399f5 --head 025f279e"
         ],
         "gateBasis": "declared"
       },
@@ -1635,7 +1637,7 @@
           "python3 tools/sweep-selftests.py tests/test_drive_phase.py",
           "python3 tools/sweep-selftests.py tests/test_audit_task.py",
           "python3 tools/sweep-selftests.py --selftest",
-          "python3 tools/reach-diff.py plugins/audit/scripts/manifest/audit-task.py tests/test_audit_task.py --base HEAD --head WORKTREE"
+          "python3 tools/reach-diff.py plugins/audit/scripts/manifest/audit-task.py tests/test_audit_task.py --base 3b692227 --head 5bb44004"
         ],
         "gateBasis": "declared"
       },
@@ -1775,7 +1777,7 @@
     {
       "id": "P152.19-6jb",
       "title": "fix P152-R15: _judged copies run_red's own orchestration lines instead of cal...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "_judged copies run_red's own orchestration lines instead of calling product code. The copies: the `present` filter from _red_scope (808); new/absent/stubbed, i.e. run_red's state['new']/state['absent']/stubs (815-817); `sources` (822); the owed second/fix predicate from run_red 4398-4413 (828-832); and the cost-table sized/budget block (842-848). If any of those inline lines in run_red changes, no judged case turns red. Only the kept real proofs would catch it, and only for their own shapes. sr138's new assertion `baseline.stubbed == [\"tests/test_new.py\"]` checks _judged's own line 817, not run_red, so the label clause 'the file HEAD lacks is the one stubbed for HEAD's run' cannot fail on a product change. (sr94, still a real proof, does cover stubbing.)\n\nResolution asked: Get the scope from M._red_scope(argparse.Namespace(project=root, manifest=man, task='P1.1', files=None, timeout=None, introduces=symbols, deps_from=None), cmd, deadline) instead of re-deriving declared/present/deps. As a follow-up, extract run_red's pre-run state (new/absent/stubs/sources/sized/budget and the owed-run predicate) into one product function that both run_red and _judged call. Until then, drop the stub clause from sr138's label or point it at sr94.",
       "files": [
         "tests/test_stamp_verification.py"
@@ -1796,14 +1798,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-01T02:20:00Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -1818,7 +1820,13 @@
       ],
       "fixes": [
         "P152-R15"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-01T02:35:39Z.65b020",
+        "status": "passed",
+        "at": "2026-11-01T02:35:39Z"
+      }
     },
     {
       "id": "P152.20-6jb",
@@ -1958,7 +1966,7 @@
     {
       "id": "P152.22-6jb",
       "title": "fix P152-R18: A blind spot is matched only by the number of untraced children...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "A blind spot is matched only by the number of untraced children per block label. The docstring says such a block 'measured the same blind spot on both sides', and CONTRIBUTING says 'the same such children'. Equal counts do not establish that. Suppose the base kills a child that runs path P (P reached nowhere else) and the head kills a different child in the same block. The counts match, P's loss is invisible, and the run exits 0. In a suite with no STAGES table the label is '(whole file)', so the match is one count over the whole suite. The residual risk is half-stated ('lines only those children ran are measured at neither revision'), but the sentence before it claims identity.\n\nResolution asked: Record each module child's identity: the child dumps its argv with the export root stripped, and the parent's `spawned` records the same key. Then match the multiset of untraced keys per block instead of their count. If identity matching is not wanted, reword the docstring and the CONTRIBUTING sentence to say the same NUMBER of children, and state that a different child killed at the head hides a loss among the lines the base's child ran.",
       "files": [
         "tools/reach-diff.py",
@@ -1986,14 +1994,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-01T02:20:04Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -2026,7 +2034,13 @@
       ],
       "fixes": [
         "P152-R18"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-01T02:46:32Z.05a060",
+        "status": "passed",
+        "at": "2026-11-01T02:46:32Z"
+      }
     },
     {
       "id": "P152.23-6jb",
@@ -2089,7 +2103,7 @@
     {
       "id": "P152.24-6jb",
       "title": "fix P152-R20: R1's narrowing swapped one over-claim for an enumeration. 'The ...",
-      "status": "in_progress",
+      "status": "done",
       "description": "R1's narrowing swapped one over-claim for an enumeration. 'The other branches on plain values are still decided inline where they act: <list>' reads as the complete set of inline branches, but it leaves some out. drive_task's status arms (drive-phase.py:9124-9136: terminal, blocked, not in_progress) are inline plain-value branches, and this task's own dt10 tests one of them. gate_step's exit-code arms (4414-4423) and answer_refusal's checks (6551-6580) are others. A reader who takes the list as the whole set will think drive_task's blocked stop is a planner arm or covered by one, and the next new inline branch makes the list false again without anyone touching the sentence. This is the same class R1 recorded: fixed once by listing places, with the class left open.\n\nResolution asked: In both places, say it as a class rather than a list. For example: 'Every other branch on plain values is decided inline where it acts. Among them are advance's stored-green check on a filed return, integrate_member, ...' Keep the named examples, but drop the reading that the list is exhaustive.",
       "files": [
         "PLUGIN-BUILD-GUIDE.md",
@@ -2114,14 +2128,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "20498ee3d1d3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Reworded both places as a class statement: 'Every other branch on plain values is decided inline where it acts. Among them are ...' keeping every named example and adding drive_task's status arms, gate_step's exit-code arms and answer_refusal's checks, plus 'these name examples, not the whole set, and a branch added later is decided where it acts as well'. Edits: PLUGIN-BUILD-GUIDE.md paragraph 'Deciding on facts' and the '# --- deciding a step on facts ---' comment in plugins/audit/scripts/governance/drive-phase.py (comment lines only; git diff filtered of '#' lines is empty). Added tests/test_drive_phase.py _prose_of + _inline_branch_class_cases called from _text_cases (cases tx4 driver comment, tx5 guide paragraph): each asserts the class sentence appears exactly once, 'Among them' exactly once, and the old exhaustive wording is absent; None from a missing marker is a red case. Runs: sweep-selftests.py tests/test_drive_phase.py exit 0 (761 cases); sweep-selftests.py tests/test__output_lints.py tests/test__deps.py exit 0 (448 cases, prose lints). Bare-shape grep for 'decided inline|still decided|decided where they act' over the repo outside docs: only these two places and the new test; SECURITY.md:998 is an unrelated sentence. Dependants: tests/test_drive_phase.py (gained cases, full suite green), tools/affected.py, tools/reach-diff.py, README.md, docs/research/pipeline-cost-design.md, hooks/detect-plan-skip.py, record-risk-confirmation.py and the guide's 25 dependants are unchanged and still correct because only comment text moved in drive-phase.py (no name, signature or behaviour) and one guide paragraph was reworded with no heading, anchor or tree line changed; the two prose lints over the guide and drive-phase.py are green.\n\nclaims:\n1 drive-phase.py:3914-3921 and PLUGIN-BUILD-GUIDE.md:4500-4507 say only that every other plain-value branch is decided inline where it acts, with named examples; the named drive_task/gate_step/answer_refusal exist at drive-phase.py:9119, 4404, 6552\n2 tx4/tx5 FAIL on the old text (0 class sentences, old wording present), PASS after; the count==1 and absence checks are the guard against re-listing as exhaustive\n3 grep -rnE 'decided inline|still decided|decided where they act': 2 prose hits (both fixed) plus SECURITY.md:998 (left, unrelated sentence about path resolution) plus the new test\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 no number written in prose; the lints exit 0",
+        "descriptive": "The two statements about inline-decided branches are now a class ('every other branch ... where it acts') with examples, so they no longer read as an exhaustive list."
       },
       "startedAt": "2026-11-01T01:44:17Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-01T02:19:41Z",
+      "verifiedBy": [
+        "tx4/tx5: the driver section comment and the build guide paragraph each state the inline-branch class once, carry 'Among them' once and no longer say 'are still decided inline'"
+      ],
       "notes": [
         {
           "at": "2026-11-01T01:43:51Z",
@@ -2164,12 +2180,24 @@
         "runId": "2026-11-01T02:15:19Z.44fd15",
         "status": "passed",
         "at": "2026-11-01T02:15:19Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "20498ee3d1d3",
+        "at": "2026-11-01T02:19:41Z",
+        "return": "docs/audit/evidence/returns/P152.24-6jb/20261101T014417Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-11-01T01:53:16Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD exited 1 with failing cases ta9 (house FAIL), tx4 (house FAIL), tx5 (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 758/759 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 758/761 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P152.25-6jb",
       "title": "fix P152-R21: The old wt6 drove a later wave over a kept tree and asserted `(...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The old wt6 drove a later wave over a kept tree and asserted `(\"base: %s\" % (base,)) in brief`. That held audit-lookup.wave_tree's `bases.get(task) or wave.get(\"base\")` precedence (plugins/audit/scripts/status/audit-lookup.py:595-596): the brief must name the base the adopted tree was cut at, not the new wave's base. The new wt6 checks only the driver half (`wave.get(\"bases\") == {\"P1.1\": _WAVE_BASE}`). The claim says 'the brief half is test_audit_lookup's', and the e2e header says the same, but neither holds. bf40's drive state (tests/test_audit_lookup.py:1765) carries no `bases` key. The kept wt7 reads `base:` in a brief only where the member's base equals the wave base, so it would still pass with the `bases` read deleted. A one-line defect `return tree, wave.get(\"base\")` in audit-lookup.wave_tree now turns no case red. The `bases` field crosses the boundary from the drive (writer) to audit-lookup (reader), and this diff removed the only case that held both sides.\n\nResolution asked: Add a case where the two bases differ. Either put one in tests/test_audit_lookup.py beside bf40, with a state whose `wave.bases[\"P1.1\"]` is not `wave.base`, asserting the brief's `base:` line names the member's base and not the wave's. Or put one in uy-block that writes the `state[\"wave\"]` wt6 records to a temp state dir and asks audit-lookup's wave_tree for P1.1, expecting `(_WAVE_TREE, _WAVE_BASE)`, not `_WAVE_NEW_BASE`. Then correct the claim and the e2e-wave header sentence.",
       "files": [
         "tests/test_drive_phase.py",
@@ -2191,14 +2219,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-01T02:20:07Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -2213,7 +2241,13 @@
       ],
       "fixes": [
         "P152-R21"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-01T02:48:28Z.607aa6",
+        "status": "passed",
+        "at": "2026-11-01T02:48:28Z"
+      }
     },
     {
       "id": "P152.26-6jb",

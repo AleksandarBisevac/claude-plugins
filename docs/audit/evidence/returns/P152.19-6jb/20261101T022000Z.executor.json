@@ -1,0 +1,32 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_stamp_verification.py": "pass",
+    "ruff check tests/test_stamp_verification.py": "pass",
+    "vermin -t=3.8- --no-tips --violations tests/test_stamp_verification.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task with tests.expectRedFirst false; the test-only change cannot be red on HEAD's product code, which it does not change. The proof the finding asks for was made instead by in-memory mutation of run_red: probe <scratchpad>/probe_before.py loads HEAD's copy of the suite (git show HEAD:tests/test_stamp_verification.py) and runs its _judged on sr138's fixture against two rewritten copies of stamp-verification.py; it printed 'HEAD _judged, jd1-emptied-stubs: no raise, sr138 check PASSES (exit 0)' and 'HEAD _judged, jd2-no-fix-owed: no raise, sr138 check PASSES (exit 0)' (exit 0) - both rewrites invisible to the copy. The new suite under the same rewrites: 'PASS jd1 ... HEAD's run is handed no stub, and sr138's own check fails: exit=0 stubs handed []' and 'PASS jd2 ... 'sr138 not judged: the record holds the fix run, which `red` does not start (exit 3: None)'' (block sr-every-run-isolated, ALL PASS 11/11).",
+    "at": "2026-11-01, probe run after the edit; no helper red run was made"
+  },
+  "outcome": {
+    "technical": "tests/test_stamp_verification.py only. _judged no longer re-derives anything: it runs the real `red` in process via _red/_run (both gained a keyword-only module=None, M by default) with five seams swapped on the module and restored in finally: _isolated_run (answers each run from _RECORDED by tag via new _RECORDED_SLOT {baseline:head, task:task, second:second, fix:fix}, lays files over with the module's own _lay_over, records rels/stubs handed), _build_throwaway (no worktree), _remove_throwaway (rmtree of the holder red made), leftover_throwaways ([]), and _git answering only ['rev-parse','HEAD'] with a placeholder. So scope (_red_scope), new/absent/stubs, sources, the owed second/fix predicates, sized/budget, fit/start problems and red_verdict are all run_red's own lines; no git subprocess added (rev-parse intercepted, worktree add/remove/list stubbed). _unjudged kept: raised for a run red starts that the record lacks, one started twice, or a recorded run red never starts (a scope refusal included). Payload gains `handed`. sr138 now checks both baseline.stubbed and the stubs actually handed to HEAD's run (helper _new_only_proved), so its label clause is a product fact. New cases jd1 (run_red's baseline stub list emptied in a mutated module copy -> sr138's check fails) and jd2 (owed-fix predicate rewritten to owe none -> _judged raises 'holds the fix run'); helper _mutated_module compiles a fresh module from source and raises unless the anchor occurs exactly once. Suite: 358 cases (was 356), `python3 tools/sweep-selftests.py tests/test_stamp_verification.py` exit 0, three runs. Block timings, sum of block figures: before 133.2s (one run), after 136.8s and 151.5s (two runs some minutes apart, shared machine) - spread larger than any shift, block names unchanged, so .github/sweep-costs.json left untouched. No product edit was needed: the finding's follow-up (extract run_red's pre-run state) is unnecessary once _judged drives run_red itself. Dependants: .github/sweep-costs.json - still correct, no block added/renamed, figures within noise; tests/test__filed_returns.py (_crlf_cases), tools/affected.py (_scan, _worktrees) - those names untouched; tools/sweep-selftests.py, tools/verify.sh, PLUGIN-BUILD-GUIDE.md reference the path only - unchanged.",
+    "descriptive": "Judged red-first cases now run the real run_red with only the throwaway and the runs stood in for, so a change to run_red's inline decisions reaches them."
+  },
+  "testsAdded": [
+    "jd1: run_red's stub list for HEAD's run emptied in a mutated module copy; sr138's judged run sees no stub handed and sr138's check fails",
+    "jd2: run_red's owed-fix-run predicate rewritten to owe none; sr138's judged run refuses its record (holds the fix run)",
+    "sr138 strengthened: the file new at HEAD must be the stub actually handed to HEAD's run, not only the one the payload reports"
+  ],
+  "casesAdded": [
+    [
+      "jd1",
+      "jd2",
+      "sr138"
+    ]
+  ],
+  "claims": "claims:\n1 _judged docstring's stand-in list matches the seams dict in _judged (tests/test_stamp_verification.py, the `seams = {...}` block); 'a change to any of them reaches every judged case' shown by jd1/jd2 against two of those decisions\n2 rewrite run_red's baseline stubs to [] -> jd1 observes stubs handed [] and sr138's check false; rewrite owed-fix predicate to False -> _judged raises 'holds the fix run'; same two rewrites against HEAD's _judged -> both green (probe_before.py output above); no shared-tree mutation, all in memory\n3 grep -n 'M\\._at_head(\\|M\\.head_tree(\\|M\\._cat_blobs(\\|M\\.declared_tests(\\|M\\.is_inline_suite(' tests/test_stamp_verification.py: 2 hits (3184, 5850) - unit cases of _at_head with their own inputs, left because they test that function, not run_red's orchestration; red_verdict/baseline_problem/sized_deadline/sweep_budget/new_stages hits are likewise unit cases with hand-built inputs\n4 n/a - no rule to an agent\n5 block-figure sums measured: before once (133.2s), after twice minutes apart (136.8s, 151.5s); no figure written into the repo\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:e576ea08cd161bdf598a84f8b4620ff39b480954c9dd6c15ce0dbe91dc4bedcd\",\"dirtyDigest\":\"sha256:29e5975b3a4e093ccb63cfe40256b92c1dc6175ebb47544595dac073ab3a1d6f\",\"dirtyPaths\":{\"tests/test_stamp_verification.py\":\"5d5218d26d676f4d\"},\"head\":\"20498ee3\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:e5c775cbde73ac3b0a033731f5af85a4b98aebd4c3958f1d09a5e5ffd82e8702\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

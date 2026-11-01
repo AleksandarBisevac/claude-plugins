@@ -110,8 +110,9 @@ def _seeded_repo(prefix):
     return root
 
 
-def _run(argv, stdin_text=None):
-    """`(code, text)` from one invocation, stderr silenced the way `run()` does.
+def _run(argv, stdin_text=None, module=None):
+    """`(code, text)` from one invocation of `module` (`M` when None), stderr
+    silenced the way `run()` does.
 
     The door writes its refusals to stderr, so a case that only collected stdout
     would grade a refusal by its exit code alone and could not tell one refusal
@@ -120,8 +121,8 @@ def _run(argv, stdin_text=None):
     held = sys.stderr
     sys.stderr = io.StringIO()
     try:
-        code = M.main(argv, out=lines.append,
-                      stdin=io.StringIO(stdin_text or ""))
+        code = (M if module is None else module).main(
+            argv, out=lines.append, stdin=io.StringIO(stdin_text or ""))
         errs = sys.stderr.getvalue()
     finally:
         sys.stderr = held
@@ -742,9 +743,10 @@ def _sh_word(path):
     return shlex.quote(path.replace("\\", "/"))
 
 
-def _red(root, man, cmd, *extra):
+def _red(root, man, cmd, *extra, module=None):
     code, text = _run(["red", "--project", root, "--manifest", man,
-                       "--task", "P1.1", "--json"] + list(extra) + ["--"] + cmd)
+                       "--task", "P1.1", "--json"] + list(extra) + ["--"] + cmd,
+                      module=module)
     try:
         return code, json.loads(text)
     except ValueError:
@@ -762,14 +764,16 @@ def _proof(root, man, cmd, key, *extra):
 
 # --- a verdict shape, judged from the runs `red` recorded for it ---
 # Many red-first cases here prove a SHAPE of verdict: HEAD's run prints this, the
-# task's run prints that, and the judge credits the red or refuses it. What
-# decides that is `red_verdict` over the runs' transcripts, with `head_tree`'s
-# reading of HEAD - so such a case builds its fixture repository exactly as
-# before, real git and the HEAD contract kept, and hands the judge the runs
-# `red` made for that fixture, recorded in `_RECORDED` at the end of this file.
-# What a RUN is - the throwaway, its resets, the isolated homes, each runner's
-# own printing - is proved by the real proofs kept for every dialect, which the
-# comment above `_RECORDED` names.
+# task's run prints that, and the judge credits the red or refuses it. Such a
+# case builds its fixture repository exactly as before, real git and the HEAD
+# contract kept, and runs `red` itself, in process (`_red`): its scope, its
+# reading of HEAD, the deadline and held-back time, which runs it owes, the
+# stubs it hands HEAD's run and the verdict are all `red`'s own code. Only the
+# throwaway's git and the runs are stood in for - each run `red` starts is
+# answered with the transcript recorded for that fixture in `_RECORDED` at the
+# end of this file. What a RUN is - the throwaway, its resets, the isolated
+# homes, each runner's own printing - is proved by the real proofs kept for
+# every dialect, which the comment above `_RECORDED` names.
 def _ran(record):
     """`red`'s record of one run that was made, from a recorded `(code, text)`,
     or None for a run it did not make."""
@@ -784,88 +788,125 @@ def _unjudged(key, why):
     raise AssertionError("%s not judged: %s" % (key, why))
 
 
-def _judged(root, man, cmd, key, *extra):
-    """`(exit, payload)` in `_red`'s shape - `verdict`, `redFirst`, `note` and
-    `baseline` - for the runs recorded under `_RECORDED[key]`, judged over the
-    fixture's own repository the way `red` reads it: `declared_tests`,
-    `_at_head`, `head_tree` and `new_stages` asked of real git, the project's
-    dependency plan (`dependency_plan`) as `red` makes it without `--deps-from`,
-    a sweep-shaped command's deadline and held-back time read off the fixture's
-    cost table, `--case` and `--introduces` taken from `extra` as `red` takes
-    them. There is no throwaway, so the files the judge weighs a runner's
-    module name against, beside the declared tests, are HEAD's alone - where
-    `red` adds what its throwaway held, which is HEAD's tree with the task's
-    files laid over.
+# The `_RECORDED` slot answering each run `red` starts, by the tag it starts
+# the run under. A tag missing here is a run no record can answer.
+_RECORDED_SLOT = {"baseline": "head", "task": "task", "second": "second",
+                  "fix": "fix"}
 
-    A record holding a run `red` would not have made, or missing one it would
-    have - the second run `_wants_second` owes, the fix run a red task run on a
-    green baseline owes - is not judged: `_unjudged` raises, naming the key and
-    the run, and so does a fixture whose declared tests, HEAD reading or
-    dependency plan cannot be read. A raise rather than a returned value,
-    because a value is only as loud as the check that reads it: an exit of None
-    satisfies a check worded as a negation (`code != M.E_PROVED`), so a refusal
-    returned would pass every such case. Raised, it fails the enclosing block
-    under the block's name (`_harness.stage`) however its checks are worded, and
-    a change to a decision that starts a run cannot leave standing a record that
-    no longer describes what `red` does."""
+
+def _judged(root, man, cmd, key, *extra, module=None):
+    """`(exit, payload)` - `red`'s own exit and JSON payload for the fixture at
+    `root`, `extra` passed as `red`'s own flags, with every run `red` starts
+    answered from `_RECORDED[key]` instead of made. `module` is the
+    stamp-verification module to drive, `M` when None.
+
+    Stood in for, and nothing else: `_build_throwaway` builds no worktree,
+    `_isolated_run` lays the run's files over with `red`'s own `_lay_over` and
+    hands back the transcript recorded for the run's tag instead of running
+    the command, `_remove_throwaway` removes the holder `red` made without
+    asking git, `leftover_throwaways` lists none, and HEAD's commit id is not
+    asked (the payload's `throwaway.head` says so). So the declared tests,
+    `_at_head`, `head_tree`, the dependency plan, a sweep-shaped command's
+    deadline and held-back time, the owed second and fix runs and the stubs
+    are decided by `red` as it runs - a change to any of them reaches every
+    judged case, where a copy of them here would have stayed green. With no
+    throwaway checked out, the files the judge weighs a runner's module name
+    against, beside the declared tests, are HEAD's alone.
+
+    The payload gains `handed`: `{slot: {"rels", "stubs"}}`, the files `red`
+    laid over and the files it stubbed for each run it started.
+
+    A run `red` starts that the record lacks, one it starts twice, and a
+    recorded run it never starts - a refusal of the scope included - are not
+    judged: `_unjudged` raises, naming the key and the run. A raise rather
+    than a returned value, because a value is only as loud as the check that
+    reads it: an exit of None satisfies a check worded as a negation
+    (`code != M.E_PROVED`), so a refusal returned would pass every such case.
+    Raised, it fails the enclosing block under the block's name
+    (`_harness.stage`) however its checks are worded, and a change to a
+    decision that starts a run cannot leave standing a record that no longer
+    describes what `red` does."""
+    mod = M if module is None else module
     rec = _RECORDED[key]
-    cases = _harness.flag_values(list(extra), "--case")
-    symbols = _harness.flag_values(list(extra), "--introduces")
-    deadline = time.time() + _AMPLE_DEADLINE
-    top, implementation, declared, problem = M.declared_tests(root, man, "P1.1",
-                                                              deadline)
-    if problem is not None:
-        _unjudged(key, problem)
-    tests = [t for t in declared if os.path.isfile(os.path.join(top, *t.split("/")))]
-    present, problem = M._at_head(top, declared, deadline)
-    if problem is not None:
-        _unjudged(key, problem)
-    deps, problem = M.dependency_plan(os.path.abspath(root), top, deadline)
-    if problem is not None:
-        _unjudged(key, problem)
-    new = sorted(set(tests) - present)
-    absent = [rel for rel in new if M._is_js_test_path(rel, set(tests))]
-    stubbed = [rel for rel in new if rel not in absent]
-    files, defs, modules, js = M.head_tree(top, set(tests), deadline)
-    head_texts, unread = M._cat_blobs(top, tests, deadline)
-    stages = M.new_stages(cmd, None if unread else head_texts,
-                          M._test_texts(top, tests))
-    sources = implementation + [rel for rel in tests if M.is_inline_suite(rel)]
-    run = {"cmd": cmd, "problem": None, "withdrawn": None,
-           "code": rec["task"][0], "text": rec["task"][1],
-           "head": _ran(rec["head"]), "fix": _ran(rec.get("fix")),
-           "second": _ran(rec.get("second"))}
-    run["head"]["absent"] = absent
-    owed = {"second": M._wants_second(run["code"], run["text"], symbols, cmd,
-                                      sources, M._roots(top)),
-            "fix": (M.classify_run(run["code"], run["text"], cmd)[0] == M.V_RED
-                    and M.baseline_problem(run["head"], cmd, stages, stubbed)
-                    is None)}
-    wrong = sorted(k for k, want in owed.items() if want != (run[k] is not None))
-    if wrong:
-        _unjudged(key, "the record %s the %s run, where `red` now %s"
-                  % ("holds" if run[wrong[0]] else "lacks", wrong[0],
-                     "makes one" if owed[wrong[0]] else "makes none"))
-    _env, dropped, naming = M.child_env(top)
-    # The deadline and the time held back for the fix run, read off the
-    # fixture's own cost table for a sweep-shaped command, as `red` reads them.
-    costs, blocks, cost_problem = (M.load_sweep_table(top) if M.sweep_suites(cmd)
-                                   else ({}, {}, None))
-    jobs = M.sweep_jobs(cmd)
-    sized = M.sized_deadline(cmd, costs, cost_problem, None, M.DEFAULT_TIMEOUT,
-                             blocks=blocks, jobs=jobs)
-    budget = M.sweep_budget(cmd, costs, cost_problem, sized["seconds"],
-                            blocks=blocks, jobs=jobs)
-    code, verdict, block, note = M.red_verdict(run, {
-        "root": top, "implementation": implementation, "tests": tests,
-        "cases": cases, "symbols": symbols, "dropped": dropped, "naming": naming,
-        "new": new, "absent": absent, "head_files": files, "head_defs": defs,
-        "head_modules": modules, "head_js": js, "path": None, "stages": stages,
-        "deadline": deadline, "deps": deps, "sources": sources, "inline": {},
-        "budget": budget, "sized": sized})
-    return code, {"verdict": verdict, "redFirst": block, "note": note,
-                  "baseline": {"stubbed": stubbed, "absent": absent,
-                               "newStages": stages}}
+    handed = {}
+    real_git = mod._git
+    lay_over = mod._lay_over
+
+    def isolated_run(top, path, rels, _cmd, _deadline, _timeout, _env, _scratch,
+                     tag, stubs=(), deps=None, texts=None):
+        slot = _RECORDED_SLOT.get(tag)
+        if slot is None or rec.get(slot) is None:
+            _unjudged(key, "`red` starts the %s run, which the record lacks"
+                      % (tag,))
+        if slot in handed:
+            _unjudged(key, "`red` starts the %s run twice" % (tag,))
+        handed[slot] = {"rels": list(rels), "stubs": list(stubs)}
+        return _ran(rec[slot]), lay_over(top, path, rels)
+
+    def remove_throwaway(_top, holder, _path, wait=None, clock=None):
+        shutil.rmtree(holder)
+        return True
+
+    def git(top, args, *rest, **kw):
+        if list(args) == ["rev-parse", "HEAD"]:
+            return 0, "not asked: judged from recorded runs"
+        return real_git(top, args, *rest, **kw)
+
+    seams = {"_isolated_run": isolated_run,
+             "_build_throwaway": lambda _top, _path, _tests, timeout=None: ([], None),
+             "_remove_throwaway": remove_throwaway,
+             "leftover_throwaways": lambda _top, timeout=None: [],
+             "_git": git}
+    held = dict((name, getattr(mod, name)) for name in seams)
+    try:
+        for name, stand_in in seams.items():
+            setattr(mod, name, stand_in)
+        code, payload = _red(root, man, cmd, *extra, module=mod)
+    finally:
+        for name, real in held.items():
+            setattr(mod, name, real)
+    unmade = [slot for slot in ("head", "task", "second", "fix")
+              if rec.get(slot) is not None and slot not in handed]
+    if unmade:
+        _unjudged(key, "the record holds the %s run, which `red` does not start "
+                  "(exit %r: %s)" % (unmade[0], code,
+                                     str(payload.get("note")
+                                         or payload.get("unparsed"))[:300]))
+    return code, dict(payload, handed=handed)
+
+
+def _stubs_handed(got):
+    """The stubs `red` handed HEAD's run in a `_judged` payload, or None when
+    it started no such run."""
+    return ((got.get("handed") or {}).get("head") or {}).get("stubs")
+
+
+def _new_only_proved(code, got):
+    """sr138's verdict over a `_judged` answer: proved, the basis naming the
+    empty stubs, and `tests/test_new.py` - the file HEAD lacks - both the one
+    the payload reports stubbed and the one `red` actually handed HEAD's run."""
+    basis = (got.get("redFirst") or {}).get("basis", "")
+    return (code == M.E_PROVED and "laid over as empty files" in basis
+            and (got.get("baseline") or {}).get("stubbed") == ["tests/test_new.py"]
+            and _stubs_handed(got) == ["tests/test_new.py"])
+
+
+def _mutated_module(anchor, replacement, modname):
+    """A fresh stamp-verification module compiled from its source with the one
+    occurrence of `anchor` replaced by `replacement`. Raises when `anchor` is
+    not there exactly once: a rewrite that never applied leaves the copy
+    identical to `M`, and a case judging it would read the real code as the
+    rewritten one."""
+    with open(M.__file__, encoding="utf-8") as fh:
+        source = fh.read()
+    if source.count(anchor) != 1:
+        raise AssertionError("the rewrite's anchor is in stamp-verification.py "
+                             "%d times, not once: %r" % (source.count(anchor), anchor))
+    mod = types.ModuleType(modname)
+    mod.__file__ = M.__file__
+    exec(compile(source.replace(anchor, replacement), M.__file__, "exec"),
+         mod.__dict__)
+    return mod
 
 
 # --- clock bounds: the helper's own figure, a witness, or a ladder ---
@@ -3259,14 +3300,38 @@ def _every_run_cases(check):
         "class New(unittest.TestCase):", "    def test_new(self):",
         "        self.assertEqual(mine.v, 2)",
         "if __name__ == '__main__':", "    unittest.main()"]) + "\n")
-    code_o, got_o = _judged(root_o, man_o, [py, "tests/test_new.py", "-v"], "sr138")
+    cmd_o = [py, "tests/test_new.py", "-v"]
+    code_o, got_o = _judged(root_o, man_o, cmd_o, "sr138")
     basis_o = (got_o.get("redFirst") or {}).get("basis", "")
     check("sr138 THE ALLOW CASE: a command naming ONLY a test file new at HEAD "
           "proves - the file HEAD lacks is the one stubbed for HEAD's run, that "
           "run's green record is a green baseline, and the basis says so: "
-          "exit=%r %r %s" % (code_o, got_o.get("baseline"), basis_o[:300]),
-          code_o == M.E_PROVED and "laid over as empty files" in basis_o
-          and (got_o.get("baseline") or {}).get("stubbed") == ["tests/test_new.py"])
+          "exit=%r %r stubs handed %r %s"
+          % (code_o, got_o.get("baseline"), _stubs_handed(got_o), basis_o[:300]),
+          _new_only_proved(code_o, got_o))
+    # The judged path is `red`'s own code, not a copy of it: each of these
+    # rewrites one line of `run_red` in a fresh copy of the module, and the
+    # judged case must see it - a copy of those lines in `_judged` would not.
+    emptied = _mutated_module(
+        '"baseline", stubs=[rel for rel in state["new"]\n'
+        '                                       if rel not in state["absent"]], '
+        'deps=deps)', '"baseline", stubs=[], deps=deps)', "sv_jd1")
+    code_m, got_m = _judged(root_o, man_o, cmd_o, "sr138", module=emptied)
+    check("jd1 with `run_red`'s stub list for HEAD's run emptied, sr138's judged "
+          "run sees it: HEAD's run is handed no stub, and sr138's own check "
+          "fails: exit=%r stubs handed %r" % (code_m, _stubs_handed(got_m)),
+          _stubs_handed(got_m) == [] and not _new_only_proved(code_m, got_m))
+    unowed = _mutated_module("if verdict1 == V_RED and baseline_problem(",
+                             "if False and baseline_problem(", "sv_jd2")
+    try:
+        _judged(root_o, man_o, cmd_o, "sr138", module=unowed)
+        refused = None
+    except AssertionError as exc:
+        refused = str(exc)
+    check("jd2 with `run_red`'s owed-fix-run predicate rewritten to owe none, "
+          "sr138's judged run refuses its record, which holds a fix run `red` "
+          "no longer starts: %r" % (refused,),
+          refused is not None and "holds the fix run" in refused)
     detail = repr([(i, i + 1) for i in range(20000)])
     long_fail = {"id": None, "label": "the pairs round-trip (saw %s)" % (detail,),
                  "assertion": True, "why": "house FAIL"}
