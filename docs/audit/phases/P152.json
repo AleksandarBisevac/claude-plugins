@@ -237,8 +237,10 @@
         "severity": "med",
         "file": "tests/test_drive_phase.py:14224-14237 (ci red unit), 14106-14148 (_e2e_ci_cycle)",
         "issue": "The old red-cadence drive ran ci_file_red against the real audit-task.py and asserted an open bug in the manifest. The new red case answers audit-task.py from _verb_rig and asserts the drive's argv literally (`bug-add <title> <manifest> --project-dir P --severity high --description -` plus stdin). The kept cycle is the green one, although PLAN.md section 4 lists 'a red files a bug' in the kept cadence cycle, and section 5 item 2 says 'the verbs agree with the drive'. No case in the drive suite now runs the drive's bug-add call through the real verb. If the verb side drifts (a flag renamed, `--description -` refused for bug-add, a new required flag), every drive case stays green while a red CI run in production stops instead of filing its bug. This is the one bug-add caller in drive-phase.py (line 3380).",
-        "resolution": "In _e2e_ci_cycle, after the drive, over the same fixture (no second drive), run `M.ci_file_red(_verb_ctx(root, mpath), {\"sha\": heads[0], \"branch\": \"ci/p1\"}, red_row)` with the real verbs, as _signoff_verb_cases does. Assert it returns None and that the manifest holds one bug with status open whose text names run 777 and ci/p1. That is one verb process.",
-        "fixTask": "P152.26-6jb"
+        "resolution": "fixed in P152.26-6jb (11e5f4aad566): In _e2e_ci_cycle, after the drive, over the same fixture (no second drive), run `M.ci_file_red(_verb_ctx(root, mpath), {\"sha\": heads[0], \"branch\": \"ci/p1\"}, red_row)` with the real verbs, as _signoff_verb_cases does. Assert it returns None and that the manifest holds one bug with status open whose text names run 777 and ci/p1. That is one verb process.",
+        "fixTask": "P152.26-6jb",
+        "commit": "11e5f4aad566",
+        "status": "fixed"
       },
       {
         "id": "P152-R23",
@@ -352,7 +354,7 @@
         "resolution": "Keep the number-free check if a pin is wanted, but drop the 'same git calls every time' conjunct (and bool(doc) only if a missing docstring is deliberately tolerated); or drop ssr2 and rely on the author-enforced rule. Do not remove it on the grounds that the lint covers it: the lint does not."
       }
     ],
-    "outcome": "[findings: 35 - 0 high, 12 med, 23 low; 26 with a recorded fix commit]"
+    "outcome": "[findings: 35 - 0 high, 12 med, 23 low; 27 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2144,7 +2146,7 @@
     {
       "id": "P152.23-6jb",
       "title": "fix P152-R19: The hook reads the block label in the atexit handler (`os.envir...",
-      "status": "in_progress",
+      "status": "blocked",
       "description": "The hook reads the block label in the atexit handler (`os.environ.get(\"REACH_DIFF_BLOCK\")` inside dump()), not when it installs. A suite process that clears or replaces os.environ before exiting has its untraced children filed under '(whole file)'. In a staged run that label ran at neither side, so the run refuses with 2 and names the wrong block. This fails safe, but the refusal is misattributed. `parent` is already captured at install time.\n\nResolution asked: Capture `block = os.environ.get(\"REACH_DIFF_BLOCK\")` beside `parent` in _reach_diff_install() and write that value in dump().",
       "files": [
         "tools/reach-diff.py",
@@ -2204,7 +2206,8 @@
         "runId": "2026-11-01T03:23:18Z.1cc2d4",
         "status": "failed",
         "at": "2026-11-01T03:23:18Z"
-      }
+      },
+      "blockedReason": "red is not this task's: tools/_suite.py s23 convicts a bare shutil.rmtree in tests/test_stamp_verification.py that 95d5549a introduced; P152.29-6jb fixes it, then this gate reruns"
     },
     {
       "id": "P152.24-6jb",
@@ -2371,7 +2374,7 @@
     {
       "id": "P152.26-6jb",
       "title": "fix P152-R22: The old red-cadence drive ran ci_file_red against the real audi...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The old red-cadence drive ran ci_file_red against the real audit-task.py and asserted an open bug in the manifest. The new red case answers audit-task.py from _verb_rig and asserts the drive's argv literally (`bug-add <title> <manifest> --project-dir P --severity high --description -` plus stdin). The kept cycle is the green one, although PLAN.md section 4 lists 'a red files a bug' in the kept cadence cycle, and section 5 item 2 says 'the verbs agree with the drive'. No case in the drive suite now runs the drive's bug-add call through the real verb. If the verb side drifts (a flag renamed, `--description -` refused for bug-add, a new required flag), every drive case stays green while a red CI run in production stops instead of filing its bug. This is the one bug-add caller in drive-phase.py (line 3380).\n\nResolution asked: In _e2e_ci_cycle, after the drive, over the same fixture (no second drive), run `M.ci_file_red(_verb_ctx(root, mpath), {\"sha\": heads[0], \"branch\": \"ci/p1\"}, red_row)` with the real verbs, as _signoff_verb_cases does. Assert it returns None and that the manifest holds one bug with status open whose text names run 777 and ci/p1. That is one verb process.",
       "files": [
         "tests/test_drive_phase.py"
@@ -2394,14 +2397,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "11e5f4aad566",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tests/test_drive_phase.py: _e2e_ci_cycle now ends by calling a new _e2e_ci_red_filed(check, M, root, mpath, heads). Over the same fixture and with no second drive, it runs M.ci_file_red(_verb_ctx(root, mpath), {sha: heads[0], branch: ci/p1}, red_row{databaseId 777, conclusion failure, url}). M comes from _load, so run_verb goes through _in_process_verbs and the real audit-task.py bug-add runs in-process (_harness.run_script_in_process), with no subprocess added. New case wv9 asserts: stop is None; the manifest holds exactly one bug; its status is open and its severity high; its title equals 'CI red on ci/p1 at <heads[0][:7]> (run 777)'; and its description, sent on stdin, contains 'run 777', 'ci/p1', heads[0], 'ended failure' and the run URL. Runs: `python3 tools/sweep-selftests.py tests/test_drive_phase.py` exit 0, '1/1 files ok, 763 cases', e2e-wave block 20.0s. Stage run `--stage e2e-wave`: exit 0, 'ALL PASS: 19/19 cases passed', 'PASS wv9 ...' printed. ruff check exit 0, vermin -t=3.8- exit 0. .github/sweep-costs.json not regenerated: it holds no per-block figure for e2e-wave, and the change adds one in-process verb run. Dependants: .github/sweep-costs.json, .github/workflows/ci.yml, drive-phase.py, tests/test__runner_output.py, tests/test_run_test_gate.py, tests/test_stamp_verification.py, tools/affected.py and tools/reach-diff.py are all still correct. The change only adds a function and a case; no existing name, stage label or block was renamed or removed, and _actions, _counting, _follower_cases and _git_said are untouched. drive-phase.py is read, not edited.",
+        "descriptive": "The drive suite again files a CI-red bug through the real audit-task bug-add verb and checks what lands in the manifest."
       },
       "startedAt": "2026-11-01T02:54:21Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-01T03:27:14Z",
+      "verifiedBy": [
+        "wv9: in the kept CI cadence e2e cycle, ci_file_red runs against the real audit-task.py bug-add (in-process) and the manifest gains exactly one open high-severity bug, with the title the drive built and a stdin description naming run 777, ci/p1, the pushed sha, the conclusion and the URL"
+      ],
       "notes": [
         {
           "at": "2026-11-01T01:43:51Z",
@@ -2420,6 +2425,17 @@
         "runId": "2026-11-01T03:25:14Z.39f85f",
         "status": "passed",
         "at": "2026-11-01T03:25:14Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "11e5f4aad566",
+        "at": "2026-11-01T03:27:14Z",
+        "return": "docs/audit/evidence/returns/P152.26-6jb/20261101T025421Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "Regression task, tests.expectRedFirst false: wv9 locks behaviour HEAD already has, so the helper's HEAD run would be green by construction. Red was shown by mutation instead, in a throwaway copy of the task tree (git ls-files rsynced to scratchpad/probe/tree; no shared or non-owned file touched), probe scratchpad/probe/mutations.py: each row asserts the anchor occurs exactly once and the mutant landed, purges __pycache__, runs `tests/test_drive_phase.py --selftest --stage e2e-wave`, restores in finally. BASELINE exit=0 PASS wv9 19/19; driver drops `--severity high` -> FAIL wv9 18/19; driver sends `--description -` with no stdin -> FAIL wv9 17/19; verb refuses every description -> FAIL wv9 18/19; verb writes description None -> FAIL wv9 18/19; verb writes severity low -> FAIL wv9 18/19; RESTORED exit=0 PASS wv9 19/19.",
+        "at": "2026-11-01, probe run after the case was green; no helper run (none owed)"
       }
     },
     {
@@ -2517,6 +2533,39 @@
       "fixes": [
         "P152-R27"
       ]
+    },
+    {
+      "id": "P152.29-6jb",
+      "title": "The judged run's throwaway stand-in removes its tree through remove_tree, as every staged-fixture removal must",
+      "status": "pending",
+      "description": "95d5549a made _judged's remove_throwaway stand-in call shutil.rmtree(holder) (tests/test_stamp_verification.py, in _judged's seams). tools/_suite.py case s23 forbids an unexcused bare removal of a staged fixture under tests/, so the full sweep is red at HEAD: windows refuses to unlink git's read-only loose objects and rmtree leaves them behind. Use remove_tree (from _suite or _harness) as the rest of the file does; do not add an exemption row.",
+      "files": [
+        "tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tools/_suite.py tests/test_stamp_verification.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "reviewPerTask": "signals",
