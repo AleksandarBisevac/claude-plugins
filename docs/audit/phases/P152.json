@@ -247,8 +247,10 @@
         "severity": "low",
         "file": "tests/test_drive_phase.py:6272-6283",
         "issue": "The diff deleted `_setup_fixture`, the only reader of `_SETUP`, so `_SETUP` is dead. The section header above it ('a wave member's tree outlives a crash, a failed setup and a block ... The setup every case below declares: ... removes the flag and fails instead, once') now describes cases that no longer exist: the next case is _kept_restart_cases, which logs through `_CWD_LOG`. ruff does not report an unused module constant.",
-        "resolution": "Delete `_SETUP` and the header lines that describe it. Keep `_provisioned` with a one-line docstring tied to the `_CWD_LOG` log it now reads.",
-        "fixTask": "P152.27-6jb"
+        "resolution": "fixed in P152.27-6jb (808ab9404258): Delete `_SETUP` and the header lines that describe it. Keep `_provisioned` with a one-line docstring tied to the `_CWD_LOG` log it now reads.",
+        "fixTask": "P152.27-6jb",
+        "commit": "808ab9404258",
+        "status": "fixed"
       },
       {
         "id": "P152-R24",
@@ -361,7 +363,7 @@
         "resolution": "None required; optionally drop the retitle or leave as is. casesAdded is harmless but inaccurate."
       }
     ],
-    "outcome": "[findings: 36 - 0 high, 12 med, 24 low; 27 with a recorded fix commit]"
+    "outcome": "[findings: 36 - 0 high, 12 med, 24 low; 28 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2448,7 +2450,7 @@
     {
       "id": "P152.27-6jb",
       "title": "fix P152-R23: The diff deleted `_setup_fixture`, the only reader of `_SETUP`,...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The diff deleted `_setup_fixture`, the only reader of `_SETUP`, so `_SETUP` is dead. The section header above it ('a wave member's tree outlives a crash, a failed setup and a block ... The setup every case below declares: ... removes the flag and fails instead, once') now describes cases that no longer exist: the next case is _kept_restart_cases, which logs through `_CWD_LOG`. ruff does not report an unused module constant.\n\nResolution asked: Delete `_SETUP` and the header lines that describe it. Keep `_provisioned` with a one-line docstring tied to the `_CWD_LOG` log it now reads.",
       "files": [
         "tests/test_drive_phase.py"
@@ -2471,14 +2473,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "808ab9404258",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Deleted the dead _SETUP constant and the three header comment lines describing the removed failed-setup cases in tests/test_drive_phase.py; retitled the section header to describe the kept-restart cases; _provisioned kept with docstring 'The directories the `_CWD_LOG` script logged, in order.' grep -rn _SETUP tests tools plugins: no remaining reader (only unrelated E_SETUP / CI_SETUP_ALLOWANCE names). Sweep: 1/1 files ok, 763 cases; ruff: All checks passed; vermin: runs, min 3.8, no violations listed. Dependants (sweep-costs.json, ci.yml, drive-phase.py, other suites, affected.py, reach-diff.py, and the 15 names used elsewhere): still correct, since only an unreferenced module constant, a comment header and one docstring changed and no name used elsewhere was touched.",
+        "descriptive": "Removes a dead test constant and a stale section header in test_drive_phase.py."
       },
       "startedAt": "2026-11-01T03:28:54Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-01T03:39:41Z",
+      "verifiedBy": [
+        "No new case: the deletion is locked by the existing kept-restart cases (kr1 is the first the suite prints) which still read _provisioned and pass."
+      ],
       "notes": [
         {
           "at": "2026-11-01T01:43:51Z",
@@ -2497,6 +2501,17 @@
         "runId": "2026-11-01T03:35:43Z.20a21f",
         "status": "passed",
         "at": "2026-11-01T03:35:43Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "808ab9404258",
+        "at": "2026-11-01T03:39:41Z",
+        "return": "docs/audit/evidence/returns/P152.27-6jb/20261101T032854Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task with expectRedFirst false: dead-constant and stale-header deletion, no behaviour change",
+        "at": "n/a"
       }
     },
     {

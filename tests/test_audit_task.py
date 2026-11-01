@@ -20396,7 +20396,7 @@ def _crossfile_cases(check):
                 # holder that stays live by construction (this pid) before the
                 # same refusal printed. The bound is zeroed for these calls
                 # alone; that a live holder IS waited out, and a dead one is
-                # not, is `test__locks.py`'s to prove (wt3, j2). What keeps the
+                # not, is `test__locks.py`'s to prove (wt3, wt4). What keeps the
                 # case honest at zero is read below: each verb printed the
                 # live-holder refusal once, and the claim it met is still the
                 # other run's.
