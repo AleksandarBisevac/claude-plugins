@@ -5929,6 +5929,20 @@ commands are; `describe_unresolved` is what it prints to stderr, then exits 2, w
 argument nor the config nor the default names a file that exists. `--selftest` (includes XSS
 cases).
 
+**Paper gets one table per phase; the screen keeps one table.** The page emits a single
+`table.phases`, and sorting, the phase order and the filters all move rows inside it. Chrome's
+renderer, though, runs out of memory paginating ONE table across many pages — what it holds grows
+with that table's rows times the pages it spans — and a long plan crashed Save as PDF outright
+(`page.pdf` too). So `ui/report/exports.js` cuts the rows into one table per phase on
+`beforeprint`, each part with its own copy of the column headers, and moves every row back, in
+order, on `afterprint`; both events fire for the real dialog and for a headless `page.pdf`.
+`ui/report-css/print-segments.css` fixes the parts' column widths so they read as one grid, moves
+each segment's page break onto the part that opens it, and hides other segments' parts when one
+segment prints. `tools/check-report-interactive.mjs` checks the cut, the grid, the round trip, and
+that a page grown past the crashing size prints within a time bound. **With JavaScript off nothing
+is cut**: the plan prints as the one table it always was, and a long enough plan can still crash
+the printer that way.
+
 ### `plugins/audit/scripts/report/_report_page.py`
 The report as a whole document, moved out of `render-report.py`: the report's vocabulary
 (`_plural`, the gate's condition labels, which optional columns a plan has earned), the

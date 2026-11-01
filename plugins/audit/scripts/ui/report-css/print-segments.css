@@ -38,3 +38,44 @@
   body[data-printseg="archived"] #phases tr[data-seg]:not([data-seg="archived"]){
     display:none!important}
 }
+
+/* ---- one table per phase on paper ------------------------------------------
+   For the length of a print, report/exports.js moves the phases table's rows
+   into one table per phase (`data-paperpart`), each with its own copy of the
+   column headers, and marks the emptied original `data-papercut`. Chrome's
+   renderer runs out of memory paginating one table across many pages, and a
+   long plan crashed Save as PDF outright; separate tables print in seconds.
+   With JavaScript off nothing is cut, and the plan prints as the one table it
+   always was — which a long enough plan can still crash.
+
+   The page break before each segment moves from its header ROW to the part
+   that starts with it, except the first part, which would otherwise print a
+   blank page ahead of the plan (the row rule above already says the same of
+   the first header, and every header is now the first row of its part). One
+   segment on paper hides the other segments' PARTS as well as their rows, or
+   each would print its column headers over no rows at all.
+
+   The widths are fixed, because a table sizes its columns from its own rows
+   and separate tables would each measure differently: the parts would stop
+   lining up into one grid. Fixed by column role, the title taking whatever is
+   left. Under fixed widths a cell's longest word no longer widens its column,
+   so a word longer than its cell may break rather than spill into the next
+   column — the reason the bare-text title cell may not break on screen is the
+   automatic layout, which paper no longer uses. */
+@media print{
+  table.phases[data-papercut]{display:none!important}
+  #phases table[data-segstart]{break-before:page}
+  #phases table[data-papercut]+table[data-segstart]{break-before:auto}
+  body[data-printseg="active"] #phases table[data-seg]:not([data-seg="active"]),
+  body[data-printseg="pending"] #phases table[data-seg]:not([data-seg="pending"]),
+  body[data-printseg="archived"] #phases table[data-seg]:not([data-seg="archived"]){
+    display:none!important}
+  table[data-paperpart]{table-layout:fixed}
+  table[data-paperpart] td{overflow-wrap:anywhere}
+  table[data-paperpart] th:first-child{width:12%}
+  table[data-paperpart] th:nth-child(3){width:11%}
+  table[data-paperpart] th[data-col="risk"]{width:8%}
+  table[data-paperpart] th[data-col="commit"]{width:17%}
+  table[data-paperpart] th[data-col="done"]{width:12%}
+  table[data-paperpart] th[data-col="tests"]{width:15%}
+}

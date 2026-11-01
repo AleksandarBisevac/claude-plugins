@@ -1399,6 +1399,33 @@ def _cases(check):
     check("ex6 the export controls never reach paper",
           ".segx,.secx{display:none!important}" in _print)
 
+    # --- pp: on paper, one table per phase ------------------------------------
+    # Construct pins, not behaviour pins: whether the cut happens, whether every
+    # row comes back in order, whether the parts line up and whether a plan past
+    # the size that crashed the printer prints at all is measured in a browser by
+    # tools/check-report-interactive.mjs. These hold the source shapes that check
+    # depends on, so a refactor that drops one is named here first.
+    check("pp1 the phases table is cut into per-phase parts on beforeprint and "
+          "joined back on afterprint, and the print sheet sizes the parts and "
+          "hides the emptied original",
+          M._SCRIPT.count("window.addEventListener('beforeprint', cutForPaper);") == 1
+          and M._SCRIPT.count("window.addEventListener('afterprint', joinAfterPaper);") == 1
+          and "table[data-paperpart]{table-layout:fixed}" in _print
+          and "table.phases[data-papercut]{display:none!important}" in _print)
+    # Counted per segment rather than found: the row rules above carry the same
+    # `body[data-printseg="..."]` prefix, so a presence test passes with the
+    # table rules deleted.
+    check("pp2 printing one segment hides the other segments' PARTS as well as "
+          "their rows, or each prints its column headers over nothing",
+          all(_print.count('body[data-printseg="%s"] #phases table[data-seg]'
+                           ':not([data-seg="%s"])' % (_s, _s)) == 1
+              for _s in ("active", "pending", "archived")))
+    check("pp3 each segment still starts its own sheet, the break now on the part "
+          "the segment opens, and the first part prints no blank page ahead of it",
+          "#phases table[data-segstart]{break-before:page}" in _print
+          and "#phases table[data-papercut]+table[data-segstart]"
+              "{break-before:auto}" in _print)
+
     # --- ow: advisory area owner chips (D4, v0.36) ----------------------------
     # meta.areas[tag].owner (v0.34, advisory) surfaces wherever the report
     # shows a tag: a small suffix on the tag chip, and a title on the filter

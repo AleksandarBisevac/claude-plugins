@@ -6,10 +6,12 @@
    segment's header is the ARCHIVE toggle; report.js collapses the done rows
    under it at load so a long finished run stops burying the work in motion.
 
-   Deliberately NOT a per-segment vertical scroll box: the segments live in
-   ONE table (splitting it would re-measure the columns per segment and skew
-   every row against the shared thead), and table rows cannot be
+   Deliberately NOT a per-segment vertical scroll box: on screen the segments
+   live in ONE table (splitting it would re-measure the columns per segment and
+   skew every row against the shared thead), and table rows cannot be
    height-clipped without display:block, which breaks that same alignment.
+   Paper is the exception, and pays for it with fixed column widths: a print
+   cuts the table into one per phase (print-segments.css says why).
    The View select is what delivers the scanning win instead; the house
    rule the table does keep is horizontal — .tablewrap owns any sideways
    overflow, and the page never scrolls sideways. */
@@ -77,7 +79,8 @@ tr.seghead td{background:var(--surface-2);border-top:1px solid var(--border);
   tr.phase,tr.task,tr.taskdetail{display:table-row!important;break-inside:avoid}
   .pmatch,tr.norows{display:none!important}
   /* A table that spans pages has to carry its column headers onto each of them,
-     or page two of a long plan is a grid of unlabelled cells. */
+     or page two of a long plan is a grid of unlabelled cells. A per-phase part
+     that runs past a page needs it as much as the uncut table does. */
   thead{display:table-header-group}
   thead th{position:static!important}
   /* A heading at the foot of a page introduces nothing. */

@@ -369,6 +369,89 @@
     document.body.removeAttribute('data-printseg');
   });
 
+  // --- exports: paper, one table per phase ------------------------------------
+
+  /**
+   * The rows the phases table held before a print cut it apart, in their order,
+   * and the tables they were moved into; null while the page is on screen.
+   * @type {{rows: HTMLTableRowElement[], parts: HTMLTableElement[]}|null}
+   */
+  let paperCut = null;
+
+  /**
+   * Move the phases table's rows into one table per phase for the length of a
+   * print, each part carrying its own copy of the column headers.
+   *
+   * Chrome's renderer runs out of memory paginating ONE table across many
+   * pages: what it holds grows with the rows in that table times the pages it
+   * spans, so a long plan crashed Save as PDF outright (and `page.pdf` with it),
+   * while the same rows cut into separate tables printed in seconds. A
+   * `<tbody>` per phase does not help, because it is the table that is
+   * fragmented. The screen keeps its one table — sorting, the phase order and
+   * the filters all move rows inside it — and the cut lives only between
+   * `beforeprint` and `afterprint`, which the real dialog and a headless
+   * `page.pdf` both fire. The print sheet fixes the column widths, so the parts
+   * read as one grid instead of each measuring its own.
+   *
+   * Rows are MOVED, never copied: whatever a reader left on them (expanded,
+   * filtered, sorted) is what goes back, and no second copy of a row exists to
+   * disagree with the first. A segment header travels with the phase it
+   * introduces, so no part is a header alone at the foot of a page.
+   * @returns {void}
+   */
+  function cutForPaper() {
+    const body = grouped ? grouped.tBodies[0] : null;
+    if (!body || paperCut) return;
+    const rows = [...body.rows];
+    /** @returns {HTMLTableElement} an empty part wearing the table's own class and headers */
+    const newPart = () => {
+      const t = /** @type {HTMLTableElement} */ (grouped.cloneNode(false));
+      t.setAttribute('data-paperpart', '');
+      if (grouped.tHead) t.appendChild(grouped.tHead.cloneNode(true));
+      t.appendChild(document.createElement('tbody'));
+      return t;
+    };
+    /**
+     * @param {HTMLTableElement} t - the part being filled
+     * @returns {boolean} true when it holds a segment header and nothing else
+     */
+    const headAlone = (t) => t.tBodies[0].rows.length === 1
+      && t.tBodies[0].rows[0].classList.contains('seghead');
+    const parts = [];
+    let part = null;
+    for (const r of rows) {
+      const head = r.classList.contains('seghead');
+      if (!part || ((head || r.classList.contains('phase')) && !headAlone(part))) {
+        part = newPart();
+        parts.push(part);
+      }
+      if (head) part.setAttribute('data-segstart', '');
+      if (r.hasAttribute('data-seg')) part.setAttribute('data-seg', r.getAttribute('data-seg'));
+      part.tBodies[0].appendChild(r);
+    }
+    grouped.setAttribute('data-papercut', '');
+    grouped.after(...parts);
+    paperCut = { rows, parts };
+  }
+
+  /**
+   * Put every row back into the phases table, in the order it left, and drop the
+   * parts. A cancelled dialog fires `afterprint` too, so a print that never
+   * happened restores the page exactly like one that did.
+   * @returns {void}
+   */
+  function joinAfterPaper() {
+    if (!paperCut) return;
+    const body = grouped.tBodies[0];
+    paperCut.rows.forEach((r) => { body.appendChild(r); });
+    paperCut.parts.forEach((t) => { t.remove(); });
+    grouped.removeAttribute('data-papercut');
+    paperCut = null;
+  }
+
+  window.addEventListener('beforeprint', cutForPaper);
+  window.addEventListener('afterprint', joinAfterPaper);
+
   // --- boot: sorting, the search box, and the view the link asked for --------
 
   wireSort(grouped, true, true);

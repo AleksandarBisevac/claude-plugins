@@ -26,7 +26,7 @@ lint over a differently-ordered join would clear a palette nobody serves.
 | `ready-now.css` | The ready-now list. |
 | `segments.css` | Phase segments and their headers. |
 | `usage.css` | The usage section: tiles, charts, heatmap. |
-| `print-segments.css` | Per-segment and single-segment print rules. |
+| `print-segments.css` | Per-segment and single-segment print rules, and the per-phase tables a print is cut into: their fixed column widths, the page break before each segment, and which parts one segment's print hides. |
 
 ## Constraints that hold for every part
 

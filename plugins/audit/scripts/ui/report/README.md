@@ -20,7 +20,7 @@ against state that already exists. Reordering them is not a formatting change.
 | `date-range.js` | The task table's date window: the two inputs, the relative-span presets, and clearing back to all time. |
 | `usage-range.js` | The same window applied to the usage charts, which read a different data source. |
 | `heatmap.js` | Calendar navigation and run selection in the activity heatmap. |
-| `exports.js` | Per-segment and per-section export: CSV for tables, PNG for the heatmap. |
+| `exports.js` | Per-segment and per-section export: CSV for tables, PNG for the heatmap, printing one segment — and, for every print, cutting the phases table into one table per phase on `beforeprint` and joining it back on `afterprint`, because Chrome's renderer crashes paginating one long table across many pages. |
 
 ## Constraints that hold for every part
 

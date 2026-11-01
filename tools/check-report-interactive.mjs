@@ -10,6 +10,7 @@
  *
  *   node tools/check-report-interactive.mjs <report.html>
  *   node tools/check-report-interactive.mjs <report.html> --record
+ *   node tools/check-report-interactive.mjs <report.html> --stress-print
  *
  * Exit 0 = every interaction behaved. Exit 1 = something is inert; the failing
  * assertion names which. Exit 2 = could not run (no browser, bad arguments, or a
@@ -22,6 +23,12 @@
  * any other failure. `ui-checks/layout-baseline.mjs` carries the reasoning — why
  * a relative arm exists beside an absolute bar, what the two measure, and how far
  * a figure may move before somebody has to say the move was meant.
+ *
+ * `--stress-print` adds the one check too heavy for every leg: the report is grown
+ * past the length that once crashed Chrome's printer and printed. It costs tens of
+ * seconds and several gigabytes of renderer memory, so it is asked for by exactly
+ * one report step of `tools/verify.sh`, run when no other leg is printing beside
+ * it; without the flag the run says it was not asked rather than staying silent.
  *
  * It also drives the one output nobody opens before shipping. The print rules
  * are checked under `emulateMedia('print')` and the orientation is read back out
@@ -75,16 +82,17 @@ import { PHONE_VIEWPORT, applyRecording, documentKey, emptyBaseline, judge,
 // report.
 const args = process.argv.slice(2);
 const flags = args.filter((a) => a.startsWith('--'));
-const unknown = flags.filter((a) => a !== '--record');
+const unknown = flags.filter((a) => a !== '--record' && a !== '--stress-print');
 if (unknown.length) {
   console.error(`unknown option(s): ${unknown.join(' ')}`);
-  console.error('usage: check-report-interactive.mjs <report.html> [--record]');
+  console.error('usage: check-report-interactive.mjs <report.html> [--record] [--stress-print]');
   process.exit(2);
 }
 const RECORDING = flags.indexOf('--record') >= 0;
+const STRESS = flags.indexOf('--stress-print') >= 0;
 const file = args.find((a) => !a.startsWith('--'));
 if (!file) {
-  console.error('usage: check-report-interactive.mjs <report.html> [--record]');
+  console.error('usage: check-report-interactive.mjs <report.html> [--record] [--stress-print]');
   process.exit(2);
 }
 const path = resolve(file);
@@ -186,6 +194,11 @@ const FEATURE_ABSENT = [
   // button's hover nor the row hover that reveals it has a box to read.
   { note: 'no task in this plan records a commit — sha hover skipped',
     covers: ['tr interaction-state parity', '.shacopy interaction-state parity'] },
+  // The long print is opt-in (`--stress-print`): a run that did not ask for it
+  // says so, and that note excuses its two sites.
+  { note: 'the long-print stress check was not asked for',
+    covers: ['(setting up the long print) the uncut sheet was grown past the crashing',
+             'a page past the length that crashed the printer prints'] },
   { note: 'nothing is ready in this plan',
     covers: ['every ready task is a term', 'the list carries as many terms',
              'every term names its task id', 'every definition says why',
@@ -1997,7 +2010,9 @@ if (await page.$('#ready') && !(await page.$('dl.ready'))) {
 
   // Print one segment: the button stamps body[data-printseg], the print sheet
   // shows only that segment, and afterprint restores the page. window.print
-  // is stubbed — a real dialog would hang a headless run — and afterprint is
+  // is stubbed — a real dialog would hang a headless run — and the stub fires
+  // `beforeprint` the way the dialog does, so the sheet is read with the table
+  // cut into its per-phase parts, which is the shape paper gets. afterprint is
   // dispatched by hand, which is the same event a closed dialog fires.
   const pBtn = await page.$(`tr.seghead [data-segprint="${segName}"]`);
   if (!pBtn) {
@@ -2005,7 +2020,10 @@ if (await page.$('#ready') && !(await page.$('dl.ready'))) {
   } else {
     await page.evaluate(() => {
       window.__printed = 0;
-      window.print = () => { window.__printed++; };
+      window.print = () => {
+        window.__printed++;
+        window.dispatchEvent(new Event('beforeprint'));
+      };
     });
     const preW = await page.evaluate(() => document.documentElement.scrollWidth);
     await pBtn.click();
@@ -2019,7 +2037,10 @@ if (await page.$('#ready') && !(await page.$('dl.ready'))) {
     await page.emulateMedia({ media: 'print' });
     await page.waitForTimeout(150);
     const isolated = await page.evaluate((s) => {
-      const vis = (el) => el && getComputedStyle(el).display !== 'none';
+      // Painted, not merely styled: a row inside a `display:none` table still
+      // computes as `table-row`, so reading `display` off the row would count a
+      // whole hidden part as printed. A box that lays out has client rects.
+      const vis = (el) => !!el && el.getClientRects().length > 0;
       const rows = [...document.querySelectorAll('table.phases tbody tr.phase')];
       return {
         shown: rows.filter(vis).length,
@@ -2028,6 +2049,11 @@ if (await page.$('#ready') && !(await page.$('dl.ready'))) {
         usageGone: !vis(document.getElementById('usage')),
         otherHeads: [...document.querySelectorAll('tr.seghead')]
           .filter((h) => vis(h) && h.getAttribute('data-seg') !== s).length,
+        // A part of another segment would print its column headers over no
+        // rows at all: the rows hide, the table around them does not.
+        parts: document.querySelectorAll('table[data-paperpart]').length,
+        otherParts: [...document.querySelectorAll('table[data-paperpart]')]
+          .filter((t) => vis(t) && t.getAttribute('data-seg') !== s).length,
       };
     }, segName);
     await page.emulateMedia({ media: null });
@@ -2036,6 +2062,8 @@ if (await page.$('#ready') && !(await page.$('dl.ready'))) {
     expect('...and nothing from the other segments does',
       isolated.shown, isolated.inSeg);
     expect('...their headers included', isolated.otherHeads, 0);
+    expect(`...and so are their tables (${isolated.parts} parts on the sheet)`,
+      isolated.parts > 0 && isolated.otherParts === 0, true);
     expect('...and the other sections stay off the sheet', isolated.usageGone, true);
     await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
     await page.waitForTimeout(100);
@@ -2043,8 +2071,10 @@ if (await page.$('#ready') && !(await page.$('dl.ready'))) {
       seg: document.body.getAttribute('data-printseg'),
       dw: document.documentElement.scrollWidth,
       cw: document.documentElement.clientWidth,
+      parts: document.querySelectorAll('table[data-paperpart]').length,
     }));
     expect('afterprint takes the stamp back off', after.seg, null);
+    expect('...and joins the table back together', after.parts, 0);
     expect(`...and the whole round trip grew no scroll box (scrollWidth ${preW} -> ${after.dw})`,
       after.dw <= Math.max(preW, after.cw + 1), true);
   }
@@ -2066,29 +2096,70 @@ expect('(setting up the print check) the screen is filtered to nothing',
 // A4 portrait inside the stylesheet's 1.4cm margin is ~688px, which is INSIDE
 // the 52rem tablet breakpoint — so this is also the width at which the print
 // sheet has to undo the small-screen layout.
+//
+// On paper the phases table is ONE TABLE PER PHASE: `beforeprint` moves the
+// rows into parts and `afterprint` moves them back (report/exports.js says
+// why). `emulateMedia` fires neither event, so this dispatches both by hand —
+// the same two events the dialog and `page.pdf` fire — and reads the page in
+// between, which is the only state paper ever sees.
 const paperState = async () => {
+  await page.evaluate(() => {
+    const g = document.querySelector('table.phases');
+    window.__screenRows = g && g.tBodies[0] ? [...g.tBodies[0].rows] : [];
+    window.dispatchEvent(new Event('beforeprint'));
+  });
   await page.emulateMedia({ media: 'print' });
   await page.setViewportSize({ width: 688, height: 900 });
   await page.waitForTimeout(100);
   const s = await page.evaluate(() => {
-    const vis = (el) => el && getComputedStyle(el).display !== 'none';
-    const g = document.querySelector('table.phases');
-    const rows = [...g.querySelectorAll('tbody tr.phase')];
-    const tasks = [...g.querySelectorAll('tbody tr.task')];
+    // Painted, not merely styled — the per-segment block above says why: a
+    // hidden part's rows would still compute as `table-row`.
+    const vis = (el) => !!el && el.getClientRects().length > 0;
+    const sec = document.getElementById('phases');
+    const whole = sec.querySelector('table.phases:not([data-paperpart])');
+    const parts = [...sec.querySelectorAll('table[data-paperpart]')];
+    const rows = [...sec.querySelectorAll('tbody tr.phase')];
+    const tasks = [...sec.querySelectorAll('tbody tr.task')];
+    // One grid, not a stack of tables that each measured themselves: every
+    // part's column headers start at the same x as the first part's.
+    const lefts = (t) => [...t.tHead.rows[0].cells]
+      .map((c) => Math.round(c.getBoundingClientRect().left)).join(',');
+    const shown = parts.filter(vis);
     return {
       phases: rows.filter(vis).length,
       total: rows.length,
       tasks: tasks.filter(vis).length,
       totalTasks: tasks.length,
+      parts: parts.length,
+      onePhaseEach: parts.filter((t) => t.querySelectorAll('tr.phase').length === 1).length,
+      headed: parts.filter((t) => t.tHead && vis(t.tHead)).length,
+      wholeShown: vis(whole),
+      grids: new Set(shown.map(lefts)).size,
       norows: vis(document.querySelector('tr.norows')),
       pmatch: [...document.querySelectorAll('.pmatch')].filter(vis).length,
-      thead: getComputedStyle(g.querySelector('thead')).display,
-      wrapOverflow: getComputedStyle(g.closest('.tablewrap')).overflowX,
+      thead: shown.length ? getComputedStyle(shown[0].tHead).display : 'no part',
+      wrapOverflow: getComputedStyle(whole.closest('.tablewrap')).overflowX,
       topbar: vis(document.querySelector('.topbar')),
     };
   });
   await page.emulateMedia({ media: null });
   await page.setViewportSize({ width: 1512, height: 945 });
+  // ...and back: every row in the screen's one table, in the order it left, the
+  // same nodes rather than copies of them, and no part left behind.
+  s.back = await page.evaluate(() => {
+    window.dispatchEvent(new Event('afterprint'));
+    const g = document.querySelector('table.phases');
+    const now = [...g.tBodies[0].rows];
+    const was = window.__screenRows;
+    const moved = now.length === was.length ? now.filter((r, i) => r !== was[i]).length : -1;
+    delete window.__screenRows;
+    return {
+      moved,
+      count: now.length,
+      left: document.querySelectorAll('table[data-paperpart]').length,
+      marked: g.hasAttribute('data-papercut'),
+    };
+  });
   return s;
 };
 
@@ -2096,6 +2167,15 @@ const paper = await paperState();
 expect('on paper every phase prints, filtered or not', paper.phases, paper.total);
 expect('...and every task with them', paper.tasks, paper.totalTasks);
 expect('...so the empty state never reaches the page it contradicts', paper.norows, false);
+expect(`on paper each phase is a table of its own (${paper.parts} parts for `
+  + `${paper.total} phases)`, paper.onePhaseEach === paper.total && paper.parts === paper.total, true);
+expect("...the screen's one table stays off the sheet", paper.wholeShown, false);
+expect('...every part carries the column headers', paper.headed, paper.parts);
+expect('...and the parts line up as one grid (distinct column layouts)', paper.grids, 1);
+expect(`afterprint puts every row back in the order it left (${paper.back.count} rows)`,
+  paper.back.moved, 0);
+expect('...and leaves no part and no mark behind',
+  `${paper.back.left} ${paper.back.marked}`, '0 false');
 expect('portrait paper is not treated as a small screen (no scroll frame)', paper.wrapOverflow, 'visible');
 expect('the app shell is gone and the document is back', paper.topbar, false);
 // Restating a default, and worth asserting for what it catches rather than for
@@ -2974,6 +3054,113 @@ const FULLRUN_SHAPES = {
 // at each. If any of that had rebuilt the document, everything from the reload
 // onwards was measured against nodes nobody was listening to.
 await stillLive('at the end, over everything driven since the reload');
+
+// A plan long enough to have crashed the printer, printed for real. Chrome's
+// renderer died in `page.pdf` (and the real Save as PDF tab with it) when ONE
+// table was paginated across many pages: its memory grew with that table's
+// rows times the pages it spanned. On the day it was measured, the demo plan at
+// twenty tasks a phase printed at 168 phases and crashed at 175, and this
+// repository's own plan crashed inside this file's PDF step above. Nothing in
+// the report's bytes or node count predicted it, and its row count did not
+// either: the acme example's rows are taller than the demo's, so the same rows
+// spanned more pages. What tracked it was how long the table ran on paper, so
+// the report under test is grown, in a page of its own, by copying its own
+// phase blocks until the uncut sheet runs past `STRESS_PRINT_PX` at portrait
+// width — past where every report measured that day crashed — and it must
+// then print. Only the first sheet is asked for: Chrome paginates the whole
+// document to produce any page of it, so the crash needs no more than that.
+//
+// The bound covers the WHOLE block — load, growth, every measurement and the
+// print — because each of those waits on the same renderer, and a bound on the
+// print alone left the rest free to hang the run. Opt-in (`--stress-print`, see
+// the header); it runs AFTER the last liveness reading and in a context of its
+// own, so a renderer that does die cannot take the page every other check drove
+// down with it.
+if (!STRESS) {
+  notes.push('ok   (the long-print stress check was not asked for - '
+    + '`--stress-print` runs it)');
+} else {
+  const STRESS_PRINT_PX = 3400000;
+  const STRESS_BOUND_MS = 300000;
+  const ctx = await browser.newContext({ viewport: { width: 1512, height: 945 } });
+  const sp = await ctx.newPage();
+  let died = null;
+  const crashed = new Promise((r) => { died = r; });
+  sp.on('crash', () => died('the renderer crashed'));
+  // What the setup reached, kept outside the race so a block that ran out of
+  // time still reports how far it got.
+  const grown = { rows: 0, px: 0 };
+  // How tall the sheet runs uncut, at the portrait width section 7 uses. Read
+  // without `beforeprint`, so the same figure is measured whatever shape the
+  // report prints in.
+  const printPx = async () => {
+    await sp.emulateMedia({ media: 'print' });
+    await sp.setViewportSize({ width: 688, height: 900 });
+    const h = await sp.evaluate(() => document.documentElement.scrollHeight);
+    await sp.emulateMedia({ media: null });
+    await sp.setViewportSize({ width: 1512, height: 945 });
+    return h;
+  };
+  // Append copies of the table's own phase blocks until it holds `want` rows.
+  const growTo = (target) => sp.evaluate((want) => {
+    const g = document.querySelector('table.phases');
+    const body = g && g.tBodies[0];
+    if (!body) return 0;
+    const blocks = [];
+    let cur = null;
+    for (const r of body.rows) {
+      if (r.classList.contains('phase')) { cur = [r]; blocks.push(cur); }
+      else if (r.classList.contains('seghead')) cur = null;
+      else if (cur) cur.push(r);
+    }
+    if (!blocks.length) return 0;
+    const frag = document.createDocumentFragment();
+    for (let n = body.rows.length, i = 0; n < want; i++) {
+      for (const r of blocks[i % blocks.length]) { frag.appendChild(r.cloneNode(true)); n++; }
+    }
+    body.appendChild(frag);
+    return body.rows.length;
+  }, target);
+  const stressBlock = async () => {
+    await sp.goto('file://' + path, { timeout: 0 });
+    grown.rows = await sp.evaluate(() => {
+      const g = document.querySelector('table.phases');
+      return g && g.tBodies[0] ? g.tBodies[0].rows.length : 0;
+    });
+    grown.px = await printPx();
+    // Rows are not all one height, and the copies start from the first blocks
+    // every round, so an estimate is scaled by what it actually printed to and
+    // a short fall is grown again.
+    for (let round = 0; round < 6 && grown.rows > 0 && grown.px < STRESS_PRINT_PX; round++) {
+      grown.rows = await growTo(Math.ceil(grown.rows * (STRESS_PRINT_PX / grown.px) * 1.1));
+      grown.px = await printPx();
+    }
+    if (grown.px < STRESS_PRINT_PX) return 'not grown far enough to print';
+    return sp.pdf({ preferCSSPageSize: true, pageRanges: '1' }).then(() => 'printed',
+      (e) => `failed: ${String(e.message || e).split('\n')[0]}`);
+  };
+  const t0 = Date.now();
+  let timer = null;
+  const outcome = await Promise.race([
+    stressBlock().catch((e) => `failed: ${String(e.message || e).split('\n')[0]}`),
+    crashed,
+    new Promise((r) => {
+      timer = setTimeout(() => r(`the long-print stress block did not finish within `
+        + `${STRESS_BOUND_MS / 1000} s`), STRESS_BOUND_MS);
+    }),
+  ]);
+  clearTimeout(timer);
+  const took = Date.now() - t0;
+  expect(`(setting up the long print) the uncut sheet was grown past the crashing `
+    + `length (${grown.rows} rows, ${grown.px} px)`, grown.px >= STRESS_PRINT_PX, true);
+  expect(`a page past the length that crashed the printer prints, the whole block `
+    + `within ${STRESS_BOUND_MS / 1000} s (${grown.rows} rows, ${(took / 1000).toFixed(1)} s)`,
+    outcome, 'printed');
+  // A crashed or still-busy page can leave close() waiting on a process that is
+  // gone or not answering.
+  await Promise.race([ctx.close(), new Promise((r) => setTimeout(r, 5000))]);
+}
+
 assertLivenessWasChecked('report', liveness, {
   report: (m) => failures.push(`FAIL ${m}`),
   ok: (m) => notes.push(`ok   ${m}`),

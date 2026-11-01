@@ -785,7 +785,12 @@ rendered_plan_legs() {
   echo "== live plan: render and check"
   python3 plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json \
     --out-dir "$lp" --format html || return 1
-  node tools/check-report-interactive.mjs "$lp"/*.html || return 1
+  # The ONE report step that asks for the long-print stress check: it grows the
+  # page past the length that once crashed Chrome's printer and prints it, which
+  # costs tens of seconds and gigabytes of renderer memory. Here because this
+  # function runs after the concurrent report legs above have finished, so no
+  # other leg is printing beside it.
+  node tools/check-report-interactive.mjs "$lp"/*.html --stress-print || return 1
   python3 tools/demo/gen-demo-manifest.py "$dl" --phases 40 --tasks 5 \
     >/dev/null || return 1
   echo "== one-status plan: every phase done"
