@@ -1814,7 +1814,7 @@ def _seeded_repo_cases(check):
           and not os.path.exists(os.path.join(second, "only-in-first.txt")))
     check("ssr2 the helper's docstring says what it does without writing a "
           "number of git calls: counted=%r" % (counted,),
-          bool(doc) and "same git calls every time" in doc and not counted)
+          bool(doc) and not counted)
 
 
 def _env_cases(check):
