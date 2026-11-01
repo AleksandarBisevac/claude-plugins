@@ -778,6 +778,12 @@ def _ran(record):
     return {"code": record[0], "text": record[1], "problem": None, "seconds": 0.0}
 
 
+def _unjudged(key, why):
+    """Refuse to judge `_RECORDED[key]`, by raising: there is no exit to return
+    that a check cannot read as the answer it wanted."""
+    raise AssertionError("%s not judged: %s" % (key, why))
+
+
 def _judged(root, man, cmd, key, *extra):
     """`(exit, payload)` in `_red`'s shape - `verdict`, `redFirst`, `note` and
     `baseline` - for the runs recorded under `_RECORDED[key]`, judged over the
@@ -793,10 +799,15 @@ def _judged(root, man, cmd, key, *extra):
 
     A record holding a run `red` would not have made, or missing one it would
     have - the second run `_wants_second` owes, the fix run a red task run on a
-    green baseline owes - is not judged: the exit is None, `record` says which
-    run, and the case reading it fails. So a change to a decision that starts a
-    run cannot leave standing a record that no longer describes what `red`
-    does."""
+    green baseline owes - is not judged: `_unjudged` raises, naming the key and
+    the run, and so does a fixture whose declared tests, HEAD reading or
+    dependency plan cannot be read. A raise rather than a returned value,
+    because a value is only as loud as the check that reads it: an exit of None
+    satisfies a check worded as a negation (`code != M.E_PROVED`), so a refusal
+    returned would pass every such case. Raised, it fails the enclosing block
+    under the block's name (`_harness.stage`) however its checks are worded, and
+    a change to a decision that starts a run cannot leave standing a record that
+    no longer describes what `red` does."""
     rec = _RECORDED[key]
     cases = _harness.flag_values(list(extra), "--case")
     symbols = _harness.flag_values(list(extra), "--introduces")
@@ -804,14 +815,14 @@ def _judged(root, man, cmd, key, *extra):
     top, implementation, declared, problem = M.declared_tests(root, man, "P1.1",
                                                               deadline)
     if problem is not None:
-        return None, {"record": problem}
+        _unjudged(key, problem)
     tests = [t for t in declared if os.path.isfile(os.path.join(top, *t.split("/")))]
     present, problem = M._at_head(top, declared, deadline)
     if problem is not None:
-        return None, {"record": problem}
+        _unjudged(key, problem)
     deps, problem = M.dependency_plan(os.path.abspath(root), top, deadline)
     if problem is not None:
-        return None, {"record": problem}
+        _unjudged(key, problem)
     new = sorted(set(tests) - present)
     absent = [rel for rel in new if M._is_js_test_path(rel, set(tests))]
     stubbed = [rel for rel in new if rel not in absent]
@@ -832,10 +843,9 @@ def _judged(root, man, cmd, key, *extra):
                     is None)}
     wrong = sorted(k for k, want in owed.items() if want != (run[k] is not None))
     if wrong:
-        return None, {"record": "the record of %s %s the %s run, where `red` now "
-                                "%s" % (key, "holds" if run[wrong[0]] else "lacks",
-                                        wrong[0], "makes one" if owed[wrong[0]]
-                                        else "makes none")}
+        _unjudged(key, "the record %s the %s run, where `red` now %s"
+                  % ("holds" if run[wrong[0]] else "lacks", wrong[0],
+                     "makes one" if owed[wrong[0]] else "makes none"))
     _env, dropped, naming = M.child_env(top)
     # The deadline and the time held back for the fix run, read off the
     # fixture's own cost table for a sweep-shaped command, as `red` reads them.
@@ -1334,7 +1344,7 @@ def _introduces_cases(check):
     check("sr16 a test broken by a SyntaxError WITH the fix present is not a "
           "proved red under --introduces: the error is the test's, it survives "
           "the fix, and syntax errors never qualify: exit=%r %r" % (code, block),
-          code != M.E_PROVED and block.get("status") != "proved")
+          code == M.E_CANNOT_PROVE and block.get("status") == "could-not-prove")
 
     root_i, man_i = _red_repo(
         "stamp-red-intro-",
@@ -7016,7 +7026,7 @@ def _sweep_cases(check):
     check("swc2 the same command with a suite that still fails in the task tree "
           "reads could-not-prove, and the basis names the failing FILE as the "
           "sweep printed it: %r" % ((bad_code, bad_block.get("status"), basis[:400]),),
-          bad_code != M.E_PROVED and bad_block.get("status") == "could-not-prove"
+          bad_code == M.E_CANNOT_PROVE and bad_block.get("status") == "could-not-prove"
           and "the sweep failed tests/test_mine.py (exited 1)" in basis)
 
     # The deny and allow lines for the reader, on text rather than a run: a

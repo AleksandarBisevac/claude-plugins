@@ -159,70 +159,80 @@
         "severity": "med",
         "file": "tests/test_stamp_verification.py:1331-1337 (sr16), with _judged at 833-838",
         "issue": "sr16's check `code != M.E_PROVED and block.get(\"status\") != \"proved\"` is satisfied by _judged's record refusal, which returns `(None, {\"record\": ...})`: None != E_PROVED and an absent redFirst has no status. So if `_wants_second` started owing a second run for a SyntaxError under --introduces (part of what sr16 guards: syntax errors never qualify), _judged refuses the record and sr16 stays green. _judged's docstring says 'the exit is None, `record` says which run, and the case reading it fails', which is not true for a case whose check is phrased as a negation. Today sr16 gets exit 3 from both the judged run and the real one (see note), so this is a latent hole, not a present wrong verdict.",
-        "resolution": "Make _judged raise (for example AssertionError naming the key and the run) on a record mismatch instead of returning None, so the refusal fails the enclosing block under its name however the case's check is worded. At the least, tighten sr16 to `code == M.E_CANNOT_PROVE and block.get(\"status\") == \"could-not-prove\"`."
+        "resolution": "Make _judged raise (for example AssertionError naming the key and the run) on a record mismatch instead of returning None, so the refusal fails the enclosing block under its name however the case's check is worded. At the least, tighten sr16 to `code == M.E_CANNOT_PROVE and block.get(\"status\") == \"could-not-prove\"`.",
+        "fixTask": "P152.18-6jb"
       },
       {
         "id": "P152-R15",
         "severity": "low",
         "file": "tests/test_stamp_verification.py:808,815-817,822,828-832,842-848 (_judged); 3254-3260 (sr138)",
         "issue": "_judged copies run_red's own orchestration lines instead of calling product code. The copies: the `present` filter from _red_scope (808); new/absent/stubbed, i.e. run_red's state['new']/state['absent']/stubs (815-817); `sources` (822); the owed second/fix predicate from run_red 4398-4413 (828-832); and the cost-table sized/budget block (842-848). If any of those inline lines in run_red changes, no judged case turns red. Only the kept real proofs would catch it, and only for their own shapes. sr138's new assertion `baseline.stubbed == [\"tests/test_new.py\"]` checks _judged's own line 817, not run_red, so the label clause 'the file HEAD lacks is the one stubbed for HEAD's run' cannot fail on a product change. (sr94, still a real proof, does cover stubbing.)",
-        "resolution": "Get the scope from M._red_scope(argparse.Namespace(project=root, manifest=man, task='P1.1', files=None, timeout=None, introduces=symbols, deps_from=None), cmd, deadline) instead of re-deriving declared/present/deps. As a follow-up, extract run_red's pre-run state (new/absent/stubs/sources/sized/budget and the owed-run predicate) into one product function that both run_red and _judged call. Until then, drop the stub clause from sr138's label or point it at sr94."
+        "resolution": "Get the scope from M._red_scope(argparse.Namespace(project=root, manifest=man, task='P1.1', files=None, timeout=None, introduces=symbols, deps_from=None), cmd, deadline) instead of re-deriving declared/present/deps. As a follow-up, extract run_red's pre-run state (new/absent/stubs/sources/sized/budget and the owed-run predicate) into one product function that both run_red and _judged call. Until then, drop the stub clause from sr138's label or point it at sr94.",
+        "fixTask": "P152.19-6jb"
       },
       {
         "id": "P152-R16",
         "severity": "low",
         "file": "tests/test_stamp_verification.py:84-101 (_seeded_repo docstring, line 93)",
         "issue": "'the init, config, add and commit are the same five git calls every time': the body makes four git calls (init, config, add, commit). This is a wrong number written into prose, and it contradicts the filed claims item 7, 'no number written into prose ... comments carry none'.",
-        "resolution": "Delete the number: 'the init, config, add and commit are the same git calls every time'."
+        "resolution": "Delete the number: 'the init, config, add and commit are the same git calls every time'.",
+        "fixTask": "P152.20-6jb"
       },
       {
         "id": "P152-R17",
         "severity": "med",
         "file": "tools/reach-diff.py:674-713,776-787",
         "issue": "A comparison whose two sides materialise the same tree exits 0 with no change measured. The new WORKTREE head makes this the likely failure: `--base HEAD --head WORKTREE` on a clean checkout, or after the task's work is committed (when a phase review re-runs a task gate), copies exactly the base commit and reports 'lost: 0 lines'. The same happens with `--base X --head X`. The task exists because a gate passed vacuously (`--head HEAD` over an uncommitted conversion compares the base with itself). The diff fixes that spelling and leaves the same vacuous pass open under the new one. P152.4's re-pointed gate in the working tree's plan is now spelled exactly `--base HEAD --head WORKTREE`.",
-        "resolution": "In compare(), after both sides are prepared, refuse with 2 when they hold the same content. Either the two sides resolve to the same commit, or the head is WORKTREE and the scratch copy is byte-identical to the base export. Comparing the two scratch trees touches no git state. Print it as 'the head is the base: no change to measure'. Add a selftest case: `--base HEAD --head WORKTREE` over a clean fixture checkout exits 2."
+        "resolution": "In compare(), after both sides are prepared, refuse with 2 when they hold the same content. Either the two sides resolve to the same commit, or the head is WORKTREE and the scratch copy is byte-identical to the base export. Comparing the two scratch trees touches no git state. Print it as 'the head is the base: no change to measure'. Add a selftest case: `--base HEAD --head WORKTREE` over a clean fixture checkout exits 2.",
+        "fixTask": "P152.21-6jb"
       },
       {
         "id": "P152-R18",
         "severity": "low",
         "file": "tools/reach-diff.py:64-77 (docstring), 253-275 (blind_spots); CONTRIBUTING.md:606-611",
         "issue": "A blind spot is matched only by the number of untraced children per block label. The docstring says such a block 'measured the same blind spot on both sides', and CONTRIBUTING says 'the same such children'. Equal counts do not establish that. Suppose the base kills a child that runs path P (P reached nowhere else) and the head kills a different child in the same block. The counts match, P's loss is invisible, and the run exits 0. In a suite with no STAGES table the label is '(whole file)', so the match is one count over the whole suite. The residual risk is half-stated ('lines only those children ran are measured at neither revision'), but the sentence before it claims identity.",
-        "resolution": "Record each module child's identity: the child dumps its argv with the export root stripped, and the parent's `spawned` records the same key. Then match the multiset of untraced keys per block instead of their count. If identity matching is not wanted, reword the docstring and the CONTRIBUTING sentence to say the same NUMBER of children, and state that a different child killed at the head hides a loss among the lines the base's child ran."
+        "resolution": "Record each module child's identity: the child dumps its argv with the export root stripped, and the parent's `spawned` records the same key. Then match the multiset of untraced keys per block instead of their count. If identity matching is not wanted, reword the docstring and the CONTRIBUTING sentence to say the same NUMBER of children, and state that a different child killed at the head hides a loss among the lines the base's child ran.",
+        "fixTask": "P152.22-6jb"
       },
       {
         "id": "P152-R19",
         "severity": "low",
         "file": "tools/reach-diff.py:277-281 (HOOK_SOURCE dump)",
         "issue": "The hook reads the block label in the atexit handler (`os.environ.get(\"REACH_DIFF_BLOCK\")` inside dump()), not when it installs. A suite process that clears or replaces os.environ before exiting has its untraced children filed under '(whole file)'. In a staged run that label ran at neither side, so the run refuses with 2 and names the wrong block. This fails safe, but the refusal is misattributed. `parent` is already captured at install time.",
-        "resolution": "Capture `block = os.environ.get(\"REACH_DIFF_BLOCK\")` beside `parent` in _reach_diff_install() and write that value in dump()."
+        "resolution": "Capture `block = os.environ.get(\"REACH_DIFF_BLOCK\")` beside `parent` in _reach_diff_install() and write that value in dump().",
+        "fixTask": "P152.23-6jb"
       },
       {
         "id": "P152-R20",
         "severity": "low",
         "file": "PLUGIN-BUILD-GUIDE.md:4500-4505; plugins/audit/scripts/governance/drive-phase.py:3914-3919",
         "issue": "R1's narrowing swapped one over-claim for an enumeration. 'The other branches on plain values are still decided inline where they act: <list>' reads as the complete set of inline branches, but it leaves some out. drive_task's status arms (drive-phase.py:9124-9136: terminal, blocked, not in_progress) are inline plain-value branches, and this task's own dt10 tests one of them. gate_step's exit-code arms (4414-4423) and answer_refusal's checks (6551-6580) are others. A reader who takes the list as the whole set will think drive_task's blocked stop is a planner arm or covered by one, and the next new inline branch makes the list false again without anyone touching the sentence. This is the same class R1 recorded: fixed once by listing places, with the class left open.",
-        "resolution": "In both places, say it as a class rather than a list. For example: 'Every other branch on plain values is decided inline where it acts. Among them are advance's stored-green check on a filed return, integrate_member, ...' Keep the named examples, but drop the reading that the list is exhaustive."
+        "resolution": "In both places, say it as a class rather than a list. For example: 'Every other branch on plain values is decided inline where it acts. Among them are advance's stored-green check on a filed return, integrate_member, ...' Keep the named examples, but drop the reading that the list is exhaustive.",
+        "fixTask": "P152.24-6jb"
       },
       {
         "id": "P152-R21",
         "severity": "med",
         "file": "tests/test_drive_phase.py:14889-14903 (wt6), 6498-6509 (wt7, inherited)",
         "issue": "The old wt6 drove a later wave over a kept tree and asserted `(\"base: %s\" % (base,)) in brief`. That held audit-lookup.wave_tree's `bases.get(task) or wave.get(\"base\")` precedence (plugins/audit/scripts/status/audit-lookup.py:595-596): the brief must name the base the adopted tree was cut at, not the new wave's base. The new wt6 checks only the driver half (`wave.get(\"bases\") == {\"P1.1\": _WAVE_BASE}`). The claim says 'the brief half is test_audit_lookup's', and the e2e header says the same, but neither holds. bf40's drive state (tests/test_audit_lookup.py:1765) carries no `bases` key. The kept wt7 reads `base:` in a brief only where the member's base equals the wave base, so it would still pass with the `bases` read deleted. A one-line defect `return tree, wave.get(\"base\")` in audit-lookup.wave_tree now turns no case red. The `bases` field crosses the boundary from the drive (writer) to audit-lookup (reader), and this diff removed the only case that held both sides.",
-        "resolution": "Add a case where the two bases differ. Either put one in tests/test_audit_lookup.py beside bf40, with a state whose `wave.bases[\"P1.1\"]` is not `wave.base`, asserting the brief's `base:` line names the member's base and not the wave's. Or put one in uy-block that writes the `state[\"wave\"]` wt6 records to a temp state dir and asks audit-lookup's wave_tree for P1.1, expecting `(_WAVE_TREE, _WAVE_BASE)`, not `_WAVE_NEW_BASE`. Then correct the claim and the e2e-wave header sentence."
+        "resolution": "Add a case where the two bases differ. Either put one in tests/test_audit_lookup.py beside bf40, with a state whose `wave.bases[\"P1.1\"]` is not `wave.base`, asserting the brief's `base:` line names the member's base and not the wave's. Or put one in uy-block that writes the `state[\"wave\"]` wt6 records to a temp state dir and asks audit-lookup's wave_tree for P1.1, expecting `(_WAVE_TREE, _WAVE_BASE)`, not `_WAVE_NEW_BASE`. Then correct the claim and the e2e-wave header sentence.",
+        "fixTask": "P152.25-6jb"
       },
       {
         "id": "P152-R22",
         "severity": "med",
         "file": "tests/test_drive_phase.py:14224-14237 (ci red unit), 14106-14148 (_e2e_ci_cycle)",
         "issue": "The old red-cadence drive ran ci_file_red against the real audit-task.py and asserted an open bug in the manifest. The new red case answers audit-task.py from _verb_rig and asserts the drive's argv literally (`bug-add <title> <manifest> --project-dir P --severity high --description -` plus stdin). The kept cycle is the green one, although PLAN.md section 4 lists 'a red files a bug' in the kept cadence cycle, and section 5 item 2 says 'the verbs agree with the drive'. No case in the drive suite now runs the drive's bug-add call through the real verb. If the verb side drifts (a flag renamed, `--description -` refused for bug-add, a new required flag), every drive case stays green while a red CI run in production stops instead of filing its bug. This is the one bug-add caller in drive-phase.py (line 3380).",
-        "resolution": "In _e2e_ci_cycle, after the drive, over the same fixture (no second drive), run `M.ci_file_red(_verb_ctx(root, mpath), {\"sha\": heads[0], \"branch\": \"ci/p1\"}, red_row)` with the real verbs, as _signoff_verb_cases does. Assert it returns None and that the manifest holds one bug with status open whose text names run 777 and ci/p1. That is one verb process."
+        "resolution": "In _e2e_ci_cycle, after the drive, over the same fixture (no second drive), run `M.ci_file_red(_verb_ctx(root, mpath), {\"sha\": heads[0], \"branch\": \"ci/p1\"}, red_row)` with the real verbs, as _signoff_verb_cases does. Assert it returns None and that the manifest holds one bug with status open whose text names run 777 and ci/p1. That is one verb process.",
+        "fixTask": "P152.26-6jb"
       },
       {
         "id": "P152-R23",
         "severity": "low",
         "file": "tests/test_drive_phase.py:6272-6283",
         "issue": "The diff deleted `_setup_fixture`, the only reader of `_SETUP`, so `_SETUP` is dead. The section header above it ('a wave member's tree outlives a crash, a failed setup and a block ... The setup every case below declares: ... removes the flag and fails instead, once') now describes cases that no longer exist: the next case is _kept_restart_cases, which logs through `_CWD_LOG`. ruff does not report an unused module constant.",
-        "resolution": "Delete `_SETUP` and the header lines that describe it. Keep `_provisioned` with a one-line docstring tied to the `_CWD_LOG` log it now reads."
+        "resolution": "Delete `_SETUP` and the header lines that describe it. Keep `_provisioned` with a one-line docstring tied to the `_CWD_LOG` log it now reads.",
+        "fixTask": "P152.27-6jb"
       },
       {
         "id": "P152-R24",
@@ -259,7 +269,8 @@
         "severity": "low",
         "file": "tests/test_audit_task.py:20397-20399",
         "issue": "The xf5 comment and the filed claim cite j2 as the proof that a dead holder is not waited out. j2 in tests/test__locks.py:134 calls judge() on a dead pid and shows it is stale; the case that times acquire() on a dead holder is wt4 (tests/test__locks.py:1805). wt3 (live holder waited out on the default) is correctly cited.",
-        "resolution": "Cite wt3 and wt4 in the comment instead of wt3 and j2; wt4 asserts E_STALE returned in under a second with wait=9.0."
+        "resolution": "Cite wt3 and wt4 in the comment instead of wt3 and j2; wt4 asserts E_STALE returned in under a second with wait=9.0.",
+        "fixTask": "P152.28-6jb"
       }
     ],
     "outcome": "[findings: 27 - 0 high, 11 med, 16 low; 16 with a recorded fix commit]"
@@ -746,7 +757,7 @@
     {
       "id": "P152.7",
       "title": "xf-block and the at4 sleepers spend only the time their subject needs",
-      "status": "in_progress",
+      "status": "done",
       "description": "Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.7, optional and measured first. Profile xf-block; hoist a scan only if one is repeated per case, else decline with the profile. at4-block: a case whose subject is the refusal passes --wait 0, a case whose subject is the wait keeps the default; say which of the sleepers is which before cutting.",
       "files": [
         "tests/test_audit_task.py"
@@ -773,19 +784,30 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d1df212da82f",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "MEASURED FIRST (scratch export of HEAD 5bb44004, single runs). xf-block: 16.05 s wall, user 0.64 s, sys 0.45 s (load 7.5). cProfile: 16.09 s total, of which 14.88 s is time.sleep (267 calls) under 3 calls to _locks.acquire (15.15 s cumulative), each spending the default _locks.WAIT_SECONDS bound. All three come from xf5, where reindex, bug-close and bug-add meet an index lock held by a live pid (this test process). The plan's guess (CPU in the document detector) did not hold: no scan is repeated per case, so the hoist is DECLINED with this profile; the wait was cut instead. at4-block: 15.45 s wall, user 5.4 s, sys 9.5 s. cProfile: 15.2 s, zero calls to time.sleep, 146 _locks.acquire calls totalling 0.586 s, 12 lv_sleeper spawns totalling 0.051 s; the lv group (lv_call, 59 calls) is 4.15 s, and the rest is subprocess fork/exec/wait (1005 spawns). So the at4 sleepers already spend no wait: `start` takes the phase lock with wait=0 (plugins/audit/scripts/manifest/audit-task.py:5120 and :5140), and lv_lock passes `--wait 0` (tests/test_audit_task.py, lv_lock in _start_cases). The at4 part is DECLINED with that profile, and at4 is not edited. CHANGE, tests/test_audit_task.py, _crossfile_cases, xf5 only: _locks.WAIT_SECONDS is set to 0 for the three verb calls and restored in a finally, the same pattern tests/test_verify_invariants.py uses. These verbs take no --wait (acquire_index_lock calls _locks.acquire without one). To keep the case meaningful at zero, the assertion is strengthened: each verb now returns (3, 1), meaning exit 3 with 'is HELD by a live run' printed exactly once, and the index claim read afterwards still carries note 'another run' and sessionId 'sess-X'. The title changed from 'waits on' to 'is refused by'. The wait itself (a live holder IS waited out, a dead one is not) is proven in tests/test__locks.py by wt3 and j2. AFTER: xf-block 0.90 s and 1.06 s standalone (loads 7.0 and 12.8), 1.3 s inside the sweep, twice. at4-block 15.12 s (untouched). Suite through the sweep: 29.19 s before (load 6.5), 28.47 s and 29.33 s after (loads 5.9 and 12.8). Wall does not move because lo-block (23.9 to 24.3 s) is the critical path. lo-block profile: 17.06 s, 660 subprocess runs (9.43 s), 4.52 s of time.sleep from _held_work_cases (3 calls, 3.33 s) and next_second (2 calls, 1.19 s). That is outside this task's scope and is left as it is. The saving is about 15 slot-seconds of the sweep's budget. .github/sweep-costs.json still records xf-block at 18.4; I did not edit it (not in files). REACH-DIFF: audit-task.py under tests/test_audit_task.py, --base HEAD --head WORKTREE: lost 0 lines, exit 0 (7981 lines both sides). _locks.py: the first run reported 4 lines lost, exit 1 (HEAD 468, WORKTREE 464): _link_into_place 884-885 and _claim 932-933, both the race branch where the name appears between the exists check and the link. A control run, --base HEAD --head HEAD, reached 464 on both sides, lost 0, exit 0, so HEAD itself reaches those lines only sometimes. The rerun of the WORKTREE comparison: 464 on both sides, lost 0, exit 0. The 4 lines are judged noise in HEAD's own reach, not a loss from this change; the measurement is over three runs. GATES: python3 tools/sweep-selftests.py tests/test_audit_task.py exit 0, 1/1 files ok, 1200 cases. python3 tools/sweep-selftests.py tests/test__locks.py exit 0, 1/1 files ok, 148 cases. ruff check exit 0; vermin -t=3.8- exit 0; prose_number_claims() found nothing in this file. DEPENDANTS: tests/test_commit_task_work.py (_attempt_cases, _close_evidence_cases, _remedies_pass) and tests/test__filed_returns.py (_held_cases) are still correct; those functions are untouched and only _crossfile_cases changed. .github/sweep-costs.json is unchanged and now overstates xf-block (18.4 recorded against about 1.3 measured); re-recording costs is the orchestrator's step. audit-task.py, tools/affected.py, tools/sweep-selftests.py, CHANGELOG.md and docs/research/pipeline-cost-levers.md refer to the suite by path, and none names xf5 or the xf-block timing (grep), so they are still correct.",
+        "descriptive": "xf-block drops from about 16 s to about 1 s: xf5 tested a refusal but paid three 5-second live-holder waits. The at4 sleepers already spent no wait, so that half and the scan hoist are declined, with the profiles."
       },
       "startedAt": "2026-11-01T01:26:41Z",
-      "completedAt": null,
+      "completedAt": "2026-11-01T01:43:15Z",
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-11-01T01:41:43Z.831b44",
         "status": "passed",
         "at": "2026-11-01T01:41:43Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "d1df212da82f",
+        "at": "2026-11-01T01:43:15Z",
+        "return": "docs/audit/evidence/returns/P152.7/20261101T012641Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task with tests.add empty and expectRedFirst false: no new case is owed a red. The changed case xf5 was still shown red on the defect it guards, in a scratch git-archive export of HEAD carrying the edited suite: _panel_write.acquire_index_lock mutated to treat E_LIVE as E_OURS (a verb writing past a live index lock) -> 'FAIL xf5 ... {reindex: (0, 1), bug-close: (0, 1), bug-add: (0, 1)}', 'SELFTEST FAILED: 16/17 cases passed'; restored, __pycache__ purged -> 'ALL PASS: 17/17 cases passed'. The shared tree was never mutated.",
+        "at": "2026-11-01 ~02:31 local, scratch export, not through the helper"
       }
     },
     {
@@ -1650,6 +1672,614 @@
         "basis": "P152.17-6jb is regression mode with expectRedFirst false and no tests.add, so no red is owed. Seen red on the shared tree all the same: the ip cases were written before the function existed (`python3 tests/_harness.py --selftest`: NameError run_script_in_process, 98/99); for the R24 fix, fb5s and ip12 were written before run_script existed - `python3 tests/test_audit_task.py --selftest --stage fb-block` printed 'FAIL fb5s ... (False, 'ValueError: .../site-planted/sitecustomize.py is i...' and 'SELFTEST FAILED: 19/20', and `python3 tests/_harness.py --selftest` 'NameError: name 'run_script' is not defined', 109/110. After the fix 20/20 and 110/110.",
         "at": "2026-11-01, on the shared tree before each implementation"
       }
+    },
+    {
+      "id": "P152.18-6jb",
+      "title": "fix P152-R14: sr16's check `code != M.E_PROVED and block.get(\"status\") != \"pr...",
+      "status": "in_progress",
+      "description": "sr16's check `code != M.E_PROVED and block.get(\"status\") != \"proved\"` is satisfied by _judged's record refusal, which returns `(None, {\"record\": ...})`: None != E_PROVED and an absent redFirst has no status. So if `_wants_second` started owing a second run for a SyntaxError under --introduces (part of what sr16 guards: syntax errors never qualify), _judged refuses the record and sr16 stays green. _judged's docstring says 'the exit is None, `record` says which run, and the case reading it fails', which is not true for a case whose check is phrased as a negation. Today sr16 gets exit 3 from both the judged run and the real one (see note), so this is a latent hole, not a present wrong verdict.\n\nResolution asked: Make _judged raise (for example AssertionError naming the key and the run) on a record mismatch instead of returning None, so the refusal fails the enclosing block under its name however the case's check is worded. At the least, tighten sr16 to `code == M.E_CANNOT_PROVE and block.get(\"status\") == \"could-not-prove\"`.",
+      "files": [
+        "tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test_stamp_verification.py: the case P152-R14 asks for, locking the behaviour at HEAD"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_stamp_verification.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-01T01:43:53Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-01T01:43:34Z",
+          "text": "scope: tests/test_stamp_verification.py, every path the finding(s) P152-R14 name"
+        },
+        {
+          "at": "2026-11-01T01:43:34Z",
+          "text": "no test runner in this task's gate for the test P152-R14 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test_stamp_verification.py'], derived as narrowed to this task's tests.add paths, in the spelling meta.phaseGate.derived.spelling records; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P152-R14"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-01T01:49:58Z.625390",
+        "status": "passed",
+        "at": "2026-11-01T01:49:58Z"
+      }
+    },
+    {
+      "id": "P152.19-6jb",
+      "title": "fix P152-R15: _judged copies run_red's own orchestration lines instead of cal...",
+      "status": "pending",
+      "description": "_judged copies run_red's own orchestration lines instead of calling product code. The copies: the `present` filter from _red_scope (808); new/absent/stubbed, i.e. run_red's state['new']/state['absent']/stubs (815-817); `sources` (822); the owed second/fix predicate from run_red 4398-4413 (828-832); and the cost-table sized/budget block (842-848). If any of those inline lines in run_red changes, no judged case turns red. Only the kept real proofs would catch it, and only for their own shapes. sr138's new assertion `baseline.stubbed == [\"tests/test_new.py\"]` checks _judged's own line 817, not run_red, so the label clause 'the file HEAD lacks is the one stubbed for HEAD's run' cannot fail on a product change. (sr94, still a real proof, does cover stubbing.)\n\nResolution asked: Get the scope from M._red_scope(argparse.Namespace(project=root, manifest=man, task='P1.1', files=None, timeout=None, introduces=symbols, deps_from=None), cmd, deadline) instead of re-deriving declared/present/deps. As a follow-up, extract run_red's pre-run state (new/absent/stubs/sources/sized/budget and the owed-run predicate) into one product function that both run_red and _judged call. Until then, drop the stub clause from sr138's label or point it at sr94.",
+      "files": [
+        "tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test_stamp_verification.py: the case P152-R15 asks for, locking the behaviour at HEAD"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_stamp_verification.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-01T01:43:34Z",
+          "text": "scope: tests/test_stamp_verification.py, every path the finding(s) P152-R15 name"
+        },
+        {
+          "at": "2026-11-01T01:43:34Z",
+          "text": "no test runner in this task's gate for the test P152-R15 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test_stamp_verification.py'], derived as narrowed to this task's tests.add paths, in the spelling meta.phaseGate.derived.spelling records; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P152-R15"
+      ]
+    },
+    {
+      "id": "P152.20-6jb",
+      "title": "fix P152-R16: 'the init, config, add and commit are the same five git calls e...",
+      "status": "pending",
+      "description": "'the init, config, add and commit are the same five git calls every time': the body makes four git calls (init, config, add, commit). This is a wrong number written into prose, and it contradicts the filed claims item 7, 'no number written into prose ... comments carry none'.\n\nResolution asked: Delete the number: 'the init, config, add and commit are the same git calls every time'.",
+      "files": [
+        "tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test_stamp_verification.py: the case P152-R16 asks for, locking the behaviour at HEAD"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_stamp_verification.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-01T01:43:34Z",
+          "text": "scope: tests/test_stamp_verification.py, every path the finding(s) P152-R16 name"
+        },
+        {
+          "at": "2026-11-01T01:43:34Z",
+          "text": "no test runner in this task's gate for the test P152-R16 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test_stamp_verification.py'], derived as narrowed to this task's tests.add paths, in the spelling meta.phaseGate.derived.spelling records; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P152-R16"
+      ]
+    },
+    {
+      "id": "P152.21-6jb",
+      "title": "fix P152-R17: A comparison whose two sides materialise the same tree exits 0 ...",
+      "status": "in_progress",
+      "description": "A comparison whose two sides materialise the same tree exits 0 with no change measured. The new WORKTREE head makes this the likely failure: `--base HEAD --head WORKTREE` on a clean checkout, or after the task's work is committed (when a phase review re-runs a task gate), copies exactly the base commit and reports 'lost: 0 lines'. The same happens with `--base X --head X`. The task exists because a gate passed vacuously (`--head HEAD` over an uncommitted conversion compares the base with itself). The diff fixes that spelling and leaves the same vacuous pass open under the new one. P152.4's re-pointed gate in the working tree's plan is now spelled exactly `--base HEAD --head WORKTREE`.\n\nResolution asked: In compare(), after both sides are prepared, refuse with 2 when they hold the same content. Either the two sides resolve to the same commit, or the head is WORKTREE and the scratch copy is byte-identical to the base export. Comparing the two scratch trees touches no git state. Print it as 'the head is the base: no change to measure'. Add a selftest case: `--base HEAD --head WORKTREE` over a clean fixture checkout exits 2.",
+      "files": [
+        "tools/reach-diff.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "files-no-suite"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-01T01:43:56Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-01T01:43:38Z",
+          "text": "scope: tools/reach-diff.py, every path the finding(s) P152-R17 name"
+        },
+        {
+          "at": "2026-11-01T01:43:38Z",
+          "text": "no suite: tools/reach-diff.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-11-01T01:43:38Z",
+          "text": "no tests.add clause for P152-R17: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P152-R17"
+      ],
+      "reviewPerTask": "signals"
+    },
+    {
+      "id": "P152.22-6jb",
+      "title": "fix P152-R18: A blind spot is matched only by the number of untraced children...",
+      "status": "pending",
+      "description": "A blind spot is matched only by the number of untraced children per block label. The docstring says such a block 'measured the same blind spot on both sides', and CONTRIBUTING says 'the same such children'. Equal counts do not establish that. Suppose the base kills a child that runs path P (P reached nowhere else) and the head kills a different child in the same block. The counts match, P's loss is invisible, and the run exits 0. In a suite with no STAGES table the label is '(whole file)', so the match is one count over the whole suite. The residual risk is half-stated ('lines only those children ran are measured at neither revision'), but the sentence before it claims identity.\n\nResolution asked: Record each module child's identity: the child dumps its argv with the export root stripped, and the parent's `spawned` records the same key. Then match the multiset of untraced keys per block instead of their count. If identity matching is not wanted, reword the docstring and the CONTRIBUTING sentence to say the same NUMBER of children, and state that a different child killed at the head hides a loss among the lines the base's child ran.",
+      "files": [
+        "tools/reach-diff.py",
+        "CONTRIBUTING.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "files-no-suite"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-01T01:43:42Z",
+          "text": "scope: tools/reach-diff.py, CONTRIBUTING.md, every path the finding(s) P152-R18 name"
+        },
+        {
+          "at": "2026-11-01T01:43:42Z",
+          "text": "no suite: tools/reach-diff.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-11-01T01:43:42Z",
+          "text": "no suite: CONTRIBUTING.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test_derive_phase_gate.py, tools/affected.py, tools/check-committed-pii.py, tools/lints/_deps.py, tools/lints/_refs.py, tools/sweep-selftests.py"
+        },
+        {
+          "at": "2026-11-01T01:43:42Z",
+          "text": "no tests.add clause for P152-R18: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        },
+        {
+          "at": "2026-11-01T01:44:15Z",
+          "text": "the fix edits only the reach-diff bullet; the passages this reader quotes are elsewhere in CONTRIBUTING.md",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-11-01T01:44:15Z",
+          "text": "the fix edits only the reach-diff bullet; the passages this reader quotes are elsewhere in CONTRIBUTING.md",
+          "waives": "tools/sweep-selftests.py"
+        }
+      ],
+      "fixes": [
+        "P152-R18"
+      ]
+    },
+    {
+      "id": "P152.23-6jb",
+      "title": "fix P152-R19: The hook reads the block label in the atexit handler (`os.envir...",
+      "status": "pending",
+      "description": "The hook reads the block label in the atexit handler (`os.environ.get(\"REACH_DIFF_BLOCK\")` inside dump()), not when it installs. A suite process that clears or replaces os.environ before exiting has its untraced children filed under '(whole file)'. In a staged run that label ran at neither side, so the run refuses with 2 and names the wrong block. This fails safe, but the refusal is misattributed. `parent` is already captured at install time.\n\nResolution asked: Capture `block = os.environ.get(\"REACH_DIFF_BLOCK\")` beside `parent` in _reach_diff_install() and write that value in dump().",
+      "files": [
+        "tools/reach-diff.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "files-no-suite"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-01T01:43:47Z",
+          "text": "scope: tools/reach-diff.py, every path the finding(s) P152-R19 name"
+        },
+        {
+          "at": "2026-11-01T01:43:47Z",
+          "text": "no suite: tools/reach-diff.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-11-01T01:43:47Z",
+          "text": "no tests.add clause for P152-R19: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P152-R19"
+      ]
+    },
+    {
+      "id": "P152.24-6jb",
+      "title": "fix P152-R20: R1's narrowing swapped one over-claim for an enumeration. 'The ...",
+      "status": "in_progress",
+      "description": "R1's narrowing swapped one over-claim for an enumeration. 'The other branches on plain values are still decided inline where they act: <list>' reads as the complete set of inline branches, but it leaves some out. drive_task's status arms (drive-phase.py:9124-9136: terminal, blocked, not in_progress) are inline plain-value branches, and this task's own dt10 tests one of them. gate_step's exit-code arms (4414-4423) and answer_refusal's checks (6551-6580) are others. A reader who takes the list as the whole set will think drive_task's blocked stop is a planner arm or covered by one, and the next new inline branch makes the list false again without anyone touching the sentence. This is the same class R1 recorded: fixed once by listing places, with the class left open.\n\nResolution asked: In both places, say it as a class rather than a list. For example: 'Every other branch on plain values is decided inline where it acts. Among them are advance's stored-green check on a filed return, integrate_member, ...' Keep the named examples, but drop the reading that the list is exhaustive.",
+      "files": [
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: In both places, say it as a class rather than a list"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-01T01:44:17Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-01T01:43:51Z",
+          "text": "scope: PLUGIN-BUILD-GUIDE.md, plugins/audit/scripts/governance/drive-phase.py, every path the finding(s) P152-R20 name"
+        },
+        {
+          "at": "2026-11-01T01:43:51Z",
+          "text": "scope: tests/test_drive_phase.py, the suite that tests plugins/audit/scripts/governance/drive-phase.py (python: it hands drive-phase.py to a loader through a module constant)"
+        },
+        {
+          "at": "2026-11-01T01:43:51Z",
+          "text": "no suite: PLUGIN-BUILD-GUIDE.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__affected_tests.py, tests/test__deps.py, tests/test__doctor_trail.py, tests/test__output.py, tests/test__refs.py, tests/test_drive_phase.py and 6 more"
+        },
+        {
+          "at": "2026-11-01T01:44:14Z",
+          "text": "the fix edits only the drive-phase.py section's planner paragraph; the text this reader quotes sits in another section",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-11-01T01:44:14Z",
+          "text": "the fix edits only the drive-phase.py section's planner paragraph; the text this reader quotes sits in another section",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-11-01T01:44:14Z",
+          "text": "the fix edits only the drive-phase.py section's planner paragraph; the text this reader quotes sits in another section",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-11-01T01:44:14Z",
+          "text": "the fix edits only the drive-phase.py section's planner paragraph; the text this reader quotes sits in another section",
+          "waives": "tools/prove-gates.py"
+        }
+      ],
+      "fixes": [
+        "P152-R20"
+      ],
+      "reviewPerTask": "signals"
+    },
+    {
+      "id": "P152.25-6jb",
+      "title": "fix P152-R21: The old wt6 drove a later wave over a kept tree and asserted `(...",
+      "status": "pending",
+      "description": "The old wt6 drove a later wave over a kept tree and asserted `(\"base: %s\" % (base,)) in brief`. That held audit-lookup.wave_tree's `bases.get(task) or wave.get(\"base\")` precedence (plugins/audit/scripts/status/audit-lookup.py:595-596): the brief must name the base the adopted tree was cut at, not the new wave's base. The new wt6 checks only the driver half (`wave.get(\"bases\") == {\"P1.1\": _WAVE_BASE}`). The claim says 'the brief half is test_audit_lookup's', and the e2e header says the same, but neither holds. bf40's drive state (tests/test_audit_lookup.py:1765) carries no `bases` key. The kept wt7 reads `base:` in a brief only where the member's base equals the wave base, so it would still pass with the `bases` read deleted. A one-line defect `return tree, wave.get(\"base\")` in audit-lookup.wave_tree now turns no case red. The `bases` field crosses the boundary from the drive (writer) to audit-lookup (reader), and this diff removed the only case that held both sides.\n\nResolution asked: Add a case where the two bases differ. Either put one in tests/test_audit_lookup.py beside bf40, with a state whose `wave.bases[\"P1.1\"]` is not `wave.base`, asserting the brief's `base:` line names the member's base and not the wave's. Or put one in uy-block that writes the `state[\"wave\"]` wt6 records to a temp state dir and asks audit-lookup's wave_tree for P1.1, expecting `(_WAVE_TREE, _WAVE_BASE)`, not `_WAVE_NEW_BASE`. Then correct the claim and the e2e-wave header sentence.",
+      "files": [
+        "tests/test_drive_phase.py",
+        "tests/test_audit_lookup.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test_drive_phase.py: the case P152-R21 asks for, locking the behaviour at HEAD"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_audit_lookup.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-01T01:43:51Z",
+          "text": "scope: tests/test_drive_phase.py, tests/test_audit_lookup.py, every path the finding(s) P152-R21 name"
+        },
+        {
+          "at": "2026-11-01T01:43:51Z",
+          "text": "no test runner in this task's gate for the test P152-R21 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_audit_lookup.py'], derived as narrowed to this task's tests.add paths and the suite(s) its files declare (tests/test_audit_lookup.py), in the spelling meta.phaseGate.derived.spelling records; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P152-R21"
+      ]
+    },
+    {
+      "id": "P152.26-6jb",
+      "title": "fix P152-R22: The old red-cadence drive ran ci_file_red against the real audi...",
+      "status": "pending",
+      "description": "The old red-cadence drive ran ci_file_red against the real audit-task.py and asserted an open bug in the manifest. The new red case answers audit-task.py from _verb_rig and asserts the drive's argv literally (`bug-add <title> <manifest> --project-dir P --severity high --description -` plus stdin). The kept cycle is the green one, although PLAN.md section 4 lists 'a red files a bug' in the kept cadence cycle, and section 5 item 2 says 'the verbs agree with the drive'. No case in the drive suite now runs the drive's bug-add call through the real verb. If the verb side drifts (a flag renamed, `--description -` refused for bug-add, a new required flag), every drive case stays green while a red CI run in production stops instead of filing its bug. This is the one bug-add caller in drive-phase.py (line 3380).\n\nResolution asked: In _e2e_ci_cycle, after the drive, over the same fixture (no second drive), run `M.ci_file_red(_verb_ctx(root, mpath), {\"sha\": heads[0], \"branch\": \"ci/p1\"}, red_row)` with the real verbs, as _signoff_verb_cases does. Assert it returns None and that the manifest holds one bug with status open whose text names run 777 and ci/p1. That is one verb process.",
+      "files": [
+        "tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test_drive_phase.py: the case P152-R22 asks for, locking the behaviour at HEAD"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-01T01:43:51Z",
+          "text": "scope: tests/test_drive_phase.py, every path the finding(s) P152-R22 name"
+        },
+        {
+          "at": "2026-11-01T01:43:51Z",
+          "text": "no test runner in this task's gate for the test P152-R22 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test_drive_phase.py'], derived as narrowed to this task's tests.add paths, in the spelling meta.phaseGate.derived.spelling records; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P152-R22"
+      ]
+    },
+    {
+      "id": "P152.27-6jb",
+      "title": "fix P152-R23: The diff deleted `_setup_fixture`, the only reader of `_SETUP`,...",
+      "status": "pending",
+      "description": "The diff deleted `_setup_fixture`, the only reader of `_SETUP`, so `_SETUP` is dead. The section header above it ('a wave member's tree outlives a crash, a failed setup and a block ... The setup every case below declares: ... removes the flag and fails instead, once') now describes cases that no longer exist: the next case is _kept_restart_cases, which logs through `_CWD_LOG`. ruff does not report an unused module constant.\n\nResolution asked: Delete `_SETUP` and the header lines that describe it. Keep `_provisioned` with a one-line docstring tied to the `_CWD_LOG` log it now reads.",
+      "files": [
+        "tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test_drive_phase.py: the case P152-R23 asks for, locking the behaviour at HEAD"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-01T01:43:51Z",
+          "text": "scope: tests/test_drive_phase.py, every path the finding(s) P152-R23 name"
+        },
+        {
+          "at": "2026-11-01T01:43:51Z",
+          "text": "no test runner in this task's gate for the test P152-R23 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test_drive_phase.py'], derived as narrowed to this task's tests.add paths, in the spelling meta.phaseGate.derived.spelling records; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P152-R23"
+      ]
+    },
+    {
+      "id": "P152.28-6jb",
+      "title": "fix P152-R27: The xf5 comment and the filed claim cite j2 as the proof that a...",
+      "status": "pending",
+      "description": "The xf5 comment and the filed claim cite j2 as the proof that a dead holder is not waited out. j2 in tests/test__locks.py:134 calls judge() on a dead pid and shows it is stale; the case that times acquire() on a dead holder is wt4 (tests/test__locks.py:1805). wt3 (live holder waited out on the default) is correctly cited.\n\nResolution asked: Cite wt3 and wt4 in the comment instead of wt3 and j2; wt4 asserts E_STALE returned in under a second with wait=9.0.",
+      "files": [
+        "tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test_audit_task.py: the case P152-R27 asks for, locking the behaviour at HEAD"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_task.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-01T01:43:51Z",
+          "text": "scope: tests/test_audit_task.py, every path the finding(s) P152-R27 name"
+        },
+        {
+          "at": "2026-11-01T01:43:51Z",
+          "text": "no test runner in this task's gate for the test P152-R27 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test_audit_task.py'], derived as narrowed to this task's tests.add paths, in the spelling meta.phaseGate.derived.spelling records; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P152-R27"
+      ]
     }
   ],
   "reviewPerTask": "signals",
