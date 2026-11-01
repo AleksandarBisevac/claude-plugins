@@ -366,8 +366,10 @@
         "severity": "low",
         "file": "tests/test_stamp_verification.py:1815-1817",
         "issue": "ssr2 is a per-instance prose pin: it greps one docstring (_seeded_repo.__doc__) for '<N> git calls' and also requires the literal phrase 'same git calls every time'. It does NOT duplicate the prose-number lint (checked: _output_lints._prose_number_claim returns None for 'the init, config, add and commit are the same five git calls every time', for '5 git calls' and for 'twelve git calls', because 'N <noun>' is a shape the lint deliberately refuses, see prose_number_claims 'WHAT IT CANNOT SEE'), so it is not redundant with it. But it guards one sentence of one helper, not the class the lint leaves to the author, and the second conjunct pins wording: any rewording of the docstring turns the suite red with no behaviour changed. The task asked only to delete the number.",
-        "resolution": "Keep the number-free check if a pin is wanted, but drop the 'same git calls every time' conjunct (and bool(doc) only if a missing docstring is deliberately tolerated); or drop ssr2 and rely on the author-enforced rule. Do not remove it on the grounds that the lint covers it: the lint does not.",
-        "fixTask": "P152.33-6jb"
+        "resolution": "fixed in P152.33-6jb (05a734fff9b1): Keep the number-free check if a pin is wanted, but drop the 'same git calls every time' conjunct (and bool(doc) only if a missing docstring is deliberately tolerated); or drop ssr2 and rely on the author-enforced rule. Do not remove it on the grounds that the lint covers it: the lint does not.",
+        "fixTask": "P152.33-6jb",
+        "commit": "05a734fff9b1",
+        "status": "fixed"
       },
       {
         "id": "P152-R36",
@@ -391,14 +393,18 @@
         "severity": "low",
         "file": "tools/reach-diff.py:164-168,307-308,1429-1443",
         "issue": "EXIT CODES gives 1 as 'a line lost', yet `_refuse`'s own ValueError (and any other uncaught exception) leaves `main` as a traceback, and Python exits 1. Probe in a scratch mirror: the 'revision' refusal at :947 renamed to 'unresolvable', then run against a fixture repo with an unresolvable --head, exited 1 with `ValueError: refusal 'unresolvable' is not one the docstring names`. So a contract defect, which is exactly what finding 1 can let through, reads to a gate as a measured loss. The control probe with --repo pointing at a missing directory exited 2 (revision), as stated.",
-        "resolution": "In `main`, catch an unexpected exception, print it under a listed refusal name (for example `[internal]`, with a case), and return 2, so that 1 means only a lost line. Or state in EXIT CODES that an internal error exits 1 with a traceback."
+        "resolution": "fixed in P152.31-6jb (3051aed3fe11): In `main`, catch an unexpected exception, print it under a listed refusal name (for example `[internal]`, with a case), and return 2, so that 1 means only a lost line. Or state in EXIT CODES that an internal error exits 1 with a traceback.",
+        "fixTask": "P152.31-6jb",
+        "commit": "3051aed3fe11",
+        "status": "fixed"
       },
       {
         "id": "P152-R39",
         "severity": "med",
         "file": "tools/reach-diff.py:1491-1504",
         "issue": "main's `try` covers only `run(argv, out)`; `settle(result, out)` sits outside it, and `except Exception` does not catch SystemExit. Measured from a scratch mirror: a run that returns something other than a dict (None or an int) dies inside settle with AttributeError, and a `sys.exit(\"msg\")` or `raise SystemExit(\"msg\")` anywhere under the run skips settle entirely. Both exit 1 (probe: none-exit=1, sysexit-str-exit=1), which breaks the new EXIT CODES sentence: '1 - a line lost, and nothing else: an error the run did not expect is refused, never left to exit 1 with a traceback'. That is the R38 class this task set out to close, and the descriptive outcome ('an unexpected exception can no longer ... exit 1') claims more than the code does.",
-        "resolution": "Make settle refuse any result that is not a dict, as `internal`, and put the settle call inside the guarded region. Catch SystemExit raised by the run, and refuse it as `internal` unless it carries a 0/1/2 the result supports. Add cases with a run that returns None and a run that raises SystemExit(\"x\"), and show each one exits 2 under `internal`."
+        "resolution": "Make settle refuse any result that is not a dict, as `internal`, and put the settle call inside the guarded region. Catch SystemExit raised by the run, and refuse it as `internal` unless it carries a 0/1/2 the result supports. Add cases with a run that returns None and a run that raises SystemExit(\"x\"), and show each one exits 2 under `internal`.",
+        "fixTask": "P152.34-6jb"
       },
       {
         "id": "P152-R40",
@@ -427,9 +433,37 @@
         "file": "tools/reach-diff.py:1491-1504",
         "issue": "A KeyboardInterrupt raised under the run passes through `except Exception` and out of main (probe: ESCAPED KeyboardInterrupt), and the process ends on SIGINT. EXIT CODES states only 0, 1 and 2, and does not name the interrupt.",
         "resolution": "Name the interrupt in EXIT CODES as outside the contract, or catch KeyboardInterrupt in main and refuse it under a listed name."
+      },
+      {
+        "id": "P152-R44",
+        "severity": "med",
+        "file": "tools/reach-diff.py:1625-1656 (main_shape), 1546-1560 (main)",
+        "issue": "The shape is not closed: main_shape() checks only for CALLS before the try and never looks at the try's `finally`, so statements in main that raise without a call get out of main and end the process with exit 1 and a traceback. That is the R38/R39 class again, and it is outside every blind spot the docstring names. Probed on a scratch mirror, each mutation applied (landed=1): (a) `    last = argv[-1][0] if argv else ''` before the try - walk clean, --selftest ALL PASS 109/109, `reach-diff.py x ''` exits 1 with IndexError (the unmutated file exits 2 under `usage`); (b) a `finally:` clause holding `if '' in argv: raise RuntimeError('finally')` - walk clean, 109/109, the same CLI exits 1 with RuntimeError. `raise RuntimeError`, `assert argv` and `x = 1 // 0` before the try are also clean to the walk. The docstring's 'calls nothing before the region' is accurate, but it does not deliver the 'ONE PATH TO AN EXIT' it is there to hold.",
+        "resolution": "Check an invariant here rather than adding more forms to the enumeration. Require main's body to be the docstring plus one Try with no `finalbody` and no `orelse`, and move the `out`/`run` defaulting inside the try. A handler can default `out` with a call-free expression such as `out if out is not None else sys.stdout`, or the walk can allow only `Assign` statements whose value tree holds no Call/Subscript/BinOp/Raise/Assert. Add rd74 mutations for `raise RuntimeError` before the try, a subscript before the try, and a `finally` that raises."
+      },
+      {
+        "id": "P152-R45",
+        "severity": "low",
+        "file": "tools/reach-diff.py:1716-1745 (_read_node bound branch), 1575 (_REFUSAL_MAKERS)",
+        "issue": "The bound check reads only Load contexts, so the refusal makers can be rebound without a report: a module-level `_refuse = <other>`, a second `def _refuse(...)`, or `global _refuse; _refuse = print` inside a function no case reaches. The last one was probed: walk clean and --selftest 109/109. That contradicts the requested 'any rebinding of the refusal function is reported' and the docstring's 'none of which, nor `Refusal`, is used other than called' (a Store is a use). The same gap lets `main` or `settle` be rebound (`settle = lambda result, out: result['code']`, `main = lambda ...` at top level), which leaves the walk's name-based checks of `return settle(...)` and `sys.exit(main(...))` checking a name that no longer points at the shape. The runtime cases catch the unconditional forms of those two, but the walk does not.",
+        "resolution": "Report any Store, Del, `global` declaration or extra FunctionDef/ClassDef of `_refuse`, `_refusal`, `Refusal`, `settle` and `main` other than the one definition each. Add rd75 cases for `_refuse = x` at top level, a second `def _refuse`, and `global _refuse` inside a function."
+      },
+      {
+        "id": "P152-R46",
+        "severity": "low",
+        "file": "tools/reach-diff.py:56-77 (ONE PATH TO AN EXIT), 1608-1614 (_guard_exits), 186-189 (EXIT CODES 1)",
+        "issue": "Code that runs outside main can end the process with 1, and neither the walk nor WHAT IT CANNOT SEE covers it. Examples are a statement in the `__main__` block before `sys.exit(main(...))` (the block already calls `safe_stdio()` and imports `_output` there), module-level code at import time (the `import _output` / `install_path()` preamble), and a top-level `raise`. Probed: `if not sys.argv[1:]: raise RuntimeError('guard')` in the `__main__` block is walk-clean, --selftest is 109/109, and running with no arguments exits 1 with a traceback. EXIT CODES still says 1 means 'a line lost, and nothing else', with only 'the failures of main's own handlers aside'.",
+        "resolution": "Either hold the `__main__` block to its shape in the walk (the `_output` import, `safe_stdio()`, the `--selftest` branch and the one exit, nothing else) and name import-time failure (a missing `_output`, a broken preamble) under WHAT IT CANNOT SEE, or name both there. Also add that exception to the EXIT CODES 1 sentence's 'aside' clause."
+      },
+      {
+        "id": "P152-R47",
+        "severity": "low",
+        "file": "tools/reach-diff.py:66-67 (docstring), 1493-1514 (_unsupported)",
+        "issue": "The docstring says --selftest fails unless 'every refusal is a call to `_refuse` or `_refusal` naming it there'. Neither the walk nor settle sees a refusal written straight into a result, such as `result['refusal'] = 'usage'; return result` from a path no case reaches. Probed: the walk is clean. settle then accepts it, because the code is 2 and the refusal is listed, so the process exits 2 under a listed name and prints no `reach-diff: no comparison made (NAME)` line, which breaks EXIT CODES' 'Each refusal prints a line'. HEAD's walk did not hold this either, but the new sentence claims it does.",
+        "resolution": "Report any write of the `refusal` key outside `_refuse` and `fresh_result` (a subscript store, a dict-literal key, a `refusal=` keyword, `.update`/`.setdefault` with that key), or have `_refuse` record the names it printed in the result and have `settle` refuse a `refusal` it did not print. Failing both, narrow the docstring sentence to what is actually held: every CALL to `_refuse`/`_refusal` names a listed refusal."
       }
     ],
-    "outcome": "[findings: 43 - 0 high, 16 med, 27 low; 34 with a recorded fix commit]"
+    "outcome": "[findings: 47 - 0 high, 17 med, 30 low; 36 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2938,7 +2972,7 @@
     {
       "id": "P152.33-6jb",
       "title": "fix P152-R35: ssr2 is a per-instance prose pin: it greps one docstring (_seed...",
-      "status": "in_progress",
+      "status": "done",
       "description": "ssr2 is a per-instance prose pin: it greps one docstring (_seeded_repo.__doc__) for '<N> git calls' and also requires the literal phrase 'same git calls every time'. It does NOT duplicate the prose-number lint (checked: _output_lints._prose_number_claim returns None for 'the init, config, add and commit are the same five git calls every time', for '5 git calls' and for 'twelve git calls', because 'N <noun>' is a shape the lint deliberately refuses, see prose_number_claims 'WHAT IT CANNOT SEE'), so it is not redundant with it. But it guards one sentence of one helper, not the class the lint leaves to the author, and the second conjunct pins wording: any rewording of the docstring turns the suite red with no behaviour changed. The task asked only to delete the number.\n\nResolution asked: Keep the number-free check if a pin is wanted, but drop the 'same git calls every time' conjunct (and bool(doc) only if a missing docstring is deliberately tolerated); or drop ssr2 and rely on the author-enforced rule. Do not remove it on the grounds that the lint covers it: the lint does not.",
       "files": [
         "tests/test_stamp_verification.py"
@@ -2961,14 +2995,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "05a734fff9b1",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tests/test_stamp_verification.py ssr2: dropped the literal-phrase conjunct 'same git calls every time' in doc; the assertion is now bool(doc) and not counted (bool(doc) kept so a missing docstring is not read as a clean one; counted still catches '<digit or spelled N> git calls'). Sweep: python3 tools/sweep-selftests.py tests/test_stamp_verification.py tools/_suite.py exit 0, 2/2 files ok, 395 cases; direct --selftest run printed PASS ssr2 and ALL PASS 360/360. Dependants (.github/sweep-costs.json, tests/test__filed_returns.py, tools/affected.py, tools/sweep-selftests.py, tools/verify.sh, PLUGIN-BUILD-GUIDE.md; names _crlf_cases, _scan, _worktrees): all still correct, the change is one boolean conjunct inside one case, no name, label, block, case count or cost changes.",
+        "descriptive": "A harmless rewording of _seeded_repo's docstring no longer turns the suite red; the no-git-call-count check stays."
       },
       "startedAt": "2026-11-01T04:02:54Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-01T04:33:58Z",
+      "verifiedBy": [
+        "ssr2 relaxed: docstring must exist and state no '<N> git calls' (digit or spelled), no longer pins a phrase"
+      ],
       "notes": [
         {
           "at": "2026-11-01T04:02:32Z",
@@ -2987,7 +3023,314 @@
         "runId": "2026-11-01T04:30:02Z.18b60a",
         "status": "passed",
         "at": "2026-11-01T04:30:02Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "05a734fff9b1",
+        "at": "2026-11-01T04:33:58Z",
+        "return": "docs/audit/evidence/returns/P152.33-6jb/20261101T040254Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task with expectRedFirst false: ssr2 is relaxed, not added. Its remaining check was shown to go red in memory: the same regex over 'the init, config, add and commit are the same five git calls every time' finds ['five git calls'] so bool(doc) and not counted is False; over '5 git calls' it is False; over a harmlessly reworded docstring it is True.",
+        "at": "2026-11-01"
       }
+    },
+    {
+      "id": "P152.34-6jb",
+      "title": "fix P152-R39: main's `try` covers only `run(argv, out)`; `settle(result, out)...",
+      "status": "in_progress",
+      "description": "main's `try` covers only `run(argv, out)`; `settle(result, out)` sits outside it, and `except Exception` does not catch SystemExit. Measured from a scratch mirror: a run that returns something other than a dict (None or an int) dies inside settle with AttributeError, and a `sys.exit(\"msg\")` or `raise SystemExit(\"msg\")` anywhere under the run skips settle entirely. Both exit 1 (probe: none-exit=1, sysexit-str-exit=1), which breaks the new EXIT CODES sentence: '1 - a line lost, and nothing else: an error the run did not expect is refused, never left to exit 1 with a traceback'. That is the R38 class this task set out to close, and the descriptive outcome ('an unexpected exception can no longer ... exit 1') claims more than the code does.\n\nResolution asked: Make settle refuse any result that is not a dict, as `internal`, and put the settle call inside the guarded region. Catch SystemExit raised by the run, and refuse it as `internal` unless it carries a 0/1/2 the result supports. Add cases with a run that returns None and a run that raises SystemExit(\"x\"), and show each one exits 2 under `internal`.",
+      "files": [
+        "tools/reach-diff.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "files-no-suite"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-01T04:34:46Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-01T04:34:27Z",
+          "text": "scope: tools/reach-diff.py, every path the finding(s) P152-R39 name"
+        },
+        {
+          "at": "2026-11-01T04:34:27Z",
+          "text": "no suite: tools/reach-diff.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-11-01T04:34:27Z",
+          "text": "no tests.add clause for P152-R39: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P152-R39"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-01T04:57:30Z.8d8072",
+        "status": "passed",
+        "at": "2026-11-01T04:57:30Z"
+      }
+    },
+    {
+      "id": "P152.35-6jb",
+      "title": "fix P152-R40: settle only checks that `refusal` is not None; it never checks ...",
+      "status": "cancelled",
+      "description": "settle only checks that `refusal` is not None; it never checks that the name is in REFUSALS. The walk reads `_refuse`/`_refusal` calls and never looks at a write to the `refusal` key or a hand-printed 'no comparison made' line. Probe: a planted path that runs `result[\"refusal\"] = \"never-listed\"`, writes its own `reach-diff: no comparison made (never-listed) - x` line and returns the fresh result leaves rd64 green, and main exits 2 printing that unlisted name. This is the description's own scenario ('A new exit-2 path that writes its own no comparison made line and returns result without calling _refuse') with one assignment added. It also falsifies the docstring's claim that a refusal site naming an unlisted refusal fails --selftest.\n\nResolution asked: In settle, refuse as `internal` any `result[\"refusal\"]` not in REFUSALS. In the walk, report any write to the `refusal` key (subscript, dict entry or `refusal=` keyword) outside `_refuse`/`fresh_result`, and any string constant containing 'no comparison made' outside `_refuse`. Add a planted-body case for each.",
+      "files": [
+        "tools/reach-diff.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "files-no-suite"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: same file and same mechanism as P152.34-6jb (how main decides its exit code); folded into it so one change states one rule"
+      },
+      "startedAt": null,
+      "completedAt": "2026-11-01T04:34:55Z",
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-01T04:34:31Z",
+          "text": "scope: tools/reach-diff.py, every path the finding(s) P152-R40 name"
+        },
+        {
+          "at": "2026-11-01T04:34:31Z",
+          "text": "no suite: tools/reach-diff.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-11-01T04:34:31Z",
+          "text": "no tests.add clause for P152-R40: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P152-R40"
+      ]
+    },
+    {
+      "id": "P152.36-6jb",
+      "title": "fix P152-R41: The exit half of the walk only reads integer literals at a `ret...",
+      "status": "cancelled",
+      "description": "The exit half of the walk only reads integer literals at a `return`, an exit call or a `code` write, so any computed exit gets past it. Each of these, planted above the selftest mark, left the walk clean in a scratch mirror: `C = 2; return C`, `C = 2; sys.exit(C)`, `return 1 + 1`, `return 2 if name else 0`, `sys.exit(True)`, `sys.exit(\"msg\")`, `raise SystemExit(\"boom\")`, `result[\"code\"] = name`, `result.setdefault(\"code\", 1)`, `import os as o; o._exit(2)`, `from sys import exit as ex; ex(2)`. Edits to main slipped too: `return 2 if not argv else settle(result, out)`, `return int(bool(result.get('gaps'))) or settle(result, out)`, and an exit decided in a helper that main returns (`return _decide(result)`). The docstring says the walk 'fails an exit of 2 written anywhere but where a refusal is printed and where a result starts', and refusal_sites' WHAT IT CANNOT SEE lists none of these shapes.\n\nResolution asked: Hold the one shape every exit has to take, instead of listing literal shapes. Every `return` in main must be exactly `settle(...)`. The `__main__` block may only pass `main(...)` or `_selftest()` to sys.exit. Any call to an exit function or `SystemExit`, whatever its argument and including import aliases, is reported outside the `__main__` block. Any write to the `code` key whose value is not a literal is reported. Add a planted case per shape. If you narrow the claim instead, say 'a literal exit' in the docstring and list the computed shapes under WHAT IT CANNOT SEE.",
+      "files": [
+        "tools/reach-diff.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "files-no-suite"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: same file and same mechanism as P152.34-6jb (how main decides its exit code); folded into it so one change states one rule"
+      },
+      "startedAt": null,
+      "completedAt": "2026-11-01T04:34:56Z",
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-01T04:34:35Z",
+          "text": "scope: tools/reach-diff.py, every path the finding(s) P152-R41 name"
+        },
+        {
+          "at": "2026-11-01T04:34:35Z",
+          "text": "no suite: tools/reach-diff.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-11-01T04:34:35Z",
+          "text": "no tests.add clause for P152-R41: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P152-R41"
+      ]
+    },
+    {
+      "id": "P152.37-6jb",
+      "title": "fix P152-R42: The site walk only counts a call whose callee is spelled `_refu...",
+      "status": "cancelled",
+      "description": "The site walk only counts a call whose callee is spelled `_refuse` or `_refusal`, so an aliased call never registers as a site. `r = _refuse; r(result, out, \"never-listed\", \"w\")` and `globals()[\"_refuse\"](result, out, \"never-listed\", \"w\")` both left rd64 green. WHAT IT CANNOT SEE names only the `.name`-carrying object. The runtime ValueError still catches the alias once it is reached, but 'a site no case reaches is held all the same' is not true for it.\n\nResolution asked: Report any load of the names `_refuse`/`_refusal` that is not the callee of a call, which covers aliasing and passing it as a value. Or add aliasing to WHAT IT CANNOT SEE.",
+      "files": [
+        "tools/reach-diff.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "files-no-suite"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: same file and same mechanism as P152.34-6jb (how main decides its exit code); folded into it so one change states one rule"
+      },
+      "startedAt": null,
+      "completedAt": "2026-11-01T04:34:57Z",
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-01T04:34:39Z",
+          "text": "scope: tools/reach-diff.py, every path the finding(s) P152-R42 name"
+        },
+        {
+          "at": "2026-11-01T04:34:39Z",
+          "text": "no suite: tools/reach-diff.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-11-01T04:34:39Z",
+          "text": "no tests.add clause for P152-R42: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P152-R42"
+      ]
+    },
+    {
+      "id": "P152.38-6jb",
+      "title": "fix P152-R43: A KeyboardInterrupt raised under the run passes through `except...",
+      "status": "cancelled",
+      "description": "A KeyboardInterrupt raised under the run passes through `except Exception` and out of main (probe: ESCAPED KeyboardInterrupt), and the process ends on SIGINT. EXIT CODES states only 0, 1 and 2, and does not name the interrupt.\n\nResolution asked: Name the interrupt in EXIT CODES as outside the contract, or catch KeyboardInterrupt in main and refuse it under a listed name.",
+      "files": [
+        "tools/reach-diff.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "files-no-suite"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: same file and same mechanism as P152.34-6jb (how main decides its exit code); folded into it so one change states one rule"
+      },
+      "startedAt": null,
+      "completedAt": "2026-11-01T04:34:58Z",
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-01T04:34:44Z",
+          "text": "scope: tools/reach-diff.py, every path the finding(s) P152-R43 name"
+        },
+        {
+          "at": "2026-11-01T04:34:44Z",
+          "text": "no suite: tools/reach-diff.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-11-01T04:34:44Z",
+          "text": "no tests.add clause for P152-R43: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P152-R43"
+      ]
     }
   ],
   "reviewPerTask": "signals",
