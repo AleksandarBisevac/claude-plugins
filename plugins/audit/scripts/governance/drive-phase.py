@@ -4532,8 +4532,9 @@ WAVE_START, WAVE_DONE = "wave.start", "wave.done"
 TASK_WORKTREE = "task.worktree"
 TASK_INTEGRATED, TASK_INTEGRATION_REFUSED = "task.integrated", "task.integration.refused"
 # `integrate-task.py`'s exit codes and its state file's name. An entry point may
-# not import another, so they are mirrored here; the `wv`/`wc` cases drive the
-# real verb, which is what goes red if either drifts.
+# not import another, so they are mirrored here; the `wv` (an integration),
+# `wd1` (a refusal) and `wt8` (an undeclared path) cases drive the real verb,
+# which is what goes red if either drifts.
 INTEGRATE_REFUSED, INTEGRATE_DECIDE = 1, 3
 INTEGRATION_STATE = "audit-wave-integration.json"
 # `manage-worktrees.py task-add`'s exit when the tree was made and its declared

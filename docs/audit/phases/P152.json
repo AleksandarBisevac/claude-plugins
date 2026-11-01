@@ -29,56 +29,80 @@
         "severity": "low",
         "file": "PLUGIN-BUILD-GUIDE.md:4447-4448; plugins/audit/scripts/governance/drive-phase.py:3910-3912",
         "issue": "The guide's opening sentence 'Where a step branches on plain values, the branch is a planner under # --- deciding a step on facts ---' and the section comment's 'So each place a step branches on plain values is a planner here' claim more than the code does. Branches on plain values still decided inline: advance's file-return arm `if stored_green(...) != _evio.STORED_HOLDS` (drive-phase.py:4301), `if tree: integrate_member(...)` (4385), kept_tree_stop / redo_patch at the top of advance, writer_wait/writer_settle, triage's review_due / filed-at-head / owed_tasks branches ahead of the advance point, drive_locked's `pending['decision'] == 'triage'` and `pending.get('task')` note_sessions branches, and sign-off. A reader told every plain-value branch is a planner would look for one that does not exist.",
-        "resolution": "Narrow both sentences to what is true, e.g. 'Four of the drive's branch points are planners under ...: advance's writer/scope/reviewer/gate/risk/close, the triage's advance and tail, drive_locked's stale and route, and close_task's findings/lock/route/commit/answer; the other branches (the file-return arm's stored-green check, integrate_member, kept_tree_stop, the triage's head and owed checks, sign-off) are still decided inline.' Apply the same narrowing to the comment at drive-phase.py:3910-3912."
+        "resolution": "fixed in P152.13-6jb (025f279e51da): Narrow both sentences to what is true, e.g. 'Four of the drive's branch points are planners under ...: advance's writer/scope/reviewer/gate/risk/close, the triage's advance and tail, drive_locked's stale and route, and close_task's findings/lock/route/commit/answer; the other branches (the file-return arm's stored-green check, integrate_member, kept_tree_stop, the triage's head and owed checks, sign-off) are still decided inline.' Apply the same narrowing to the comment at drive-phase.py:3910-3912.",
+        "fixTask": "P152.13-6jb",
+        "commit": "025f279e51da",
+        "status": "fixed"
       },
       {
         "id": "P152-R2",
         "severity": "med",
         "file": "tests/test_drive_phase.py:12414-12417, 12887-12962 (subject: plugins/audit/scripts/governance/drive-phase.py:7559-7570, 9294-9298)",
         "issue": "No case sends the sign-off-in-advance call through main() any more. The removed sq2 was an end-to-end drive: file a clean phase review, send `next P1 --answer sign-off --reason ...`, and assert exit 0, `done`, exactly one signoff verb call, and the signedOff/landed/released did-line. sq1 is still a drive and still asserts that the dispatch PRINTS that call, but nothing sends it. sq0, sq2, sq3, sq4, sq5, sq3m and sq0m now only ask the predicates and planners: `_pending_turn('route')`, `_triage_plan('advance')`, `advance_applies`, plus `apply_phase_answer` called directly. The wiring that acts on their answer goes unexercised: route 'advance' sets ctx['advance'], drive_phase carries it to the triage point, `if sent == \"advance\"` applies it, and `if sent == \"not-applied\"` prints the triage. Read, not run: a mutation of drive-phase.py:7563 to `if reason is not None:` (apply whenever an advance was sent, ignoring the planner) would leave every remaining case green, because no kept drive sends an advance. This is the path the phase-review dispatch tells the main loop to take for every clean phase, and its one-call sign-off is the cost property sq2 pinned. Plan section 5 calls this kind of loss acceptable only when it is stated, and the outcome does not state it.",
-        "resolution": "Restore one end-to-end advance in e2e-signoff. Either add a second clean drive or reuse _e2e_clean's first leg. Drive with phase_review=False, call _file_phase_review, then _next(M, root, mpath, '--answer', 'sign-off', '--reason', SUMMARY). Assert exit 0, instruction DONE, one ('audit-task.py','signoff') call under _counting, the signedOff, landed and released did-events, and NOT_APPLIED absent. In the findings round, send the same advance call once after the first review is filed and assert TRIAGE, NOT_APPLIED in the print, and zero signoff calls. That covers sq3's refusal arm end to end at the cost of one `next`."
+        "resolution": "fixed in P152.13-6jb (025f279e51da): Restore one end-to-end advance in e2e-signoff. Either add a second clean drive or reuse _e2e_clean's first leg. Drive with phase_review=False, call _file_phase_review, then _next(M, root, mpath, '--answer', 'sign-off', '--reason', SUMMARY). Assert exit 0, instruction DONE, one ('audit-task.py','signoff') call under _counting, the signedOff, landed and released did-events, and NOT_APPLIED absent. In the findings round, send the same advance call once after the first review is filed and assert TRIAGE, NOT_APPLIED in the print, and zero signoff calls. That covers sq3's refusal arm end to end at the cost of one `next`.",
+        "fixTask": "P152.13-6jb",
+        "commit": "025f279e51da",
+        "status": "fixed"
       },
       {
         "id": "P152-R3",
         "severity": "low",
         "file": "tests/test_drive_phase.py:12938-12942, 13203-13206, 13212-13217, 13230-13234",
         "issue": "Several narrowed labels still claim a downstream consequence that the case does not check and that no kept drive walks. sq3/sq4 say 'so the triage is printed, noted not applied, and no sign-off runs' but check only `_triage_plan` == ('not-applied', None) and a constant's prefix. rr2 says 'and the phase review is dispatched' but checks only that nothing is marked. rr4 says 'so each is recorded once' but checks only findings_held(...) is False. sr1 says 'so sign-off dispatches a new review' but checks only owed_tasks. The case ids are the lookup keys, so a reader of a red or green line trusts these clauses.",
-        "resolution": "Cut each label to what its condition reads: e.g. sq3 'the advance point answers not-applied', rr2 'nothing is marked at a head with no return', rr4 'the reused return is not marked recorded', sr1 'the review filed before it owes the added task its answers'. Alternatively, assert the consequence: finding 1's fix does that for sq3/sq4."
+        "resolution": "fixed in P152.13-6jb (025f279e51da): Cut each label to what its condition reads: e.g. sq3 'the advance point answers not-applied', rr2 'nothing is marked at a head with no return', rr4 'the reused return is not marked recorded', sr1 'the review filed before it owes the added task its answers'. Alternatively, assert the consequence: finding 1's fix does that for sq3/sq4.",
+        "fixTask": "P152.13-6jb",
+        "commit": "025f279e51da",
+        "status": "fixed"
       },
       {
         "id": "P152-R4",
         "severity": "low",
         "file": "PLUGIN-BUILD-GUIDE.md:4545-4548",
         "issue": "This file is untouched by the diff, but the diff changed what it describes. The paragraph says 'The `sg` cases drive it over the fixture plan: ... a red phase gate never reaches `signoff`, and several findings are one `finding` call - each beside a mutant driver that breaks it.' After this diff, sg3/sg3b/sg3m (red gate) and sg4m (one `finding` call) are unit cases in us-block over run_signoff/record_findings with faked verbs. Only sg1, sg2, sg4 and sg5 still drive the fixture plan (e2e-signoff). The executor's outcome notes this drift.",
-        "resolution": "Rewrite the sentence. The sg1/sg2/sg4 cases drive the fixture plan: model-facing steps, the committed sign-off, several findings recorded in one `finding` call. sg3/sg3m and sg4m ask run_signoff and record_findings over faked verbs: a red phase gate never reaches `signoff`, and one call per finding is caught. Do it in the phase's docs task or a follow-up, since this task's files exclude the guide."
+        "resolution": "fixed in P152.13-6jb (025f279e51da): Rewrite the sentence. The sg1/sg2/sg4 cases drive the fixture plan: model-facing steps, the committed sign-off, several findings recorded in one `finding` call. sg3/sg3m and sg4m ask run_signoff and record_findings over faked verbs: a red phase gate never reaches `signoff`, and one call per finding is caught. Do it in the phase's docs task or a follow-up, since this task's files exclude the guide.",
+        "fixTask": "P152.13-6jb",
+        "commit": "025f279e51da",
+        "status": "fixed"
       },
       {
         "id": "P152-R5",
         "severity": "low",
         "file": "tests/test_drive_phase.py:12352-12361",
         "issue": "Plan section 5 requires the executor to say, for each planner arm a converted block used to reach in a drive, which kept scenario still walks it or that none does. Neither the e2e-signoff header comment nor the filed outcome lists them. These arms are now proven only on their facts, with no case showing they are reachable: a return reused at the head after lost drive state (rr), a fresh review dispatched for a task added after the review (sr), a hand-off that satisfies the triage (ht), the round-cap stop (rc1), a decline on boot/gate-coverage/breach inside a drive (db/dc/di), `leave` on a moved parent (nf2), the stalled stop (bk1), and the advance (finding 1).",
-        "resolution": "Add the list to the e2e-signoff header comment: each arm with 'walked by <scenario>' or 'walked by no kept scenario'. A reader deciding whether a later change needs a new drive can then see the gap without re-deriving it."
+        "resolution": "fixed in P152.13-6jb (025f279e51da): Add the list to the e2e-signoff header comment: each arm with 'walked by <scenario>' or 'walked by no kept scenario'. A reader deciding whether a later change needs a new drive can then see the gap without re-deriving it.",
+        "fixTask": "P152.13-6jb",
+        "commit": "025f279e51da",
+        "status": "fixed"
       },
       {
         "id": "P152-R6",
         "severity": "med",
         "file": "tests/test_drive_phase.py:13197-13210,13268-13276 (dt1, dt3, dt9); plugins/audit/scripts/governance/drive-phase.py:9312-9313",
         "issue": "The one-task route is now run by no test. At base, dt1/dt2 drove `target=\"P1.2\"` and dt9 ran `M.main([\"next\", \"P1.2\", ..., \"--task\"])` and checked that P1.2's executor was dispatched. Now dt1/dt2/pf6 call `M.drive_task` directly, and dt9 asks only the planner (`_pending_turn(\"route\", ...)` == (\"drive-task\", None)) and `M.context`. The code that acts on that answer, `if route == \"drive-task\": return drive_task(ctx, state)` in `drive_locked`, has no caller in any test: grep finds no `next <taskId> --task` run and no `target=` drive other than `target=PHASE`. A one-line defect that deletes or misspells that branch would make `next P1.2 --task` (what /audit:run and /audit:next run) drive the whole phase, and dt1, dt3, dt9 and pf6 would all stay green. This is the same class as P152.2's medium finding. The e2e-steps header says \"the one-task form `next <taskId>` and its refusals (dt)\" is held by a unit case, which is true of the refusals only.",
-        "resolution": "In dt9, run the routing code itself. Either call `M.drive_locked(ctx, {}, None, None, ())` with `ctx[\"only\"] == \"P1.2\"`, the plan readers pointed at `_step_plan`, `M.drive_task` replaced by a recorder and `M.drive_phase = _never(\"drive_phase\")`, or run `M.main([\"next\", \"P1.2\", mpath, \"--project-dir\", root_u, \"--task\"])` over `_plain_project` with `_verb_rig` verbs and `drive_task` recorded. Assert with literal values that the recorder ran once for P1.2 and that drive_phase never ran. Then prove it red by deleting the `drive-task` branch, and restore it."
+        "resolution": "fixed in P152.13-6jb (025f279e51da): In dt9, run the routing code itself. Either call `M.drive_locked(ctx, {}, None, None, ())` with `ctx[\"only\"] == \"P1.2\"`, the plan readers pointed at `_step_plan`, `M.drive_task` replaced by a recorder and `M.drive_phase = _never(\"drive_phase\")`, or run `M.main([\"next\", \"P1.2\", mpath, \"--project-dir\", root_u, \"--task\"])` over `_plain_project` with `_verb_rig` verbs and `drive_task` recorded. Assert with literal values that the recorder ran once for P1.2 and that drive_phase never ran. Then prove it red by deleting the `drive-task` branch, and restore it.",
+        "fixTask": "P152.13-6jb",
+        "commit": "025f279e51da",
+        "status": "fixed"
       },
       {
         "id": "P152-R7",
         "severity": "med",
         "file": "tests/test_drive_phase.py:13219-13240 (dt5, dt6); plugins/audit/scripts/governance/drive-phase.py:9867,10014",
         "issue": "dt6's label says \"the print that reports the close says so with the rule for it\", and dt5's says \"no line says one is owed\". Both cases only call `M.ado_echo_lines(ctx)`. The code that puts its answer into the print, `lines.extend(ado_echo_lines(ctx))` in `render` (and the signal basis at 10014), is now run by no test: `ado echo owed` appears in no other suite under tests/. At base, dt6 drove `target=\"P1.2\"` over a boarded plan and read the close's print. A one-line defect that deletes line 9867 would leave every ADO-linked close silent about the owed echo, and dt5 and dt6 would stay green. The labels claim more than the cases assert, and the acting code is untested. This is the same class as finding 1.",
-        "resolution": "Render the step. Call `M.render(ctx, 0, {\"kind\": \"done\", \"lines\": [\"done P1.2: done at abc1234\"]})` with `ctx[\"manifest\"]` pointed at the boarded `_with_manifest` plan and `did == [\"closed P1.2 at abc1234\"]`. Assert that the rendered lines are exactly the did-line, the done line, `ado echo owed: P1.2` and the rule line, all as literals. For the no-board twin, assert that the render holds no `ado echo` line. Prove it red by deleting `lines.extend(ado_echo_lines(ctx))`, and restore it."
+        "resolution": "fixed in P152.13-6jb (025f279e51da): Render the step. Call `M.render(ctx, 0, {\"kind\": \"done\", \"lines\": [\"done P1.2: done at abc1234\"]})` with `ctx[\"manifest\"]` pointed at the boarded `_with_manifest` plan and `did == [\"closed P1.2 at abc1234\"]`. Assert that the rendered lines are exactly the did-line, the done line, `ado echo owed: P1.2` and the rule line, all as literals. For the no-board twin, assert that the render holds no `ado echo` line. Prove it red by deleting `lines.extend(ado_echo_lines(ctx))`, and restore it.",
+        "fixTask": "P152.13-6jb",
+        "commit": "025f279e51da",
+        "status": "fixed"
       },
       {
         "id": "P152-R8",
         "severity": "low",
         "file": "PLUGIN-BUILD-GUIDE.md:4483-4486,4493",
         "issue": "The guide names only `up-block`, `ut-block`, `uq-block` and `uc-block` as the drive's unit tests. It does not mention ux-block (unit cases over the deciding functions and the code acting on their answers, with fake verbs), uw-block (verb-subject cases with no drive) or e2e-steps. The guide also still says of `next <taskId>` that \"The `dt` cases drive it\". After this diff no dt case drives `next <taskId>` (see finding 1), so the sentence is false until finding 1 is fixed.",
-        "resolution": "Add one sentence after the planner sentence, naming e2e-steps as the kept drives, ux-block as the unit cases over the acting code with fake verbs, and uw-block as the verb-subject cases. Once finding 1 is fixed, word the dt sentence to say what the dt cases run, for example: `drive_task` and the `drive-task` route over fake verbs, and the refusals through `main`."
+        "resolution": "fixed in P152.13-6jb (025f279e51da): Add one sentence after the planner sentence, naming e2e-steps as the kept drives, ux-block as the unit cases over the acting code with fake verbs, and uw-block as the verb-subject cases. Once finding 1 is fixed, word the dt sentence to say what the dt cases run, for example: `drive_task` and the `drive-task` route over fake verbs, and the refusals through `main`.",
+        "fixTask": "P152.13-6jb",
+        "commit": "025f279e51da",
+        "status": "fixed"
       },
       {
         "id": "P152-R9",
@@ -178,9 +202,30 @@
         "file": "PLUGIN-BUILD-GUIDE.md:4500-4505; plugins/audit/scripts/governance/drive-phase.py:3914-3919",
         "issue": "R1's narrowing swapped one over-claim for an enumeration. 'The other branches on plain values are still decided inline where they act: <list>' reads as the complete set of inline branches, but it leaves some out. drive_task's status arms (drive-phase.py:9124-9136: terminal, blocked, not in_progress) are inline plain-value branches, and this task's own dt10 tests one of them. gate_step's exit-code arms (4414-4423) and answer_refusal's checks (6551-6580) are others. A reader who takes the list as the whole set will think drive_task's blocked stop is a planner arm or covered by one, and the next new inline branch makes the list false again without anyone touching the sentence. This is the same class R1 recorded: fixed once by listing places, with the class left open.",
         "resolution": "In both places, say it as a class rather than a list. For example: 'Every other branch on plain values is decided inline where it acts. Among them are advance's stored-green check on a filed return, integrate_member, ...' Keep the named examples, but drop the reading that the list is exhaustive."
+      },
+      {
+        "id": "P152-R21",
+        "severity": "med",
+        "file": "tests/test_drive_phase.py:14889-14903 (wt6), 6498-6509 (wt7, inherited)",
+        "issue": "The old wt6 drove a later wave over a kept tree and asserted `(\"base: %s\" % (base,)) in brief`. That held audit-lookup.wave_tree's `bases.get(task) or wave.get(\"base\")` precedence (plugins/audit/scripts/status/audit-lookup.py:595-596): the brief must name the base the adopted tree was cut at, not the new wave's base. The new wt6 checks only the driver half (`wave.get(\"bases\") == {\"P1.1\": _WAVE_BASE}`). The claim says 'the brief half is test_audit_lookup's', and the e2e header says the same, but neither holds. bf40's drive state (tests/test_audit_lookup.py:1765) carries no `bases` key. The kept wt7 reads `base:` in a brief only where the member's base equals the wave base, so it would still pass with the `bases` read deleted. A one-line defect `return tree, wave.get(\"base\")` in audit-lookup.wave_tree now turns no case red. The `bases` field crosses the boundary from the drive (writer) to audit-lookup (reader), and this diff removed the only case that held both sides.",
+        "resolution": "Add a case where the two bases differ. Either put one in tests/test_audit_lookup.py beside bf40, with a state whose `wave.bases[\"P1.1\"]` is not `wave.base`, asserting the brief's `base:` line names the member's base and not the wave's. Or put one in uy-block that writes the `state[\"wave\"]` wt6 records to a temp state dir and asks audit-lookup's wave_tree for P1.1, expecting `(_WAVE_TREE, _WAVE_BASE)`, not `_WAVE_NEW_BASE`. Then correct the claim and the e2e-wave header sentence."
+      },
+      {
+        "id": "P152-R22",
+        "severity": "med",
+        "file": "tests/test_drive_phase.py:14224-14237 (ci red unit), 14106-14148 (_e2e_ci_cycle)",
+        "issue": "The old red-cadence drive ran ci_file_red against the real audit-task.py and asserted an open bug in the manifest. The new red case answers audit-task.py from _verb_rig and asserts the drive's argv literally (`bug-add <title> <manifest> --project-dir P --severity high --description -` plus stdin). The kept cycle is the green one, although PLAN.md section 4 lists 'a red files a bug' in the kept cadence cycle, and section 5 item 2 says 'the verbs agree with the drive'. No case in the drive suite now runs the drive's bug-add call through the real verb. If the verb side drifts (a flag renamed, `--description -` refused for bug-add, a new required flag), every drive case stays green while a red CI run in production stops instead of filing its bug. This is the one bug-add caller in drive-phase.py (line 3380).",
+        "resolution": "In _e2e_ci_cycle, after the drive, over the same fixture (no second drive), run `M.ci_file_red(_verb_ctx(root, mpath), {\"sha\": heads[0], \"branch\": \"ci/p1\"}, red_row)` with the real verbs, as _signoff_verb_cases does. Assert it returns None and that the manifest holds one bug with status open whose text names run 777 and ci/p1. That is one verb process."
+      },
+      {
+        "id": "P152-R23",
+        "severity": "low",
+        "file": "tests/test_drive_phase.py:6272-6283",
+        "issue": "The diff deleted `_setup_fixture`, the only reader of `_SETUP`, so `_SETUP` is dead. The section header above it ('a wave member's tree outlives a crash, a failed setup and a block ... The setup every case below declares: ... removes the flag and fails instead, once') now describes cases that no longer exist: the next case is _kept_restart_cases, which logs through `_CWD_LOG`. ruff does not report an unused module constant.",
+        "resolution": "Delete `_SETUP` and the header lines that describe it. Keep `_provisioned` with a one-line docstring tied to the `_CWD_LOG` log it now reads."
       }
     ],
-    "outcome": "[findings: 20 - 0 high, 8 med, 12 low; 5 with a recorded fix commit]"
+    "outcome": "[findings: 23 - 0 high, 10 med, 13 low; 13 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -412,7 +457,7 @@
     {
       "id": "P152.4",
       "title": "Wave decisions and the CI cadence are tested as unit cases, with three end-to-end drives",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.4. Convert ci wv wz wc wr wp nr wh wt wt5 wo sk to unit cases over ci_due/ci_settle/ci_after_close, wave_width/hooks_width, parked-return and sibling-red routing; keep e2e-wave (two disjoint tasks in one next wv1, one parked return nr, one full cadence cycle with the fake gh ci). wqm and wj stay end-to-end. Do not widen _ci_fake. drive-phase.py changes only if ci_settle's decision is not separable from its gh call, then as one more seam ci_turn(run_state, counter, cadence). Remove dropped labels from .github/sweep-costs.json.",
       "files": [
         "tests/test_drive_phase.py",
@@ -443,14 +488,14 @@
         "P152.13-6jb"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-31T23:27:46Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -464,7 +509,13 @@
           "text": "it reads drive-phase.py's section; this task edits drive-phase.py only if ci_settle needs one more seam, and then the guide's planner paragraph is reconciled at the phase review",
           "waives": "PLUGIN-BUILD-GUIDE.md"
         }
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-01T00:14:33Z.a7d967",
+        "status": "passed",
+        "at": "2026-11-01T00:14:33Z"
+      }
     },
     {
       "id": "P152.5",
@@ -1110,7 +1161,7 @@
     {
       "id": "P152.13-6jb",
       "title": "Every line of the driver the converted drive suite stopped reaching is reached again or named as reached elsewhere",
-      "status": "in_progress",
+      "status": "done",
       "description": "Run tools/reach-diff.py over plugins/audit/scripts/governance/drive-phase.py and tests/test_drive_phase.py from 92c399f5 (planners extracted, before any conversion) to HEAD. For every line reported, add or extend a case that runs it and asserts what it does, proven red by deleting the line in a scratch export; or, where the line is reached by another suite, name that suite in the e2e header comment and show its run. Covers the review findings of P152.2 and P152.3: the advance sign-off route (one advance call in e2e-signoff, clean and over an open finding), the one-task route (dt9 runs drive_locked or main with drive_phase failing if called), the ADO echo in render (dt5/dt6 call render and assert literal lines), labels that claim more than their case checks (sq3/sq4, rr2, rr4, sr1), and the unwalked-paths list in the e2e-signoff header. Also correct the prose the conversions left stale: PLUGIN-BUILD-GUIDE.md's drive-phase paragraphs (the planners paragraph and the drive-phase.py section comment claim every plain-value branch is a planner; the sg paragraph says sg3/sg3m/sg4m drive; the unit-block paragraph names only up/ut/uq/uc; 'The dt cases drive it'). The task ends with reach-diff exiting 0 over the same range, its output quoted in the return. If .github/sweep-costs.json changes, regenerate it through record_costs.",
       "files": [
         "tests/test_drive_phase.py",
@@ -1144,14 +1195,33 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "025f279e51da",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "reach-diff final (exit 0, one run, 287.7s): base 92c399f5 reached 5808 lines of drive-phase.py; head WORKTREE over 376d08cbb1ec reached 5821; 'lost: 0 lines reached at 92c399f5 and not at WORKTREE, in 0 functions'. Before this task it listed 35 lines in 13 functions. Cases added to tests/test_drive_phase.py. ux-block: dt5/dt6 now call M.render over the boarded plan and its no-board twin and compare the whole printed text literally (R7). dt9 runs M.drive_locked with ctx only=P1.2, drive_task recorded and drive_phase recorded as a different route; dt9b runs the same with only=None (R6). _step_branch_units: dt10 (drive_task over a blocked task), pf9 (a gate naming no runner), ucl10 (close_task stops at review-answer after commit and done), gf1 (gate_step returns the follower print), sw1 (answer_refusal of widen with no config, plus its config twin). pf10 in _preflight_units: a widen already answered, with vitest.config.ts in the task's files, asks nothing; this is the scope_gap continue at 1727. _gap gained a declared= argument. us-block: sq6 in _advance_units runs drive_locked's advance route and its taken twin. _signoff_branch_units: lf3 (gate_went_red over a real evidence-ledger file), rr5 (findings_held of an empty set), rc4 (rounds_cost_lines with nothing attributed, with and without a ledger), rc5 (M.triage reaching the round-cap decision with its cost line), ftm1 (add_fix_tasks sends the regression tests block in the batch stdin), so1 (run_signoff's --accept-open P1-R1=<summary>), pa1 (apply_phase_answer accept-on-breach / no-ff / leave). e2e-signoff: new _e2e_advance drive, sq7 (a filed clean review, then one `next P1 --answer sign-off --reason`: exit 0, done, one signoff verb call, did-line 'sign-off answered in advance;', signedOff/landed/released). The findings round's on_dispatch now sends the same advance once after the first review is filed: sq8 checks the triage, the not-applied note with its reason, zero signoff calls and an unsigned phase (R2). R3 labels narrowed: sq3/sq4, rr2, rr4, sr1. R5: the e2e-signoff header lists each converted arm as walked by a named kept scenario or by none; the e2e-steps header lists the new unit-only paths. R1/R4/R8: PLUGIN-BUILD-GUIDE.md now names the planners and the branches still inline, names ux/us/uw/uv and e2e-steps/e2e-signoff, says what the dt cases run, and splits sg1/sg2/sg4 (drives) from sg3/sg3m/sg4m (unit). The section comment in drive-phase.py is narrowed the same way; that comment is the only change there, and git diff shows only '#' lines changed. Every new unit call goes through _caught. Expected values are literals. Fixtures are removed with remove_tree, or rmtree as the neighbouring cases do. bare_git_calls(test source) == []; ruff and vermin -t=3.8- are clean; prose_number_claims and doc_prose_numbers report nothing for these files. Suite time (back to back, measured once each, quiet): HEAD export 100.75s wall / 745 cases, worktree 99.02s wall / 762 cases. e2e-signoff block went from 24.9s to 26.6s (one added one-task drive). .github/sweep-costs.json is not changed: it keeps no per-block figures for this suite. Gates: sweep test_drive_phase.py exit 0 (1/1 files ok, 762 cases); sweep test_stamp_verification.py, test__deps.py and test__output_lints.py exit 0 (3/3 files ok, 804 cases); the reach-diff above exit 0. Dependants. sweep-costs.json and ci.yml are unchanged and still correct: the suite still runs as one staged file. tests/test__runner_output.py, test_run_test_gate.py (_counting, _follower_cases) and test_stamp_verification.py (_actions) are unchanged and still correct: those helpers were not edited, and the stamp suite passed. tools/affected.py and tools/reach-diff.py are unchanged; their paths still resolve. PLUGIN-BUILD-GUIDE.md's basename dependants are unaffected: no heading or tree line changed, and test__deps/test__output_lints passed. drive-phase.py's dependants are unaffected: comment-only change. No line is left that only another suite reaches.",
+        "descriptive": "Every drive-phase.py line the converted drive suite stopped reaching is reached again and asserted (reach-diff exits 0, and each of 32 mutation rows goes red). The one-task route, the advance sign-off and the ADO echo in render are run end to end or through the acting code. The stale guide and comment prose is corrected."
       },
       "startedAt": "2026-10-31T22:40:00Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-31T23:27:45Z",
+      "verifiedBy": [
+        "dt5/dt6 rewritten: render over a boarded and a board-less plan, whole print compared",
+        "dt9 + dt9b: drive_locked routes a named task to drive_task and no task to drive_phase",
+        "dt10: the one-task drive of a blocked task stops with the blocked print",
+        "pf9: a gate naming no runner asks nothing at task start",
+        "pf10: a widen already answered (runner config in the task's files) asks nothing",
+        "ucl10: close_task stops at review-answer after commit and done",
+        "gf1: gate_step returns the red gate's follower print",
+        "sw1: widen refused with no config to declare; the config twin takes it",
+        "sq6: drive_locked carries the advance and notes 'no triage was reached' when untaken",
+        "sq7: e2e - a clean filed review answered in advance signs off in one call",
+        "sq8: e2e - the advance over an open finding prints the triage, notes not applied, runs no signoff",
+        "lf3: gate_went_red reads failed rows off the evidence ledger",
+        "rr5: findings_held of an empty set is False",
+        "rc4: rounds_cost_lines says not known when nothing is attributed, naming a missing ledger",
+        "rc5: triage at the round cap asks round-cap with its cost line",
+        "ftm1: add_fix_tasks sends the regression tests block for a test-only finding",
+        "so1: run_signoff records an unanswered open finding with --accept-open and the summary",
+        "pa1: apply_phase_answer binds breach accept, sets noFf, keeps leave's reason"
+      ],
       "notes": [
         {
           "at": "2026-10-31T22:39:58Z",
@@ -1184,6 +1254,18 @@
         "runId": "2026-10-31T23:21:46Z.c1415e",
         "status": "passed",
         "at": "2026-10-31T23:21:46Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "025f279e51da",
+        "at": "2026-10-31T23:27:45Z",
+        "return": "docs/audit/evidence/returns/P152.13-6jb/20261031T224000Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-31T23:12:47Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD exited 1 with failing cases ta9 (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 744/745 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 761/762 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {

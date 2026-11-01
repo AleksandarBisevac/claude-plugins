@@ -2342,55 +2342,6 @@ def _reviewer_dispatch(M, bindir, log):
     return root, mpath, line
 
 
-def _skill_flags(argv):
-    """Every value that follows a `--skill` in `argv`, in order."""
-    argv = list(argv or [])
-    return [argv[i + 1] for i, a in enumerate(argv[:-1]) if a == "--skill"]
-
-
-def _session_skill_cases(check):
-    """The drive hands the task's resolved skills to the session runner, for the
-    writer and for the reviewer alike, and to neither when the task resolves none.
-    The skills are project skills committed into the fixture, because the stub
-    session is the real runner and a name it cannot find refuses to start."""
-    M, why = _load("drive_phase_session_skills")
-    if M is None:
-        check("sk1 the driver loads", False, why)
-        return
-    stubs = os.path.realpath(_harness.fixture_root("drive-sk-stub-"))
-    bindir = _writer_stub(stubs)
-    log = os.path.join(stubs, "runs.jsonl")
-    named = ["alpha-house", "beta-house"]
-    root, mpath = _tdd_writer_repo("sk", (_wf_gate(),), skills=named)
-    for name in named:
-        folder = os.path.join(root, ".claude", "skills", name)
-        os.makedirs(folder)
-        _write_lf(os.path.join(folder, "SKILL.md"),
-                  "---\nname: %s\n---\nbody of %s\n" % (name, name))
-    for argv in (["add", "-A"], ["commit", "-qm", "the task's skills"]):
-        _harness.git(root, *argv)
-    _signal_next(M, root, mpath)
-    _c, block = _explain_of(M, root, mpath, "P1.1")
-    wargv = _run_argv(block) or []
-    _writer_round(M, root, mpath, bindir, log, "0.31",
-                  edit={_WF_SRC: "v = 2\n", _WF_TEST: _WF_NEW_TEST}, result=_WF_CLAIM)
-    _c, block = _explain_of(M, root, mpath, "P1.1")
-    rargv = _run_argv(block) or []
-    check("sk1 the writer's printed command carries one --skill per skill the task "
-          "resolves to, in order: %r" % ((wargv,),),
-          _flag(wargv, "--role") == "writer" and _skill_flags(wargv) == named)
-    check("sk2 ...and the reviewer's carries the same, beside its own role: %r"
-          % ((rargv,),),
-          _flag(rargv, "--role") == "reviewer" and _skill_flags(rargv) == named)
-    root, mpath = _tdd_writer_repo("sk0", (_wf_gate(),))
-    _signal_next(M, root, mpath)
-    _c, block = _explain_of(M, root, mpath, "P1.1")
-    bare = _run_argv(block) or []
-    check("sk3 a task that resolves no skill gets no --skill at all - the flag is not "
-          "added with an empty name: %r" % ((bare,),),
-          _flag(bare, "--role") == "writer" and "--skill" not in bare)
-
-
 def _reviewer_session_cases(check):
     """With a writer session set, the per-task reviewer is a headless session the
     main loop runs through `run-agent-session.py --role reviewer`, and the drive
@@ -5634,164 +5585,6 @@ def _next_wave(M, root, mpath):
     return code, "\n".join(said)
 
 
-def _wave_cases(check):
-    M, why = _load("drive_phase_wave")
-    if M is None:
-        check("wv1 the driver loads", False, why)
-        return
-    root, mpath = _wave_repo("wave", 2)
-    code, first = _next_wave(M, root, mpath)
-    sent = _dispatched(first)
-    check("wv1 at waveWidth 2 two ready tasks with disjoint files are dispatched "
-          "in ONE next, one dispatch line each, in id order, under the rule that "
-          "sends them together: %r" % (first,),
-          code == 0 and sent == ["P1.1", "P1.2"]
-          and "dispatch these together in one message; then next" in first)
-    lines = [ln for ln in first.splitlines() if ln.startswith("dispatch ")]
-    check("wv2 every dispatch line of a wave stays inside %d bytes: %r"
-          % (WAVE_LINE_BYTES, [len(ln.encode("utf-8")) for ln in lines]),
-          lines and all(len(ln.encode("utf-8")) <= WAVE_LINE_BYTES for ln in lines))
-    trees = [_tree_of(root, t) for t in ("P1.1", "P1.2")]
-    check("wv3 each task has a tree of its own, outside the project: %r" % (trees,),
-          all(trees) and trees[0] != trees[1]
-          and not any(t.startswith(root + os.sep) for t in trees if t))
-    filed = [_file_wave_executor(root, mpath, t) for t in sent]
-    check("wv4 each executor's submit from the project files its return: %r"
-          % (filed,), [c for c, _t in filed] == [0, 0])
-    texts = dict((t, _read(_filed_path(mpath, t)).decode("utf-8")
-                  if _filed_path(mpath, t) and os.path.exists(_filed_path(mpath, t))
-                  else "") for t in sent)
-    labels = dict((t, _stamp_field(json.loads(x or "{}").get("stamp"), "manifest"))
-                  for t, x in texts.items())
-    spelled = [p for t in sent for p in (root, _tree_of(root, t),
-                                         os.path.realpath(root),
-                                         os.path.realpath(_tree_of(root, t) or "-"))
-               if p and any(p in x for x in texts.values())]
-    check("wv4a a wave executor's filed return names its stamp's manifest by a "
-          "project-relative label and carries no absolute machine path - neither "
-          "the project's, nor the task tree's - anywhere in it: %r %r"
-          % (labels, spelled),
-          all(texts.values())
-          and all(l and not os.path.isabs(l) for l in labels.values())
-          and not spelled)
-    code, second = _next_wave(M, root, mpath)
-    rows = dict((t, _rows_of(root, mpath, t)) for t in ("P1.1", "P1.2"))
-    green = dict((t, [r.get("status") for r in rs]) for t, rs in rows.items())
-    keyed = dict((t, [((r.get("testedState") or {}).get("tree") or {}).get("key")
-                      for r in rs]) for t, rs in rows.items())
-    check("wv5 each task's recorded gate ran in its own tree and was green - the "
-          "gate passes only where the tree's changed sources are exactly the "
-          "task's own file - and each row names a tree: %r %r %r"
-          % (green, keyed, second),
-          green == {"P1.1": ["passed"], "P1.2": ["passed"]}
-          and all(keyed[t] and keyed[t][0] for t in keyed)
-          and keyed["P1.1"] != keyed["P1.2"])
-    tasks = tasks_of(mpath)
-    with open(os.path.join(root, "src", "f1.txt"), encoding="utf-8") as fh:
-        f1 = fh.read()
-    with open(os.path.join(root, "src", "f2.txt"), encoding="utf-8") as fh:
-        f2 = fh.read()
-    check("wv6 both tasks are integrated into the phase tree and closed against "
-          "a commit each: %r" % ([(t, tasks[t].get("status"), tasks[t].get("commit"))
-                                  for t in ("P1.1", "P1.2")],),
-          all(tasks[t].get("status") == "done" and tasks[t].get("commit")
-              for t in ("P1.1", "P1.2"))
-          and tasks["P1.1"]["commit"] != tasks["P1.2"]["commit"]
-          and f1 == "changed by P1.1\n" and f2 == "changed by P1.2\n")
-    acts = [a for a in _actions(root) if a.startswith("wave.")
-            or a in ("task.worktree", "task.integrated",
-                     "task.integration.refused")]
-    check("wv7 the journal records the wave: its start, a tree per task, an "
-          "integration per task in id order, and its end: %r" % (acts,),
-          acts == ["wave.start", "task.worktree", "task.worktree",
-                   "task.integrated", "task.integrated", "wave.done"])
-    gone = [t for t in trees if t and os.path.isdir(t)]
-    check("wv8 a clean task tree is taken down once its task is closed: %r"
-          % (gone,), all(trees) and not gone)
-
-    # RED TWIN: the same wave with the gate measured in the phase tree. The
-    # own-diff gate is red there - the executors' edits are in their trees -
-    # so wv5's predicate fails for the mutant, which is what says it reads.
-    mutant, _w = _load("drive_phase_wave_no_tree")
-    real_gate = mutant.record_gate
-    mutant.record_gate = lambda ctx, phase, task, tree=None: real_gate(
-        ctx, phase, task)
-    root_m, mpath_m = _wave_repo("wavem", 2)
-    _code, first_m = _next_wave(mutant, root_m, mpath_m)
-    for t in _dispatched(first_m):
-        _file_wave_executor(root_m, mpath_m, t)
-    _next_wave(mutant, root_m, mpath_m)
-    green_m = dict((t, [r.get("status") for r in _rows_of(root_m, mpath_m, t)])
-                   for t in ("P1.1", "P1.2"))
-    check("wv5m RED TWIN: a driver that measures a wave task's gate in the phase "
-          "tree records no green row for it: %r" % (green_m,),
-          "passed" not in green_m["P1.1"] and "passed" not in green_m["P1.2"])
-
-
-def _wave_red_sibling_cases(check):
-    M, why = _load("drive_phase_wave_red")
-    if M is None:
-        check("wr1 the driver loads", False, why)
-        return
-    root, mpath = _wave_repo("wavered", 2, red=("P1.1",))
-    _code, first = _next_wave(M, root, mpath)
-    sent = _dispatched(first)
-    for t in sent:
-        _file_wave_executor(root, mpath, t)
-    code, second = _next_wave(M, root, mpath)
-    tasks = tasks_of(mpath)
-    check("wr1 a red sibling does not hold back a green one: the first task's "
-          "gate is red and the second is integrated and closed in the same next, "
-          "and the red one's decision is what is printed: %r %r" % (sent, second),
-          sent == ["P1.1", "P1.2"]
-          and tasks["P1.2"].get("status") == "done" and tasks["P1.2"].get("commit")
-          and tasks["P1.1"].get("status") == "in_progress"
-          and instruction(second) == ("decide", "gate-red", None))
-    check("wr2 the red task's tree is kept for its retry: %r"
-          % (_tree_of(root, "P1.1"),),
-          _tree_of(root, "P1.1") and os.path.isdir(_tree_of(root, "P1.1")))
-    code, again = _next_wave(M, root, mpath)
-    check("wr3 the decision is printed again until it is answered: %r" % (again,),
-          code == 0 and instruction(again) == ("decide", "gate-red", None))
-
-
-def _wave_parked_return_cases(check):
-    M, why = _load("drive_phase_wave_parked")
-    if M is None:
-        check("wp1 the driver loads", False, why)
-        return
-    root, mpath = _wave_repo("waveparked", 2, per_task="always")
-    _code, first = _next_wave(M, root, mpath)
-    sent = _dispatched(first)
-    # Only the first member's executor comes back; the second is graded as one
-    # that returned nothing, and its decision is parked behind the first's
-    # reviewer dispatch, which is due in the same print.
-    _file_wave_executor(root, mpath, "P1.1")
-    _code, second = _next_wave(M, root, mpath)
-    parked = (((_drive_state(root).get("wave") or {}).get("parked") or {})
-              .get("P1.2") or {})
-    check("wp0 the fixture parks where it means to: the first member's reviewer "
-          "is dispatched while the second's no-executor-return decision waits "
-          "parked: %r %r %r" % (sent, parked, second),
-          sent == ["P1.1", "P1.2"]
-          and _dispatched(second, "reviewer") == ["P1.1"]
-          and parked.get("decision") == "no-executor-return")
-    # The return the decision is about is filed late, by the member itself.
-    late = _file_wave_executor(root, mpath, "P1.2")
-    _code, third = _next_wave(M, root, mpath)
-    state = _drive_state(root)
-    held = ((state.get("wave") or {}).get("parked") or {}).get("P1.2")
-    pending = state.get("pending") or {}
-    rows = [r.get("status") for r in _rows_of(root, mpath, "P1.2")]
-    check("wp1 a no-executor-return decision parked while other dispatches were "
-          "due is dropped on the next run once the member's return is filed, and "
-          "the member advances: %r %r %r %r %r"
-          % (late, held, pending, rows, third),
-          late[0] == 0 and held is None
-          and pending.get("decision") != "no-executor-return"
-          and "no-executor-return" not in third and rows == ["passed"])
-
-
 def _drive_source_decisions():
     """Every `no-<role>-return` name the driver's source can emit: the
     DECISIONS table's keys and any string constant of that shape in its AST, so
@@ -5804,97 +5597,6 @@ def _drive_source_decisions():
     return sorted(set(n.value for n in ast.walk(tree)
                       if isinstance(n, ast.Constant) and isinstance(n.value, str)
                       and shape.match(n.value)))
-
-
-def _parked_return_cases(check):
-    """One rule over every parked no-<role>-return decision: it is dropped once
-    that role's return is filed for the start it was raised for."""
-    M, why = _load("drive_phase_parked_return")
-    if M is None:
-        check("nr1 the driver loads", False, why)
-        return
-    root, mpath = _repo("parked-reviewer", task_ids=TASKS[:1], per_task="always")
-    _next(M, root, mpath)
-    _file_executor(root, mpath, "P1.1")
-    _code, sent = _next(M, root, mpath)
-    _code, asked = _next(M, root, mpath)
-    held = (_drive_state(root).get("pending") or {})
-    check("nr0 the fixture parks where it means to: the reviewer is dispatched, "
-          "no return comes, and the next run parks the no-reviewer-return "
-          "decision: %r %r" % ((instruction(sent), instruction(asked)), held),
-          instruction(sent) == ("dispatch", "reviewer", "P1.1")
-          and instruction(asked)[1] == "no-reviewer-return"
-          and held.get("decision") == "no-reviewer-return")
-    late = _file_reviewer(root, mpath, "P1.1")
-    code, third = _next(M, root, mpath)
-    pending = _drive_state(root).get("pending") or {}
-    task = tasks_of(mpath).get("P1.1", {})
-    check("nr1 a no-reviewer-return decision parked while the reviewer worked "
-          "is dropped on the next run once the reviewer return is filed, and "
-          "the task advances to its close: %r %r %r %r"
-          % (late, third, pending, task.get("status")),
-          late[0] == 0 and code == 0
-          and pending.get("decision") != "no-reviewer-return"
-          and "no-reviewer-return" not in third
-          and task.get("status") == "done" and task.get("commit"))
-
-    # The same decision parked in a wave, behind a sibling's printed one.
-    wroot, wmpath = _wave_repo("parkedwave", 2, per_task="always")
-    _code, first = _next_wave(M, wroot, wmpath)
-    for t in _dispatched(first):
-        _file_wave_executor(wroot, wmpath, t)
-    _next_wave(M, wroot, wmpath)
-    _next_wave(M, wroot, wmpath)
-    wstate = _drive_state(wroot)
-    parked = ((wstate.get("wave") or {}).get("parked") or {}).get("P1.2") or {}
-    check("nr2 the fixture parks the second member's no-reviewer-return decision "
-          "behind the first's: %r %r" % (wstate.get("pending"), parked),
-          (wstate.get("pending") or {}).get("task") == "P1.1"
-          and parked.get("decision") == "no-reviewer-return")
-    # The first member's return comes; the second's has not. Its parked decision
-    # still holds (the twin that fails a rule dropping parked decisions blindly)
-    # and is what the drive prints once the first member has closed.
-    _file_reviewer(wroot, wmpath, "P1.1")
-    _code, held_text = _next_wave(M, wroot, wmpath)
-    check("nr3 a parked no-reviewer-return decision whose reviewer return is "
-          "still missing is kept and printed once the sibling has closed: %r"
-          % (held_text,),
-          "decide no-reviewer-return P1.2:" in held_text
-          and tasks_of(wmpath)["P1.1"].get("status") == "done")
-    wlate = _file_reviewer(wroot, wmpath, "P1.2")
-    _code, after = _next_wave(M, wroot, wmpath)
-    wstate = _drive_state(wroot)
-    check("nr3b a no-reviewer-return decision parked in a wave is dropped on the "
-          "next run once that member's reviewer return is filed, and the member "
-          "closes: %r %r %r"
-          % (wlate, after, wstate.get("pending")),
-          wlate[0] == 0 and "no-reviewer-return" not in after
-          and (wstate.get("pending") or {}).get("decision") != "no-reviewer-return"
-          and tasks_of(wmpath)["P1.2"].get("status") == "done")
-
-    # The rule is keyed by role: every role the drive files a return for, and
-    # every no-<role>-return name its source can emit.
-    names = _drive_source_decisions()
-    roles = sorted(_fr.RETURN_ROLES)
-    check("nr4 the source emits a no-<role>-return decision for each task role "
-          "and the rule names exactly that role for it: %r %r"
-          % (names, roles),
-          all(M.parked_return_role("no-%s-return" % (r,)) == r for r in roles)
-          and all("no-%s-return" % (r,) in names for r in roles))
-    unhandled = [n for n in names
-                 if M.parked_return_role(n) is None and n not in M.PHASE_DECISIONS]
-    check("nr5 every no-*-return decision name the drive can emit is a task role "
-          "the parked-return rule drops once filed, or a sign-off decision of "
-          "no task - a new role's decision name fails here by name: %r"
-          % (unhandled,), names and not unhandled)
-    check("nr6 ALLOW: a decision of the same shape that names no role of "
-          "RETURN_ROLES is not read as a role's: %r"
-          % ([M.parked_return_role(n) for n in ("no-phase-review-return",
-                                                "no-banana-return", "no-return",
-                                                "gate-red", None)],),
-          [M.parked_return_role(n) for n in ("no-phase-review-return",
-                                             "no-banana-return", "no-return",
-                                             "gate-red", None)] == [None] * 5)
 
 
 # A member's record check, run as a gate entry in the member's tree: every
@@ -6186,113 +5888,6 @@ def _wave_sibling_record_cases(check):
           and "docs/audit/audit-plan.json" in committed
           and valid[0] == 0 and rows == ["passed"] and status == "done"
           and not undeclared)
-
-
-def _wave_crash_cases(check):
-    M, why = _load("drive_phase_wave_crash")
-    if M is None:
-        check("wc1 the driver loads", False, why)
-        return
-    root, mpath = _wave_repo("wavecrash", 2)
-    _code, first = _next_wave(M, root, mpath)
-    for t in _dispatched(first):
-        _file_wave_executor(root, mpath, t)
-    real_close = M.close_task
-
-    def crash_on_second(ctx, state, phase, task, intent_basis=None):
-        if task["id"] == "P1.2":
-            raise RuntimeError("the session died after P1.2 was integrated")
-        return real_close(ctx, state, phase, task, intent_basis=intent_basis)
-    M.close_task = crash_on_second
-    crashed = None
-    try:
-        _next_wave(M, root, mpath)
-    except RuntimeError as exc:
-        crashed = str(exc)
-    finally:
-        M.close_task = real_close
-    before = tasks_of(mpath)
-    check("wc1 the fixture crashed where it means to: P1.1 closed, P1.2 "
-          "integrated and not committed: %r %r"
-          % (crashed, [(t, before[t].get("status")) for t in ("P1.1", "P1.2")]),
-          crashed and before["P1.1"].get("status") == "done"
-          and before["P1.2"].get("status") == "in_progress")
-    calls = []
-    real_run = M.run_verb
-
-    def counting(ctx, script, args, stdin=None):
-        calls.append(script)
-        return real_run(ctx, script, args, stdin=stdin)
-    M.run_verb = counting
-    try:
-        code, resumed = _next_wave(M, root, mpath)
-    finally:
-        M.run_verb = real_run
-    after = tasks_of(mpath)
-    integrated = [a for a in _actions(root) if a == "task.integrated"]
-    check("wc2 a rerun after the crash neither re-integrates nor re-dispatches: "
-          "no integration verb runs, no executor is dispatched, one row per "
-          "integration, and P1.2 is closed: %r %r %r"
-          % (calls, _dispatched(resumed), resumed),
-          "integrate-task.py" not in calls and not _dispatched(resumed)
-          and len(integrated) == 2 and after["P1.2"].get("status") == "done"
-          and after["P1.2"].get("commit"))
-
-
-def _wave_width_cases(check):
-    """A width outside the vocabulary stops the drive by name; `auto` is read
-    with its basis; an undeclared path is a decision, and `widen` declares it,
-    re-gates on the phase tree and closes the task."""
-    M, why = _load("drive_phase_wave_width")
-    if M is None:
-        check("wz1 the driver loads", False, why)
-        return
-    root, mpath = _wave_repo("wavezero", 0)
-    code, text = _next_wave(M, root, mpath)
-    check("wz1 executor.waveWidth 0 stops the drive by name and starts nothing - "
-          "never a drive that runs no task, successfully: %r" % (text,),
-          code == 1 and "executor.waveWidth" in text
-          and all(t.get("status") == "pending" for t in tasks_of(mpath).values()))
-    cores = os.cpu_count()
-    width, basis, problem = M.wave_width({"executor": {"waveWidth": "auto"}})
-    check("wa1 `auto` is the core count less two, at least 1, with that basis: "
-          "%r" % ((width, basis, problem, cores),),
-          problem is None and width == max(1, (cores or 3) - 2)
-          and (("%d cores less two" % (cores,)) in basis if cores else "1" in basis))
-    check("wa2 an absent key is width 1 and says so: %r" % (M.wave_width({}),),
-          M.wave_width({})[:1] == (1,) and "absent" in M.wave_width({})[1])
-
-    root, mpath = _wave_repo("waveundeclared", 2)
-    _code, first = _next_wave(M, root, mpath)
-    sent = _dispatched(first)
-    tree = _tree_of(root, "P1.2")
-    if tree:
-        with open(os.path.join(tree, "notes.txt"), "w", encoding="utf-8") as fh:
-            fh.write("written by P1.2, declared by nobody\n")
-    for t in sent:
-        _file_wave_executor(root, mpath, t)
-    code, second = _next_wave(M, root, mpath)
-    acts = [a for a in _actions(root) if a.startswith("task.integ")]
-    check("wu1 a path the task changed and never declared is a decision naming "
-          "it, reached after the sibling closed, and nothing of it is in the "
-          "phase tree yet: %r %r" % (second, acts),
-          instruction(second) == ("decide", "undeclared-change", None)
-          and "notes.txt" in second
-          and tasks_of(mpath)["P1.1"].get("status") == "done"
-          and not os.path.exists(os.path.join(root, "notes.txt"))
-          and acts == ["task.integrated"])
-    said = []
-    with _Env(root):
-        code = M.main(["next", PHASE, mpath, "--project-dir", root, "--answer",
-                       "widen"], out=said.append)
-    third = "\n".join(said)
-    task = tasks_of(mpath)["P1.2"]
-    check("wu2 widen declares the path, integrates it, re-gates on the phase tree "
-          "and closes the task: %r %r" % (third, task.get("files")),
-          code == 0 and "notes.txt" in (task.get("files") or [])
-          and task.get("status") == "done" and task.get("commit")
-          and "re-gate P1.2 green" in third
-          and os.path.isfile(os.path.join(root, "notes.txt")))
 
 
 # --- a follower a red gate owes: regenerated, or widened, from its row ----------
@@ -6688,20 +6283,6 @@ _SETUP = ("import os, sys\n"
           "    fh.write(os.path.realpath(os.getcwd()) + '\\n')\n")
 
 
-def _setup_fixture(prefix, fail_first=False):
-    """`(command, log)` - an `executor.worktreeSetup` running `_SETUP`, which
-    fails its first run when `fail_first`."""
-    aux = os.path.realpath(_harness.fixture_root("drive-setup-%s-" % (prefix,)))
-    script = os.path.join(aux, "setup.py")
-    flag, log = os.path.join(aux, "fail-once"), os.path.join(aux, "provisioned.log")
-    with open(script, "w", encoding="utf-8") as fh:
-        fh.write(_SETUP)
-    if fail_first:
-        with open(flag, "w", encoding="utf-8") as fh:
-            fh.write("fail the first setup\n")
-    return '"%s" "%s" "%s" "%s"' % (sys.executable, script, flag, log), log
-
-
 def _provisioned(log):
     """The trees the setup completed in, in order."""
     try:
@@ -6709,14 +6290,6 @@ def _provisioned(log):
             return [ln.strip() for ln in fh if ln.strip()]
     except OSError:
         return []
-
-
-def _tree_expected(root, task_id):
-    """Where `tree_path` puts a task's tree in a `_wave_repo` fixture."""
-    with open(os.path.join(root, ".claude", "audit.config.json"),
-              encoding="utf-8") as fh:
-        where = json.load(fh)["executor"]["worktreeRoot"]
-    return os.path.join(where, "%s-%s" % (os.path.basename(root), task_id))
 
 
 def _brief_of(root, text, task_id, role="executor"):
@@ -6728,127 +6301,6 @@ def _brief_of(root, text, task_id, role="executor"):
             with open(os.path.join(root, *brief.group(1).split("/")), encoding="utf-8") as fh:
                 return fh.read()
     return ""
-
-
-def _wave_resume_cases(check):
-    """Tree setup resumes through the marker: a crash inside the setup and a
-    setup that failed both leave a marked tree that the next drive finds and
-    provisions again before any dispatch, spending no attempt."""
-    M, why = _load("drive_phase_wave_resume")
-    if M is None:
-        check("wt1 the driver loads", False, why)
-        return
-    cmd, log = _setup_fixture("crash")
-    root, mpath = _wave_repo("wavesetupcrash", 2, setup=cmd)
-    tree = _tree_expected(root, "P1.1")
-    MW = _loader.load_script("manage-worktrees.py", "mw_crash_in_setup", cache=False)
-
-    def die_in_setup(command, cwd, timeout=None):
-        raise RuntimeError("the session died inside the setup of %s" % (cwd,))
-    MW.run_setup = die_in_setup
-    real_run = M.run_verb
-    crashes = []
-
-    def crash_once(ctx, script, args, stdin=None):
-        # The real verb, in this process, dying where the session would: after
-        # the marker is written and before the setup returns.
-        if script == "manage-worktrees.py" and args[:1] == ["task-add"] \
-                and args[2] == "P1.1" and not crashes:
-            crashes.append(args)
-            MW.main(list(args), out=lambda *_a: None)
-        return real_run(ctx, script, args, stdin=stdin)
-    M.run_verb = crash_once
-    crashed = None
-    try:
-        _next_wave(M, root, mpath)
-    except RuntimeError as exc:
-        crashed = str(exc)
-    finally:
-        M.run_verb = real_run
-    marked = MW._wt.read_provenance(tree, expect_task="P1.1") \
-        if os.path.isdir(tree) else {}
-    check("wt1 the fixture crashed where it means to: the tree of P1.1 exists and "
-          "is marked for it, its setup never completed, and the driver recorded "
-          "no tree: %r %r %r" % (crashed, marked.get("ours"), _provisioned(log)),
-          crashed and marked.get("ours") is True and not _provisioned(log)
-          and not _tree_of(root, "P1.1")
-          and _attempts(mpath, "P1.1") == 1)
-    code, resumed = _next_wave(M, root, mpath)
-    check("wt2 the next drive finds that tree through its marker, runs its setup "
-          "again before dispatching, and spends no attempt: %r %r %r"
-          % (resumed, _provisioned(log), _attempts(mpath, "P1.1")),
-          code == 0 and _dispatched(resumed) == ["P1.1", "P1.2"]
-          and os.path.realpath(_tree_of(root, "P1.1") or "-") == os.path.realpath(tree)
-          and os.path.realpath(tree) in _provisioned(log)
-          and _attempts(mpath, "P1.1") == 1)
-
-    cmd, log = _setup_fixture("fail", fail_first=True)
-    root, mpath = _wave_repo("wavesetupfail", 2, setup=cmd)
-    tree = _tree_expected(root, "P1.1")
-    code, first = _next_wave(M, root, mpath)
-    check("wt3 a setup that fails stops the drive as could-not-run, dispatching "
-          "nothing, with the tree kept: %r" % (first,),
-          code != 0 and "setup" in first and not _dispatched(first)
-          and os.path.isdir(tree) and not _provisioned(log))
-    code, second = _next_wave(M, root, mpath)
-    check("wt4 the next drive runs the failed setup again before it dispatches "
-          "the task, in the same tree, and spends no attempt: %r %r"
-          % (second, _provisioned(log)),
-          code == 0 and "P1.1" in _dispatched(second)
-          and os.path.realpath(tree) in _provisioned(log)
-          and _attempts(mpath, "P1.1") == 1)
-
-
-def _wave_adopt_cases(check):
-    """A blocked member's tree is kept when its wave closes, and a later wave
-    that runs the task again adopts it - at the base it was cut from."""
-    M, why = _load("drive_phase_wave_adopt")
-    if M is None:
-        check("wt5 the driver loads", False, why)
-        return
-    root, mpath = _wave_repo("waveadopt", 2, red=("P1.1",), spare_file=True)
-
-    def one_attempt(plan):
-        plan["phases"][0]["tasks"][0]["maxAttempts"] = 1
-    _commit_plan(root, mpath, one_attempt, "one attempt for P1.1")
-    _code, first = _next_wave(M, root, mpath)
-    for t in _dispatched(first):
-        _file_wave_executor(root, mpath, t)
-    _next_wave(M, root, mpath)
-    tree = _tree_of(root, "P1.1")
-    base = (_drive_state(root).get("wave") or {}).get("base")
-    said = []
-    with _Env(root):
-        M.main(["next", PHASE, mpath, "--project-dir", root, "--answer", "block",
-                "--reason", "the gate is red"], out=said.append)
-    blocked = "\n".join(said)
-    state = _drive_state(root)
-    check("wt5 when the wave closes over a blocked member, its tree is kept on "
-          "disk, recorded, and named: %r %r" % (blocked, state.get("keptTrees")),
-          tree and not state.get("wave") and os.path.isdir(tree)
-          and (state.get("keptTrees") or {}).get("P1.1") == tree
-          and tree in blocked
-          and tasks_of(mpath)["P1.1"].get("status") == "blocked")
-    with _Env(root):
-        unblocked = _verb(root, "audit-task.py", [
-            "unblock", "P1.1", mpath, "--project-dir", root, "--reason",
-            "the human: run it again"])
-        added = _verb(root, "audit-task.py", [
-            "add", "a third file", mpath, "--project-dir", root, "--phase", PHASE,
-            "--files", "src/f3.txt", "--description", "change src/f3.txt",
-            "--gate", '"%s" check_own.py src/f3.txt' % (sys.executable,), "--json"])
-    code, again = _next_wave(M, root, mpath)
-    wave = _drive_state(root).get("wave") or {}
-    brief = _brief_of(root, again, "P1.1")
-    check("wt6 a later wave that runs the task again adopts the kept tree, and "
-          "its executor's brief names that tree and the base it was cut at, not "
-          "the new wave's: %r %r %r" % (again, (unblocked[0], added[0]),
-                                        wave.get("base")),
-          code == 0 and "P1.1" in _dispatched(again)
-          and len(_dispatched(again)) == 2
-          and _tree_of(root, "P1.1") == tree and wave.get("base") != base
-          and ("tree: %s" % (tree,)) in brief and ("base: %s" % (base,)) in brief
-          and "P1.1" not in (_drive_state(root).get("keptTrees") or {}))
 
 
 # A gate that passes wherever it runs and logs the directory it ran in, outside
@@ -9064,66 +8516,6 @@ def _kept_key_cases(M, check):
           and marker_o == "P1.1 set aside 1")
 
 
-def _wave_hooks_cases(check):
-    """Before a wave opens the driver asks which hooks Claude Code loads: a copy
-    whose hooks lack the task-tree binding runs the phase at width 1 and says
-    why; a copy that carries it, or no record at all, leaves the width alone."""
-    M, why = _load("drive_phase_wave_hooks")
-    if M is None:
-        check("wh1 the driver loads", False, why)
-        return
-    import tempfile
-    base = os.path.realpath(tempfile.mkdtemp(prefix="drive-hooks-"))
-    try:
-        def copy_of(name, binding):
-            root = os.path.join(base, name)
-            os.makedirs(os.path.join(root, "hooks"))
-            for fname, body in (("_config.py", "def task_binding(t, m):\n    pass\n"),
-                                ("require-plan.py", "x = task_binding(r, m)\n")):
-                with open(os.path.join(root, "hooks", fname), "w", encoding="utf-8") as fh:
-                    fh.write(body if binding else "pass\n")
-            return root
-
-        def installed(path):
-            home = os.path.join(base, "home-%d" % (len(os.listdir(base)),))
-            os.makedirs(os.path.join(home, "plugins"))
-            with open(os.path.join(home, "plugins", "installed_plugins.json"),
-                      "w", encoding="utf-8") as fh:
-                json.dump({"plugins": {"audit@quality-gates": [
-                    {"scope": "user", "installPath": path, "version": "1.0.0"}]}}, fh)
-            _Env.CLAUDE_HOME[0] = home
-
-        installed(copy_of("old", False))
-        root, mpath = _wave_repo("wavehooks-old", 2)
-        code, text = _next_wave(M, root, mpath)
-        check("wh1 hooks without the task-tree binding: the phase runs at width 1 "
-              "- one task dispatched, no wave recorded - and the print names the "
-              "copy and the width it ran at: %r" % (text,),
-              code == 0 and len(_dispatched(text)) == 1
-              and not _drive_state(root).get("wave")
-              and "task-tree binding" in text and os.path.join(base, "old") in text
-              and "width 1" in text)
-        installed(copy_of("new", True))
-        root, mpath = _wave_repo("wavehooks-new", 2)
-        code, text = _next_wave(M, root, mpath)
-        check("wh2 THE TWIN: hooks that carry it open the wave as asked, and "
-              "print nothing about the binding: %r" % (text,),
-              code == 0 and _dispatched(text) == ["P1.1", "P1.2"]
-              and "task-tree binding" not in text)
-        _Env.CLAUDE_HOME[0] = os.path.join(base, "no-home")
-        root, mpath = _wave_repo("wavehooks-none", 2)
-        code, text = _next_wave(M, root, mpath)
-        check("wh3 no record of a loaded copy: the wave opens as asked and the "
-              "print says the binding was not established, with what was looked "
-              "for: %r" % (text,),
-              code == 0 and _dispatched(text) == ["P1.1", "P1.2"]
-              and "task-tree binding not established" in text
-              and "installed_plugins.json" in text)
-    finally:
-        _Env.CLAUDE_HOME[0] = None
-        _harness.remove_tree(base)
-
-
 def _text_cases(check):
     """The texts a user meets name nothing a plugin install does not ship."""
     M, why = _load("drive_phase_text")
@@ -10343,86 +9735,6 @@ def _recorded_dispatches(root, member, key="writer"):
     members does not give a run line per member."""
     return ((((_drive_state(root).get(key) or {}).get(member) or {})
              .get("value") or {}).get("dispatches")) or []
-
-
-def _unset_writer(root):
-    """The config with `executor.writerModel` taken out, written over the
-    committed one and left uncommitted so HEAD stays where the session was
-    dispatched."""
-    cfg_path = os.path.join(root, ".claude", "audit.config.json")
-    with open(cfg_path, encoding="utf-8") as fh:
-        cfg = json.load(fh)
-    cfg.pop("executor", None)
-    with open(cfg_path, "w", encoding="utf-8") as fh:
-        json.dump(cfg, fh)
-
-
-def _offered(text):
-    """The answers the `--answer a|b|c` word of a decision's text offers."""
-    found = re.search(r"--answer ([a-z-]+(?:\|[a-z-]+)*)", text or "")
-    return found.group(1).split("|") if found else []
-
-
-def _writer_off_cases(check):
-    """A decision that asks `resume` of a writer session is asked only while
-    the writer path is on; with `executor.writerModel unset` the same red-first
-    or clause gap offers an answer that leaves the decision, and a pending one
-    that outlived the setting names an answer it does offer - never `retry`
-    where it is not one."""
-    M, why = _load("drive_phase_writer_off")
-    if M is None:
-        check("wo1 the driver loads", False, why)
-        return
-    stubs = os.path.realpath(_harness.fixture_root("drive-wo-stub-"))
-    bindir = _writer_stub(stubs)
-    log = os.path.join(stubs, "runs.jsonl")
-    passing = _wf_suite([("old1", "mine.v >= 1"), ("new1", "mine.v >= 1")])
-    kinds = (("clauses-uncovered", _WC_DESCRIPTION,
-              {_WF_SRC: "v = 2\n", _WF_TEST: _WF_NEW_TEST}, _said("done", (1, 3))),
-             ("red-refused", None, {_WF_SRC: "v = 2\n", _WF_TEST: passing},
-              _said("done")))
-    for n, (plain, description, edit, result) in enumerate(kinds, 1):
-        root, mpath = _tdd_writer_repo("wo-%s" % (plain,), (_wf_gate(),), description)
-        _signal_next(M, root, mpath)
-        _c, block = _explain_of(M, root, mpath, "P1.1")
-        _play_session(root, _run_argv(block) or [], bindir, log, "0.4%d" % (n,),
-                      edit=edit, result=result)
-        _unset_writer(root)
-        code, line = _signal_next(M, root, mpath)
-        _c, block = _explain_of(M, root, mpath, "P1.1")
-        offered = _offered(block)
-        before = _attempts(mpath, "P1.1")
-        check("wo%da the session ran, then executor.writerModel was unset: the "
-              "%s the work earns is asked as a decision that does not send "
-              "anything to a session, and offers an answer other than block: %r"
-              % (n, plain, (code, line, block)),
-              code == 0 and ("decide %s " % (plain,)) in block
-              and "resume" not in offered and "retry" in offered)
-        code_r, line_r = _signal_next(M, root, mpath, "--answer", "retry")
-        check("wo%db that decision's own answer leaves it: one attempt is spent "
-              "and the next step is not the same decision again: %r"
-              % (n, (code_r, line_r)),
-              code_r == 0 and _attempts(mpath, "P1.1") == before + 1
-              and ("decide %s " % (plain,)) not in line_r
-              and "-writer" not in line_r)
-
-        # The decision was asked while the writer path was on and is answered
-        # after it went off: the stop names only what the decision offers.
-        root2, mpath2 = _tdd_writer_repo("wo2-%s" % (plain,), (_wf_gate(),), description)
-        _signal_next(M, root2, mpath2)
-        _writer_round(M, root2, mpath2, bindir, log, "0.5%d" % (n,), edit=edit,
-                      result=result)
-        _c, asked = _explain_of(M, root2, mpath2, "P1.1")
-        _unset_writer(root2)
-        stop_code, stop_line = _signal_next(M, root2, mpath2, "--answer", "resume")
-        _c, again = _explain_of(M, root2, mpath2, "P1.1")
-        named = re.findall(r"answer ([a-z]+)", stop_line)
-        check("wo%dc a `resume` answered after the writer path went off stops "
-              "with a word naming only answers that decision offers (%s), and "
-              "names at least one: %r"
-              % (n, "|".join(_offered(asked)), (stop_code, stop_line, again)),
-              stop_code == 1 and named and all(a in _offered(asked) for a in named)
-              and "retry" not in named)
 
 
 def _redispatch_wave_cases(check):
@@ -14623,10 +13935,1074 @@ def _retired_return_cases(check, M):
         _harness.remove_tree(root_u)
 
 
+# --- waves and the CI cadence end to end: the drives only a real drive can show ---
+# One drive per family over a real repository, the verbs run for real, because
+# what each proves is the pipeline as a whole: the order the members' steps run in
+# within one `next`, the verbs agreeing with the drive's own record, git
+# holding what the record says. Their subjects:
+#   wv1-wv8  two disjoint tasks dispatched in ONE `next`, each in a worktree
+#            of its own outside the project: the returns filed from the
+#            project, each gate measured in its member's tree (the own-diff
+#            gate is red anywhere else), both integrated into the phase tree
+#            and closed against a commit each, the journal's wave rows in
+#            order, and each clean tree taken down - git is the subject;
+#   nr2 nr3 nr3b  a no-reviewer-return decision parked in a wave behind the
+#            sibling's printed one, kept while its return is missing and
+#            printed once the sibling closed, then dropped once the return is
+#            filed - the drive state, the evidence and the plan read together;
+#   the `ci.cadence` cases of the green cycle  one full cadence
+#            cycle with the CI seam faked by `_ci_fake`: no call at the first
+#            two closes, the push of the phase tip and the dispatch at the
+#            third, no wait, and the verdict read once at the fourth.
+# Where each converted case's guarantee lives now (`_wave_unit_cases`: the
+# deciding function and the code acting on its answer - `ci_after_close`,
+# `drive_phase`, `walk_wave`, `step_member`, `add_tree`, `close_wave`,
+# `integrate_member`, `advance`, `apply_answer`, `drive_locked`,
+# `writer_argv` - over facts and fake verbs, no repository):
+#   wv5m wz1 wa1 wa2 wu1 wu2 wc1 wc2 wr1-wr3 wp0 wp1 nr0 nr1 nr4-nr6 wh1-wh3
+#   wt1-wt6 wo1a-wo2c sk1-sk3, and the cadence's red, still-running,
+#   absent, hours, closes-and-hours and config details -> `_wave_unit_cases`
+# Paths no drive in this block reaches, held by a unit case alone: a red CI
+# run filing its bug and a run still going at a close (ci), no `ci` key at
+# all, a width outside the vocabulary (wz1), a member's integration that asks
+# about an undeclared path and its `widen` answer (wu), a rerun after a crash
+# between integration and close (wc), a red sibling beside a green one (wr),
+# a parked no-executor-return decision (wp) and a serial parked
+# no-reviewer-return (nr0 nr1), hooks lacking the task-tree binding (wh1) or
+# with no install record (wh3), a tree whose setup crashed or failed (wt1-wt4),
+# a blocked member's tree kept and adopted by a later wave (wt5 wt6), the
+# writer path switched off under a pending writer decision (wo), and the
+# session's skills on its command (sk). A later change to one of them owes a
+# drive of its own if what it changes is the order of the steps or what git
+# holds after them.
+def _e2e_wave_cases(check):
+    """One drive per wave family and one CI cadence cycle, over real
+    repositories."""
+    M, why = _load("drive_phase_e2e_wave")
+    if M is None:
+        check("wv1 the driver loads", False, why)
+        return
+    _e2e_wave_pair(check, M)
+    _e2e_wave_parked(check, M)
+    _e2e_ci_cycle(check, M)
+
+
+def _e2e_wave_pair(check, M):
+    """Two ready disjoint tasks at waveWidth 2: one `next` sends both, each
+    files from the project, and the next `next` gates, integrates and closes
+    them in their own trees."""
+    root, mpath = _wave_repo("wave", 2)
+    code, first = _next_wave(M, root, mpath)
+    sent = _dispatched(first)
+    check("wv1 at waveWidth 2 two ready tasks with disjoint files are dispatched "
+          "in ONE next, one dispatch line each, in id order, under the rule that "
+          "sends them together: %r" % (first,),
+          code == 0 and sent == ["P1.1", "P1.2"]
+          and "dispatch these together in one message; then next" in first)
+    lines = [ln for ln in first.splitlines() if ln.startswith("dispatch ")]
+    check("wv2 every dispatch line of a wave stays inside %d bytes: %r"
+          % (WAVE_LINE_BYTES, [len(ln.encode("utf-8")) for ln in lines]),
+          lines and all(len(ln.encode("utf-8")) <= WAVE_LINE_BYTES for ln in lines))
+    trees = [_tree_of(root, t) for t in ("P1.1", "P1.2")]
+    check("wv3 each task has a tree of its own, outside the project: %r" % (trees,),
+          all(trees) and trees[0] != trees[1]
+          and not any(t.startswith(root + os.sep) for t in trees if t))
+    filed = [_file_wave_executor(root, mpath, t) for t in sent]
+    check("wv4 each executor's submit from the project files its return: %r"
+          % (filed,), [c for c, _t in filed] == [0, 0])
+    texts = dict((t, _read(_filed_path(mpath, t)).decode("utf-8")
+                  if _filed_path(mpath, t) and os.path.exists(_filed_path(mpath, t))
+                  else "") for t in sent)
+    labels = dict((t, _stamp_field(json.loads(x or "{}").get("stamp"), "manifest"))
+                  for t, x in texts.items())
+    spelled = [p for t in sent for p in (root, _tree_of(root, t),
+                                         os.path.realpath(root),
+                                         os.path.realpath(_tree_of(root, t) or "-"))
+               if p and any(p in x for x in texts.values())]
+    check("wv4a a wave executor's filed return names its stamp's manifest by a "
+          "project-relative label and carries no absolute machine path - neither "
+          "the project's, nor the task tree's - anywhere in it: %r %r"
+          % (labels, spelled),
+          all(texts.values())
+          and all(l and not os.path.isabs(l) for l in labels.values())
+          and not spelled)
+    code, second = _next_wave(M, root, mpath)
+    rows = dict((t, _rows_of(root, mpath, t)) for t in ("P1.1", "P1.2"))
+    green = dict((t, [r.get("status") for r in rs]) for t, rs in rows.items())
+    keyed = dict((t, [((r.get("testedState") or {}).get("tree") or {}).get("key")
+                      for r in rs]) for t, rs in rows.items())
+    check("wv5 each task's recorded gate ran in its own tree and was green - the "
+          "gate passes only where the tree's changed sources are exactly the "
+          "task's own file - and each row names a tree: %r %r %r"
+          % (green, keyed, second),
+          green == {"P1.1": ["passed"], "P1.2": ["passed"]}
+          and all(keyed[t] and keyed[t][0] for t in keyed)
+          and keyed["P1.1"] != keyed["P1.2"])
+    tasks = tasks_of(mpath)
+    with open(os.path.join(root, "src", "f1.txt"), encoding="utf-8") as fh:
+        f1 = fh.read()
+    with open(os.path.join(root, "src", "f2.txt"), encoding="utf-8") as fh:
+        f2 = fh.read()
+    check("wv6 both tasks are integrated into the phase tree and closed against "
+          "a commit each: %r" % ([(t, tasks[t].get("status"), tasks[t].get("commit"))
+                                  for t in ("P1.1", "P1.2")],),
+          all(tasks[t].get("status") == "done" and tasks[t].get("commit")
+              for t in ("P1.1", "P1.2"))
+          and tasks["P1.1"]["commit"] != tasks["P1.2"]["commit"]
+          and f1 == "changed by P1.1\n" and f2 == "changed by P1.2\n")
+    acts = [a for a in _actions(root) if a.startswith("wave.")
+            or a in ("task.worktree", "task.integrated",
+                     "task.integration.refused")]
+    check("wv7 the journal records the wave: its start, a tree per task, an "
+          "integration per task in id order, and its end: %r" % (acts,),
+          acts == ["wave.start", "task.worktree", "task.worktree",
+                   "task.integrated", "task.integrated", "wave.done"])
+    gone = [t for t in trees if t and os.path.isdir(t)]
+    check("wv8 a clean task tree is taken down once its task is closed: %r"
+          % (gone,), all(trees) and not gone)
+
+
+def _e2e_wave_parked(check, M):
+    """A no-reviewer-return decision parked in a wave, behind a sibling's
+    printed one: kept while its return is missing, dropped once it is filed."""
+    wroot, wmpath = _wave_repo("parkedwave", 2, per_task="always")
+    _code, first = _next_wave(M, wroot, wmpath)
+    for t in _dispatched(first):
+        _file_wave_executor(wroot, wmpath, t)
+    _next_wave(M, wroot, wmpath)
+    _next_wave(M, wroot, wmpath)
+    wstate = _drive_state(wroot)
+    parked = ((wstate.get("wave") or {}).get("parked") or {}).get("P1.2") or {}
+    check("nr2 the fixture parks the second member's no-reviewer-return decision "
+          "behind the first's: %r %r" % (wstate.get("pending"), parked),
+          (wstate.get("pending") or {}).get("task") == "P1.1"
+          and parked.get("decision") == "no-reviewer-return")
+    # The first member's return comes; the second's has not. Its parked decision
+    # still holds (the twin that fails a rule dropping parked decisions blindly)
+    # and is what the drive prints once the first member has closed.
+    _file_reviewer(wroot, wmpath, "P1.1")
+    _code, held_text = _next_wave(M, wroot, wmpath)
+    check("nr3 a parked no-reviewer-return decision whose reviewer return is "
+          "still missing is kept and printed once the sibling has closed: %r"
+          % (held_text,),
+          "decide no-reviewer-return P1.2:" in held_text
+          and tasks_of(wmpath)["P1.1"].get("status") == "done")
+    wlate = _file_reviewer(wroot, wmpath, "P1.2")
+    _code, after = _next_wave(M, wroot, wmpath)
+    wstate = _drive_state(wroot)
+    check("nr3b a no-reviewer-return decision parked in a wave is dropped on the "
+          "next run once that member's reviewer return is filed, and the member "
+          "closes: %r %r %r"
+          % (wlate, after, wstate.get("pending")),
+          wlate[0] == 0 and "no-reviewer-return" not in after
+          and (wstate.get("pending") or {}).get("decision") != "no-reviewer-return"
+          and tasks_of(wmpath)["P1.2"].get("status") == "done")
+
+
+def _ci_clause(detail):
+    return "%s (%s)" % (CI_CADENCE_CLAUSE, detail)
+
+
+def _e2e_ci_cycle(check, M):
+    """`ci.cadence` every 3 closes over a four-task phase, the CI seam faked:
+    the push and the dispatch at the third close only, no wait, the green
+    verdict read once at the fourth."""
+    def green(sha):
+        return [{"databaseId": 501, "headSha": sha, "status": "completed",
+                 "conclusion": "success", "url": "https://example.invalid/r/501"}]
+
+    root, mpath = _ci_repo("cadence", {"cadence": {"closes": 3}})
+    calls, events, pushed, heads, run = _ci_run(M, root, mpath, green)
+    seg = _segments(events)
+    closes = [v for k, v in events if k == "close"]
+    shape = [[(a[0], a[1]) if a[0] == "gh" else ("git", a[3]) for a in s]
+             for s in seg]
+    check(_ci_clause("the drive closed all four tasks and finished: %r"
+                     % ((closes, run["steps"][-1]),)),
+          closes == list(CI_TASKS) and run["steps"][-1] == DONE)
+    check(_ci_clause("no CI call is made at the first or second close; the push "
+                     "and the dispatch are made at the third and only there: %r"
+                     % (shape,)),
+          len(seg) == 5 and seg[0] == [] and seg[1] == []
+          and [a[3] for a in seg[2]][:1] == ["push"]
+          and seg[2][1][:3] == ("gh", "workflow", "run") and len(seg[2]) == 2
+          and not [a for s in seg[3:] for a in s if "push" in a])
+    check(_ci_clause("the push carries the phase tip as it stood at the third "
+                     "close to ci/p1, and the workflow is dispatched on that same "
+                     "branch: %r" % (calls[:2],)),
+          len(heads) == 1 and pushed == heads
+          and calls[0][-1] == "+%s:refs/heads/ci/p1" % (heads[0],)
+          and calls[1][-2:] == ("--ref", "ci/p1"))
+    check(_ci_clause("it never waits: no `watch`, no exit-status polling, and the "
+                     "fourth task is dispatched and closed while the run is out: "
+                     "%r" % (calls,)),
+          not [c for c in calls if "watch" in c or "--exit-status" in c]
+          and closes[3] == "P1.4")
+    reads = [c for c in calls if c[:3] == ("gh", "run", "list")]
+    check(_ci_clause("the verdict is read once, at the next close - the fourth - "
+                     "and never twice for a run already read: %r" % (shape,)),
+          len(reads) == 1 and shape[3] == [("gh", "run")]
+          and seg[4] == [])
+    check(_ci_clause("a green verdict files no bug: %r"
+                     % (_mio.load_manifest(mpath).get("bugs"),)),
+          not _mio.load_manifest(mpath).get("bugs"))
+
+
+# --- waves, the CI cadence and the writer path, decided on facts -----------------
+# The cases below were drives once: each built a repository, played the main
+# loop to the step it asks about and read the print. What each asks is now
+# asked of the code that acts on the decision - `ci_after_close`,
+# `drive_phase`, `walk_wave`, `step_member`, `add_tree`, `close_wave`,
+# `wave_step`, `integrate_member`, `advance`, `gate_step`, `apply_answer`,
+# `drive_locked`, `writer_argv` - run whole over a context pointing at nothing
+# on disk, a plan held here, the verbs answered by `_verb_rig` and the CI seam
+# by `_ci_fake`. What only a real drive shows is the kept `e2e-wave` block's;
+# what the tree verb does on disk - a marker, a setup run again in an adopted
+# tree - is `tests/test_manage_worktrees.py`'s, and what a brief prints for a
+# wave member is `tests/test_audit_lookup.py`'s. Every expected value is
+# written out, never recomputed from the function asked.
+_WAVE_TREE = "/trees/drive-wave-P1.1"
+_WAVE_TREE2 = "/trees/drive-wave-P1.2"
+_WAVE_BASE, _WAVE_NEW_BASE = "c" * 40, "d" * 40
+
+
+def _wave_unit_cases(check):
+    """The wave's decisions, the CI cadence and the writer path switched off,
+    each asked of the code that acts on them - no repository, no verb run for
+    real."""
+    M, why = _unit_driver("drive_phase_wave_units")
+    if M is None:
+        check("wz1 the driver loads", False, why)
+        return
+    _ci_units(check)
+    _gate_tree_units(check)
+    _width_units(check)
+    _hooks_units(check)
+    _undeclared_units(check)
+    _crash_units(check)
+    _red_sibling_units(check)
+    _parked_units(check)
+    _parked_rule_units(check, M)
+    _tree_setup_units(check)
+    _adopt_units(check)
+    _writer_off_units(check)
+    _skill_units(check)
+
+
+def _ci_held(closes):
+    """A drive state whose last dispatch left a run out on `ci/p1`."""
+    return {"ci": {"run": {"sha": _HEAD_A, "branch": "ci/p1"}, "closes": closes,
+                   "at": 0.0}}
+
+
+def _ci_row(conclusion, status="completed"):
+    return [{"databaseId": 777, "headSha": _HEAD_A, "status": status,
+             "conclusion": conclusion, "url": "https://example.invalid/r/777"}]
+
+
+def _ci_close(name, config, state, rows, closes=1):
+    """`closes` closes through `ci_after_close` on a fresh driver, the CI seam
+    answered by `_ci_fake` with `rows` and the verbs by a rig. -> (said, seam
+    calls, verb calls, did-lines, state)."""
+    M, _w = _unit_driver(name)
+    fake, calls, _pushed = _ci_fake(None, lambda _sha: rows)
+    M.ci_run = fake
+    M.git_head = lambda ctx: _HEAD_B
+    M.run_verb, verbs = _verb_rig()
+    ctx = _unit_ctx(config=config)
+    said = None
+    for _ in range(closes):
+        said = _caught(M.ci_after_close, ctx, state, {"id": PHASE,
+                                                      "startedAt": None})
+    return said, calls, verbs, ctx["did"], state
+
+
+def _ci_units(check):
+    """What a close owes `ci.cadence`: the run left out is read and a red one
+    files its bug, a run still going is left alone, and no key asks nothing."""
+    cadence = {"ci": {"cadence": {"closes": 3}}}
+    said, calls, verbs, did, state = _ci_close(
+        "drive_phase_ci_red", cadence, _ci_held(0), _ci_row("failure"))
+    bugs = [(a, i) for s, a, i in verbs if s == "audit-task.py" and a[:1] == ["bug-add"]]
+    check(_ci_clause("a red run read at the next close asks the bug verb for one "
+                     "high-severity bug whose title names the run and the branch, "
+                     "and the run is no longer held, so it is never read twice: %r"
+                     % ((said, calls, bugs, did, state),)),
+          said is None and len(calls) == 1 and calls[0][:3] == ("gh", "run", "list")
+          and len(bugs) == 1
+          and bugs[0][0][:2] == ["bug-add", "CI red on ci/p1 at aaaaaaa (run 777)"]
+          and bugs[0][0][-4:] == ["--severity", "high", "--description", "-"]
+          and "ended failure" in bugs[0][1] and "ci/p1" in bugs[0][1]
+          and did == ["CI aaaaaaa red: bug filed"]
+          and state["ci"] == {"closes": 1, "at": 0.0})
+
+    said, calls, verbs, did, state = _ci_close(
+        "drive_phase_ci_running", cadence, _ci_held(2), _ci_row("", "in_progress"))
+    M, _w = _unit_driver("drive_phase_ci_signoff")
+    fake, signoff_calls, _p = _ci_fake(None, lambda _sha: _ci_row("", "in_progress"))
+    M.ci_run = fake
+    ctx = _unit_ctx(config=cadence)
+    at_signoff = _caught(M.ci_before_signoff, ctx, state)
+    did = did + ctx["did"]
+    _s, calls_g, _v, did_g, state_g = _ci_close(
+        "drive_phase_ci_settled", cadence, _ci_held(2), _ci_row("success"))
+    check(_ci_clause("a run still going at the next close is left alone - no "
+                     "second dispatch is piled on it though the cadence is due, "
+                     "nothing is filed, and the close goes on without waiting; "
+                     "sign-off reads it once more, again without waiting; the twin "
+                     "whose run had ended green dispatches the next one: %r"
+                     % ((said, calls, signoff_calls, at_signoff, verbs, did, state,
+                         calls_g, did_g),)),
+          said is None and [c[:3] for c in calls] == [("gh", "run", "list")]
+          and at_signoff is None
+          and [c[:3] for c in signoff_calls] == [("gh", "run", "list")]
+          and verbs == [] and did == ["CI aaaaaaa still running"] * 2
+          and state["ci"]["run"] == {"sha": _HEAD_A, "branch": "ci/p1"}
+          and state["ci"]["closes"] == 3
+          and [c[:3] for c in calls_g] == [("gh", "run", "list"),
+                                           ("git", "-C", "/nowhere"),
+                                           ("gh", "workflow", "run")]
+          and calls_g[1][-1] == "+%s:refs/heads/ci/p1" % (_HEAD_B,)
+          and did_g == ["CI aaaaaaa green", "CI dispatched on ci/p1 at bbbbbbb"]
+          and state_g["ci"]["run"] == {"sha": _HEAD_B, "branch": "ci/p1"})
+
+    M, _w = _unit_driver("drive_phase_ci_absent")
+    fake, calls, _p = _ci_fake(None, lambda _sha: _ci_row("success"))
+    M.ci_run = fake
+    M.run_verb, verbs = _verb_rig()
+    ctx, state = _unit_ctx(config={}), {}
+    said = [_caught(M.ci_after_close, ctx, state, {"id": PHASE}) for _ in range(4)]
+    said.append(_caught(M.ci_before_signoff, ctx, state))
+    check(_ci_clause("with no ci key no close and no sign-off makes a push, a "
+                     "dispatch or a run read, and nothing is recorded: %r"
+                     % ((said, calls, verbs, ctx["did"], state),)),
+          said == [None] * 5 and calls == [] and verbs == [] and ctx["did"] == []
+          and state == {})
+
+    # hours: a pure reading of the clock, asked with an injected `now`.
+    cadence = {"closes": None, "hours": 2}
+    base = {"at": 1000.0, "closes": 1}
+    check(_ci_clause("hours: due only once the hours since the last dispatch "
+                     "have elapsed, and closes counted since then do not matter "
+                     "when closes is unset: %r"
+                     % ((M.ci_due(cadence, base, 1000.0 + 7199),
+                         M.ci_due(cadence, base, 1000.0 + 7200)),)),
+          not M.ci_due(cadence, base, 1000.0 + 7199)
+          and M.ci_due(cadence, base, 1000.0 + 7200))
+    both = {"closes": 3, "hours": 2}
+    check(_ci_clause("closes and hours together: either one is enough: %r"
+                     % ((M.ci_due(both, {"at": 0.0, "closes": 3}, 10.0),
+                         M.ci_due(both, {"at": 0.0, "closes": 1}, 7200.0),
+                         M.ci_due(both, {"at": 0.0, "closes": 2}, 7199.0)),)),
+          M.ci_due(both, {"at": 0.0, "closes": 3}, 10.0)
+          and M.ci_due(both, {"at": 0.0, "closes": 1}, 7200.0)
+          and not M.ci_due(both, {"at": 0.0, "closes": 2}, 7199.0))
+    rules = _loader.load_script("_config_rules.py", "ci_rules_mod", cache=False)
+    ok, ok_why = rules.ci_cadence_setting({"ci": {"cadence": {"closes": 3}}})
+    absent, absent_why = rules.ci_cadence_setting({})
+    bad, bad_why = rules.ci_cadence_setting({"ci": {"cadence": {"closes": 0}}})
+    empty, empty_why = rules.ci_cadence_setting({"ci": {"cadence": {}}})
+    check(_ci_clause("the config reads closes and hours; an absent key is no "
+                     "cadence, and a zero, a non-number or an empty cadence is "
+                     "refused with a reason, never read as the default: %r"
+                     % ((ok, absent, bad, bad_why, empty_why),)),
+          ok and ok["closes"] == 3 and ok_why is None
+          and absent is None and absent_why is None
+          and bad is None and bad_why and empty is None and empty_why
+          and not rules.validate_config({"ci": {"cadence": {"hours": 4}}})[0]
+          and rules.validate_config({"ci": {"cadence": {"closes": 0}}})[0]
+          and "ci" in rules.KNOWN_ROOT)
+
+
+_UNTREED_GATE = ("[run-test-gate] P1.1 has a wave tree registered under this "
+                 "project whose work is not integrated, and a recorded gate "
+                 "without --tree would measure the project's checkout\n")
+
+
+def _gate_tree_units(check):
+    """A member's gate is measured in the member's tree: the gate step hands
+    the gate verb that tree, which is what a green row there stands on. The
+    verb answers as it does over a project holding a wave tree - green with
+    `--tree`, a refusal without it."""
+    def gate_args(M):
+        task_u = _step_task()
+        phase = _step_phase([task_u], key="phase")
+        calls = _step_rig(M, phase, answers={"run-test-gate.py": lambda args: (
+            (0, "[run-test-gate] GATE GREEN: true\n", "") if "--tree" in args
+            else (2, _UNTREED_GATE, ""))})
+        M.advance_member = lambda ctx, state, task_, tree: None
+        M.refresh_member_records = lambda ctx, state, task_, tree: None
+        state = {}
+        said = _caught(M.gate_step, _step_ctx(), state, _step_plan(phase), phase,
+                       task_u, _WAVE_TREE)
+        return (said, [a for s, a, _i in calls if s == "run-test-gate.py"],
+                M._marked(state, "gated", task_u) is not None)
+    M, _w = _unit_driver("drive_phase_gate_tree")
+    said, args, gated = gate_args(M)
+    mutant, _w = _unit_driver("drive_phase_gate_no_tree")
+    real_gate = mutant.record_gate
+    mutant.record_gate = lambda ctx, phase, task, tree=None, no_reuse=False: \
+        real_gate(ctx, phase, task)
+    said_m, args_m, gated_m = gate_args(mutant)
+    check("wv5m RED TWIN: a driver that measures a wave task's gate in the phase "
+          "tree asks the gate verb with no tree and records no green - the "
+          "verb's refusal is relayed as a stop - where the real gate step names "
+          "the member's own tree and marks the gate green: %r"
+          % ((said, args, gated, said_m, args_m, gated_m),),
+          said is None and gated and not gated_m
+          and args == [["audit-plan.json", PHASE, "--task", "P1.1", "--record",
+                        "--project-dir", "/nowhere", "--tree", _WAVE_TREE]]
+          and args_m == [["audit-plan.json", PHASE, "--task", "P1.1", "--record",
+                          "--project-dir", "/nowhere"]]
+          and isinstance(said_m, tuple) and said_m[0] == 1
+          and said_m[1].startswith("[drive-phase] P1: stopped - run-test-gate.py "
+                                   "refused (exit 2); its own words follow\n"
+                                   + _UNTREED_GATE))
+
+
+def _wave_plan_rig(M, tasks, answers=None):
+    """Point `M` at a plan holding `tasks` that its verbs move: `start` puts a
+    task in progress and `block` blocks it, as the verbs would. Carries and
+    tree removal are git's and answer nothing here; journal rows are kept in
+    order. -> (phase, calls, rows, retired)."""
+    phase = _step_phase(tasks, key="phase")
+    plan_u = _step_plan(phase)
+    by_id = dict((t["id"], t) for t in tasks)
+
+    def moved(status):
+        def answer(args):
+            by_id[args[1]]["status"] = status
+            return 0, "[audit-task] %s %s\n" % (args[0], args[1]), ""
+        return answer
+    both = {("audit-task.py", "start"): moved("in_progress"),
+            ("audit-task.py", "block"): moved("blocked")}
+    both.update(answers or {})
+    M.load_phase = lambda ctx: (plan_u, phase)
+    M.run_verb, calls = _verb_rig(both)
+    rows, retired = [], []
+    M.wave_row = lambda ctx, action, summary, details: rows.append(action)
+    M.drop_carry = lambda ctx, task_id: None
+    M.restore_carry = lambda ctx, task_, tree: None
+    M.retire_member = lambda ctx, state, task_: retired.append(task_["id"])
+    M.note_sessions = lambda ctx, state, task_: None
+    M.settle_kept_markers = lambda ctx, state: None
+    M.git_head = lambda ctx: _WAVE_NEW_BASE
+    return phase, calls, rows, retired
+
+
+def _wave_state(trees, tasks=("P1.1", "P1.2"), **extra):
+    wave = {"id": "P1-w1", "base": _WAVE_BASE, "tasks": list(tasks),
+            "width": 2, "widthBasis": "executor.waveWidth 2",
+            "trees": dict(trees), "parked": {}}
+    wave.update(extra)
+    return {"wave": wave}
+
+
+def _first_line(said):
+    return (_text_of(said).splitlines() or [""])[0]
+
+
+def _width_units(check):
+    """A width outside the vocabulary stops the drive by name; `auto` and an
+    absent key are read with their basis."""
+    M, _w = _unit_driver("drive_phase_width_zero")
+    phase, calls, rows, _r = _wave_plan_rig(M, [
+        _step_task("P1.1", status="pending"), _step_task("P1.2", status="pending")])
+    ctx = _step_ctx(config={"executor": {"waveWidth": 0}})
+    said = _caught(M.drive_phase, ctx, {}, phase)
+    check("wz1 executor.waveWidth 0 stops the drive by name and starts nothing - "
+          "no verb runs, no wave row is written - never a drive that runs no "
+          "task, successfully: %r" % ((said, calls, rows),),
+          said == (1, "[drive-phase] P1: stopped - executor.waveWidth is 0, not "
+                      "a whole number of at least 1 or 'auto' - fix the config "
+                      "(/audit:doctor names it); it is not read as the default")
+          and calls == [] and rows == []
+          and [t["status"] for t in phase["tasks"]] == ["pending", "pending"])
+    cores = os.cpu_count()
+    width, basis, problem = M.wave_width({"executor": {"waveWidth": "auto"}})
+    check("wa1 `auto` is the core count less two, at least 1, with that basis: "
+          "%r" % ((width, basis, problem, cores),),
+          problem is None and width == max(1, (cores or 3) - 2)
+          and (("%d cores less two" % (cores,)) in basis if cores else "1" in basis))
+    check("wa2 an absent key is width 1 and says so: %r" % (M.wave_width({}),),
+          M.wave_width({})[:1] == (1,) and "absent" in M.wave_width({})[1])
+
+
+def _hooks_drive(name, base):
+    """`drive_phase` at waveWidth 2 over two ready tasks, Claude Code's home at
+    `_Env.CLAUDE_HOME[0]`: the wave step answers with the width it was asked
+    at, the serial step with the task it advanced. -> (said, widths, did)."""
+    M, _w = _unit_driver(name)
+    phase, _calls, _rows, _r = _wave_plan_rig(M, [
+        _step_task("P1.1", status="pending"), _step_task("P1.2", status="pending")])
+    widths = []
+    M.wave_step = lambda ctx, state, manifest, phase_, width, basis: (
+        widths.append((width, basis)) or M.instruction(
+            "dispatch", ["dispatch a wave at width %d" % (width,)]))
+    M.red_at_base = lambda ctx, ready, names: ([], None)
+    M.scope_gap = lambda ctx, state, task_: None
+    M.advance = lambda ctx, state, manifest, phase_, task_, tree=None: \
+        M.instruction("dispatch", ["dispatch serial %s" % (task_["id"],)])
+    ctx = _step_ctx(config={"executor": {"waveWidth": 2}}, project=base,
+                    gitRoot=base)
+    with _Env(base):
+        said = _caught(M.drive_phase, ctx, {}, phase)
+    return said, widths, ctx["did"]
+
+
+def _hooks_units(check):
+    """Before a wave opens the driver asks which hooks Claude Code loads: a copy
+    whose hooks lack the task-tree binding runs the phase at width 1 and says
+    why; a copy that carries it, or no record at all, leaves the width alone."""
+    base = os.path.realpath(tempfile.mkdtemp(prefix="drive-hooks-"))
+    try:
+        def copy_of(name, binding):
+            root = os.path.join(base, name)
+            os.makedirs(os.path.join(root, "hooks"))
+            for fname, body in (("_config.py", "def task_binding(t, m):\n    pass\n"),
+                                ("require-plan.py", "x = task_binding(r, m)\n")):
+                with open(os.path.join(root, "hooks", fname), "w", encoding="utf-8") as fh:
+                    fh.write(body if binding else "pass\n")
+            return root
+
+        def installed(path):
+            home = os.path.join(base, "home-%d" % (len(os.listdir(base)),))
+            os.makedirs(os.path.join(home, "plugins"))
+            with open(os.path.join(home, "plugins", "installed_plugins.json"),
+                      "w", encoding="utf-8") as fh:
+                json.dump({"plugins": {"audit@quality-gates": [
+                    {"scope": "user", "installPath": path, "version": "1.0.0"}]}}, fh)
+            _Env.CLAUDE_HOME[0] = home
+
+        installed(copy_of("old", False))
+        said, widths, did = _hooks_drive("drive_phase_hooks_old", base)
+        check("wh1 hooks without the task-tree binding: the phase runs at width 1 "
+              "- the serial step advances one task and the wave step is never "
+              "asked - and the drive's did-line names the copy and the width it "
+              "ran at: %r" % ((said, widths, did),),
+              said == (0, {"kind": "dispatch", "lines": ["dispatch serial P1.1"]})
+              and widths == [] and len(did) == 2
+              and did[0].startswith("the hooks Claude Code loads lack the "
+                                    "task-tree binding, so this phase runs at "
+                                    "width 1: ")
+              and os.path.join(base, "old") in did[0]
+              and did[1] == "started P1.1")
+        installed(copy_of("new", True))
+        said, widths, did = _hooks_drive("drive_phase_hooks_new", base)
+        check("wh2 THE TWIN: hooks that carry it open the wave as asked, and "
+              "say nothing about the binding: %r" % ((said, widths, did),),
+              said == (0, {"kind": "dispatch",
+                           "lines": ["dispatch a wave at width 2"]})
+              and widths == [(2, "executor.waveWidth 2")] and did == [])
+        _Env.CLAUDE_HOME[0] = os.path.join(base, "no-home")
+        said, widths, did = _hooks_drive("drive_phase_hooks_none", base)
+        check("wh3 no record of a loaded copy: the wave opens as asked and the "
+              "did-line says the binding was not established, with what was "
+              "looked for: %r" % ((said, widths, did),),
+              said == (0, {"kind": "dispatch",
+                           "lines": ["dispatch a wave at width 2"]})
+              and widths == [(2, "executor.waveWidth 2")] and len(did) == 1
+              and did[0].startswith("task-tree binding not established for the "
+                                    "loaded hooks: ")
+              and "installed_plugins.json" in did[0])
+    finally:
+        _Env.CLAUDE_HOME[0] = None
+        _harness.remove_tree(base)
+
+
+def _undeclared_units(check):
+    """A path the member changed and never declared is the integration's
+    question, asked as a decision; `widen` declares it, integrates it with
+    that word and re-gates on the phase tree."""
+    M, _w = _unit_driver("drive_phase_undeclared")
+    task_u = _step_task("P1.2")
+    phase = _step_phase([_step_task("P1.1", status="done"), task_u], key="phase")
+    asked = json.dumps({"decision": {"paths": ["notes.txt"]}})
+    took = json.dumps({"paths": ["src/f2.txt", "notes.txt"], "regate": False,
+                       "base": _WAVE_BASE, "headBefore": _HEAD_B})
+
+    def integrate(args):
+        return (0, took, "") if "--undeclared" in args else (3, asked, "")
+    calls = _step_rig(M, phase, answers={"integrate-task.py": integrate})
+    rows = []
+    M.wave_row = lambda ctx, action, summary, details: rows.append(action)
+    state, ctx = {}, _step_ctx()
+    said = _caught(M.integrate_member, ctx, state, phase, task_u)
+    pending = dict(state.get("pending") or {})
+    check("wu1 a path the task changed and never declared is a decision naming "
+          "it, and the integration that asked is not marked done, so no close "
+          "runs over it: %r" % ((_text_of(said), pending, _scripts(calls), rows),),
+          _first_line(said) == "decide undeclared-change P1.2: changed outside "
+                               "its files: notes.txt"
+          and pending == {"decision": "undeclared-change", "task": "P1.2",
+                          "start": M.start_key(task_u), "why": "notes.txt",
+                          "paths": ["notes.txt"]}
+          and _scripts(calls) == [("integrate-task.py", "audit-plan.json")]
+          and "integrated" not in state and rows == [])
+    del calls[:]
+    answered = _caught(M.apply_answer, ctx, state, _step_plan(phase), phase,
+                       pending, "widen", "")
+    said = _caught(M.integrate_member, ctx, state, phase, task_u)
+    sent = [a for s, a, _i in calls if s == "integrate-task.py"]
+    check("wu2 widen declares the path, integrates it with that word, re-gates "
+          "on the phase tree and leaves the close free to run: %r"
+          % ((answered, said, _scripts(calls), sent, ctx["did"], rows),),
+          answered is None and said is None
+          and _scripts(calls) == [("audit-task.py", "scope"), ("audit-task.py", "note"),
+                                  ("integrate-task.py", "audit-plan.json"),
+                                  ("run-test-gate.py", "audit-plan.json")]
+          and calls[0][1][-2:] == ["--files", "src/f2.txt,notes.txt"]
+          and sent == [["audit-plan.json", "P1.2", "--project", "/nowhere", "--json",
+                        "--undeclared", "widen"]]
+          and ctx["did"] == ["P1.2 widened by notes.txt (widened by the "
+                             "integration answer)", "integrated P1.2",
+                             "re-gate P1.2 green"]
+          and rows == ["task.integrated"] and "pending" not in state)
+
+
+def _crash_units(check):
+    """A session that dies between a member's integration and its close leaves
+    the integration marked for that start, so the next step closes without
+    carrying the tree again or sending anyone back."""
+    M, _w = _unit_driver("drive_phase_wave_crash")
+    task_u = _step_task("P1.2")
+    phase = _step_phase([_step_task("P1.1", status="done"), task_u], key="phase")
+    took = json.dumps({"paths": ["src/f2.txt"], "regate": False,
+                       "base": _WAVE_BASE, "headBefore": _HEAD_B})
+    fresh = json.dumps({"records": [], "head": _HEAD_B})
+
+    def integrate(args):
+        return 0, (fresh if "--refresh-records" in args else took), ""
+    calls = _step_rig(M, phase, filed={("P1.2", "executor"): _filed_executor()},
+                      answers={"integrate-task.py": integrate})
+    M.advance_member = lambda ctx, state, task_, tree: None
+    rows = []
+    M.wave_row = lambda ctx, action, summary, details: rows.append(action)
+    real_close = M.close_task
+
+    def crash(ctx, state, phase_, task_, intent_basis=None):
+        raise RuntimeError("the session died after P1.2 was integrated")
+    M.close_task = crash
+    state = _wave_state({"P1.2": _WAVE_TREE2})
+    first = _caught(M.advance, _step_ctx(), state, _step_plan(phase), phase,
+                    task_u, tree=_WAVE_TREE2)
+    carried = [a for s, a, _i in calls
+               if s == "integrate-task.py" and "--refresh-records" not in a]
+    check("wc1 the fixture crashes where it means to: P1.2's tree is integrated "
+          "and that is marked for its start, and the close after it died: %r"
+          % ((first, carried, rows, state.get("integrated")),),
+          first == ("raised", "RuntimeError: the session died after P1.2 was "
+                              "integrated")
+          and len(carried) == 1 and rows == ["task.integrated"]
+          and M._marked(state, "integrated", task_u) == {"regate": False,
+                                                         "followers": []})
+    M.close_task = real_close
+    del calls[:]
+    again = _caught(M.advance, _step_ctx(), state, _step_plan(phase), phase,
+                    task_u, tree=_WAVE_TREE2)
+    scripts = _scripts(calls)
+    check("wc2 a rerun after the crash neither re-integrates nor re-dispatches: "
+          "no integration verb carries the tree, no brief is written, one row "
+          "per integration, and the close commits and closes P1.2: %r"
+          % ((again, scripts, rows),),
+          again is None and ("integrate-task.py", "audit-plan.json") not in [
+              (s, a[0]) for s, a, _i in calls if "--refresh-records" not in a]
+          and not [s for s in scripts if s[0] == "audit-lookup.py"]
+          and rows == ["task.integrated"]
+          and scripts[-2:] == [("commit-task-work.py", "audit-plan.json"),
+                               ("audit-task.py", "done")])
+
+
+_RED_LINE = ("decide gate-red P1.1: recorded gate red (recorded gate red); no run "
+             "recorded with it")
+
+
+def _red_sibling_units(check):
+    """A wave's walk takes every member's due step: a red sibling's decision is
+    parked while a green one closes, and is printed once nothing else is due."""
+    M, _w = _unit_driver("drive_phase_red_sibling")
+    phase, calls, rows, retired = _wave_plan_rig(M, [_step_task("P1.1"),
+                                                     _step_task("P1.2")])
+    M.gate_basis_holds = lambda ctx, manifest, pending: True
+    seen = []
+
+    def advance(ctx, state, manifest, phase_, task_, tree=None):
+        seen.append((task_["id"], tree))
+        if task_["id"] == "P1.1":
+            return M.decision(ctx, state, "gate-red", task_, "recorded gate red")
+        task_["status"] = "done"
+        return None
+    M.advance = advance
+    state = _wave_state({"P1.1": _WAVE_TREE, "P1.2": _WAVE_TREE2})
+    ctx = _step_ctx()
+    said = _caught(M.walk_wave, ctx, state)
+    check("wr1 a red sibling does not hold back a green one: the first member's "
+          "red gate is parked while the second closes in the same walk, each in "
+          "its own tree, and the red one's decision is what is printed, as a "
+          "decision rather than among the dispatches: %r"
+          % ((said, seen, state.get("pending"), state["wave"]["parked"]),),
+          isinstance(said, dict) and said.get("kind") == "decide"
+          and _first_line(said) == _RED_LINE
+          and seen == [("P1.1", _WAVE_TREE), ("P1.2", _WAVE_TREE2)]
+          and (state.get("pending") or {}).get("decision") == "gate-red"
+          and state["wave"]["parked"] == {}
+          and [t["status"] for t in phase["tasks"]] == ["in_progress", "done"])
+    check("wr2 the red task's tree is kept for its retry: the wave still names "
+          "it, and only the closed sibling's tree is taken down: %r"
+          % ((state["wave"]["trees"], retired),),
+          state["wave"]["trees"].get("P1.1") == _WAVE_TREE and retired == ["P1.2"])
+    again = [_caught(M.drive_locked, ctx, state, None, None, ()) for _ in range(2)]
+    check("wr3 the decision is printed again until it is answered: %r"
+          % ([(_c, _first_line(s)) for _c, s in again],),
+          [(c, _first_line(s)) for c, s in again]
+          == [(0, _RED_LINE)] * 2
+          and (state.get("pending") or {}).get("decision") == "gate-red")
+
+
+def _filed_return_at(evidence, task_u, role):
+    """Write `role`'s return for `task_u`'s current start where the filing verb
+    puts it, so `role_return_filed` finds it on disk."""
+    path = _fr.return_path(evidence, task_u, role)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("{}\n")
+    return path
+
+
+def _parked_units(check):
+    """A no-<role>-return decision waits while that role's return is missing
+    and is dropped once it is filed for the start it was raised for - parked
+    in a wave, or pending on a serial task."""
+    evidence = os.path.realpath(tempfile.mkdtemp(prefix="drive-parked-"))
+    try:
+        M, _w = _unit_driver("drive_phase_wave_parked")
+        phase, calls, _rows, _r = _wave_plan_rig(M, [_step_task("P1.1"),
+                                                     _step_task("P1.2")])
+
+        def advance(ctx, state, manifest, phase_, task_, tree=None):
+            if task_["id"] == "P1.1":
+                return M.dispatch_said(ctx, "reviewer", "P1.1", "audit-reviewer",
+                                       "sonnet", ".claude/state/briefs/P1.1/r.md")
+            return M.decision(ctx, state, "no-executor-return", task_, "")
+        M.advance = advance
+        state = _wave_state({"P1.1": _WAVE_TREE, "P1.2": _WAVE_TREE2})
+        ctx = _step_ctx(evidence=evidence)
+        said = _caught(M.walk_wave, ctx, state)
+        parked = state["wave"]["parked"].get("P1.2") or {}
+        sent = [ln for ln in _text_of(said).splitlines()
+                if re.match(r"^dispatch \S+ P1\.\d ", ln)]
+        check("wp0 the fixture parks where it means to: the first member's "
+              "reviewer is dispatched while the second's no-executor-return "
+              "decision waits parked: %r" % ((sent, parked, state.get("pending")),),
+              len(sent) == 1
+              and sent[0] == ("dispatch audit-reviewer P1.1 model=sonnet "
+                              "brief=.claude/state/briefs/P1.1/r.md")
+              and parked.get("decision") == "no-executor-return"
+              and "pending" not in state)
+
+        M, _w = _unit_driver("drive_phase_wave_parked_late")
+        phase, calls, _rows, _r = _wave_plan_rig(M, [_step_task("P1.1"),
+                                                     _step_task("P1.2")])
+        task_u = phase["tasks"][1]
+        stepped = []
+        M.advance = lambda ctx, state, manifest, phase_, task_, tree=None: (
+            stepped.append((task_["id"], tree)) or M.instruction(
+                "dispatch", ["dispatch audit:audit-reviewer %s" % (task_["id"],)]))
+        held = {"decision": "no-executor-return", "task": "P1.2",
+                "start": M.start_key(task_u), "why": ""}
+        state = _wave_state({"P1.2": _WAVE_TREE2}, parked={"P1.2": dict(held)})
+        missing = _caught(M.step_member, _step_ctx(evidence=evidence), state, "P1.2")
+        kept = dict(state["wave"]["parked"])
+        _filed_return_at(evidence, task_u, "executor")
+        late = _caught(M.step_member, _step_ctx(evidence=evidence), state, "P1.2")
+        check("wp1 a no-executor-return decision parked while other dispatches "
+              "were due is dropped on the next run once the member's return is "
+              "filed, and the member advances in its tree; while the return is "
+              "missing it stays parked and the member does not advance: %r"
+              % ((missing, kept, late, state["wave"]["parked"], stepped),),
+              missing == ("parked", None) and kept == {"P1.2": held}
+              and late[0] == "dispatch" and state["wave"]["parked"] == {}
+              and stepped == [("P1.2", _WAVE_TREE2)])
+
+        M, _w = _unit_driver("drive_phase_parked_serial")
+        phase, calls, _rows, _r = _wave_plan_rig(M, [_step_task("P1.1")])
+        task_u = phase["tasks"][0]
+        went = []
+        M.drive_phase = lambda ctx, state, phase_: went.append(1) or (0, "went on")
+        held = {"decision": "no-reviewer-return", "task": "P1.1",
+                "start": M.start_key(task_u), "why": ""}
+        state = {"pending": dict(held)}
+        asked = _caught(M.drive_locked, _step_ctx(evidence=evidence), state,
+                        None, None, ())
+        check("nr0 the fixture parks where it means to: with the reviewer's return "
+              "missing, the pending no-reviewer-return decision is kept and "
+              "printed again: %r" % ((asked, state.get("pending"), went),),
+              asked[0] == 0
+              and _first_line(asked[1]).startswith("decide no-reviewer-return P1.1")
+              and state.get("pending") == held and went == [])
+        _filed_return_at(evidence, task_u, "reviewer")
+        said = _caught(M.drive_locked, _step_ctx(evidence=evidence), state,
+                       None, None, ())
+        check("nr1 a no-reviewer-return decision parked while the reviewer worked "
+              "is dropped on the next run once the reviewer return is filed, and "
+              "the drive goes on to the phase's steps rather than printing it: %r"
+              % ((said, state.get("pending"), went),),
+              said == (0, "went on") and "pending" not in state and went == [1])
+    finally:
+        _harness.remove_tree(evidence)
+
+
+def _parked_rule_units(check, M):
+    """The rule is keyed by role: every role the drive files a return for, and
+    every no-<role>-return name its source can emit."""
+    names = _drive_source_decisions()
+    roles = sorted(_fr.RETURN_ROLES)
+    check("nr4 the source emits a no-<role>-return decision for each task role "
+          "and the rule names exactly that role for it: %r %r"
+          % (names, roles),
+          all(M.parked_return_role("no-%s-return" % (r,)) == r for r in roles)
+          and all("no-%s-return" % (r,) in names for r in roles))
+    unhandled = [n for n in names
+                 if M.parked_return_role(n) is None and n not in M.PHASE_DECISIONS]
+    check("nr5 every no-*-return decision name the drive can emit is a task role "
+          "the parked-return rule drops once filed, or a sign-off decision of "
+          "no task - a new role's decision name fails here by name: %r"
+          % (unhandled,), names and not unhandled)
+    check("nr6 ALLOW: a decision of the same shape that names no role of "
+          "RETURN_ROLES is not read as a role's: %r"
+          % ([M.parked_return_role(n) for n in ("no-phase-review-return",
+                                                "no-banana-return", "no-return",
+                                                "gate-red", None)],),
+          [M.parked_return_role(n) for n in ("no-phase-review-return",
+                                             "no-banana-return", "no-return",
+                                             "gate-red", None)] == [None] * 5)
+
+
+def _tree_setup_units(check):
+    """A member's tree whose setup did not complete is not recorded: the next
+    step asks the tree verb again before anything is dispatched, and no
+    attempt is spent on it."""
+    adopted = json.dumps({"path": _WAVE_TREE, "adopted": True, "base": _WAVE_BASE,
+                          "setup": {"status": "ran"}})
+    failed = json.dumps({"path": _WAVE_TREE, "base": _WAVE_BASE,
+                         "error": "setup exited 1"})
+    for first, label in (("crash", "wt1"), ("fail", "wt3")):
+        M, _w = _unit_driver("drive_phase_tree_%s" % (first,))
+        answers = []
+
+        def task_add(args):
+            said = answers.pop(0)
+            if said == "crash":
+                raise RuntimeError("the session died inside the setup of %s"
+                                   % (_WAVE_TREE,))
+            return said
+        phase, calls, rows, _r = _wave_plan_rig(M, [
+            _step_task("P1.1", status="pending")],
+            answers={("manage-worktrees.py", "task-add"): task_add})
+        stepped = []
+        M.advance = lambda ctx, state, manifest, phase_, task_, tree=None: (
+            stepped.append(tree) or M.instruction(
+                "dispatch", ["dispatch audit:audit-executor %s" % (task_["id"],)]))
+        state = _wave_state({}, tasks=("P1.1",))
+        answers[:] = [first if first == "crash" else (6, failed, ""),
+                      (0, adopted, "")]
+        ctx = _step_ctx()
+        said = _caught(M.step_member, ctx, state, "P1.1")
+        starts = [a for s, a, _i in calls if s == "audit-task.py" and a[0] == "start"]
+        if first == "crash":
+            check("wt1 the fixture crashes where it means to: the tree verb dies "
+                  "inside the setup of P1.1's tree, after P1.1 was started once, "
+                  "and the driver recorded no tree: %r"
+                  % ((said, state["wave"]["trees"], starts, stepped),),
+                  said == ("raised", "RuntimeError: the session died inside the "
+                                     "setup of %s" % (_WAVE_TREE,))
+                  and state["wave"]["trees"] == {} and len(starts) == 1
+                  and stepped == [] and rows == [])
+        else:
+            check("wt3 a setup that fails stops the drive as could-not-run, "
+                  "dispatching nothing and recording no tree: %r"
+                  % ((said, state["wave"]["trees"], stepped),),
+                  said == ("stop", (1, "[drive-phase] P1: stopped - the tree of "
+                                       "P1.1 is made, and its setup did not "
+                                       "complete - could not run, not red, and no "
+                                       "attempt is spent; the next run sets it up "
+                                       "again: setup exited 1"))
+                  and state["wave"]["trees"] == {} and stepped == []
+                  and rows == [])
+        del calls[:]
+        again = _caught(M.step_member, ctx, state, "P1.1")
+        adds = [a for s, a, _i in calls if s == "manage-worktrees.py"]
+        check("%s the next step asks the tree verb again before it dispatches the "
+              "task, records the tree it hands back, dispatches in it, and starts "
+              "nothing again - no attempt spent: %r"
+              % ("wt2" if first == "crash" else "wt4",
+                 (again, adds, _scripts(calls), state["wave"]["trees"], stepped)),
+              again[0] == "dispatch" and len(adds) == 1
+              and adds[0][:2] == ["task-add", "audit-plan.json"]
+              and adds[0][2:5] == ["P1.1", "--base", _WAVE_BASE]
+              and state["wave"]["trees"] == {"P1.1": _WAVE_TREE}
+              and stepped == [_WAVE_TREE]
+              and not [a for s, a, _i in calls if s == "audit-task.py"]
+              and rows == ["task.worktree"])
+
+
+def _adopt_units(check):
+    """A blocked member's tree is kept when its wave closes, and a later wave
+    that runs the task again records the tree the tree verb adopts - at the
+    base it was cut from."""
+    M, _w = _unit_driver("drive_phase_wave_keep")
+    phase, calls, rows, retired = _wave_plan_rig(M, [
+        _step_task("P1.1", status="blocked"), _step_task("P1.2", status="done")])
+    state = _wave_state({"P1.1": _WAVE_TREE}, retired=["P1.2"])
+    ctx = _step_ctx()
+    said = _caught(M.walk_wave, ctx, state)
+    check("wt5 when the wave closes over a blocked member, its tree is recorded "
+          "kept and named, and the wave is dropped with its done row: %r"
+          % ((said, state, ctx["did"], rows),),
+          said is None and "wave" not in state
+          and state.get("keptTrees") == {"P1.1": _WAVE_TREE}
+          and ctx["did"] == ["tree of P1.1 kept for a later wave at %s" % (_WAVE_TREE,),
+                             "wave P1-w1 done"]
+          and rows == ["wave.done"])
+
+    M, _w = _unit_driver("drive_phase_wave_adopt")
+    adopted = json.dumps({"path": _WAVE_TREE, "adopted": True, "base": _WAVE_BASE,
+                          "setup": {"status": "none"}})
+    phase, calls, rows, _r = _wave_plan_rig(
+        M, [_step_task("P1.1"), _step_task("P1.2", status="done")],
+        answers={("manage-worktrees.py", "task-add"): (0, adopted, "")})
+    M.kept_tree = lambda state, task_: (state.get("keptTrees") or {}).get(task_["id"])
+    M.kept_marker = lambda path, task_id: (True, "the marker names %s" % (task_id,))
+    stepped = []
+    M.advance = lambda ctx, state, manifest, phase_, task_, tree=None: (
+        stepped.append(tree) or M.dispatch_said(
+            ctx, "executor", task_["id"], "audit-executor", "sonnet",
+            ".claude/state/briefs/%s/b.md" % (task_["id"],)))
+    state = {"keptTrees": {"P1.1": _WAVE_TREE}, "waves": 1}
+    ctx = _step_ctx()
+    opened = _caught(M.wave_step, ctx, state, _step_plan(phase), phase, 2,
+                     "executor.waveWidth 2")
+    said = _caught(M.wave_step, ctx, state, _step_plan(phase), phase, 2,
+                   "executor.waveWidth 2")
+    wave = state.get("wave") or {}
+    adds = [a for s, a, _i in calls if s == "manage-worktrees.py"]
+    check("wt6 a later wave over the member started again opens on its kept "
+          "tree: the tree verb is asked at the new wave's base, the tree it "
+          "adopts is recorded with the base that tree was cut at, not the new "
+          "wave's - the base its brief names - and the kept record is spent: %r"
+          % ((opened, _text_of(said), wave, adds, state.get("keptTrees")),),
+          opened is None and wave.get("base") == _WAVE_NEW_BASE
+          and wave.get("tasks") == ["P1.1"]
+          and wave.get("trees") == {"P1.1": _WAVE_TREE}
+          and wave.get("bases") == {"P1.1": _WAVE_BASE}
+          and len(adds) == 1 and adds[0][2:5] == ["P1.1", "--base", _WAVE_NEW_BASE]
+          and "keptTrees" not in state
+          and _first_line(said) == ("dispatch audit-executor P1.1 model=sonnet "
+                                    "brief=.claude/state/briefs/P1.1/b.md")
+          and stepped == [_WAVE_TREE]
+          and rows == ["wave.start", "task.worktree"])
+
+
+def _writer_off_units(check):
+    """A decision that asks `resume` of a writer session is asked only while
+    the writer path is on; with `executor.writerModel` unset the same red-first
+    or clause gap offers an answer that leaves the decision, and a pending one
+    that outlived the setting names an answer it does offer - never `retry`
+    where it is not one."""
+    gap = {"gaps": [{"n": 1, "reason": "unanswered", "text": "the clause",
+                     "detail": "no answer"}]}
+    on = {"executor": dict(WRITER_EXECUTOR)}
+    kinds = (("clauses-uncovered",
+              lambda M, ctx, state, task_: M.clauses_uncovered(
+                  ctx, state, task_, gap, ["the clause"])),
+             ("red-refused",
+              lambda M, ctx, state, task_: M.red_refused(
+                  ctx, state, task_, "a test passes without the fix")))
+    for n, (plain, ask) in enumerate(kinds, 1):
+        M, _w = _unit_driver("drive_phase_writer_off_%d" % (n,))
+        task_u = _step_task()
+        phase = _step_phase([task_u], key="phase")
+        calls = _step_rig(M, phase)
+        sessioned = {}
+        M._mark(sessioned, "writer", task_u, {"runs": [{"session": WRITER_SESSION}]})
+        state = json.loads(json.dumps(sessioned))
+        off = _caught(ask, M, _step_ctx(config={}), state, task_u)
+        offered = _offered_of(_text_of(off))
+        twin = _caught(ask, M, _step_ctx(config=on), json.loads(json.dumps(
+            sessioned)), task_u)
+        check("wo%da the session ran, then executor.writerModel was unset: the %s "
+              "the work earns is asked as a decision that does not send anything "
+              "to a session, and offers an answer other than block; the twin with "
+              "the writer path on asks the session's own decision: %r"
+              % (n, plain, (_first_line(off), offered, _first_line(twin))),
+              _first_line(off).startswith("decide %s P1.1: " % (plain,))
+              and offered == ["retry", "block"]
+              and _first_line(twin).startswith("decide %s-writer P1.1: " % (plain,))
+              and _offered_of(_text_of(twin)) == ["resume", "block"])
+        pending = dict(state["pending"])
+        said = _caught(M.apply_answer, _step_ctx(config={}), state, _step_plan(phase),
+                       phase, pending, "retry", "")
+        check("wo%db that decision's own answer leaves it: `retry` asks the start "
+              "verb for a new attempt and the drive goes on with no decision "
+              "pending: %r" % (n, (said, _scripts(calls), state.get("pending"))),
+              said is None and _scripts(calls) == [("audit-task.py", "start")]
+              and "pending" not in state)
+        asked = dict(pending, decision="%s-writer" % (plain,),
+                     session=WRITER_SESSION)
+        stop = _caught(M.apply_answer, _step_ctx(config={}), json.loads(json.dumps(
+            sessioned)), _step_plan(phase), phase, asked, "resume", "")
+        named = re.findall(r"answer ([a-z]+)", stop[1] if len(stop) == 2 else "")
+        check("wo%dc a `resume` answered after the writer path went off stops "
+              "with a word naming only answers that decision offers (resume|block), "
+              "and names at least one: %r" % (n, (stop, named)),
+              stop == (1, "[drive-phase] P1: stopped - executor.writerModel is no "
+                          "longer set, so there is no writer session to resume; "
+                          "answer block with --reason, or set "
+                          "executor.writerModel again and answer resume")
+              and named == ["block", "resume"])
+
+
+def _offered_of(text):
+    """The answers the `--answer a|b|c` word of a decision's text offers."""
+    found = re.search(r"--answer ([a-z-]+(?:\|[a-z-]+)*)", text or "")
+    return found.group(1).split("|") if found else []
+
+
+def _skill_flags(argv):
+    """Every value that follows a `--skill` in `argv`, in order."""
+    argv = list(argv or [])
+    return [argv[i + 1] for i, a in enumerate(argv[:-1]) if a == "--skill"]
+
+
+def _skill_units(check):
+    """The drive hands the task's resolved skills to the session runner, for the
+    writer and for the reviewer alike, and to neither when the task resolves
+    none."""
+    named = ["alpha-house", "beta-house"]
+    writer = {"model": WRITER_MODEL, "budget": "2.5"}
+    M, _w = _unit_driver("drive_phase_session_skills")
+    task_u = _step_task(skills=list(named))
+    _step_rig(M, _step_phase([task_u]))
+    ctx = _step_ctx(stateDir="/nowhere/state")
+    wargv = _caught(M.writer_argv, ctx, task_u, writer, "/p", "/r")
+    rargv = _caught(M.writer_argv, ctx, task_u, writer, "/p", "/r", role="reviewer")
+    check("sk1 the writer's command carries one --skill per skill the task "
+          "resolves to, in order: %r" % ((wargv,),),
+          _flag(wargv, "--role") == "writer" and _skill_flags(wargv) == named)
+    check("sk2 ...and the reviewer's carries the same, beside its own role: %r"
+          % ((rargv,),),
+          _flag(rargv, "--role") == "reviewer" and _skill_flags(rargv) == named)
+    bare_task = _step_task()
+    _step_rig(M, _step_phase([bare_task]))
+    bare = _caught(M.writer_argv, ctx, bare_task, writer, "/p", "/r")
+    check("sk3 a task that resolves no skill gets no --skill at all - the flag is "
+          "not added with an empty name: %r" % ((bare,),),
+          _flag(bare, "--role") == "writer" and "--skill" not in bare)
+
+
 STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("ws-block", "_writer_session_cases"),
           ("rv-block", "_reviewer_session_cases"),
-          ("sk-block", "_session_skill_cases"),
           ("pv-block", "_phase_validation_cases"),
           ("pv4-block", "_phase_cold_cases"),
           ("pv7-block", "_pv_unit_cases"),
@@ -14640,28 +15016,19 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("ds-block", "_submit_cases"),
           ("e2e-signoff", "_e2e_signoff_cases"),
           ("sr2-block", "_redispatch_wave_cases"),
-          ("wo-block", "_writer_off_cases"),
           ("lp-block", "_lint_probe_cases"),
           ("gr-block", "_stale_gate_cases"),
           ("gr4-block", "_stale_reaccept_cases"),
-          ("wv-block", "_wave_cases"),
-          ("wr-block", "_wave_red_sibling_cases"),
-          ("wp-block", "_wave_parked_return_cases"),
-          ("nr-block", "_parked_return_cases"),
           ("wq-block", "_wave_record_cases"),
           ("wqm-block", "_wave_record_mutant_cases"),
           ("wq4-block", "_wave_sibling_record_cases"),
-          ("wc-block", "_wave_crash_cases"),
           ("w1-block", "_width_one_cases"),
-          ("wz-block", "_wave_width_cases"),
           ("fh-block", "_follower_wave_cases"),
           ("fm-block", "_follower_map_cases"),
           ("fi-block", "_follower_index_cases"),
           ("fr-block", "_follower_retire_cases"),
           ("fm2-block", "_follower_shot_cases"),
           ("al-block", "_ascii_locale_cases"),
-          ("wt-block", "_wave_resume_cases"),
-          ("wt5-block", "_wave_adopt_cases"),
           ("kr-block", "_kept_restart_cases"),
           ("wt7-block", "_wave_review_discard_cases"),
           ("wd-block", "_wave_redo_cases"),
@@ -14672,7 +15039,6 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("ar9-block", "_recut_precondition_staged_cases"),
           ("ar18-block", "_recut_describes_staged_cases"),
           ("ta-block", "_set_aside_cases"),
-          ("wh-block", "_wave_hooks_cases"),
           ("imc-block", "_import_note_cases"),
           ("tx-block", "_text_cases"),
           ("sn-block", "_signal_cases"),
@@ -14682,7 +15048,6 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("ce-block", "_close_evidence_cases"),
           ("fv-block", "_review_rules_cases"),
           ("gt-block", "_git_stdin_cases"),
-          ("ci-block", "_ci_cadence_cases"),
           ("cr-block", "_carry_cases"),
           ("cl-block", "_carry_local_cases"),
           ("sl-block", "_slice_cases"),
@@ -14699,6 +15064,8 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("uv-block", "_signoff_verb_cases"),
           ("ux-block", "_steps_unit_cases"),
           ("uw-block", "_steps_verb_cases"),
+          ("e2e-wave", "_e2e_wave_cases"),
+          ("uy-block", "_wave_unit_cases"),
           ("sb-block", "_stage_cases"))
 
 
@@ -14782,122 +15149,6 @@ def _segments(events):
         else:
             out[-1].append(value)
     return out
-
-
-def _ci_cadence_cases(check):
-    """`ci.cadence`: the drive pushes the phase tip to `ci/<phase>` and
-    dispatches the workflow every N closes, without waiting, and reads the run
-    at the next close; a red files a bug; no cadence, no CI call at all."""
-    def clause(detail):
-        return "%s (%s)" % (CI_CADENCE_CLAUSE, detail)
-
-    M, why = _load("ci_cadence_mod")
-    if M is None:
-        check(clause("the driver loads"), False, why)
-        return
-
-    def green(sha):
-        return [{"databaseId": 501, "headSha": sha, "status": "completed",
-                 "conclusion": "success", "url": "https://example.invalid/r/501"}]
-
-    root, mpath = _ci_repo("cadence", {"cadence": {"closes": 3}})
-    calls, events, pushed, heads, run = _ci_run(M, root, mpath, green)
-    seg = _segments(events)
-    closes = [v for k, v in events if k == "close"]
-    shape = [[(a[0], a[1]) if a[0] == "gh" else ("git", a[3]) for a in s]
-             for s in seg]
-    check(clause("the drive closed all four tasks and finished: %r"
-                 % ((closes, run["steps"][-1]),)),
-          closes == list(CI_TASKS) and run["steps"][-1] == DONE)
-    check(clause("no CI call is made at the first or second close; the push and "
-                 "the dispatch are made at the third and only there: %r"
-                 % (shape,)),
-          len(seg) == 5 and seg[0] == [] and seg[1] == []
-          and [a[3] for a in seg[2]][:1] == ["push"]
-          and seg[2][1][:3] == ("gh", "workflow", "run") and len(seg[2]) == 2
-          and not [a for s in seg[3:] for a in s if "push" in a])
-    check(clause("the push carries the phase tip as it stood at the third close "
-                 "to ci/p1, and the workflow is dispatched on that same branch: "
-                 "%r" % (calls[:2],)),
-          len(heads) == 1 and pushed == heads
-          and calls[0][-1] == "+%s:refs/heads/ci/p1" % (heads[0],)
-          and calls[1][-2:] == ("--ref", "ci/p1"))
-    check(clause("it never waits: no `watch`, no exit-status polling, and the "
-                 "fourth task is dispatched and closed while the run is out: %r"
-                 % (calls,)),
-          not [c for c in calls if "watch" in c or "--exit-status" in c]
-          and closes[3] == "P1.4")
-    reads = [c for c in calls if c[:3] == ("gh", "run", "list")]
-    check(clause("the verdict is read once, at the next close - the fourth - and "
-                 "never twice for a run already read: %r" % (shape,)),
-          len(reads) == 1 and shape[3] == [("gh", "run")]
-          and seg[4] == [])
-    check(clause("a green verdict files no bug: %r"
-                 % (_mio.load_manifest(mpath).get("bugs"),)),
-          not _mio.load_manifest(mpath).get("bugs"))
-
-    def red(sha):
-        return [{"databaseId": 777, "headSha": sha, "status": "completed",
-                 "conclusion": "failure", "url": "https://example.invalid/r/777"}]
-    root2, mpath2 = _ci_repo("cadence-red", {"cadence": {"closes": 3}})
-    _calls2, _events2, _pushed2, _heads2, _run2 = _ci_run(M, root2, mpath2, red)
-    bugs = _mio.load_manifest(mpath2).get("bugs") or []
-    check(clause("a red run read at the next close files one bug naming the run "
-                 "and the branch: %r" % (bugs,)),
-          len(bugs) == 1 and "777" in json.dumps(bugs[0])
-          and "ci/p1" in json.dumps(bugs[0]) and bugs[0].get("status") == "open")
-
-    def running(sha):
-        return [{"databaseId": 901, "headSha": sha, "status": "in_progress",
-                 "conclusion": "", "url": "https://example.invalid/r/901"}]
-    root3, mpath3 = _ci_repo("cadence-run", {"cadence": {"closes": 3}})
-    calls3, _e3, _p3, _h3, run3 = _ci_run(M, root3, mpath3, running)
-    check(clause("a run still going at the next close is left alone - no second "
-                 "dispatch is piled on it, nothing is filed, and the drive "
-                 "finishes without waiting: %r" % (calls3,)),
-          len([c for c in calls3 if c[:3] == ("gh", "workflow", "run")]) == 1
-          and run3["steps"][-1] == DONE
-          and not _mio.load_manifest(mpath3).get("bugs"))
-
-    root4, mpath4 = _ci_repo("cadence-absent", None)
-    calls4, _e4, _p4, _h4, run4 = _ci_run(M, root4, mpath4, green)
-    check(clause("with no ci key the drive makes no push and no dispatch at any "
-                 "close, and reads no run: %r" % (calls4,)),
-          calls4 == [] and run4["steps"][-1] == DONE)
-
-    # hours: a pure reading of the clock, asked with an injected `now`.
-    cadence = {"closes": None, "hours": 2}
-    base = {"at": 1000.0, "closes": 1}
-    check(clause("hours: due only once the hours since the last dispatch have "
-                 "elapsed, and closes counted since then do not matter when "
-                 "closes is unset: %r"
-                 % ((M.ci_due(cadence, base, 1000.0 + 7199),
-                     M.ci_due(cadence, base, 1000.0 + 7200)),)),
-          not M.ci_due(cadence, base, 1000.0 + 7199)
-          and M.ci_due(cadence, base, 1000.0 + 7200))
-    both = {"closes": 3, "hours": 2}
-    check(clause("closes and hours together: either one is enough: %r"
-                 % ((M.ci_due(both, {"at": 0.0, "closes": 3}, 10.0),
-                     M.ci_due(both, {"at": 0.0, "closes": 1}, 7200.0),
-                     M.ci_due(both, {"at": 0.0, "closes": 2}, 7199.0)),)),
-          M.ci_due(both, {"at": 0.0, "closes": 3}, 10.0)
-          and M.ci_due(both, {"at": 0.0, "closes": 1}, 7200.0)
-          and not M.ci_due(both, {"at": 0.0, "closes": 2}, 7199.0))
-    rules = _loader.load_script("_config_rules.py", "ci_rules_mod", cache=False)
-    ok, ok_why = rules.ci_cadence_setting({"ci": {"cadence": {"closes": 3}}})
-    absent, absent_why = rules.ci_cadence_setting({})
-    bad, bad_why = rules.ci_cadence_setting({"ci": {"cadence": {"closes": 0}}})
-    empty, empty_why = rules.ci_cadence_setting({"ci": {"cadence": {}}})
-    check(clause("the config reads closes and hours; an absent key is no "
-                 "cadence, and a zero, a non-number or an empty cadence is "
-                 "refused with a reason, never read as the default: %r"
-                 % ((ok, absent, bad, bad_why, empty_why),)),
-          ok and ok["closes"] == 3 and ok_why is None
-          and absent is None and absent_why is None
-          and bad is None and bad_why and empty is None and empty_why
-          and not rules.validate_config({"ci": {"cadence": {"hours": 4}}})[0]
-          and rules.validate_config({"ci": {"cadence": {"closes": 0}}})[0]
-          and "ci" in rules.KNOWN_ROOT)
 
 
 MACHINE_TEXT_CLAUSE = ("a scope widening whose note text holds a run of spaces and "
