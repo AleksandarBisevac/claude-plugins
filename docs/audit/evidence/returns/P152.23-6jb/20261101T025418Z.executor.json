@@ -1,0 +1,34 @@
+{
+  "gates": {
+    "sweep-selftests (tools/reach-diff.py tests/test__output_lints.py tests/test__deps.py tests/test__refs.py)": "pass",
+    "ruff check tools/reach-diff.py": "pass",
+    "vermin -t=3.8- tools/reach-diff.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "tests.expectRedFirst is false on this tdd task: it names no case to prove a red by, so no red-first proof is owed",
+    "at": "2026-11-01T03:11:25Z"
+  },
+  "outcome": {
+    "technical": "tools/reach-diff.py and CONTRIBUTING.md only. R19: the hook now reads REACH_DIFF_BLOCK once at install, next to parent, and writes that value in both the start marker and dump(). rd49 runs a hooked process that rewrites the label before it exits and checks the trace is filed under the label it started with. R32, fixing the class and not just this site: the docstring now has an EXIT CODES list of named refusals and is the only copy of the contract. REFUSALS is parsed from __doc__. Every exit-2 site goes through _refuse(result, out, name, why), which prints 'reach-diff: no comparison made (NAME) - ...', records result['refusal'], and raises ValueError for a name the docstring does not list. The usage, prepare, same, judge and recheck sites all converted. Each case asserts its refusal through _refused(seen, text, name). rd62 fails when a documented name has no asserting case or a case asserts an undocumented one. rd63 pins the ValueError. The recheck now compares each block's written, silent and untraced process multisets for equality, so a difference in either direction refuses (recheck-processes), including extra writers (rd58). It compares case ids, the word after PASS/FAIL, when both runs printed them (rd59, rd46), else the contract count, and says which (rd60). recheck-export and recheck-unreadable are covered by direct _judge cases over hand-written traces (rd56, rd57), and rd61 is the allow direction. New refusal cases: hook-probe (rd52, through a new compare(environ=) parameter carrying a broken PYTHONHOME), export (rd53, missing loose blob), unparsable (rd54), unreadable (rd55). CONTRIBUTING.md now keeps only why the tool exists, the author's obligation, the pointer to `python3 tools/reach-diff.py --help`, and the fact that nothing runs it. R33: same_side short-circuits only on same commit, same tree or byte-identical exports. Sides whose differing files are all non-deciding are measured: a loss exits 1 (rd50, data.json flips a branch). Nothing lost exits 2 'no-conversion' (rd42, journal row), or 0 under --allow-same (rd51). R34: in the hook's ident(), an absolute path outside the export root is now kept verbatim. Paths under the block's temp or home directory become <temp> or <home>. The block's first traced process reads those two directories and hands them down in REACH_DIFF_TEMP and REACH_DIFF_HOME, which traced_env pops. rd47 tells apart two children that differ only in an outside path; rd48 matches the same outside path at both sides; rd29's key now reads '<tree>/data <temp>'. Selftest went from 44 to 61 cases, all passing. Dependants: CONTRIBUTING.md was changed as above. hook_line in tests/test__refs.py is that file's own parameter name, so it is unaffected. parse_args, total and compare in other files are namesakes, also unaffected. compare() only gained an optional keyword. Note: I read the implementation before drafting the tests, because I needed the existing contract to write them; the drafted cases still ran red first.",
+    "descriptive": "reach-diff's exit and refusal contract now lives once in --help with a selftest per named refusal. It files a process under the block it started in, measures changes confined to data files, and keeps outside paths in child keys."
+  },
+  "testsAdded": [
+    "rd47/rd48 outside-path keys in both directions",
+    "rd49 block label captured at install",
+    "rd50 data-file-only change measured and lost",
+    "rd51 no-conversion under --allow-same exits 0",
+    "rd52 hook-probe refusal",
+    "rd53 export refusal",
+    "rd54 unparsable refusal",
+    "rd55 unreadable refusal",
+    "rd56-rd61 recheck refusals over hand-written traces: export, unreadable, extra writer, case ids, case-count fallback, and the allow direction",
+    "rd62 every docstring refusal has a case and vice versa",
+    "rd63 an undocumented refusal name raises",
+    "rd42 rewritten: a journal-only change is measured and refused as no-conversion"
+  ],
+  "claims": "claims:\n1 _refuse is the only exit-2 writer (grep 'no comparison made' shows the format string inside _refuse only); hook block capture is at HOOK_SOURCE 'block = os.environ.get(\"REACH_DIFF_BLOCK\")' beside parent; ident's verbatim else-branch is next((mark ...), arg); same_side returns why only for commit, tree or byte-identical; _no_conversion runs after _judge when nothing decides\n2 mutation probe at scratchpad probe/mutations.py: eleven rows, all landed and all red (listed in redFirst); file sha 7772f6b3 restored after both probe runs; allow direction rd61 red under always-refuse\n3 class: every refusal site in the file goes through _refuse, and the contract case holds docstring, cases and sites together at runtime; the CONTRIBUTING copy of the contract was deleted rather than corrected\n4 the rule that each refusal has a case is enforced by rd62 and rd63, and the docstring sentence says so; CONTRIBUTING says the tool is run by nothing and a review is where a missing run is found\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:3ed52851122210d5f8aa02590094225572b554d8b6a3e0e257bf11e9c6066781\",\"dirtyDigest\":\"sha256:6cd04e915641d4c2a0f2169d6f05fd0503fb282db2d9de6881fb54d51d5221b9\",\"dirtyPaths\":{\"CONTRIBUTING.md\":\"fcf9a20f13b85e4c\",\"tools/reach-diff.py\":\"04829218f5224000\"},\"head\":\"a04a2425\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CONTRIBUTING.md\",\"tools/reach-diff.py\"],\"scopeDigest\":\"sha256:27e135b6ec7a3158840d2f3488fadabe0b9e3e238afa4a56bb69ee2df33b92fd\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

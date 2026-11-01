@@ -90,7 +90,7 @@ def _seeded_repo(prefix):
     checkout writes.
 
     Built ONCE per process and copied for each caller: the init, config, add
-    and commit are the same five git calls every time, and a copy of the
+    and commit are the same git calls every time, and a copy of the
     finished repository - `.git` and all, file times kept - is the same
     repository at a fraction of the cost. Each copy is its own: nothing a case
     does to one reaches the template or another copy. Both live under
@@ -1786,6 +1786,36 @@ def _own_case_cases(check):
                   "pytest body TypeError": "collection-error"}
           and [(f["id"], f["assertion"]) for f in fails]
           == [("test_assert", True), ("test_type", False)])
+
+
+def _seeded_repo_cases(check):
+    """The fixture every git-backed case starts from: one committed file, the
+    line-ending pin in the repository's own config, and a private copy per
+    caller. The docstring states what the helper does without a figure that
+    the code would have to keep matching."""
+    first = _seeded_repo("stamp-seed-a-")
+    second = _seeded_repo("stamp-seed-b-")
+    pin = _harness.git(None, "-C", first, "config", "--local", "core.autocrlf",
+                       prefix=("git",)).strip()
+    log = _harness.git(None, "-C", first, "log", "--format=%s",
+                       prefix=("git",)).split()
+    tracked = _harness.git(None, "-C", first, "ls-files",
+                           prefix=("git",)).split()
+    marker = os.path.join(first, "only-in-first.txt")
+    _write(marker, "x\n")
+    doc = _seeded_repo.__doc__ or ""
+    counted = re.findall(
+        r"\b(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+git\s+calls",
+        doc, re.IGNORECASE)
+    check("ssr1 the seeded repository holds the single seed commit with its "
+          "one tracked file and the line-ending pin in its own config, and a "
+          "file added to one copy is absent from the next: pin=%r log=%r "
+          "tracked=%r" % (pin, log, tracked),
+          pin == "false" and log == ["seed"] and tracked == ["src/mine.py"]
+          and not os.path.exists(os.path.join(second, "only-in-first.txt")))
+    check("ssr2 the helper's docstring says what it does without writing a "
+          "number of git calls: counted=%r" % (counted,),
+          bool(doc) and "same git calls every time" in doc and not counted)
 
 
 def _env_cases(check):
@@ -6894,6 +6924,7 @@ def _su_env_cases(check):
     _harness.stage(check, "sr-remove-retry", lambda c: _remove_retry_cases(c))
     _harness.stage(check, "sr-crlf", lambda c: _crlf_cases(c))
     _harness.stage(check, "sr-env", lambda c: _env_cases(c))
+    _harness.stage(check, "sr-seed", lambda c: _seeded_repo_cases(c))
 
 
 def _su_wording_cases(check):

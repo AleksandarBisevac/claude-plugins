@@ -225,8 +225,10 @@
         "severity": "med",
         "file": "tests/test_drive_phase.py:14889-14903 (wt6), 6498-6509 (wt7, inherited)",
         "issue": "The old wt6 drove a later wave over a kept tree and asserted `(\"base: %s\" % (base,)) in brief`. That held audit-lookup.wave_tree's `bases.get(task) or wave.get(\"base\")` precedence (plugins/audit/scripts/status/audit-lookup.py:595-596): the brief must name the base the adopted tree was cut at, not the new wave's base. The new wt6 checks only the driver half (`wave.get(\"bases\") == {\"P1.1\": _WAVE_BASE}`). The claim says 'the brief half is test_audit_lookup's', and the e2e header says the same, but neither holds. bf40's drive state (tests/test_audit_lookup.py:1765) carries no `bases` key. The kept wt7 reads `base:` in a brief only where the member's base equals the wave base, so it would still pass with the `bases` read deleted. A one-line defect `return tree, wave.get(\"base\")` in audit-lookup.wave_tree now turns no case red. The `bases` field crosses the boundary from the drive (writer) to audit-lookup (reader), and this diff removed the only case that held both sides.",
-        "resolution": "Add a case where the two bases differ. Either put one in tests/test_audit_lookup.py beside bf40, with a state whose `wave.bases[\"P1.1\"]` is not `wave.base`, asserting the brief's `base:` line names the member's base and not the wave's. Or put one in uy-block that writes the `state[\"wave\"]` wt6 records to a temp state dir and asks audit-lookup's wave_tree for P1.1, expecting `(_WAVE_TREE, _WAVE_BASE)`, not `_WAVE_NEW_BASE`. Then correct the claim and the e2e-wave header sentence.",
-        "fixTask": "P152.25-6jb"
+        "resolution": "fixed in P152.25-6jb (a04a2425daf0): Add a case where the two bases differ. Either put one in tests/test_audit_lookup.py beside bf40, with a state whose `wave.bases[\"P1.1\"]` is not `wave.base`, asserting the brief's `base:` line names the member's base and not the wave's. Or put one in uy-block that writes the `state[\"wave\"]` wt6 records to a temp state dir and asks audit-lookup's wave_tree for P1.1, expecting `(_WAVE_TREE, _WAVE_BASE)`, not `_WAVE_NEW_BASE`. Then correct the claim and the e2e-wave header sentence.",
+        "fixTask": "P152.25-6jb",
+        "commit": "a04a2425daf0",
+        "status": "fixed"
       },
       {
         "id": "P152-R22",
@@ -287,21 +289,30 @@
         "severity": "med",
         "file": "tools/reach-diff.py:781-831 (_tree_entries, same_tree, same_side); docstring 38-39",
         "issue": "contradicts task clause \"or after the task's work is committed (when a phase review re-runs a task gate), copies exactly the base commit and reports 'lost: 0 lines'\": sameness is judged over the WHOLE tree, so any non-ignored difference unrelated to the module or the suite makes the sides 'differ' and the comparison runs and exits 0 over a byte-identical module and suite - the same vacuous pass. Probe (scratchpad rd-probe/probe_same.py over a fixture checkout of the task tree's module): clean checkout `--base HEAD --head WORKTREE` -> exit 2 'the head is the base'; the same checkout plus one untracked `journal.jsonl` -> exit 0, 'lost: 0 lines reached at HEAD and not at WORKTREE', same False. The project checkout a phase review runs in is never that clean: the drive itself keeps docs/audit/journal/*.jsonl and docs/audit/evidence/* modified and writes untracked docs/audit/evidence/returns/<task>/ (git status of the project shows all three now), so the scenario the clause names still passes vacuously there. The docstring's 'Sides that differ anywhere, in any file, are measured: a task that changed nothing the suite reaches is an honest 0' states the hole as a property.",
-        "resolution": "Decide sameness on what the run can read, not on the whole tree: compute the differing paths (same_tree already walks both), print them, and treat the sides as the same (exit 2 unless --allow-same) when neither the module nor the suite differs and no differing path is a Python source (or, stricter, none lies under a directory on the suite's or module's import path). Add the other-direction case beside rd31: a clean fixture checkout plus one untracked non-.py file must still exit 2, and rd39 (a .py content change) must still be measured."
+        "resolution": "fixed in P152.22-6jb (2eeef20cd257): Decide sameness on what the run can read, not on the whole tree: compute the differing paths (same_tree already walks both), print them, and treat the sides as the same (exit 2 unless --allow-same) when neither the module nor the suite differs and no differing path is a Python source (or, stricter, none lies under a directory on the suite's or module's import path). Add the other-direction case beside rd31: a clean fixture checkout plus one untracked non-.py file must still exit 2, and rd39 (a .py content change) must still be measured.",
+        "fixTask": "P152.22-6jb",
+        "commit": "2eeef20cd257",
+        "status": "fixed"
       },
       {
         "id": "P152-R29",
         "severity": "low",
         "file": "tools/reach-diff.py:946-965 (_recheck_refusal), 1064-1065",
         "issue": "The recheck is accepted as evidence of chance whenever its blocks pass, its traces read, and per block its silent and untraced counts do not EXCEED the first run's. It never compares how many processes of a block wrote at all, nor how many cases ran. A rechecked block that passes having done less - a case that skips or bails early on its environment (a busy resource, a missing tool) and still grades ok, or a child that is never started - misses lost lines for a reason other than chance, and those lines are set apart under `sometimes:` with exit 0. Counts rather than identities also let an equal-count swap through (a different process of the block silent in the recheck than in the first run). So the claim 'it cannot set aside a real loss' holds only for a deterministic base; an environmental miss inside those bounds is set aside, not refused.",
-        "resolution": "Refuse with 2 also when a rechecked block wrote fewer processes than in its first run (count written dumps per block in read_traces, as silent_by_block already does for silent ones), or when its graded case count differs from the first run's; add a fixture case whose recheck skips the reaching case yet passes, expecting exit 2. And name the remaining blind spot (an equal-count swap of silent processes) under WHAT IT CANNOT SEE."
+        "resolution": "fixed in P152.22-6jb (2eeef20cd257): Refuse with 2 also when a rechecked block wrote fewer processes than in its first run (count written dumps per block in read_traces, as silent_by_block already does for silent ones), or when its graded case count differs from the first run's; add a fixture case whose recheck skips the reaching case yet passes, expecting exit 2. And name the remaining blind spot (an equal-count swap of silent processes) under WHAT IT CANNOT SEE.",
+        "fixTask": "P152.22-6jb",
+        "commit": "2eeef20cd257",
+        "status": "fixed"
       },
       {
         "id": "P152-R30",
         "severity": "low",
         "file": "CONTRIBUTING.md:594-610 (dependant of tools/reach-diff.py)",
         "issue": "The bullet the brief names as this file's dependant is now inaccurate, not merely incomplete: it says the tool 'exits 1 naming each line of the module reached before and not after', but lines the recheck does not reach are now listed under `sometimes:` and exit 0; and its list of what 'refuses with 2 rather than passing' omits the two new refusals (the head is the base; a recheck that could not confirm a loss) and --allow-same. The executor answered this dependant as 'still correct but incomplete' and left it.",
-        "resolution": "Add one sentence to the bullet: identical sides refuse with 2 unless --allow-same, and a line the base does not reach again on a recheck is listed as reached only sometimes and does not fail it - or route it as a follow-up task on CONTRIBUTING.md."
+        "resolution": "fixed in P152.22-6jb (2eeef20cd257): Add one sentence to the bullet: identical sides refuse with 2 unless --allow-same, and a line the base does not reach again on a recheck is listed as reached only sometimes and does not fail it - or route it as a follow-up task on CONTRIBUTING.md.",
+        "fixTask": "P152.22-6jb",
+        "commit": "2eeef20cd257",
+        "status": "fixed"
       },
       {
         "id": "P152-R31",
@@ -330,9 +341,16 @@
         "file": "tools/reach-diff.py:104-110, 281",
         "issue": "ident() writes every absolute path outside the export root as the single placeholder `<path>`. So two different children, e.g. `MODULE exit-hard /etc/a` and `MODULE exit-hard /etc/b`, have one key and still match as 'the same blind spot'. The 'WHAT A KEY CANNOT TELL APART' paragraph lists children with the same arguments and arguments that vary between runs, but not this collapse that the placeholder itself causes. A swap like this shows up as a false loss or a mislabelled blind spot rather than a hidden one, which is why it is only low.",
         "resolution": "Add the collapse to the WHAT A KEY CANNOT TELL APART paragraph. Or use the placeholder only for paths under the scratch or temp directory and keep other absolute paths verbatim, since those are stable between runs."
+      },
+      {
+        "id": "P152-R35",
+        "severity": "low",
+        "file": "tests/test_stamp_verification.py:1815-1817",
+        "issue": "ssr2 is a per-instance prose pin: it greps one docstring (_seeded_repo.__doc__) for '<N> git calls' and also requires the literal phrase 'same git calls every time'. It does NOT duplicate the prose-number lint (checked: _output_lints._prose_number_claim returns None for 'the init, config, add and commit are the same five git calls every time', for '5 git calls' and for 'twelve git calls', because 'N <noun>' is a shape the lint deliberately refuses, see prose_number_claims 'WHAT IT CANNOT SEE'), so it is not redundant with it. But it guards one sentence of one helper, not the class the lint leaves to the author, and the second conjunct pins wording: any rewording of the docstring turns the suite red with no behaviour changed. The task asked only to delete the number.",
+        "resolution": "Keep the number-free check if a pin is wanted, but drop the 'same git calls every time' conjunct (and bool(doc) only if a missing docstring is deliberately tolerated); or drop ssr2 and rely on the author-enforced rule. Do not remove it on the grounds that the lint covers it: the lint does not."
       }
     ],
-    "outcome": "[findings: 34 - 0 high, 12 med, 22 low; 21 with a recorded fix commit]"
+    "outcome": "[findings: 35 - 0 high, 12 med, 23 low; 25 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1871,7 +1889,7 @@
     {
       "id": "P152.20-6jb",
       "title": "fix P152-R16: 'the init, config, add and commit are the same five git calls e...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "'the init, config, add and commit are the same five git calls every time': the body makes four git calls (init, config, add, commit). This is a wrong number written into prose, and it contradicts the filed claims item 7, 'no number written into prose ... comments carry none'.\n\nResolution asked: Delete the number: 'the init, config, add and commit are the same git calls every time'.",
       "files": [
         "tests/test_stamp_verification.py"
@@ -1892,14 +1910,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-01T02:54:15Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -1914,7 +1932,13 @@
       ],
       "fixes": [
         "P152-R16"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-01T03:12:31Z.7c91d3",
+        "status": "passed",
+        "at": "2026-11-01T03:12:31Z"
+      }
     },
     {
       "id": "P152.21-6jb",
@@ -2104,10 +2128,11 @@
     {
       "id": "P152.23-6jb",
       "title": "fix P152-R19: The hook reads the block label in the atexit handler (`os.envir...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The hook reads the block label in the atexit handler (`os.environ.get(\"REACH_DIFF_BLOCK\")` inside dump()), not when it installs. A suite process that clears or replaces os.environ before exiting has its untraced children filed under '(whole file)'. In a staged run that label ran at neither side, so the run refuses with 2 and names the wrong block. This fails safe, but the refusal is misattributed. `parent` is already captured at install time.\n\nResolution asked: Capture `block = os.environ.get(\"REACH_DIFF_BLOCK\")` beside `parent` in _reach_diff_install() and write that value in dump().",
       "files": [
-        "tools/reach-diff.py"
+        "tools/reach-diff.py",
+        "CONTRIBUTING.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -2131,14 +2156,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-01T02:54:18Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -2157,7 +2182,13 @@
       ],
       "fixes": [
         "P152-R19"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-01T03:23:18Z.1cc2d4",
+        "status": "failed",
+        "at": "2026-11-01T03:23:18Z"
+      }
     },
     {
       "id": "P152.24-6jb",
@@ -2256,7 +2287,7 @@
     {
       "id": "P152.25-6jb",
       "title": "fix P152-R21: The old wt6 drove a later wave over a kept tree and asserted `(...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The old wt6 drove a later wave over a kept tree and asserted `(\"base: %s\" % (base,)) in brief`. That held audit-lookup.wave_tree's `bases.get(task) or wave.get(\"base\")` precedence (plugins/audit/scripts/status/audit-lookup.py:595-596): the brief must name the base the adopted tree was cut at, not the new wave's base. The new wt6 checks only the driver half (`wave.get(\"bases\") == {\"P1.1\": _WAVE_BASE}`). The claim says 'the brief half is test_audit_lookup's', and the e2e header says the same, but neither holds. bf40's drive state (tests/test_audit_lookup.py:1765) carries no `bases` key. The kept wt7 reads `base:` in a brief only where the member's base equals the wave base, so it would still pass with the `bases` read deleted. A one-line defect `return tree, wave.get(\"base\")` in audit-lookup.wave_tree now turns no case red. The `bases` field crosses the boundary from the drive (writer) to audit-lookup (reader), and this diff removed the only case that held both sides.\n\nResolution asked: Add a case where the two bases differ. Either put one in tests/test_audit_lookup.py beside bf40, with a state whose `wave.bases[\"P1.1\"]` is not `wave.base`, asserting the brief's `base:` line names the member's base and not the wave's. Or put one in uy-block that writes the `state[\"wave\"]` wt6 records to a temp state dir and asks audit-lookup's wave_tree for P1.1, expecting `(_WAVE_TREE, _WAVE_BASE)`, not `_WAVE_NEW_BASE`. Then correct the claim and the e2e-wave header sentence.",
       "files": [
         "tests/test_drive_phase.py",
@@ -2280,14 +2311,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a04a2425daf0",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tests/test_drive_phase.py only, edited in the task's worktree. The wt6 rig in _adopt_units now loads the driver with `_load` (real write_state) and points ctx stateDir at `_harness.fixture_root(\"drive-adopt-state-\")`, so add_tree's own write lands on disk. New case wt6r reads that file back with `_fr.drive_state` (asserts wave.base == d*40 and wave.bases == {P1.1: c*40}, so the fixture separates the two bases) and asks audit-lookup's `wave_tree` and `wave_tree_lines` for P1.1, expecting `(_WAVE_TREE, _WAVE_BASE)` and exactly one `base:` line naming c*40. Corrected the e2e-wave header sentence (the brief half was attributed to test_audit_lookup.py; now names wt6r) and the 'context pointing at nothing on disk' sentence, and added wt6r to the guarantee map. Gate: `python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_audit_lookup.py` exit 0, `2/2 files ok, 906 cases`. uy-block alone: 43/43 in 0.79 s wall, so its cost did not change materially and .github/sweep-costs.json was not regenerated. ruff check exit 0, vermin -t=3.8- clean. Dependants: tests/test_audit_lookup.py untouched, so its own dependants are unchanged and still correct. test_drive_phase.py's dependants (sweep-costs.json, ci.yml, drive-phase.py, test__runner_output.py, test_run_test_gate.py, test_stamp_verification.py, affected.py, reach-diff.py) are still correct: no helper name was added, renamed or removed, the STAGES table is the same, and drive-phase.py and audit-lookup.py were not edited. The claim the finding names ('the brief half is test_audit_lookup's') is corrected: the brief half is wt6r's.",
+        "descriptive": "wt6r restores coverage across the drive-to-audit-lookup boundary for a wave member whose base differs from the wave's base"
       },
       "startedAt": "2026-11-01T02:20:07Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-01T02:54:11Z",
+      "verifiedBy": [
+        "wt6r: the drive's written state for an adopted member, read back through audit-lookup.wave_tree and wave_tree_lines, names the member's own base (c*40) and not the later wave's base (d*40)"
+      ],
       "notes": [
         {
           "at": "2026-11-01T01:43:51Z",
@@ -2306,12 +2339,23 @@
         "runId": "2026-11-01T02:48:28Z.607aa6",
         "status": "passed",
         "at": "2026-11-01T02:48:28Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "a04a2425daf0",
+        "at": "2026-11-01T02:54:11Z",
+        "return": "docs/audit/evidence/returns/P152.25-6jb/20261101T022007Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task with expectRedFirst false: the behaviour is already correct at HEAD, so HEAD's code holds no red for the helper to find. The case was instead proven by mutation of the code under test: audit-lookup.wave_tree's return mutated to `return tree, wave.get(\"base\")` (landed-assert, __pycache__ purged, restored in the same script, git diff --quiet after = clean) -> `tests/test_drive_phase.py --selftest --stage uy-block` exit 1, `FAIL wt6r ...`, 42/43; restored -> 43/43.",
+        "at": "2026-11-01, mutation probe run in the task's own worktree before submit"
       }
     },
     {
       "id": "P152.26-6jb",
       "title": "fix P152-R22: The old red-cadence drive ran ci_file_red against the real audi...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The old red-cadence drive ran ci_file_red against the real audit-task.py and asserted an open bug in the manifest. The new red case answers audit-task.py from _verb_rig and asserts the drive's argv literally (`bug-add <title> <manifest> --project-dir P --severity high --description -` plus stdin). The kept cycle is the green one, although PLAN.md section 4 lists 'a red files a bug' in the kept cadence cycle, and section 5 item 2 says 'the verbs agree with the drive'. No case in the drive suite now runs the drive's bug-add call through the real verb. If the verb side drifts (a flag renamed, `--description -` refused for bug-add, a new required flag), every drive case stays green while a red CI run in production stops instead of filing its bug. This is the one bug-add caller in drive-phase.py (line 3380).\n\nResolution asked: In _e2e_ci_cycle, after the drive, over the same fixture (no second drive), run `M.ci_file_red(_verb_ctx(root, mpath), {\"sha\": heads[0], \"branch\": \"ci/p1\"}, red_row)` with the real verbs, as _signoff_verb_cases does. Assert it returns None and that the manifest holds one bug with status open whose text names run 777 and ci/p1. That is one verb process.",
       "files": [
         "tests/test_drive_phase.py"
@@ -2332,14 +2376,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-01T02:54:21Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -2354,7 +2398,13 @@
       ],
       "fixes": [
         "P152-R22"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-01T03:25:14Z.39f85f",
+        "status": "passed",
+        "at": "2026-11-01T03:25:14Z"
+      }
     },
     {
       "id": "P152.27-6jb",

@@ -1,0 +1,28 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_stamp_verification.py tests/test__output_lints.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "mode regression with tests.expectRedFirst false; no red owed. Separately checked by hand that the ssr2 regex matches the old wording ('five git calls') and finds nothing in the new one.",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "In tests/test_stamp_verification.py, the _seeded_repo docstring now reads 'the init, config, add and commit are the same git calls every time' (the number removed, as asked). Added _seeded_repo_cases (stage sr-seed, registered in _su_env_cases) with ssr1: the seeded repo holds the single 'seed' commit, tracks only src/mine.py, has core.autocrlf=false in its own config, and a file added to one copy is absent from the next. ssr2: the docstring contains no '<N> git calls' (digit or spelled numeral) and keeps the 'same git calls every time' wording. Command: python3 tools/sweep-selftests.py tests/test_stamp_verification.py tests/test__output_lints.py -> '2/2 files ok, 542 cases'; the su-env stage alone prints ssr1 and ssr2 PASS, 37/37. Dependants (.github/sweep-costs.json, tests/test__filed_returns.py, tools/affected.py, tools/sweep-selftests.py, tools/verify.sh, PLUGIN-BUILD-GUIDE.md; names _crlf_cases, _scan, _worktrees): still correct. Only a docstring word and one new case function were added; no existing name changed. The sweep-costs table has no figure for the new sr-seed label, so it falls back to the suite's figure. No git-call bound is pinned by any existing case, so nothing to keep consistent.",
+    "descriptive": "The seeded-repo helper's docstring no longer carries a git-call count, and two cases lock its behaviour and the absence of the number."
+  },
+  "testsAdded": [
+    "ssr1: seeded repo is one 'seed' commit tracking src/mine.py with core.autocrlf=false, and copies are independent",
+    "ssr2: _seeded_repo docstring states no number of git calls"
+  ],
+  "casesAdded": [
+    [
+      "ssr1",
+      "ssr2"
+    ]
+  ],
+  "claims": "claims:\n1 tests/test_stamp_verification.py:93 now says 'the same git calls every time'; the body (init, config, add, commit) is unchanged\n2 ssr2 regex run on the old sentence returns ['five git calls'], on the new docstring returns []; ssr1 checks fixture behaviour (single commit, tracked file, pin, copy independence); not mutated in the shared tree\n3 grep -n -i 'five\\|git calls' tests/test_stamp_verification.py: line 93 fixed; line 915 'one of five things' is a different sentence about a clock bound, left because it is outside this finding; lines 1011, 2315, 4083, 4579, 4648 mention git calls with no number, left\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 number deleted, pointer kept (the code that makes the calls sits directly below the docstring)",
+  "stamp": "audit-stamp: {\"content\":\"sha256:cc05a98b51809e53525542cd5da64bf39cc6028f33b8511607699908fcf965f6\",\"dirtyDigest\":\"sha256:29e5975b3a4e093ccb63cfe40256b92c1dc6175ebb47544595dac073ab3a1d6f\",\"dirtyPaths\":{\"tests/test_stamp_verification.py\":\"49c984e5542ad194\"},\"head\":\"a04a2425\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:7c3d6a60f51468d0d5027d503308f934504076e26fe75c89b91547bc646702d2\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

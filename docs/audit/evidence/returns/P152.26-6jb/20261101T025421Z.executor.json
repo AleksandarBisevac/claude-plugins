@@ -1,0 +1,24 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "Regression task, tests.expectRedFirst false: wv9 locks behaviour HEAD already has, so the helper's HEAD run would be green by construction. Red was shown by mutation instead, in a throwaway copy of the task tree (git ls-files rsynced to scratchpad/probe/tree; no shared or non-owned file touched), probe scratchpad/probe/mutations.py: each row asserts the anchor occurs exactly once and the mutant landed, purges __pycache__, runs `tests/test_drive_phase.py --selftest --stage e2e-wave`, restores in finally. BASELINE exit=0 PASS wv9 19/19; driver drops `--severity high` -> FAIL wv9 18/19; driver sends `--description -` with no stdin -> FAIL wv9 17/19; verb refuses every description -> FAIL wv9 18/19; verb writes description None -> FAIL wv9 18/19; verb writes severity low -> FAIL wv9 18/19; RESTORED exit=0 PASS wv9 19/19.",
+    "at": "2026-11-01, probe run after the case was green; no helper run (none owed)"
+  },
+  "outcome": {
+    "technical": "tests/test_drive_phase.py: _e2e_ci_cycle now ends by calling a new _e2e_ci_red_filed(check, M, root, mpath, heads). Over the same fixture and with no second drive, it runs M.ci_file_red(_verb_ctx(root, mpath), {sha: heads[0], branch: ci/p1}, red_row{databaseId 777, conclusion failure, url}). M comes from _load, so run_verb goes through _in_process_verbs and the real audit-task.py bug-add runs in-process (_harness.run_script_in_process), with no subprocess added. New case wv9 asserts: stop is None; the manifest holds exactly one bug; its status is open and its severity high; its title equals 'CI red on ci/p1 at <heads[0][:7]> (run 777)'; and its description, sent on stdin, contains 'run 777', 'ci/p1', heads[0], 'ended failure' and the run URL. Runs: `python3 tools/sweep-selftests.py tests/test_drive_phase.py` exit 0, '1/1 files ok, 763 cases', e2e-wave block 20.0s. Stage run `--stage e2e-wave`: exit 0, 'ALL PASS: 19/19 cases passed', 'PASS wv9 ...' printed. ruff check exit 0, vermin -t=3.8- exit 0. .github/sweep-costs.json not regenerated: it holds no per-block figure for e2e-wave, and the change adds one in-process verb run. Dependants: .github/sweep-costs.json, .github/workflows/ci.yml, drive-phase.py, tests/test__runner_output.py, tests/test_run_test_gate.py, tests/test_stamp_verification.py, tools/affected.py and tools/reach-diff.py are all still correct. The change only adds a function and a case; no existing name, stage label or block was renamed or removed, and _actions, _counting, _follower_cases and _git_said are untouched. drive-phase.py is read, not edited.",
+    "descriptive": "The drive suite again files a CI-red bug through the real audit-task bug-add verb and checks what lands in the manifest."
+  },
+  "testsAdded": [
+    "wv9: in the kept CI cadence e2e cycle, ci_file_red runs against the real audit-task.py bug-add (in-process) and the manifest gains exactly one open high-severity bug, with the title the drive built and a stdin description naming run 777, ci/p1, the pushed sha, the conclusion and the URL"
+  ],
+  "casesAdded": [
+    "wv9"
+  ],
+  "claims": "claims:\n1 tests/test_drive_phase.py _e2e_ci_red_filed docstring: 'filed through the real audit-task.py bug-add' - _load sets module.run_verb = _in_process_verbs(module), which runs _loader.script_path('audit-task.py') via _harness.run_script_in_process; the stage output shows the BUG-1 row in the manifest\n2 five mutations (2 driver, 3 verb), each landed-asserted, with __pycache__ purged -> FAIL wv9 every time -> restored PASS wv9 19/19 (probe output in redFirst.basis)\n3 grep -n 'bug-add' drive-phase.py: the one call at line 3380 (ci_file_red), now exercised for real by wv9; the _ci_units rigged red case is left as it is because it pins the argv shape, which is a separate claim\n4 n/a - no rule to an agent\n5 n/a - no property recorded (the block timing 20.0s is one reading, not written into any document)\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:8de458c9d46818ae3b9d882e5f72f44f2dd27ed634cd42ad8d83de5fc7c964be\",\"dirtyDigest\":\"sha256:1808bb0f638266519c691f870c399c131e8dd8e29a20c542c81367291ea15994\",\"dirtyPaths\":{\"tests/test_drive_phase.py\":\"003304881960bc16\"},\"head\":\"a04a2425\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:575582047fd7814bced5c4e98c99d53f09815168be16d31d92734d5cd1d12546\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

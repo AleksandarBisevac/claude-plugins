@@ -1,0 +1,19 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "tests/test_stamp_verification.py:1815-1817",
+   "issue": "ssr2 is a per-instance prose pin: it greps one docstring (_seeded_repo.__doc__) for '<N> git calls' and also requires the literal phrase 'same git calls every time'. It does NOT duplicate the prose-number lint (checked: _output_lints._prose_number_claim returns None for 'the init, config, add and commit are the same five git calls every time', for '5 git calls' and for 'twelve git calls', because 'N <noun>' is a shape the lint deliberately refuses, see prose_number_claims 'WHAT IT CANNOT SEE'), so it is not redundant with it. But it guards one sentence of one helper, not the class the lint leaves to the author, and the second conjunct pins wording: any rewording of the docstring turns the suite red with no behaviour changed. The task asked only to delete the number.",
+   "resolution": "Keep the number-free check if a pin is wanted, but drop the 'same git calls every time' conjunct (and bool(doc) only if a missing docstring is deliberately tolerated); or drop ssr2 and rely on the author-enforced rule. Do not remove it on the grounds that the lint covers it: the lint does not."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Clause: 'the init, config, add and commit are the same five git calls every time' / resolution 'Delete the number'. The diff at tests/test_stamp_verification.py:93 yields 'are the same git calls every time', the body unchanged, so the clause is met. The claim describes the diff: docstring edit plus _seeded_repo_cases (ssr1, ssr2) staged as sr-seed in _su_env_cases. Dependants (sweep-costs.json, test__filed_returns.py, affected.py, sweep-selftests.py, verify.sh, PLUGIN-BUILD-GUIDE.md) are unaffected: one docstring word and a new function; no existing name changed.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "The executor filed not-attempted (mode regression, expectRedFirst false, no red owed) with a by-hand check that the ssr2 regex matches 'five git calls'; I did not see ssr1/ssr2 run red in the tree. ssr1 can fail by reading: pin=='false' fails if the config line is removed from _seeded_repo; log/tracked fail if the seed commit or file changes; the independence conjunct fails if _seeded_repo returned the shared template instead of a copy (the marker written into 'first' would then exist in 'second'). ssr2 can fail on the old wording or a reworded docstring.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "tests.gate is the literal command 'python3 tools/sweep-selftests.py tests/test_stamp_verification.py', which selects the whole suite file (several thousand lines); reading it for tests that would survive deletion of a behaviour this docstring-only change names is not bounded by one named behaviour, and no behaviour was changed."
+ },
+ "verdict": "findings",
+ "tasks": []
+}
