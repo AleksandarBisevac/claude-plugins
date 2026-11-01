@@ -453,22 +453,30 @@
         "severity": "med",
         "file": "tools/reach-diff.py:1625-1656 (main_shape), 1546-1560 (main)",
         "issue": "The shape is not closed: main_shape() checks only for CALLS before the try and never looks at the try's `finally`, so statements in main that raise without a call get out of main and end the process with exit 1 and a traceback. That is the R38/R39 class again, and it is outside every blind spot the docstring names. Probed on a scratch mirror, each mutation applied (landed=1): (a) `    last = argv[-1][0] if argv else ''` before the try - walk clean, --selftest ALL PASS 109/109, `reach-diff.py x ''` exits 1 with IndexError (the unmutated file exits 2 under `usage`); (b) a `finally:` clause holding `if '' in argv: raise RuntimeError('finally')` - walk clean, 109/109, the same CLI exits 1 with RuntimeError. `raise RuntimeError`, `assert argv` and `x = 1 // 0` before the try are also clean to the walk. The docstring's 'calls nothing before the region' is accurate, but it does not deliver the 'ONE PATH TO AN EXIT' it is there to hold.",
-        "resolution": "Check an invariant here rather than adding more forms to the enumeration. Require main's body to be the docstring plus one Try with no `finalbody` and no `orelse`, and move the `out`/`run` defaulting inside the try. A handler can default `out` with a call-free expression such as `out if out is not None else sys.stdout`, or the walk can allow only `Assign` statements whose value tree holds no Call/Subscript/BinOp/Raise/Assert. Add rd74 mutations for `raise RuntimeError` before the try, a subscript before the try, and a `finally` that raises.",
-        "fixTask": "P152.39-6jb"
+        "resolution": "fixed in P152.39-6jb (88e13a1a8487): Check an invariant here rather than adding more forms to the enumeration. Require main's body to be the docstring plus one Try with no `finalbody` and no `orelse`, and move the `out`/`run` defaulting inside the try. A handler can default `out` with a call-free expression such as `out if out is not None else sys.stdout`, or the walk can allow only `Assign` statements whose value tree holds no Call/Subscript/BinOp/Raise/Assert. Add rd74 mutations for `raise RuntimeError` before the try, a subscript before the try, and a `finally` that raises.",
+        "fixTask": "P152.39-6jb",
+        "commit": "88e13a1a8487",
+        "status": "fixed"
       },
       {
         "id": "P152-R45",
         "severity": "low",
         "file": "tools/reach-diff.py:1716-1745 (_read_node bound branch), 1575 (_REFUSAL_MAKERS)",
         "issue": "The bound check reads only Load contexts, so the refusal makers can be rebound without a report: a module-level `_refuse = <other>`, a second `def _refuse(...)`, or `global _refuse; _refuse = print` inside a function no case reaches. The last one was probed: walk clean and --selftest 109/109. That contradicts the requested 'any rebinding of the refusal function is reported' and the docstring's 'none of which, nor `Refusal`, is used other than called' (a Store is a use). The same gap lets `main` or `settle` be rebound (`settle = lambda result, out: result['code']`, `main = lambda ...` at top level), which leaves the walk's name-based checks of `return settle(...)` and `sys.exit(main(...))` checking a name that no longer points at the shape. The runtime cases catch the unconditional forms of those two, but the walk does not.",
-        "resolution": "Report any Store, Del, `global` declaration or extra FunctionDef/ClassDef of `_refuse`, `_refusal`, `Refusal`, `settle` and `main` other than the one definition each. Add rd75 cases for `_refuse = x` at top level, a second `def _refuse`, and `global _refuse` inside a function."
+        "resolution": "fixed in P152.39-6jb (88e13a1a8487): Report any Store, Del, `global` declaration or extra FunctionDef/ClassDef of `_refuse`, `_refusal`, `Refusal`, `settle` and `main` other than the one definition each. Add rd75 cases for `_refuse = x` at top level, a second `def _refuse`, and `global _refuse` inside a function.",
+        "fixTask": "P152.39-6jb",
+        "commit": "88e13a1a8487",
+        "status": "fixed"
       },
       {
         "id": "P152-R46",
         "severity": "low",
         "file": "tools/reach-diff.py:56-77 (ONE PATH TO AN EXIT), 1608-1614 (_guard_exits), 186-189 (EXIT CODES 1)",
         "issue": "Code that runs outside main can end the process with 1, and neither the walk nor WHAT IT CANNOT SEE covers it. Examples are a statement in the `__main__` block before `sys.exit(main(...))` (the block already calls `safe_stdio()` and imports `_output` there), module-level code at import time (the `import _output` / `install_path()` preamble), and a top-level `raise`. Probed: `if not sys.argv[1:]: raise RuntimeError('guard')` in the `__main__` block is walk-clean, --selftest is 109/109, and running with no arguments exits 1 with a traceback. EXIT CODES still says 1 means 'a line lost, and nothing else', with only 'the failures of main's own handlers aside'.",
-        "resolution": "Either hold the `__main__` block to its shape in the walk (the `_output` import, `safe_stdio()`, the `--selftest` branch and the one exit, nothing else) and name import-time failure (a missing `_output`, a broken preamble) under WHAT IT CANNOT SEE, or name both there. Also add that exception to the EXIT CODES 1 sentence's 'aside' clause."
+        "resolution": "fixed in P152.39-6jb (88e13a1a8487): Either hold the `__main__` block to its shape in the walk (the `_output` import, `safe_stdio()`, the `--selftest` branch and the one exit, nothing else) and name import-time failure (a missing `_output`, a broken preamble) under WHAT IT CANNOT SEE, or name both there. Also add that exception to the EXIT CODES 1 sentence's 'aside' clause.",
+        "fixTask": "P152.39-6jb",
+        "commit": "88e13a1a8487",
+        "status": "fixed"
       },
       {
         "id": "P152-R47",
@@ -482,10 +490,11 @@
         "severity": "med",
         "file": "tools/reach-diff.py:70-105,200-204,330,361-367,1493",
         "issue": "An escape outside the two blind spots the rewritten docstring now names as exact: under PYTHONOPTIMIZE=2 (or python3 -OO) `__doc__` is None, so `REFUSALS = tuple(doc_refusals(__doc__))` is (), and every `_refuse` raises ValueError - the run's own refusal, main's handler, `_escaped`'s stdout attempt AND its StringIO fallback alike - so the ValueError escapes `_entry` and Python exits 1 with a traceback. Probed in a scratch mirror: `PYTHONOPTIMIZE=2 python3 tools/reach-diff.py x ''` exits 1 (`ValueError: refusal 'internal' is not one the docstring names`), the plain run exits 2 under `usage`; `python3 -OO tools/reach-diff.py --help` exits 1 too. That is the module imported successfully, so 'a failure while the module is being imported' does not cover it, and EXIT CODES' '1 - a line lost, and nothing else ... never left to exit 1 with a traceback' is false for it. HEAD behaved the same but its docstring carved it out ('a failure inside main's own handlers ... ends the process with Python's own code'); this diff removed that carve-out. The gate's selftest (run unoptimised) stays green.",
-        "resolution": "Read the refusal list (and --help's text) from the file's source rather than from `__doc__` - e.g. `ast.get_docstring(ast.parse(<source of __file__>))`, which -OO cannot strip - so `REFUSALS` is never empty; add a case running the CLI as a child under PYTHONOPTIMIZE=2 asserting exit 2 under `usage`, and prove it red against the `__doc__` reading."
+        "resolution": "Read the refusal list (and --help's text) from the file's source rather than from `__doc__` - e.g. `ast.get_docstring(ast.parse(<source of __file__>))`, which -OO cannot strip - so `REFUSALS` is never empty; add a case running the CLI as a child under PYTHONOPTIMIZE=2 asserting exit 2 under `usage`, and prove it red against the `__doc__` reading.",
+        "fixTask": "P152.42-6jb"
       }
     ],
-    "outcome": "[findings: 48 - 0 high, 18 med, 30 low; 41 with a recorded fix commit]"
+    "outcome": "[findings: 48 - 0 high, 18 med, 30 low; 44 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -3377,7 +3386,7 @@
     {
       "id": "P152.39-6jb",
       "title": "fix P152-R44: The shape is not closed: main_shape() checks only for CALLS bef...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The shape is not closed: main_shape() checks only for CALLS before the try and never looks at the try's `finally`, so statements in main that raise without a call get out of main and end the process with exit 1 and a traceback. That is the R38/R39 class again, and it is outside every blind spot the docstring names. Probed on a scratch mirror, each mutation applied (landed=1): (a) `    last = argv[-1][0] if argv else ''` before the try - walk clean, --selftest ALL PASS 109/109, `reach-diff.py x ''` exits 1 with IndexError (the unmutated file exits 2 under `usage`); (b) a `finally:` clause holding `if '' in argv: raise RuntimeError('finally')` - walk clean, 109/109, the same CLI exits 1 with RuntimeError. `raise RuntimeError`, `assert argv` and `x = 1 // 0` before the try are also clean to the walk. The docstring's 'calls nothing before the region' is accurate, but it does not deliver the 'ONE PATH TO AN EXIT' it is there to hold.\n\nResolution asked: Check an invariant here rather than adding more forms to the enumeration. Require main's body to be the docstring plus one Try with no `finalbody` and no `orelse`, and move the `out`/`run` defaulting inside the try. A handler can default `out` with a call-free expression such as `out if out is not None else sys.stdout`, or the walk can allow only `Assign` statements whose value tree holds no Call/Subscript/BinOp/Raise/Assert. Add rd74 mutations for `raise RuntimeError` before the try, a subscript before the try, and a `finally` that raises.",
       "files": [
         "tools/reach-diff.py"
@@ -3406,14 +3415,22 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "88e13a1a8487",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/reach-diff.py only. The process path is now closed from OUTSIDE main. The __main__ block is the one statement sys.exit(_entry(sys.argv[1:])). _entry's whole body is one try (safe_stdio, the --selftest dispatch, return main(argv)) whose one handler catches BaseException and returns _escaped(exc). _escaped is one try that refuses through settle, as `interrupted` for an interrupt and `internal` with the exception's own traceback otherwise (_unexpected now formats exc.__traceback__, not format_exc). If the output refuses that write, _escaped's one BaseException handler writes the same refusal to a StringIO and still returns settle's 2. main's two handlers fold into one (`except BaseException: return settle(_escaped_result(out, exc), out)`). main_shape is replaced by function_shape(fn, returns, fallback), applied through _SHAPES: main may return only settle(...); _entry may return main/_selftest/_escaped calls, and its handler must be exactly `return _escaped(...)`; _escaped may return only settle(...). None of the three may yield or run off its end. The two nets must be one try with no else and no finally, with one BaseException handler. guard_shape() compares the block to the exact AST, and exactly one __main__ block is required (recognised by any `if` reading __name__). R44 (pre-try raise, raising finally): _entry catches both. The reviewer's own escapes, run through a freshly exec'd module's real _entry, all exit 2 (rd84): `last = argv[-1][0] if argv else ''`, `raise RuntimeError`, `1 // 0`, `assert`, `raise SystemExit(1)`, a KeyboardInterrupt before the try, and a raising finally. A closed output exits 2 too (rd85). R45: rebound() reads the WHOLE file and reports any binding of a _PINNED name other than its single top-level def/assignment. That covers Store, Del, global/nonlocal, import-as, a parameter, an except-as name, a comprehension target and a second def. _PINNED = main, _entry, _escaped, settle, _unsupported, _refuse, _refusal, REFUSALS. The last three are beyond the five asked, because settle's verdict rests on them. Cases: rd81 (global _refuse; _refuse = print, top-level rebinding, second def, import json as _entry, del, and more) and rd86 (parameter, comprehension). R46: a statement before main's call in the __main__ block is reported by rd73 (print / safe_stdio before the call, else-branch, sys.exit(main(...)), and others). Import-time failure is now named in the docstring. Direct-store case: the 'refusal' key may be spelled only inside _refuse and the walk's two readers. Anywhere else it is reported, except a subscript read, a .get's first argument, or a dict display's key whose value is None. That covers result['refusal']='usage', setdefault, update(refusal=), update({...}), dict(..., refusal=), a dict literal, del, and result[_REFUSAL_KEY] (rd82). The over-fire direction is rd87 (a read and a fresh result's None are no write). New rule rd83: the walked code may take no name from below the selftest section, except _entry's call of _selftest. Without it, a below-mark function holding os._exit called from main was a third blind spot, and the docstring's list could not stay at exactly two. ONE PATH TO AN EXIT is rewritten, and its WHAT IT CANNOT SEE names exactly: a name reached by a string (exec, eval, getattr and the like), and a failure while the module is being imported, before _entry exists. EXIT CODES drops the 'main's own handlers aside' carve-out. Commands: `python3 tools/reach-diff.py --selftest` gave ALL PASS 151/151, exit 0. `python3 tools/sweep-selftests.py tools/reach-diff.py tests/test__output_lints.py tests/test__deps.py` exited 0 (3/3 files ok, 599 cases). ruff exit 0, vermin exit 0. Mutation probe: the script is <scratchpad>/probe/mutations.py. It runs in scratch mirrors of tools/, plugins/, .github/ and tests/, asserts landed=1, purges __pycache__, and restores in the same run. Baseline 151/151 exit 0. Red: guard shape off -> rd73; other returns allowed -> rd74 (+rd79); run-off unread -> rd74; yield unread -> rd74; any handler counts as catch-all -> rd79; finally allowed -> rd79; handler may do more before returning -> rd79; _entry catching Exception -> rd84 (+rd64, rd73, rd79, rd83); _escaped fallback writing stdout -> rd85; rebinding unreported -> rd81 and rd86; parameter not a binding -> rd86; literal key / keyword / key constant unread -> rd82 each; reads not exempted (over-fire) -> rd87; below-mark names unread -> rd83. A first handler-shape mutation (len >= 1 while still reading body[0]) survived because it changed nothing reachable. The re-probe (len >= 1 reading body[-1]) went red on rd79. Dependants: CONTRIBUTING.md's usage line and `--help` pointer are still correct, since the CLI and its flags are unchanged and --help still prints __doc__. hook_line (tests/test__refs.py) is unchanged. The parse_args/settle/total hits elsewhere are other files' own functions sharing a name, so nothing they import changed. Residuals, not claimed by the docstring: a process killed by a signal, and Python's own exit 120 when flushing a refused stdout at shutdown, are not exit 1 and not exits main raises. claims:\n1 tools/reach-diff.py: _entry/_escaped/main and guard_shape/function_shape/rebound/_refusal_written/_shapes are what ONE PATH TO AN EXIT says; WHAT IT CANNOT SEE lists exactly the two items asked, with the below-mark-reference rule added so that stays true\n2 every new/rewritten case red by mutation in a scratch mirror (table above), restored and verified in the same run; over-fire direction rd87 red under 'reads not exempted'\n3 class, not instance: the statement-by-statement policing of main is replaced by an outer net; the bare shapes the reviewer named (pre-try raise, finally, guard statement, rebinding, direct store) each carry a case\n4 the rule lives in the walk (refusal_sites, run by rd64 over this file) and the docstring names refusal_sites() in the rule's own sentence\n5 n/a - no property measured\n6 the walk reads the AST's operations (bindings, the try's handlers, the guard's exact AST), not text\n7 n/a - no number written into prose",
+        "descriptive": "reach-diff's exit is now closed from outside: one __main__ statement into a catch-all _entry, pinned bindings and a refusal key only _refuse writes, each rule held by the walk and proven red by mutation"
       },
       "startedAt": "2026-11-01T05:05:48Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-01T05:37:19Z",
+      "verifiedBy": [
+        "rd73 rewritten: the __main__ block is exactly sys.exit(_entry(sys.argv[1:])); a statement before the call, an else, or another exit is reported",
+        "rd74 rewritten: main returns only settle(...), cannot run off its end, is no generator",
+        "rd79: _entry and _escaped are one try, no else/finally, one BaseException handler returning only the next net's call",
+        "rd80/rd84/rd85: the real _entry, over a mutated main, exits 2 for a pre-try raise, a subscript error, an exit, an interrupt, a raising finally, and an output that refuses writes",
+        "rd81/rd86: any rebinding of a pinned name (global+store, top-level, second def, import as, del, parameter, comprehension) is reported",
+        "rd82/rd87: the refusal key written anywhere but _refuse is reported; a read or a fresh result's None is not",
+        "rd83: the walked code takes no name from below the selftest section, _entry's selftest call aside"
+      ],
       "notes": [
         {
           "at": "2026-11-01T05:05:37Z",
@@ -3436,6 +3453,17 @@
         "runId": "2026-11-01T05:33:55Z.ae5222",
         "status": "passed",
         "at": "2026-11-01T05:33:55Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "88e13a1a8487",
+        "at": "2026-11-01T05:37:19Z",
+        "return": "docs/audit/evidence/returns/P152.39-6jb/20261101T050548Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "tests.expectRedFirst is false on this tdd task: it names no case to prove a red by, so no red-first proof is owed",
+        "at": "2026-11-01T05:22:50Z"
       }
     },
     {
@@ -3552,6 +3580,128 @@
       ],
       "fixes": [
         "P152-R46"
+      ]
+    },
+    {
+      "id": "P152.42-6jb",
+      "title": "fix P152-R48: An escape outside the two blind spots the rewritten docstring n...",
+      "status": "in_progress",
+      "description": "An escape outside the two blind spots the rewritten docstring now names as exact: under PYTHONOPTIMIZE=2 (or python3 -OO) `__doc__` is None, so `REFUSALS = tuple(doc_refusals(__doc__))` is (), and every `_refuse` raises ValueError - the run's own refusal, main's handler, `_escaped`'s stdout attempt AND its StringIO fallback alike - so the ValueError escapes `_entry` and Python exits 1 with a traceback. Probed in a scratch mirror: `PYTHONOPTIMIZE=2 python3 tools/reach-diff.py x ''` exits 1 (`ValueError: refusal 'internal' is not one the docstring names`), the plain run exits 2 under `usage`; `python3 -OO tools/reach-diff.py --help` exits 1 too. That is the module imported successfully, so 'a failure while the module is being imported' does not cover it, and EXIT CODES' '1 - a line lost, and nothing else ... never left to exit 1 with a traceback' is false for it. HEAD behaved the same but its docstring carved it out ('a failure inside main's own handlers ... ends the process with Python's own code'); this diff removed that carve-out. The gate's selftest (run unoptimised) stays green.\n\nResolution asked: Read the refusal list (and --help's text) from the file's source rather than from `__doc__` - e.g. `ast.get_docstring(ast.parse(<source of __file__>))`, which -OO cannot strip - so `REFUSALS` is never empty; add a case running the CLI as a child under PYTHONOPTIMIZE=2 asserting exit 2 under `usage`, and prove it red against the `__doc__` reading.",
+      "files": [
+        "tools/reach-diff.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "files-no-suite"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-01T05:37:45Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-01T05:37:39Z",
+          "text": "scope: tools/reach-diff.py, every path the finding(s) P152-R48 name"
+        },
+        {
+          "at": "2026-11-01T05:37:39Z",
+          "text": "no suite: tools/reach-diff.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-11-01T05:37:39Z",
+          "text": "no tests.add clause for P152-R48: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P152-R48"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-01T06:01:55Z.a0511b",
+        "status": "passed",
+        "at": "2026-11-01T06:01:55Z"
+      }
+    },
+    {
+      "id": "P152.43-6jb",
+      "title": "fix P152-R47: The docstring says --selftest fails unless 'every refusal is a ...",
+      "status": "cancelled",
+      "description": "The docstring says --selftest fails unless 'every refusal is a call to `_refuse` or `_refusal` naming it there'. Neither the walk nor settle sees a refusal written straight into a result, such as `result['refusal'] = 'usage'; return result` from a path no case reaches. Probed: the walk is clean. settle then accepts it, because the code is 2 and the refusal is listed, so the process exits 2 under a listed name and prints no `reach-diff: no comparison made (NAME)` line, which breaks EXIT CODES' 'Each refusal prints a line'. HEAD's walk did not hold this either, but the new sentence claims it does.\n\nResolution asked: Report any write of the `refusal` key outside `_refuse` and `fresh_result` (a subscript store, a dict-literal key, a `refusal=` keyword, `.update`/`.setdefault` with that key), or have `_refuse` record the names it printed in the result and have `settle` refuse a `refusal` it did not print. Failing both, narrow the docstring sentence to what is actually held: every CALL to `_refuse`/`_refusal` names a listed refusal.",
+      "files": [
+        "tools/reach-diff.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "files-no-suite"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: same file and same rule as P152.42-6jb; folded into it"
+      },
+      "startedAt": null,
+      "completedAt": "2026-11-01T05:37:53Z",
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-01T05:37:44Z",
+          "text": "scope: tools/reach-diff.py, every path the finding(s) P152-R47 name"
+        },
+        {
+          "at": "2026-11-01T05:37:44Z",
+          "text": "no suite: tools/reach-diff.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-11-01T05:37:44Z",
+          "text": "no tests.add clause for P152-R47: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P152-R47"
       ]
     }
   ],

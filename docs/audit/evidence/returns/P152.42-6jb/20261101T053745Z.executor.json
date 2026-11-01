@@ -1,0 +1,27 @@
+{
+  "gates": {
+    "sweep-subset: python3 tools/sweep-selftests.py tools/reach-diff.py tests/test__output_lints.py tests/test__deps.py": "pass",
+    "ruff check tools/reach-diff.py": "pass",
+    "vermin -t=3.8- tools/reach-diff.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "tests.expectRedFirst is false on this tdd task: it names no case to prove a red by, so no red-first proof is owed",
+    "at": "2026-11-01T05:50:38Z"
+  },
+  "outcome": {
+    "technical": "tools/reach-diff.py only. R48 (med): the docstring is read from the file's own source by source_docstring() - compile(..., ast.PyCF_ONLY_AST, dont_inherit=True, optimize=0) + ast.get_docstring - into DOC; REFUSALS and --help read DOC, never __doc__. Plain ast.parse was not enough: on python 3.14 under -OO it also drops the docstring (probed: None), while compile at optimize=0 keeps it on 3.14 and 3.9. _escaped's last resort is now settle(_UNREPORTED, io.StringIO()): _UNREPORTED is a Refusal made once at import by _refusal('internal', ...), pinned in _PINNED, and settle answers it with 2 and its line without reading the list or the exception. Probe: PYTHONOPTIMIZE=2 python3 tools/reach-diff.py x '' -> exit 2 under usage; python3 -OO tools/reach-diff.py --help -> exit 0 with the list. R47 (low): _refuse(result, name, why) no longer prints (out parameter dropped at every site, the walk reads the name at index 1); it records (name, why) under result['refused'] and names the first as refusal. settle is the one printer: one line per recorded refusal, or one for a refusal named with nothing recorded, so an exit-2 result always prints its line exactly once. _unsupported also refuses as internal recorded refusals that are not pairs of a listed name and a reason, or whose first is not the refusal named. Output order consequence: refusal lines now come after everything else the run printed; the 'failed' reason now says the blocks are listed above, and internal says its traceback is printed above. Test helpers _run and _judged go through settle. Docstring updated (contract, ONE PATH TO AN EXIT, _PINNED, EXIT CODES, [internal]). Cases added: rd88 (R47 bare + recorded, once each), rd89 (an exception whose __str__ raises: both attempts fail, still 2), rd90 (R48: child under PYTHONOPTIMIZE=2, usage exit 2 and --help exit 0), rd91 (two recorded refusals, each once, in order); rd77 extended with five malformed or mismatched recorded-refusal shapes. Selftest 160/160; sweep over reach-diff, test__output_lints, test__deps exit 0 (3/3 files ok). Dependants: CONTRIBUTING.md names the path and points at --help, which is unchanged and now also holds under -OO - still correct. hook_line/rebound/parse_args/settle elsewhere are other modules' own definitions sharing a name (a hyphenated file is not imported by name) - unaffected. Left as-is (same class, not in scope): ast.parse at lines 629/1056 (module under test) and refusal_sites' parse of its own source would also drop docstrings if the tool itself ran under -OO on 3.13+; reach and the walk are unaffected in practice since docstring lines are not traced and function_shape skips a leading docstring either way.",
+    "descriptive": "reach-diff no longer exits 1 with a traceback under -OO, and every exit-2 result prints its refusal line exactly once, from settle."
+  },
+  "testsAdded": [
+    "rd88 a result naming a listed refusal prints that line exactly once, recorded by _refuse or not",
+    "rd89 an exception that cannot be described still exits 2 through _escaped's last resort",
+    "rd90 under PYTHONOPTIMIZE=2 the CLI refuses a bad command line with exit 2 under usage and --help exits 0 with the list",
+    "rd91 each recorded refusal prints its own line once, in order",
+    "rd77 extended: malformed or mismatched recorded refusals are refused as internal"
+  ],
+  "claims": "claims:\n1 tools/reach-diff.py: source_docstring/DOC/REFUSALS at the refusals section; settle prints via _owed_lines; _escaped's handler returns settle(_UNREPORTED, io.StringIO()); docstring sentences rewritten to say refusal lines are settle's and the traceback precedes the internal line\n2 mirror mutations, each landed-asserted, pycache purged, restored by cmp: DOC->__doc__ -> rd90 red (159/160); no fallback -> rd88 red; double print -> rd72/88/90/91 red; old last resort -> rd89 red; no first-recorded check -> rd77 red; clean mirror 160/160\n3 grep of __doc__ in the file: only the comment and docstring mentions remain; grep of ast.parse: 4 code hits - lines 629/1056/1973 left (fixture module / own walk, docstrings not load-bearing there), 1703/1704 parse literals\n4 n/a - no rule addressed to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:e7ebe6dd0020c183d2edf2ebd99ac9be9194f5ca2aadb1d6e95506e67e0a0812\",\"dirtyDigest\":\"sha256:21378ebd69a45ba3ba9273ab775bd39592d39e352a8b7d0eafed915828d422d6\",\"dirtyPaths\":{\"tools/reach-diff.py\":\"3a6f324e9e442eda\"},\"head\":\"88e13a1a\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tools/reach-diff.py\"],\"scopeDigest\":\"sha256:0bd95b5fba861cbc8d132ae20ec880d6afc5adb3a9fbc0f479c5fb3285ef5ab5\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

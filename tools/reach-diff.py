@@ -21,14 +21,16 @@ THIS TEXT IS THE CONTRACT, and the only copy of it: what the run measures, when 
 exits 1, and - in the list at the end - every reason it refuses with 2. Each
 refusal printed carries its name from that list, and `--selftest` fails when a
 name there has no case asserting it, when a case asserts a name not there, or
-when a refusal site in the code names one not there.
+when a refusal site in the code names one not there. The list and `--help` are
+read from this file's source, never from `__doc__`, which `-OO` strips.
 
 ONE PATH TO AN EXIT. The `__main__` block is one statement,
 `sys.exit(_entry(sys.argv[1:]))`, and `_entry` is one `try` around the run whose
 one handler catches every exception - an exit and an interrupt included - and
 hands it to `_escaped`, which refuses it as `interrupted` or as `internal` with
-its traceback, through `settle`, and writes that line where nothing can refuse
-it when the output refuses it too. So nothing `main` raises - before its own
+its traceback, through `settle` - and, when that refusal cannot be made or
+printed, hands `settle` the last resort `_UNREPORTED`, which reads neither the
+list nor the exception. So nothing `main` raises - before its own
 region, in a `finally`, anywhere - ends the process with a code `settle` did
 not give, and `settle` gives 1 to a line lost and to nothing else; under
 `--selftest`, `_entry` hands on the suite's own code. A walk of this file's own
@@ -44,19 +46,23 @@ from below the selftest section, `_entry`'s call of the selftest aside; nothing
 outside the block names an exit - `exit`, `_exit`, `quit` or `SystemExit`, as a
 name or an attribute, called or not, whatever it is handed; `sys` and `os` are
 imported under their own names and nothing is imported from them; each name in
-`_PINNED` - the functions this path runs through and the list `_refuse` reads -
-is bound once in the whole file, by its own top-level definition, and never
+`_PINNED` - the functions this path runs through, the list `_refuse` reads
+and the last resort - is bound once in the whole file, by its own top-level definition, and never
 assigned, deleted, declared global or nonlocal, imported as, taken as a
 parameter or defined again; every refusal is a call to `_refuse` or `_refusal`
 naming it there, none of which, nor `Refusal`, is used other than called; and
 the `refusal` key of a result is written by `_refuse` alone - never stored,
 deleted, handed as a keyword, set by `setdefault` or given a value in a dict
-display - so a refusal is never recorded without its line. The walk reads that
-a path exists, never what code it would carry: `settle()` judges that when it
-runs, and refuses as `internal` a result that is not a dict, a code other than
-the three stated below (a boolean included), a refusal the list does not hold,
-2 with no refusal, a refusal with another code, 1 with no line lost, or 0 with
-one. WHAT IT CANNOT SEE: a name reached by a string - through `exec`, `eval`,
+display - so the name a result carries is the first one `_refuse` recorded.
+`_refuse` prints nothing: `settle` prints every refusal line, one per refusal
+recorded, or one for the name a result carries when nothing recorded it, so an
+exit of 2 never passes without its line whatever made the result. The walk reads
+that a path exists, never what code it would carry: `settle()` judges that when
+it runs, and refuses as `internal` a result that is not a dict, a code other
+than the three stated below (a boolean included), a refusal the list does not
+hold, 2 with no refusal, a refusal with another code, recorded refusals that are
+not pairs of a listed name and a reason or whose first is not the refusal named,
+1 with no line lost, or 0 with one. WHAT IT CANNOT SEE: a name reached by a string - through `exec`, `eval`,
 `getattr` and the like - and a failure while the module is being imported,
 before `_entry` exists.
 
@@ -203,8 +209,9 @@ not decide differ, under `--allow-same`. 1 - a line lost, and nothing else: an
 error the run did not expect is refused, never left to exit 1 with a traceback,
 as ONE PATH TO AN EXIT says. 2 - no comparison made: a reach measured over a suite that did not finish, or
 over sides that cannot be told apart, is not the suite's reach. Each refusal
-prints a line `reach-diff: no comparison made (NAME) - ...`, the result carries
-the first NAME as `refusal`, and these are all of them:
+prints a line `reach-diff: no comparison made (NAME) - ...`, written by
+`settle` once the run has returned, after everything else it printed; the
+result carries the first NAME as `refusal`, and these are all of them:
 
   [usage] the command line is not one this accepts.
   [base-worktree] `--base WORKTREE`: the base is the state a change started
@@ -239,7 +246,7 @@ the first NAME as `refusal`, and these are all of them:
   [interrupted] the run was interrupted (SIGINT, Ctrl-C) before it finished;
       nothing it measured is reported.
   [internal] the run ended in an error it did not expect, an exit raised
-      under it included - its traceback is printed after the line - or with
+      under it included - its traceback is printed before the line - or with
       a result its exit cannot rest on, as ONE PATH TO AN EXIT lists.
 """
 import ast
@@ -313,7 +320,9 @@ USER_SITE_PROBE = "import site; print(site.ENABLE_USER_SITE)"
 # --- the refusals ------------------------------------------------------------
 # The names are read off the docstring's list, the one place the contract is
 # stated; `_refuse` takes no other, `--selftest` holds a case for each, and
-# `refusal_sites()` holds every site in the code to the list.
+# `refusal_sites()` holds every site in the code to the list. The docstring is
+# read from this file's source rather than from `__doc__`, which `-OO` strips:
+# an empty list there would make every refusal, the last one included, an error.
 _DOC_REFUSAL = re.compile(r"^  \[([a-z][a-z-]*)\] ", re.M)
 REFUSAL_LINE = re.compile(r"^reach-diff: no comparison made \(([a-z][a-z-]*)\) - ",
                           re.M)
@@ -327,7 +336,19 @@ def doc_refusals(doc):
     return _DOC_REFUSAL.findall(tail[1]) if len(tail) == 2 else []
 
 
-REFUSALS = tuple(doc_refusals(__doc__))
+def source_docstring(path):
+    """The module docstring of the file at `path`, read off its source. Parsed
+    at `optimize=0` and inheriting no flag: a parse at the interpreter's own
+    level drops docstrings under `-OO` on newer interpreters, as `__doc__` is
+    dropped on every one."""
+    with io.open(path, encoding="utf-8") as fh:
+        tree = compile(fh.read(), path, "exec", ast.PyCF_ONLY_AST,
+                       dont_inherit=True, optimize=0)
+    return ast.get_docstring(tree, clean=False) or ""
+
+
+DOC = source_docstring(os.path.abspath(__file__))
+REFUSALS = tuple(doc_refusals(DOC))
 
 
 def refusals_in(text):
@@ -335,13 +356,18 @@ def refusals_in(text):
     return REFUSAL_LINE.findall(text or "")
 
 
+def refusal_line(name, why):
+    return "reach-diff: no comparison made (%s) - %s\n" % (name, why)
+
+
 def fresh_result():
     """The result of a comparison before anything has been decided: exit 2,
-    no refusal named yet."""
-    return {"code": 2, "refusal": None, "gaps": [], "gone": [], "reached": {},
-            "tracers": [], "processes": {}, "blocks": {}, "untraced": {},
-            "hook": None, "blind": {}, "same": False, "rechecked": [],
-            "flaky": []}
+    no refusal named yet. `refused` holds each refusal `_refuse` recorded, as
+    `(name, why)` in order, for `settle` to print."""
+    return {"code": 2, "refusal": None, "refused": [], "gaps": [], "gone": [],
+            "reached": {}, "tracers": [], "processes": {}, "blocks": {},
+            "untraced": {}, "hook": None, "blind": {}, "same": False,
+            "rechecked": [], "flaky": []}
 
 
 # A refusal decided where no result is at hand, and handed back to the caller
@@ -358,17 +384,25 @@ def _refusal(name, why):
     return Refusal(name, why)
 
 
-def _refuse(result, out, name, why):
-    """Print one refusal line naming `name` and record the first one in
-    `result`, whose exit stays 2. A name the docstring's list does not hold is
-    a ValueError: a refusal the contract does not state is a defect here, not
-    a reason to print."""
+# The last resort `_escaped` hands `settle` when its own refusal could not be
+# made or printed. Made once, as the module is imported, so the name is checked
+# against the list then and `settle` reads nothing at the moment it needs it.
+_UNREPORTED = _refusal("internal", "the run failed, and reporting how failed "
+                       "as well")
+
+
+def _refuse(result, name, why):
+    """Record the refusal `name` in `result`, whose exit stays 2, and name the
+    first one as its `refusal`. Nothing is printed here: `settle` prints every
+    refusal line, so a refusal no call recorded still gets one. A name the
+    docstring's list does not hold is a ValueError: a refusal the contract
+    does not state is a defect here, not a reason to print."""
     if name not in REFUSALS:
         raise ValueError("refusal %r is not one the docstring names" % (name,))
     if result.get("refusal") is None:
         result["refusal"] = name
+    result["refused"] = list(result.get("refused") or []) + [(name, why)]
     result["code"] = 2
-    out.write("reach-diff: no comparison made (%s) - %s\n" % (name, why))
     return result
 
 
@@ -1129,7 +1163,7 @@ def _same_verdict(result, out, why, allow_same):
                   "sides are an answer, and this is not a measured conversion\n")
         result["code"] = 0
         return result
-    return _refuse(result, out, "same", "a 0 here would read as a conversion "
+    return _refuse(result, "same", "a 0 here would read as a conversion "
                    "measured and found whole; pass --allow-same where identical "
                    "sides are the answer expected")
 
@@ -1159,7 +1193,7 @@ def compare(repo, module, suite, base, head, jobs=None, timeout=None,
             tracer=None, out=None, allow_same=False, environ=None):
     """Run the comparison and print it to `out`; the result dict, whose `code`
     is the exit code the docstring's EXIT CODES state, and whose `refusal` is
-    the first refusal's name. `environ` is the environment the runs start
+    the first refusal's name - its lines are `settle`'s to print. `environ` is the environment the runs start
     from, the process's own when None - threaded so a case can hand it an
     interpreter that cannot start without writing to the process's own."""
     out = out if out is not None else sys.stdout
@@ -1172,12 +1206,12 @@ def compare(repo, module, suite, base, head, jobs=None, timeout=None,
     timeout = timeout if timeout is not None else (
         TIMEOUT_FACTOR * sweep.DEFAULT_TIMEOUT)
     if base == WORKTREE:
-        return _refuse(result, out, "base-worktree", "--base %s is refused: the "
+        return _refuse(result, "base-worktree", "--base %s is refused: the "
                        "base is the state a change started from, a commit; only "
                        "--head may name the working tree" % (WORKTREE,))
     entry, why = hook_entry(sweep.ambient_env(environ))
     if entry is None:
-        return _refuse(result, out, "hook-probe", why)
+        return _refuse(result, "hook-probe", why)
     result["hook"] = entry
     scratch = tempfile.mkdtemp(prefix="reach-")
     try:
@@ -1188,7 +1222,7 @@ def compare(repo, module, suite, base, head, jobs=None, timeout=None,
             side, refused = _prepare(repo, name, rev, module, suite, scratch,
                                      tracer, sweep, environ)
             if side is None:
-                return _refuse(result, out, refused.name, refused.why)
+                return _refuse(result, refused.name, refused.why)
             sides.append(side)
         why, differing = same_side(repo, sides[0], sides[1])
         if why:
@@ -1232,7 +1266,7 @@ def _no_conversion(result, out, differing, allow_same):
         out.write("  exit 0 under --allow-same: only files that do not decide "
                   "differ (%s), and nothing was lost\n" % (", ".join(differing),))
         return result
-    return _refuse(result, out, "no-conversion", "only files that do not decide "
+    return _refuse(result, "no-conversion", "only files that do not decide "
                    "differ (%s) and nothing was lost: no evidence of a conversion; "
                    "pass --allow-same where that is the answer expected" % (
                        ", ".join(differing),))
@@ -1338,9 +1372,9 @@ def _judge(sides, rows, result, out, began, jobs, recheck):
                                    for t in tr["tracers"]))
     seconds = time.monotonic() - began
     if failed:
-        _refuse(result, out, "failed", "%d of %d blocks did not pass, and a reach "
-                "measured over a suite that did not finish is not its reach:" % (
-                    len(failed), len(rows)))
+        _refuse(result, "failed", "%d of %d blocks did not pass, and a reach "
+                "measured over a suite that did not finish is not its reach; "
+                "they are listed above" % (len(failed), len(rows)))
         for row in failed:
             out.write("  %s block %s: %s\n" % (row["side"], row["label"],
                                                row["why"]))
@@ -1356,7 +1390,7 @@ def _judge(sides, rows, result, out, began, jobs, recheck):
     unreadable = [side for side in sides if traces[side["name"]]["unreadable"]]
     if spots["unmatched"] or unreadable:
         for label, at_base, at_head, why in spots["unmatched"]:
-            _refuse(result, out, "untraced", "block %s: module children were "
+            _refuse(result, "untraced", "block %s: module children were "
                     "started and never wrote what they reached (%s) - at the "
                     "base: %s; at the head: %s. A child started on the module's "
                     "path with an environment that drops the hook, or one that "
@@ -1364,7 +1398,7 @@ def _judge(sides, rows, result, out, began, jobs, recheck):
                     "timeout), ran lines no trace holds" % (
                         label, why, render_keys(at_base), render_keys(at_head)))
         for side in unreadable:
-            _refuse(result, out, "unreadable", "at %s (%s) %d trace files could "
+            _refuse(result, "unreadable", "at %s (%s) %d trace files could "
                     "not be read" % (side["name"], side["rev"],
                                      len(traces[side["name"]]["unreadable"])))
         out.write("took %.1fs with %d jobs\n" % (seconds, jobs))
@@ -1378,7 +1412,7 @@ def _judge(sides, rows, result, out, began, jobs, recheck):
                       traces["base"]["untraced"][label])))
     for side in sides:
         if not traces[side["name"]]["lines"]:
-            _refuse(result, out, "no-reach", "no line of the module was reached "
+            _refuse(result, "no-reach", "no line of the module was reached "
                     "at %s (%s): the suite does not run it there, or no process "
                     "it started ran the tracer" % (side["name"], side["rev"]))
             out.write("took %.1fs with %d jobs\n" % (seconds, jobs))
@@ -1395,7 +1429,7 @@ def _judge(sides, rows, result, out, began, jobs, recheck):
         refused = (_refusal("recheck-export", why) if why else
                    _recheck_refusal(again_rows, again, traces["base"], rows))
         if refused:
-            _refuse(result, out, refused.name, "%d lines reached at %s and not at "
+            _refuse(result, refused.name, "%d lines reached at %s and not at "
                     "%s could not be confirmed by running the blocks that "
                     "reached them again: %s" % (len(lost), base["rev"],
                                                 head["rev"], refused.why))
@@ -1490,11 +1524,11 @@ def parse_args(argv):
 def _command(argv, out):
     """The result of the command line `argv`, printed to `out`."""
     if argv and argv[0] in ("-h", "--help"):
-        out.write(__doc__.strip() + "\n")
+        out.write(DOC.strip() + "\n")
         return dict(fresh_result(), code=0)
     opts, why = parse_args(argv)
     if opts is None:
-        result = _refuse(fresh_result(), out, "usage", why)
+        result = _refuse(fresh_result(), "usage", why)
         out.write(USAGE)
         return result
     repo = os.path.abspath(opts.get("repo") or REPO)
@@ -1502,6 +1536,31 @@ def _command(argv, out):
                    opts["head"], jobs=opts.get("jobs"),
                    timeout=opts.get("timeout"), tracer=opts.get("tracer"),
                    out=out, allow_same=opts.get("allow_same", False))
+
+
+def _recorded(result):
+    """The `(name, why)` pairs `result` recorded under `refused`, or None when
+    that is not a list of pairs of a name the list holds and a reason."""
+    refused = result.get("refused")
+    if refused is None:
+        return []
+    if not isinstance(refused, (list, tuple)):
+        return None
+    pairs = [(pair[0], pair[1]) for pair in refused
+             if isinstance(pair, (list, tuple)) and len(pair) == 2
+             and pair[0] in REFUSALS and isinstance(pair[1], str)]
+    return pairs if len(pairs) == len(refused) else None
+
+
+def _owed_lines(result):
+    """The refusal lines `result`, one `settle` accepts, is owed: one per
+    refusal recorded, or - for a result that names a refusal no `_refuse`
+    call recorded - one for that name."""
+    recorded = _recorded(result)
+    if result["refusal"] is not None and not recorded:
+        recorded = [(result["refusal"], "the run named this refusal and "
+                     "recorded no reason with it")]
+    return [refusal_line(name, why) for name, why in recorded]
 
 
 def _unsupported(result):
@@ -1521,6 +1580,13 @@ def _unsupported(result):
     if code != 2 and refusal is not None:
         return "the run named the refusal %r and ended with exit %d" % (
             refusal, code)
+    recorded = _recorded(result)
+    if recorded is None:
+        return ("the run recorded the refusals %r, which are not pairs of a "
+                "name the list holds and a reason" % (result.get("refused"),))
+    if recorded and recorded[0][0] != refusal:
+        return "the run named the refusal %r and recorded %r first" % (
+            refusal, recorded[0][0])
     if code == 1 and not result.get("gaps"):
         return "the run ended with exit 1 and lost no line"
     if code == 0 and result.get("gaps"):
@@ -1529,27 +1595,36 @@ def _unsupported(result):
 
 
 def settle(result, out):
-    """The exit code `result` supports, and the only one `main` returns. A
-    result its exit cannot rest on is refused as `internal`, into a result of
-    its own, since the one handed over may not be a result at all: each is a
-    path that decided an exit without saying why, and printing its code as
-    given would make the code mean something the contract does not say."""
+    """The exit code `result` supports, and the only one `main` returns, with
+    every refusal line the result is owed printed to `out` - here and nowhere
+    else, so an exit of 2 never passes without its line, whatever made the
+    result. A result its exit cannot rest on is refused as `internal`, into a
+    result of its own, since the one handed over may not be a result at all:
+    each is a path that decided an exit without saying why, and printing its
+    code as given would make the code mean something the contract does not
+    say. `_UNREPORTED` is answered with 2 and its own line, reading nothing
+    else."""
+    if result is _UNREPORTED:
+        out.write(refusal_line(_UNREPORTED.name, _UNREPORTED.why))
+        return 2
     why = _unsupported(result)
-    if why is None:
-        return result["code"]
-    return _refuse(fresh_result(), out, "internal", why)["code"]
+    settled = result if why is None else _refuse(fresh_result(), "internal",
+                                                 why)
+    for line in _owed_lines(settled):
+        out.write(line)
+    return settled["code"]
 
 
 def _interrupted(out):
-    return _refuse(fresh_result(), out, "interrupted", "the run was interrupted "
+    return _refuse(fresh_result(), "interrupted", "the run was interrupted "
                    "before it finished, and nothing it measured is reported")
 
 
 def _unexpected(out, exc):
     """`internal`, with `exc`'s own traceback: read off the exception rather
     than the one being handled, since a second failure may be by then."""
-    result = _refuse(fresh_result(), out, "internal", "%s: %s; its traceback "
-                     "follows" % (type(exc).__name__, exc))
+    result = _refuse(fresh_result(), "internal", "%s: %s; its traceback "
+                     "is printed above" % (type(exc).__name__, exc))
     out.write("".join(traceback.format_exception(type(exc), exc,
                                                  exc.__traceback__)))
     return result
@@ -1579,14 +1654,15 @@ def main(argv, out=None, run=None):
 
 def _escaped(exc):
     """2, for `exc`, which escaped `main` or the selftest: `interrupted` for an
-    interrupt, `internal` with its traceback for anything else. When the output
-    refuses that line as well, the refusal is written where nothing refuses a
-    write and the exit is 2 all the same, since the code is what a caller
-    reads."""
+    interrupt, `internal` with its traceback for anything else. When that
+    refusal cannot be made or printed - the output refuses it, or `exc`
+    cannot even be described - `settle` is handed `_UNREPORTED` and an output
+    that refuses no write, so the last step reads neither the list nor `exc`
+    and the exit is 2 all the same, since the code is what a caller reads."""
     try:
         return settle(_escaped_result(sys.stdout, exc), sys.stdout)
     except BaseException:
-        return settle(_escaped_result(io.StringIO(), exc), io.StringIO())
+        return settle(_UNREPORTED, io.StringIO())
 
 
 def _entry(argv):
@@ -1634,7 +1710,7 @@ _SHAPES = (("main", ("settle",), None),
 # Bound once, by their own top-level statement: a call by one of these names
 # is then a call to the code the walk read, whatever runs before it.
 _PINNED = ("main", "_entry", "_escaped", "settle", "_unsupported", "_refuse",
-           "_refusal", "REFUSALS")
+           "_refusal", "REFUSALS", "_UNREPORTED")
 # The key a result names its refusal under, written by `_refuse` alone so that
 # no refusal is recorded without its line.
 _REFUSAL_KEY = "refusal"
@@ -1960,7 +2036,7 @@ def _read_node(found, owner, node, allowed, called):
                                       "a Refusal made outside _refusal"))
     if name_of not in ("_refuse", "_refusal"):
         return
-    name = _argument(node, 2, "name") if name_of == "_refuse" else (
+    name = _argument(node, 1, "name") if name_of == "_refuse" else (
         _argument(node, 0, "name"))
     found["sites"] += 1
     if _text(name) is not None:
@@ -2386,11 +2462,12 @@ def _fixture_repo(root):
 
 def _run(repo, head, base="base", suite=FIX_SUITE, module=FIX_MODULE,
          tracer=None, allow_same=False, environ=None):
-    """`(exit code, the result dict, printed text)` for one comparison."""
+    """`(exit code, the result dict, printed text)` for one comparison, its
+    refusal lines printed by `settle` as the command line prints them."""
     out = io.StringIO()
     result = compare(repo, module, suite, base, head, tracer=tracer, out=out,
                      allow_same=allow_same, environ=environ)
-    return result["code"], result, out.getvalue()
+    return settle(result, out), result, out.getvalue()
 
 
 def _refused(seen, text, name):
@@ -2993,7 +3070,7 @@ def _judged(root, again=None, again_output=JUDGE_CASES, again_cases=2,
                  for label in labels], read_traces(path), None)
     out = io.StringIO()
     result = _judge(sides, rows, fresh_result(), out, time.monotonic(), 1, recheck)
-    return result["code"], result, out.getvalue()
+    return settle(result, out), result, out.getvalue()
 
 
 def _judge_cases(check, root, seen):
@@ -3120,7 +3197,7 @@ def _site_cases(check):
           and sites["names"] == set(REFUSALS) and not sites["unnamed"]
           and not sites["bound"] and not sites["exits"] and not sites["shape"]
           and not sites["rebound"] and not sites["stored"])
-    for body in ('_refuse(result, out, "never-listed", "why")',
+    for body in ('_refuse(result, "never-listed", "why")',
                  'return _refusal("never-listed", "why")'):
         found = refusal_sites(_planted(own, body))
         check("rd65 a site no case reaches that names a refusal --help does not "
@@ -3128,7 +3205,7 @@ def _site_cases(check):
               % (body, sorted(found["names"] - set(REFUSALS))),
               found["scanned"]
               and found["names"] - set(REFUSALS) == set(["never-listed"]))
-    for body in ('_refuse(result, out, name, "why")',
+    for body in ('_refuse(result, name, "why")',
                  'return _refusal(name, "why")',
                  'return Refusal("revision", "why")'):
         found = refusal_sites(_planted(own, body))
@@ -3197,9 +3274,8 @@ def _site_cases(check):
              "not one handler"),
             ("_escaped", "    except BaseException:\n",
              "    except KeyboardInterrupt:\n", "not one handler"),
-            ("_escaped", "        return settle(_escaped_result(io.StringIO(), "
-             "exc), io.StringIO())\n", "        return 2\n",
-             "returns something")):
+            ("_escaped", "        return settle(_UNREPORTED, io.StringIO())\n",
+             "        return 2\n", "returns something")):
         mutated, landed = _in_function(own, fn, old, new)
         found = refusal_sites(mutated)
         check("rd79 _entry and _escaped are each one try with no else and no "
@@ -3210,7 +3286,7 @@ def _site_cases(check):
               landed == 1 and found["scanned"]
               and any(kind in f for f in found["shape"]))
     for body in ("global _refuse; _refuse = print", "_refuse = print",
-                 "def _refuse(result, out, name, why): return result",
+                 "def _refuse(result, name, why): return result",
                  "main = None", "settle = int", "import json as _entry",
                  "def _escaped(exc): return 1", "del _refusal",
                  "_unsupported = None", "REFUSALS = ()"):
@@ -3284,7 +3360,7 @@ def _exit_cases(check, seen):
         raise RuntimeError("planted failure")
 
     def unlisted(argv, out):
-        return _refuse(fresh_result(), out, "never-listed", "why")
+        return _refuse(fresh_result(), "never-listed", "why")
     for run, what in ((raising, "planted failure"), (unlisted, "never-listed")):
         code, text = quiet(run)
         check("rd69 an error the run did not expect exits 2 under `internal`, "
@@ -3309,7 +3385,7 @@ def _exit_cases(check, seen):
     lost = dict(clean, code=1, gaps=[("pick", 3, 'return "positive"')])
     code_lost, text_lost = quiet(lambda argv, out: lost)
     code_named, text_named = quiet(
-        lambda argv, out: _refuse(fresh_result(), out, "usage", "why"))
+        lambda argv, out: _refuse(fresh_result(), "usage", "why"))
     code_clean, text_clean = quiet(lambda argv, out: dict(clean))
     check("rd72 ...and an honest result passes through untouched: a line lost "
           "exits 1 with no refusal %d %r; a named refusal exits 2 under its own "
@@ -3341,15 +3417,47 @@ def _exit_cases(check, seen):
                    dict(clean, code=3),
                    dict(clean, code="1", gaps=lost["gaps"]),
                    dict(clean, refusal="usage"),
-                   dict(clean, gaps=lost["gaps"])):
+                   dict(clean, gaps=lost["gaps"]),
+                   dict(fresh_result(), refusal="usage", refused=[("same", "w")]),
+                   dict(fresh_result(), refusal="usage",
+                        refused=[("usage", "w"), ("never-listed", "w")]),
+                   dict(fresh_result(), refusal="usage", refused="usage"),
+                   dict(fresh_result(), refusal="usage", refused=[("usage",)]),
+                   dict(clean, refused=[("usage", "w")])):
         code, text = quiet(lambda argv, out, given=result: given)
         check("rd77 a result whose exit cannot rest on it - a refusal the list "
               "does not hold, a code that is not 0, 1 or 2 (a boolean "
-              "included), a refusal with another code, 0 with a line lost - "
-              "exits 2 under `internal`: %r -> %d\n%s"
-              % (dict((k, result[k]) for k in ("code", "refusal", "gaps")),
+              "included), a refusal with another code, 0 with a line lost, "
+              "recorded refusals that are not pairs of a listed name and a "
+              "reason or do not begin with the refusal named - exits 2 under "
+              "`internal`: %r -> %d\n%s"
+              % (dict((k, result.get(k)) for k in ("code", "refusal", "gaps",
+                                                    "refused")),
                  code, text),
               code == 2 and _refused(seen, text, "internal"))
+
+    # A refusal no `_refuse` call recorded - the name written straight into a
+    # result - still exits 2 with its line, printed once; the second shape
+    # holds the other direction, a refusal recorded once printing only once.
+    code_bare, text_bare = quiet(
+        lambda argv, out: dict(fresh_result(), refusal="usage"))
+    code_once, text_once = quiet(
+        lambda argv, out: _refuse(fresh_result(), "usage", "why"))
+    check("rd88 a result naming a listed refusal prints that refusal's line "
+          "exactly once, whether or not a `_refuse` call recorded it: bare "
+          "%d %r; recorded %d %r" % (code_bare, text_bare, code_once, text_once),
+          code_bare == 2 and refusals_in(text_bare) == ["usage"]
+          and code_once == 2 and refusals_in(text_once) == ["usage"])
+
+    def twice(argv, out):
+        return _refuse(_refuse(fresh_result(), "failed", "first"), "untraced",
+                       "second")
+    code, text = quiet(twice)
+    check("rd91 every refusal a result recorded prints its own line, each "
+          "once and in the order recorded, and the first names the result: "
+          "%d %r" % (code, text),
+          code == 2 and refusals_in(text) == ["failed", "untraced"]
+          and "- first\n" in text and "- second\n" in text)
 
     def interrupted(argv, out):
         raise KeyboardInterrupt()
@@ -3426,6 +3534,33 @@ def _entry_cases(check, seen):
           "handler fails as well, still exits 2: %d %r" % (code, text),
           code == 2)
 
+    class Unspeakable(Exception):
+        def __str__(self):
+            raise RuntimeError("an exception that cannot be named")
+    try:
+        code = _escaped(Unspeakable())
+    except BaseException as exc:
+        code = "escaped: %r" % (exc,)
+    check("rd89 an exception that cannot even be described, so that both of "
+          "_escaped's attempts at a refusal would fail, still exits 2: %r"
+          % (code,), code == 2)
+    # Under -OO the docstring is stripped from `__doc__`; the refusal list and
+    # --help are read from this file's source, which that cannot strip.
+    env = dict(os.environ, PYTHONOPTIMIZE="2", PYTHONDONTWRITEBYTECODE="1")
+    runs = [subprocess.run([sys.executable, os.path.abspath(__file__)] + argv,
+                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                           universal_newlines=True, env=env)
+            for argv in (["x", ""], ["--help"])]
+    usage, helped = runs
+    seen.append("usage")
+    check("rd90 under PYTHONOPTIMIZE=2 a command line it refuses still exits 2 "
+          "under `usage` %d %r, and --help still exits 0 printing the "
+          "refusal list %d %r" % (usage.returncode, usage.stdout[-400:],
+                                 helped.returncode, helped.stdout[-200:]),
+          usage.returncode == 2 and refusals_in(usage.stdout) == ["usage"]
+          and helped.returncode == 0 and "THIS TEXT IS THE CONTRACT" in helped.stdout
+          and "  [internal] " in helped.stdout)
+
 
 def _contract_cases(check, seen):
     named = list(REFUSALS)
@@ -3435,7 +3570,7 @@ def _contract_cases(check, seen):
           % (sorted(set(named) - asserted), sorted(asserted - set(named))),
           named and len(named) == len(set(named)) and set(named) == asserted)
     try:
-        _refuse(fresh_result(), io.StringIO(), "no-such-refusal", "a reason")
+        _refuse(fresh_result(), "no-such-refusal", "a reason")
         raised = None
     except ValueError as exc:
         raised = exc
