@@ -1824,7 +1824,8 @@
       "P152.13-6jb",
       "P152.16-6jb",
       "P152.17-6jb",
-      "P152.24-6jb"
+      "P152.24-6jb",
+      "P154.3-mkf"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1954,7 +1955,8 @@
       "P125.105-0h5",
       "P125.107-0h5",
       "P125.81-0h5",
-      "P125.99-0h5"
+      "P125.99-0h5",
+      "P154.3-mkf"
     ],
     "docs/design/audit-concurrency-report.md": [
       "P60.3"
@@ -2005,7 +2007,8 @@
       "P125.105-0h5",
       "P125.107-0h5",
       "P125.81-0h5",
-      "P125.99-0h5"
+      "P125.99-0h5",
+      "P154.3-mkf"
     ],
     "docs/screenshots": [
       "P53.9",
@@ -2064,7 +2067,8 @@
       "P125.135-0h5",
       "P128.34-0h5",
       "P131.5",
-      "P132.4"
+      "P132.4",
+      "P154.3-mkf"
     ],
     "examples/acme-store/acme-store-audit.html": [
       "P13.3",
@@ -2092,7 +2096,8 @@
       "P125.105-0h5",
       "P125.107-0h5",
       "P125.81-0h5",
-      "P125.99-0h5"
+      "P125.99-0h5",
+      "P154.3-mkf"
     ],
     "examples/acme-store/acme-store-audit.md": [
       "P13.3",
@@ -2110,7 +2115,8 @@
       "P125.105-0h5",
       "P125.107-0h5",
       "P125.81-0h5",
-      "P125.99-0h5"
+      "P125.99-0h5",
+      "P154.3-mkf"
     ],
     "examples/acme-store/audit-plan.json": [
       "P50.3",
@@ -8250,7 +8256,8 @@
       "P125.130-0h5",
       "P125.140-0h5",
       "P130.9",
-      "P131.2"
+      "P131.2",
+      "P154.3-mkf"
     ],
     "tools/gate-parity.py": [
       "P19.2",
@@ -8570,7 +8577,8 @@
       "P143.2-6yq",
       "P143.3-6yq",
       "P143.12-z9j",
-      "P151.2"
+      "P151.2",
+      "P154.3-mkf"
     ],
     "plugins/audit/scripts/governance/_gate_derive.py": [
       "P79.2",
@@ -8957,7 +8965,8 @@
       "P125.81-0h5",
       "P125.99-0h5",
       "P131.5",
-      "P132.4"
+      "P132.4",
+      "P154.3-mkf"
     ],
     "docs/screenshots/authors.png": [
       "P84.7-791",
@@ -8982,7 +8991,8 @@
       "P125.81-0h5",
       "P125.99-0h5",
       "P131.5",
-      "P132.4"
+      "P132.4",
+      "P154.3-mkf"
     ],
     "docs/screenshots/dark.png": [
       "P84.7-791",
@@ -9007,7 +9017,8 @@
       "P125.81-0h5",
       "P125.99-0h5",
       "P131.5",
-      "P132.4"
+      "P132.4",
+      "P154.3-mkf"
     ],
     "docs/screenshots/demo-gate.gif": [
       "P84.7-791",
@@ -9043,7 +9054,8 @@
       "P125.81-0h5",
       "P125.99-0h5",
       "P131.5",
-      "P132.4"
+      "P132.4",
+      "P154.3-mkf"
     ],
     "docs/screenshots/filtered.png": [
       "P84.7-791",
@@ -9068,7 +9080,8 @@
       "P125.81-0h5",
       "P125.99-0h5",
       "P131.5",
-      "P132.4"
+      "P132.4",
+      "P154.3-mkf"
     ],
     "docs/screenshots/filters.png": [
       "P84.7-791",
@@ -9093,7 +9106,8 @@
       "P125.81-0h5",
       "P125.99-0h5",
       "P131.5",
-      "P132.4"
+      "P132.4",
+      "P154.3-mkf"
     ],
     "docs/screenshots/mobile.png": [
       "P84.7-791",
@@ -9141,7 +9155,8 @@
       "P125.81-0h5",
       "P125.99-0h5",
       "P131.5",
-      "P132.4"
+      "P132.4",
+      "P154.3-mkf"
     ],
     "docs/screenshots/panel-appearance.png": [
       "P80.8",
@@ -11233,7 +11248,8 @@
     "plugins/audit/scripts/ui/report/page-state.js": [
       "P125.81-0h5",
       "P125.130-0h5",
-      "P131.2"
+      "P131.2",
+      "P154.3-mkf"
     ],
     "tools/ui-tests/table-fit.test.mjs": [
       "P125.81-0h5",
@@ -11268,7 +11284,8 @@
       "P125.99-0h5"
     ],
     "plugins/audit/scripts/ui/report-css/segments.css": [
-      "P125.99-0h5"
+      "P125.99-0h5",
+      "P154.3-mkf"
     ],
     "plugins/audit/scripts/ui/report-css/usage.css": [
       "P125.99-0h5"
@@ -11822,14 +11839,16 @@
       "P109.7"
     ],
     "tests/test__report_html.py": [
-      "P131.1"
+      "P131.1",
+      "P154.3-mkf"
     ],
     "tests/test__report_md.py": [
       "P131.1"
     ],
     "tests/test__report_page.py": [
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P154.3-mkf"
     ],
     "tests/test__report_ui.py": [
       "P131.1",
@@ -12257,7 +12276,8 @@
     ],
     "tests/test_render_report.py": [
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P154.3-mkf"
     ],
     "tests/test_repair_commits.py": [
       "P131.1"
@@ -12500,6 +12520,21 @@
       "P152.43-6jb",
       "P154.1",
       "P154.2-mkf"
+    ],
+    "plugins/audit/scripts/ui/report/exports.js": [
+      "P154.3-mkf"
+    ],
+    "plugins/audit/scripts/ui/report-css/print-segments.css": [
+      "P154.3-mkf"
+    ],
+    "plugins/audit/scripts/ui/report/README.md": [
+      "P154.3-mkf"
+    ],
+    "plugins/audit/scripts/ui/report-css/README.md": [
+      "P154.3-mkf"
+    ],
+    "plugins/audit/scripts/ui/report/date-range.js": [
+      "P154.3-mkf"
     ]
   },
   "bugs": [
@@ -13159,6 +13194,22 @@
       "taskId": null,
       "fixedIn": null,
       "notes": null
+    },
+    {
+      "id": "BUG-32",
+      "title": "The rendered report of this repository's own plan no longer prints: Chrome's printToPDF fails on it",
+      "status": "fixed",
+      "severity": "med",
+      "reportedAt": "2026-11-01T06:58:30Z",
+      "reportedBy": "orchestrator, CI on ci/P152",
+      "description": "The release tier's live-plan leg renders docs/audit/audit-plan.json and drives the page, including page.pdf for the print page box. The page is now large enough that Chrome's print pipeline refuses it, so the leg cannot pass and Save-as-PDF on a plan of this size is suspect for users too. Measured once per revision; size threshold not yet located.",
+      "repro": "python3 plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json --out-dir D --format html; node tools/check-report-interactive.mjs D/*.html",
+      "expected": "the report renders a PDF page box in portrait and landscape, as the live-plan leg asserts",
+      "actual": "page.pdf: Protocol error (Page.printToPDF): Printing failed, locally at origin/main 6d38ced9 (report about 10.2 MB) and at 438838a0 (about 10.7 MB); on CI run 41281241772 the browser (report) job was terminated (exit 143) inside the same leg",
+      "files": [],
+      "taskId": null,
+      "fixedIn": "12937474",
+      "notes": "On paper every phase is its own table (built on beforeprint, joined back on afterprint), so no table spans the whole plan; the live plan and 200- and 600-phase demos print; check-report-interactive --stress-print guards it on the live-plan leg (P154.3-mkf)"
     }
   ],
   "deferred": {

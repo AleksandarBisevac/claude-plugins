@@ -22,20 +22,23 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P154-R1",
         "severity": "low",
         "file": "tools/reach-diff.py:3189-3230",
         "issue": "rd92's argument tuple WINDOWS_ARGS only exercises two splitter branches at the END of the line: the empty argument is last (so the in-loop 'if started' separator test is never what keeps it) and the final backslash run is followed by a closing quote (the post-loop 'word.append(slash * run)' is never reached with run>0). Read by mutation in a scratch mirror: replacing the in-loop 'if started:' with 'if word:' (drops a mid-line empty argument) and deleting the post-loop backslash append (drops a trailing backslash on an unquoted last argument, e.g. a directory path ending in a backslash) both leave 162/162 green. Both are exactly the cases the task's brief named (empty arg, trailing backslashes). The splitter itself is correct for both (round-trip probe below), so this is a test gap, not a code bug.",
-        "resolution": "Add to WINDOWS_ARGS (or a third line in _windows_event_cases) an empty argument in the middle and an unquoted last argument ending in a backslash, e.g. ('exit-hard', '', 'D:\\\\out\\\\') ending after a non-empty arg, then re-run mutants 'if word:' and no post-loop append to see rd92 red.",
-        "fixTask": "P154.2-mkf"
+        "resolution": "fixed in P154.2-mkf (362430ee3cfc): Add to WINDOWS_ARGS (or a third line in _windows_event_cases) an empty argument in the middle and an unquoted last argument ending in a backslash, e.g. ('exit-hard', '', 'D:\\\\out\\\\') ending after a non-empty arg, then re-run mutants 'if word:' and no post-loop append to see rd92 red.",
+        "fixTask": "P154.2-mkf",
+        "commit": "362430ee3cfc",
+        "status": "fixed"
       }
     ],
-    "outcome": "[findings: 1 - 0 high, 0 med, 1 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 1 - 0 high, 0 med, 1 low; 1 with a recorded fix commit]",
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "reach-diff traces module children on Windows (P154.1, P154.2); BUG-32 fixed by printing a table per phase (P154.3-mkf, reviewed in a real browser, its findings fixed before commit); every finding resolved",
   "tasks": [
     {
       "id": "P154.1",
@@ -93,7 +96,7 @@
     {
       "id": "P154.2-mkf",
       "title": "fix P154-R1: rd92's argument tuple WINDOWS_ARGS only exercises two splitter b...",
-      "status": "in_progress",
+      "status": "done",
       "description": "rd92's argument tuple WINDOWS_ARGS only exercises two splitter branches at the END of the line: the empty argument is last (so the in-loop 'if started' separator test is never what keeps it) and the final backslash run is followed by a closing quote (the post-loop 'word.append(slash * run)' is never reached with run>0). Read by mutation in a scratch mirror: replacing the in-loop 'if started:' with 'if word:' (drops a mid-line empty argument) and deleting the post-loop backslash append (drops a trailing backslash on an unquoted last argument, e.g. a directory path ending in a backslash) both leave 162/162 green. Both are exactly the cases the task's brief named (empty arg, trailing backslashes). The splitter itself is correct for both (round-trip probe below), so this is a test gap, not a code bug.\n\nResolution asked: Add to WINDOWS_ARGS (or a third line in _windows_event_cases) an empty argument in the middle and an unquoted last argument ending in a backslash, e.g. ('exit-hard', '', 'D:\\\\out\\\\') ending after a non-empty arg, then re-run mutants 'if word:' and no post-loop append to see rd92 red.",
       "files": [
         "tools/reach-diff.py"
@@ -122,14 +125,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "362430ee3cfc",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/reach-diff.py only. WINDOWS_ARGS now carries an empty argument mid-line and an unquoted last argument ending in a backslash (E:\\out\\), round-trip equality through list2cmdline kept as the assertion; comment above it rewritten. Finding corrected: the in-loop 'if started' -> 'if word' mutant does NOT drop a mid-line empty argument (the splitter appends '' to the word before any separator test, so the word is never empty and the mutant is equivalent on every list2cmdline output); it differs only on whitespace list2cmdline never writes. So a new case rd94 feeds a hand-built line with a run of spaces and tabs between arguments and after the last, expecting no empty argument. Mutation in a scratch mirror (copy of plugins/, tools/, tests/ under the scratchpad, mutation landed via count==1 assert, __pycache__ purged, file restored in the same command, cmp against the checkout identical): 'if word:' -> rd94 FAIL, 162/163; deleting the post-loop backslash append -> rd92 FAIL, 162/163; before rd94 existed the 'if word:' mutant stayed 162/162 green. Real file: python3 tools/reach-diff.py --selftest 163/163; python3 tools/sweep-selftests.py tools/reach-diff.py exit 0, 163 cases; ruff check tools/reach-diff.py clean. Dependant CONTRIBUTING.md names this file by path only: still correct, nothing it says about reach-diff changed. The 8 shared names (hook_line, rebound, parse_args, settle ...) are untouched.",
+        "descriptive": "rd92 now fails if the trailing-backslash append is dropped, and a new rd94 fails if the splitter reads an empty argument out of repeated whitespace."
       },
       "startedAt": "2026-11-01T12:45:50Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-01T13:06:30Z",
+      "verifiedBy": [
+        "rd92 argument tuple gained a mid-line empty argument and an unquoted trailing-backslash last argument",
+        "rd94: a run of spaces and tabs between arguments and after the last yields one separator and no empty argument"
+      ],
       "notes": [
         {
           "at": "2026-11-01T12:45:48Z",
@@ -152,14 +158,125 @@
         "runId": "2026-11-01T13:03:08Z.76fe64",
         "status": "passed",
         "at": "2026-11-01T13:03:08Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "362430ee3cfc",
+        "at": "2026-11-01T13:06:30Z",
+        "return": "docs/audit/evidence/returns/P154.2-mkf/20261101T124550Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "tests.expectRedFirst is false on this tdd task: it names no case to prove a red by, so no red-first proof is owed",
+        "at": "2026-11-01T12:51:24Z"
+      }
+    },
+    {
+      "id": "P154.3-mkf",
+      "title": "A report prints a phase table per phase, so the paper's cost is the sum of its phases rather than the square of the plan",
+      "status": "done",
+      "description": "BUG-32. Chrome's renderer crashes (Printing failed in page.pdf; an 'Aw, Snap!' tab under the real Save-as-PDF dialog) when one <table> is paginated across many pages: renderer memory grows with the layout boxes in ONE table times the pages it spans. Measured: the demo plan at 20 tasks per phase prints at 168 phases and crashes at 175; this repository's live plan prints alone but crashes inside the interactive check; cutting the same rows into separate <table>s prints in seconds; <tbody> splitting does not help; bytes, scripts, node count and text volume were ruled out by counter-examples. Fix: on paper, every phase is its own table, with column widths fixed for print so the tables read as one grid, the repeated header kept per table, and the paper still printing every row (the pinned 'archive prints expanded' promise stands). Choose between emitting per-phase tables and building a print-time split on beforeprint by what keeps the screen's sort and filter correct and what page.pdf actually triggers (verify whether page.pdf fires beforeprint before relying on it). The investigation's probes and numbers are in the orchestrator scratchpad bug32/.",
+      "files": [
+        "plugins/audit/scripts/ui/report/exports.js",
+        "plugins/audit/scripts/ui/report-css/print-segments.css",
+        "plugins/audit/scripts/ui/report-css/segments.css",
+        "plugins/audit/scripts/ui/report/README.md",
+        "plugins/audit/scripts/ui/report-css/README.md",
+        "tools/check-report-interactive.mjs",
+        "tests/test_render_report.py",
+        "tests/test__report_page.py",
+        "tests/test__report_html.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/ui/report/date-range.js",
+        "plugins/audit/scripts/ui/report/page-state.js",
+        "examples/acme-store/acme-store-audit.html",
+        "examples/acme-store/acme-store-audit.md",
+        "docs/index.html",
+        "docs/demo-large.html",
+        "tools/verify.sh",
+        "docs/screenshots/areas.png",
+        "docs/screenshots/authors.png",
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/dark.png",
+        "docs/screenshots/expanded.png",
+        "docs/screenshots/filtered.png",
+        "docs/screenshots/filters.png",
+        "docs/screenshots/overview.png"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_render_report.py tests/test__report_page.py",
+          "npx vitest run",
+          "sh tools/verify.sh --only report"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "12937474",
+      "outcome": {
+        "technical": "exports.js cutForPaper/joinAfterPaper; print CSS keyed on script-set attributes; check-report-interactive asserts per-phase shape, round trip, painted visibility and a bounded --stress-print, run once on the live-plan leg; the reviewer's three findings were fixed before the commit",
+        "descriptive": "On paper each phase is its own table, built on beforeprint and joined back on afterprint; plans that crashed the printer now print"
+      },
+      "startedAt": "2026-11-01T13:25:10Z",
+      "completedAt": "2026-11-01T15:20:33Z",
+      "verifiedBy": [
+        "sweep (3 files) exit 0; npx vitest run exit 0; gate-parity exit 0; verify.sh --only report exit 0 with the stress print passing on the live plan; opus review in a real browser"
+      ],
+      "notes": [
+        {
+          "at": "2026-11-01T13:25:09Z",
+          "text": "the task edits only the report renderer section of PLUGIN-BUILD-GUIDE.md if anything; the quoted text sits in another section",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-11-01T13:25:09Z",
+          "text": "the task edits only the report renderer section of PLUGIN-BUILD-GUIDE.md if anything; the quoted text sits in another section",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-11-01T13:25:09Z",
+          "text": "the task edits only the report renderer section of PLUGIN-BUILD-GUIDE.md if anything; the quoted text sits in another section",
+          "waives": "tests/test_drive_phase.py"
+        },
+        {
+          "at": "2026-11-01T13:25:09Z",
+          "text": "the task edits only the report renderer section of PLUGIN-BUILD-GUIDE.md if anything; the quoted text sits in another section; _deps' own lints run in the sweep",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-11-01T13:25:09Z",
+          "text": "the task edits only the report renderer section of PLUGIN-BUILD-GUIDE.md if anything; the quoted text sits in another section",
+          "waives": "tools/prove-gates.py"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "12937474",
+        "at": "2026-11-01T15:20:33Z",
+        "return": "docs/audit/evidence/returns/P154.3-mkf/20261101T132510Z.reviewer.json"
+      },
+      "testEvidence": {
+        "runId": "2026-11-01T15:26:15Z.ef6158",
+        "status": "passed",
+        "at": "2026-11-01T15:26:15Z"
       }
     }
   ],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "4331b4e9-59c2-4a61-9004-3102aba69ea2",
-    "branch": "audit/p154-the-release-tier-is-green-agai",
-    "at": "2026-11-01T12:31:31Z"
-  },
-  "startedAt": "2026-11-01T12:31:31Z"
+  "startedAt": "2026-11-01T12:31:31Z",
+  "testEvidence": {
+    "runId": "2026-11-01T15:37:02Z.cd3753",
+    "status": "passed",
+    "at": "2026-11-01T15:37:02Z"
+  }
 }
