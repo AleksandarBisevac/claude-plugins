@@ -223,9 +223,30 @@
         "file": "tests/test_drive_phase.py:6272-6283",
         "issue": "The diff deleted `_setup_fixture`, the only reader of `_SETUP`, so `_SETUP` is dead. The section header above it ('a wave member's tree outlives a crash, a failed setup and a block ... The setup every case below declares: ... removes the flag and fails instead, once') now describes cases that no longer exist: the next case is _kept_restart_cases, which logs through `_CWD_LOG`. ruff does not report an unused module constant.",
         "resolution": "Delete `_SETUP` and the header lines that describe it. Keep `_provisioned` with a one-line docstring tied to the `_CWD_LOG` log it now reads."
+      },
+      {
+        "id": "P152-R24",
+        "severity": "med",
+        "file": "tests/test_audit_task.py:6106-6108, tests/test_audit_task.py:8360-8362, tests/test_audit_task.py:13529-13533, tests/_harness.py:203-207, PLUGIN-BUILD-GUIDE.md:6418-6423",
+        "issue": "The three converted callers (lv_call, gs_gate, _cli_here) call run_script_in_process with no process fallback, and the runner now raises ValueError when the environment's PYTHONPATH holds a sitecustomize. reach-diff puts one there by design. When the interpreter's user site is off (-s, PYTHONNOUSERSITE, or any venv without system site packages), it writes its hook as sitecustomize rather than usercustomize (tools/reach-diff.py:41-44, 55-57, 767). Under it every in-process fb, at4 and at6 call in test_audit_task raises, because _cli_here and lv_env copy os.environ (PYTHONPATH included) and gs_gate inherits it. The suite is then green at base HEAD (processes) and red at WORKTREE, so this task's own declared gate `reach-diff.py ... --head WORKTREE` cannot pass on such an interpreter. test_drive_phase avoids this only because it routes through _needs_process before calling the runner. The PLUGIN-BUILD-GUIDE sentence 'it refuses an env planting a sitecustomize ... so a case whose subject is the process boundary still starts one' is false for these callers: nothing starts a process, the case raises.",
+        "resolution": "Route the way the drive suite does. In _cli_here, lv_call and gs_gate, when `_harness.planted_sitecustomize(env or os.environ)` returns a path, run the old subprocess.run form (the code this diff replaced) and return the same shape. Alternatively, give run_script_in_process an opt-in that runs `subprocess.run([sys.executable, path] + args, ...)` with the same (code, out, err) return when a sitecustomize is planted, and keep the bare refusal as the default. Add a case that points PYTHONPATH at a directory holding a sitecustomize.py and asserts _cli_here still answers fb5's refusal. Reword the guide's 'still starts one' to say what the caller must do."
+      },
+      {
+        "id": "P152-R25",
+        "severity": "low",
+        "file": "tests/_harness.py:96-105, tests/_harness.py:190-202",
+        "issue": "The runner replaces only the sys.stdin, sys.stdout and sys.stderr objects. A child process the script starts without its own pipes inherits this suite's file descriptors 0, 1 and 2, not the byte-backed streams. That child's output is missing from the returned bytes and goes to the suite's own stdout or stderr. A case asserting that a script printed nothing on stderr therefore passes in-process and fails as a process: the silent-pass shape. The docstring promises 'the way subprocess.run would run it as a process', and the WHAT IT CANNOT BE block does not name this. No converted verb reaches it today: audit-task.py's spawns at :3751, :5539, :6570, :14598 and :15101 all pipe, and run-test-gate.py:3145 spawns through _spawn_kwargs. But the helper is now offered to every suite under tests/.",
+        "resolution": "Add to the WHAT IT CANNOT BE block that a child the script starts with inherited stdio writes to this suite's descriptors, so its output is not in the returned bytes. A case whose subject includes a child's inherited output runs as a process. If it should be enforced instead, os.dup2 descriptors 1 and 2 onto temporary files for the duration of the run and append their contents."
+      },
+      {
+        "id": "P152-R26",
+        "severity": "low",
+        "file": "PLUGIN-BUILD-GUIDE.md:6418",
+        "issue": "The guide names the signature as `run_script_in_process(path, args, cwd, stdin, env)` and leaves out `before_main`. The task description names that parameter, test_drive_phase._run_in_process depends on it (tests/test_drive_phase.py:368-370 passes _route_verbs), and ip11 proves it. A reader of the guide looking for how a script's own function is rerouted before its __main__ runs will not find it.",
+        "resolution": "Write the signature as `run_script_in_process(path, args, cwd, stdin, env, before_main)` and add one clause: before_main(namespace) runs between the script's body and its __main__ block, for a caller that reroutes what the command line will call."
       }
     ],
-    "outcome": "[findings: 23 - 0 high, 10 med, 13 low; 13 with a recorded fix commit]"
+    "outcome": "[findings: 26 - 0 high, 11 med, 15 low; 13 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -457,7 +478,7 @@
     {
       "id": "P152.4",
       "title": "Wave decisions and the CI cadence are tested as unit cases, with three end-to-end drives",
-      "status": "in_progress",
+      "status": "done",
       "description": "Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.4. Convert ci wv wz wc wr wp nr wh wt wt5 wo sk to unit cases over ci_due/ci_settle/ci_after_close, wave_width/hooks_width, parked-return and sibling-red routing; keep e2e-wave (two disjoint tasks in one next wv1, one parked return nr, one full cadence cycle with the fake gh ci). wqm and wj stay end-to-end. Do not widen _ci_fake. drive-phase.py changes only if ci_settle's decision is not separable from its gh call, then as one more seam ci_turn(run_state, counter, cadence). Remove dropped labels from .github/sweep-costs.json.",
       "files": [
         "tests/test_drive_phase.py",
@@ -490,14 +511,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3b692227cfab",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tests/test_drive_phase.py: blocks ci wv wz wc wr wp nr wh wt wt5 wo sk removed (functions _ci_cadence_cases _wave_cases _wave_width_cases _wave_crash_cases _wave_red_sibling_cases _wave_parked_return_cases _parked_return_cases _wave_hooks_cases _wave_resume_cases _wave_adopt_cases _writer_off_cases _session_skill_cases, helpers _setup_fixture _tree_expected _unset_writer _offered; _skill_flags re-homed beside its cases) and two STAGES rows added: e2e-wave (_e2e_wave_cases: _e2e_wave_pair = wv1-wv8 one wave of two disjoint tasks in one next; _e2e_wave_parked = nr2 nr3 nr3b one parked no-reviewer-return in a wave; _e2e_ci_cycle = the six green-cycle ci.cadence details with the unchanged _ci_fake) and uy-block (_wave_unit_cases: ci red/running/absent/hours/closes+hours/config, wv5m, wz1 wa1 wa2, wh1-wh3, wu1 wu2, wc1 wc2, wr1-wr3, wp0 wp1 nr0 nr1, nr4-nr6, wt1-wt6, wo1a-wo2c, sk1-sk3), each run over the code that acts on the decision (ci_after_close, ci_before_signoff, gate_step, drive_phase, integrate_member, apply_answer, advance, walk_wave, step_member, add_tree, close_wave, wave_step, drive_locked, red_refused, clauses_uncovered, writer_argv) with _verb_rig/_ci_fake/_step_rig fakes, literal expectations, raising calls through _caught, temp dirs (hooks fixture, evidence dir) removed with _harness.remove_tree in finally. Case ids: old 60 = new 60 per id (script over --stage output of the 12 old blocks vs e2e-wave+uy-block; nothing lost, nothing added; the ci clause id is shared by its 12 cases before and after). No ci_turn seam: ci_settle's decision is separable because ci_run is already the module's one seam to git/gh and a case replaces it on its own driver copy; _ci_fake not widened (the unit cases reuse it as is). drive-phase.py: one comment only (the integrate exit-code mirror named the wv/wc cases as driving the real verb; wc no longer does, so it now names wv, wd1, wt8, each verified to drive real integrate-task exits 0/1/3). PLUGIN-BUILD-GUIDE.md not touched (no seam added). .github/sweep-costs.json: the 12 dropped labels' rows removed and the table rewritten through sweep-selftests.record_costs with labels limited to the remaining blocks (suite figure 1920.3 -> 1695.0 written by the recorder); swd7 green. Gates: sweep drive suite 1/1 ok 762 cases exit 0; _harness 98 cases exit 0; --selftest 160/160 exit 0; test__output_lints 182 cases exit 0; test_stamp_verification 356 cases exit 0; ruff and vermin -t=3.8- clean on both .py files; reach-diff exit 0: base 5821 lines/77 blocks, head 5824 lines/67 blocks, lost 0, 0 module children untraced at both. A probe run with only e2e-wave kept (no unit block) lost 35 lines in 12 functions (without_writer_way, resume_writer, red_refused, ci_file_red, ci_settle, ci_before_signoff, gate_step's relay of a gate refusal, wave_width, hooks_width, add_tree's setup-failed stop, step_member's add_tree stop, drive_phase's width stop); every one is reached by uy-block now (gate_step's relay is wv5m's mutant, whose old drive reached it through the real gate verb refusing a tree-less run). Timings (single runs, sweep --loud, 8 workers): before 767.2 slot-s, 98.87 s wall, 77 blocks (load 6.82 -> 14.49 at 00:29); after 707.3 slot-s, 91.70 s wall, 67 blocks (load 4.44 -> 18.12 at 00:46) and again 724.0 slot-s, 93.71 s wall (load 9.71 -> 19.76 at 00:55, a 9-minute gap). The twelve old blocks summed 84.0 slot-s in the before run; e2e-wave 17.2 / 18.6 s and uy-block 0.5 / 0.6 s in the two after runs. Mutation table (probe file scratchpad/probe/mutations.py): ci-red-files-nothing, ci-dispatch-over-running, ci-never-dispatch, ci-absent-reads-default, ci-signoff-reads-nothing, ci-hours-strict -> the ci clause cases; gate-no-tree, gate-refusal-marked-green -> wv5m; width-problem-read-as-1, drive-ignores-width-problem -> wz1; auto-less-one -> wa1; hooks-lacks-ignored -> wh1; hooks-always-width-1 -> wh2 wh3; hooks-unestablished-unsaid -> wh3; undeclared-not-asked -> wu1 wu2; widen-word-not-passed, widen-not-declared, widen-no-regate -> wu2; crash-reintegrates -> wc2; member-decision-not-parked -> wp0 wr1; parked-never-printed -> wr1 wr3; parked-kept-always, parked-dropped-always -> wp1; role-return-always-missing -> nr1 wp1; role-return-always-filed -> nr0 nr1 wp1; pending-not-rendered -> nr0 wr3; role-any-name -> nr6; role-never-read -> nr1 nr4 nr5 wp1; setup-failure-relayed -> wt3; member-restarted -> wp0 wp1 wr1 wr2 wr3 wt1 wt2 wt3 wt4 wt6; adopted-base-dropped, kept-record-not-spent, kept-not-reopened -> wt6; wave-close-drops-kept -> wt5; writer-off-offers-retry-always, resume-without-writer -> wo1c wo2c; writer-path-always-on, writer-path-always-off -> wo1a wo2a; red-refused-ignores-writer-off -> wo2a; clauses-ignores-writer-off -> wo1a; retry-starts-nothing -> wo1b wo2b; skills-dropped -> sk1 sk2; skill-empty-name -> sk3. The first probe run caught wr1 surviving member-decision-not-parked (the walk printed the decision line through wave_said); wr1 now asserts the print's kind is decide, and the rerun killed it. A row mutating add_tree's non-setup refusal survived and was dropped as mis-aimed: no old or new case drives a task-add failure other than a setup failure. wc1 and wt1 are fixture-shape cases (the crash lands where meant) and are not a mutation's target. Dependants: .github/workflows/ci.yml - still correct, it names the cost table and the suite by path only; stamp-verification.py - still correct, it reads the table for deadlines and swd5/swd7 are green; tests/test_stamp_verification.py - green (356 cases); tools/sweep-selftests.py - still correct, its --selftest is green and it weighs the two new blocks by the suite's largest recorded block (its budget line printed 12 such blocks); CHANGELOG.md, CLAUDE.md, CONTRIBUTING.md, PLUGIN-BUILD-GUIDE.md - name the table by path, no row of the removed labels (git grep for the removed labels outside docs/audit: no hits); tests/test_drive_phase.py - changed, this task; tools/affected.py - still correct, it maps paths and the suite path is unchanged; tools/reach-diff.py - ran, exit 0; README.md, docs/research/pipeline-cost-design.md, hooks/detect-plan-skip.py, record-risk-confirmation.py - still correct, the driver changed by one comment; PLUGIN-BUILD-GUIDE.md's wh1-wh3 sentence says the print names the copy - the product still prints its did-lines in the print and wh1 asserts the did-line, so the sentence stays true; tests/test__runner_output.py, tests/test_run_test_gate.py - still correct, they name the suite by path and define their own _counting/_follower_cases, which this change did not touch; tests/test_stamp_verification.py's _actions is its own name, and the drive suite's _actions is kept. _git_said, _advance_plan, _close_plan and the other names other files reference are untouched. bare_git_calls: no subprocess call was added to the suite; the drive suite's own git-bypass case is green in the full run.",
+        "descriptive": "The wave and CI cadence blocks are unit cases over the code that acts on each decision, with one end-to-end drive each for a two-task wave, a parked return in a wave and a full cadence cycle; the drive suite lost 10 blocks and about 50-60 slot-seconds with no line of the driver left unreached."
       },
       "startedAt": "2026-10-31T23:27:46Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-01T00:21:14Z",
+      "verifiedBy": [
+        "e2e-wave block: _e2e_wave_pair (wv1-wv8), _e2e_wave_parked (nr2 nr3 nr3b), _e2e_ci_cycle (the green ci.cadence cycle) - moved from the old wv, nr and ci blocks",
+        "uy-block: _wave_unit_cases - 42 converted cases over ci_after_close/ci_before_signoff, gate_step, drive_phase, integrate_member/apply_answer, advance, walk_wave/step_member, add_tree/close_wave/wave_step, drive_locked, red_refused/clauses_uncovered/apply_answer, writer_argv"
+      ],
       "notes": [
         {
           "at": "2026-10-31T16:23:48Z",
@@ -515,12 +539,23 @@
         "runId": "2026-11-01T00:14:33Z.a7d967",
         "status": "passed",
         "at": "2026-11-01T00:14:33Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "3b692227cfab",
+        "at": "2026-11-01T00:21:14Z",
+        "return": "docs/audit/evidence/returns/P152.4/20261031T232746Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task with tests.add empty and expectRedFirst false: no new case is owed a red. Every converted case was instead proven able to fail by a mutation probe over a git-archive export of HEAD with the working suite and cost table copied in: 43 defects put into drive-phase.py one at a time, each anchor asserted to occur once and to have landed, __pycache__ purged before and after, uy-block run, driver restored byte for byte; baseline and restored runs green; 43 of 43 KILLED on their wanted ids.",
+        "at": "not run: no red-first helper run is owed"
       }
     },
     {
       "id": "P152.5",
       "title": "test_audit_task.py runs its verbs in-process where the process is not the subject",
-      "status": "pending",
+      "status": "cancelled",
       "description": "Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.5. Move test_drive_phase.py's _run_in_process/_script_parts/_child_codec/_exit_status to tests/_harness.py as run_script_in_process(path, args, cwd, stdin, env), with its own cases (ip-block moves with the code), and use it in tests/test_audit_task.py fb-block (_cli), at4-block (lv_call, the caller only; the sleepers stay real processes) and at6-block (gs_gate). Keep two real-process runs in fb (the stdin '-' and argv dialect). The restore of argv, cwd, environ and streams stays in a finally. PLUGIN-BUILD-GUIDE.md tests/ paragraph on _harness.py gains one sentence.",
       "files": [
         "tests/_harness.py",
@@ -532,14 +567,16 @@
       "tests": {
         "mode": "tdd",
         "add": [
-          "tests/_harness.py: run_script_in_process restores argv, cwd, environ and streams after a raising script and reports its exit status"
+          "tests/_harness.py: run_script_in_process restores argv, cwd, environ and streams after a raising script and reports its exit status",
+          "tests/test_audit_task.py: the fb, at4 and at6 verb calls run in-process through _harness.run_script_in_process and keep their verdicts"
         ],
         "expectRedFirst": true,
         "gate": [
           "python3 tools/sweep-selftests.py tests/_harness.py",
           "python3 tools/sweep-selftests.py tests/test_drive_phase.py",
           "python3 tools/sweep-selftests.py tests/test_audit_task.py",
-          "python3 tools/sweep-selftests.py --selftest"
+          "python3 tools/sweep-selftests.py --selftest",
+          "python3 tools/reach-diff.py plugins/audit/scripts/manifest/audit-task.py tests/test_audit_task.py --base HEAD --head WORKTREE"
         ],
         "gateBasis": "declared"
       },
@@ -553,15 +590,15 @@
         "P152.4"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Cancelled: Re-added as P152.16 in regression mode: tests.add named tests/_harness.py, which holds both the new cases and the new function, and the red-first helper lays every file under tests/ over HEAD, so no red can ever be shown for it; the work is kept as a patch and re-applied under the new id."
       },
-      "startedAt": null,
-      "completedAt": null,
+      "startedAt": "2026-11-01T00:21:37Z",
+      "completedAt": "2026-11-01T00:46:12Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -583,8 +620,14 @@
           "at": "2026-10-31T15:42:15Z",
           "text": "the edit is confined to the touched module's own section; the text this reader quotes sits in another section and is not edited",
           "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-01T00:21:34Z",
+          "text": "it quotes the runner's refusal text in _harness.py; this task adds an in-process runner beside it and does not edit that passage",
+          "waives": "tools/sweep-selftests.py"
         }
-      ]
+      ],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P152.6",
@@ -709,7 +752,7 @@
       ],
       "risk": "low",
       "blockedBy": [
-        "P152.5"
+        "P152.17-6jb"
       ],
       "dependsOn": [],
       "attempts": 0,
@@ -1412,6 +1455,165 @@
         "basis": "`python3 tools/sweep-selftests.py tools/reach-diff.py` in a throwaway tree at HEAD exited 1 with failing cases rd17 (house FAIL), rd29 (house FAIL), rd30 (house FAIL), rd21 (house FAIL), rd25 (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 20/22 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 23/28 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
         "status": "could-not-prove",
         "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P152.16-6jb",
+      "title": "test_audit_task.py runs its verbs in-process where the process is not the subject",
+      "status": "cancelled",
+      "description": "Same work as the cancelled P152.5 (re-added because the red-first helper cannot prove a change to tests/_harness.py). Move the in-process runner to tests/_harness.py as run_script_in_process(path, args, cwd, stdin, env, before_main) with its own cases ip1-ip11 (restore of argv, cwd, environ, sys.path and streams after a raising script and every SystemExit shape; stdin bytes; whole-environment env; refusal of a planted sitecustomize), and use it in tests/test_audit_task.py fb-block, at4-block (the caller; sleepers stay real) and at6-block; two real-process runs kept in fb. The cases were seen red before the function existed: python3 tests/_harness.py --selftest raised NameError run_script_in_process, 98/99. Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.5.",
+      "files": [
+        "tests/_harness.py",
+        "tests/test_drive_phase.py",
+        "tests/test_audit_task.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/_harness.py",
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py",
+          "python3 tools/sweep-selftests.py tests/test_audit_task.py",
+          "python3 tools/sweep-selftests.py --selftest",
+          "python3 tools/reach-diff.py plugins/audit/scripts/manifest/audit-task.py tests/test_audit_task.py --base HEAD --head WORKTREE"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: Re-added as a fresh task: its work was already in the tree when it started (carried from the cancelled P152.5), so the commit verb refused it as earlier work; the work is kept as a patch and applied after the new task starts on a clean tree."
+      },
+      "startedAt": "2026-11-01T00:46:24Z",
+      "completedAt": "2026-11-01T01:07:36Z",
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-01T00:46:22Z",
+          "text": "it quotes the runner's refusal text in _harness.py; this task adds an in-process runner beside it and does not edit that passage",
+          "waives": "tools/sweep-selftests.py"
+        },
+        {
+          "at": "2026-11-01T00:46:22Z",
+          "text": "the task adds one sentence to the tests/ paragraph; the text this reader quotes sits in another section",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-11-01T00:46:22Z",
+          "text": "the task adds one sentence to the tests/ paragraph; the text this reader quotes sits in another section",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-11-01T00:46:22Z",
+          "text": "the task adds one sentence to the tests/ paragraph; the text this reader quotes sits in another section",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-11-01T00:46:22Z",
+          "text": "the task adds one sentence to the tests/ paragraph; the text this reader quotes sits in another section",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-01T00:46:22Z",
+          "text": "declared",
+          "waives": "PLUGIN-BUILD-GUIDE.md"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-01T00:58:27Z.d564ae",
+        "status": "passed",
+        "at": "2026-11-01T00:58:27Z"
+      }
+    },
+    {
+      "id": "P152.17-6jb",
+      "title": "test_audit_task.py runs its verbs in-process where the process is not the subject",
+      "status": "in_progress",
+      "description": "Same work as the cancelled P152.5 and P152.16-6jb, started on a clean tree; the work is applied from the saved patch after start. Move the in-process runner to tests/_harness.py as run_script_in_process(path, args, cwd, stdin, env, before_main) with its own cases ip1-ip11, and use it in tests/test_audit_task.py fb-block, at4-block (the caller; sleepers stay real) and at6-block; two real-process runs kept in fb. The cases were seen red before the function existed (NameError run_script_in_process, 98/99). Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.5.",
+      "files": [
+        "tests/_harness.py",
+        "tests/test_drive_phase.py",
+        "tests/test_audit_task.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/_harness.py",
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py",
+          "python3 tools/sweep-selftests.py tests/test_audit_task.py",
+          "python3 tools/sweep-selftests.py --selftest",
+          "python3 tools/reach-diff.py plugins/audit/scripts/manifest/audit-task.py tests/test_audit_task.py --base HEAD --head WORKTREE"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-01T01:07:48Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-01T01:07:46Z",
+          "text": "it quotes the runner's refusal text in _harness.py; this task adds an in-process runner beside it and does not edit that passage",
+          "waives": "tools/sweep-selftests.py"
+        },
+        {
+          "at": "2026-11-01T01:07:46Z",
+          "text": "the task adds one sentence to the tests/ paragraph; the text this reader quotes sits in another section",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-11-01T01:07:46Z",
+          "text": "the task adds one sentence to the tests/ paragraph; the text this reader quotes sits in another section",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-11-01T01:07:46Z",
+          "text": "the task adds one sentence to the tests/ paragraph; the text this reader quotes sits in another section",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-11-01T01:07:46Z",
+          "text": "the task adds one sentence to the tests/ paragraph; the text this reader quotes sits in another section",
+          "waives": "tools/prove-gates.py"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-01T01:24:57Z.25a70d",
+        "status": "passed",
+        "at": "2026-11-01T01:24:57Z"
       }
     }
   ],

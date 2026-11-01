@@ -6415,6 +6415,16 @@ route, and `_panel_state`'s `--name-only` **security** slice widened from 3,747 
 still "found" the flag. `between()` raises on either marker, and `run()` reports the escape as a
 named failing case.
 
+**`run_script_in_process(path, args, cwd, stdin, env, before_main)`** runs an entry point's
+`__main__` in the suite's own interpreter, as `subprocess.run` would run it as a process - `env`
+the whole environment, `stdin` bytes, an escape a traceback and status 1 - with
+`before_main(namespace)` called between the script's body and its `__main__` block for a caller
+that reroutes what the command line will call, and puts argv, the working directory, the
+environment, the import path and the three std streams back in a `finally` (`ip1`-`ip11` in its
+own selftest); it refuses an `env` planting a `sitecustomize`, which only a fresh interpreter
+imports, and **`run_script`** is the caller's way past that refusal: in this interpreter, or as
+a process when a `sitecustomize` is planted (`ip12`).
+
 **`in_json(text)`** is the needle for counting a path inside a haystack that is JSON. Suites
 count an out-of-repository path in a feed file to prove a prune removed it, and
 `feed.count(str(tmpdir))` is one string looked for in a copy of itself on POSIX — while on the

@@ -80,8 +80,11 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 
 import ast
 import atexit
+import builtins
 import contextlib
+import io
 import json
+import locale
 import os
 import re
 import shutil
@@ -90,6 +93,7 @@ import sys
 import tempfile
 import time
 import traceback
+import types
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 # The suites sit at the repository root, beside the plugin and not inside it, so
@@ -1453,6 +1457,192 @@ def staged_main(argv, stages, namespace, prefix):
                            flag_values(argv, "--stage"))
 
 
+# --- a script run in this interpreter ------------------------------------------
+# A SCRIPT RUN AS A PROCESS COSTS AN INTERPRETER START AND ITS WHOLE IMPORT GRAPH,
+# and a suite that drives its entry point dozens of times a block pays that start
+# every time. `run_script_in_process` runs the script as `__main__` here instead -
+# the same `__main__` block a process runs, `safe_stdio` included - with its own
+# argv, working directory, environment and byte-backed stdio, each put back in a
+# `finally`. The modules it imports are the ones this process already holds, which
+# is the saving, and why a module-level cache a script fills outlives the run.
+#
+# WHAT IT CANNOT BE. Anything decided at interpreter start is this process's, not
+# the script's: a `sitecustomize` on the `PYTHONPATH` it is handed (refused, by
+# name, rather than silently run without), `-X` flags, `sys.flags`, the locale.
+# And `os.getpid()` is this suite's pid, which outlives the script: a lock a
+# script takes records a holder that is still alive when the next run reads it,
+# so a case whose subject is a holder that died needs a process of its own -
+# and nothing checks a case for that; its author is the check. Only the three
+# `sys.std*` OBJECTS are swapped, not descriptors 0-2: a child process the
+# script starts without pipes of its own inherits this suite's descriptors, so
+# what that child writes lands in the suite's own output and is missing from
+# the returned bytes - a case whose subject includes such a child's output
+# runs a process; nothing checks a case for that either. A
+# case whose subject is the process boundary itself - argv parsed from a real
+# command line, the status the OS reports, stdout bytes under a legacy code page -
+# runs a process; this is for the cases whose subject is what the script decides.
+def _is_main_guard(node):
+    """True for a top-level `if __name__ == "__main__":`."""
+    test = getattr(node, "test", None)
+    return (isinstance(node, ast.If) and isinstance(test, ast.Compare)
+            and isinstance(test.left, ast.Name) and test.left.id == "__name__"
+            and len(test.comparators) == 1
+            and isinstance(test.comparators[0], ast.Constant)
+            and test.comparators[0].value == "__main__")
+
+
+# A memo of each script's two halves, so a suite parses each script once. Keyed by
+# its path, size and mtime in nanoseconds, so a script edited while this process
+# runs is parsed again wherever the filesystem records the edit's time that
+# finely; a mutation probe runs each mutant in a process of its own anyway.
+_SCRIPT_PARTS = {}
+
+
+def script_parts(path):
+    """`(body, main)` code objects of the script at `path`: every top-level
+    statement but a trailing `if __name__ == "__main__":` block, and that block
+    alone - `main` None when the script does not end in one. Split so a caller
+    can reach into the module between the two (`run_script_in_process`'s
+    `before_main`)."""
+    st = os.stat(path)
+    key = (path, st.st_mtime_ns, st.st_size)
+    if key not in _SCRIPT_PARTS:
+        with open(path, "rb") as fh:
+            parsed = ast.parse(fh.read(), path)
+        tail = [n for n in parsed.body[-1:] if _is_main_guard(n)]
+        body = parsed.body[:len(parsed.body) - len(tail)]
+        _SCRIPT_PARTS[key] = tuple(
+            compile(ast.Module(body=part, type_ignores=[]), path, "exec")
+            if part else None for part in (body, tail))
+    return _SCRIPT_PARTS[key]
+
+
+def child_codec(environ=None):
+    """`(encoding, errors)` a child interpreter started under `environ` gives its
+    stdin and stdout: `PYTHONIOENCODING` when set, else the locale's encoding,
+    with the error handler the interpreter picks - `surrogateescape` under UTF-8
+    mode or the C or POSIX locale, `strict` otherwise - so under a legacy code
+    page or the ASCII locale a script reads its stdin the way a process of its
+    own would."""
+    environ = os.environ if environ is None else environ
+    spec = environ.get("PYTHONIOENCODING") or ""
+    encoding, _sep, errors = spec.partition(":")
+    lenient = (sys.flags.utf8_mode
+               or locale.setlocale(locale.LC_CTYPE) in ("C", "POSIX"))
+    return ((encoding or locale.getpreferredencoding(False)),
+            (errors or ("surrogateescape" if lenient else "strict")))
+
+
+def exit_status(code, err):
+    """The exit status `sys.exit(code)` gives a process; a code that is not an
+    int is printed on `err` first, as the interpreter prints it."""
+    if code is None:
+        return 0
+    if isinstance(code, int):
+        return code
+    err.write("%s\n" % (code,))
+    return 1
+
+
+def _restore_environ(held):
+    """Make `os.environ` exactly `held`, through `os.environ` itself so the
+    process environment a grandchild inherits follows it."""
+    for name in [n for n in os.environ if n not in held]:
+        del os.environ[name]
+    for name, value in held.items():
+        if os.environ.get(name) != value:
+            os.environ[name] = value
+
+
+def planted_sitecustomize(environ):
+    """The `sitecustomize.py` a fresh interpreter under `environ` would import
+    from its `PYTHONPATH`, or None - the one start-up hook a fixture here plants,
+    and one this interpreter, already started, never runs."""
+    for where in (environ.get("PYTHONPATH") or "").split(os.pathsep):
+        found = os.path.join(where, "sitecustomize.py") if where else ""
+        if found and os.path.isfile(found):
+            return found
+    return None
+
+
+def run_script_in_process(path, args, cwd, stdin=None, env=None, before_main=None):
+    """`(code, stdout bytes, stderr bytes)` of the script at `path` run as
+    `__main__` in this interpreter from `cwd`, the way `subprocess.run` would run
+    it as a process: `env` is the whole environment it sees (None: this one),
+    `stdin` its stdin as bytes (a str is sent as UTF-8; None is empty). An
+    exception that escapes the script is its traceback on stderr and status 1,
+    as a process reports it. `before_main(namespace)`, when given, is called
+    between the script's top-level body and its `__main__` block, for a caller
+    that reroutes something the command line will call.
+
+    Refuses with ValueError, before anything is swapped, an `env` whose
+    `PYTHONPATH` plants a `sitecustomize`: only a fresh interpreter imports one,
+    so in here the script would run without it and read as if it had."""
+    environ = dict(os.environ if env is None else env)
+    planted = planted_sitecustomize(environ)
+    if planted:
+        raise ValueError("%s is imported only at interpreter start; run this "
+                         "script as a process" % (planted,))
+    body, main = script_parts(path)
+    encoding, errors = child_codec(environ)
+    raw_in = stdin.encode("utf-8") if isinstance(stdin, str) else (stdin or b"")
+    out_raw, err_raw = io.BytesIO(), io.BytesIO()
+    streams = (io.TextIOWrapper(io.BytesIO(raw_in), encoding=encoding, errors=errors),
+               io.TextIOWrapper(out_raw, encoding=encoding, errors=errors),
+               io.TextIOWrapper(err_raw, encoding=encoding,
+                                errors="backslashreplace"))
+    held = (sys.stdin, sys.stdout, sys.stderr, list(sys.argv), list(sys.path),
+            os.getcwd(), dict(os.environ))
+    module = types.ModuleType("__main__")
+    module.__dict__.update(__file__=path, __builtins__=builtins, __cached__=None)
+    try:
+        sys.stdin, sys.stdout, sys.stderr = streams
+        sys.argv = [path] + list(args)
+        sys.path.insert(0, os.path.dirname(path))
+        _restore_environ(environ)
+        os.chdir(cwd)
+        try:
+            if body is not None:
+                exec(body, module.__dict__)
+            if before_main is not None:
+                before_main(module.__dict__)
+            if main is not None:
+                exec(main, module.__dict__)
+            code = 0
+        except SystemExit as exc:
+            code = exit_status(exc.code, streams[2])
+        except Exception:                                      # noqa: BLE001
+            traceback.print_exc(file=streams[2])
+            code = 1
+        for stream in streams[1:]:
+            stream.flush()
+        return code, out_raw.getvalue(), err_raw.getvalue()
+    finally:
+        sys.stdin, sys.stdout, sys.stderr = held[:3]
+        sys.argv = held[3]
+        sys.path[:] = held[4]
+        os.chdir(held[5])
+        _restore_environ(held[6])
+
+
+def run_script(path, args, cwd, stdin=None, env=None, timeout=300):
+    """`run_script_in_process`'s `(code, stdout bytes, stderr bytes)`, from
+    this interpreter - or, when `env` (None: this one) plants a
+    `sitecustomize`, from the script run as a process of its own, since only a
+    fresh interpreter imports one. A caller that has no other reason to want a
+    process calls this rather than the in-process runner, so a `PYTHONPATH`
+    somebody else planted - a tracer's hook - changes how the script runs and
+    never whether the case can run at all."""
+    environ = dict(os.environ if env is None else env)
+    if planted_sitecustomize(environ) is None:
+        return run_script_in_process(path, args, cwd, stdin=stdin, env=environ)
+    raw_in = stdin.encode("utf-8") if isinstance(stdin, str) else (stdin or b"")
+    done = subprocess.run([sys.executable, path] + list(args), cwd=cwd,
+                          env=environ, input=raw_in, stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE, timeout=timeout)
+    return done.returncode, done.stdout, done.stderr
+
+
 # --- waiting for a killed process to be gone ------------------------------------
 # A killed child stays a zombie until its parent reaps it, and a zombie still
 # answers `kill(pid, 0)`. The product's liveness rule, `_locks.pid_alive`, reads
@@ -2689,11 +2879,294 @@ def _receive_pack_cases(check):
           and (seen.get("deny") or {}).get("spawns") == 1)
 
 
+_IN_PROCESS_STUB = (
+    "import os, sys\n"
+    "os.environ['AUDIT_IP_PROBE'] = 'set by the stub'\n"
+    "os.chdir(%r)\n"
+    "print('argv=%%s cwd=%%s given=%%s' %% (sys.argv[1:], os.getcwd(),\n"
+    "                                     os.environ.get('AUDIT_IP_GIVEN')))\n"
+    "sys.exit(int(sys.argv[1]) if sys.argv[1].isdigit() else sys.argv[1])\n")
+
+# Every way out a script has, each after it has moved what the runner swaps:
+# the cwd, the environment, argv and the import path. `raise` is an escape a
+# process turns into status 1 and a traceback; the three `exit-*` modes are
+# the three shapes `SystemExit.code` takes; `swap-streams` replaces all three
+# std stream objects with its own before it exits; `stdin-*` read what the
+# runner handed them, as bytes and as text; `env-seen` prints two variables.
+# A script ending in a `__main__` block whose answer comes from its body, so a
+# `before_main` that reroutes the body's function shows in what it prints.
+_IN_PROCESS_GUARDED = (
+    "def said():\n"
+    "    return 'from the body'\n"
+    "\n"
+    "\n"
+    "if __name__ == '__main__':\n"
+    "    print(said())\n")
+
+_IN_PROCESS_WAYS_OUT = (
+    "import io, os, sys\n"
+    "mode = sys.argv[1]\n"
+    "if mode == 'stdin-bytes':\n"
+    "    got = sys.stdin.buffer.read()\n"
+    "    sys.stdout.write('%%s %%s\\n' %% (type(got).__name__, ascii(got)))\n"
+    "    sys.exit(0)\n"
+    "if mode == 'env-seen':\n"
+    "    sys.stdout.write('%%s %%s\\n' %% (os.environ.get('AUDIT_IP_OUTER'),\n"
+    "                                    os.environ.get('AUDIT_IP_GIVEN')))\n"
+    "    sys.exit(0)\n"
+    "if mode == 'stdin-text':\n"
+    "    got = sys.stdin.read()\n"
+    "    sys.stdout.write('%%s %%s\\n' %% (type(got).__name__, ascii(got)))\n"
+    "    sys.exit(0)\n"
+    "print('main' if __name__ == '__main__' else 'imported as %%s' %% __name__)\n"
+    "os.environ['AUDIT_IP_PROBE'] = 'set by the stub'\n"
+    "os.chdir(%r)\n"
+    "sys.argv.append('appended')\n"
+    "sys.path.insert(0, os.getcwd())\n"
+    "if mode == 'swap-streams':\n"
+    "    sys.stdout.flush()\n"
+    "    sys.stdin = io.TextIOWrapper(io.BytesIO(b''))\n"
+    "    sys.stdout = io.TextIOWrapper(io.BytesIO())\n"
+    "    sys.stderr = io.TextIOWrapper(io.BytesIO())\n"
+    "    sys.exit(0)\n"
+    "if mode == 'raise':\n"
+    "    raise RuntimeError('boom from the stub')\n"
+    "if mode == 'exit-none':\n"
+    "    sys.exit()\n"
+    "if mode == 'exit-int':\n"
+    "    sys.exit(4)\n"
+    "if mode == 'exit-str':\n"
+    "    sys.exit('said on the way out')\n")
+
+
+def _last_line(raw):
+    """The last non-blank line of captured bytes, as a one-item list (empty
+    when there is none) - where a traceback names its exception."""
+    return raw.rstrip().splitlines()[-1:]
+
+
+def _process_state():
+    """What a script run in this interpreter could leave behind, by name -
+    the stream OBJECTS, not their text, since a script that swaps a stream
+    and is not undone leaves this suite printing into the script's buffer."""
+    return {"cwd": os.getcwd(), "argv": list(sys.argv),
+            "environment": dict(os.environ), "import path": list(sys.path),
+            "stdin": sys.stdin, "stdout": sys.stdout, "stderr": sys.stderr}
+
+
+def _in_process_runner_cases(check):
+    """`run_script_in_process` gives a script the argv, working directory and
+    environment a process of its own would see, reads `sys.exit` and an escape
+    the way the interpreter turns them into a status, hands stdin as the bytes
+    a process would read, and leaves none of the script's own changes behind
+    in this interpreter."""
+    where = os.path.realpath(fixture_root("harness-in-process-"))
+    try:
+        away = os.path.join(where, "elsewhere")
+        os.mkdir(away)
+        stub = os.path.join(where, "stub.py")
+        with open(stub, "w", encoding="utf-8") as fh:
+            fh.write(_IN_PROCESS_STUB % (away,))
+        before = _process_state()
+        runs, leaked = [], []
+        for arg in ("x", "3", "0"):
+            code, out, err = run_script_in_process(
+                stub, [arg, "--flag"], where, env={"AUDIT_IP_GIVEN": "handed"})
+            runs.append((code, out.decode("utf-8"), err.decode("utf-8")))
+            after = _process_state()
+            leaked.extend("%s after sys.exit(%r)" % (name, arg)
+                          for name in sorted(before) if before[name] != after[name])
+        check("ip1 a script run in this process changes no cwd, argv, "
+              "environment or import path that outlives it, whichever way it "
+              "exits: %r" % (leaked,),
+              leaked == [] and "AUDIT_IP_PROBE" not in os.environ
+              and "AUDIT_IP_GIVEN" not in os.environ)
+        check("ip2 the script saw its own argv, the environment it was handed "
+              "and the cwd it moved to: %r" % ([r[1] for r in runs],),
+              [r[1].replace("\r\n", "\n") for r in runs] == [
+                  "argv=%r cwd=%s given=handed\n" % ([a, "--flag"], away)
+                  for a in ("x", "3", "0")])
+        check("ip3 sys.exit('x') is status 1 with 'x' on stderr, sys.exit(3) is "
+              "3, sys.exit(0) is 0 with nothing on stderr: %r"
+              % ([(r[0], r[2]) for r in runs],),
+              [(r[0], r[2].replace("\r\n", "\n")) for r in runs]
+              == [(1, "x\n"), (3, ""), (0, "")])
+
+        ways = os.path.join(where, "ways_out.py")
+        with open(ways, "w", encoding="utf-8") as fh:
+            fh.write(_IN_PROCESS_WAYS_OUT % (away,))
+        env = dict(os.environ, AUDIT_IP_GIVEN="handed")
+        modes = ("raise", "exit-none", "exit-int", "exit-str", "swap-streams")
+        seen, real, leaked = {}, {}, []
+        for mode in modes:
+            seen[mode] = attempt(run_script_in_process, ways, [mode], where,
+                                 env=env)[1]
+            after = _process_state()
+            leaked.extend("%s after %s" % (name, mode)
+                          for name in sorted(before) if before[name] != after[name])
+            ran = subprocess.run([sys.executable, ways, mode], cwd=where, env=env,
+                                 stdin=subprocess.DEVNULL, capture_output=True,
+                                 timeout=60)
+            real[mode] = (ran.returncode, ran.stdout, ran.stderr)
+        shown = dict((m, g if not isinstance(g, tuple)
+                      else (g[0], g[1][-120:], g[2][-200:]))
+                     for m, g in seen.items())
+        check("ip4 a script that moves argv, cwd, environment and the import "
+              "path, then raises, exits by any of `SystemExit`'s three code "
+              "shapes, or swaps all three std stream objects for its own, "
+              "leaves none of them changed behind it - each restored in the "
+              "runner's `finally`, not by the script: %r" % ((leaked, shown),),
+              leaked == [] and all(isinstance(g, tuple) for g in seen.values())
+              and "AUDIT_IP_PROBE" not in os.environ
+              and "AUDIT_IP_GIVEN" not in os.environ)
+        raised = seen["raise"] if isinstance(seen["raise"], tuple) else (None, b"", b"")
+        check("ip5 an escape is what a process makes of it: status 1, what the "
+              "script printed before it kept, and a traceback on stderr whose "
+              "last line is the one the same script's own process ends on - "
+              "not raised into the caller: %r" % ((shown.get("raise"),
+                                                   real["raise"][2][-200:]),),
+              raised[0] == 1 == real["raise"][0]
+              and raised[1].replace(b"\r\n", b"\n") == b"main\n"
+              and b"Traceback (most recent call last)" in raised[2]
+              and _last_line(raised[2]) == [b"RuntimeError: boom from the stub"]
+              == _last_line(real["raise"][2]))
+        exits = dict((m, seen[m]) for m in modes if m != "raise")
+        check("ip6 `sys.exit()` is status 0 with nothing on stderr, "
+              "`sys.exit(4)` is 4, `sys.exit('...')` is 1 with the text on "
+              "stderr, a script that swapped the streams still had its output "
+              "read, and each is byte for byte what the same script's own "
+              "process gives: %r" % ((exits, dict((m, real[m]) for m in exits)),),
+              exits == dict((m, real[m]) for m in exits)
+              and dict((m, (g[0], g[1].replace(b"\r\n", b"\n"),
+                            g[2].replace(b"\r\n", b"\n")))
+                       for m, g in exits.items() if isinstance(g, tuple))
+              == {"exit-none": (0, b"main\n", b""),
+                  "exit-int": (4, b"main\n", b""),
+                  "exit-str": (1, b"main\n", b"said on the way out\n"),
+                  "swap-streams": (0, b"main\n", b"")})
+        payload = u"caf\u00e9 \u2192 done\n".encode("utf-8")
+        pairs = {}
+        for mode in ("stdin-bytes", "stdin-text"):
+            here = attempt(run_script_in_process, ways, [mode], where,
+                           stdin=payload, env=env)[1]
+            real = subprocess.run([sys.executable, ways, mode], cwd=where,
+                                  input=payload, env=env, capture_output=True,
+                                  timeout=60)
+            pairs[mode] = (here, (real.returncode, real.stdout, real.stderr))
+        check("ip7 stdin is handed as the bytes a process would read - "
+              "`sys.stdin.buffer` gives them back as `bytes`, unchanged, and "
+              "`sys.stdin` decodes them the way the same script run as a "
+              "process of its own does, under the same environment: %r" % (pairs,),
+              all(isinstance(h, tuple) and h[0] == 0 and h == r
+                  for h, r in pairs.values())
+              and pairs["stdin-bytes"][0][1].replace(b"\r\n", b"\n")
+              == ("bytes %s\n" % (ascii(payload),)).encode("ascii"))
+        check("ip8 ...and after those runs too, nothing the stdin runs touched "
+              "is left behind: %r" % ([n for n in sorted(before)
+                                       if before[n] != _process_state()[n]],),
+              before == _process_state())
+        outer = os.environ.get("AUDIT_IP_OUTER")
+        os.environ["AUDIT_IP_OUTER"] = "outer"
+        try:
+            whole = dict((k, v) for k, v in os.environ.items()
+                         if k != "AUDIT_IP_OUTER")
+            whole["AUDIT_IP_GIVEN"] = "handed"
+            here = attempt(run_script_in_process, ways, ["env-seen"], where,
+                           env=whole)[1]
+            inherited = attempt(run_script_in_process, ways, ["env-seen"],
+                                where)[1]
+            ran = subprocess.run([sys.executable, ways, "env-seen"], cwd=where,
+                                 env=whole, stdin=subprocess.DEVNULL,
+                                 capture_output=True, timeout=60)
+        finally:
+            if outer is None:
+                os.environ.pop("AUDIT_IP_OUTER", None)
+            else:
+                os.environ["AUDIT_IP_OUTER"] = outer
+        check("ip9 `env` is the whole environment the script sees, as "
+              "`subprocess.run`'s is - a variable this process holds and `env` "
+              "leaves out is absent, and no `env` inherits this one: %r"
+              % ((here, inherited, ran.stdout),),
+              isinstance(here, tuple) and isinstance(inherited, tuple)
+              and here == (ran.returncode, ran.stdout, ran.stderr)
+              and here[1].replace(b"\r\n", b"\n") == b"None handed\n"
+              and inherited[1].replace(b"\r\n", b"\n") == b"outer None\n")
+
+        site = os.path.join(where, "site")
+        os.mkdir(site)
+        planted = dict(os.environ, PYTHONPATH=site)
+        bare = attempt(run_script_in_process, ways, ["exit-int"], where,
+                       env=planted)
+        with open(os.path.join(site, "sitecustomize.py"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("pass\n")
+        refused = attempt(run_script_in_process, ways, ["exit-int"], where,
+                          env=planted)
+        check("ip10 an `env` whose `PYTHONPATH` plants a `sitecustomize` is "
+              "refused by name before anything is swapped - this interpreter "
+              "is already started and would run the script without it - while "
+              "the same `PYTHONPATH` with no `sitecustomize` in it runs: %r"
+              % ((bare, refused),),
+              bare[0] and bare[1][0] == 4
+              and refused[0] is False
+              and refused[1].startswith("ValueError: ")
+              and os.path.join(site, "sitecustomize.py") in refused[1]
+              and before == _process_state())
+
+        guarded = os.path.join(where, "guarded.py")
+        with open(guarded, "w", encoding="utf-8") as fh:
+            fh.write(_IN_PROCESS_GUARDED)
+
+        def reroute(namespace):
+            namespace["said"] = lambda: "rerouted before main"
+        plain = attempt(run_script_in_process, guarded, [], where)[1]
+        hooked = attempt(run_script_in_process, guarded, [], where,
+                         before_main=reroute)[1]
+        check("ip11 `before_main` is handed the script's namespace after its "
+              "body ran and before its `__main__` block does, so what it "
+              "reroutes is what the command line calls - and without it the "
+              "body's own function answers: %r" % ((plain, hooked),),
+              isinstance(plain, tuple) and isinstance(hooked, tuple)
+              and plain[1].replace(b"\r\n", b"\n") == b"from the body\n"
+              and hooked[1].replace(b"\r\n", b"\n") == b"rerouted before main\n")
+
+        # The routing half of ip10: what `run_script` does with the env that
+        # `run_script_in_process` refuses. The planted file sets a variable, so
+        # a run that skipped it reads None; the pid says which route ran.
+        whose = os.path.join(where, "whose.py")
+        with open(whose, "w", encoding="utf-8") as fh:
+            fh.write("import os\nprint(os.getpid(), "
+                     "os.environ.get('AUDIT_IP_SITE'))\n")
+        with open(os.path.join(site, "sitecustomize.py"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("import os\nos.environ['AUDIT_IP_SITE'] = 'ran'\n")
+        routed = attempt(run_script, whose, [], where, env=planted)[1]
+        plain_env = dict((k, v) for k, v in os.environ.items()
+                         if k != "PYTHONPATH")
+        here_run = attempt(run_script, whose, [], where, env=plain_env)[1]
+
+        def said(got):
+            if not isinstance(got, tuple) or got[0] != 0:
+                return None
+            words = got[1].decode("ascii", "replace").split()
+            return (words[0] == str(os.getpid()), words[1]) if len(words) == 2 else None
+        check("ip12 `run_script` runs a script whose env plants a "
+              "`sitecustomize` as a process of its own - the planted file ran "
+              "and the pid is not this one - and every other script in this "
+              "interpreter, its pid this one's, in the same `(code, out, err)` "
+              "shape: %r" % ((routed, here_run),),
+              said(routed) == (False, "ran") and said(here_run) == (True, "None")
+              and before == _process_state())
+    finally:
+        remove_tree(where)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _stage_runner_cases(check)
         _receive_pack_cases(check)
+        _in_process_runner_cases(check)
     return run(body)
 
 

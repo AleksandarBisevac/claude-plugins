@@ -49,12 +49,10 @@ twice or never and a green run looks the same either way.
 """
 import argparse
 import ast
-import builtins
 import contextlib
 import hashlib
 import io
 import json
-import locale
 import os
 import re
 import shlex
@@ -63,7 +61,6 @@ import subprocess
 import sys
 import tempfile
 import time
-import traceback
 import types
 
 import _harness                                   # sets sys.path for scripts/ + hooks/
@@ -324,7 +321,8 @@ def _windows_stdout():
 # --- a verb run in this process ------------------------------------------------
 # A VERB RUN AS A PROCESS COSTS AN INTERPRETER START AND ITS WHOLE IMPORT GRAPH,
 # and a drive runs several verbs a step, so those starts were a large share of
-# this suite's time. So a verb is run here instead: its script executed as `__main__`
+# this suite's time. So a verb is run here instead, through
+# `_harness.run_script_in_process`: its script executed as `__main__`
 # in this interpreter - the same `__main__` block a process runs, `safe_stdio`
 # and `terse_cli` included - with its own argv, working directory, environment
 # and byte-backed stdio, each put back afterwards. The modules it imports are the
@@ -349,132 +347,27 @@ def _needs_process(module=None):
     a fixture planted a `sitecustomize` on `PYTHONPATH` (a pinned clock, a
     Windows-shaped stdout), which only a fresh interpreter imports, or the case
     replaced `module`'s own `subprocess` to watch what crosses the boundary."""
-    for where in (os.environ.get("PYTHONPATH") or "").split(os.pathsep):
-        if where and os.path.isfile(os.path.join(where, "sitecustomize.py")):
-            return True
+    if _harness.planted_sitecustomize(os.environ):
+        return True
     return (module is not None
             and getattr(module, "subprocess", subprocess) is not subprocess)
 
 
-def _child_codec():
-    """`(encoding, errors)` a child interpreter gives its stdin and stdout:
-    `PYTHONIOENCODING` when set, else the locale's encoding, with the error
-    handler the interpreter picks - `surrogateescape` under UTF-8 mode or the C
-    or POSIX locale, `strict` otherwise - so under a legacy code page or the
-    ASCII locale a verb reads its stdin the way a process of its own would."""
-    spec = os.environ.get("PYTHONIOENCODING") or ""
-    encoding, _sep, errors = spec.partition(":")
-    lenient = (sys.flags.utf8_mode
-               or locale.setlocale(locale.LC_CTYPE) in ("C", "POSIX"))
-    return ((encoding or locale.getpreferredencoding(False)),
-            (errors or ("surrogateescape" if lenient else "strict")))
-
-
-def _exit_status(code, err):
-    """The exit status `sys.exit(code)` gives a process; a code that is not an
-    int is printed on stderr first, as the interpreter prints it."""
-    if code is None:
-        return 0
-    if isinstance(code, int):
-        return code
-    err.write("%s\n" % (code,))
-    return 1
-
-
-def _restore_environ(held):
-    """Put `os.environ` back to `held`: a verb's own changes - the token it
-    hands its children - must not outlive it, as they cannot outlive a process."""
-    for name in [n for n in os.environ if n not in held]:
-        del os.environ[name]
-    for name, value in held.items():
-        if os.environ.get(name) != value:
-            os.environ[name] = value
-
-
-def _is_main_guard(node):
-    """True for a top-level `if __name__ == "__main__":`."""
-    test = getattr(node, "test", None)
-    return (isinstance(node, ast.If) and isinstance(test, ast.Compare)
-            and isinstance(test.left, ast.Name) and test.left.id == "__name__"
-            and len(test.comparators) == 1
-            and isinstance(test.comparators[0], ast.Constant)
-            and test.comparators[0].value == "__main__")
-
-
-# A memo of each script's two halves, so a block parses each verb once. Keyed by
-# its path, size and mtime in nanoseconds, so a script edited while this process
-# runs is parsed again wherever the filesystem records the edit's time that
-# finely; a mutation probe runs each mutant in a process of its own anyway.
-_SCRIPT_PARTS = {}
-
-
-def _script_parts(path):
-    """`(body, main)` code objects of the script at `path`: every top-level
-    statement but a trailing `if __name__ == "__main__":` block, and that block
-    alone - `main` None when the script does not end in one. Split so a verb
-    that runs verbs itself can have them run here too before its command line
-    starts (`_run_in_process`)."""
-    st = os.stat(path)
-    key = (path, st.st_mtime_ns, st.st_size)
-    if key not in _SCRIPT_PARTS:
-        with open(path, "rb") as fh:
-            parsed = ast.parse(fh.read(), path)
-        tail = [n for n in parsed.body[-1:] if _is_main_guard(n)]
-        body = parsed.body[:len(parsed.body) - len(tail)]
-        _SCRIPT_PARTS[key] = tuple(
-            compile(ast.Module(body=part, type_ignores=[]), path, "exec")
-            if part else None for part in (body, tail))
-    return _SCRIPT_PARTS[key]
+def _route_verbs(namespace):
+    """`before_main` for a script run here: a script that runs verbs itself -
+    the driver's `submit` - has its `run_verb` routed through
+    `_in_process_verbs` too before its command line runs."""
+    if callable(namespace.get("run_verb")):
+        namespace["run_verb"] = _in_process_verbs(types.SimpleNamespace(**namespace))
 
 
 def _run_in_process(path, args, cwd, stdin=None, env=None):
-    """`(code, stdout bytes, stderr bytes)` of the script at `path` run as
-    `__main__` in this interpreter from `cwd`, with `env` laid over the
-    environment and `stdin` (a str) on its stdin as UTF-8 bytes. An exception
-    that escapes the script is its traceback on stderr and exit 1, as a process
-    reports it. A script that runs verbs itself - the driver's `submit` - has
-    its `run_verb` routed here as well (`_in_process_verbs`) before its command
-    line runs."""
-    body, main = _script_parts(path)
-    encoding, errors = _child_codec()
-    out_raw, err_raw = io.BytesIO(), io.BytesIO()
-    streams = (io.TextIOWrapper(io.BytesIO((stdin or "").encode("utf-8")),
-                                encoding=encoding, errors=errors),
-               io.TextIOWrapper(out_raw, encoding=encoding, errors=errors),
-               io.TextIOWrapper(err_raw, encoding=encoding,
-                                errors="backslashreplace"))
-    held = (sys.stdin, sys.stdout, sys.stderr, list(sys.argv), list(sys.path),
-            os.getcwd(), dict(os.environ))
-    module = types.ModuleType("__main__")
-    module.__dict__.update(__file__=path, __builtins__=builtins, __cached__=None)
-    sys.stdin, sys.stdout, sys.stderr = streams
-    sys.argv = [path] + list(args)
-    sys.path.insert(0, os.path.dirname(path))
-    os.environ.update(env or {})
-    try:
-        os.chdir(cwd)
-        try:
-            if body is not None:
-                exec(body, module.__dict__)
-            if callable(getattr(module, "run_verb", None)):
-                module.run_verb = _in_process_verbs(module)
-            if main is not None:
-                exec(main, module.__dict__)
-            code = 0
-        except SystemExit as exc:
-            code = _exit_status(exc.code, streams[2])
-        except Exception:                                      # noqa: BLE001
-            traceback.print_exc(file=streams[2])
-            code = 1
-        for stream in streams[1:]:
-            stream.flush()
-        return code, out_raw.getvalue(), err_raw.getvalue()
-    finally:
-        sys.stdin, sys.stdout, sys.stderr = held[:3]
-        sys.argv = held[3]
-        sys.path[:] = held[4]
-        os.chdir(held[5])
-        _restore_environ(held[6])
+    """`_harness.run_script_in_process` with `env` laid over this process's
+    environment rather than replacing it, and a script that runs verbs itself
+    routed here as well (`_route_verbs`)."""
+    return _harness.run_script_in_process(
+        path, args, cwd, stdin=stdin, env=dict(os.environ, **(env or {})),
+        before_main=_route_verbs)
 
 
 def _as_text(raw):
@@ -15055,7 +14948,6 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("bb-block", "_base_red_drive_cases"),
           ("tcc-block", "_committed_close_cases"),
           ("oc-block", "_own_commit_cases"),
-          ("ip-block", "_in_process_runner_cases"),
           ("up-block", "_advance_plan_cases"),
           ("ut-block", "_triage_plan_cases"),
           ("uq-block", "_pending_turn_cases"),
@@ -16785,55 +16677,6 @@ def _own_commit_cases(check):
     check("oc12 the attempt's start moment is read off the row its start head is: "
           "for each attempt both readers pick the same row, or none: %r" % (picked,),
           picked == [(1, 1, 1), (2, 5, 5), (3, 6, 6), (4, None, None)])
-
-
-_IN_PROCESS_STUB = (
-    "import os, sys\n"
-    "os.environ['AUDIT_IP_PROBE'] = 'set by the stub'\n"
-    "os.chdir(%r)\n"
-    "print('argv=%%s cwd=%%s given=%%s' %% (sys.argv[1:], os.getcwd(),\n"
-    "                                     os.environ.get('AUDIT_IP_GIVEN')))\n"
-    "sys.exit(int(sys.argv[1]) if sys.argv[1].isdigit() else sys.argv[1])\n")
-
-
-def _in_process_runner_cases(check):
-    """`_run_in_process` gives a script the argv, working directory and
-    environment a process of its own would see, reads `sys.exit` the way the
-    interpreter turns it into a status, and leaves none of the script's own
-    changes behind in this interpreter."""
-    where = os.path.realpath(_harness.fixture_root("drive-in-process-"))
-    try:
-        away = os.path.join(where, "elsewhere")
-        os.mkdir(away)
-        stub = os.path.join(where, "stub.py")
-        with open(stub, "w", encoding="utf-8") as fh:
-            fh.write(_IN_PROCESS_STUB % (away,))
-        before = (os.getcwd(), list(sys.argv), dict(os.environ), list(sys.path))
-        runs, leaked = [], []
-        names = ("cwd", "argv", "environment", "import path")
-        for arg in ("x", "3", "0"):
-            code, out, err = _run_in_process(stub, [arg, "--flag"], where,
-                                             env={"AUDIT_IP_GIVEN": "handed"})
-            runs.append((code, _as_text(out), _as_text(err)))
-            after = (os.getcwd(), list(sys.argv), dict(os.environ), list(sys.path))
-            leaked.extend("%s after sys.exit(%r)" % (name, arg)
-                          for name, b, a in zip(names, before, after) if b != a)
-        check("ip1 a script run in this process changes no cwd, argv, "
-              "environment or import path that outlives it, whichever way it "
-              "exits: %r" % (leaked,),
-              leaked == [] and "AUDIT_IP_PROBE" not in os.environ
-              and "AUDIT_IP_GIVEN" not in os.environ)
-        check("ip2 the script saw its own argv, the environment it was handed "
-              "and the cwd it moved to: %r" % ([r[1] for r in runs],),
-              [r[1] for r in runs] == [
-                  "argv=%r cwd=%s given=handed\n" % ([a, "--flag"], away)
-                  for a in ("x", "3", "0")])
-        check("ip3 sys.exit('x') is status 1 with 'x' on stderr, sys.exit(3) is "
-              "3, sys.exit(0) is 0 with nothing on stderr: %r"
-              % ([(r[0], r[2]) for r in runs],),
-              [(r[0], r[2]) for r in runs] == [(1, "x\n"), (3, ""), (0, "")])
-    finally:
-        _harness.remove_tree(where)
 
 
 def _stage_cases(check):

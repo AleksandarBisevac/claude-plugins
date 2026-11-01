@@ -6073,11 +6073,14 @@ def _start_cases(check):
                 os.environ["CLAUDE_CODE_SESSION_ID"] = _pc_env_was
 
         # ---- (lv) a held phase lock names a live process -----------------------
-        # Every step is its own process with its own session id and $CLAUDE_PID,
-        # the way two sessions and a restarted run really meet: in one process the
-        # token a take carries in the environment would let every later call back
-        # in, and the cases would be about that instead. The pids are sleepers this
-        # suite starts and kills, so "the holder died" is an observed exit.
+        # Every step runs under its own session id and $CLAUDE_PID, in an
+        # environment of its own, the way two sessions and a restarted run really
+        # meet: the token a take carries in the environment is gone when the step
+        # ends (`_harness.run_script` puts the environment back), so no later
+        # call is let back in by it. The pids are sleepers this suite starts and
+        # kills - real processes, so "the holder died" is an observed exit; the
+        # verbs that record them run in this interpreter, since what a case reads
+        # is the pid each was handed, never its own.
         _lv_task_py = os.path.join(_output.SCRIPTS_DIR, "manifest", "audit-task.py")
         _lv_lock_py = os.path.join(_output.SCRIPTS_DIR, "governance",
                                    "audit-lock.py")
@@ -6098,10 +6101,11 @@ def _start_cases(check):
             # sentence in the long form a success prints; run as a command, a
             # success is otherwise one line (`sl` below), which these cases are
             # not about.
-            done = subprocess.run([sys.executable, script] + argv + ["--verbose"],
-                                  env=lv_env(session, pid), cwd=proj,
-                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-            return done.returncode, done.stdout.decode("utf-8", "replace")
+            # Stderr first: a piped process's stdout is block-buffered and
+            # reaches a merged pipe at exit, after the lines stderr wrote.
+            code, out, err = _harness.run_script(
+                script, argv + ["--verbose"], proj, env=lv_env(session, pid))
+            return code, (err + out).decode("utf-8", "replace")
 
         def lv_start(proj, session, pid):
             code, txt = lv_call(_lv_task_py, proj, ["start", "P3.1", "--json",
@@ -8348,16 +8352,15 @@ def _group_cases(check):
             """The group's one gate run, recorded - the real script, so the
             evidence the record checks is a row a real run wrote. `reuse` lets
             the gate repeat an earlier verdict, which is its default."""
-            argv = [sys.executable, os.path.join(_output.SCRIPTS_DIR, "governance",
-                                                 "run-test-gate.py"),
-                    mpath, carrier, "--record", "--project-dir", proj]
+            argv = [mpath, carrier, "--record", "--project-dir", proj]
             if not reuse:
                 argv.append("--no-reuse")
             if also:
                 argv += ["--also", also]
-            done_ = subprocess.run(argv, stdout=subprocess.PIPE,
-                                   stderr=subprocess.STDOUT, cwd=proj)
-            return done_.returncode
+            code_, _out, _err = _harness.run_script(
+                os.path.join(_output.SCRIPTS_DIR, "governance", "run-test-gate.py"),
+                argv, proj)
+            return code_
 
         gs_proj, gs_mp, gs_shas = gs_fixture("gs-plan")
         _gs_before = open(gs_mp, "rb").read()
@@ -13511,6 +13514,27 @@ def _cli(argv, cwd):
     return done.returncode, done.stdout
 
 
+def _text_mode(raw):
+    """Captured bytes as `_cli`'s text-mode pipe reads them: UTF-8, and
+    "\\r\\n" and a lone "\\r" read as "\\n"."""
+    return raw.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _cli_here(argv, cwd, stdin=None):
+    """`_cli` run in this interpreter rather than as a process (unless a
+    `sitecustomize` is planted on PYTHONPATH - `_harness.run_script`): the verb's own
+    `__main__` block, under the same environment with the session's own
+    variables dropped, read back as the same `(exit, stdout)`, with `stdin`
+    (text) on its stdin when given. For a case whose subject is what the verb
+    decides; a case whose subject is the command line itself - its argv, its
+    stdin `-`, its exit status through the OS - calls `_cli` or `_cli_in`."""
+    env = dict((k, v) for k, v in os.environ.items()
+               if not k.startswith("CLAUDE") and k != "AUDIT_LOCK_TOKENS")
+    code, out, _err = _harness.run_script(
+        _loader.script_path("audit-task.py"), argv, cwd, stdin=stdin, env=env)
+    return code, _text_mode(out)
+
+
 def _success_line_cases(check):
     """A write, said in one line naming the task and the file written; a value
     verb's one line kept as it is; `--verbose` and a refusal, in full."""
@@ -15396,6 +15420,8 @@ def _batch_cases(check):
 
     proj, mpath = project("valid")
     doc = _batch_doc()
+    # A process, on purpose: the argv dialect a real command line hands the
+    # verb, and the status the OS reports for it. fb13's stdin run is the other.
     code, txt = _cli(["add", "--from-file", batch(proj, doc)], proj)
     ph = phase_of(mpath, "P2") or {}
     tasks = dict((t.get("id"), t) for t in ph.get("tasks") or [])
@@ -15425,7 +15451,7 @@ def _batch_cases(check):
           == ["gate: test (from meta.buildCommands)"])
 
     proj, mpath = project("sharded", sharded=True)
-    code, txt = _cli(["add", "--from-file", batch(proj, _batch_doc())], proj)
+    code, txt = _cli_here(["add", "--from-file", batch(proj, _batch_doc())], proj)
     stubs = [s.get("id") for s in _mio.read_json(mpath).get("phases") or []]
     shard = os.path.join(os.path.dirname(mpath), "phases", "P2.json")
     check("fb3 in the sharded layout the batch writes the new phase's shard "
@@ -15436,19 +15462,43 @@ def _batch_cases(check):
           == ["P2.1", "P2.2"])
 
     proj, mpath = project("no-choices")
-    code, txt = _cli(["add", "--from-file",
-                      batch(proj, _batch_doc(openChoices=[]))], proj)
+    code, txt = _cli_here(["add", "--from-file",
+                           batch(proj, _batch_doc(openChoices=[]))], proj)
     check("fb4 ALLOW: an empty list of open choices is an answer, and is "
           "written as one: %r" % ((code, txt),),
           code == 0 and (phase_of(mpath, "P2") or {}).get("openChoices") == [])
 
     proj, mpath = project("not-json")
     before = tree_bytes(proj)
-    code, txt = _cli(["add", "--from-file",
-                      batch(proj, None, raw='{"request": "x", ')], proj)
+    code, txt = _cli_here(["add", "--from-file",
+                           batch(proj, None, raw='{"request": "x", ')], proj)
     check("fb5 a file that is not JSON is refused and nothing is written: %r"
           % ((code, txt),),
           code == M.E_USAGE and "cannot read it as JSON" in txt
+          and tree_bytes(proj) == before)
+    # The same call under a PYTHONPATH holding a sitecustomize - which
+    # reach-diff plants when the interpreter's user site is off - still answers,
+    # as a process, rather than raising out of the in-process runner.
+    site = os.path.join(root, "site-planted")
+    os.makedirs(site)
+    with open(os.path.join(site, "sitecustomize.py"), "w", encoding="utf-8") as fh:
+        fh.write("pass\n")
+    held_path = os.environ.get("PYTHONPATH")
+    os.environ["PYTHONPATH"] = site + (os.pathsep + held_path if held_path else "")
+    try:
+        planted = _harness.attempt(
+            _cli_here, ["add", "--from-file",
+                        batch(proj, None, raw='{"request": "x", ')], proj)
+    finally:
+        if held_path is None:
+            os.environ.pop("PYTHONPATH", None)
+        else:
+            os.environ["PYTHONPATH"] = held_path
+    check("fb5s ...and with a sitecustomize planted on PYTHONPATH the same "
+          "refusal is still answered, the verb run as a process: %r"
+          % (planted,),
+          planted[0] is True and planted[1][0] == M.E_USAGE
+          and "cannot read it as JSON" in planted[1][1]
           and tree_bytes(proj) == before)
 
     proj, mpath = project("shape")
@@ -15456,7 +15506,7 @@ def _batch_cases(check):
     bad = _batch_doc()
     del bad["openChoices"]
     bad["tasks"][1]["dependOn"] = ["sum"]
-    code, txt = _cli(["add", "--from-file", batch(proj, bad)], proj)
+    code, txt = _cli_here(["add", "--from-file", batch(proj, bad)], proj)
     check("fb6 a malformed file is refused naming every fault - the missing "
           "open choices and the misspelt key - and nothing is written: %r"
           % ((code, txt),),
@@ -15470,7 +15520,7 @@ def _batch_cases(check):
     machine = _batch_doc()
     machine["phase"]["testGate"] = [_fb_home]
     machine["tasks"][0].setdefault("tests", {})["gate"] = [_fb_home]
-    code, txt = _cli(["add", "--from-file", batch(proj, machine)], proj)
+    code, txt = _cli_here(["add", "--from-file", batch(proj, machine)], proj)
     check("fb6b a batch whose phase and task gates name a home-directory "
           "interpreter is refused naming both fields and a remedy a command "
           "can take, the value never echoed, nothing written - fb1 is the "
@@ -15483,7 +15533,7 @@ def _batch_cases(check):
     before = tree_bytes(proj)
     gone = _batch_doc()
     gone["tasks"][1]["dependsOn"] = ["sum", "P9.9"]
-    code, txt = _cli(["add", "--from-file", batch(proj, gone)], proj)
+    code, txt = _cli_here(["add", "--from-file", batch(proj, gone)], proj)
     check("fb7 a task naming a dependency the plan does not hold is refused "
           "by that name, and nothing is written - the allow twin is fb1, "
           "whose key and plan id both resolve: %r" % ((code, txt),),
@@ -15492,8 +15542,8 @@ def _batch_cases(check):
 
     proj, mpath = project("stray-flag")
     before = tree_bytes(proj)
-    code, txt = _cli(["add", "--from-file", batch(proj, _batch_doc()),
-                      "--files", "src/c.ts"], proj)
+    code, txt = _cli_here(["add", "--from-file", batch(proj, _batch_doc()),
+                           "--files", "src/c.ts"], proj)
     check("fb8 a task flag beside --from-file is refused rather than applied "
           "to some of the tasks, and nothing is written: %r" % ((code, txt),),
           code == M.E_USAGE and "--files" in txt
@@ -15633,7 +15683,7 @@ def _batch_remedy_cases(check, project, batch, tree_bytes):
             value = remedies.get(dest, (keyless.get(dest),))[0]
             argv = (["add", "--from-file", path, option[dest]]
                     + ([] if value is None else [value]))
-        code, txt = _cli(argv, proj)
+        code, txt = _cli_here(argv, proj)
         if code != M.E_USAGE or tree_bytes(proj) != before:
             return "not refused cleanly: %r" % ((code, txt[-160:]),)
         if dest in keyless:
@@ -15650,7 +15700,7 @@ def _batch_remedy_cases(check, project, batch, tree_bytes):
                 M.batch_problems(doc),)
         if dest == "fixes":
             return None
-        again, again_txt = _cli(["add", "--from-file", batch(proj, doc)], proj)
+        again, again_txt = _cli_here(["add", "--from-file", batch(proj, doc)], proj)
         if again != 0:
             return "the file edited as told leads to another refusal: %r" % (
                 (again, again_txt[-200:]),)
@@ -15663,14 +15713,14 @@ def _batch_remedy_cases(check, project, batch, tree_bytes):
         proj, _m = project("remedy-dry-run")
         before = tree_bytes(proj)
         path = batch(proj, _batch_doc())
-        code, txt = _cli(["add", "--from-file", path, "--dry-run", "--json"],
-                         proj)
+        code, txt = _cli_here(["add", "--from-file", path, "--dry-run", "--json"],
+                              proj)
         try:
             seen = json.loads(txt)
         except ValueError:
             return "no JSON on stdout: %r" % ((code, txt[-200:]),)
         kept = tree_bytes(proj) == before
-        real_code, real_txt = _cli(["add", "--from-file", path, "--json"], proj)
+        real_code, real_txt = _cli_here(["add", "--from-file", path, "--json"], proj)
         real = json.loads(real_txt) if real_code == 0 else {}
         if not (code == 0 and seen.get("dryRun") is True and kept
                 and seen.get("written") == [] and seen.get("tasks")
@@ -15781,8 +15831,9 @@ def _batch_stdin_cases(check, project, batch, tree_bytes, section, heredoc):
     doc = _batch_doc()
     text = json.dumps(doc, indent=1)
     proj_f, mpath_f = project("from-file", sharded=True)
-    code_f, txt_f = _cli(["add", "--from-file", batch(proj_f, doc)], proj_f)
+    code_f, txt_f = _cli_here(["add", "--from-file", batch(proj_f, doc)], proj_f)
     proj_s, mpath_s = project("from-stdin", sharded=True)
+    # A process, on purpose: `-` read off a real stdin pipe is what this proves.
     code_s, txt_s = _cli_in(["add", "--from-file", "-"], proj_s, text)
     plan_f, plan_s = _plan_bytes(proj_f), _plan_bytes(proj_s)
     shard = _mio.read_json(os.path.join(os.path.dirname(mpath_s), "phases",
@@ -15800,8 +15851,8 @@ def _batch_stdin_cases(check, project, batch, tree_bytes, section, heredoc):
     before = tree_bytes(proj)
     bad = _batch_doc()
     del bad["openChoices"]
-    code, txt = _cli_in(["add", "--from-file", "-"], proj, json.dumps(bad))
-    empty = _cli_in(["add", "--from-file", "-"], proj, "")
+    code, txt = _cli_here(["add", "--from-file", "-"], proj, json.dumps(bad))
+    empty = _cli_here(["add", "--from-file", "-"], proj, "")
     check("fb14 a malformed batch on stdin is refused naming the field and "
           "stdin as its source, an empty stdin is refused as empty rather "
           "than read as nothing to add, and the plan's bytes are unchanged - "
