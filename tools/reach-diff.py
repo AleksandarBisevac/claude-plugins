@@ -23,28 +23,42 @@ refusal printed carries its name from that list, and `--selftest` fails when a
 name there has no case asserting it, when a case asserts a name not there, or
 when a refusal site in the code names one not there.
 
-ONE PATH TO AN EXIT. A walk of this file's own syntax tree (`refusal_sites()`,
-over the code above the selftest section and the `__main__` block, so code no
-case reaches is held all the same) fails `--selftest` unless: every return in
-`main` is `return settle(...)`, `main` calls the run once and calls nothing
-before the region that runs it, and that region catches every exception, an
-exit and an interrupt included, each branch of it returning; nothing outside
-the `__main__` block names an exit - `exit`, `_exit`, `quit` or `SystemExit`, as
-a name or an attribute, called or not, whatever it is handed - and that block
-hands its exit `main(...)` or the selftest's result and nothing else; `sys` and
-`os` are imported under their own names and nothing is imported from them; and
-every refusal is a call to `_refuse` or `_refusal` naming it there, none of
-which, nor `Refusal`, is used other than called. The walk reads that a path
-exists, never what code it would carry: `settle()` judges that when it runs,
-and refuses as `internal` a result that is not a dict, a code other than the
-three stated below (a boolean included), a refusal the list does not hold, 2
-with no refusal, a refusal with another code, 1 with no line lost, or 0 with
-one. WHAT IT CANNOT SEE: a name reached by a string - `getattr`, `globals()`,
-`__import__`, `importlib`, `exec`, `eval`; a process ended by a signal,
-`os.kill` or `os.abort`; an exit raised in a module the run calls, which `main`
-catches when it runs; and a failure inside `main`'s own handlers - the output
-refusing a write, or a second interrupt while the first is refused - which
-escapes `main` and ends the process with Python's own code.
+ONE PATH TO AN EXIT. The `__main__` block is one statement,
+`sys.exit(_entry(sys.argv[1:]))`, and `_entry` is one `try` around the run whose
+one handler catches every exception - an exit and an interrupt included - and
+hands it to `_escaped`, which refuses it as `interrupted` or as `internal` with
+its traceback, through `settle`, and writes that line where nothing can refuse
+it when the output refuses it too. So nothing `main` raises - before its own
+region, in a `finally`, anywhere - ends the process with a code `settle` did
+not give, and `settle` gives 1 to a line lost and to nothing else; under
+`--selftest`, `_entry` hands on the suite's own code. A walk of this file's own
+syntax tree (`refusal_sites()`, over the code above the selftest section and
+the `__main__` block, so code no case reaches is held all the same) fails
+`--selftest` unless: the block has that one shape and is the only one; `_entry`
+and `_escaped` are each one `try` with no `else` and no `finally`, whose one
+handler catches BaseException and only returns a call - to `_escaped` from
+`_entry`, to `settle` from `_escaped` - and every return in `main`, `_escaped`
+and `_entry` is a call it may make, none of the three a generator or able to
+run off its end; the code read takes no name
+from below the selftest section, `_entry`'s call of the selftest aside; nothing
+outside the block names an exit - `exit`, `_exit`, `quit` or `SystemExit`, as a
+name or an attribute, called or not, whatever it is handed; `sys` and `os` are
+imported under their own names and nothing is imported from them; each name in
+`_PINNED` - the functions this path runs through and the list `_refuse` reads -
+is bound once in the whole file, by its own top-level definition, and never
+assigned, deleted, declared global or nonlocal, imported as, taken as a
+parameter or defined again; every refusal is a call to `_refuse` or `_refusal`
+naming it there, none of which, nor `Refusal`, is used other than called; and
+the `refusal` key of a result is written by `_refuse` alone - never stored,
+deleted, handed as a keyword, set by `setdefault` or given a value in a dict
+display - so a refusal is never recorded without its line. The walk reads that
+a path exists, never what code it would carry: `settle()` judges that when it
+runs, and refuses as `internal` a result that is not a dict, a code other than
+the three stated below (a boolean included), a refusal the list does not hold,
+2 with no refusal, a refusal with another code, 1 with no line lost, or 0 with
+one. WHAT IT CANNOT SEE: a name reached by a string - through `exec`, `eval`,
+`getattr` and the like - and a failure while the module is being imported,
+before `_entry` exists.
 
 THE HEAD A GATE NAMES IS THE WORKING TREE. A task's gate runs over the task's
 uncommitted work, and a commit is not that work: `--head HEAD` over an uncommitted
@@ -186,8 +200,8 @@ misses it.
 
 EXIT CODES. 0 - nothing lost; or the head is the base, or only files that do
 not decide differ, under `--allow-same`. 1 - a line lost, and nothing else: an
-error the run did not expect is refused, never left to exit 1 with a traceback
-(the failures of `main`'s own handlers aside, as ONE PATH TO AN EXIT says). 2 - no comparison made: a reach measured over a suite that did not finish, or
+error the run did not expect is refused, never left to exit 1 with a traceback,
+as ONE PATH TO AN EXIT says. 2 - no comparison made: a reach measured over a suite that did not finish, or
 over sides that cannot be told apart, is not the suite's reach. Each refusal
 prints a line `reach-diff: no comparison made (NAME) - ...`, the result carries
 the first NAME as `refusal`, and these are all of them:
@@ -1532,27 +1546,62 @@ def _interrupted(out):
 
 
 def _unexpected(out, exc):
+    """`internal`, with `exc`'s own traceback: read off the exception rather
+    than the one being handled, since a second failure may be by then."""
     result = _refuse(fresh_result(), out, "internal", "%s: %s; its traceback "
                      "follows" % (type(exc).__name__, exc))
-    out.write(traceback.format_exc())
+    out.write("".join(traceback.format_exception(type(exc), exc,
+                                                 exc.__traceback__)))
     return result
+
+
+def _escaped_result(out, exc):
+    """The refusal for `exc`, an exception nothing else caught, printed to
+    `out`."""
+    if isinstance(exc, KeyboardInterrupt):
+        return _interrupted(out)
+    return _unexpected(out, exc)
 
 
 def main(argv, out=None, run=None):
     """The exit code of the command line `argv`. `run` makes the result,
     `_command` when None - threaded so a case can hand it a run that raises,
-    exits or is interrupted, or that returns a result no path should. The
-    shape is the walk's to hold (`main_shape()`): every return is `settle`'s,
-    and the run and its settling sit inside one region that catches every
-    exception, an exit and an interrupt included."""
+    exits or is interrupted, or that returns a result no path should. Every
+    return is `settle`'s and the body cannot run off its end (`function_shape()`
+    holds both); what escapes it anyway is `_entry`'s."""
     out = out if out is not None else sys.stdout
     run = run if run is not None else _command
     try:
         return settle(run(argv, out), out)
-    except KeyboardInterrupt:
-        return settle(_interrupted(out), out)
     except BaseException as exc:
-        return settle(_unexpected(out, exc), out)
+        return settle(_escaped_result(out, exc), out)
+
+
+def _escaped(exc):
+    """2, for `exc`, which escaped `main` or the selftest: `interrupted` for an
+    interrupt, `internal` with its traceback for anything else. When the output
+    refuses that line as well, the refusal is written where nothing refuses a
+    write and the exit is 2 all the same, since the code is what a caller
+    reads."""
+    try:
+        return settle(_escaped_result(sys.stdout, exc), sys.stdout)
+    except BaseException:
+        return settle(_escaped_result(io.StringIO(), exc), io.StringIO())
+
+
+def _entry(argv):
+    """The process's exit code, and the one call the `__main__` block makes.
+    Everything the run does sits inside one region whose one handler catches
+    every exception, an exit and an interrupt included, so nothing `main` does -
+    before its own region, in a `finally`, anywhere - ends the process with a
+    code `settle` did not give. Its shape is the walk's (`function_shape()`)."""
+    try:
+        _output.safe_stdio()
+        if "--selftest" in argv:
+            return _selftest()
+        return main(argv)
+    except BaseException as exc:
+        return _escaped(exc)
 
 
 # --- where an exit is decided -------------------------------------------------
@@ -1561,9 +1610,9 @@ def main(argv, out=None, run=None):
 # process its own way passes every case that never takes it. What is read is
 # one shape, not the values an exit could carry - a list of the spellings of 1
 # or 2 never ends - so the walk asks only whether a path to an exit exists
-# outside the one `main` takes, and `settle` judges the code that path carries
-# when it runs. The walk reads every top-level statement above the selftest
-# section, and the `__main__` block.
+# outside the one `_entry` takes, and `settle` judges the code that path
+# carries when it runs. The walk reads every top-level statement above the
+# selftest section and the `__main__` block, and the bindings of the whole file.
 _SELFTEST_MARK = re.compile(r"^# --- selftest -", re.M)
 # A name or attribute by any of these ends the process, called or raised.
 _EXIT_NAMES = ("exit", "_exit", "quit", "SystemExit")
@@ -1573,8 +1622,24 @@ _EXIT_MODULES = ("sys", "os")
 # What makes a refusal: a use other than a call hands it on, and a site
 # called through the new name is one the walk cannot count.
 _REFUSAL_MAKERS = ("_refuse", "_refusal", "Refusal")
-# What the `__main__` block may hand its exit: main's code, or the selftest's.
-_GUARD_EXITS = ("main", "_selftest")
+# The `__main__` block, whole: one statement handing the process's exit to
+# `_entry`, so nothing in it runs where `_entry`'s region does not reach.
+_GUARD_TEST = ast.dump(ast.parse('__name__ == "__main__"', mode="eval").body)
+_GUARD_BODY = ast.dump(ast.parse("sys.exit(_entry(sys.argv[1:]))").body[0])
+# The functions the one path runs through, and what each may return a call to;
+# a net's one handler returns a call to the last name and nothing else.
+_SHAPES = (("main", ("settle",), None),
+           ("_entry", ("main", "_selftest", "_escaped"), "_escaped"),
+           ("_escaped", ("settle",), "settle"))
+# Bound once, by their own top-level statement: a call by one of these names
+# is then a call to the code the walk read, whatever runs before it.
+_PINNED = ("main", "_entry", "_escaped", "settle", "_unsupported", "_refuse",
+           "_refusal", "REFUSALS")
+# The key a result names its refusal under, written by `_refuse` alone so that
+# no refusal is recorded without its line.
+_REFUSAL_KEY = "refusal"
+# Where the key may be spelled: the one writer, and the two readers of it here.
+_KEY_OWNERS = ("_refuse", "_refusal_written", "_refusal_reads")
 
 
 def _called(call):
@@ -1601,9 +1666,10 @@ def _argument(call, index, keyword):
 
 
 def _is_main_guard(node):
-    return (isinstance(node, ast.If) and isinstance(node.test, ast.Compare)
-            and isinstance(node.test.left, ast.Name)
-            and node.test.left.id == "__name__")
+    """A top-level `if` that reads `__name__`, however it is spelled."""
+    return isinstance(node, ast.If) and any(
+        isinstance(n, ast.Name) and n.id == "__name__"
+        for n in ast.walk(node.test))
 
 
 def _site(owner, node, what):
@@ -1632,56 +1698,172 @@ def _exit_import(node):
     return ""
 
 
-def _guard_exits(guard):
-    """The exit nodes the `__main__` block calls with main's code or the
-    selftest's as the one argument."""
-    return set(id(n.func) for n in ast.walk(guard) if isinstance(n, ast.Call)
-               and _exit_named(n.func) and not n.keywords and len(n.args) == 1
-               and isinstance(n.args[0], ast.Call)
-               and _called(n.args[0]) in _GUARD_EXITS)
+def guard_shape(guard):
+    """What keeps `guard`, a `__main__` block, from being exactly
+    `if __name__ == "__main__": sys.exit(_entry(sys.argv[1:]))`."""
+    exact = (ast.dump(guard.test) == _GUARD_TEST and not guard.orelse
+             and len(guard.body) == 1
+             and ast.dump(guard.body[0]) == _GUARD_BODY)
+    return [] if exact else [_site("<module>", guard, "the __main__ block is not "
+                                   "the one statement "
+                                   "sys.exit(_entry(sys.argv[1:]))")]
 
 
-def _returns(block):
-    return bool(block) and isinstance(block[-1], ast.Return)
+def _guard_exit(guard):
+    """The exit node of `guard` when it has its one shape, else None."""
+    return None if guard_shape(guard) else guard.body[0].value.func
 
 
-def main_shape(fn):
-    """What keeps `fn`, the `main` function's node, from the one path to an
-    exit: every return a `settle(...)`; a body that ends in one `try` whose
-    handlers include one catching every exception, every branch of it ending
-    in a return; no call before it; and the run called once, inside it."""
+def _ends_returning(block):
+    """Whether `block` cannot run off its end: it ends in a return, or in a
+    `try` with no `else` whose body and every handler end so."""
+    last = block[-1] if block else None
+    if isinstance(last, ast.Return):
+        return True
+    return (isinstance(last, ast.Try) and not last.orelse
+            and _ends_returning(last.body)
+            and all(_ends_returning(h.body) for h in last.handlers))
+
+
+def _catches_all(handler):
+    return handler.type is None or (isinstance(handler.type, ast.Name)
+                                    and handler.type.id == "BaseException")
+
+
+def _returns_a_call(stmt, names):
+    return (isinstance(stmt, ast.Return) and isinstance(stmt.value, ast.Call)
+            and _called(stmt.value) in names)
+
+
+def function_shape(fn, returns, fallback=None):
+    """What keeps `fn`, a function's node, from ending only through a call to
+    one of `returns`: a return of anything else, a yield (a generator's call
+    returns before its body runs), or a body that can run off its end. With a
+    `fallback`, `fn` is a net: its body is one `try` with no `else` and no
+    `finally`, whose one handler catches BaseException and does nothing but
+    return a call to `fallback`."""
+    owner, found = fn.name, []
     body = fn.body[1:] if (isinstance(fn.body[0], ast.Expr)
-                           and _text(fn.body[0].value)) else fn.body
-    if not body or not isinstance(body[-1], ast.Try) or any(
-            isinstance(stmt, ast.Try) for stmt in body[:-1]):
-        return [_site("main", fn, "the body does not end in the one guarded "
-                      "region")]
-    guard, found = body[-1], []
-    found += [_site("main", n, "calls %s outside the guarded region" % (
-        _called(n) or "something",)) for stmt in body[:-1]
-        for n in ast.walk(stmt) if isinstance(n, ast.Call)]
-    if not any(h.type is None or (isinstance(h.type, ast.Name)
-                                  and h.type.id == "BaseException")
-               for h in guard.handlers):
-        found.append(_site("main", guard, "the guarded region does not catch "
-                           "BaseException, so an exit or an interrupt escapes"))
-    found += [_site("main", (block or [guard])[-1], "a branch of the guarded "
-                    "region ends without returning")
-              for block in [guard.body] + [h.body for h in guard.handlers]
-              if not _returns(block)]
-    runs = [n for n in ast.walk(fn) if isinstance(n, ast.Call)
-            and _called(n) == "run"]
-    guarded = [n for stmt in guard.body for n in ast.walk(stmt)
-               if isinstance(n, ast.Call) and _called(n) == "run"]
-    if len(runs) != 1 or len(guarded) != 1:
-        found.append(_site("main", fn, "the run is called %d times, %d of them "
-                           "inside the guarded region" % (len(runs),
-                                                          len(guarded))))
-    found += [_site("main", n, "returns something other than settle(...)")
-              for n in ast.walk(fn) if isinstance(n, ast.Return)
-              and not (isinstance(n.value, ast.Call)
-                       and _called(n.value) == "settle")]
+                           and _text(fn.body[0].value) is not None) else fn.body
+    found += [_site(owner, n, "returns something other than a call to %s"
+                    % (" or ".join(returns),)) for n in ast.walk(fn)
+              if isinstance(n, ast.Return) and not _returns_a_call(n, returns)]
+    found += [_site(owner, n, "yields, so a call returns before the body runs")
+              for n in ast.walk(fn)
+              if isinstance(n, (ast.Yield, ast.YieldFrom, ast.Await))]
+    if not _ends_returning(body):
+        found.append(_site(owner, fn, "the body can run off its end"))
+    if fallback is None:
+        return found
+    region = body[0] if len(body) == 1 and isinstance(body[0], ast.Try) else None
+    if region is None or region.orelse or region.finalbody:
+        return found + [_site(owner, fn, "the body is not one try with no else "
+                              "and no finally")]
+    handler = region.handlers[0] if len(region.handlers) == 1 else None
+    if not (handler and _catches_all(handler) and len(handler.body) == 1
+            and _returns_a_call(handler.body[0], (fallback,))):
+        found.append(_site(owner, region, "the try has not one handler, "
+                           "catching BaseException and returning %s(...)"
+                           % (fallback,)))
     return found
+
+
+def _bindings(node):
+    """The names `node` binds, each as it is spelled there."""
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return [node.name]
+    if isinstance(node, ast.Name) and not isinstance(node.ctx, ast.Load):
+        return [node.id]
+    if isinstance(node, (ast.Global, ast.Nonlocal)):
+        return list(node.names)
+    if isinstance(node, ast.alias):
+        return [node.asname or node.name.split(".")[0]]
+    if isinstance(node, ast.arg):
+        return [node.arg]
+    if isinstance(node, ast.ExceptHandler) and node.name:
+        return [node.name]
+    return []
+
+
+def _own_binding(top, name):
+    """The node of `top`, a module-level statement, that is `name`'s own
+    definition: the def of that name, or a plain assignment to it."""
+    if isinstance(top, ast.FunctionDef) and top.name == name:
+        return top
+    if isinstance(top, ast.Assign):
+        return next((t for t in top.targets
+                     if isinstance(t, ast.Name) and t.id == name), None)
+    return None
+
+
+def _binding_sites(tree):
+    """`(name, node)` for every binding in `tree`, the node one that carries a
+    line - an import's, for the names it binds."""
+    sites = [(name, n) for n in ast.walk(tree) if not isinstance(n, ast.alias)
+             for name in _bindings(n)]
+    return sites + [(name, n) for n in ast.walk(tree)
+                    if isinstance(n, (ast.Import, ast.ImportFrom))
+                    for a in n.names for name in _bindings(a)]
+
+
+def rebound(tree):
+    """Each binding, anywhere in `tree`, of a name in `_PINNED` other than
+    one definition of it at the top level, and each such name with none."""
+    sites, found = _binding_sites(tree), []
+    for name in _PINNED:
+        own = [n for n in (_own_binding(top, name) for top in tree.body) if n]
+        keep = id(own[0]) if own else None
+        found += [_site("<module>", n, "binds %s other than by its one "
+                        "top-level definition" % (name,))
+                  for bound, n in sites if bound == name and id(n) != keep]
+        if not own:
+            found.append("<module>: %s has no top-level definition" % (name,))
+    return found
+
+
+def _key(sub):
+    """The string a subscript's key is, or None."""
+    key = sub.slice
+    if type(key).__name__ == "Index":
+        key = key.value
+    return _text(key)
+
+
+def _refusal_written(node, loads):
+    """What `node` writes under the refusal key, or ''. `loads` holds the ids
+    of the strings that only read it: a subscript read, `.get`'s first
+    argument, and a dict display's key whose value is None."""
+    if isinstance(node, ast.keyword) and node.arg == _REFUSAL_KEY:
+        return "hands %s= as a keyword" % (_REFUSAL_KEY,)
+    if (isinstance(node, ast.Name) and node.id == "_REFUSAL_KEY"
+            and isinstance(node.ctx, ast.Load)):
+        return "names _REFUSAL_KEY, which spells the key"
+    if _text(node) == _REFUSAL_KEY and id(node) not in loads:
+        return "writes the %r key" % (_REFUSAL_KEY,)
+    return ""
+
+
+def _refusal_reads(top):
+    """The ids of the refusal-key strings in `top` that read the key or set it
+    to None, which is no refusal, and the one that spells `_REFUSAL_KEY`."""
+    loads = set()
+    for n in ast.walk(top):
+        if (isinstance(n, ast.Subscript) and isinstance(n.ctx, ast.Load)
+                and _key(n) == _REFUSAL_KEY):
+            key = n.slice
+            loads.add(id(key.value if type(key).__name__ == "Index" else key))
+        if (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                and n.func.attr == "get" and n.args):
+            loads.add(id(n.args[0]))
+        if isinstance(n, ast.Dict):
+            loads.update(id(k) for k, v in zip(n.keys, n.values)
+                         if _text(k) == _REFUSAL_KEY
+                         and isinstance(v, ast.Constant) and v.value is None)
+        if (isinstance(n, ast.Assign) and len(n.targets) == 1
+                and isinstance(n.targets[0], ast.Name)
+                and n.targets[0].id == "_REFUSAL_KEY"):
+            loads.add(id(n.value))
+    return loads
 
 
 def refusal_sites(source):
@@ -1692,45 +1874,75 @@ def refusal_sites(source):
     `Refusal` made outside `_refusal`; `bound`, each use of a refusal maker
     other than a call; `exits`, each exit reachable outside the `__main__`
     block - a name or attribute in `_EXIT_NAMES`, whatever it is handed or
-    whether it is called at all - each one in that block handed anything but
-    main's code or the selftest's, and each import of `_EXIT_MODULES` under
-    another name or from them; `main`, what `main_shape()` finds; `scanned`,
+    whether it is called at all - and each import of `_EXIT_MODULES` under
+    another name or from them; `shape`, what `guard_shape()` finds of the
+    `__main__` block and `function_shape()` of each function in `_SHAPES`,
+    and each name the read code takes from below the selftest section, where
+    nothing is read; `rebound`, what `rebound()` finds over the whole file;
+    `stored`, each write of the refusal key outside `_refuse`; `scanned`,
     False when the source has no selftest section to stop at, so nothing was
     read.
 
     `_refuse` may also be handed `<x>.name`, a `Refusal` passed on: its name was
-    written where `_refusal` made it. WHAT IT CANNOT SEE: a name reached by a
-    string - `getattr`, `globals()`, `__import__`, `importlib`, `exec`, `eval`;
-    an object other than a `Refusal` carrying a `.name` handed to `_refuse`, which
-    the runtime check in `_refuse` still refuses when reached; a process ended
-    by a signal, `os.kill` or `os.abort`; and an exit raised in a module this
-    one calls, which `main` catches when it runs rather than the walk seeing."""
+    written where `_refusal` made it, and an object other than a `Refusal`
+    carrying a `.name` is refused by `_refuse` when it runs."""
     found = {"names": set(), "sites": 0, "unnamed": [], "bound": [],
-             "exits": [], "main": [], "scanned": False}
+             "exits": [], "shape": [], "rebound": [], "stored": [],
+             "scanned": False}
     mark = _SELFTEST_MARK.search(source)
     if mark is None:
         return found
     found["scanned"] = True
     last = source.count("\n", 0, mark.start()) + 1
-    tops = [top for top in ast.parse(source).body
-            if top.lineno < last or _is_main_guard(top)]
-    mains = [top for top in tops if isinstance(top, ast.FunctionDef)
-             and top.name == "main"]
-    found["main"] = main_shape(mains[0]) if len(mains) == 1 else [
-        "main is defined %d times above the selftest section, not once" % (
-            len(mains),)]
-    for top in tops:
-        allowed = _guard_exits(top) if _is_main_guard(top) else set()
+    tree = ast.parse(source)
+    above = [top for top in tree.body if top.lineno < last]
+    guards = [top for top in tree.body if _is_main_guard(top)]
+    found["shape"] = _shapes(tree, above, guards, last)
+    found["rebound"] = rebound(tree)
+    allowed = set(id(n) for n in (_guard_exit(g) for g in guards) if n)
+    for top in above + [g for g in guards if g.lineno >= last]:
         called = set(id(n.func) for n in ast.walk(top) if isinstance(n, ast.Call))
+        loads = _refusal_reads(top)
         owner = getattr(top, "name", "<module>")
         for node in ast.walk(top):
             _read_node(found, owner, node, allowed, called)
+            written = ("" if owner in _KEY_OWNERS
+                       else _refusal_written(node, loads))
+            if written:
+                found["stored"].append(_site(owner, node, written))
+    return found
+
+
+def _shapes(tree, above, guards, last):
+    """`refusal_sites()`'s `shape`: the block, the functions, and the names
+    the read code takes from below the selftest section."""
+    found = [] if len(guards) == 1 else [
+        "<module>: %d __main__ blocks, not one" % (len(guards),)]
+    for guard in guards:
+        found += guard_shape(guard)
+    for name, returns, fallback in _SHAPES:
+        defs = [top for top in above if isinstance(top, ast.FunctionDef)
+                and top.name == name]
+        found += function_shape(defs[0], returns, fallback) if len(defs) == 1 \
+            else ["<module>: %s is defined %d times above the selftest "
+                  "section, not once" % (name, len(defs))]
+    below = set(name for top in tree.body if top.lineno >= last
+                and not _is_main_guard(top)
+                for node in ast.walk(top) for name in _bindings(node)
+                if node is top or isinstance(top, ast.Assign))
+    for top in above:
+        owner = getattr(top, "name", "<module>")
+        found += [_site(owner, n, "takes %s from below the selftest section, "
+                        "where nothing is read" % (n.id,))
+                  for n in ast.walk(top) if isinstance(n, ast.Name)
+                  and n.id in below
+                  and not (owner == "_entry" and n.id == "_selftest")]
     return found
 
 
 def _read_node(found, owner, node, allowed, called):
     """Fold what one syntax node says into `found`. `allowed` holds the exit
-    nodes the `__main__` block may call, `called` every node called."""
+    node the `__main__` block may call, `called` every node called."""
     exit_named = _exit_named(node)
     if exit_named and id(node) not in allowed:
         found["exits"].append(_site(owner, node, "%s is reachable here" % (
@@ -2863,16 +3075,26 @@ def _planted(source, body):
     return source[:mark.start()] + planted + source[mark.start():]
 
 
-def _in_main(source, old, new):
-    """`source` with `old` replaced by `new` inside `main` alone, and how many
-    times `old` was there: a mutation that did not land reports nothing, and
-    the case says so rather than reading its silence as the walk's."""
+def _in_function(source, name, old, new):
+    """`source` with `old` replaced by `new` inside the top-level function
+    `name` alone, and how many times `old` was there."""
     fn = next(t for t in ast.parse(source).body
-              if isinstance(t, ast.FunctionDef) and t.name == "main")
+              if isinstance(t, ast.FunctionDef) and t.name == name)
     lines = source.splitlines(True)
     body = "".join(lines[fn.lineno - 1:fn.end_lineno])
     return ("".join(lines[:fn.lineno - 1]) + body.replace(old, new)
             + "".join(lines[fn.end_lineno:]), body.count(old))
+
+
+def _in_main(source, old, new):
+    return _in_function(source, "main", old, new)
+
+
+def _at_top(source, text):
+    """`source` with `text` as top-level code just above the selftest
+    section."""
+    mark = _SELFTEST_MARK.search(source)
+    return source[:mark.start()] + text + "\n\n\n" + source[mark.start():]
 
 
 def _in_guard(source, old, new):
@@ -2888,13 +3110,16 @@ def _site_cases(check):
           "sites - read off its syntax tree, reached by a case or not - are "
           "the names --help lists, both ways, and the code holds the one path "
           "to an exit: only in the code %r, only in the list %r; sites read "
-          "%d; unnamed %r; bound %r; exits reachable elsewhere %r; main %r"
+          "%d; unnamed %r; bound %r; exits reachable elsewhere %r; shape %r; "
+          "rebound %r; key stored %r"
           % (sorted(sites["names"] - set(REFUSALS)),
              sorted(set(REFUSALS) - sites["names"]), sites["sites"],
-             sites["unnamed"], sites["bound"], sites["exits"], sites["main"]),
+             sites["unnamed"], sites["bound"], sites["exits"], sites["shape"],
+             sites["rebound"], sites["stored"]),
           sites["scanned"] and sites["sites"] > 0
           and sites["names"] == set(REFUSALS) and not sites["unnamed"]
-          and not sites["bound"] and not sites["exits"] and not sites["main"])
+          and not sites["bound"] and not sites["exits"] and not sites["shape"]
+          and not sites["rebound"] and not sites["stored"])
     for body in ('_refuse(result, out, "never-listed", "why")',
                  'return _refusal("never-listed", "why")'):
         found = refusal_sites(_planted(own, body))
@@ -2924,35 +3149,110 @@ def _site_cases(check):
               "under another name or imported from: %s -> %r"
               % (body, found["exits"]),
               found["scanned"] and len(found["exits"]) == 1)
-    for new in ("    sys.exit(2)\n", "    sys.exit(main(sys.argv[1:]) + 1)\n",
-                "    sys.exit(len(sys.argv))\n"):
-        mutated, landed = _in_guard(own, "    sys.exit(main(sys.argv[1:]))\n",
-                                    new)
+    guard = "    sys.exit(_entry(sys.argv[1:]))\n"
+    for new in ("    sys.exit(2)\n", "    sys.exit(main(sys.argv[1:]))\n",
+                "    sys.exit(_entry(sys.argv[1:]) + 1)\n",
+                "    print(sys.argv[2])\n" + guard,
+                "    _output.safe_stdio()\n" + guard,
+                guard + "else:\n    pass\n"):
+        mutated, landed = _in_guard(own, guard, new)
         found = refusal_sites(mutated)
-        check("rd73 the __main__ block hands its exit main's code or the "
-              "selftest's and nothing else: %s landed %d -> %r"
-              % (new.strip(), landed, found["exits"]),
-              landed == 1 and found["scanned"] and len(found["exits"]) == 1)
+        check("rd73 the __main__ block is the one statement "
+              "sys.exit(_entry(sys.argv[1:])) and nothing else, and the exit "
+              "of a block of another shape is one more reachable elsewhere: "
+              "%r landed %d -> shape %r exits %r"
+              % (new, landed, found["shape"], found["exits"]),
+              landed == 1 and found["scanned"]
+              and len(found["shape"]) == 1 and "__main__ block" in found["shape"][0]
+              and len(found["exits"]) == 1)
     for old, new, kind in (
             ("        return settle(run(argv, out), out)\n",
-             "        code = 2\n        return code\n", "returns"),
+             "        code = 2\n        return code\n", "returns something"),
             ("        return settle(run(argv, out), out)\n",
-             "        return _exit_of(run(argv, out))\n", "returns"),
-            ("    try:\n        return settle(run(argv, out), out)\n",
-             "    result = run(argv, out)\n    try:\n"
-             "        return settle(result, out)\n", "outside the guarded"),
-            ("    except BaseException as exc:\n",
-             "    except Exception as exc:\n", "BaseException"),
-            ("        return settle(_interrupted(out), out)\n",
-             "        settle(_interrupted(out), out)\n", "without returning")):
+             "        return _exit_of(run(argv, out))\n", "returns something"),
+            ("        return settle(_escaped_result(out, exc), out)\n",
+             "        settle(_escaped_result(out, exc), out)\n", "run off"),
+            ("        return settle(run(argv, out), out)\n",
+             "        yield settle(run(argv, out), out)\n", "yields")):
         mutated, landed = _in_main(own, old, new)
         found = refusal_sites(mutated)
-        check("rd74 main returns settle(...) and nothing else, calls the run "
-              "once inside a region that catches every exception, and calls "
-              "nothing outside it: %r -> %r landed %d -> %r"
-              % (old, new, landed, found["main"]),
+        check("rd74 main returns a call to settle and nothing else, cannot run "
+              "off its end and is no generator: %r -> %r landed %d -> %r"
+              % (old, new, landed, found["shape"]),
               landed == 1 and found["scanned"]
-              and any(kind in f for f in found["main"]))
+              and any(kind in f for f in found["shape"]))
+    for fn, old, new, kind in (
+            ("_entry", "    except BaseException as exc:\n        return _escaped(exc)\n",
+             "    except Exception as exc:\n        return _escaped(exc)\n",
+             "not one handler"),
+            ("_entry", "        return _escaped(exc)\n",
+             "        return _escaped(exc)\n    finally:\n        pass\n",
+             "no finally"),
+            ("_entry", "    try:\n        _output.safe_stdio()\n",
+             "    _output.safe_stdio()\n    try:\n", "not one try"),
+            ("_entry", "        return main(argv)\n", "        return 1\n",
+             "returns something"),
+            ("_entry", "        return _escaped(exc)\n",
+             "        main(argv)\n        return _escaped(exc)\n",
+             "not one handler"),
+            ("_escaped", "    except BaseException:\n",
+             "    except KeyboardInterrupt:\n", "not one handler"),
+            ("_escaped", "        return settle(_escaped_result(io.StringIO(), "
+             "exc), io.StringIO())\n", "        return 2\n",
+             "returns something")):
+        mutated, landed = _in_function(own, fn, old, new)
+        found = refusal_sites(mutated)
+        check("rd79 _entry and _escaped are each one try with no else and no "
+              "finally, whose one handler catches BaseException and only "
+              "returns the next net's call, every return a call it may make: "
+              "%s %r -> %r landed %d -> %r" % (fn, old, new, landed,
+                                               found["shape"]),
+              landed == 1 and found["scanned"]
+              and any(kind in f for f in found["shape"]))
+    for body in ("global _refuse; _refuse = print", "_refuse = print",
+                 "def _refuse(result, out, name, why): return result",
+                 "main = None", "settle = int", "import json as _entry",
+                 "def _escaped(exc): return 1", "del _refusal",
+                 "_unsupported = None", "REFUSALS = ()"):
+        mutated = _at_top(own, body)
+        found = refusal_sites(mutated)
+        check("rd81 each function the one path runs through, and the list "
+              "_refuse reads, is bound once by its own top-level definition - "
+              "never assigned, deleted, declared global, imported as or "
+              "defined again: %s -> %r" % (body, found["rebound"]),
+              found["scanned"] and len(found["rebound"]) >= 1)
+    for body in ("def _late(main): return main",
+                 "def _late():\n    nonlocal_free = [settle for settle in ()]"):
+        found = refusal_sites(_at_top(own, body))
+        check("rd86 ...in a parameter or a comprehension as well: %s -> %r"
+              % (body, found["rebound"]),
+              found["scanned"] and len(found["rebound"]) == 1)
+    for body in ('result["refusal"] = "usage"',
+                 'result.setdefault("refusal", "usage")',
+                 'result.update(refusal="usage")',
+                 'result.update({"refusal": "usage"})',
+                 'return dict(result, refusal="usage")',
+                 'return {"code": 2, "refusal": "usage"}',
+                 'del result["refusal"]', 'result[_REFUSAL_KEY] = "usage"'):
+        found = refusal_sites(_planted(own, body))
+        check("rd82 the refusal key is written by _refuse alone, so a refusal "
+              "is never recorded without its line: %s -> %r"
+              % (body, found["stored"]),
+              found["scanned"] and len(found["stored"]) == 1)
+    quiet = ('return result.get("refusal")', 'return result["refusal"]',
+             'return {"refusal": None}')
+    loud = [(body, refusal_sites(_planted(own, body))["stored"])
+            for body in quiet]
+    check("rd87 ...and reading it, or a fresh result's None, is no write: %r"
+          % (loud,), all(not stored for body, stored in loud))
+    for body in ("return FIX_MODULE", "return _selftest()",
+                 "return _run(result, out)"):
+        found = refusal_sites(_planted(own, body))
+        check("rd83 the code the walk reads takes nothing from below the "
+              "selftest section, where it reads nothing, but _entry's call of "
+              "the selftest: %s -> %r" % (body, found["shape"]),
+              found["scanned"] and len(found["shape"]) == 1
+              and "below the selftest" in found["shape"][0])
     for body in ("leave = _refuse", "return _refusal",
                  "return Refusal", "return functools.partial(_refuse, result)"):
         found = refusal_sites(_planted(own, body))
@@ -3059,6 +3359,74 @@ def _exit_cases(check, seen):
           code == 2 and _refused(seen, text, "interrupted"))
 
 
+def _entered(source, argv, stdout=None):
+    """`_entry(argv)`'s code and what it printed, `source` run as a module of
+    its own under a name that is not `__main__` - the real code with one thing
+    changed in it - and its stdout an output of the case's."""
+    space = {"__name__": "reach_diff_mutated",
+             "__file__": os.path.abspath(__file__)}
+    exec(compile(source, "<reach-diff.py, mutated>", "exec"), space)
+    out = io.StringIO()
+    kept, sys.stdout = sys.stdout, (stdout if stdout is not None else out)
+    try:
+        code = space["_entry"](argv)
+    except BaseException as exc:
+        # Anything escaping `_entry` is the case's failure, reported under
+        # its id rather than ending the suite.
+        code = -1
+        out.write("escaped _entry: %r" % (exc,))
+    finally:
+        sys.stdout = kept
+    return code, out.getvalue()
+
+
+def _ended_under(seen, text, name):
+    """Whether the last refusal `text` prints is `name`: a `finally` that
+    raises runs after the region has already refused once."""
+    seen.append(name)
+    return refusals_in(text)[-1:] == [name]
+
+
+def _entry_cases(check, seen):
+    own = _own_source()
+    code, text = _entered(own, ["x", ""])
+    check("rd80 the process's exit goes through _entry, and a command line it "
+          "refuses exits 2 under `usage`: %d\n%s" % (code, text),
+          code == 2 and _refused(seen, text, "usage"))
+    finally_raises = ("    finally:\n        if '' in argv:\n"
+                      "            raise RuntimeError('finally')\n")
+    for old, new, name, what in (
+            ("    try:\n", "    last = argv[-1][0] if argv else ''\n    try:\n",
+             "internal", "IndexError"),
+            ("    try:\n", "    raise RuntimeError('before')\n    try:\n",
+             "internal", "RuntimeError: before"),
+            ("    try:\n", "    x = 1 // 0\n    try:\n", "internal",
+             "ZeroDivisionError"),
+            ("    try:\n", "    assert not argv\n    try:\n", "internal",
+             "AssertionError"),
+            ("    try:\n", "    raise SystemExit(1)\n    try:\n", "internal",
+             "SystemExit: 1"),
+            ("    try:\n", "    raise KeyboardInterrupt()\n    try:\n",
+             "interrupted", "interrupted"),
+            ("        return settle(_escaped_result(out, exc), out)\n",
+             "        return settle(_escaped_result(out, exc), out)\n"
+             + finally_raises, "internal", "RuntimeError: finally")):
+        mutated, landed = _in_main(own, old, new)
+        code, text = _entered(mutated, ["x", ""])
+        check("rd84 whatever main does outside its own region - a "
+              "statement before it that raises, an exit, an interrupt, a "
+              "finally that raises - exits 2 under a listed refusal, never 1: "
+              "%r landed %d -> %d\n%s" % (new, landed, code, text),
+              landed == 1 and code == 2 and _ended_under(seen, text, name)
+              and what in text)
+    closed = io.StringIO()
+    closed.close()
+    code, text = _entered(own, ["x", ""], stdout=closed)
+    check("rd85 an output that refuses every write, so that main's own "
+          "handler fails as well, still exits 2: %d %r" % (code, text),
+          code == 2)
+
+
 def _contract_cases(check, seen):
     named = list(REFUSALS)
     asserted = set(seen)
@@ -3098,6 +3466,7 @@ def _cases(check):
         _hook_cases(check, os.path.join(root, "hooked"))
         _site_cases(check)
         _exit_cases(check, seen)
+        _entry_cases(check, seen)
         _contract_cases(check, seen)
     finally:
         from _suite import remove_tree
@@ -3110,8 +3479,4 @@ def _selftest():
 
 
 if __name__ == "__main__":
-    from _output import safe_stdio
-    safe_stdio()
-    if "--selftest" in sys.argv[1:]:
-        sys.exit(_selftest())
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(_entry(sys.argv[1:]))
