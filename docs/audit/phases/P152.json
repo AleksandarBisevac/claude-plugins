@@ -209,8 +209,7 @@
         "severity": "low",
         "file": "tools/reach-diff.py:277-281 (HOOK_SOURCE dump)",
         "issue": "The hook reads the block label in the atexit handler (`os.environ.get(\"REACH_DIFF_BLOCK\")` inside dump()), not when it installs. A suite process that clears or replaces os.environ before exiting has its untraced children filed under '(whole file)'. In a staged run that label ran at neither side, so the run refuses with 2 and names the wrong block. This fails safe, but the refusal is misattributed. `parent` is already captured at install time.",
-        "resolution": "Capture `block = os.environ.get(\"REACH_DIFF_BLOCK\")` beside `parent` in _reach_diff_install() and write that value in dump().",
-        "fixTask": "P152.23-6jb"
+        "resolution": "Capture `block = os.environ.get(\"REACH_DIFF_BLOCK\")` beside `parent` in _reach_diff_install() and write that value in dump()."
       },
       {
         "id": "P152-R20",
@@ -363,9 +362,23 @@
         "file": "tests/test_drive_phase.py:6166",
         "issue": "The task said delete the header lines; the diff keeps a one-line section header ('a wave member's kept tree is not run in the phase tree') it wrote itself. It is true (the section is _provisioned, _brief_of, _CWD_LOG, KEPT_RESTART_CLAUSE and the kept-restart cases) but is a rewrite, not a deletion. Also casesAdded ['kr1'] names a pre-existing case, not one this task added.",
         "resolution": "None required; optionally drop the retitle or leave as is. casesAdded is harmless but inaccurate."
+      },
+      {
+        "id": "P152-R37",
+        "severity": "med",
+        "file": "tools/reach-diff.py:20-24,302-313,2540-2550; CONTRIBUTING.md:599-601",
+        "issue": "The contract says `--selftest` fails 'when a refusal site in the code names one not there' (and CONTRIBUTING says the same), but nothing in the suite looks at the refusal sites. rd62 compares the docstring's list with the names the CASES pass to `_refused`, and rd63 shows only that `_refuse` raises on one literal it is handed directly. A site with an unlisted name is caught only if some case runs that site. A new exit-2 path that writes its own 'no comparison made' line and returns `result` without calling `_refuse` (code 2, `refusal` None) is invisible to both checks. This is the prose-says-more-than-the-code class again, now in the sentence that claims to end it. Today every site is reached by a case (I traced each name to its case: rd5/6, 7, 12-14, 21/22/30/44/47, 28, 31, 38/44/45/58, 42, 46/59/60, 52, 53, 54, 55, 56, 57), so nothing is wrong in this tree yet. The gap is in the mechanism.",
+        "resolution": "Make the site half static. Walk the module's AST and collect the name literal of every `_refuse(...)` call and every `(name, why)` tuple returned by `_prepare`/`_recheck_refusal` (or hold those names in one constant table that the walk reads). Compare that set with REFUSALS in both directions. Also enforce in `compare()` (or `main`) that code 2 implies `result['refusal']` is set, with a case that goes red when a path returns 2 unnamed. Or narrow the two sentences to 'a refusal site a case reaches'."
+      },
+      {
+        "id": "P152-R38",
+        "severity": "low",
+        "file": "tools/reach-diff.py:164-168,307-308,1429-1443",
+        "issue": "EXIT CODES gives 1 as 'a line lost', yet `_refuse`'s own ValueError (and any other uncaught exception) leaves `main` as a traceback, and Python exits 1. Probe in a scratch mirror: the 'revision' refusal at :947 renamed to 'unresolvable', then run against a fixture repo with an unresolvable --head, exited 1 with `ValueError: refusal 'unresolvable' is not one the docstring names`. So a contract defect, which is exactly what finding 1 can let through, reads to a gate as a measured loss. The control probe with --repo pointing at a missing directory exited 2 (revision), as stated.",
+        "resolution": "In `main`, catch an unexpected exception, print it under a listed refusal name (for example `[internal]`, with a case), and return 2, so that 1 means only a lost line. Or state in EXIT CODES that an internal error exits 1 with a traceback."
       }
     ],
-    "outcome": "[findings: 36 - 0 high, 12 med, 24 low; 29 with a recorded fix commit]"
+    "outcome": "[findings: 38 - 0 high, 13 med, 25 low; 29 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2157,7 +2170,7 @@
     {
       "id": "P152.23-6jb",
       "title": "fix P152-R19: The hook reads the block label in the atexit handler (`os.envir...",
-      "status": "blocked",
+      "status": "cancelled",
       "description": "The hook reads the block label in the atexit handler (`os.environ.get(\"REACH_DIFF_BLOCK\")` inside dump()), not when it installs. A suite process that clears or replaces os.environ before exiting has its untraced children filed under '(whole file)'. In a staged run that label ran at neither side, so the run refuses with 2 and names the wrong block. This fails safe, but the refusal is misattributed. `parent` is already captured at install time.\n\nResolution asked: Capture `block = os.environ.get(\"REACH_DIFF_BLOCK\")` beside `parent` in _reach_diff_install() and write that value in dump().",
       "files": [
         "tools/reach-diff.py",
@@ -2185,15 +2198,15 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Cancelled: its kept tree sits on a04a2425, before the s23 fix at 54f0c646, so its whole-sweep gate can only repeat that red; the work (saved as a patch) is re-added on a clean start"
       },
-      "startedAt": "2026-11-01T02:54:18Z",
-      "completedAt": null,
+      "startedAt": "2026-11-01T03:40:41Z",
+      "completedAt": "2026-11-01T03:41:14Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -2207,6 +2220,16 @@
         {
           "at": "2026-11-01T01:43:47Z",
           "text": "no tests.add clause for P152-R19: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        },
+        {
+          "at": "2026-11-01T03:40:39Z",
+          "text": "the edit rewrites the reach-diff paragraph only; the quoted 'print it with' text sits in another section, and _deps' prose lints run in the gate",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-11-01T03:40:39Z",
+          "text": "the edit does not touch the isolation paragraph whose 'refuses to start' text the runner quotes",
+          "waives": "tools/sweep-selftests.py"
         }
       ],
       "fixes": [
@@ -2217,8 +2240,7 @@
         "runId": "2026-11-01T03:23:18Z.1cc2d4",
         "status": "failed",
         "at": "2026-11-01T03:23:18Z"
-      },
-      "blockedReason": "red is not this task's: tools/_suite.py s23 convicts a bare shutil.rmtree in tests/test_stamp_verification.py that 95d5549a introduced; P152.29-6jb fixes it, then this gate reruns"
+      }
     },
     {
       "id": "P152.24-6jb",
@@ -2586,7 +2608,7 @@
     {
       "id": "P152.29-6jb",
       "title": "The judged run's throwaway stand-in removes its tree through remove_tree, as every staged-fixture removal must",
-      "status": "in_progress",
+      "status": "done",
       "description": "95d5549a made _judged's remove_throwaway stand-in call shutil.rmtree(holder) (tests/test_stamp_verification.py, in _judged's seams). tools/_suite.py case s23 forbids an unexcused bare removal of a staged fixture under tests/, so the full sweep is red at HEAD: windows refuses to unlink git's read-only loose objects and rmtree leaves them behind. Use remove_tree (from _suite or _harness) as the rest of the file does; do not add an exemption row.",
       "files": [
         "tests/test_stamp_verification.py"
@@ -2607,19 +2629,90 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "54f0c6460fef",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "In tests/test_stamp_verification.py, _judged's remove_throwaway stand-in now returns _harness.remove_tree(holder) instead of shutil.rmtree(holder); return True. import shutil kept (still used by copytree at line 109 and the M.shutil.rmtree pins). Before: sweep-selftests.py tools/_suite.py exit 1, 34/35, s23 red. After: sweep-selftests.py tools/_suite.py tests/test_stamp_verification.py -> 2/2 files ok, 395 cases. No exemption row added. Dependants (sweep-costs.json, test__filed_returns.py, affected.py, sweep-selftests.py, verify.sh, PLUGIN-BUILD-GUIDE.md; names _crlf_cases, _scan, _worktrees): still correct, the change is one line inside a test-local seam and alters no name, case id or file they read.",
+        "descriptive": "The judged-run stand-in removes its tree through remove_tree, turning the full sweep's s23 green."
       },
       "startedAt": "2026-11-01T03:29:01Z",
-      "completedAt": null,
+      "completedAt": "2026-11-01T03:39:54Z",
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-11-01T03:37:55Z.d00465",
         "status": "passed",
         "at": "2026-11-01T03:37:55Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "54f0c6460fef",
+        "at": "2026-11-01T03:39:54Z",
+        "return": "docs/audit/evidence/returns/P152.29-6jb/20261101T032901Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task with expectRedFirst false and no tests.add; the existing case s23 in tools/_suite.py was red at base (FAIL s23, 34/35, convicting tests/test_stamp_verification.py line 847) and is green after (tools/_suite.py 35 cases ok)",
+        "at": "n/a"
+      }
+    },
+    {
+      "id": "P152.30-6jb",
+      "title": "reach-diff states its refusal contract once, tells children apart by their real paths, captures the block label at start, and measures a change limited to non-Python files",
+      "status": "in_progress",
+      "description": "Carries the cancelled P152.23-6jb's work. Findings: R19 the hook read the block label at exit, capture it at install; R32 the recheck must refuse on a different case set and on writers differing in either direction, and the exit/refusal contract is stated once in reach-diff.py's docstring (--help) with one selftest per refusal, CONTRIBUTING.md pointing at --help; R33 a change limited to non-Python files is measured, exit 2 only when nothing is lost; R34 ident() keeps paths outside the export root verbatim so children differing only in such a path are told apart.",
+      "files": [
+        "tools/reach-diff.py",
+        "CONTRIBUTING.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "files-no-suite"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-01T03:41:41Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-01T03:41:37Z",
+          "text": "the edit rewrites the reach-diff paragraph only; the quoted 'print it with' text sits in another section, and _deps' prose lints run in the gate",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-11-01T03:41:37Z",
+          "text": "the edit does not touch the isolation paragraph whose 'refuses to start' text the runner quotes",
+          "waives": "tools/sweep-selftests.py"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-01T03:57:56Z.13daea",
+        "status": "passed",
+        "at": "2026-11-01T03:57:56Z"
       }
     }
   ],

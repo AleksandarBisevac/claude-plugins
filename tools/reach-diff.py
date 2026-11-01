@@ -17,6 +17,12 @@ a time, and a reader finds the instances they think to look for. This is the
 invariant instead: every line of the module the old suite reached, the new suite
 still reaches, or the line is named. It is the check a conversion owes.
 
+THIS TEXT IS THE CONTRACT, and the only copy of it: what the run measures, when it
+exits 1, and - in the list at the end - every reason it refuses with 2. Each
+refusal printed carries its name from that list, and `--selftest` fails when a
+name there has no case asserting it, when a case asserts a name not there, or
+when a refusal site in the code names one not there.
+
 THE HEAD A GATE NAMES IS THE WORKING TREE. A task's gate runs over the task's
 uncommitted work, and a commit is not that work: `--head HEAD` over an uncommitted
 conversion compares the base with itself, and over an uncommitted fix still holds
@@ -24,28 +30,28 @@ the loss the fix removes. `--head WORKTREE` (that exact spelling, so a ref of th
 name cannot be compared) materialises the checkout as git lists it - each tracked
 file as it is on disk, each untracked file git does not ignore, a tracked file
 deleted on disk absent - by copying, never by writing the checkout or its index.
-The base is always a commit: `--base WORKTREE` refuses with 2.
+The base is always a commit.
 
-THE HEAD IS THE BASE: NO CHANGE TO MEASURE, AND EXIT 2. When the two sides hold the
-same code - both name one commit, two commits name one tree, or the two exports
-differ in no file that `decides()`: not the module, not the suite, and no file
-Python can import (`IMPORTABLE_SUFFIXES` - source, bytecode, an extension, a
-`.pth`, an importable archive, a `conftest` or a `sitecustomize` included) - no
-suite is run and the first line says the head is the base, followed by each
-differing file it looked past. That covers `--base HEAD --head WORKTREE` on a
-clean checkout, once the task's work is committed, and a checkout whose only
-change is a file no process imports, such as a journal row the drive leaves
-uncommitted. "Lost: 0" over such sides is true and measures nothing: it is the
-same for every suite, a converted one or not. A gate reads the exit code, not
-the line, so the default is 2, the code for no comparison made, and not 0.
-`--allow-same` is the caller saying identical sides are the answer it expects
-(a gate re-run where the work is already in the base): the same lines are
-printed and the exit is 0. Sides that differ in any file that decides are
-measured, the run saying which: a task that changed nothing the suite reaches is
-an honest 0. WHAT IT CANNOT SEE: a changed file that is not code - a fixture the
-suite reads, a shell script it runs - does not make the sides differ, so a
-change confined to one is refused as no change rather than measured; the listed
-files are the reader's to judge.
+THE HEAD IS THE BASE WHEN THE TWO SIDES HOLD THE SAME BYTES: both name one commit,
+two commits name one tree, or the two exports differ in no file at all. No suite
+is run then - there is nothing a run could tell apart - and the run refuses
+(`same`): "lost: 0" over such sides is true and measures nothing, the same for
+every suite, a converted one or not. That covers `--base HEAD --head WORKTREE` on
+a clean checkout, and any run once the task's work is committed. `--allow-same`
+is the caller saying identical sides are the answer it expects (a gate re-run
+where the work is already in the base): the same lines are printed and the exit
+is 0.
+
+SIDES THAT DIFFER IN ANY FILE ARE MEASURED, and the run says which files differ
+and which of them `decides()`: the module, the suite, or a file Python can import
+(`IMPORTABLE_SUFFIXES` - source, bytecode, an extension, a `.pth`, an importable
+archive, a `conftest` or a `sitecustomize` included). A change confined to files
+that do not decide is measured all the same, because a data file the module reads
+can move what the suite reaches, and a line lost over it exits 1 like any other.
+Nothing lost over such sides is no evidence of a conversion, though - a journal
+row the drive leaves uncommitted changes nothing any suite runs - so it refuses
+(`no-conversion`), unless `--allow-same`. Sides that differ in a file that decides
+and lose nothing are an honest 0.
 
 HOW A REVISION IS MEASURED. Each commit is a `git archive` export into a scratch
 directory, and the working tree the copy above (the checkout is never written, and
@@ -69,7 +75,9 @@ module, by resolved path - `sys.monitoring` where the interpreter has it, each
 location disabled after its first event so the cost elsewhere is one call per
 location, and `sys.settrace` plus `threading.settrace` on the 3.8 floor, which hands
 a line tracer only to the module's frames. Each process writes a start marker when
-it installs and its lines when it exits.
+it installs and its lines when it exits. Everything a process writes about itself -
+its parent, its key, its block - is read when the hook installs, so a process that
+rewrites or clears its environment before it exits is still filed where it started.
 
 THE ROUTE IS THE SWEEP'S. A suite may decide how to run something by what is on
 `PYTHONPATH` - the drive suite runs a verb as a process rather than in its own
@@ -85,29 +93,33 @@ their arguments, and hands each child a token naming itself in the environment;
 each traced process records its own key, whether it is running the module, and
 the token of its parent. A KEY is a process's arguments - for a module child,
 those after the module's path - with every absolute path under the export's root
-written relative to it and every other absolute path written as one placeholder,
-so the same child has one key at both revisions and in both of a base's runs. A
+written relative to it, every one under the temp or home directory the sweep
+handed the block's run written as `<temp>` or `<home>` (those two differ between
+any two runs; the block's first process reads them and hands them down, so every
+process of one block agrees), and every other absolute path kept as it is, since
+on one machine it names the same thing at both revisions. So the same child has
+one key at both revisions and in both of a base's runs. A
 child started on the module that never wrote its lines - one handed an
 environment that drops the hook, one started with `-I`, `-E`, `-S` or (under the
 `usercustomize` entry) `-s`, one that ended through `os._exit`, a kill or a
 timeout - is a key its parent recorded and no child of its answered. Children are
-kept per block (each process records the block it runs under). A block that ran
+kept per block. A block that ran
 at both revisions and left the same untraced children at both - the same keys,
 as many times each - measured the same blind spot on both sides (a suite that
 kills a child on purpose does that at every revision), and it is printed, with
 the keys, as a blind spot while the comparison goes on over everything else;
 lines only those children ran are measured at neither revision, so a loss among
-them cannot be seen. Any other untraced child refuses with 2, naming each side's
-keys: a block whose children differ, in number or in which they are, or one that
-ran at one revision only - the shape a conversion takes when it deletes a block,
-whose children the base could not see either. A trace file that cannot be read
-refuses with 2 as well. WHAT A KEY CANNOT TELL APART: two children with the same
-arguments that take different paths through the module - by what they read on
-stdin, in the environment or in a file - are one key, so a blind spot matched by
-key can still hide a loss among the lines one of them ran; and an argument that
-varies between runs in a way the placeholder does not cover (a generated id, a
-path inside an option's value) makes the same child two keys, which refuses with
-2 rather than hiding anything.
+them cannot be seen. Any other untraced child refuses (`untraced`), naming each
+side's keys: a block whose children differ, in number or in which they are, or
+one that ran at one revision only - the shape a conversion takes when it deletes
+a block, whose children the base could not see either. WHAT A KEY CANNOT TELL
+APART: two children with the same arguments that take different paths through
+the module - by what they read on stdin, in the environment or in a file - are
+one key, and so are two that differ only in which path under the temp or home
+directory they name; a blind spot matched by key can still hide a loss among the
+lines one of them ran. An argument that varies between runs in a way the key
+does not cover (a generated id, a path inside an option's value) makes the same
+child two keys, which refuses rather than hiding anything.
 
 WHAT IT CANNOT SEE, SAID RATHER THAN IMPLIED. A child that runs the module without
 naming its path among `subprocess.Popen`'s arguments - started through a shell
@@ -142,25 +154,50 @@ reached that the head does not, is listed apart under `sometimes:` and does not
 decide the exit. This rather than a fixed number of base runs, because it costs
 nothing when nothing looks lost and is on in every run, and it cannot set aside
 a real loss: a line every base run reaches is reached by the recheck too. A
-recheck that could have missed a line for another reason is no evidence of
-chance, and refuses with 2: a block that did not pass, a trace that cannot be
-read, or a block run again that left a silent process or an untraced module
-child its first run did not, that did not write again a process that wrote in
-its first run, or that ran another number of cases. Processes are compared by
-key, as multisets, so one child swapped for another is a difference even where
-the counts agree. WHAT IT CANNOT SEE: a line the base reaches by chance in both
-of its runs is still lost - the flap is made rarer, not impossible - and the
-head is measured once, so a line the head reaches only sometimes is lost in the
-runs where it misses it.
+recheck that could have missed a line for another reason than chance is no
+evidence of chance, and refuses - the `recheck-` reasons in the list below.
+WHAT IT CANNOT SEE: a line the base reaches by chance in both of its runs is
+still lost - the flap is made rarer, not impossible - and the head is measured
+once, so a line the head reaches only sometimes is lost in the runs where it
+misses it.
 
-A RUN THAT MEASURED NOTHING IS NOT A PASS. Any block that failed - a red case, a
-crash, a timeout, no contract line - an untraced module child no blind spot
-matches, a recheck refused as above, or a revision at which no line of the module
-was reached at all, refuses with 2 and says which: a reach measured over a suite
-that did not finish is not the suite's reach.
+EXIT CODES. 0 - nothing lost; or the head is the base, or only files that do
+not decide differ, under `--allow-same`. 1 - a line lost. 2 - no comparison
+made: a reach measured over a suite that did not finish, or over sides that
+cannot be told apart, is not the suite's reach. Each refusal prints a line
+`reach-diff: no comparison made (NAME) - ...`, the result carries the first
+NAME as `refusal`, and these are all of them:
 
-Exit codes: 0 no line lost (or the head is the base, under `--allow-same`) - 1 a
-line lost - 2 usage error, or no comparison made, the head being the base included.
+  [usage] the command line is not one this accepts.
+  [base-worktree] `--base WORKTREE`: the base is the state a change started
+      from, a commit; only `--head` may name the working tree.
+  [hook-probe] the interpreter could not be asked whether it imports a
+      `usercustomize` module, so where to write the hook is unknown.
+  [revision] git cannot resolve a revision.
+  [export] a revision could not be exported or copied.
+  [missing] a revision holds no module or no suite at the path given.
+  [unparsable] the module at a revision does not parse.
+  [same] the head is the base, as above; no suite is run.
+  [failed] a block did not pass at either revision - a red case, a crash, a
+      timeout, no contract line.
+  [untraced] a module child never wrote what it reached, and no blind spot
+      matches it.
+  [unreadable] a trace file of either revision could not be read.
+  [no-reach] a revision reached no line of the module: the suite does not run
+      it there, or no process it started ran the tracer.
+  [no-conversion] only files that do not decide differ, and nothing was lost.
+  [recheck-export] the fresh export the recheck runs in could not be made.
+  [recheck-failed] a block run again did not pass.
+  [recheck-unreadable] a trace file of the recheck could not be read.
+  [recheck-processes] a block run again did not run the same processes as its
+      first run: the processes that wrote what they reached, the processes that
+      never wrote it, and the module children left untraced are each compared
+      with the first run's by key, as multisets, and a difference in either
+      direction refuses - a child swapped for another included.
+  [recheck-cases] a block run again did not run the same cases as its first
+      run: compared by case id - the word after `PASS` or `FAIL` on each case
+      line - when both runs printed case lines, else by the contract's case
+      count; the refusal says which it compared.
 """
 import ast
 import difflib
@@ -168,7 +205,9 @@ import filecmp
 import io
 import json
 import os
+import re
 import shutil
+import stat
 import subprocess
 import sys
 import tarfile
@@ -208,6 +247,10 @@ ENV_TRACER = "REACH_DIFF_TRACER"
 ENV_PARENT = "REACH_DIFF_PARENT"
 ENV_BLOCK = "REACH_DIFF_BLOCK"
 ENV_ROOT = "REACH_DIFF_ROOT"
+# Written by the first traced process of a block and read by every process below
+# it, so the whole tree of one block normalises the same two directories.
+ENV_TEMP = "REACH_DIFF_TEMP"
+ENV_HOME = "REACH_DIFF_HOME"
 WHOLE_FILE = "(whole file)"
 UNKNOWN_BLOCK = "(a start marker that could not be read)"
 # The head that names the checkout's working tree rather than a commit. A ref of
@@ -221,6 +264,53 @@ WORKTREE = "WORKTREE"
 HOOK_USER = "usercustomize"
 HOOK_SITE = "sitecustomize"
 USER_SITE_PROBE = "import site; print(site.ENABLE_USER_SITE)"
+
+
+# --- the refusals ------------------------------------------------------------
+# The names are read off the docstring's list, the one place the contract is
+# stated; `_refuse` takes no other, and `--selftest` holds a case for each.
+_DOC_REFUSAL = re.compile(r"^  \[([a-z][a-z-]*)\] ", re.M)
+REFUSAL_LINE = re.compile(r"^reach-diff: no comparison made \(([a-z][a-z-]*)\) - ",
+                          re.M)
+# A case line of the house runner's: `PASS <id> ...` or `FAIL <id> ...`.
+CASE_LINE = re.compile(r"^(?:PASS|FAIL) (\S+)", re.M)
+
+
+def doc_refusals(doc):
+    """The refusal names the list at the end of `doc` holds, in its order."""
+    tail = (doc or "").split("\nEXIT CODES.", 1)
+    return _DOC_REFUSAL.findall(tail[1]) if len(tail) == 2 else []
+
+
+REFUSALS = tuple(doc_refusals(__doc__))
+
+
+def refusals_in(text):
+    """The refusal names `text` prints, in order, one per refusal line."""
+    return REFUSAL_LINE.findall(text or "")
+
+
+def fresh_result():
+    """The result of a comparison before anything has been decided: exit 2,
+    no refusal named yet."""
+    return {"code": 2, "refusal": None, "gaps": [], "gone": [], "reached": {},
+            "tracers": [], "processes": {}, "blocks": {}, "untraced": {},
+            "hook": None, "blind": {}, "same": False, "rechecked": [],
+            "flaky": []}
+
+
+def _refuse(result, out, name, why):
+    """Print one refusal line naming `name` and record the first one in
+    `result`, whose exit stays 2. A name the docstring's list does not hold is
+    a ValueError: a refusal the contract does not state is a defect here, not
+    a reason to print."""
+    if name not in REFUSALS:
+        raise ValueError("refusal %r is not one the docstring names" % (name,))
+    if result.get("refusal") is None:
+        result["refusal"] = name
+    result["code"] = 2
+    out.write("reach-diff: no comparison made (%s) - %s\n" % (name, why))
+    return result
 
 
 def hook_line(entry):
@@ -262,6 +352,27 @@ def _reach_diff_install():
     root = os.environ.get("REACH_DIFF_ROOT")
     root = norm(root) if root else None
 
+    def under(full, base):
+        return full == base or full.startswith(base.rstrip(os.sep) + os.sep)
+
+    def first_set(names):
+        for name in names:
+            if os.environ.get(name):
+                return os.environ[name]
+        return ""
+    home = os.path.expanduser("~")
+    scratch = []
+    for var, mark, here in (
+            ("REACH_DIFF_TEMP", "<temp>", first_set(("TMPDIR", "TEMP", "TMP"))),
+            ("REACH_DIFF_HOME", "<home>", "" if home == "~" else home)):
+        if var not in os.environ:
+            os.environ[var] = here
+        found = os.environ[var]
+        if found and os.path.isabs(found):
+            found = norm(found)
+            if os.path.dirname(found) != found:
+                scratch.append((found, mark))
+
     def decoded(arg):
         try:
             return os.fsdecode(arg)
@@ -278,7 +389,8 @@ def _reach_diff_install():
                     arg = "<tree>/" + os.path.relpath(full, root).replace(
                         os.sep, "/")
                 else:
-                    arg = "<path>"
+                    arg = next((mark for base, mark in scratch
+                                if under(full, base)), arg)
             key.append(arg)
         return key
 
@@ -295,6 +407,7 @@ def _reach_diff_install():
     spawned = []
     token = "%d-%s" % (os.getpid(), os.urandom(6).hex())
     parent = os.environ.get("REACH_DIFF_PARENT")
+    block = os.environ.get("REACH_DIFF_BLOCK")
     os.environ["REACH_DIFF_PARENT"] = token
     argv = list(getattr(sys, "argv", None) or [])
     is_module = module_at(argv[:1]) == 0
@@ -306,7 +419,7 @@ def _reach_diff_install():
             json.dump(record, fh)
         os.replace(path + ".part", path)
     write(".start", {"parent": parent, "module": is_module, "argv": me,
-                     "block": os.environ.get("REACH_DIFF_BLOCK")})
+                     "block": block})
 
     def on_event(event, args):
         if event != "subprocess.Popen":
@@ -362,8 +475,7 @@ def _reach_diff_install():
     def dump():
         write(".json", {"tracer": used, "lines": sorted(lines),
                         "parent": parent, "module": is_module, "argv": me,
-                        "spawned": spawned,
-                        "block": os.environ.get("REACH_DIFF_BLOCK")})
+                        "spawned": spawned, "block": block})
     import atexit
     atexit.register(dump)
 
@@ -651,6 +763,8 @@ def traced_env(hook_dir, module_path, out_dir, tracer, root, environ=None):
     env[ENV_ROOT] = root
     env[ENV_OUT] = out_dir
     env.pop(ENV_PARENT, None)
+    env.pop(ENV_TEMP, None)
+    env.pop(ENV_HOME, None)
     if tracer:
         env[ENV_TRACER] = tracer
     else:
@@ -817,8 +931,10 @@ def _repo_relative(repo, path):
     return path.replace(os.sep, "/").lstrip("/")
 
 
-def _prepare(repo, name, rev, module, suite, scratch, tracer, sweep):
-    """One side of the comparison, exported and ready to run; or a refusal."""
+def _prepare(repo, name, rev, module, suite, scratch, tracer, sweep,
+             environ=None):
+    """One side of the comparison, exported and ready to run; or `(None,
+    (refusal name, why))`."""
     export = os.path.join(scratch, name + "-tree")
     if rev == WORKTREE:
         sha = resolve_rev(repo, "HEAD") or "no commit"
@@ -828,25 +944,26 @@ def _prepare(repo, name, rev, module, suite, scratch, tracer, sweep):
     else:
         sha = resolve_rev(repo, rev)
         if sha is None:
-            return None, "%s revision %r: git cannot resolve it in %s" % (
-                name, rev, repo)
+            return None, ("revision", "%s revision %r: git cannot resolve it in "
+                                      "%s" % (name, rev, repo))
         shown = sha[:12]
         os.makedirs(export)
         why = export_rev(repo, sha, export)
     if why:
-        return None, "%s revision %s: %s" % (name, rev, why)
+        return None, ("export", "%s revision %s: %s" % (name, rev, why))
     sources = {}
     for role, rel in (("module", module), ("suite", suite)):
         path = os.path.join(export, *rel.split("/"))
         if not os.path.isfile(path):
-            return None, "%s revision %s holds no %s at %s" % (name, rev, role, rel)
+            return None, ("missing", "%s revision %s holds no %s at %s" % (
+                name, rev, role, rel))
         with io.open(path, encoding="utf-8", errors="replace") as fh:
             sources[role] = fh.read()
     try:
         ast.parse(sources["module"])
     except (SyntaxError, ValueError) as exc:
-        return None, "%s revision %s: the module does not parse: %s" % (
-            name, rev, exc)
+        return None, ("unparsable", "%s revision %s: the module does not "
+                                    "parse: %s" % (name, rev, exc))
     out_dir = os.path.join(scratch, name + "-traces")
     os.makedirs(out_dir)
     labels, whole = suite_blocks(sweep, sources["suite"])
@@ -856,7 +973,7 @@ def _prepare(repo, name, rev, module, suite, scratch, tracer, sweep):
             "out": out_dir, "labels": labels, "whole": whole,
             "module_source": sources["module"],
             "env": traced_env(os.path.join(scratch, "hook"), module_path, out_dir,
-                              tracer, export)}, None
+                              tracer, export, environ)}, None
 
 
 def _measure(sweep, work, suite, jobs, timeout, pycache):
@@ -923,13 +1040,11 @@ def _tree_of(repo, sha):
     return tree if code == 0 and tree else None
 
 
-def same_side(repo, base, head, module, suite):
-    """`(why, differing)`: why the two prepared sides count as the same, or None
-    when they differ, and the files that differ between them. Two commits
-    naming one commit or one tree are the same; otherwise the two exports are
-    compared byte for byte, and sides whose differing files are none of them
-    `decides()` - neither the module nor the suite nor a file Python can
-    import - are the same as well. Nothing here writes any git state."""
+def same_side(repo, base, head):
+    """`(why, differing)`: why the two prepared sides hold the same bytes, or
+    None when they do not, and the files that differ between them. Two
+    commits naming one commit or one tree are the same; otherwise the two
+    exports are compared byte for byte. Nothing here writes any git state."""
     if head["rev"] != WORKTREE:
         if base["sha"] == head["sha"]:
             return "both name commit %s" % (base["sha"][:12],), []
@@ -941,31 +1056,23 @@ def same_side(repo, base, head, module, suite):
     if not differing:
         return "%s is byte for byte the export of %s" % (
             head["shown"], base["shown"]), []
-    if any(decides(rel, module, suite) for rel in differing):
-        return None, differing
-    return ("%s differs from %s only in files no Python process imports, and "
-            "neither the module nor the suite is one of them" % (
-                head["shown"], base["shown"])), differing
+    return None, differing
 
 
-def _same_verdict(result, out, why, differing, allow_same):
+def _same_verdict(result, out, why, allow_same):
     """The verdict when the head is the base: nothing is run, and the exit is 2
-    unless the caller said identical sides are an answer. The differing files
-    the verdict looked past are listed, so a reader can judge them."""
+    unless the caller said identical sides are an answer."""
     result["same"] = True
     out.write("reach-diff: the head is the base: no change to measure - %s; "
               "no suite was run\n" % (why,))
-    for rel in differing:
-        out.write("  differs, and is no file Python imports: %s\n" % (rel,))
     if allow_same:
         out.write("  exit 0 under --allow-same: the caller has said identical "
                   "sides are an answer, and this is not a measured conversion\n")
         result["code"] = 0
         return result
-    out.write("reach-diff: no comparison made - a 0 here would read as a "
-              "conversion measured and found whole; pass --allow-same where "
-              "identical sides are the answer expected\n")
-    return result
+    return _refuse(result, out, "same", "a 0 here would read as a conversion "
+                   "measured and found whole; pass --allow-same where identical "
+                   "sides are the answer expected")
 
 
 def _tail(text, count):
@@ -990,29 +1097,28 @@ def _render_lines(rows, indent):
 
 
 def compare(repo, module, suite, base, head, jobs=None, timeout=None,
-            tracer=None, out=None, allow_same=False):
+            tracer=None, out=None, allow_same=False, environ=None):
     """Run the comparison and print it to `out`; the result dict, whose `code`
-    is the exit code: 0 no line lost, 1 a line lost, 2 no comparison made - or
-    the two sides hold the same content and `allow_same` is off."""
+    is the exit code the docstring's EXIT CODES state, and whose `refusal` is
+    the first refusal's name. `environ` is the environment the runs start
+    from, the process's own when None - threaded so a case can hand it an
+    interpreter that cannot start without writing to the process's own."""
     out = out if out is not None else sys.stdout
+    environ = os.environ if environ is None else environ
     began = time.monotonic()
     module, suite = _repo_relative(repo, module), _repo_relative(repo, suite)
-    result = {"code": 2, "gaps": [], "gone": [], "reached": {}, "tracers": [],
-              "processes": {}, "blocks": {}, "untraced": {}, "hook": None,
-              "blind": {}, "same": False, "rechecked": [], "flaky": []}
+    result = fresh_result()
     sweep = _sweep()
     jobs = jobs if jobs is not None else sweep.default_jobs()
     timeout = timeout if timeout is not None else (
         TIMEOUT_FACTOR * sweep.DEFAULT_TIMEOUT)
     if base == WORKTREE:
-        out.write("reach-diff: no comparison made - --base %s is refused: the "
-                  "base is the state a change started from, a commit; only "
-                  "--head may name the working tree\n" % (WORKTREE,))
-        return result
-    entry, why = hook_entry(sweep.ambient_env(os.environ))
+        return _refuse(result, out, "base-worktree", "--base %s is refused: the "
+                       "base is the state a change started from, a commit; only "
+                       "--head may name the working tree" % (WORKTREE,))
+    entry, why = hook_entry(sweep.ambient_env(environ))
     if entry is None:
-        out.write("reach-diff: no comparison made - %s\n" % (why,))
-        return result
+        return _refuse(result, out, "hook-probe", why)
     result["hook"] = entry
     scratch = tempfile.mkdtemp(prefix="reach-")
     try:
@@ -1020,20 +1126,21 @@ def compare(repo, module, suite, base, head, jobs=None, timeout=None,
         write_hook(os.path.join(scratch, "hook"), entry)
         sides = []
         for name, rev in (("base", base), ("head", head)):
-            side, why = _prepare(repo, name, rev, module, suite, scratch, tracer,
-                                 sweep)
+            side, refused = _prepare(repo, name, rev, module, suite, scratch,
+                                     tracer, sweep, environ)
             if side is None:
-                out.write("reach-diff: no comparison made - %s\n" % (why,))
-                return result
+                return _refuse(result, out, refused[0], refused[1])
             sides.append(side)
-        why, differing = same_side(repo, sides[0], sides[1], module, suite)
+        why, differing = same_side(repo, sides[0], sides[1])
         if why:
-            return _same_verdict(result, out, why, differing, allow_same)
+            return _same_verdict(result, out, why, allow_same)
         out.write("reach-diff: %s under %s\n" % (module, suite))
         deciding = [rel for rel in differing if decides(rel, module, suite)]
-        out.write("  the sides differ in %d files, %d of them the module, the "
-                  "suite or a file Python can import: %s\n" % (
-                      len(differing), len(deciding), ", ".join(deciding)))
+        out.write("  the sides differ in %d files, %d of them deciding - the "
+                  "module, the suite or a file Python can import: %s\n" % (
+                      len(differing), len(deciding),
+                      ", ".join(deciding) or "none, so the files that differ "
+                      "are %s" % (", ".join(differing),)))
         out.write("  hook: %s\n" % (hook_line(entry),))
         pycache = os.path.join(scratch, "pycache")
         os.makedirs(pycache)
@@ -1042,17 +1149,34 @@ def compare(repo, module, suite, base, head, jobs=None, timeout=None,
                         suite, jobs, timeout, pycache)
 
         def recheck(labels):
-            again, why = _prepare(repo, "base-again", base, module, suite,
-                                  scratch, tracer, sweep)
+            again, refused = _prepare(repo, "base-again", base, module, suite,
+                                      scratch, tracer, sweep, environ)
             if again is None:
-                return None, None, why
+                return None, None, refused[1]
             return (_measure(sweep, [(again, label) for label in labels], suite,
                              jobs, timeout, pycache),
                     read_traces(again["out"]), None)
-        return _judge(sides, rows, result, out, began, jobs, recheck)
+        _judge(sides, rows, result, out, began, jobs, recheck)
+        if result["code"] == 0 and not deciding:
+            return _no_conversion(result, out, differing, allow_same)
+        return result
     finally:
         from _suite import remove_tree
         remove_tree(scratch)
+
+
+def _no_conversion(result, out, differing, allow_same):
+    """The verdict over sides measured whole that differ only in files that do
+    not decide, with nothing lost: exit 2 unless the caller said so is the
+    answer."""
+    if allow_same:
+        out.write("  exit 0 under --allow-same: only files that do not decide "
+                  "differ (%s), and nothing was lost\n" % (", ".join(differing),))
+        return result
+    return _refuse(result, out, "no-conversion", "only files that do not decide "
+                   "differ (%s) and nothing was lost: no evidence of a conversion; "
+                   "pass --allow-same where that is the answer expected" % (
+                       ", ".join(differing),))
 
 
 def _blocks_reaching(by_block, lines, labels):
@@ -1066,44 +1190,62 @@ def _blocks_reaching(by_block, lines, labels):
     return [label for label in labels if (label or WHOLE_FILE) in hit]
 
 
+def case_ids(output):
+    """The case ids a run printed - the word after `PASS` or `FAIL` on each
+    case line - as a Counter, or None when it printed no case line."""
+    found = CASE_LINE.findall(output or "")
+    return Counter(found) if found else None
+
+
+def _render_ids(ids):
+    return ", ".join(sorted(ids.elements())) or "none"
+
+
+# Each per-block multiset of processes a recheck must match its first run's, in
+# the order they are checked and with the words a refusal names them by.
+RECHECK_PROCESSES = (
+    ("silent_by_block", "processes that never wrote what they reached"),
+    ("untraced", "module children untraced"),
+    ("written_by_block", "processes that wrote what they reached"),
+)
+
+
 def _recheck_refusal(rows, again, first, first_rows):
-    """Why the recheck cannot stand beside the base's first run, or None. A line
-    the recheck did not reach is set apart as reached only sometimes, so any run
-    that could have missed it for another reason must not be read as one: a
-    block that did not pass, a trace that cannot be read, and for each block run
-    again - a process that never wrote what it reached, or a module child left
-    untraced, that its first run did not have; a process that wrote in its
-    first run and did not write again; or another number of cases. Processes
-    are compared by key (`process_key`), as multisets, so one child swapped for
-    another is a difference however many there are."""
+    """`(refusal name, why)` when the recheck cannot stand beside the base's
+    first run, or None. The docstring's `recheck-` refusals are the rules; each
+    comparison is an equality, so a difference in either direction refuses."""
     failed = [r for r in rows if not r["ok"]]
     if failed:
-        return "%d of %d blocks run again did not pass: %s" % (
+        return "recheck-failed", "%d of %d blocks run again did not pass: %s" % (
             len(failed), len(rows), "; ".join(
                 "%s: %s" % (r["label"], r["why"]) for r in failed))
     if again["unreadable"]:
-        return "%d trace files could not be read" % (len(again["unreadable"]),)
-    before = dict((r["label"], r["cases"]) for r in first_rows
-                  if r["side"] == "base")
-    for label in [r["label"] for r in rows]:
-        for key, what in (("silent_by_block", "processes that never wrote what "
-                           "they reached"),
-                          ("untraced", "module children untraced")):
-            extra = (again[key].get(label, Counter())
-                     - first[key].get(label, Counter()))
-            if extra:
-                return ("block %s left %s beyond its first run's: %s" % (
-                    label, what, render_keys(extra)))
-        missing = (first["written_by_block"].get(label, Counter())
-                   - again["written_by_block"].get(label, Counter()))
-        if missing:
-            return ("block %s: processes that wrote what they reached in its "
-                    "first run did not write again: %s" % (
-                        label, render_keys(missing)))
+        return "recheck-unreadable", "%d trace files could not be read: %s" % (
+            len(again["unreadable"]), "; ".join(again["unreadable"]))
+    before = dict((r["label"], r) for r in first_rows if r["side"] == "base")
     for row in rows:
-        if row["cases"] != before.get(row["label"]):
-            return "block %s ran %s cases, %s in its first run" % (
-                row["label"], row["cases"], before.get(row["label"]))
+        label = row["label"]
+        for key, what in RECHECK_PROCESSES:
+            was = first[key].get(label, Counter())
+            now = again[key].get(label, Counter())
+            if was != now:
+                return "recheck-processes", (
+                    "block %s: its %s differ from its first run's - only in the "
+                    "first run: %s; only run again: %s" % (
+                        label, what, render_keys(was - now), render_keys(now - was)))
+        then = before.get(label) or {}
+        was, now = case_ids(then.get("output")), case_ids(row["output"])
+        if was is not None and now is not None:
+            if was != now:
+                return "recheck-cases", (
+                    "block %s ran other cases than in its first run, compared "
+                    "by case id - only in the first run: %s; only run again: %s"
+                    % (label, _render_ids(was - now), _render_ids(now - was)))
+        elif row["cases"] != then.get("cases"):
+            return "recheck-cases", (
+                "block %s ran %s cases and %s in its first run, compared by the "
+                "case count, since a run printed no case id" % (
+                    label, row["cases"], then.get("cases")))
     return None
 
 
@@ -1135,9 +1277,9 @@ def _judge(sides, rows, result, out, began, jobs, recheck):
                                    for t in tr["tracers"]))
     seconds = time.monotonic() - began
     if failed:
-        out.write("reach-diff: no comparison made - %d of %d blocks did not pass, "
-                  "and a reach measured over a suite that did not finish is not "
-                  "its reach:\n" % (len(failed), len(rows)))
+        _refuse(result, out, "failed", "%d of %d blocks did not pass, and a reach "
+                "measured over a suite that did not finish is not its reach:" % (
+                    len(failed), len(rows)))
         for row in failed:
             out.write("  %s block %s: %s\n" % (row["side"], row["label"],
                                                row["why"]))
@@ -1153,19 +1295,17 @@ def _judge(sides, rows, result, out, began, jobs, recheck):
     unreadable = [side for side in sides if traces[side["name"]]["unreadable"]]
     if spots["unmatched"] or unreadable:
         for label, at_base, at_head, why in spots["unmatched"]:
-            out.write("reach-diff: no comparison made - block %s: module "
-                      "children were started and never wrote what they reached "
-                      "(%s) - at the base: %s; at the head: %s. A child started "
-                      "on the module's path with an environment that drops the "
-                      "hook, or one that ended without its exit handlers "
-                      "(os._exit, a kill, a timeout), ran lines no trace "
-                      "holds\n" % (label, why, render_keys(at_base),
-                                    render_keys(at_head)))
+            _refuse(result, out, "untraced", "block %s: module children were "
+                    "started and never wrote what they reached (%s) - at the "
+                    "base: %s; at the head: %s. A child started on the module's "
+                    "path with an environment that drops the hook, or one that "
+                    "ended without its exit handlers (os._exit, a kill, a "
+                    "timeout), ran lines no trace holds" % (
+                        label, why, render_keys(at_base), render_keys(at_head)))
         for side in unreadable:
-            out.write("reach-diff: no comparison made - at %s (%s) %d trace files "
-                      "could not be read\n" % (
-                          side["name"], side["rev"],
-                          len(traces[side["name"]]["unreadable"])))
+            _refuse(result, out, "unreadable", "at %s (%s) %d trace files could "
+                    "not be read" % (side["name"], side["rev"],
+                                     len(traces[side["name"]]["unreadable"])))
         out.write("took %.1fs with %d jobs\n" % (seconds, jobs))
         return result
     result["blind"] = spots["matched"]
@@ -1177,10 +1317,9 @@ def _judge(sides, rows, result, out, began, jobs, recheck):
                       traces["base"]["untraced"][label])))
     for side in sides:
         if not traces[side["name"]]["lines"]:
-            out.write("reach-diff: no comparison made - no line of the module was "
-                      "reached at %s (%s): the suite does not run it there, or no "
-                      "process it started ran the tracer\n" % (
-                          side["name"], side["rev"]))
+            _refuse(result, out, "no-reach", "no line of the module was reached "
+                    "at %s (%s): the suite does not run it there, or no process "
+                    "it started ran the tracer" % (side["name"], side["rev"]))
             out.write("took %.1fs with %d jobs\n" % (seconds, jobs))
             return result
     base, head = sides
@@ -1192,12 +1331,13 @@ def _judge(sides, rows, result, out, began, jobs, recheck):
                                   base["labels"])
         result["rechecked"] = [label or WHOLE_FILE for label in labels]
         again_rows, again, why = recheck(labels)
-        why = why or _recheck_refusal(again_rows, again, traces["base"], rows)
-        if why:
-            out.write("reach-diff: no comparison made - %d lines reached at %s "
-                      "and not at %s could not be confirmed by running the "
-                      "blocks that reached them again: %s\n" % (
-                          len(lost), base["rev"], head["rev"], why))
+        refused = (("recheck-export", why) if why else
+                   _recheck_refusal(again_rows, again, traces["base"], rows))
+        if refused:
+            _refuse(result, out, refused[0], "%d lines reached at %s and not at "
+                    "%s could not be confirmed by running the blocks that "
+                    "reached them again: %s" % (len(lost), base["rev"],
+                                                head["rev"], refused[1]))
             for row in [r for r in again_rows or () if not r["ok"]]:
                 for line in _tail(row["output"], 12):
                     out.write("      %s\n" % (line,))
@@ -1293,7 +1433,8 @@ def main(argv, out=None):
         return 0
     opts, why = parse_args(argv)
     if opts is None:
-        out.write("reach-diff: %s\n%s" % (why, USAGE))
+        _refuse(fresh_result(), out, "usage", why)
+        out.write(USAGE)
         return 2
     repo = os.path.abspath(opts.get("repo") or REPO)
     return compare(repo, opts["module"], opts["suite"], opts["base"],
@@ -1470,6 +1611,16 @@ def _race_count_cases(check):
     if os.path.basename(HERE) == "base-again-tree":
         check("x9", True)
 
+
+def _act_cases(check):
+    check("a1", load().act() in ("took a", "took b"))
+
+
+def _junk_cases(check):
+    with open(os.path.join(os.environ["REACH_DIFF_OUT"], "junk.json"), "w") as fh:
+        fh.write("{")
+    check("j1", True)
+
 '''
 
 _SUITE_STAGED_MAIN = '''
@@ -1598,6 +1749,30 @@ def remember():
     return "once"
 '''
 
+# A module whose reach turns on a data file it reads: a change to that file alone
+# moves what the suite reaches, though no file Python imports differs.
+MODULE_DATA = MODULE_BASE + '''
+
+def mode():
+    import json
+    import os
+    here = os.path.dirname(os.path.abspath(__file__))
+    with open(os.path.join(here, "data" + ".json")) as fh:
+        return json.load(fh)["mode"]
+
+
+def act():
+    if mode() == "a":
+        return "took a"
+    return "took b"
+'''
+
+# Two absolute paths outside every export and every scratch directory: one
+# machine names the same thing by each at both revisions, so a child given one is
+# not the child given the other.
+OUTSIDE_A = os.path.abspath(os.sep + "reach-diff-outside-a")
+OUTSIDE_B = os.path.abspath(os.sep + "reach-diff-outside-b")
+
 SHADOW_ROWS = ALL_ROWS[:2] + (("shadowed", "_shadowed_child_cases"),)
 GRADE_ROWS = ALL_ROWS + (("grade", "_grade_cases"),)
 
@@ -1649,6 +1824,13 @@ FIXTURE_TAGS = (
         ALL_ROWS + (("race", "_race_swap_cases"),))),
     ("race-count", MODULE_RACE, _staged_suite(
         ALL_ROWS + (("race", "_race_count_cases"),))),
+    ("outside-a", MODULE_HARD, _staged_suite(child_args=["exit-hard", OUTSIDE_A])),
+    ("outside-a-drop", MODULE_HARD, _staged_suite(
+        ALL_ROWS[1:], child_args=["exit-hard", OUTSIDE_A])),
+    ("outside-b", MODULE_HARD, _staged_suite(child_args=["exit-hard", OUTSIDE_B])),
+    ("unparsable", "def broken(:\n", _staged_suite()),
+    ("junk-trace", MODULE_BASE, _staged_suite(
+        ALL_ROWS + (("junk", "_junk_cases"),))),
 )
 
 
@@ -1675,12 +1857,21 @@ def _fixture_repo(root):
 
 
 def _run(repo, head, base="base", suite=FIX_SUITE, module=FIX_MODULE,
-         tracer=None, allow_same=False):
+         tracer=None, allow_same=False, environ=None):
     """`(exit code, the result dict, printed text)` for one comparison."""
     out = io.StringIO()
     result = compare(repo, module, suite, base, head, tracer=tracer, out=out,
-                     allow_same=allow_same)
+                     allow_same=allow_same, environ=environ)
     return result["code"], result, out.getvalue()
+
+
+def _refused(seen, text, name):
+    """Whether `text` refuses for `name` and for no other reason. `name` goes
+    into `seen` either way: that list is how the contract case knows which
+    refusals the docstring names some case asserts."""
+    seen.append(name)
+    found = refusals_in(text)
+    return bool(found) and set(found) == set([name])
 
 
 def _gap_texts(result):
@@ -1710,7 +1901,7 @@ def _key_cases(check):
           and pairs.get(ret[0]) == now[0])
 
 
-def _compare_cases(check, repo):
+def _compare_cases(check, repo, seen):
     code, res, text = _run(repo, "drop-positive")
     check("rd1 a suite that stops reaching one branch exits 1 and names that "
           "line and its function - and only it: %r\n%s"
@@ -1755,20 +1946,22 @@ def _compare_cases(check, repo):
     check("rd5 a suite with a failing case at one revision is no measurement "
           "of its reach: exit 2, naming the block - never 0: %d\n%s"
           % (code, text),
-          code == 2 and "other" in text and "FAIL" in text)
+          code == 2 and _refused(seen, text, "failed") and "other" in text
+          and "FAIL" in text)
 
     code, res, text = _run(repo, "crash")
     # The block is named as not passing, not only refused: a crashed suite also
     # reaches no line, and the empty-reach refusal alone would exit 2 here too.
     check("rd6 a suite that fails to run at all exits 2, not 0, and says its "
           "blocks did not pass: %d\n%s" % (code, text),
-          code == 2 and "did not pass" in text and "exited 3" in text)
+          code == 2 and _refused(seen, text, "failed") and "did not pass" in text
+          and "exited 3" in text)
 
     code, res, text = _run(repo, "untouched")
     check("rd7 a revision at which no line of the module was reached is a run "
           "that measured nothing, and refuses with 2 rather than reporting "
           "every line as lost or none: %d\n%s" % (code, text),
-          code == 2 and "no line" in text)
+          code == 2 and _refused(seen, text, "no-reach") and "no line" in text)
 
     code, res, text = _run(repo, "plain-drop", base="plain-base")
     check("rd8 a suite with no `STAGES` table is run whole, and the same loss "
@@ -1790,13 +1983,14 @@ def _compare_cases(check, repo):
           "for the head and not the base: %r\n%s"
           % (res.get("untraced"), text),
           code == 2 and res.get("untraced") == {"base": 0, "head": 1}
-          and "untraced" in text)
+          and _refused(seen, text, "untraced"))
 
     code, res, text = _run(repo, "hard-exit")
     check("rd22 a module child that ran the hook and ended without its exit "
           "handlers wrote nothing it reached: it is counted as untraced too, "
           "exit 2: %r\n%s" % (res.get("untraced"), text),
-          code == 2 and res.get("untraced") == {"base": 0, "head": 1})
+          code == 2 and res.get("untraced") == {"base": 0, "head": 1}
+          and _refused(seen, text, "untraced"))
 
     code, res, text = _run(repo, "hard-exit-drop", base="hard-exit")
     check("rd29 a block that ran at both revisions with the same untraced "
@@ -1805,12 +1999,12 @@ def _compare_cases(check, repo):
           "exits 1: %r %r\n%s" % (res.get("blind"), _gap_texts(res), text),
           code == 1 and res.get("blind") == {"child": 1}
           and _gap_texts(res) == [("pick", 'return "positive"')]
-          and "blind spot" in text and "child" in text
+          and "blind spot" in text and "child" in text and not refusals_in(text)
           # The child is one key at both revisions although its arguments
-          # name two export roots and two scratch directories: a path under
-          # the root is kept relative to it, any other absolute one is a
-          # placeholder.
-          and "<module> exit-hard <tree>/data <path>;" in text)
+          # name two export roots and two temp directories: a path under the
+          # root is kept relative to it, one under the run's temp directory is
+          # that directory's placeholder.
+          and "<module> exit-hard <tree>/data <temp>;" in text)
 
     code, res, text = _run(repo, "hard-exit-gone", base="hard-exit")
     check("rd30 ...and a block whose module children were untraced at the base "
@@ -1818,7 +2012,8 @@ def _compare_cases(check, repo):
           "naming it, so a removed block cannot take its children's lines out "
           "of the comparison silently: %d %r\n%s"
           % (code, res.get("blind"), text),
-          code == 2 and "child" in text and not res.get("blind"))
+          code == 2 and _refused(seen, text, "untraced") and "child" in text
+          and not res.get("blind"))
 
     code, res, text = _run(repo, "hard-exit-other", base="hard-exit")
     # Equal counts, different children: the base's untraced child ran the module
@@ -1829,9 +2024,46 @@ def _compare_cases(check, repo):
           "at both revisions, but not the same children, is no matched blind "
           "spot: exit 2 naming the block and each side's child: %d %r\n%s"
           % (code, res.get("blind"), text),
-          code == 2 and not res.get("blind") and "block child" in text
+          code == 2 and not res.get("blind") and _refused(seen, text, "untraced")
+          and "block child" in text
           and "<module> exit-hard other" in text
           and "the children differ" in text)
+
+    code, res, text = _run(repo, "outside-b", base="outside-a")
+    # A path outside the export and the temp and home directories names one
+    # thing at both revisions, so it stays in the key: a placeholder for it would
+    # make these two children one key and match them as one blind spot.
+    check("rd47 two module children that differ only in an absolute path outside "
+          "the export and the run's scratch directories are two children: exit "
+          "2, the children differ, each named with its path: %d %r\n%s"
+          % (code, res.get("blind"), text),
+          code == 2 and not res.get("blind") and _refused(seen, text, "untraced")
+          and "the children differ" in text and OUTSIDE_A in text
+          and OUTSIDE_B in text)
+    code, res, text = _run(repo, "outside-a-drop", base="outside-a")
+    # The other direction for rd47: the same outside path at both revisions is
+    # one key, so a key that varied by revision goes red here.
+    check("rd48 ...and the same child given the same outside path at both "
+          "revisions is one key, matched as a blind spot, the dropped branch "
+          "still exiting 1: %r %r\n%s" % (res.get("blind"), _gap_texts(res), text),
+          code == 1 and res.get("blind") == {"child": 1} and OUTSIDE_A in text
+          and _gap_texts(res) == [("pick", 'return "positive"')])
+
+    code, res, text = _run(repo, "moved", environ=dict(
+        os.environ, PYTHONHOME=os.path.join(repo, "no-such-home")))
+    check("rd52 an interpreter that cannot be asked whether it imports a "
+          "usercustomize module is no run to trace: exit 2: %d\n%s" % (code, text),
+          code == 2 and _refused(seen, text, "hook-probe") and not res.get("blocks"))
+
+    code, res, text = _run(repo, "unparsable")
+    check("rd54 a module that does not parse at one revision refuses with 2, "
+          "naming the revision: %d\n%s" % (code, text),
+          code == 2 and _refused(seen, text, "unparsable") and "unparsable" in text)
+
+    code, res, text = _run(repo, "junk-trace")
+    check("rd55 a trace file that cannot be read refuses with 2, naming the "
+          "revision it was written at: %d\n%s" % (code, text),
+          code == 2 and _refused(seen, text, "unreadable") and "junk" in text)
 
     code, res, text = _run(repo, "extracted")
     check("rd19 a line moved into ANOTHER function and left unreached is "
@@ -1866,13 +2098,13 @@ def _compare_cases(check, repo):
           and res.get("tracers") == ["settrace"])
 
 
-def _same_cases(check, repo):
+def _same_cases(check, repo, seen):
     code, res, text = _run(repo, "WORKTREE", base="HEAD")
     check("rd31 --base HEAD --head WORKTREE over a clean checkout copies exactly "
           "the base, so it measures no change: exit 2, saying the head is the "
           "base, and no suite is run: %d %r\n%s"
           % (code, res.get("same"), text),
-          code == 2 and res.get("same") is True
+          code == 2 and res.get("same") is True and _refused(seen, text, "same")
           and "the head is the base: no change to measure" in text
           and "lost:" not in text and not res.get("blocks"))
     shas = [_fixture_git(repo, "rev-parse", tag) for tag in
@@ -1882,7 +2114,7 @@ def _same_cases(check, repo):
           "too - the content decides, not the name: exit 2: %r %d\n%s"
           % (shas, code, text),
           shas[0] != shas[1] and code == 2 and res.get("same") is True
-          and "the head is the base" in text)
+          and _refused(seen, text, "same") and "the head is the base" in text)
     out = io.StringIO()
     code = main([FIX_MODULE, FIX_SUITE, "--base", "base", "--head", "base",
                  "--repo", repo, "--allow-same"], out=out)
@@ -1898,7 +2130,7 @@ def _flaky_texts(result):
     return _gap_texts({"gaps": result.get("flaky") or []})
 
 
-def _flaky_cases(check, repo):
+def _flaky_cases(check, repo, seen):
     code, res, text = _run(repo, "race-marked", base="race-base")
     check("rd34 a line the base reaches in one run and not when its block runs "
           "again is reported apart as reached only sometimes, and decides "
@@ -1936,13 +2168,14 @@ def _flaky_cases(check, repo):
           "is reached only sometimes: exit 2, saying the lost lines could not "
           "be confirmed - never 0 and never a list set apart: %d %r\n%s"
           % (code, res.get("flaky"), text),
-          code == 2 and "could not be confirmed" in text and "did not pass" in text
+          code == 2 and _refused(seen, text, "recheck-failed")
+          and "could not be confirmed" in text and "did not pass" in text
           and res.get("flaky") == [] and res.get("rechecked") == ["race"])
     code, res, text = _run(repo, "race-hard-drop", base="race-hard")
     check("rd38 ...nor is a recheck whose block left a process that never wrote "
           "what it reached, which its first run did not: exit 2: %d %r\n%s"
           % (code, res.get("flaky"), text),
-          code == 2 and "could not be confirmed" in text
+          code == 2 and _refused(seen, text, "recheck-processes")
           and "never wrote" in text and res.get("flaky") == [])
     code, res, text = _run(repo, "state-drop", base="state-base")
     check("rd40 a line the base's first run would skip on a second pass over "
@@ -1963,37 +2196,40 @@ def _flaky_cases(check, repo):
           "run - a child it did not start again - is no evidence of chance: "
           "exit 2, naming the process that did not write again: %d %r\n%s"
           % (code, res.get("flaky"), text),
-          code == 2 and "could not be confirmed" in text
-          and "did not write again" in text and res.get("flaky") == [])
+          code == 2 and _refused(seen, text, "recheck-processes")
+          and "only in the first run: <module>" in text and res.get("flaky") == [])
     code, res, text = _run(repo, "race-drop", base="race-swap")
     check("rd45 ...nor is one that wrote as MANY processes but not the same "
           "ones - a child started with other arguments: the processes are "
           "compared as sets, exit 2 naming the first run's: %d %r\n%s"
           % (code, res.get("flaky"), text),
-          code == 2 and "could not be confirmed" in text
+          code == 2 and _refused(seen, text, "recheck-processes")
           and "<module> kept" in text and res.get("flaky") == [])
     code, res, text = _run(repo, "race-drop", base="race-count")
-    check("rd46 ...nor one whose block ran a different number of cases than "
-          "in its first run: exit 2, saying both numbers: %d %r\n%s"
+    check("rd46 ...nor one whose block ran other cases than in its first run: "
+          "exit 2, naming by id the case only the recheck ran: %d %r\n%s"
           % (code, res.get("flaky"), text),
-          code == 2 and "could not be confirmed" in text
-          and "cases" in text and res.get("flaky") == [])
+          code == 2 and _refused(seen, text, "recheck-cases")
+          and "by case id" in text and "x9" in text and res.get("flaky") == [])
 
 
-def _usage_cases(check, repo):
+def _usage_cases(check, repo, seen):
     def quiet(argv):
         out = io.StringIO()
         return main(argv, out=out), out.getvalue()
     code, text = quiet([])
-    check("rd12 no arguments is a usage error, 2: %d" % (code,), code == 2)
+    check("rd12 no arguments is a usage error, 2: %d %r" % (code, text),
+          code == 2 and _refused(seen, text, "usage"))
     code, text = quiet([FIX_MODULE, FIX_SUITE, "--base", "base", "--head",
                         "no-such-rev", "--repo", repo])
     check("rd13 a revision git cannot resolve is a usage error naming it: "
-          "%d %r" % (code, text), code == 2 and "no-such-rev" in text)
+          "%d %r" % (code, text),
+          code == 2 and _refused(seen, text, "revision") and "no-such-rev" in text)
     code, text = quiet(["missing" + _PY, FIX_SUITE, "--base", "base",
                         "--head", "moved", "--repo", repo])
     check("rd14 a module the revision does not hold refuses with 2: %d %r"
-          % (code, text), code == 2 and "missing" in text)
+          % (code, text),
+          code == 2 and _refused(seen, text, "missing") and "missing" in text)
 
 
 WT_NOTES = "notes.txt"
@@ -2024,7 +2260,7 @@ def _worktree_repo(root):
     return root
 
 
-def _worktree_cases(check, root):
+def _worktree_cases(check, root, seen):
     repo = os.path.join(root, "wt")
     os.makedirs(repo)
     _worktree_repo(repo)
@@ -2039,7 +2275,7 @@ def _worktree_cases(check, root):
           "commit, which is the base: refused with 2 as no change to measure, "
           "which is what proves rd25's head was the working tree: %d\n%s"
           % (code, text),
-          code == 2 and res.get("same") is True
+          code == 2 and res.get("same") is True and _refused(seen, text, "same")
           and "the head is the base" in text)
     dest = os.path.join(root, "wt-export")
     os.makedirs(dest)
@@ -2075,21 +2311,24 @@ def _worktree_cases(check, root):
           "%r %r\n%s" % (res.get("same"), _gap_texts(res), text),
           code == 1 and res.get("same") is False
           and _gap_texts(res) == [("pick", 'return "positive"')])
-    _clean_differs_cases(check, root)
+    _clean_differs_cases(check, root, seen)
+    _data_cases(check, root)
+    _export_cases(check, root, seen)
     out = io.StringIO()
     code = main([FIX_MODULE, FIX_SUITE, "--base", "WORKTREE", "--head", "HEAD",
                  "--repo", repo], out=out)
     check("rd28 --base WORKTREE is refused with 2: the base is the state the "
           "change started from, which a working tree is not: %d %r"
           % (code, out.getvalue()),
-          code == 2 and "WORKTREE" in out.getvalue())
+          code == 2 and _refused(seen, out.getvalue(), "base-worktree")
+          and "WORKTREE" in out.getvalue())
 
 
 WT_JOURNAL = "journal.jsonl"
 WT_HELPER = "helper" + _PY
 
 
-def _clean_differs_cases(check, root):
+def _clean_differs_cases(check, root, seen):
     """A committed base whose working tree adds files the suite cannot import,
     then one it can."""
     repo = os.path.join(root, "wt-clean")
@@ -2106,12 +2345,17 @@ def _clean_differs_cases(check, root):
         fh.write('{"row": 1}\n')
     code, res, text = _run(repo, "WORKTREE", base="HEAD")
     check("rd42 a working tree that differs from the base only in a file no "
-          "Python process imports - an untracked journal row - is still the "
-          "base: exit 2, no suite run, and the differing file named: %d %r\n%s"
-          % (code, res.get("same"), text),
-          code == 2 and res.get("same") is True
-          and "the head is the base" in text and WT_JOURNAL in text
-          and "lost:" not in text and not res.get("blocks"))
+          "Python process imports - an untracked journal row - is measured, "
+          "and with nothing lost it is no evidence of a conversion: exit 2, "
+          "the differing file named: %d %r\n%s" % (code, res.get("same"), text),
+          code == 2 and res.get("same") is False
+          and _refused(seen, text, "no-conversion") and WT_JOURNAL in text
+          and "lost: 0" in text and res.get("blocks"))
+    code, res, text = _run(repo, "WORKTREE", base="HEAD", allow_same=True)
+    check("rd51 ...and under --allow-same the same measurement exits 0: %d\n%s"
+          % (code, text),
+          code == 0 and not refusals_in(text) and "lost: 0" in text
+          and "--allow-same" in text)
     with io.open(os.path.join(repo, WT_HELPER), "w", encoding="utf-8",
                  newline="\n") as fh:
         fh.write("HELPER = True\n")
@@ -2125,23 +2369,208 @@ def _clean_differs_cases(check, root):
           code == 0 and res.get("same") is False and "lost: 0" in text)
 
 
+WT_DATA = "data" + ".json"
+
+
+def _data_cases(check, root):
+    """A committed base whose working tree changes only a data file the module
+    reads, moving which branch the suite reaches."""
+    repo = os.path.join(root, "wt-data")
+    os.makedirs(repo)
+    _fixture_git(repo, "init", "-q")
+    files = ((FIX_MODULE, MODULE_DATA), (WT_DATA, '{"mode": "a"}\n'),
+             (FIX_SUITE, _staged_suite(ALL_ROWS + (("act", "_act_cases"),))))
+    for name, text in files:
+        with io.open(os.path.join(repo, name), "w", encoding="utf-8",
+                     newline="\n") as fh:
+            fh.write(text)
+    _fixture_git(repo, "add", "-A")
+    _fixture_git(repo, "commit", "-q", "-m", "base")
+    with io.open(os.path.join(repo, WT_DATA), "w", encoding="utf-8",
+                 newline="\n") as fh:
+        fh.write('{"mode": "b"}\n')
+    code, res, text = _run(repo, "WORKTREE", base="HEAD")
+    check("rd50 a change confined to a data file the module reads is measured, "
+          "not refused as no change: the branch it stops taking is lost, exit "
+          "1: %d %r\n%s" % (code, _gap_texts(res), text),
+          code == 1 and res.get("same") is False and not refusals_in(text)
+          and _gap_texts(res) == [("act", 'return "took a"')])
+
+
+def _export_cases(check, root, seen):
+    """A base commit git cannot export: an object it names is gone."""
+    repo = os.path.join(root, "corrupt")
+    os.makedirs(repo)
+    _fixture_git(repo, "init", "-q")
+    for name, text in ((FIX_MODULE, MODULE_BASE), (FIX_SUITE, _staged_suite())):
+        with io.open(os.path.join(repo, name), "w", encoding="utf-8",
+                     newline="\n") as fh:
+            fh.write(text)
+    _fixture_git(repo, "add", "-A")
+    _fixture_git(repo, "commit", "-q", "-m", "base")
+    blob = _fixture_git(repo, "rev-parse", "HEAD:" + FIX_SUITE)
+    loose = os.path.join(repo, ".git", "objects", blob[:2], blob[2:])
+    os.chmod(loose, stat.S_IREAD | stat.S_IWRITE)
+    os.remove(loose)
+    code, res, text = _run(repo, "WORKTREE", base="HEAD")
+    check("rd53 a revision git cannot export refuses with 2, naming it: %d\n%s"
+          % (code, text),
+          code == 2 and _refused(seen, text, "export") and not res.get("blocks"))
+
+
+# --- the recheck, judged over traces written by hand ----------------------------
+JUDGE_SOURCE = "a = 1\nb = 2\n"
+JUDGE_CASES = "PASS a1\nPASS a2\n2/2 cases passed\n"
+
+
+def _trace_dir(path, records, junk=False):
+    """`path`, holding one lines file per record, each a traced process of
+    block `blk` in the hook's shape; and an unreadable one under `junk`."""
+    os.makedirs(path)
+    for n, record in enumerate(records):
+        data = {"tracer": "settrace", "parent": None, "module": False,
+                "spawned": [], "block": "blk"}
+        data.update(record)
+        with io.open(os.path.join(path, "p%d.json" % (n,)), "w",
+                     encoding="utf-8") as fh:
+            fh.write(json.dumps(data))
+    if junk:
+        with io.open(os.path.join(path, "junk.json"), "w", encoding="utf-8") as fh:
+            fh.write("{")
+    return path
+
+
+def _judged(root, again=None, again_output=JUDGE_CASES, again_cases=2,
+            first_output=JUDGE_CASES, export_failed=None, junk=False):
+    """`(exit code, result, text)` of `_judge` over a base whose one process
+    reached both lines of `JUDGE_SOURCE`, a head reaching the first only, and
+    a recheck of `again` - the base's own process when None."""
+    os.makedirs(root)
+    first = [{"lines": [1, 2], "argv": ["suite"]}]
+    sides = [{"name": name, "rev": name, "shown": name, "whole": None,
+              "labels": ["blk"], "module_source": JUDGE_SOURCE,
+              "out": _trace_dir(os.path.join(root, name), records)}
+             for name, records in (("base", first),
+                                   ("head", [{"lines": [1], "argv": ["suite"]}]))]
+    rows = [{"side": name, "label": "blk", "ok": True, "why": None, "cases": 2,
+             "output": first_output, "seconds": 0.0} for name in ("base", "head")]
+
+    def recheck(labels):
+        if export_failed:
+            return None, None, export_failed
+        path = _trace_dir(os.path.join(root, "again"),
+                          first if again is None else again, junk)
+        return ([{"side": "base-again", "label": label, "ok": True, "why": None,
+                  "cases": again_cases, "output": again_output, "seconds": 0.0}
+                 for label in labels], read_traces(path), None)
+    out = io.StringIO()
+    result = _judge(sides, rows, fresh_result(), out, time.monotonic(), 1, recheck)
+    return result["code"], result, out.getvalue()
+
+
+def _judge_cases(check, root, seen):
+    code, res, text = _judged(os.path.join(root, "j-same"))
+    # The other direction for every recheck refusal: a recheck that ran the
+    # same processes and the same cases confirms the loss, so a refusal that
+    # fired on equal runs goes red here.
+    check("rd61 a recheck that ran the same processes and the same cases as "
+          "the first run confirms the loss: exit 1, nothing refused: %d\n%s"
+          % (code, text),
+          code == 1 and not refusals_in(text)
+          and res.get("gaps") == [("<module>", 2, "b = 2")])
+    code, res, text = _judged(os.path.join(root, "j-export"),
+                              export_failed="the fresh export failed")
+    check("rd56 a recheck whose fresh export could not be made refuses with 2: "
+          "%d\n%s" % (code, text),
+          code == 2 and _refused(seen, text, "recheck-export")
+          and "the fresh export failed" in text)
+    code, res, text = _judged(os.path.join(root, "j-junk"), junk=True)
+    check("rd57 a recheck whose trace cannot be read refuses with 2: %d\n%s"
+          % (code, text), code == 2 and _refused(seen, text, "recheck-unreadable"))
+    code, res, text = _judged(os.path.join(root, "j-more"), again=[
+        {"lines": [1, 2], "argv": ["suite"]}, {"lines": [], "argv": ["suite", "extra"]}])
+    check("rd58 a recheck that wrote a process its first run did not - MORE "
+          "writers, not fewer - is no evidence of chance: exit 2, naming the "
+          "process only the recheck wrote: %d\n%s" % (code, text),
+          code == 2 and _refused(seen, text, "recheck-processes")
+          and "only run again: suite extra" in text)
+    code, res, text = _judged(os.path.join(root, "j-ids"), again_output=(
+        "PASS a1\nPASS a3\n2/2 cases passed\n"))
+    check("rd59 a recheck that ran as many cases but not the same ones is "
+          "refused, the cases compared by id: exit 2 naming each side's: %d\n%s"
+          % (code, text),
+          code == 2 and _refused(seen, text, "recheck-cases") and "by case id" in text
+          and "only in the first run: a2" in text and "only run again: a3" in text)
+    code, res, text = _judged(os.path.join(root, "j-count"),
+                              first_output="2/2 cases passed\n",
+                              again_output="3/3 cases passed\n", again_cases=3)
+    check("rd60 ...and where neither run printed a case id, the case count is "
+          "what is compared, and the refusal says so: %d\n%s" % (code, text),
+          code == 2 and _refused(seen, text, "recheck-cases")
+          and "by the case count" in text)
+
+
+def _hook_cases(check, root):
+    """The hook in one process that rewrites the block label before it exits."""
+    hook_dir, out_dir = os.path.join(root, "hook"), os.path.join(root, "out")
+    os.makedirs(hook_dir)
+    os.makedirs(out_dir)
+    entry, why = hook_entry(dict(os.environ))
+    if entry:
+        write_hook(hook_dir, entry)
+    env = traced_env(hook_dir, os.path.join(root, FIX_MODULE), out_dir, None, root)
+    env[ENV_BLOCK] = "installed"
+    done = subprocess.run(
+        [sys.executable, "-c", "import os; os.environ[%r] = 'changed'" % (ENV_BLOCK,)],
+        env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        universal_newlines=True)
+    traces = read_traces(out_dir)
+    check("rd49 a process that changes its block label before it exits is filed "
+          "under the label it was started with, read when the hook installed: "
+          "%r %r %r %r" % (why, done.returncode, done.stdout[-300:],
+                           sorted(traces["written_by_block"])),
+          entry is not None and done.returncode == 0 and traces["written"] == 1
+          and sorted(traces["written_by_block"]) == ["installed"])
+
+
+def _contract_cases(check, seen):
+    named = list(REFUSALS)
+    asserted = set(seen)
+    check("rd62 every refusal --help names has a case asserting it, and every "
+          "refusal a case asserts is named there: unasserted %r, unnamed %r"
+          % (sorted(set(named) - asserted), sorted(asserted - set(named))),
+          named and len(named) == len(set(named)) and set(named) == asserted)
+    try:
+        _refuse(fresh_result(), io.StringIO(), "no-such-refusal", "a reason")
+        raised = None
+    except ValueError as exc:
+        raised = exc
+    check("rd63 a refusal site naming a refusal --help does not name raises "
+          "rather than printing an undocumented reason: %r" % (raised,),
+          raised is not None and "no-such-refusal" in str(raised))
+
+
 def _cases(check):
     _key_cases(check)
+    seen = []
     root = tempfile.mkdtemp(prefix="rd-")
     try:
         repo = os.path.join(root, "repo")
         os.makedirs(repo)
         _fixture_repo(repo)
         status = _fixture_git(repo, "status", "--porcelain", "--ignored")
-        _compare_cases(check, repo)
-        _same_cases(check, repo)
-        _flaky_cases(check, repo)
-        _usage_cases(check, repo)
+        _compare_cases(check, repo, seen)
+        _same_cases(check, repo, seen)
+        _flaky_cases(check, repo, seen)
+        _usage_cases(check, repo, seen)
         after = _fixture_git(repo, "status", "--porcelain", "--ignored")
         check("rd15 the repository compared is never written: its status, "
               "ignored files included, is the same after every comparison "
               "above: %r -> %r" % (status, after), status == after == "")
-        _worktree_cases(check, root)
+        _worktree_cases(check, root, seen)
+        _judge_cases(check, os.path.join(root, "judge"), seen)
+        _hook_cases(check, os.path.join(root, "hooked"))
+        _contract_cases(check, seen)
     finally:
         from _suite import remove_tree
         remove_tree(root)
