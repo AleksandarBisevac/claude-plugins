@@ -169,8 +169,10 @@
         "severity": "low",
         "file": "tests/test_stamp_verification.py:808,815-817,822,828-832,842-848 (_judged); 3254-3260 (sr138)",
         "issue": "_judged copies run_red's own orchestration lines instead of calling product code. The copies: the `present` filter from _red_scope (808); new/absent/stubbed, i.e. run_red's state['new']/state['absent']/stubs (815-817); `sources` (822); the owed second/fix predicate from run_red 4398-4413 (828-832); and the cost-table sized/budget block (842-848). If any of those inline lines in run_red changes, no judged case turns red. Only the kept real proofs would catch it, and only for their own shapes. sr138's new assertion `baseline.stubbed == [\"tests/test_new.py\"]` checks _judged's own line 817, not run_red, so the label clause 'the file HEAD lacks is the one stubbed for HEAD's run' cannot fail on a product change. (sr94, still a real proof, does cover stubbing.)",
-        "resolution": "Get the scope from M._red_scope(argparse.Namespace(project=root, manifest=man, task='P1.1', files=None, timeout=None, introduces=symbols, deps_from=None), cmd, deadline) instead of re-deriving declared/present/deps. As a follow-up, extract run_red's pre-run state (new/absent/stubs/sources/sized/budget and the owed-run predicate) into one product function that both run_red and _judged call. Until then, drop the stub clause from sr138's label or point it at sr94.",
-        "fixTask": "P152.19-6jb"
+        "resolution": "fixed in P152.19-6jb (95d5549a06b1): Get the scope from M._red_scope(argparse.Namespace(project=root, manifest=man, task='P1.1', files=None, timeout=None, introduces=symbols, deps_from=None), cmd, deadline) instead of re-deriving declared/present/deps. As a follow-up, extract run_red's pre-run state (new/absent/stubs/sources/sized/budget and the owed-run predicate) into one product function that both run_red and _judged call. Until then, drop the stub clause from sr138's label or point it at sr94.",
+        "fixTask": "P152.19-6jb",
+        "commit": "95d5549a06b1",
+        "status": "fixed"
       },
       {
         "id": "P152-R16",
@@ -305,9 +307,30 @@
         "file": "docs/audit/phases/P152.json:527,608 (and 1526,1608) vs tools/reach-diff.py:815-831",
         "issue": "The diff changes the exit code of a command the plan's gates name. P152.4's and P152.17's gates are spelled `--base HEAD --head WORKTREE`; their work is committed, so a phase review re-running them now refuses with 2 on a clean tree (a red sign-off) and - per finding 1 - measures nothing and exits 0 on the drive's usual dirty tree. Neither reading measures the conversion those gates exist for.",
         "resolution": "Re-point those gate entries to the commit before each task (`--base <pre-task sha> --head WORKTREE`, as P152.13's gate does with 92c399f5), which measures the conversion both before and after it is committed; use --allow-same only where identical sides really are the expected answer."
+      },
+      {
+        "id": "P152-R32",
+        "severity": "low",
+        "file": "CONTRIBUTING.md:615-616",
+        "issue": "The new contract says the base rerun refuses when a block 'ran other cases, wrote other processes'. The code does not check that. _recheck_refusal (tools/reach-diff.py) compares `row[\"cases\"] != before.get(label)`, which is an integer count, so the same number of different cases passes. It also refuses only on `first written - again written`, so an extra writer is not refused. The tool's own docstring says it correctly: 'did not write again a process that wrote in its first run, or that ran another number of cases'. This is R18's defect class again: prose claims identity where the code checks a count.",
+        "resolution": "Reword to match the docstring: '...a block that failed, that ran another number of cases, that left a process unwritten that wrote the first time, or that left other children untraced'. Or make the code compare case ids so 'other cases' becomes true."
+      },
+      {
+        "id": "P152-R33",
+        "severity": "low",
+        "file": "tools/reach-diff.py:926-962 (same_side, _same_verdict)",
+        "issue": "A change limited to a non-importable file that the module reads can no longer be measured. Before this diff it was measured. Verified with a fixture probe (<scratchpad>/rd-probe22/probe.py): the module reads data.json, and flipping data.json makes a reached line unreachable. The run printed 'the head is the base: no change to measure ... differs, and is no file Python imports: data.json' and exited 2. With --allow-same it exited 0 and measured nothing. The default refuses, so this fails closed, and the docstring states the limit. But no flag gets a measurement for such a change, and the first line still says 'no change to measure' even though a file the suite reads changed.",
+        "resolution": "Add an opt-in flag that marks named paths as deciding, e.g. a repeatable `--decides PATH`, so a data-only change can be measured. Word the first line as 'the sides differ only in files no Python process imports' instead of 'no change to measure'."
+      },
+      {
+        "id": "P152-R34",
+        "severity": "low",
+        "file": "tools/reach-diff.py:104-110, 281",
+        "issue": "ident() writes every absolute path outside the export root as the single placeholder `<path>`. So two different children, e.g. `MODULE exit-hard /etc/a` and `MODULE exit-hard /etc/b`, have one key and still match as 'the same blind spot'. The 'WHAT A KEY CANNOT TELL APART' paragraph lists children with the same arguments and arguments that vary between runs, but not this collapse that the placeholder itself causes. A swap like this shows up as a false loss or a mislabelled blind spot rather than a hidden one, which is why it is only low.",
+        "resolution": "Add the collapse to the WHAT A KEY CANNOT TELL APART paragraph. Or use the placeholder only for paths under the scratch or temp directory and keep other absolute paths verbatim, since those are stable between runs."
       }
     ],
-    "outcome": "[findings: 31 - 0 high, 12 med, 19 low; 19 with a recorded fix commit]"
+    "outcome": "[findings: 34 - 0 high, 12 med, 22 low; 20 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1777,7 +1800,7 @@
     {
       "id": "P152.19-6jb",
       "title": "fix P152-R15: _judged copies run_red's own orchestration lines instead of cal...",
-      "status": "in_progress",
+      "status": "done",
       "description": "_judged copies run_red's own orchestration lines instead of calling product code. The copies: the `present` filter from _red_scope (808); new/absent/stubbed, i.e. run_red's state['new']/state['absent']/stubs (815-817); `sources` (822); the owed second/fix predicate from run_red 4398-4413 (828-832); and the cost-table sized/budget block (842-848). If any of those inline lines in run_red changes, no judged case turns red. Only the kept real proofs would catch it, and only for their own shapes. sr138's new assertion `baseline.stubbed == [\"tests/test_new.py\"]` checks _judged's own line 817, not run_red, so the label clause 'the file HEAD lacks is the one stubbed for HEAD's run' cannot fail on a product change. (sr94, still a real proof, does cover stubbing.)\n\nResolution asked: Get the scope from M._red_scope(argparse.Namespace(project=root, manifest=man, task='P1.1', files=None, timeout=None, introduces=symbols, deps_from=None), cmd, deadline) instead of re-deriving declared/present/deps. As a follow-up, extract run_red's pre-run state (new/absent/stubs/sources/sized/budget and the owed-run predicate) into one product function that both run_red and _judged call. Until then, drop the stub clause from sr138's label or point it at sr94.",
       "files": [
         "tests/test_stamp_verification.py"
@@ -1800,14 +1823,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "95d5549a06b1",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tests/test_stamp_verification.py only. _judged no longer re-derives anything: it runs the real `red` in process via _red/_run (both gained a keyword-only module=None, M by default) with five seams swapped on the module and restored in finally: _isolated_run (answers each run from _RECORDED by tag via new _RECORDED_SLOT {baseline:head, task:task, second:second, fix:fix}, lays files over with the module's own _lay_over, records rels/stubs handed), _build_throwaway (no worktree), _remove_throwaway (rmtree of the holder red made), leftover_throwaways ([]), and _git answering only ['rev-parse','HEAD'] with a placeholder. So scope (_red_scope), new/absent/stubs, sources, the owed second/fix predicates, sized/budget, fit/start problems and red_verdict are all run_red's own lines; no git subprocess added (rev-parse intercepted, worktree add/remove/list stubbed). _unjudged kept: raised for a run red starts that the record lacks, one started twice, or a recorded run red never starts (a scope refusal included). Payload gains `handed`. sr138 now checks both baseline.stubbed and the stubs actually handed to HEAD's run (helper _new_only_proved), so its label clause is a product fact. New cases jd1 (run_red's baseline stub list emptied in a mutated module copy -> sr138's check fails) and jd2 (owed-fix predicate rewritten to owe none -> _judged raises 'holds the fix run'); helper _mutated_module compiles a fresh module from source and raises unless the anchor occurs exactly once. Suite: 358 cases (was 356), `python3 tools/sweep-selftests.py tests/test_stamp_verification.py` exit 0, three runs. Block timings, sum of block figures: before 133.2s (one run), after 136.8s and 151.5s (two runs some minutes apart, shared machine) - spread larger than any shift, block names unchanged, so .github/sweep-costs.json left untouched. No product edit was needed: the finding's follow-up (extract run_red's pre-run state) is unnecessary once _judged drives run_red itself. Dependants: .github/sweep-costs.json - still correct, no block added/renamed, figures within noise; tests/test__filed_returns.py (_crlf_cases), tools/affected.py (_scan, _worktrees) - those names untouched; tools/sweep-selftests.py, tools/verify.sh, PLUGIN-BUILD-GUIDE.md reference the path only - unchanged.",
+        "descriptive": "Judged red-first cases now run the real run_red with only the throwaway and the runs stood in for, so a change to run_red's inline decisions reaches them."
       },
       "startedAt": "2026-11-01T02:20:00Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-01T02:53:57Z",
+      "verifiedBy": [
+        "jd1: run_red's stub list for HEAD's run emptied in a mutated module copy; sr138's judged run sees no stub handed and sr138's check fails",
+        "jd2: run_red's owed-fix-run predicate rewritten to owe none; sr138's judged run refuses its record (holds the fix run)",
+        "sr138 strengthened: the file new at HEAD must be the stub actually handed to HEAD's run, not only the one the payload reports"
+      ],
       "notes": [
         {
           "at": "2026-11-01T01:43:34Z",
@@ -1826,6 +1853,17 @@
         "runId": "2026-11-01T02:35:39Z.65b020",
         "status": "passed",
         "at": "2026-11-01T02:35:39Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "95d5549a06b1",
+        "at": "2026-11-01T02:53:57Z",
+        "return": "docs/audit/evidence/returns/P152.19-6jb/20261101T022000Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task with tests.expectRedFirst false; the test-only change cannot be red on HEAD's product code, which it does not change. The proof the finding asks for was made instead by in-memory mutation of run_red: probe <scratchpad>/probe_before.py loads HEAD's copy of the suite (git show HEAD:tests/test_stamp_verification.py) and runs its _judged on sr138's fixture against two rewritten copies of stamp-verification.py; it printed 'HEAD _judged, jd1-emptied-stubs: no raise, sr138 check PASSES (exit 0)' and 'HEAD _judged, jd2-no-fix-owed: no raise, sr138 check PASSES (exit 0)' (exit 0) - both rewrites invisible to the copy. The new suite under the same rewrites: 'PASS jd1 ... HEAD's run is handed no stub, and sr138's own check fails: exit=0 stubs handed []' and 'PASS jd2 ... 'sr138 not judged: the record holds the fix run, which `red` does not start (exit 3: None)'' (block sr-every-run-isolated, ALL PASS 11/11).",
+        "at": "2026-11-01, probe run after the edit; no helper red run was made"
       }
     },
     {

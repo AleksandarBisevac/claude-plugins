@@ -597,20 +597,31 @@ slice is `python3 tools/gate-parity.py --list`.
   commit, which for an uncommitted conversion is the base again and for an
   uncommitted fix still holds the loss. The suite runs at both in scratch copies -
   the base exported from git, the working tree copied as git lists it - with a
-  line tracer on the module in every Python process that imports its hook, and the
-  tool exits 1 naming each line of the module reached before and not after, grouped
-  by the function it is in now. Lines are paired across the revisions by aligning
-  their text, never by number, so a change that only moves code stays green and a
-  line moved into another function is still judged; a reached line whose text the
-  module no longer holds anywhere is listed apart as gone and does not fail it. Each
-  line it names is reached again by a case, or named in the change as deliberately
-  left. It refuses with 2 rather than passing when a block failed, a revision reached
-  no line of the module, or a child the suite started on the module's path never
-  wrote what it reached - unless that block ran at both revisions with the same
-  such children, which it prints as a blind spot the two sides share; its docstring
-  says what the tracer cannot see, and which children it cannot count. Nothing runs it for you: it is no slice of `verify.sh`
-  and no hook asks for it, so it runs where a task names it in its gate, and
-  otherwise a review is where a missing run is found.
+  line tracer on the module in every Python process that imports its hook.
+  Lines are paired across the revisions by aligning their text, never by number,
+  so a change that only moves code stays green and a line moved into another
+  function is still judged. Its output sorts what the base reached and the head
+  did not into three lists, and only the first decides the exit: `lost:`, each
+  line grouped by the function it is in now, which exits 1; `gone:`, a line whose
+  text the module no longer holds anywhere; and `sometimes:`, a lost-looking line
+  that the blocks reaching it, run again at the base in a fresh export, did not
+  reach again. A run with nothing under `lost:` exits 0 whatever the other two
+  hold. Each line under `lost:` is reached again by a case, or named in the change
+  as deliberately left. It exits 2 - no comparison made - rather than passing when
+  a block failed; a revision reached no line of the module; a child the suite
+  started on the module's path never wrote what it reached, unless that block ran
+  at both revisions with the same such children, matched by their arguments and
+  printed as a blind spot the two sides share; a trace could not be read; the
+  rerun at the base could not stand beside the first run (a block that failed, or
+  that ran other cases, wrote other processes or left other children untraced); or
+  the head is the base, meaning the two sides differ in no file Python can import,
+  the module and the suite included, with each differing file it looked past
+  printed. `--allow-same` turns that last refusal alone into a 0, for a gate
+  re-run where the work is already in the base. The tool's docstring is the full
+  contract, and says what the tracer cannot see and which children it cannot
+  tell apart. Nothing runs it for you: it is no slice of `verify.sh` and no hook
+  asks for it, so it runs where a task names it in its gate, and otherwise a
+  review is where a missing run is found.
 - **Every `.py` under `hooks/` and `scripts/` is scanned wherever it sits.** The
   selftest sweep — one runner, run by verify.sh's sweep slices here and in CI —
   walks the tree through `_output.py_files()`, the single recursive walk behind
