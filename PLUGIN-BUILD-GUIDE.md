@@ -4497,12 +4497,14 @@ under `# --- deciding a step on facts ---`: `_advance_plan`
 (the points of one task's `advance` - writer, scope, reviewer, gate, risk, close),
 `_triage_plan` (a sign-off sent in advance, then the triage's tail), `_pending_turn` (a waiting
 decision that may no longer apply, then where the answer routes) and `_close_plan` (findings,
-a moved test digest, the commit route, the commit to close on, a reviewer answer). The other
-branches on plain values are still decided inline where they act: `advance`'s file-return arm
+a moved test digest, the commit route, the commit to close on, a reviewer answer). Every other
+branch on plain values is decided inline where it acts. Among them are `advance`'s file-return arm
 (the stored-green check), the wave member's `integrate_member`, `kept_tree_stop` and the redo
 patch at the top of `advance`, the writer's wait and settle, the triage's head checks ahead of
 the advance point (`review_due`, `filed_at_head`, `owed_tasks`), `drive_locked`'s refresh of a
-pending triage and its session note, and sign-off's own steps (`run_signoff`). Each planner is
+pending triage and its session note, `drive_task`'s status arms, `gate_step`'s exit-code arms,
+`answer_refusal`'s checks and sign-off's own steps (`run_signoff`); these are examples, not the
+whole set, and a branch added later is decided where it acts as well. Each planner is
 called as `planner(point, facts)` and answers `(arm, detail)`; the caller performs the arm. There
 is no one `decide()` because the drive's facts are read lazily and some reads act -
 `stored_green` spends a moved mark, `standing_use` writes a journal row, `review_rounds` writes

@@ -8438,6 +8438,56 @@ def _text_cases(check):
           % ((done, nff),),
           "another parent" in done and "development branch lacks" in done
           and "the parent moved" in nff)
+    _inline_branch_class_cases(check)
+
+
+def _prose_of(path, start, stop, comment):
+    """The words between two markers in a file, comment prefixes removed and
+    whitespace collapsed, so a phrase wrapped across lines still matches.
+    None when either marker is missing, so a moved paragraph is a red case
+    and not an empty string that passes a negative check."""
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    head = text.find(start)
+    tail = text.find(stop, head) if head >= 0 else -1
+    if head < 0 or tail < 0:
+        return None
+    body = text[head:tail]
+    if comment:
+        body = "\n".join(ln.lstrip("#") for ln in body.splitlines())
+    return " ".join(body.split())
+
+
+def _inline_branch_class_cases(check):
+    """The two places that say how the drive's other branches are decided state
+    a class - every one is decided inline where it acts - and offer the named
+    branches as examples, so a branch added or left out of the names does not
+    make the sentence false.
+
+    Each assertion is there for one mutation: the class sentence deleted (the
+    old exhaustive list back), the examples marker deleted (a bare list that
+    reads as the whole set), and the sentence copied into a second paragraph
+    (two statements to keep true, which the count of one refuses)."""
+    driver = os.path.join(_output.SCRIPTS_DIR, "governance", DRIVER)
+    guide = os.path.join(_output.REPO_ROOT, "PLUGIN-BUILD-GUIDE.md")
+    places = (
+        ("the driver's section comment",
+         _prose_of(driver, "# --- deciding a step on facts",
+                   "A fact is a value or a", True)),
+        ("the build guide's paragraph",
+         _prose_of(guide, "**Deciding on facts: named planners",
+                   "`stored_green` spends a moved mark", False)))
+    klass = "Every other branch on plain values is decided inline where it acts"
+    for n, (where, prose) in enumerate(places, 4):
+        got = prose or ""
+        check("tx%d %s says the other branches are decided inline as a class "
+              "and names its examples as examples: %r"
+              % (n, where, (prose is not None, got.count(klass),
+                            got.count("Among them"),
+                            "are still decided inline" in got)),
+              prose is not None and got.count(klass) == 1
+              and got.count("Among them") == 1
+              and "are still decided inline" not in got)
 
 
 def _submit_unchanged(root, mpath, task_id, over=None):

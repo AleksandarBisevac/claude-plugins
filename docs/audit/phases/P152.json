@@ -185,8 +185,10 @@
         "severity": "med",
         "file": "tools/reach-diff.py:674-713,776-787",
         "issue": "A comparison whose two sides materialise the same tree exits 0 with no change measured. The new WORKTREE head makes this the likely failure: `--base HEAD --head WORKTREE` on a clean checkout, or after the task's work is committed (when a phase review re-runs a task gate), copies exactly the base commit and reports 'lost: 0 lines'. The same happens with `--base X --head X`. The task exists because a gate passed vacuously (`--head HEAD` over an uncommitted conversion compares the base with itself). The diff fixes that spelling and leaves the same vacuous pass open under the new one. P152.4's re-pointed gate in the working tree's plan is now spelled exactly `--base HEAD --head WORKTREE`.",
-        "resolution": "In compare(), after both sides are prepared, refuse with 2 when they hold the same content. Either the two sides resolve to the same commit, or the head is WORKTREE and the scratch copy is byte-identical to the base export. Comparing the two scratch trees touches no git state. Print it as 'the head is the base: no change to measure'. Add a selftest case: `--base HEAD --head WORKTREE` over a clean fixture checkout exits 2.",
-        "fixTask": "P152.21-6jb"
+        "resolution": "fixed in P152.21-6jb (2b9f5e71f3a9): In compare(), after both sides are prepared, refuse with 2 when they hold the same content. Either the two sides resolve to the same commit, or the head is WORKTREE and the scratch copy is byte-identical to the base export. Comparing the two scratch trees touches no git state. Print it as 'the head is the base: no change to measure'. Add a selftest case: `--base HEAD --head WORKTREE` over a clean fixture checkout exits 2.",
+        "fixTask": "P152.21-6jb",
+        "commit": "2b9f5e71f3a9",
+        "status": "fixed"
       },
       {
         "id": "P152-R18",
@@ -303,7 +305,7 @@
         "resolution": "Re-point those gate entries to the commit before each task (`--base <pre-task sha> --head WORKTREE`, as P152.13's gate does with 92c399f5), which measures the conversion both before and after it is committed; use --allow-same only where identical sides really are the expected answer."
       }
     ],
-    "outcome": "[findings: 31 - 0 high, 12 med, 19 low; 17 with a recorded fix commit]"
+    "outcome": "[findings: 31 - 0 high, 12 med, 19 low; 18 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1869,7 +1871,7 @@
     {
       "id": "P152.21-6jb",
       "title": "fix P152-R17: A comparison whose two sides materialise the same tree exits 0 ...",
-      "status": "in_progress",
+      "status": "done",
       "description": "A comparison whose two sides materialise the same tree exits 0 with no change measured. The new WORKTREE head makes this the likely failure: `--base HEAD --head WORKTREE` on a clean checkout, or after the task's work is committed (when a phase review re-runs a task gate), copies exactly the base commit and reports 'lost: 0 lines'. The same happens with `--base X --head X`. The task exists because a gate passed vacuously (`--head HEAD` over an uncommitted conversion compares the base with itself). The diff fixes that spelling and leaves the same vacuous pass open under the new one. P152.4's re-pointed gate in the working tree's plan is now spelled exactly `--base HEAD --head WORKTREE`.\n\nResolution asked: In compare(), after both sides are prepared, refuse with 2 when they hold the same content. Either the two sides resolve to the same commit, or the head is WORKTREE and the scratch copy is byte-identical to the base export. Comparing the two scratch trees touches no git state. Print it as 'the head is the base: no change to measure'. Add a selftest case: `--base HEAD --head WORKTREE` over a clean fixture checkout exits 2.",
       "files": [
         "tools/reach-diff.py"
@@ -1898,14 +1900,26 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "2b9f5e71f3a9",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/reach-diff.py only. (1) HEAD IS BASE: after both sides are prepared, same_side() compares the content of the two sides. Two commits count as the same when they have the same sha or the same tree (a read-only rev-parse of each commit's tree). A WORKTREE head counts as the same when same_tree() finds its copy byte for byte equal to the base's export (files and symlinks; directories ignored). This changes no git state. When the sides are the same, no suite runs. The first line printed is 'reach-diff: the head is the base: no change to measure - <why>; no suite was run', and the exit is 2. The new --allow-same flag makes that exit 0 and still prints the line. Why this rule (also in the docstring, section THE HEAD IS THE BASE): 'lost: 0' over identical sides is true for every suite, so it measures nothing. A gate reads the exit code, not the text, so a line printed under an exit of 0 would still be a vacuous pass. Sides that differ anywhere are measured, so a task whose change the suite never reaches is an honest 0. A caller who expects identical sides (a re-run after the work was committed) says so with --allow-same. rd26 changed: --base HEAD --head HEAD used to expect exit 0 and now expects 2. (2) SOMETIMES-REACHED LINES: when any line looks lost, the base blocks that reached a lost line run once more, in a FRESH export of the base commit. Only those blocks run, and they are found per block: the hook's start marker now records its block, and read_traces returns by_block and silent_by_block. A lost line the recheck reaches again stays lost. A lost line the recheck misses, and any line only the recheck reached that the head misses, go under 'sometimes:' and result['flaky'] and do not affect the exit. The recheck refuses with 2 when it cannot rule out a non-random miss: a rechecked block failed, a trace could not be read, or a block left more silent processes or untraced module children than in its first run. I chose this over --base-runs N because it is on by default, costs nothing when nothing looks lost, and cannot set aside a line every base run reaches. The export is fresh because a rerun in the first run's export reads state that run left behind, and that state could hide a real loss; rd40 holds this and mutation M8 shows it. Limits, stated in the docstring: a line reached by chance in both base runs is still lost (flapping becomes rarer, not impossible), and the head is measured once. Other changes: reach_gaps also returns lost_at_base; _measure takes a work list and a pycache dir. New cases rd31-rd40; fixture tags race-base, race-marked, race-drop, race-fragile, race-hard, race-hard-drop, state-base, state-drop; rd39 uses a separate content-only worktree repo. Selftest ALL PASS 38/38. A real clean checkout (the driver tree) gives `--base HEAD --head WORKTREE` exit 2 in about 2.4 s (measured once), and its git status is empty before and after. DEPENDANTS: CONTRIBUTING.md (path) is still correct but now incomplete. Its usage line `--base <the commit before it> --head WORKTREE` is still right, and every refusal it lists still refuses. Its list of refusals does not name the two new ones (head is base; recheck could not confirm) or the 'sometimes:' list. I left it alone because it is outside this task's files; it is a candidate for a follow-up or the orchestrator's call. hook_line in tests/test__refs.py is that suite's own parameter name, not this module, so it is unaffected (test__refs 292 cases ok). parse_args/compare/main in close-phase.py, integrate-task.py, manage-worktrees.py, the .claude skills and the .claude hooks are other definitions with the same names, so they are unaffected.",
+        "descriptive": "reach-diff refuses (exit 2, or 0 under --allow-same) when the head is the base instead of passing vacuously, and a line the base reaches only some of the time no longer makes a gate flap."
       },
       "startedAt": "2026-11-01T01:43:56Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-01T02:19:36Z",
+      "verifiedBy": [
+        "rd31 --base HEAD --head WORKTREE on a clean checkout exits 2 'the head is the base', no suite run",
+        "rd32 two different commits with the same tree are the same side (content, not name)",
+        "rd33 --allow-same exits 0 and still prints the head-is-base line",
+        "rd34 a lost line the recheck does not reach is listed under sometimes and the run exits 0",
+        "rd35 in the same comparison, lines every base run reaches are still lost (exit 1) while race branches are set apart",
+        "rd36 an ordinary loss is rechecked and confirmed; nothing set apart",
+        "rd37 a recheck whose block fails refuses with 2",
+        "rd38 a recheck leaving a process that never wrote refuses with 2",
+        "rd39 a content-only working-tree change is measured, not treated as same",
+        "rd40 a line skipped because of state the first run left behind is still lost (fresh export)",
+        "rd26 updated: --base HEAD --head HEAD now refuses with 2"
+      ],
       "notes": [
         {
           "at": "2026-11-01T01:43:38Z",
@@ -1928,6 +1942,17 @@
         "runId": "2026-11-01T02:11:27Z.ed24c8",
         "status": "passed",
         "at": "2026-11-01T02:11:27Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "2b9f5e71f3a9",
+        "at": "2026-11-01T02:19:36Z",
+        "return": "docs/audit/evidence/returns/P152.21-6jb/20261101T014356Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "tests.expectRedFirst is false on this tdd task: it names no case to prove a red by, so no red-first proof is owed",
+        "at": "2026-11-01T01:59:57Z"
       }
     },
     {

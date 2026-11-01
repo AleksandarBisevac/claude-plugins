@@ -3911,13 +3911,15 @@ def _opens_task_header(subject, task_id):
 # not. So the drive's planners are here - `_advance_plan`, `_triage_plan`,
 # `_pending_turn` and `_close_plan` - each asked at a named
 # point and answering `(arm, detail)` from a facts dict; its caller reads the
-# facts it always read and performs the arm. The other branches on plain
-# values are still decided inline where they act: `advance`'s stored-green
+# facts it always read and performs the arm. Every other branch on plain
+# values is decided inline where it acts. Among them are `advance`'s stored-green
 # check on a filed return, `integrate_member`, `kept_tree_stop` and the redo
 # patch, the writer's wait and settle, the triage's head checks ahead of its
 # advance point, `drive_locked`'s refresh and session note for a pending
-# decision, and sign-off's own steps. A fact is a value or a
-# zero-argument callable, and `_fact` calls the callable only when the planner
+# decision, `drive_task`'s status arms, `gate_step`'s exit-code arms,
+# `answer_refusal`'s checks and sign-off's own steps; these name examples, not
+# the whole set, and a branch added later is decided where it acts as well.
+# A fact is a value or a zero-argument callable, and `_fact` calls the callable only when the planner
 # reaches it: the read happens where it always happened, and an arm that never
 # reaches it never makes it. Where a step acts between two branches (a session
 # stepped, a return filed, a decision dropped), the planner is asked once per
