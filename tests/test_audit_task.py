@@ -20391,18 +20391,44 @@ def _crossfile_cases(check):
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                     universal_newlines=True)
                 before = _plan_bytes(projk)
-                _xf_lock = dict((verb, run(argv + ["--project-dir", projk])[0])
-                                for verb, argv in (
-                    ("reindex", ["reindex"]),
-                    ("bug-close", ["bug-close", "BUG-1", "--status", "wontfix",
-                                   "--reason", "r"]),
-                    ("bug-add", ["bug-add", "T", "--severity", "low",
-                                 "--description", "d", "--ado", '{"id": 5}'])))
-                check("xf5 each verb waits on a live index lock - exit 3, the "
-                      "plan untouched: %r" % ((held.returncode, _xf_lock),),
+                # THE SUBJECT IS THE REFUSAL, NOT THE WAIT. These verbs take no
+                # `--wait`, so each spent the lock's whole default bound on a
+                # holder that stays live by construction (this pid) before the
+                # same refusal printed. The bound is zeroed for these calls
+                # alone; that a live holder IS waited out, and a dead one is
+                # not, is `test__locks.py`'s to prove (wt3, j2). What keeps the
+                # case honest at zero is read below: each verb printed the
+                # live-holder refusal once, and the claim it met is still the
+                # other run's.
+                def xf_refused(argv):
+                    code, txt = run(argv + ["--project-dir", projk])
+                    return code, txt.count("is HELD by a live run")
+
+                _xf_wait = _lock_lib.WAIT_SECONDS
+                _lock_lib.WAIT_SECONDS = 0
+                try:
+                    _xf_lock = dict(
+                        (verb, xf_refused(argv)) for verb, argv in (
+                            ("reindex", ["reindex"]),
+                            ("bug-close", ["bug-close", "BUG-1", "--status",
+                                           "wontfix", "--reason", "r"]),
+                            ("bug-add", ["bug-add", "T", "--severity", "low",
+                                         "--description", "d", "--ado",
+                                         '{"id": 5}'])))
+                finally:
+                    _lock_lib.WAIT_SECONDS = _xf_wait
+                _xf_claim = _lock_lib.read_lock(os.path.join(
+                    _lock_lib.lock_dir(projk), "index.lock"))
+                check("xf5 each verb is refused by a live index lock - exit 3 "
+                      "with the live-holder refusal printed once, the plan "
+                      "untouched and the claim still the other run's: %r"
+                      % ((held.returncode, _xf_lock, _xf_claim.get("note"),
+                          _xf_claim.get("sessionId")),),
                       held.returncode == 0
-                      and _xf_lock == {"reindex": 3, "bug-close": 3,
-                                       "bug-add": 3}
+                      and _xf_lock == {"reindex": (3, 1), "bug-close": (3, 1),
+                                       "bug-add": (3, 1)}
+                      and _xf_claim.get("note") == "another run"
+                      and _xf_claim.get("sessionId") == "sess-X"
                       and _plan_bytes(projk) == before)
             finally:
                 for n, v in _k_saved.items():

@@ -229,24 +229,40 @@
         "severity": "med",
         "file": "tests/test_audit_task.py:6106-6108, tests/test_audit_task.py:8360-8362, tests/test_audit_task.py:13529-13533, tests/_harness.py:203-207, PLUGIN-BUILD-GUIDE.md:6418-6423",
         "issue": "The three converted callers (lv_call, gs_gate, _cli_here) call run_script_in_process with no process fallback, and the runner now raises ValueError when the environment's PYTHONPATH holds a sitecustomize. reach-diff puts one there by design. When the interpreter's user site is off (-s, PYTHONNOUSERSITE, or any venv without system site packages), it writes its hook as sitecustomize rather than usercustomize (tools/reach-diff.py:41-44, 55-57, 767). Under it every in-process fb, at4 and at6 call in test_audit_task raises, because _cli_here and lv_env copy os.environ (PYTHONPATH included) and gs_gate inherits it. The suite is then green at base HEAD (processes) and red at WORKTREE, so this task's own declared gate `reach-diff.py ... --head WORKTREE` cannot pass on such an interpreter. test_drive_phase avoids this only because it routes through _needs_process before calling the runner. The PLUGIN-BUILD-GUIDE sentence 'it refuses an env planting a sitecustomize ... so a case whose subject is the process boundary still starts one' is false for these callers: nothing starts a process, the case raises.",
-        "resolution": "Route the way the drive suite does. In _cli_here, lv_call and gs_gate, when `_harness.planted_sitecustomize(env or os.environ)` returns a path, run the old subprocess.run form (the code this diff replaced) and return the same shape. Alternatively, give run_script_in_process an opt-in that runs `subprocess.run([sys.executable, path] + args, ...)` with the same (code, out, err) return when a sitecustomize is planted, and keep the bare refusal as the default. Add a case that points PYTHONPATH at a directory holding a sitecustomize.py and asserts _cli_here still answers fb5's refusal. Reword the guide's 'still starts one' to say what the caller must do."
+        "resolution": "fixed in P152.17-6jb (5bb44004d1a1): Route the way the drive suite does. In _cli_here, lv_call and gs_gate, when `_harness.planted_sitecustomize(env or os.environ)` returns a path, run the old subprocess.run form (the code this diff replaced) and return the same shape. Alternatively, give run_script_in_process an opt-in that runs `subprocess.run([sys.executable, path] + args, ...)` with the same (code, out, err) return when a sitecustomize is planted, and keep the bare refusal as the default. Add a case that points PYTHONPATH at a directory holding a sitecustomize.py and asserts _cli_here still answers fb5's refusal. Reword the guide's 'still starts one' to say what the caller must do.",
+        "fixTask": "P152.17-6jb",
+        "commit": "5bb44004d1a1",
+        "status": "fixed"
       },
       {
         "id": "P152-R25",
         "severity": "low",
         "file": "tests/_harness.py:96-105, tests/_harness.py:190-202",
         "issue": "The runner replaces only the sys.stdin, sys.stdout and sys.stderr objects. A child process the script starts without its own pipes inherits this suite's file descriptors 0, 1 and 2, not the byte-backed streams. That child's output is missing from the returned bytes and goes to the suite's own stdout or stderr. A case asserting that a script printed nothing on stderr therefore passes in-process and fails as a process: the silent-pass shape. The docstring promises 'the way subprocess.run would run it as a process', and the WHAT IT CANNOT BE block does not name this. No converted verb reaches it today: audit-task.py's spawns at :3751, :5539, :6570, :14598 and :15101 all pipe, and run-test-gate.py:3145 spawns through _spawn_kwargs. But the helper is now offered to every suite under tests/.",
-        "resolution": "Add to the WHAT IT CANNOT BE block that a child the script starts with inherited stdio writes to this suite's descriptors, so its output is not in the returned bytes. A case whose subject includes a child's inherited output runs as a process. If it should be enforced instead, os.dup2 descriptors 1 and 2 onto temporary files for the duration of the run and append their contents."
+        "resolution": "fixed in P152.17-6jb (5bb44004d1a1): Add to the WHAT IT CANNOT BE block that a child the script starts with inherited stdio writes to this suite's descriptors, so its output is not in the returned bytes. A case whose subject includes a child's inherited output runs as a process. If it should be enforced instead, os.dup2 descriptors 1 and 2 onto temporary files for the duration of the run and append their contents.",
+        "fixTask": "P152.17-6jb",
+        "commit": "5bb44004d1a1",
+        "status": "fixed"
       },
       {
         "id": "P152-R26",
         "severity": "low",
         "file": "PLUGIN-BUILD-GUIDE.md:6418",
         "issue": "The guide names the signature as `run_script_in_process(path, args, cwd, stdin, env)` and leaves out `before_main`. The task description names that parameter, test_drive_phase._run_in_process depends on it (tests/test_drive_phase.py:368-370 passes _route_verbs), and ip11 proves it. A reader of the guide looking for how a script's own function is rerouted before its __main__ runs will not find it.",
-        "resolution": "Write the signature as `run_script_in_process(path, args, cwd, stdin, env, before_main)` and add one clause: before_main(namespace) runs between the script's body and its __main__ block, for a caller that reroutes what the command line will call."
+        "resolution": "fixed in P152.17-6jb (5bb44004d1a1): Write the signature as `run_script_in_process(path, args, cwd, stdin, env, before_main)` and add one clause: before_main(namespace) runs between the script's body and its __main__ block, for a caller that reroutes what the command line will call.",
+        "fixTask": "P152.17-6jb",
+        "commit": "5bb44004d1a1",
+        "status": "fixed"
+      },
+      {
+        "id": "P152-R27",
+        "severity": "low",
+        "file": "tests/test_audit_task.py:20397-20399",
+        "issue": "The xf5 comment and the filed claim cite j2 as the proof that a dead holder is not waited out. j2 in tests/test__locks.py:134 calls judge() on a dead pid and shows it is stale; the case that times acquire() on a dead holder is wt4 (tests/test__locks.py:1805). wt3 (live holder waited out on the default) is correctly cited.",
+        "resolution": "Cite wt3 and wt4 in the comment instead of wt3 and j2; wt4 asserts E_STALE returned in under a second with wait=9.0."
       }
     ],
-    "outcome": "[findings: 26 - 0 high, 11 med, 15 low; 13 with a recorded fix commit]"
+    "outcome": "[findings: 27 - 0 high, 11 med, 16 low; 16 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -730,7 +746,7 @@
     {
       "id": "P152.7",
       "title": "xf-block and the at4 sleepers spend only the time their subject needs",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.7, optional and measured first. Profile xf-block; hoist a scan only if one is repeated per case, else decline with the profile. at4-block: a case whose subject is the refusal passes --wait 0, a case whose subject is the wait keeps the default; say which of the sleepers is which before cutting.",
       "files": [
         "tests/test_audit_task.py"
@@ -755,16 +771,22 @@
         "P152.17-6jb"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-01T01:26:41Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-01T01:41:43Z.831b44",
+        "status": "passed",
+        "at": "2026-11-01T01:41:43Z"
+      }
     },
     {
       "id": "P152.8",
@@ -1542,7 +1564,7 @@
     {
       "id": "P152.17-6jb",
       "title": "test_audit_task.py runs its verbs in-process where the process is not the subject",
-      "status": "in_progress",
+      "status": "done",
       "description": "Same work as the cancelled P152.5 and P152.16-6jb, started on a clean tree; the work is applied from the saved patch after start. Move the in-process runner to tests/_harness.py as run_script_in_process(path, args, cwd, stdin, env, before_main) with its own cases ip1-ip11, and use it in tests/test_audit_task.py fb-block, at4-block (the caller; sleepers stay real) and at6-block; two real-process runs kept in fb. The cases were seen red before the function existed (NameError run_script_in_process, 98/99). Plan: quality-gates-internal plans/2026-10-31-speed-phase/PLAN.md section 4, P152.5.",
       "files": [
         "tests/_harness.py",
@@ -1574,14 +1596,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "5bb44004d1a1",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Filed under P152.17-6jb (re-add of the cancelled P152.5 and P152.16-6jb, started on a clean tree): scratchpad/p15216.patch applied with `git apply` (exit 0, git diff --stat HEAD: 4 files), then the P152.16 review findings fixed. tests/_harness.py: new section 'a script run in this interpreter' - run_script_in_process(path, args, cwd, stdin=None, env=None, before_main=None) -> (code, stdout bytes, stderr bytes), plus script_parts, child_codec(environ), exit_status, planted_sitecustomize, _is_main_guard, _restore_environ moved from tests/test_drive_phase.py. Semantics are subprocess.run's: env is the WHOLE environment (None inherits), stdin is bytes (str sent as UTF-8, None empty), an escape is a traceback on stderr and status 1, SystemExit None/int/str as the interpreter maps them; argv, cwd, environ, sys.path and the three std streams are restored in a finally. The child codec is read from the env handed in, not this process's. An env whose PYTHONPATH plants a sitecustomize is refused with ValueError before anything is swapped (only a fresh interpreter imports one); test_drive_phase keeps its _needs_process routing (pinned clock, windows stdout, a replaced subprocess) and now asks _harness.planted_sitecustomize for the sitecustomize half. before_main(namespace) replaces the drive-specific run_verb rerouting: test_drive_phase passes _route_verbs. Own cases ip1-ip3 moved byte-identical from the drive suite's ip-block (row and function removed there), new ip4-ip11; ip5/ip6/ip7/ip9 compare against the same script run as a real process. tests/test_drive_phase.py: _run_in_process is now a thin wrapper (env laid over os.environ, as before) around the harness; unused builtins/locale/traceback imports dropped; 759 cases (762 minus the three moved). tests/test_audit_task.py: new _cli_here (in-process _cli, same filtered env, same (exit, stdout) text-mode read) used by every fb call except fb1 (_cli, real process: argv dialect + OS exit status) and fb13's stdin run (_cli_in, real process: '-' off a real pipe); fb14's two stdin runs now _cli_here(stdin=...); lv_call (at4) runs audit-task.py/audit-lock.py in-process with its whole env per call and returns err+out (the 12 sleepers stay real Popen processes); gs_gate (at6) runs run-test-gate.py in-process. sl-block and fp-block still call _cli as processes (not in scope). PLUGIN-BUILD-GUIDE.md: one sentence on run_script_in_process in the tests/ _harness.py paragraph. Converted cases still red on the defect: in a HEAD export with these test files, mutating audit-task's JSON refusal wording -> fb5 red (18/19); its 'left in place' wording -> lv7, lv13, lv14 red (79/82); run-test-gate --record inverted -> 17 at6 cases red (53/70); unmutated fb+at4+at6 171/171. cp1252: `python3 tools/sweep-selftests.py --encoding cp1252 tests/_harness.py tests/test_audit_task.py tests/test_drive_phase.py` exit 0, both halves ran (cp1252 stdio + LANG=C locale), 3/3 files ok, 2067 cases. reach-diff exit 0: base HEAD 7981 lines reached, WORKTREE 7981, lost 0 in 0 functions; processes that started the hook 254 -> 131; same 4-child blind spot in at7-block at both revisions. Dependants sample `python3 tools/sweep-selftests.py --quiet tests/test__output_lints.py tests/test__deps.py tests/test_run_test_gate.py tests/test__usage_viz.py tests/test__refs.py tests/test__runner_output.py tests/test_commit_task_work.py tests/test__filed_returns.py` exit 0, 8/8 files ok, 1714 cases. Times (single runs each, sweep per suite, NOT a quiet machine): before load avg 3.2-6.2 / after 16.4-19.0; test_audit_task wall 36.0 s -> 29.8 s, slot sum 217.5 -> 202.0 s; fb-block 15.2 -> 5.1 s, at4-block 33.3 -> 22.6 s, at6-block 27.6 -> 26.1 s; test_drive_phase wall 93.4 -> 91.9 s, slot sum 721.1 -> 712.7 s (ip-block 0.3 s left it). Kept real-process runs and what each proves: argv from a real command line - fb1 (_cli) and fb15 (the phase.md heredoc via sh -c); exit status through the OS - fb1, fb13, fb15 for 0 and sl-block's sl4 _cli refusal for E_USAGE; stdin bytes / '-' off a real pipe - fb13 (_cli_in) and fb15; stdout under a legacy code page - fb1, fb13 and every sl-block _cli run under the cp1252 leg; dead lock holders - the at4 sleepers. Dependants: tools/sweep-selftests.py unchanged (the _harness constants it reads untouched; --selftest 160/160); the suites importing _harness see only added names, none renamed, and none used the moved drive helpers (grep of tests/ and tools/ for _run_in_process/_in_process_verbs/_needs_process); test_stamp_verification, test__runner_output, tools/affected.py and tools/reach-diff.py name test_drive_phase.py only by path or the unchanged _stage_cases label; CORRECTION: .github/sweep-costs.json DOES still hold \"ip-block\": 0.4 under tests/test_drive_phase.py (line 157) though the block is gone - an earlier grep of mine missed it and the P152.5/P152.16 outcomes said otherwise; the file is not in this task's files, the orchestrator batches the row; test_commit_task_work and test__filed_returns (importing test_audit_task names) green in the sample run; PLUGIN-BUILD-GUIDE.md changed by the one sentence. REVIEW FINDINGS. R24 (med): new _harness.run_script(path, args, cwd, stdin=None, env=None, timeout=300) - run_script_in_process unless the env plants a sitecustomize, then subprocess.run([sys.executable, path] + args) with the same (code, out, err) shape; _cli_here, lv_call and gs_gate now call run_script. Cases written first and seen red: fb5s (fb5's refusal under a PYTHONPATH holding sitecustomize.py, red 19/20 with the ValueError) and ip12 (planted env runs as a process - the planted file ran, pid differs; plain env runs here, pid ours; red NameError 109/110). Mutations of run_script in a scratch copy: never routing -> ip12 red (11/12); always a process -> ip12 red (11/12). The R24 condition reproduced: `PYTHONNOUSERSITE=1 python3 tools/reach-diff.py plugins/audit/scripts/manifest/audit-task.py tests/test_audit_task.py --base HEAD --head WORKTREE` exit 0, hook: sitecustomize, base 7981 / WORKTREE 7981 lines, lost 0, 254 processes at both (every converted call fell back to a process). Guide sentence rewritten: the refusal plus run_script as the caller's way past it (ip12). R25 (low): the runner's WHAT IT CANNOT BE comment now says only the sys.std* objects are swapped, not descriptors 0-2, so a child started without its own pipes writes to the suite's output and is missing from the returned bytes; a case about such output runs a process; nothing checks that. R26 (low): the guide names run_script_in_process(path, args, cwd, stdin, env, before_main) and what before_main does. GATES THIS ROUND (all exit 0): tests/_harness.py 110 cases; tests/test_drive_phase.py 759; tests/test_audit_task.py 1200 (1199 + fb5s); --selftest 160/160; reach-diff --base HEAD --head WORKTREE: hook usercustomize, 7981/7981, lost 0, processes 254 -> 132; cp1252 leg over the three suites 3/3 ok, 2069 cases, both halves ran. Block times this round (single run, load 4.6-13.9): fb-block 5.1 s, at4-block 21.8 s, at6-block 25.0 s.",
+        "descriptive": "The in-process script runner is one harness helper with its own restore proofs, and test_audit_task's fb/at4/at6 verbs run through it, cutting fb-block about two thirds and at4 about a third while the reach of audit-task.py is unchanged."
       },
       "startedAt": "2026-11-01T01:07:48Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-01T01:26:40Z",
+      "verifiedBy": [
+        "ip4-ip12 in tests/_harness.py's own selftest (ip12: run_script routes a planted-sitecustomize env to a process, everything else here), ip1-ip3 moved from test_drive_phase.py; fb5s in tests/test_audit_task.py fb-block (the converted caller still answers under a planted sitecustomize); recorded though the task declares no tests.add"
+      ],
       "notes": [
         {
           "at": "2026-11-01T01:07:46Z",
@@ -1614,6 +1638,17 @@
         "runId": "2026-11-01T01:24:57Z.25a70d",
         "status": "passed",
         "at": "2026-11-01T01:24:57Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "5bb44004d1a1",
+        "at": "2026-11-01T01:26:40Z",
+        "return": "docs/audit/evidence/returns/P152.17-6jb/20261101T010748Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "P152.17-6jb is regression mode with expectRedFirst false and no tests.add, so no red is owed. Seen red on the shared tree all the same: the ip cases were written before the function existed (`python3 tests/_harness.py --selftest`: NameError run_script_in_process, 98/99); for the R24 fix, fb5s and ip12 were written before run_script existed - `python3 tests/test_audit_task.py --selftest --stage fb-block` printed 'FAIL fb5s ... (False, 'ValueError: .../site-planted/sitecustomize.py is i...' and 'SELFTEST FAILED: 19/20', and `python3 tests/_harness.py --selftest` 'NameError: name 'run_script' is not defined', 109/110. After the fix 20/20 and 110/110.",
+        "at": "2026-11-01, on the shared tree before each implementation"
       }
     }
   ],
