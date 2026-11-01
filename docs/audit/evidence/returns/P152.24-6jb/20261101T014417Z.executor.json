@@ -1,0 +1,29 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py": "pass",
+    "python3 tools/sweep-selftests.py tests/test__output_lints.py tests/test__deps.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-01T01:53:16Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD exited 1 with failing cases ta9 (house FAIL), tx4 (house FAIL), tx5 (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 758/759 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 758/761 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Reworded both places as a class statement: 'Every other branch on plain values is decided inline where it acts. Among them are ...' keeping every named example and adding drive_task's status arms, gate_step's exit-code arms and answer_refusal's checks, plus 'these name examples, not the whole set, and a branch added later is decided where it acts as well'. Edits: PLUGIN-BUILD-GUIDE.md paragraph 'Deciding on facts' and the '# --- deciding a step on facts ---' comment in plugins/audit/scripts/governance/drive-phase.py (comment lines only; git diff filtered of '#' lines is empty). Added tests/test_drive_phase.py _prose_of + _inline_branch_class_cases called from _text_cases (cases tx4 driver comment, tx5 guide paragraph): each asserts the class sentence appears exactly once, 'Among them' exactly once, and the old exhaustive wording is absent; None from a missing marker is a red case. Runs: sweep-selftests.py tests/test_drive_phase.py exit 0 (761 cases); sweep-selftests.py tests/test__output_lints.py tests/test__deps.py exit 0 (448 cases, prose lints). Bare-shape grep for 'decided inline|still decided|decided where they act' over the repo outside docs: only these two places and the new test; SECURITY.md:998 is an unrelated sentence. Dependants: tests/test_drive_phase.py (gained cases, full suite green), tools/affected.py, tools/reach-diff.py, README.md, docs/research/pipeline-cost-design.md, hooks/detect-plan-skip.py, record-risk-confirmation.py and the guide's 25 dependants are unchanged and still correct because only comment text moved in drive-phase.py (no name, signature or behaviour) and one guide paragraph was reworded with no heading, anchor or tree line changed; the two prose lints over the guide and drive-phase.py are green.\n\nclaims:\n1 drive-phase.py:3914-3921 and PLUGIN-BUILD-GUIDE.md:4500-4507 say only that every other plain-value branch is decided inline where it acts, with named examples; the named drive_task/gate_step/answer_refusal exist at drive-phase.py:9119, 4404, 6552\n2 tx4/tx5 FAIL on the old text (0 class sentences, old wording present), PASS after; the count==1 and absence checks are the guard against re-listing as exhaustive\n3 grep -rnE 'decided inline|still decided|decided where they act': 2 prose hits (both fixed) plus SECURITY.md:998 (left, unrelated sentence about path resolution) plus the new test\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 no number written in prose; the lints exit 0",
+    "descriptive": "The two statements about inline-decided branches are now a class ('every other branch ... where it acts') with examples, so they no longer read as an exhaustive list."
+  },
+  "testsAdded": [
+    "tx4/tx5: the driver section comment and the build guide paragraph each state the inline-branch class once, carry 'Among them' once and no longer say 'are still decided inline'"
+  ],
+  "casesAdded": [
+    [
+      "tx4",
+      "tx5"
+    ]
+  ],
+  "claims": "1 drive-phase.py:3914-3921 and PLUGIN-BUILD-GUIDE.md:4500-4507 state the class with examples; 2 tx4/tx5 red on old text, green after; 3 grep done, two hits fixed, SECURITY.md:998 left (unrelated); 4 n/a; 5 n/a; 6 n/a; 7 no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:3a3669e37081e926e5f222d9f534ee0ced983b29ba8dae1c0b2b67d39d46641c\",\"dirtyDigest\":\"sha256:c0d99c7ee977d7831c08df63b38b1c701c3c2ae1651c7e6ac59a0b42f502767e\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"9894aea9e46903e4\",\"plugins/audit/scripts/governance/drive-phase.py\":\"ece837e6caa366ae\",\"tests/test_drive_phase.py\":\"bf7fe670dca50651\"},\"head\":\"d1df212d\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:76ff01319b812c23ec074c24eec8ad71882f855d1e67c602148d425564c66174\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

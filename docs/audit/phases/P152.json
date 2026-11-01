@@ -159,8 +159,10 @@
         "severity": "med",
         "file": "tests/test_stamp_verification.py:1331-1337 (sr16), with _judged at 833-838",
         "issue": "sr16's check `code != M.E_PROVED and block.get(\"status\") != \"proved\"` is satisfied by _judged's record refusal, which returns `(None, {\"record\": ...})`: None != E_PROVED and an absent redFirst has no status. So if `_wants_second` started owing a second run for a SyntaxError under --introduces (part of what sr16 guards: syntax errors never qualify), _judged refuses the record and sr16 stays green. _judged's docstring says 'the exit is None, `record` says which run, and the case reading it fails', which is not true for a case whose check is phrased as a negation. Today sr16 gets exit 3 from both the judged run and the real one (see note), so this is a latent hole, not a present wrong verdict.",
-        "resolution": "Make _judged raise (for example AssertionError naming the key and the run) on a record mismatch instead of returning None, so the refusal fails the enclosing block under its name however the case's check is worded. At the least, tighten sr16 to `code == M.E_CANNOT_PROVE and block.get(\"status\") == \"could-not-prove\"`.",
-        "fixTask": "P152.18-6jb"
+        "resolution": "fixed in P152.18-6jb (e0521c62efdf): Make _judged raise (for example AssertionError naming the key and the run) on a record mismatch instead of returning None, so the refusal fails the enclosing block under its name however the case's check is worded. At the least, tighten sr16 to `code == M.E_CANNOT_PROVE and block.get(\"status\") == \"could-not-prove\"`.",
+        "fixTask": "P152.18-6jb",
+        "commit": "e0521c62efdf",
+        "status": "fixed"
       },
       {
         "id": "P152-R15",
@@ -271,9 +273,37 @@
         "issue": "The xf5 comment and the filed claim cite j2 as the proof that a dead holder is not waited out. j2 in tests/test__locks.py:134 calls judge() on a dead pid and shows it is stale; the case that times acquire() on a dead holder is wt4 (tests/test__locks.py:1805). wt3 (live holder waited out on the default) is correctly cited.",
         "resolution": "Cite wt3 and wt4 in the comment instead of wt3 and j2; wt4 asserts E_STALE returned in under a second with wait=9.0.",
         "fixTask": "P152.28-6jb"
+      },
+      {
+        "id": "P152-R28",
+        "severity": "med",
+        "file": "tools/reach-diff.py:781-831 (_tree_entries, same_tree, same_side); docstring 38-39",
+        "issue": "contradicts task clause \"or after the task's work is committed (when a phase review re-runs a task gate), copies exactly the base commit and reports 'lost: 0 lines'\": sameness is judged over the WHOLE tree, so any non-ignored difference unrelated to the module or the suite makes the sides 'differ' and the comparison runs and exits 0 over a byte-identical module and suite - the same vacuous pass. Probe (scratchpad rd-probe/probe_same.py over a fixture checkout of the task tree's module): clean checkout `--base HEAD --head WORKTREE` -> exit 2 'the head is the base'; the same checkout plus one untracked `journal.jsonl` -> exit 0, 'lost: 0 lines reached at HEAD and not at WORKTREE', same False. The project checkout a phase review runs in is never that clean: the drive itself keeps docs/audit/journal/*.jsonl and docs/audit/evidence/* modified and writes untracked docs/audit/evidence/returns/<task>/ (git status of the project shows all three now), so the scenario the clause names still passes vacuously there. The docstring's 'Sides that differ anywhere, in any file, are measured: a task that changed nothing the suite reaches is an honest 0' states the hole as a property.",
+        "resolution": "Decide sameness on what the run can read, not on the whole tree: compute the differing paths (same_tree already walks both), print them, and treat the sides as the same (exit 2 unless --allow-same) when neither the module nor the suite differs and no differing path is a Python source (or, stricter, none lies under a directory on the suite's or module's import path). Add the other-direction case beside rd31: a clean fixture checkout plus one untracked non-.py file must still exit 2, and rd39 (a .py content change) must still be measured."
+      },
+      {
+        "id": "P152-R29",
+        "severity": "low",
+        "file": "tools/reach-diff.py:946-965 (_recheck_refusal), 1064-1065",
+        "issue": "The recheck is accepted as evidence of chance whenever its blocks pass, its traces read, and per block its silent and untraced counts do not EXCEED the first run's. It never compares how many processes of a block wrote at all, nor how many cases ran. A rechecked block that passes having done less - a case that skips or bails early on its environment (a busy resource, a missing tool) and still grades ok, or a child that is never started - misses lost lines for a reason other than chance, and those lines are set apart under `sometimes:` with exit 0. Counts rather than identities also let an equal-count swap through (a different process of the block silent in the recheck than in the first run). So the claim 'it cannot set aside a real loss' holds only for a deterministic base; an environmental miss inside those bounds is set aside, not refused.",
+        "resolution": "Refuse with 2 also when a rechecked block wrote fewer processes than in its first run (count written dumps per block in read_traces, as silent_by_block already does for silent ones), or when its graded case count differs from the first run's; add a fixture case whose recheck skips the reaching case yet passes, expecting exit 2. And name the remaining blind spot (an equal-count swap of silent processes) under WHAT IT CANNOT SEE."
+      },
+      {
+        "id": "P152-R30",
+        "severity": "low",
+        "file": "CONTRIBUTING.md:594-610 (dependant of tools/reach-diff.py)",
+        "issue": "The bullet the brief names as this file's dependant is now inaccurate, not merely incomplete: it says the tool 'exits 1 naming each line of the module reached before and not after', but lines the recheck does not reach are now listed under `sometimes:` and exit 0; and its list of what 'refuses with 2 rather than passing' omits the two new refusals (the head is the base; a recheck that could not confirm a loss) and --allow-same. The executor answered this dependant as 'still correct but incomplete' and left it.",
+        "resolution": "Add one sentence to the bullet: identical sides refuse with 2 unless --allow-same, and a line the base does not reach again on a recheck is listed as reached only sometimes and does not fail it - or route it as a follow-up task on CONTRIBUTING.md."
+      },
+      {
+        "id": "P152-R31",
+        "severity": "low",
+        "file": "docs/audit/phases/P152.json:527,608 (and 1526,1608) vs tools/reach-diff.py:815-831",
+        "issue": "The diff changes the exit code of a command the plan's gates name. P152.4's and P152.17's gates are spelled `--base HEAD --head WORKTREE`; their work is committed, so a phase review re-running them now refuses with 2 on a clean tree (a red sign-off) and - per finding 1 - measures nothing and exits 0 on the drive's usual dirty tree. Neither reading measures the conversion those gates exist for.",
+        "resolution": "Re-point those gate entries to the commit before each task (`--base <pre-task sha> --head WORKTREE`, as P152.13's gate does with 92c399f5), which measures the conversion both before and after it is committed; use --allow-same only where identical sides really are the expected answer."
       }
     ],
-    "outcome": "[findings: 27 - 0 high, 11 med, 16 low; 16 with a recorded fix commit]"
+    "outcome": "[findings: 31 - 0 high, 12 med, 19 low; 17 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1676,7 +1706,7 @@
     {
       "id": "P152.18-6jb",
       "title": "fix P152-R14: sr16's check `code != M.E_PROVED and block.get(\"status\") != \"pr...",
-      "status": "in_progress",
+      "status": "done",
       "description": "sr16's check `code != M.E_PROVED and block.get(\"status\") != \"proved\"` is satisfied by _judged's record refusal, which returns `(None, {\"record\": ...})`: None != E_PROVED and an absent redFirst has no status. So if `_wants_second` started owing a second run for a SyntaxError under --introduces (part of what sr16 guards: syntax errors never qualify), _judged refuses the record and sr16 stays green. _judged's docstring says 'the exit is None, `record` says which run, and the case reading it fails', which is not true for a case whose check is phrased as a negation. Today sr16 gets exit 3 from both the judged run and the real one (see note), so this is a latent hole, not a present wrong verdict.\n\nResolution asked: Make _judged raise (for example AssertionError naming the key and the run) on a record mismatch instead of returning None, so the refusal fails the enclosing block under its name however the case's check is worded. At the least, tighten sr16 to `code == M.E_CANNOT_PROVE and block.get(\"status\") == \"could-not-prove\"`.",
       "files": [
         "tests/test_stamp_verification.py"
@@ -1699,14 +1729,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e0521c62efdf",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tests/test_stamp_verification.py only. New `_unjudged(key, why)` raises AssertionError('<key> not judged: <why>'); `_judged` calls it on all four refusal paths (declared_tests problem, _at_head problem, dependency_plan problem, record holds/lacks a second or fix run) instead of returning (None, {'record': ...}). A raise fails the enclosing STAGES block under its name via _harness.stage (tests/_harness.py:1173 and :1319 run every block under stage), however the case's check is worded. Docstring rewritten to say so and why. No caller read the `record` key (grep '\"record\"' over the file: only the four return sites). sr16 tightened to `code == M.E_CANNOT_PROVE and block.get('status') == 'could-not-prove'` - the kept real proof on sr16's fixture, run through `_red` in the probe, printed `REAL exit=3 status='could-not-prove'` (E_CANNOT_PROVE == 3, stamp-verification.py:619), and the judged one `exit=3 status='could-not-prove'`. Class sweep: grep -nE '!= *M\\.E_PROVED|!= *\"proved\"|not +.*proved|!= *M\\.E_CANNOT_PROVE|code_?[a-z0-9]* (!=|not in)' gave these negative-shaped checks: sr16 (judged) - tightened; swc2 line ~7029 (judged, `bad_code != M.E_PROVED` with a positive status conjunct) - tightened to `== M.E_CANNOT_PROVE` as well; sr207 (~1421), sr26 (~1728), sl6 (~7951) read `_red`/the CLI, a real run with no record to refuse - left; se2 (~5921) and the sm1 detail filter (~5869) read M.red_verdict directly - left; lines ~1910/~2155 are `if` guards in helpers, not checks - left; the rest are label prose. Gate: `python3 tools/sweep-selftests.py tests/test_stamp_verification.py` exit 0, `1/1 files ok, 356 cases`. ruff check on the file exit 0; vermin -t=3.8- exit 0. Dependants: .github/sweep-costs.json - still correct, no block gains or loses a run, only an in-process raise on a path that is not taken; tests/test__filed_returns.py (_crlf_cases) and tools/affected.py (_scan, _worktrees) - those names untouched; tools/sweep-selftests.py, tools/verify.sh, PLUGIN-BUILD-GUIDE.md name the file by path, which did not move - still correct.",
+        "descriptive": "A recorded run that no longer matches what `red` does now fails its block by name, whatever the case's check says, and sr16/swc2 pin the exact could-not-prove exit."
       },
       "startedAt": "2026-11-01T01:43:53Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-01T01:51:52Z",
+      "verifiedBy": [
+        "sr16 tightened to the exact exit and status the real proof gives (E_CANNOT_PROVE / could-not-prove), and _judged raising on every refusal so a mismatched record fails the block - proven by mutating sr16's and sr20's records"
+      ],
       "notes": [
         {
           "at": "2026-11-01T01:43:34Z",
@@ -1725,6 +1757,17 @@
         "runId": "2026-11-01T01:49:58Z.625390",
         "status": "passed",
         "at": "2026-11-01T01:49:58Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "e0521c62efdf",
+        "at": "2026-11-01T01:51:52Z",
+        "return": "docs/audit/evidence/returns/P152.18-6jb/20261101T014353Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "Not owed: tests.mode is regression with expectRedFirst false, and the change is to the test file alone, so HEAD's code with this test file laid over is green by construction and the helper has no red to find. The mutation evidence was watched by hand instead, through a scratch probe that imports the suite and patches _RECORDED in memory (the tree was never mutated): (a) BEFORE the fix, sr16's record given a `second` run red does not make -> `PASS sr16 ...` (the hole, reproduced); (b) AFTER the fix, the same mutation -> `AssertionError: sr16 not judged: the record holds the second run, where red now makes none` and `FAIL sr-introduces RAISED WHILE ITS CASES WERE BEING BUILT`, 1 failed of 1; (c) AFTER the fix, sr20's record stripped of its owed `second` run -> `AssertionError: sr20 not judged: the record lacks the second run, where red now makes one`, block FAIL (a second judged case); (d) the tightened sr16 check alone, fed the old refusal shape `(None, {record: x})` through a patched _judged -> `FAIL sr16`; unmutated -> 5 of 5 PASS in sr-introduces.",
+        "at": "2026-11-01, scratch probe runs before submit; no helper run"
       }
     },
     {
@@ -1880,7 +1923,12 @@
       "fixes": [
         "P152-R17"
       ],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-01T02:11:27Z.ed24c8",
+        "status": "passed",
+        "at": "2026-11-01T02:11:27Z"
+      }
     },
     {
       "id": "P152.22-6jb",
@@ -2086,7 +2134,12 @@
       "fixes": [
         "P152-R20"
       ],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-01T02:15:19Z.44fd15",
+        "status": "passed",
+        "at": "2026-11-01T02:15:19Z"
+      }
     },
     {
       "id": "P152.25-6jb",
