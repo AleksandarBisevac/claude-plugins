@@ -14090,6 +14090,37 @@ def _e2e_ci_cycle(check, M):
     check(_ci_clause("a green verdict files no bug: %r"
                      % (_mio.load_manifest(mpath).get("bugs"),)),
           not _mio.load_manifest(mpath).get("bugs"))
+    _e2e_ci_red_filed(check, M, root, mpath, heads)
+
+
+def _e2e_ci_red_filed(check, M, root, mpath, heads):
+    """The red half of the cycle, over the same fixture and with no second
+    drive: the bug a red run owes is filed through the real `audit-task.py
+    bug-add`, so a verb that renamed a flag, refused `--description -` or grew
+    a required one stops the filing here rather than in production, where every
+    rigged case (the `_ci_units` red one asserts only the argv) stays green."""
+    red_row = {"databaseId": 777, "headSha": heads[0] if heads else None,
+               "status": "completed", "conclusion": "failure",
+               "url": "https://example.invalid/r/777"}
+    ctx = _verb_ctx(root, mpath)
+    stop = (M.ci_file_red(ctx, {"sha": heads[0], "branch": "ci/p1"}, red_row)
+            if heads else "no push was made, so there is no run to file")
+    bugs = _mio.load_manifest(mpath).get("bugs") or []
+    bug = bugs[0] if len(bugs) == 1 else {}
+    description = bug.get("description") or ""
+    title = "CI red on ci/p1 at %s (run 777)" % (heads[0][:7] if heads else "",)
+    check("wv9 a red run filed by `ci_file_red` through the real `audit-task.py "
+          "bug-add` returns no stop and lands exactly one open high-severity bug "
+          "in the manifest, its title the one the drive built and its "
+          "description, read off stdin, naming run 777, ci/p1, the pushed sha, "
+          "the conclusion and the run's URL: %r" % ((stop, bugs, ctx["log"]),),
+          stop is None and len(bugs) == 1
+          and bug.get("status") == "open" and bug.get("severity") == "high"
+          and bug.get("title") == title
+          and "run 777" in description and "ci/p1" in description
+          and bool(heads) and heads[0] in description
+          and "ended failure" in description
+          and "https://example.invalid/r/777" in description)
 
 
 # --- waves, the CI cadence and the writer path, decided on facts -----------------

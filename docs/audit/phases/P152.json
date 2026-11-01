@@ -179,8 +179,10 @@
         "severity": "low",
         "file": "tests/test_stamp_verification.py:84-101 (_seeded_repo docstring, line 93)",
         "issue": "'the init, config, add and commit are the same five git calls every time': the body makes four git calls (init, config, add, commit). This is a wrong number written into prose, and it contradicts the filed claims item 7, 'no number written into prose ... comments carry none'.",
-        "resolution": "Delete the number: 'the init, config, add and commit are the same git calls every time'.",
-        "fixTask": "P152.20-6jb"
+        "resolution": "fixed in P152.20-6jb (7b9d77059cfa): Delete the number: 'the init, config, add and commit are the same git calls every time'.",
+        "fixTask": "P152.20-6jb",
+        "commit": "7b9d77059cfa",
+        "status": "fixed"
       },
       {
         "id": "P152-R17",
@@ -350,7 +352,7 @@
         "resolution": "Keep the number-free check if a pin is wanted, but drop the 'same git calls every time' conjunct (and bool(doc) only if a missing docstring is deliberately tolerated); or drop ssr2 and rely on the author-enforced rule. Do not remove it on the grounds that the lint covers it: the lint does not."
       }
     ],
-    "outcome": "[findings: 35 - 0 high, 12 med, 23 low; 25 with a recorded fix commit]"
+    "outcome": "[findings: 35 - 0 high, 12 med, 23 low; 26 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1889,7 +1891,7 @@
     {
       "id": "P152.20-6jb",
       "title": "fix P152-R16: 'the init, config, add and commit are the same five git calls e...",
-      "status": "in_progress",
+      "status": "done",
       "description": "'the init, config, add and commit are the same five git calls every time': the body makes four git calls (init, config, add, commit). This is a wrong number written into prose, and it contradicts the filed claims item 7, 'no number written into prose ... comments carry none'.\n\nResolution asked: Delete the number: 'the init, config, add and commit are the same git calls every time'.",
       "files": [
         "tests/test_stamp_verification.py"
@@ -1912,14 +1914,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7b9d77059cfa",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "In tests/test_stamp_verification.py, the _seeded_repo docstring now reads 'the init, config, add and commit are the same git calls every time' (the number removed, as asked). Added _seeded_repo_cases (stage sr-seed, registered in _su_env_cases) with ssr1: the seeded repo holds the single 'seed' commit, tracks only src/mine.py, has core.autocrlf=false in its own config, and a file added to one copy is absent from the next. ssr2: the docstring contains no '<N> git calls' (digit or spelled numeral) and keeps the 'same git calls every time' wording. Command: python3 tools/sweep-selftests.py tests/test_stamp_verification.py tests/test__output_lints.py -> '2/2 files ok, 542 cases'; the su-env stage alone prints ssr1 and ssr2 PASS, 37/37. Dependants (.github/sweep-costs.json, tests/test__filed_returns.py, tools/affected.py, tools/sweep-selftests.py, tools/verify.sh, PLUGIN-BUILD-GUIDE.md; names _crlf_cases, _scan, _worktrees): still correct. Only a docstring word and one new case function were added; no existing name changed. The sweep-costs table has no figure for the new sr-seed label, so it falls back to the suite's figure. No git-call bound is pinned by any existing case, so nothing to keep consistent.",
+        "descriptive": "The seeded-repo helper's docstring no longer carries a git-call count, and two cases lock its behaviour and the absence of the number."
       },
       "startedAt": "2026-11-01T02:54:15Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-01T03:27:07Z",
+      "verifiedBy": [
+        "ssr1: seeded repo is one 'seed' commit tracking src/mine.py with core.autocrlf=false, and copies are independent",
+        "ssr2: _seeded_repo docstring states no number of git calls"
+      ],
       "notes": [
         {
           "at": "2026-11-01T01:43:34Z",
@@ -1938,6 +1943,17 @@
         "runId": "2026-11-01T03:12:31Z.7c91d3",
         "status": "passed",
         "at": "2026-11-01T03:12:31Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "7b9d77059cfa",
+        "at": "2026-11-01T03:27:07Z",
+        "return": "docs/audit/evidence/returns/P152.20-6jb/20261101T025415Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "mode regression with tests.expectRedFirst false; no red owed. Separately checked by hand that the ssr2 regex matches the old wording ('five git calls') and finds nothing in the new one.",
+        "at": "n/a"
       }
     },
     {
