@@ -13903,7 +13903,7 @@ def _retired_return_cases(check, M):
 # `integrate_member`, `advance`, `apply_answer`, `drive_locked`,
 # `writer_argv` - over facts and fake verbs, no repository):
 #   wv5m wz1 wa1 wa2 wu1 wu2 wc1 wc2 wr1-wr3 wp0 wp1 nr0 nr1 nr4-nr6 wh1-wh3
-#   wt1-wt6 wo1a-wo2c sk1-sk3, and the cadence's red, still-running,
+#   wt1-wt6 wt6r wo1a-wo2c sk1-sk3, and the cadence's red, still-running,
 #   absent, hours, closes-and-hours and config details -> `_wave_unit_cases`
 # Paths no drive in this block reaches, held by a unit case alone: a red CI
 # run filing its bug and a run still going at a close (ci), no `ci` key at
@@ -13913,7 +13913,8 @@ def _retired_return_cases(check, M):
 # a parked no-executor-return decision (wp) and a serial parked
 # no-reviewer-return (nr0 nr1), hooks lacking the task-tree binding (wh1) or
 # with no install record (wh3), a tree whose setup crashed or failed (wt1-wt4),
-# a blocked member's tree kept and adopted by a later wave (wt5 wt6), the
+# a blocked member's tree kept and adopted by a later wave, and the base the
+# adopted member's brief names off the drive's written state (wt5 wt6 wt6r), the
 # writer path switched off under a pending writer decision (wo), and the
 # session's skills on its command (sk). A later change to one of them owes a
 # drive of its own if what it changes is the order of the steps or what git
@@ -14098,12 +14099,14 @@ def _e2e_ci_cycle(check, M):
 # `drive_phase`, `walk_wave`, `step_member`, `add_tree`, `close_wave`,
 # `wave_step`, `integrate_member`, `advance`, `gate_step`, `apply_answer`,
 # `drive_locked`, `writer_argv` - run whole over a context pointing at nothing
-# on disk, a plan held here, the verbs answered by `_verb_rig` and the CI seam
+# on disk (but for wt6's scratch state dir, below), a plan held here, the verbs answered by `_verb_rig` and the CI seam
 # by `_ci_fake`. What only a real drive shows is the kept `e2e-wave` block's;
 # what the tree verb does on disk - a marker, a setup run again in an adopted
-# tree - is `tests/test_manage_worktrees.py`'s, and what a brief prints for a
-# wave member is `tests/test_audit_lookup.py`'s. Every expected value is
-# written out, never recomputed from the function asked.
+# tree - is `tests/test_manage_worktrees.py`'s. Which base a wave member's
+# brief names is held here, by wt6r: the adopting drive writes its state to a
+# scratch state dir through its own writer, and `audit-lookup`'s `wave_tree`
+# reads it back for a member whose base is not the wave's. Every expected
+# value is written out, never recomputed from the function asked.
 _WAVE_TREE = "/trees/drive-wave-P1.1"
 _WAVE_TREE2 = "/trees/drive-wave-P1.2"
 _WAVE_BASE, _WAVE_NEW_BASE = "c" * 40, "d" * 40
@@ -14808,7 +14811,11 @@ def _adopt_units(check):
                              "wave P1-w1 done"]
           and rows == ["wave.done"])
 
-    M, _w = _unit_driver("drive_phase_wave_adopt")
+    # The driver's own state writer runs here, into a scratch state dir, so the
+    # record `add_tree` leaves is the one the brief's reader is asked about
+    # below: `bases` crosses from the drive to `audit-lookup` on disk.
+    M, _w = _load("drive_phase_wave_adopt")
+    held = _harness.fixture_root("drive-adopt-state-")
     adopted = json.dumps({"path": _WAVE_TREE, "adopted": True, "base": _WAVE_BASE,
                           "setup": {"status": "none"}})
     phase, calls, rows, _r = _wave_plan_rig(
@@ -14822,7 +14829,7 @@ def _adopt_units(check):
             ctx, "executor", task_["id"], "audit-executor", "sonnet",
             ".claude/state/briefs/%s/b.md" % (task_["id"],)))
     state = {"keptTrees": {"P1.1": _WAVE_TREE}, "waves": 1}
-    ctx = _step_ctx()
+    ctx = _step_ctx(stateDir=held)
     opened = _caught(M.wave_step, ctx, state, _step_plan(phase), phase, 2,
                      "executor.waveWidth 2")
     said = _caught(M.wave_step, ctx, state, _step_plan(phase), phase, 2,
@@ -14844,6 +14851,24 @@ def _adopt_units(check):
                                     "brief=.claude/state/briefs/P1.1/b.md")
           and stepped == [_WAVE_TREE]
           and rows == ["wave.start", "task.worktree"])
+
+    # The two bases differ on disk (the wave's is the new one), so a reader
+    # that took the wave's base for every member names the wrong commit here.
+    lookup = _loader.load_script("audit-lookup.py", "lookup_adopted_base",
+                                 cache=False)
+    on_disk, problem = _fr.drive_state(held, PHASE)
+    disk_wave = on_disk.get("wave") or {}
+    where = ({"state": held}, {"id": PHASE}, {"id": "P1.1"})
+    read = lookup.wave_tree(*where)
+    named = [line for line in lookup.wave_tree_lines(*where)
+             if line.startswith("base: ")]
+    check("wt6r the brief of the adopted member, read off the state the drive "
+          "wrote, names the base its tree was cut at and not the later wave's: "
+          "%r" % ((problem, disk_wave, read, named),),
+          problem == "" and disk_wave.get("base") == _WAVE_NEW_BASE
+          and disk_wave.get("bases") == {"P1.1": _WAVE_BASE}
+          and read == (_WAVE_TREE, _WAVE_BASE)
+          and named == ["base: %s" % (_WAVE_BASE,)])
 
 
 def _writer_off_units(check):
