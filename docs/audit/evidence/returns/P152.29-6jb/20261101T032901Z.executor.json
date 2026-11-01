@@ -1,0 +1,19 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tools/_suite.py tests/test_stamp_verification.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task with expectRedFirst false and no tests.add; the existing case s23 in tools/_suite.py was red at base (FAIL s23, 34/35, convicting tests/test_stamp_verification.py line 847) and is green after (tools/_suite.py 35 cases ok)",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "In tests/test_stamp_verification.py, _judged's remove_throwaway stand-in now returns _harness.remove_tree(holder) instead of shutil.rmtree(holder); return True. import shutil kept (still used by copytree at line 109 and the M.shutil.rmtree pins). Before: sweep-selftests.py tools/_suite.py exit 1, 34/35, s23 red. After: sweep-selftests.py tools/_suite.py tests/test_stamp_verification.py -> 2/2 files ok, 395 cases. No exemption row added. Dependants (sweep-costs.json, test__filed_returns.py, affected.py, sweep-selftests.py, verify.sh, PLUGIN-BUILD-GUIDE.md; names _crlf_cases, _scan, _worktrees): still correct, the change is one line inside a test-local seam and alters no name, case id or file they read.",
+    "descriptive": "The judged-run stand-in removes its tree through remove_tree, turning the full sweep's s23 green."
+  },
+  "testsAdded": [],
+  "claims": "claims:\n1 n/a - no behaviour claimed in prose; the changed line is tests/test_stamp_verification.py:847\n2 s23 red before (34/35), green after (35/35); no new check\n3 grep shutil in the file: remaining hits are copytree (109), subprocess source strings, and the M.shutil.rmtree pins at 4340-4364, none a bare removal of a staged fixture; s23 now finds no conviction in the file\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:f06bcf3b48b0561d78f91b002642ae53318b529b2956e5e1e42c5490ce558818\",\"dirtyDigest\":\"sha256:29e5975b3a4e093ccb63cfe40256b92c1dc6175ebb47544595dac073ab3a1d6f\",\"dirtyPaths\":{\"tests/test_stamp_verification.py\":\"3b34b16ecf96d205\"},\"head\":\"8db3d6c5\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:c1037b3c9ca6c8d07ef2d0a1bc71665062dcf84a7d096098051d3c8922c1caa0\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

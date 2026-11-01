@@ -6163,21 +6163,11 @@ def _follower_shot_cases(check):
                            "owner": "capture-screenshots", "needsBrowser": True}])
 
 
-# --- a wave member's tree outlives a crash, a failed setup and a block ----------
-# The setup every case below declares: it appends the directory it ran in to a
-# log outside the fixture, so the log is the evidence a tree was provisioned -
-# and, while a flag file exists, it removes the flag and fails instead, once.
-_SETUP = ("import os, sys\n"
-          "flag, log = sys.argv[1], sys.argv[2]\n"
-          "if os.path.exists(flag):\n"
-          "    os.remove(flag)\n"
-          "    sys.exit(3)\n"
-          "with open(log, 'a') as fh:\n"
-          "    fh.write(os.path.realpath(os.getcwd()) + '\\n')\n")
+# --- a wave member's kept tree is not run in the phase tree ---------------------
 
 
 def _provisioned(log):
-    """The trees the setup completed in, in order."""
+    """The directories the `_CWD_LOG` script logged, in order."""
     try:
         with open(log, encoding="utf-8") as fh:
             return [ln.strip() for ln in fh if ln.strip()]

@@ -352,9 +352,16 @@
         "file": "tests/test_stamp_verification.py:1815-1817",
         "issue": "ssr2 is a per-instance prose pin: it greps one docstring (_seeded_repo.__doc__) for '<N> git calls' and also requires the literal phrase 'same git calls every time'. It does NOT duplicate the prose-number lint (checked: _output_lints._prose_number_claim returns None for 'the init, config, add and commit are the same five git calls every time', for '5 git calls' and for 'twelve git calls', because 'N <noun>' is a shape the lint deliberately refuses, see prose_number_claims 'WHAT IT CANNOT SEE'), so it is not redundant with it. But it guards one sentence of one helper, not the class the lint leaves to the author, and the second conjunct pins wording: any rewording of the docstring turns the suite red with no behaviour changed. The task asked only to delete the number.",
         "resolution": "Keep the number-free check if a pin is wanted, but drop the 'same git calls every time' conjunct (and bool(doc) only if a missing docstring is deliberately tolerated); or drop ssr2 and rely on the author-enforced rule. Do not remove it on the grounds that the lint covers it: the lint does not."
+      },
+      {
+        "id": "P152-R36",
+        "severity": "low",
+        "file": "tests/test_drive_phase.py:6166",
+        "issue": "The task said delete the header lines; the diff keeps a one-line section header ('a wave member's kept tree is not run in the phase tree') it wrote itself. It is true (the section is _provisioned, _brief_of, _CWD_LOG, KEPT_RESTART_CLAUSE and the kept-restart cases) but is a rewrite, not a deletion. Also casesAdded ['kr1'] names a pre-existing case, not one this task added.",
+        "resolution": "None required; optionally drop the retitle or leave as is. casesAdded is harmless but inaccurate."
       }
     ],
-    "outcome": "[findings: 35 - 0 high, 12 med, 23 low; 27 with a recorded fix commit]"
+    "outcome": "[findings: 36 - 0 high, 12 med, 24 low; 27 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2441,7 +2448,7 @@
     {
       "id": "P152.27-6jb",
       "title": "fix P152-R23: The diff deleted `_setup_fixture`, the only reader of `_SETUP`,...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The diff deleted `_setup_fixture`, the only reader of `_SETUP`, so `_SETUP` is dead. The section header above it ('a wave member's tree outlives a crash, a failed setup and a block ... The setup every case below declares: ... removes the flag and fails instead, once') now describes cases that no longer exist: the next case is _kept_restart_cases, which logs through `_CWD_LOG`. ruff does not report an unused module constant.\n\nResolution asked: Delete `_SETUP` and the header lines that describe it. Keep `_provisioned` with a one-line docstring tied to the `_CWD_LOG` log it now reads.",
       "files": [
         "tests/test_drive_phase.py"
@@ -2462,14 +2469,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-01T03:28:54Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -2484,12 +2491,18 @@
       ],
       "fixes": [
         "P152-R23"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-01T03:35:43Z.20a21f",
+        "status": "passed",
+        "at": "2026-11-01T03:35:43Z"
+      }
     },
     {
       "id": "P152.28-6jb",
       "title": "fix P152-R27: The xf5 comment and the filed claim cite j2 as the proof that a...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The xf5 comment and the filed claim cite j2 as the proof that a dead holder is not waited out. j2 in tests/test__locks.py:134 calls judge() on a dead pid and shows it is stale; the case that times acquire() on a dead holder is wt4 (tests/test__locks.py:1805). wt3 (live holder waited out on the default) is correctly cited.\n\nResolution asked: Cite wt3 and wt4 in the comment instead of wt3 and j2; wt4 asserts E_STALE returned in under a second with wait=9.0.",
       "files": [
         "tests/test_audit_task.py"
@@ -2510,14 +2523,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-01T03:28:58Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -2532,12 +2545,18 @@
       ],
       "fixes": [
         "P152-R27"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-01T03:36:50Z.15239e",
+        "status": "passed",
+        "at": "2026-11-01T03:36:50Z"
+      }
     },
     {
       "id": "P152.29-6jb",
       "title": "The judged run's throwaway stand-in removes its tree through remove_tree, as every staged-fixture removal must",
-      "status": "pending",
+      "status": "in_progress",
       "description": "95d5549a made _judged's remove_throwaway stand-in call shutil.rmtree(holder) (tests/test_stamp_verification.py, in _judged's seams). tools/_suite.py case s23 forbids an unexcused bare removal of a staged fixture under tests/, so the full sweep is red at HEAD: windows refuses to unlink git's read-only loose objects and rmtree leaves them behind. Use remove_tree (from _suite or _harness) as the rest of the file does; do not add an exemption row.",
       "files": [
         "tests/test_stamp_verification.py"
@@ -2556,16 +2575,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-01T03:29:01Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-01T03:37:55Z.d00465",
+        "status": "passed",
+        "at": "2026-11-01T03:37:55Z"
+      }
     }
   ],
   "reviewPerTask": "signals",

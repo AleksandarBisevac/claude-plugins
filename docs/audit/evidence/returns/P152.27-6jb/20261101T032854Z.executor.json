@@ -1,0 +1,24 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task with expectRedFirst false: dead-constant and stale-header deletion, no behaviour change",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "Deleted the dead _SETUP constant and the three header comment lines describing the removed failed-setup cases in tests/test_drive_phase.py; retitled the section header to describe the kept-restart cases; _provisioned kept with docstring 'The directories the `_CWD_LOG` script logged, in order.' grep -rn _SETUP tests tools plugins: no remaining reader (only unrelated E_SETUP / CI_SETUP_ALLOWANCE names). Sweep: 1/1 files ok, 763 cases; ruff: All checks passed; vermin: runs, min 3.8, no violations listed. Dependants (sweep-costs.json, ci.yml, drive-phase.py, other suites, affected.py, reach-diff.py, and the 15 names used elsewhere): still correct, since only an unreferenced module constant, a comment header and one docstring changed and no name used elsewhere was touched.",
+    "descriptive": "Removes a dead test constant and a stale section header in test_drive_phase.py."
+  },
+  "testsAdded": [
+    "No new case: the deletion is locked by the existing kept-restart cases (kr1 is the first the suite prints) which still read _provisioned and pass."
+  ],
+  "casesAdded": [
+    "kr1"
+  ],
+  "claims": "claims:\n1 tests/test_drive_phase.py header and _provisioned docstring now say only what _CWD_LOG/_provisioned do\n2 n/a - no check touched; sweep still 763 cases ok\n3 grep -rn _SETUP tests tools plugins: only E_SETUP and CI_SETUP_ALLOWANCE (different names); no other reader of the deleted constant\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:78c9b5c96868cdb024aa7567665eaf2f5ad4b434a9fff8b461daf2dbd3f0b28c\",\"dirtyDigest\":\"sha256:1808bb0f638266519c691f870c399c131e8dd8e29a20c542c81367291ea15994\",\"dirtyPaths\":{\"tests/test_drive_phase.py\":\"8b00a2cd47b6c3fd\"},\"head\":\"8db3d6c5\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:ebfff70854248c3da158a99fdabca1035e55acf44d642352ec7cdf4f46825ed5\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

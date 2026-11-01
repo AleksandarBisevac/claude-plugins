@@ -1,0 +1,23 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_audit_task.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task, tests.expectRedFirst false; comment-only change, no behaviour to turn red",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "tests/test_audit_task.py line 20399: comment now cites (wt3, wt4) instead of (wt3, j2). Confirmed in tests/test__locks.py that wt3 (line 1788) asserts a holder that lets go inside the default bound is waited out (code == 0), and wt4 (line 1806) asserts acquire() with wait=9.0 on a dead holder returns E_STALE in under 1.0s. Gate: python3 tools/sweep-selftests.py tests/test_audit_task.py -> '1/1 files ok, 1200 cases' (the pipeline exit status was not captured; the summary line is the evidence). Dependants (test_commit_task_work.py, test__filed_returns.py, sweep-costs.json, audit-task.py, affected.py, sweep-selftests.py, CHANGELOG.md, pipeline-cost-levers.md): still correct, no code, name or case label changed. The filed claim that also cites j2 lives outside this task's files and was not touched.\n\nclaims:\n1 tests/test__locks.py:1788 (wt3 live holder waited out, code == 0) and :1806 (wt4 dead holder, wait=9.0, E_STALE, gone < 1.0) are the lines the rewritten comment now points at\n2 n/a - comment-only change, no check touched\n3 grep 'j2' near the xf5 comment: one hit in tests/test_audit_task.py:20399, fixed; other j2 labels left, they are unrelated cases\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written",
+    "descriptive": "The xf5 comment now cites wt3 and wt4, the cases that actually time acquire() on a live and a dead holder."
+  },
+  "testsAdded": [
+    "none new - comment-only correction; xf5 is the existing case the comment sits in"
+  ],
+  "casesAdded": [
+    "xf5"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:60e28d63a5485126fa1979b8750372aff35e95476a851dc6c18716b39df3aef4\",\"dirtyDigest\":\"sha256:f274f071c3c59065a6a7ec4264602e316c39c82c9233d31b3bf12ae0502d2df0\",\"dirtyPaths\":{\"tests/test_audit_task.py\":\"2828082a81c0e14b\"},\"head\":\"8db3d6c5\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:de3857a5c6ae16b764a73f1e3fa119afbc452ef8490bc771147df5fa7c37d4da\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}
