@@ -596,9 +596,8 @@ slice is `python3 tools/gate-parity.py --list`.
   named in the change as deliberately left. What it measures, when it exits 1 and
   every reason it refuses with 2 are stated once, by
   `python3 tools/reach-diff.py --help`, and this entry repeats none of it: an
-  earlier copy here described refusals the code did not make. Each refusal it
-  prints carries a name from that text, and its selftest goes red when a name
-  there has no case or a refusal site names one not there. Nothing runs it for
+  earlier copy here described refusals the code did not make - and what holds
+  the code to that text is stated there too, not here. Nothing runs it for
   you: it is no slice of `verify.sh` and no hook asks for it, so it runs where a
   task names it in its gate, and otherwise a review is where a missing run is
   found.

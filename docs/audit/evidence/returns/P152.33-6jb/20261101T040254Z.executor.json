@@ -1,0 +1,23 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_stamp_verification.py tools/_suite.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task with expectRedFirst false: ssr2 is relaxed, not added. Its remaining check was shown to go red in memory: the same regex over 'the init, config, add and commit are the same five git calls every time' finds ['five git calls'] so bool(doc) and not counted is False; over '5 git calls' it is False; over a harmlessly reworded docstring it is True.",
+    "at": "2026-11-01"
+  },
+  "outcome": {
+    "technical": "tests/test_stamp_verification.py ssr2: dropped the literal-phrase conjunct 'same git calls every time' in doc; the assertion is now bool(doc) and not counted (bool(doc) kept so a missing docstring is not read as a clean one; counted still catches '<digit or spelled N> git calls'). Sweep: python3 tools/sweep-selftests.py tests/test_stamp_verification.py tools/_suite.py exit 0, 2/2 files ok, 395 cases; direct --selftest run printed PASS ssr2 and ALL PASS 360/360. Dependants (.github/sweep-costs.json, tests/test__filed_returns.py, tools/affected.py, tools/sweep-selftests.py, tools/verify.sh, PLUGIN-BUILD-GUIDE.md; names _crlf_cases, _scan, _worktrees): all still correct, the change is one boolean conjunct inside one case, no name, label, block, case count or cost changes.",
+    "descriptive": "A harmless rewording of _seeded_repo's docstring no longer turns the suite red; the no-git-call-count check stays."
+  },
+  "testsAdded": [
+    "ssr2 relaxed: docstring must exist and state no '<N> git calls' (digit or spelled), no longer pins a phrase"
+  ],
+  "casesAdded": [
+    "ssr2"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:6632ba412c78da81a03aa56a62898540d2bf429f1dcba655678742015c2ed432\",\"dirtyDigest\":\"sha256:29e5975b3a4e093ccb63cfe40256b92c1dc6175ebb47544595dac073ab3a1d6f\",\"dirtyPaths\":{\"tests/test_stamp_verification.py\":\"99314a8abee4be10\"},\"head\":\"735bb801\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:5f1bdeecfa0dc78be06d716206b8f3917553b551476074fd7b87c9ad2966fd75\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

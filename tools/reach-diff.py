@@ -21,7 +21,12 @@ THIS TEXT IS THE CONTRACT, and the only copy of it: what the run measures, when 
 exits 1, and - in the list at the end - every reason it refuses with 2. Each
 refusal printed carries its name from that list, and `--selftest` fails when a
 name there has no case asserting it, when a case asserts a name not there, or
-when a refusal site in the code names one not there.
+when a refusal site in the code names one not there - the sites read off this
+file's own syntax tree, so a site no case reaches is held all the same. The same
+walk fails an exit of 2 written anywhere but where a refusal is printed and where
+a result starts, and an exit of 1 written anywhere but where lost lines are
+counted; and a result that reaches the exit with 2 and no refusal named, or with
+1 and no line lost, is refused as `internal` rather than exiting as given.
 
 THE HEAD A GATE NAMES IS THE WORKING TREE. A task's gate runs over the task's
 uncommitted work, and a commit is not that work: `--head HEAD` over an uncommitted
@@ -162,11 +167,12 @@ once, so a line the head reaches only sometimes is lost in the runs where it
 misses it.
 
 EXIT CODES. 0 - nothing lost; or the head is the base, or only files that do
-not decide differ, under `--allow-same`. 1 - a line lost. 2 - no comparison
-made: a reach measured over a suite that did not finish, or over sides that
-cannot be told apart, is not the suite's reach. Each refusal prints a line
-`reach-diff: no comparison made (NAME) - ...`, the result carries the first
-NAME as `refusal`, and these are all of them:
+not decide differ, under `--allow-same`. 1 - a line lost, and nothing else: an
+error the run did not expect is refused, never left to exit 1 with a traceback.
+2 - no comparison made: a reach measured over a suite that did not finish, or
+over sides that cannot be told apart, is not the suite's reach. Each refusal
+prints a line `reach-diff: no comparison made (NAME) - ...`, the result carries
+the first NAME as `refusal`, and these are all of them:
 
   [usage] the command line is not one this accepts.
   [base-worktree] `--base WORKTREE`: the base is the state a change started
@@ -198,6 +204,9 @@ NAME as `refusal`, and these are all of them:
       run: compared by case id - the word after `PASS` or `FAIL` on each case
       line - when both runs printed case lines, else by the contract's case
       count; the refusal says which it compared.
+  [internal] the run ended in an error it did not expect - its traceback is
+      printed after the line - or with an exit code its result does not
+      support: 2 naming no refusal, or 1 with no line lost.
 """
 import ast
 import difflib
@@ -213,7 +222,8 @@ import sys
 import tarfile
 import tempfile
 import time
-from collections import Counter
+import traceback
+from collections import Counter, namedtuple
 from concurrent import futures
 
 # The path bootstrap, adapted: this file lives in tools/, outside scripts/, so the
@@ -268,7 +278,8 @@ USER_SITE_PROBE = "import site; print(site.ENABLE_USER_SITE)"
 
 # --- the refusals ------------------------------------------------------------
 # The names are read off the docstring's list, the one place the contract is
-# stated; `_refuse` takes no other, and `--selftest` holds a case for each.
+# stated; `_refuse` takes no other, `--selftest` holds a case for each, and
+# `refusal_sites()` holds every site in the code to the list.
 _DOC_REFUSAL = re.compile(r"^  \[([a-z][a-z-]*)\] ", re.M)
 REFUSAL_LINE = re.compile(r"^reach-diff: no comparison made \(([a-z][a-z-]*)\) - ",
                           re.M)
@@ -297,6 +308,20 @@ def fresh_result():
             "tracers": [], "processes": {}, "blocks": {}, "untraced": {},
             "hook": None, "blind": {}, "same": False, "rechecked": [],
             "flaky": []}
+
+
+# A refusal decided where no result is at hand, and handed back to the caller
+# that prints it. Made by `_refusal` alone, so its name is written at a site the
+# walk reads; a pair built by hand has no `.name`, and printing it is an error.
+Refusal = namedtuple("Refusal", "name why")
+
+
+def _refusal(name, why):
+    """A refusal to print later. The name is checked here as `_refuse` checks
+    it, so an unlisted one fails where it is made."""
+    if name not in REFUSALS:
+        raise ValueError("refusal %r is not one the docstring names" % (name,))
+    return Refusal(name, why)
 
 
 def _refuse(result, out, name, why):
@@ -944,26 +969,26 @@ def _prepare(repo, name, rev, module, suite, scratch, tracer, sweep,
     else:
         sha = resolve_rev(repo, rev)
         if sha is None:
-            return None, ("revision", "%s revision %r: git cannot resolve it in "
-                                      "%s" % (name, rev, repo))
+            return None, _refusal("revision", "%s revision %r: git cannot resolve "
+                                          "it in %s" % (name, rev, repo))
         shown = sha[:12]
         os.makedirs(export)
         why = export_rev(repo, sha, export)
     if why:
-        return None, ("export", "%s revision %s: %s" % (name, rev, why))
+        return None, _refusal("export", "%s revision %s: %s" % (name, rev, why))
     sources = {}
     for role, rel in (("module", module), ("suite", suite)):
         path = os.path.join(export, *rel.split("/"))
         if not os.path.isfile(path):
-            return None, ("missing", "%s revision %s holds no %s at %s" % (
+            return None, _refusal("missing", "%s revision %s holds no %s at %s" % (
                 name, rev, role, rel))
         with io.open(path, encoding="utf-8", errors="replace") as fh:
             sources[role] = fh.read()
     try:
         ast.parse(sources["module"])
     except (SyntaxError, ValueError) as exc:
-        return None, ("unparsable", "%s revision %s: the module does not "
-                                    "parse: %s" % (name, rev, exc))
+        return None, _refusal("unparsable", "%s revision %s: the module does "
+                                            "not parse: %s" % (name, rev, exc))
     out_dir = os.path.join(scratch, name + "-traces")
     os.makedirs(out_dir)
     labels, whole = suite_blocks(sweep, sources["suite"])
@@ -1129,7 +1154,7 @@ def compare(repo, module, suite, base, head, jobs=None, timeout=None,
             side, refused = _prepare(repo, name, rev, module, suite, scratch,
                                      tracer, sweep, environ)
             if side is None:
-                return _refuse(result, out, refused[0], refused[1])
+                return _refuse(result, out, refused.name, refused.why)
             sides.append(side)
         why, differing = same_side(repo, sides[0], sides[1])
         if why:
@@ -1152,7 +1177,7 @@ def compare(repo, module, suite, base, head, jobs=None, timeout=None,
             again, refused = _prepare(repo, "base-again", base, module, suite,
                                       scratch, tracer, sweep, environ)
             if again is None:
-                return None, None, refused[1]
+                return None, None, refused.why
             return (_measure(sweep, [(again, label) for label in labels], suite,
                              jobs, timeout, pycache),
                     read_traces(again["out"]), None)
@@ -1211,17 +1236,18 @@ RECHECK_PROCESSES = (
 
 
 def _recheck_refusal(rows, again, first, first_rows):
-    """`(refusal name, why)` when the recheck cannot stand beside the base's
-    first run, or None. The docstring's `recheck-` refusals are the rules; each
+    """The `Refusal` when the recheck cannot stand beside the base's first
+    run, or None. The docstring's `recheck-` refusals are the rules; each
     comparison is an equality, so a difference in either direction refuses."""
     failed = [r for r in rows if not r["ok"]]
     if failed:
-        return "recheck-failed", "%d of %d blocks run again did not pass: %s" % (
-            len(failed), len(rows), "; ".join(
-                "%s: %s" % (r["label"], r["why"]) for r in failed))
+        return _refusal("recheck-failed", "%d of %d blocks run again did not "
+                        "pass: %s" % (len(failed), len(rows), "; ".join(
+                            "%s: %s" % (r["label"], r["why"]) for r in failed)))
     if again["unreadable"]:
-        return "recheck-unreadable", "%d trace files could not be read: %s" % (
-            len(again["unreadable"]), "; ".join(again["unreadable"]))
+        return _refusal("recheck-unreadable", "%d trace files could not be read: "
+                        "%s" % (len(again["unreadable"]),
+                                "; ".join(again["unreadable"])))
     before = dict((r["label"], r) for r in first_rows if r["side"] == "base")
     for row in rows:
         label = row["label"]
@@ -1229,23 +1255,24 @@ def _recheck_refusal(rows, again, first, first_rows):
             was = first[key].get(label, Counter())
             now = again[key].get(label, Counter())
             if was != now:
-                return "recheck-processes", (
+                return _refusal("recheck-processes", (
                     "block %s: its %s differ from its first run's - only in the "
                     "first run: %s; only run again: %s" % (
-                        label, what, render_keys(was - now), render_keys(now - was)))
+                        label, what, render_keys(was - now),
+                        render_keys(now - was))))
         then = before.get(label) or {}
         was, now = case_ids(then.get("output")), case_ids(row["output"])
         if was is not None and now is not None:
             if was != now:
-                return "recheck-cases", (
+                return _refusal("recheck-cases", (
                     "block %s ran other cases than in its first run, compared "
                     "by case id - only in the first run: %s; only run again: %s"
-                    % (label, _render_ids(was - now), _render_ids(now - was)))
+                    % (label, _render_ids(was - now), _render_ids(now - was))))
         elif row["cases"] != then.get("cases"):
-            return "recheck-cases", (
+            return _refusal("recheck-cases", (
                 "block %s ran %s cases and %s in its first run, compared by the "
                 "case count, since a run printed no case id" % (
-                    label, row["cases"], then.get("cases")))
+                    label, row["cases"], then.get("cases"))))
     return None
 
 
@@ -1331,13 +1358,13 @@ def _judge(sides, rows, result, out, began, jobs, recheck):
                                   base["labels"])
         result["rechecked"] = [label or WHOLE_FILE for label in labels]
         again_rows, again, why = recheck(labels)
-        refused = (("recheck-export", why) if why else
+        refused = (_refusal("recheck-export", why) if why else
                    _recheck_refusal(again_rows, again, traces["base"], rows))
         if refused:
-            _refuse(result, out, refused[0], "%d lines reached at %s and not at "
+            _refuse(result, out, refused.name, "%d lines reached at %s and not at "
                     "%s could not be confirmed by running the blocks that "
                     "reached them again: %s" % (len(lost), base["rev"],
-                                                head["rev"], refused[1]))
+                                                head["rev"], refused.why))
             for row in [r for r in again_rows or () if not r["ok"]]:
                 for line in _tail(row["output"], 12):
                     out.write("      %s\n" % (line,))
@@ -1426,21 +1453,190 @@ def parse_args(argv):
     return opts, None
 
 
-def main(argv, out=None):
-    out = out if out is not None else sys.stdout
+def _command(argv, out):
+    """The result of the command line `argv`, printed to `out`."""
     if argv and argv[0] in ("-h", "--help"):
         out.write(__doc__.strip() + "\n")
-        return 0
+        return dict(fresh_result(), code=0)
     opts, why = parse_args(argv)
     if opts is None:
-        _refuse(fresh_result(), out, "usage", why)
+        result = _refuse(fresh_result(), out, "usage", why)
         out.write(USAGE)
-        return 2
+        return result
     repo = os.path.abspath(opts.get("repo") or REPO)
     return compare(repo, opts["module"], opts["suite"], opts["base"],
                    opts["head"], jobs=opts.get("jobs"),
                    timeout=opts.get("timeout"), tracer=opts.get("tracer"),
-                   out=out, allow_same=opts.get("allow_same", False))["code"]
+                   out=out, allow_same=opts.get("allow_same", False))
+
+
+def settle(result, out):
+    """The exit code `result` supports. A 2 naming no refusal, a 1 with no line
+    lost, or a code EXIT CODES does not state is refused as `internal`: each is
+    a path that decided an exit without saying why, and printing its code as
+    given would make the code mean something the contract does not say."""
+    code = result.get("code")
+    if code == 2 and result.get("refusal") is None:
+        why = "the run ended with exit 2 and named no refusal"
+    elif code == 1 and not result.get("gaps"):
+        why = "the run ended with exit 1 and lost no line"
+    elif code not in (0, 1, 2):
+        why = "the run ended with exit %r, which EXIT CODES does not state" % (
+            code,)
+    else:
+        return code
+    return _refuse(result, out, "internal", why)["code"]
+
+
+def main(argv, out=None, run=None):
+    """The exit code of the command line `argv`. `run` makes the result,
+    `_command` when None - threaded so a case can hand it a run that raises
+    or that returns a result no path should."""
+    out = out if out is not None else sys.stdout
+    run = run if run is not None else _command
+    try:
+        result = run(argv, out)
+    except Exception as exc:
+        result = _refuse(fresh_result(), out, "internal", "%s: %s; its "
+                         "traceback follows" % (type(exc).__name__, exc))
+        out.write(traceback.format_exc())
+    return settle(result, out)
+
+
+# --- where an exit is decided -------------------------------------------------
+# The contract's list is held to the code by reading the code rather than by
+# running it: a refusal site no case reaches is still a site, and a path that
+# writes its own line and returns its own code passes every case that never
+# takes it. The walk reads every top-level statement above the selftest section,
+# and the `__main__` block.
+_SELFTEST_MARK = re.compile(r"^# --- selftest -", re.M)
+# Each exit code other than 0, and the functions allowed to write it into a
+# result: 2 where a result is made and where a refusal is printed, 1 where lost
+# lines are counted. `settle` reads a code and writes none.
+_CODE_WRITERS = {2: ("fresh_result", "_refuse"), 1: ("_judge",)}
+_EXIT_CALLS = ("sys.exit", "os._exit", "exit", "quit", "SystemExit")
+
+
+def _called(call):
+    """The dotted name `call` calls, or ''."""
+    func = call.func
+    if isinstance(func, ast.Name):
+        return func.id
+    if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
+        return "%s.%s" % (func.value.id, func.attr)
+    return ""
+
+
+def _text(node):
+    """The string `node` is when it is a string literal, else None."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
+
+
+def _ints(node):
+    """Every whole-number literal in `node`, booleans not counted."""
+    return set(n.value for n in ast.walk(node)
+               if isinstance(n, ast.Constant) and isinstance(n.value, int)
+               and not isinstance(n.value, bool))
+
+
+def _argument(call, index, keyword):
+    if len(call.args) > index:
+        return call.args[index]
+    return next((k.value for k in call.keywords if k.arg == keyword), None)
+
+
+def _subscript_key(target):
+    """The key node of a subscript, the same on 3.8 (wrapped in `Index`) and
+    after."""
+    key = target.slice
+    return key.value if type(key).__name__ == "Index" else key
+
+
+def _code_values(node):
+    """The values `node` writes under the result's `code` key: a subscript
+    assigned, a dict literal's entry, or a `code=` keyword."""
+    if isinstance(node, (ast.Assign, ast.AugAssign)):
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        return [node.value for t in targets if isinstance(t, ast.Subscript)
+                and _text(_subscript_key(t)) == "code"]
+    if isinstance(node, ast.Dict):
+        return [v for k, v in zip(node.keys, node.values) if _text(k) == "code"]
+    if isinstance(node, ast.Call):
+        return [k.value for k in node.keywords if k.arg == "code"]
+    return []
+
+
+def _is_main_guard(node):
+    return (isinstance(node, ast.If) and isinstance(node.test, ast.Compare)
+            and isinstance(node.test.left, ast.Name)
+            and node.test.left.id == "__name__")
+
+
+def _site(owner, node, what):
+    return "%s line %d: %s" % (owner, node.lineno, what)
+
+
+def refusal_sites(source):
+    """What `source`'s code says about its refusals and its exits, read off its
+    syntax tree: `names`, every refusal name written at a site - the name
+    argument of `_refuse`, the first of `_refusal`; `sites`, how many sites
+    were read; `unnamed`, each site whose name is not written there and each
+    `Refusal` made outside `_refusal`; `exits`, each exit of 1 or 2 decided
+    outside `_CODE_WRITERS` - a literal returned, an exit called or raised
+    with one, a `code` written with one; `scanned`, False when the source has
+    no selftest section to stop at, so nothing was read.
+
+    `_refuse` may also be handed `<x>.name`, a `Refusal` passed on: its name was
+    written where `_refusal` made it. WHAT IT CANNOT SEE: an object other than a
+    `Refusal` carrying a `.name` handed to `_refuse` - the runtime check in
+    `_refuse` still refuses an unlisted name, at the moment it is reached."""
+    found = {"names": set(), "sites": 0, "unnamed": [], "exits": [],
+             "scanned": False}
+    mark = _SELFTEST_MARK.search(source)
+    if mark is None:
+        return found
+    found["scanned"] = True
+    last = source.count("\n", 0, mark.start()) + 1
+    for top in ast.parse(source).body:
+        if top.lineno >= last and not _is_main_guard(top):
+            continue
+        owner = getattr(top, "name", "<module>")
+        for node in ast.walk(top):
+            _read_node(found, owner, node)
+    return found
+
+
+def _read_node(found, owner, node):
+    """Fold what one syntax node says into `found`."""
+    exits = []
+    for value in _code_values(node):
+        exits += ["writes exit %d" % (code,) for code in sorted(
+            _ints(value) & set(_CODE_WRITERS)) if owner not in _CODE_WRITERS[code]]
+    if isinstance(node, ast.Return) and isinstance(node.value, ast.Constant):
+        exits += ["returns %d" % (code,) for code in sorted(
+            _ints(node.value) & set(_CODE_WRITERS))]
+    called = _called(node) if isinstance(node, ast.Call) else ""
+    if called in _EXIT_CALLS and node.args and isinstance(node.args[0],
+                                                          ast.Constant):
+        exits += ["exits %d via %s" % (code, called) for code in sorted(
+            _ints(node.args[0]) & set(_CODE_WRITERS))]
+    found["exits"] += [_site(owner, node, what) for what in exits]
+    if called == "Refusal" and owner != "_refusal":
+        found["unnamed"].append(_site(owner, node,
+                                      "a Refusal made outside _refusal"))
+    if called not in ("_refuse", "_refusal"):
+        return
+    name = _argument(node, 2, "name") if called == "_refuse" else (
+        _argument(node, 0, "name"))
+    found["sites"] += 1
+    if _text(name) is not None:
+        found["names"].add(_text(name))
+    elif not (called == "_refuse" and isinstance(name, ast.Attribute)
+              and name.attr == "name"):
+        found["unnamed"].append(_site(owner, node,
+                                      "%s names no refusal there" % (called,)))
 
 
 # --- selftest -----------------------------------------------------------------
@@ -2533,6 +2729,117 @@ def _hook_cases(check, root):
           and sorted(traces["written_by_block"]) == ["installed"])
 
 
+def _own_source():
+    with io.open(os.path.abspath(__file__), encoding="utf-8") as fh:
+        return fh.read()
+
+
+def _planted(source, body):
+    """`source` with a function holding `body` added just above the selftest
+    section, where the walk reads: a site no case can reach, since nothing
+    calls it."""
+    mark = _SELFTEST_MARK.search(source)
+    planted = "def _planted(result, out, name):\n    %s\n\n\n" % (body,)
+    return source[:mark.start()] + planted + source[mark.start():]
+
+
+def _site_cases(check):
+    own = _own_source()
+    sites = refusal_sites(own)
+    check("rd64 the refusal names this file's own code writes at its refusal "
+          "sites - read off its syntax tree, reached by a case or not - are "
+          "the names --help lists, both ways: only in the code %r, only in the "
+          "list %r; sites read %d; unnamed %r; exits decided elsewhere %r"
+          % (sorted(sites["names"] - set(REFUSALS)),
+             sorted(set(REFUSALS) - sites["names"]), sites["sites"],
+             sites["unnamed"], sites["exits"]),
+          sites["scanned"] and sites["sites"] > 0
+          and sites["names"] == set(REFUSALS)
+          and not sites["unnamed"] and not sites["exits"])
+    for body in ('_refuse(result, out, "never-listed", "why")',
+                 'return _refusal("never-listed", "why")'):
+        found = refusal_sites(_planted(own, body))
+        check("rd65 a site no case reaches that names a refusal --help does not "
+              "list is read as a name the code writes: %s -> %r"
+              % (body, sorted(found["names"] - set(REFUSALS))),
+              found["scanned"]
+              and found["names"] - set(REFUSALS) == set(["never-listed"]))
+    for body in ('_refuse(result, out, name, "why")',
+                 'return _refusal(name, "why")',
+                 'return Refusal("revision", "why")'):
+        found = refusal_sites(_planted(own, body))
+        check("rd66 a site whose refusal name is not written there, or a "
+              "refusal made without `_refusal`, is reported rather than read "
+              "past: %s -> %r" % (body, found["unnamed"]),
+              found["scanned"] and len(found["unnamed"]) == 1)
+    for body in ("return 2", "return 1", "sys.exit(2)", "raise SystemExit(1)",
+                 'result["code"] = 2', 'return {"code": 1}',
+                 "return dict(result, code=2)"):
+        found = refusal_sites(_planted(own, body))
+        check("rd67 an exit of 1 or 2 decided anywhere but the one place each "
+              "is decided is reported: %s -> %r" % (body, found["exits"]),
+              found["scanned"] and len(found["exits"]) == 1)
+    after = own + "\n\ndef _late(result, out):\n    return 2\n"
+    found = refusal_sites(after)
+    unmarked = refusal_sites(own.replace("# --- selftest ", "# --- tests "))
+    check("rd68 the walk reads the code above the selftest section and nothing "
+          "below it, and a source with no such section is not read as clean: "
+          "below %r; unmarked scanned=%r" % (found["exits"], unmarked["scanned"]),
+          found["scanned"] and not found["exits"]
+          and unmarked["scanned"] is False)
+
+
+def _exit_cases(check, seen):
+    def quiet(run):
+        # An exception escaping `main` is this case's failure, reported under
+        # its id rather than ending the suite.
+        out = io.StringIO()
+        try:
+            return main(["a", "b"], out=out, run=run), out.getvalue()
+        except Exception as exc:
+            return -1, "%s escaped main: %r" % (out.getvalue(), exc)
+
+    def raising(argv, out):
+        raise RuntimeError("planted failure")
+
+    def unlisted(argv, out):
+        return _refuse(fresh_result(), out, "never-listed", "why")
+    for run, what in ((raising, "planted failure"), (unlisted, "never-listed")):
+        code, text = quiet(run)
+        check("rd69 an error the run did not expect exits 2 under `internal`, "
+              "with its traceback printed, never 1: %d\n%s" % (code, text),
+              code == 2 and _refused(seen, text, "internal")
+              and "Traceback" in text and what in text)
+
+    def unnamed(argv, out):
+        return fresh_result()
+    code, text = quiet(unnamed)
+    check("rd70 a run that ends with exit 2 and names no refusal is refused "
+          "as `internal`: %d\n%s" % (code, text),
+          code == 2 and _refused(seen, text, "internal"))
+
+    clean = dict(fresh_result(), code=0)
+    code, text = quiet(lambda argv, out: dict(clean, code=1))
+    check("rd71 a run that ends with exit 1 and lost no line is refused as "
+          "`internal`, so 1 means a line lost and nothing else: %d\n%s"
+          % (code, text),
+          code == 2 and _refused(seen, text, "internal"))
+    # The other direction: the settling must not fire on an honest result.
+    lost = dict(clean, code=1, gaps=[("pick", 3, 'return "positive"')])
+    code_lost, text_lost = quiet(lambda argv, out: lost)
+    code_named, text_named = quiet(
+        lambda argv, out: _refuse(fresh_result(), out, "usage", "why"))
+    code_clean, text_clean = quiet(lambda argv, out: dict(clean))
+    check("rd72 ...and an honest result passes through untouched: a line lost "
+          "exits 1 with no refusal %d %r; a named refusal exits 2 under its own "
+          "name only %d %r; nothing lost exits 0 %d %r"
+          % (code_lost, text_lost, code_named, text_named, code_clean,
+             text_clean),
+          code_lost == 1 and not refusals_in(text_lost)
+          and code_named == 2 and refusals_in(text_named) == ["usage"]
+          and code_clean == 0 and not refusals_in(text_clean))
+
+
 def _contract_cases(check, seen):
     named = list(REFUSALS)
     asserted = set(seen)
@@ -2570,6 +2877,8 @@ def _cases(check):
         _worktree_cases(check, root, seen)
         _judge_cases(check, os.path.join(root, "judge"), seen)
         _hook_cases(check, os.path.join(root, "hooked"))
+        _site_cases(check)
+        _exit_cases(check, seen)
         _contract_cases(check, seen)
     finally:
         from _suite import remove_tree
