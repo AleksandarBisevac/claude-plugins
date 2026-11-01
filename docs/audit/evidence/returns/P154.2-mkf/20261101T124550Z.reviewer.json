@@ -1,0 +1,15 @@
+{
+ "findings": [],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Clause: add 'an empty argument in the middle and an unquoted last argument ending in a backslash' to WINDOWS_ARGS so the 'if word' and no-post-loop-append mutants turn rd92 red. Diff: WINDOWS_ARGS gains '' between 'a\"b' and the quoted dir, and a last 'E:\\\\out\\\\' (unquoted, ends in a backslash); plus new rd94. The task's premise that 'if word' drops a mid-line empty argument is wrong, and the executor's correction holds: list2cmdline writes an empty argument as \"\", the quote branch appends '' to the word list, so `word` is a non-empty list at the separator and `if word` is equivalent to `if started` on every list2cmdline output (tools/reach-diff.py:455-461, 466). It differs only where word == [] at a separator, i.e. consecutive whitespace, which list2cmdline never writes; hence the hand-built line in rd94. The filed outcome describes the diff accurately; the dependant (CONTRIBUTING.md names the file by path only) is untouched.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "tests.expectRedFirst is false on this tdd task; the executor filed not-attempted with that basis. I did, however, run the mutants myself (below).",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "tests.gate's selftests entry is `python3 tools/sweep-selftests.py`, which runs the whole tree, so no narrower selection can be read; the question is not asked."
+ },
+ "verdict": "clean",
+ "tasks": []
+}

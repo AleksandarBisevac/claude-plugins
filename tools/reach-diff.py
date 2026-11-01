@@ -3187,10 +3187,13 @@ def _hook_cases(check, root):
 
 
 # Arguments a Windows suite hands a module child: a drive letter, mixed case, a
-# space, an embedded quote, a backslash run ending an argument that must be quoted,
-# and an empty argument - each a rule of the C runtime's splitting.
-WINDOWS_ARGS = ("exit-hard", "C:\\Users\\Some One\\Mixed Case\\x", 'a"b',
-                "D:\\dir with space\\", "back\\\\slash\\", "")
+# space, an embedded quote, an empty argument between two others, a backslash run
+# ending an argument that must be quoted, and a last argument that needs no quotes
+# yet ends in a backslash - each a rule of the C runtime's splitting. The empty
+# argument sits mid-line and the unquoted backslash comes last, so neither the
+# separator test inside the loop nor the append after it can be dropped unseen.
+WINDOWS_ARGS = ("exit-hard", "C:\\Users\\Some One\\Mixed Case\\x", 'a"b', "",
+                "D:\\dir with space\\", "back\\\\slash\\", "E:\\out\\")
 
 
 def _popen_event(root, hook_dir, name, line):
@@ -3229,6 +3232,17 @@ def _windows_event_cases(check, root, hook_dir):
           "a quoted argument is no module child: nothing untraced: %r %r %r %r"
           % (code, said, line, traces["untraced"]),
           code == 0 and traces["written"] == 1 and traces["untraced"] == {})
+    # Whitespace `list2cmdline` never writes - a run of spaces and tabs between
+    # arguments and a tail after the last one - separates and adds nothing: an
+    # argument exists only once a character has started it, so a splitter that
+    # asks whether the word holds anything reads an empty one out of every gap.
+    line = subprocess.list2cmdline([sys.executable, module]) + "  \t exit-hard \t x \t "
+    code, said, traces = _popen_event(root, hook_dir, "nt-gaps", line)
+    want = {"nt-gaps": Counter({("<module>", "exit-hard", "x"): 1})}
+    check("rd94 ...and a run of spaces and tabs between arguments, or after the "
+          "last, is one separator and no empty argument: %r %r %r %r"
+          % (code, said, line, traces["untraced"]),
+          code == 0 and traces["written"] == 1 and traces["untraced"] == want)
 
 
 def _own_source():

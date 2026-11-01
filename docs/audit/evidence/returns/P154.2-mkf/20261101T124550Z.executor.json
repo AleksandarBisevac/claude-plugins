@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "own-tests": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "tests.expectRedFirst is false on this tdd task: it names no case to prove a red by, so no red-first proof is owed",
+    "at": "2026-11-01T12:51:24Z"
+  },
+  "outcome": {
+    "technical": "tools/reach-diff.py only. WINDOWS_ARGS now carries an empty argument mid-line and an unquoted last argument ending in a backslash (E:\\out\\), round-trip equality through list2cmdline kept as the assertion; comment above it rewritten. Finding corrected: the in-loop 'if started' -> 'if word' mutant does NOT drop a mid-line empty argument (the splitter appends '' to the word before any separator test, so the word is never empty and the mutant is equivalent on every list2cmdline output); it differs only on whitespace list2cmdline never writes. So a new case rd94 feeds a hand-built line with a run of spaces and tabs between arguments and after the last, expecting no empty argument. Mutation in a scratch mirror (copy of plugins/, tools/, tests/ under the scratchpad, mutation landed via count==1 assert, __pycache__ purged, file restored in the same command, cmp against the checkout identical): 'if word:' -> rd94 FAIL, 162/163; deleting the post-loop backslash append -> rd92 FAIL, 162/163; before rd94 existed the 'if word:' mutant stayed 162/162 green. Real file: python3 tools/reach-diff.py --selftest 163/163; python3 tools/sweep-selftests.py tools/reach-diff.py exit 0, 163 cases; ruff check tools/reach-diff.py clean. Dependant CONTRIBUTING.md names this file by path only: still correct, nothing it says about reach-diff changed. The 8 shared names (hook_line, rebound, parse_args, settle ...) are untouched.",
+    "descriptive": "rd92 now fails if the trailing-backslash append is dropped, and a new rd94 fails if the splitter reads an empty argument out of repeated whitespace."
+  },
+  "testsAdded": [
+    "rd92 argument tuple gained a mid-line empty argument and an unquoted trailing-backslash last argument",
+    "rd94: a run of spaces and tabs between arguments and after the last yields one separator and no empty argument"
+  ],
+  "claims": "claims:\n1 n/a - comments state only the argument shapes the fixture holds; tools/reach-diff.py WINDOWS_ARGS and rd94 line carry them\n2 post-loop append deleted -> rd92 red (162/163); 'if word:' -> rd94 red (162/163); both restored, cmp identical, real file 163/163; 'if word:' was green (162/162) against the fixture before rd94\n3 n/a - not a fix of a reported code defect; the sibling mutant class (separator test) is covered by rd94\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:9bd14c672c2bb2d5d953ecbfae6e877174006e21ad7efdead2e43292ee4fbb10\",\"dirtyDigest\":\"sha256:21378ebd69a45ba3ba9273ab775bd39592d39e352a8b7d0eafed915828d422d6\",\"dirtyPaths\":{\"tools/reach-diff.py\":\"d72183570773347b\"},\"head\":\"a5c8d566\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tools/reach-diff.py\"],\"scopeDigest\":\"sha256:55d4b936fb50792984c29682ca74b37dcb01f69bcd36de4b38b97fce2b3101e9\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}
