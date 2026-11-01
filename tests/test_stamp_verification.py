@@ -844,8 +844,7 @@ def _judged(root, man, cmd, key, *extra, module=None):
         return _ran(rec[slot]), lay_over(top, path, rels)
 
     def remove_throwaway(_top, holder, _path, wait=None, clock=None):
-        shutil.rmtree(holder)
-        return True
+        return _harness.remove_tree(holder)
 
     def git(top, args, *rest, **kw):
         if list(args) == ["rev-parse", "HEAD"]:

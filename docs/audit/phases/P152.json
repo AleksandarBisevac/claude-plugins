@@ -287,8 +287,10 @@
         "severity": "low",
         "file": "tests/test_audit_task.py:20397-20399",
         "issue": "The xf5 comment and the filed claim cite j2 as the proof that a dead holder is not waited out. j2 in tests/test__locks.py:134 calls judge() on a dead pid and shows it is stale; the case that times acquire() on a dead holder is wt4 (tests/test__locks.py:1805). wt3 (live holder waited out on the default) is correctly cited.",
-        "resolution": "Cite wt3 and wt4 in the comment instead of wt3 and j2; wt4 asserts E_STALE returned in under a second with wait=9.0.",
-        "fixTask": "P152.28-6jb"
+        "resolution": "fixed in P152.28-6jb (0644125ccefa): Cite wt3 and wt4 in the comment instead of wt3 and j2; wt4 asserts E_STALE returned in under a second with wait=9.0.",
+        "fixTask": "P152.28-6jb",
+        "commit": "0644125ccefa",
+        "status": "fixed"
       },
       {
         "id": "P152-R28",
@@ -363,7 +365,7 @@
         "resolution": "None required; optionally drop the retitle or leave as is. casesAdded is harmless but inaccurate."
       }
     ],
-    "outcome": "[findings: 36 - 0 high, 12 med, 24 low; 28 with a recorded fix commit]"
+    "outcome": "[findings: 36 - 0 high, 12 med, 24 low; 29 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2517,7 +2519,7 @@
     {
       "id": "P152.28-6jb",
       "title": "fix P152-R27: The xf5 comment and the filed claim cite j2 as the proof that a...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The xf5 comment and the filed claim cite j2 as the proof that a dead holder is not waited out. j2 in tests/test__locks.py:134 calls judge() on a dead pid and shows it is stale; the case that times acquire() on a dead holder is wt4 (tests/test__locks.py:1805). wt3 (live holder waited out on the default) is correctly cited.\n\nResolution asked: Cite wt3 and wt4 in the comment instead of wt3 and j2; wt4 asserts E_STALE returned in under a second with wait=9.0.",
       "files": [
         "tests/test_audit_task.py"
@@ -2540,14 +2542,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "0644125ccefa",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tests/test_audit_task.py line 20399: comment now cites (wt3, wt4) instead of (wt3, j2). Confirmed in tests/test__locks.py that wt3 (line 1788) asserts a holder that lets go inside the default bound is waited out (code == 0), and wt4 (line 1806) asserts acquire() with wait=9.0 on a dead holder returns E_STALE in under 1.0s. Gate: python3 tools/sweep-selftests.py tests/test_audit_task.py -> '1/1 files ok, 1200 cases' (the pipeline exit status was not captured; the summary line is the evidence). Dependants (test_commit_task_work.py, test__filed_returns.py, sweep-costs.json, audit-task.py, affected.py, sweep-selftests.py, CHANGELOG.md, pipeline-cost-levers.md): still correct, no code, name or case label changed. The filed claim that also cites j2 lives outside this task's files and was not touched.\n\nclaims:\n1 tests/test__locks.py:1788 (wt3 live holder waited out, code == 0) and :1806 (wt4 dead holder, wait=9.0, E_STALE, gone < 1.0) are the lines the rewritten comment now points at\n2 n/a - comment-only change, no check touched\n3 grep 'j2' near the xf5 comment: one hit in tests/test_audit_task.py:20399, fixed; other j2 labels left, they are unrelated cases\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written",
+        "descriptive": "The xf5 comment now cites wt3 and wt4, the cases that actually time acquire() on a live and a dead holder."
       },
       "startedAt": "2026-11-01T03:28:58Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-01T03:39:48Z",
+      "verifiedBy": [
+        "none new - comment-only correction; xf5 is the existing case the comment sits in"
+      ],
       "notes": [
         {
           "at": "2026-11-01T01:43:51Z",
@@ -2566,6 +2570,17 @@
         "runId": "2026-11-01T03:36:50Z.15239e",
         "status": "passed",
         "at": "2026-11-01T03:36:50Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "0644125ccefa",
+        "at": "2026-11-01T03:39:48Z",
+        "return": "docs/audit/evidence/returns/P152.28-6jb/20261101T032858Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task, tests.expectRedFirst false; comment-only change, no behaviour to turn red",
+        "at": "n/a"
       }
     },
     {
