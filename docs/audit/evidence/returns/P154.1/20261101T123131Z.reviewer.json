@@ -1,0 +1,19 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "tools/reach-diff.py:3189-3230",
+   "issue": "rd92's argument tuple WINDOWS_ARGS only exercises two splitter branches at the END of the line: the empty argument is last (so the in-loop 'if started' separator test is never what keeps it) and the final backslash run is followed by a closing quote (the post-loop 'word.append(slash * run)' is never reached with run>0). Read by mutation in a scratch mirror: replacing the in-loop 'if started:' with 'if word:' (drops a mid-line empty argument) and deleting the post-loop backslash append (drops a trailing backslash on an unquoted last argument, e.g. a directory path ending in a backslash) both leave 162/162 green. Both are exactly the cases the task's brief named (empty arg, trailing backslashes). The splitter itself is correct for both (round-trip probe below), so this is a test gap, not a code bug.",
+   "resolution": "Add to WINDOWS_ARGS (or a third line in _windows_event_cases) an empty argument in the middle and an unquoted last argument ending in a backslash, e.g. ('exit-hard', '', 'D:\\\\out\\\\') ending after a non-empty arg, then re-run mutants 'if word:' and no post-loop append to see rd92 red."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Clause: 'Find why a child started on the module is not recognised on Windows ... fix it so the same cases pass on windows; a posix-only assumption must become portable rather than skipped.' The diff replaces module_at's list-only test with a splitter for the command-line string, so the hook records module children on Windows rather than skipping. Cause confirmed against CPython source on this machine: 3.14.7 subprocess.py line 1477 'args = list2cmdline(args)' in the Windows _execute_child, then line 1549 sys.audit('subprocess.Popen', executable, args, cwd, env); the posix branch audits a list (1858). CPython 3.11 (lmstudio copy) has the same shape (lines 1462/1534 Windows, 1823 posix). A 3.8 source is not on this machine; the 3.8 branch is not read here, only inferred. The executor's claim describes the diff: _reach_diff_argv in HOOK_SOURCE, on_event/module_at changes, rd92/rd93, 162 cases (confirmed below). Caveat: I cannot run Windows, so the claim that this one cause explains all eight CI cases rests on the log reasoning, not on a run here.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Task mode is regression with expectRedFirst false, so none is owed; the executor's hand-run pre-fix red of rd92 through a scratch driver is not helper-stamped and I did not rely on it. Separately, I ran mutants against the fixed hook in a scratch mirror (git archive HEAD plus the working file, byte-identical): never-split (on_event takes only lists) -> rd92 red, 161/162; quote toggle removed -> rd92 and rd93 red, 160/162; split at any space -> rd92 and rd93 red, 160/162; odd-backslash quote escape removed -> rd92 red, 161/162. Two mutants survived at 162/162: dropped post-loop trailing backslash, and mid-line empty argument dropped (finding 1).",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "tests.gate is 'python3 tools/sweep-selftests.py tools/reach-diff.py', a single file whose cases are the ones the task writes into or already holds in that file; I did not read the other rd cases for deletion-survival. Selftest run from the mirror (python3 tools/reach-diff.py --selftest): exit 0, 'ALL PASS: 162/162 cases passed', rd92 and rd93 present."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

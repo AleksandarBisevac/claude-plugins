@@ -988,6 +988,12 @@
       "title": "The 3.8.0 med defects are fixed: locks, guard false positive, the affected listing, dependants at mint, and the empty task gate",
       "status": "done",
       "shard": "phases/P153.json"
+    },
+    {
+      "id": "P154",
+      "title": "The release tier is green again: a large plan's report prints, and reach-diff runs on Windows",
+      "status": "in_progress",
+      "shard": "phases/P154.json"
     }
   ],
   "fileIndex": {
@@ -12491,7 +12497,8 @@
       "P152.40-6jb",
       "P152.41-6jb",
       "P152.42-6jb",
-      "P152.43-6jb"
+      "P152.43-6jb",
+      "P154.1"
     ]
   },
   "bugs": [

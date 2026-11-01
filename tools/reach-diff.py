@@ -134,7 +134,9 @@ UNTRACED MODULE CHILDREN DECIDE THE EXIT. Each traced process records the key of
 every child it starts through `subprocess.Popen` with the module's path among
 their arguments, and hands each child a token naming itself in the environment;
 each traced process records its own key, whether it is running the module, and
-the token of its parent. A KEY is a process's arguments - for a module child,
+the token of its parent. On Windows `Popen` audits the one command line it built
+rather than the list, and the hook splits it back as the C runtime does, so the
+child's arguments are the ones its own `sys.argv` holds. A KEY is a process's arguments - for a module child,
 those after the module's path - with every absolute path under the export's root
 written relative to it, every one under the temp or home directory the sweep
 handed the block's run written as `<temp>` or `<home>` (those two differ between
@@ -423,11 +425,54 @@ def hook_line(entry):
 # process killed mid-write leaves a `.part` the reader skips. Both name the process
 # by a token it also hands its children in the environment and carry its key, and
 # the lines file holds the key of each child it started on the module's path - an
-# audit hook on `subprocess.Popen` - so the reader can tell which module child was
-# traced and which was started and never wrote.
+# audit hook on `subprocess.Popen`, whose arguments arrive as a list on posix and
+# as one command line on Windows, split back by `_reach_diff_argv` - so the reader
+# can tell which module child was traced and which was started and never wrote.
 HOOK_SOURCE = '''import json
 import os
 import sys
+
+
+def _reach_diff_argv(args):
+    """`args` as the arguments a process is started with, or None. A list is as
+    it is. A string is the command line Popen audits on Windows - it joins the
+    list with `list2cmdline` before the audit event fires - split back the way
+    the C runtime splits it: a run of backslashes is literal unless a quote
+    follows, where each pair is one backslash and an odd one out makes the quote
+    literal; an unescaped quote toggles quoting; a space or tab outside quotes
+    ends an argument."""
+    if isinstance(args, (list, tuple)):
+        return list(args)
+    if not isinstance(args, str):
+        return None
+    slash = "\\\\"
+    out, word, quoted, started, run = [], [], False, False, 0
+    for ch in args:
+        if ch == slash:
+            run += 1
+            started = True
+            continue
+        if ch == '"':
+            word.append(slash * (run // 2))
+            if run % 2:
+                word.append(ch)
+            else:
+                quoted = not quoted
+            run, started = 0, True
+            continue
+        word.append(slash * run)
+        run = 0
+        if ch in " \\t" and not quoted:
+            if started:
+                out.append("".join(word))
+            word, started = [], False
+            continue
+        word.append(ch)
+        started = True
+    word.append(slash * run)
+    if started:
+        out.append("".join(word))
+    return out
 
 
 def _reach_diff_install():
@@ -488,7 +533,7 @@ def _reach_diff_install():
         return key
 
     def module_at(args):
-        if not isinstance(args, (list, tuple)):
+        if args is None:
             return -1
         for at, arg in enumerate(args):
             arg = decoded(arg)
@@ -517,9 +562,10 @@ def _reach_diff_install():
     def on_event(event, args):
         if event != "subprocess.Popen":
             return
-        at = module_at(args[1])
+        started = _reach_diff_argv(args[1])
+        at = module_at(started)
         if at >= 0:
-            spawned.append(["<module>"] + ident(list(args[1])[at + 1:]))
+            spawned.append(["<module>"] + ident(started[at + 1:]))
     sys.addaudithook(on_event)
 
     def ours(filename):
@@ -3136,6 +3182,53 @@ def _hook_cases(check, root):
                            sorted(traces["written_by_block"])),
           entry is not None and done.returncode == 0 and traces["written"] == 1
           and sorted(traces["written_by_block"]) == ["installed"])
+    if entry:
+        _windows_event_cases(check, root, hook_dir)
+
+
+# Arguments a Windows suite hands a module child: a drive letter, mixed case, a
+# space, an embedded quote, a backslash run ending an argument that must be quoted,
+# and an empty argument - each a rule of the C runtime's splitting.
+WINDOWS_ARGS = ("exit-hard", "C:\\Users\\Some One\\Mixed Case\\x", 'a"b',
+                "D:\\dir with space\\", "back\\\\slash\\", "")
+
+
+def _popen_event(root, hook_dir, name, line):
+    """A hooked process that fires `subprocess.Popen`'s audit event with `line`
+    as its arguments - the shape the event takes on Windows, where `Popen` joins
+    the list into one command line before it audits - and starts nothing;
+    `(exit code, output, traces)`."""
+    out_dir = os.path.join(root, name)
+    os.makedirs(out_dir)
+    env = traced_env(hook_dir, os.path.join(root, FIX_MODULE), out_dir, None, root)
+    env[ENV_BLOCK] = name
+    done = subprocess.run(
+        [sys.executable, "-c", "import sys; sys.audit('subprocess.Popen', None, "
+         "%r, None, None)" % (line,)],
+        env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        universal_newlines=True)
+    return done.returncode, done.stdout[-300:], read_traces(out_dir)
+
+
+def _windows_event_cases(check, root, hook_dir):
+    module = os.path.join(root, FIX_MODULE)
+    line = subprocess.list2cmdline([sys.executable, module] + list(WINDOWS_ARGS))
+    code, said, traces = _popen_event(root, hook_dir, "nt-line", line)
+    want = {"nt-line": Counter({("<module>",) + WINDOWS_ARGS: 1})}
+    check("rd92 a module child named in the one command line Popen audits on "
+          "Windows is recorded with the arguments the C runtime splits it into, "
+          "and counted untraced when nothing answers: %r %r %r %r"
+          % (code, said, line, traces["untraced"]),
+          code == 0 and traces["written"] == 1 and traces["untraced"] == want)
+    # The over-fire direction: a splitter that drops quotes and splits at every
+    # space reads the module's path out of one quoted argument and counts a child
+    # that never ran the module, as `cmd /c "..."` hands it on.
+    line = subprocess.list2cmdline([sys.executable, "-c", module + " x"])
+    code, said, traces = _popen_event(root, hook_dir, "nt-quoted", line)
+    check("rd93 ...and one whose command line holds the module's path only inside "
+          "a quoted argument is no module child: nothing untraced: %r %r %r %r"
+          % (code, said, line, traces["untraced"]),
+          code == 0 and traces["written"] == 1 and traces["untraced"] == {})
 
 
 def _own_source():

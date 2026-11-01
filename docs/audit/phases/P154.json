@@ -1,0 +1,86 @@
+{
+  "id": "P154",
+  "title": "The release tier is green again: a large plan's report prints, and reach-diff runs on Windows",
+  "status": "in_progress",
+  "description": "Follow-up to P152's CI run 41281241772. BUG-32: Chrome's printToPDF refuses the rendered report of this repository's own plan (about 10 MB). reach-diff, new in P152, never ran on Windows and fails its child-tracing cases there.",
+  "desiredOutcome": "The live-plan browser leg passes on every runner at this repository's plan size with headroom measured, and tools/reach-diff.py's selftest passes on the windows cells, so ci/P152's head can land on main",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [],
+  "baseRef": "438838a0f21af40def003029ac11a7ce9a3f1af2",
+  "branch": "audit/p154-the-release-tier-is-green-agai",
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": [
+      {
+        "id": "P154-R1",
+        "severity": "low",
+        "file": "tools/reach-diff.py:3189-3230",
+        "issue": "rd92's argument tuple WINDOWS_ARGS only exercises two splitter branches at the END of the line: the empty argument is last (so the in-loop 'if started' separator test is never what keeps it) and the final backslash run is followed by a closing quote (the post-loop 'word.append(slash * run)' is never reached with run>0). Read by mutation in a scratch mirror: replacing the in-loop 'if started:' with 'if word:' (drops a mid-line empty argument) and deleting the post-loop backslash append (drops a trailing backslash on an unquoted last argument, e.g. a directory path ending in a backslash) both leave 162/162 green. Both are exactly the cases the task's brief named (empty arg, trailing backslashes). The splitter itself is correct for both (round-trip probe below), so this is a test gap, not a code bug.",
+        "resolution": "Add to WINDOWS_ARGS (or a third line in _windows_event_cases) an empty argument in the middle and an unquoted last argument ending in a backslash, e.g. ('exit-hard', '', 'D:\\\\out\\\\') ending after a non-empty arg, then re-run mutants 'if word:' and no post-loop append to see rd92 red."
+      }
+    ],
+    "outcome": "[findings: 1 - 0 high, 0 med, 1 low; 0 with a recorded fix commit]"
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P154.1",
+      "title": "reach-diff traces module children on Windows as it does on posix",
+      "status": "in_progress",
+      "description": "On CI run 41281241772 both windows selftest cells fail tools/reach-diff.py: rd18, rd22, rd29, rd30, rd41, rd47, rd48 (untraced module children counted 0 at both sides) and rd62 (the 'untraced' refusal unasserted, a consequence). The failing log is saved in the orchestrator scratchpad (ci-P152-failed.log). Find why a child started on the module is not recognised on Windows (path separators or drive letters in the spawned-child key, the usercustomize/sitecustomize hook not loading, os.environ case, .start/.json files) and fix it so the same cases pass on windows; a posix-only assumption must become portable rather than skipped.",
+      "files": [
+        "tools/reach-diff.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tools/reach-diff.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-01T12:31:31Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-01T12:40:16Z.e6e28a",
+        "status": "passed",
+        "at": "2026-11-01T12:40:16Z"
+      }
+    }
+  ],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "4331b4e9-59c2-4a61-9004-3102aba69ea2",
+    "branch": "audit/p154-the-release-tier-is-green-agai",
+    "at": "2026-11-01T12:31:31Z"
+  },
+  "startedAt": "2026-11-01T12:31:31Z"
+}
