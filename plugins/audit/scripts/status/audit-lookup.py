@@ -685,6 +685,7 @@ def compose_executor_brief(manifest, phase, task, ctx, files, gate):
     lines += _section("Files", flines)
     lines += _section(DEPENDANTS_TITLE,
                       dependant_lines(ctx, task, DEPENDANTS_ASK))
+    lines += _section(DOCUMENTED_TITLE, documented_lines(ctx, task))
     docs = [d for d in (task.get("docs") or []) if isinstance(d, str)]
     lines += _section("Docs", ["- %s" % (d,) for d in docs]
                       or ["The task names no docs."])
@@ -808,6 +809,87 @@ def dependants_listing(ctx, task):
     return lines + ["- %s: outside the checkout, not searched" % (f,)
                     for f in outside] or [
         "The task declares no files, so nothing is searched for."]
+
+
+# --- where the declared files are documented ---------------------------------------
+# The section of a document that describes a declared module is the edit an
+# executor most often makes outside its files: the change alters what the
+# module does, so the paragraph about it is wrong until it is rewritten. The
+# brief names each such heading, with its line and whether its document is
+# declared, so the executor sees the edit before making it rather than at
+# submit. A heading counts when it names the declared path in full or its
+# basename standing alone - a basename after a directory is some other file's
+# path. Headings are `_impact`'s reading (ATX, outside a fence), so this section
+# and the owed `section` reader agree on what a heading is.
+DOCUMENTED_TITLE = "Where your files are documented"
+DOCUMENTED_SCOPE = ("A listed document your task does not declare is outside "
+                    "your scope. "
+                    "submit compares the paths your attempt changed with your "
+                    "files (drive-phase.py submit_strays): it refuses a serial "
+                    "filing that changed one, and names it on a wave member's "
+                    "filing. If your change makes such a section untrue, give "
+                    "the reason in your outcome so the scope can be widened.")
+_MARKDOWN_GLOBS = ("*.md", "*.markdown")
+
+
+def documented_rows(top, paths, exclude=(), git=None, read=None):
+    """`(rows, error)` - one `{"path", "doc", "line", "heading"}` per Markdown
+    heading of a tracked document naming a declared git path, in declared
+    order then document then line; `rows` None beside why when git would not
+    search. One `git grep` finds the documents holding any basename; only
+    those are read."""
+    run = git if git is not None else _impact.run_git
+    read = read if read is not None else _impact._read_text
+    declared = [_impact._norm(p) for p in paths]
+    names = sorted(set(posixpath.basename(p) for p in declared))
+    if not names:
+        return [], None
+    argv = ["grep", "-l", "-z", "-I", "-F"]
+    for name in names:
+        argv += ["-e", name]
+    argv += ["--"] + list(_MARKDOWN_GLOBS) + [
+        ":(exclude)%s" % _impact._norm(e) for e in exclude]
+    code, out, err = run(argv, top)
+    error = _impact._grep_error(code, err)
+    if error is not None:
+        return None, error
+    docs = sorted(set(_impact._norm(d) for d in out.split("\0") if d.strip()))
+    heads = dict((doc, _impact._headings(read(top, doc))) for doc in docs)
+    rows = []
+    for path in declared:
+        words = (_impact._path_word(path),
+                 _impact._path_word(posixpath.basename(path)))
+        rows += [{"path": path, "doc": doc, "line": number,
+                  "heading": text.strip()}
+                 for doc in docs if doc != path
+                 for number, _level, text in heads[doc]
+                 if any(w.search(text) for w in words)]
+    return rows, None
+
+
+def documented_lines(ctx, task):
+    """The section's lines: one row per heading `documented_rows` finds, each
+    saying whether its document is among the task's files, then the scope line
+    when any is not; one line naming what was searched when nothing is found,
+    and the failure when git would not search."""
+    top, inside, outside, exclude = _dependant_scope(ctx, task)
+    if not inside and not outside:
+        return ["The task declares no files, so nothing is searched for."]
+    rows, error = documented_rows(top, inside, exclude=exclude)
+    away = ["- %s: outside the checkout, not searched" % (f,) for f in outside]
+    if rows is None:
+        return ["The tracked documents could not be searched: %s" % (error,)] + away
+    if not rows:
+        return ["No heading of a tracked Markdown document names a declared "
+                "file, by its path or its basename standing alone."] + away
+    owned = set(inside)
+    lines = ["- %s: %s:%d %s (%s)" % (
+        r["path"], r["doc"], r["line"], r["heading"],
+        "in your files" if r["doc"] in owned else "not in your files")
+        for r in rows] + away
+    if any(r["doc"] not in owned for r in rows):
+        lines.append(DOCUMENTED_SCOPE)
+    return lines
 
 
 # --- the writer's prompt ---------------------------------------------------------

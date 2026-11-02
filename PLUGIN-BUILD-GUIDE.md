@@ -3431,6 +3431,23 @@ declared file's dependants unbounded. A task whose files nothing names gets the 
 line saying what was searched, and no ask. Nothing grades the answers mechanically; the
 reviewer's verdict is the check.
 
+The executor's brief also carries `Where your files are documented` (`documented_lines`): one
+row per Markdown heading of a tracked document that names a declared file — by its path in
+full, or by its basename standing alone, as in a heading listing sibling modules after the
+first one's path — with the document's line, the heading as written and whether that document
+is among the task's files. The section of this guide describing a module is the edit an
+executor most often makes outside its files, and before this section the brief named the module
+but not the paragraph about it, so the out-of-scope edit surfaced only at `submit`. One
+`git grep` over the `.md`/`.markdown` files finds the documents holding a declared basename, the
+plan's own directory left out; only those are read, and a heading is `_impact._headings`' reading
+(ATX, outside a fence), the one `_impact.owed` grades a `section` reader by. A basename after a
+directory is another file's path and does not count. When any row's document is undeclared, one
+closing line says that edit is outside the task's scope and names `submit_strays`, which
+compares the attempt's changed paths with the task's files at filing. Nothing found is one line
+saying what was searched; a `git grep` that fails is said, never read as nothing found. The rows
+are not budgeted: a module rarely has more than one heading, so the section grows with the
+task's `Files` list, which the brief already prints whole.
+
 ### `plugins/audit/scripts/status/_impact.py`
 Who, among a repository's tracked files, reads a file a task is about to change — the reader
 a task gate cannot see because it is not among the task's files: a heredoc importing a module,

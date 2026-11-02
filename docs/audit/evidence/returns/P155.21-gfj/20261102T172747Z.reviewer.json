@@ -1,0 +1,19 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "plugins/audit/scripts/status/audit-lookup.py:844-156",
+   "issue": "documented_rows is unbounded and the basename-alone arm matches any heading naming the bare basename (or, for a declared directory entry, the directory's last component, e.g. 'tests' in '### Adding tests'). The guide paragraph justifies no budget with 'a module rarely has more than one heading', which holds for module files but not for a declared README.md, a directory entry or a generic basename, where the executor brief would grow by one row per heading in every tracked document. Every other brief section is bounded.",
+   "resolution": "Cap the rows (as _impact.section does for dependants) with an 'N of M shown' tail naming a command that lists all, or skip the basename-alone arm for entries that are directories or have no file extension; add a case with a declared README.md or directory entry."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Clause (the task's description): 'The executor brief names the PLUGIN-BUILD-GUIDE.md section per declared module.' The diff takes the first option of the resolution (widen scope to audit-lookup.py and its suite): compose_executor_brief now calls _section(DOCUMENTED_TITLE, documented_lines(ctx, task)) (audit-lookup.py:688), which lists per declared file each Markdown heading of any tracked document naming it (path in full or bare basename), with line, heading and whether that document is in the task's files. That covers the PLUGIN-BUILD-GUIDE.md case and is generic, so the clause is met and the brief is not narrowed to the one document. The executor's claim describes the diff: the documented_rows/documented_lines functions, the guide paragraph, gd1-gd8 and the section placement between Files and Docs are all there; DOCUMENTED_SCOPE's reference to drive-phase.py submit_strays is true (submit_strays docstring: serial filing refused, member told). Writer prompt and reviewer brief carrying nothing is stated by the executor and the clause names only the executor brief. I ran tests/test_audit_lookup.py --selftest in the task tree: exit 0, 154/154 cases, gd1-gd8 among them. The executor's mutation probes m1-m7 and its manual red run (146/152) are not independently verifiable from what I was handed.",
+  "missing": [],
+  "redFirst": "could-not-prove",
+  "redFirstBasis": "The filed redFirst is status could-not-prove, source red-first-helper: the helper's command (python3 tools/sweep-selftests.py tests/test_audit_lookup.py ... tests/test_stamp_verification.py) 'timed out after 115 s and its process group was torn down' in a throwaway tree at HEAD, so no red was stamped. The outcome separately claims a hand run 'red first 146/152 exit 1 (gd1-gd6 red)' before the implementation; that is not backed by a stamped command and is not graded as proved.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "tests.gate is a literal sweep-selftests.py command selecting 8 explicit files (test_audit_lookup, test__affected_tests, test__doctor_trail, test_drive_phase, _harness, test__deps, test__runner_collects, test_stamp_verification). I read the part of test_audit_lookup.py the change touches (the bf section-order case around :1808, which asserts task headings and relative order of rules/return and still has material to compare, and the _di_project/_di_brief fixtures the new block shares) and found no assertion the new behaviour could silence. I did not read the other seven suites in full, since the diff does not touch what they select."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

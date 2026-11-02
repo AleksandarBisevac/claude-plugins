@@ -2559,9 +2559,151 @@ def _dependants_cases(check):
     _harness.remove_tree(root)
 
 
+# Each heading's line is its index in this list plus one. Matching headings:
+# the path in a span, a bare basename span beside another path, the path in
+# plain text. Not matching: the same basename under another directory, a
+# heading-shaped line inside a fence, a longer name sharing the prefix.
+_GD_GUIDE = [
+    "# Guide",                                   # 1
+    "",                                          # 2
+    "## Refunds",                                # 3
+    "",                                          # 4
+    "### `src/refund.py`",                       # 5  match
+    "",                                          # 6
+    "Splits a refund.",                          # 7
+    "",                                          # 8
+    "### `lib/refund.py`",                       # 9  other directory
+    "",                                          # 10
+    "```sh",                                     # 11
+    "# `src/refund.py` is a comment in a fence",  # 12 not a heading
+    "```",                                       # 13
+    "",                                          # 14
+    "### `src/refund.pyc`",                      # 15 longer name
+    "",                                          # 16
+    "### `src/ledger.py`, `refund.py`",          # 17 match, bare basename
+    "",                                          # 18
+    "### Notes on src/refund.py",                # 19 match, plain text
+    "",                                          # 20
+]
+_GD_README = ["# Readme", "", "## `tests/test_refund.py`", ""]
+_GD_TITLE = "Where your files are documented"
+
+
+def _gd_section(text):
+    """The `Where your files are documented` section's lines, heading
+    excluded - `None` when the heading is absent or repeated."""
+    lines = text.split("\n")
+    heads = [i for i, ln in enumerate(lines)
+             if ln.startswith("## ") and ln[3:].strip() == _GD_TITLE]
+    if len(heads) != 1:
+        return None
+    body = []
+    for ln in lines[heads[0] + 1:]:
+        if ln.startswith("## "):
+            break
+        if ln.strip():
+            body.append(ln)
+    return body
+
+
+def _guide_section_cases(check):
+    """The executor's brief names, per declared file, each heading of a
+    tracked Markdown document that names it, and whether that document is in
+    the task's files - the doc section being the edit an executor most often
+    makes outside its scope."""
+    root = _harness.fixture_root("audit-lookup-gd-")
+    files = dict(_DI_FILES)
+    files["docs/GUIDE.md"] = "\n".join(_GD_GUIDE)
+    files["README.md"] = "\n".join(_GD_README)
+    proj, mpath = _di_project(root, "gd", _bf_manifest(), files)
+    code, text = _di_brief(proj, mpath, "executor")
+    body = _gd_section(text)
+    rows = [ln for ln in (body or []) if ln.startswith("- ")]
+    refund = [ln for ln in rows if ln.startswith("- src/refund.py:")]
+    at = sorted(int(ln.split("docs/GUIDE.md:", 1)[1].split()[0])
+                for ln in refund if "docs/GUIDE.md:" in ln)
+    check("gd1 the executor brief carries ONE 'Where your files are "
+          "documented' section naming, for src/refund.py, exactly the three "
+          "GUIDE.md headings that name it - the path in a span, a bare "
+          "basename span, the path in plain text - each with its line and "
+          "heading text: code=%r %r" % (code, body),
+          code == M.E_OK and body is not None
+          and len(refund) == 3 and at == [5, 17, 19]
+          and any("### `src/ledger.py`, `refund.py`" in ln for ln in refund))
+    check("gd2 THE OVER-FIRE TWIN: the same basename under lib/, a "
+          "heading-shaped line inside a fence and a longer name sharing the "
+          "prefix are NOT listed - no row carries GUIDE.md:9, :12 or :15: %r"
+          % (rows,),
+          body is not None and len(rows) > 0
+          and not any(("docs/GUIDE.md:%d " % n) in ln
+                      for n in (9, 12, 15) for ln in rows))
+    tests_rows = [ln for ln in rows if ln.startswith("- tests/test_refund.py:")]
+    check("gd3 every declared file is looked up, in every tracked document: "
+          "tests/test_refund.py's one heading in README.md is listed: %r"
+          % (tests_rows,),
+          len(tests_rows) == 1 and "README.md:3 " in tests_rows[0])
+    outside = [ln for ln in rows if "not in your files" in ln]
+    notes = [ln for ln in (body or []) if not ln.startswith("- ")]
+    check("gd4 a listed document the task does not declare says so on its row, "
+          "and ONE closing line names what holds the scope - submit compares "
+          "the changed paths with the task's files: %r" % (body,),
+          len(outside) == len(rows) == 4 and len(notes) == 1
+          and "submit" in notes[0])
+
+    declared = _bf_manifest()
+    declared["phases"][0]["tasks"][0]["files"].append("docs/GUIDE.md")
+    proj_d, mpath_d = _di_project(root, "gd-declared", declared, files)
+    dcode, dtext = _di_brief(proj_d, mpath_d, "executor")
+    dbody = _gd_section(dtext) or []
+    drows = [ln for ln in dbody if ln.startswith("- src/refund.py:")]
+    check("gd5 THE OTHER DIRECTION: with GUIDE.md declared its rows say it is "
+          "in the task's files, and README.md's row alone still says it is "
+          "not: %r" % (dbody,),
+          dcode == M.E_OK and len(drows) == 3
+          and all("in your files" in ln and "not in your files" not in ln
+                  for ln in drows)
+          and sum(1 for ln in dbody if "not in your files" in ln) == 1)
+
+    both = _bf_manifest()
+    both["phases"][0]["tasks"][0]["files"] += ["docs/GUIDE.md", "README.md"]
+    proj_b, mpath_b = _di_project(root, "gd-both", both, files)
+    bcode, btext = _di_brief(proj_b, mpath_b, "executor")
+    bbody = _gd_section(btext) or []
+    check("gd7 THE SCOPE LINE'S OTHER DIRECTION: with every listed document "
+          "declared, all four rows say so and the section carries no scope "
+          "line - nothing but rows: %r" % (bbody,),
+          bcode == M.E_OK and len(bbody) == 4
+          and all(ln.startswith("- ") and ln.endswith("(in your files)")
+                  for ln in bbody))
+
+    proj_n, mpath_n = _di_project(root, "gd-none", _bf_manifest(), _DI_FILES)
+    ncode, ntext = _di_brief(proj_n, mpath_n, "executor")
+    nbody = _gd_section(ntext)
+    check("gd6 a task whose files no tracked heading names keeps the section "
+          "and says so in ONE line, naming no row: %r" % (nbody,),
+          ncode == M.E_OK and nbody is not None and len(nbody) == 1
+          and not nbody[0].startswith("- ") and "heading" in nbody[0])
+
+    def broken(argv, cwd):
+        return 128, "", "fatal: not a git repository\n"
+
+    def quiet(argv, cwd):
+        return 1, "", ""
+
+    failed = M.documented_rows(proj, ["src/refund.py"], git=broken)
+    empty = M.documented_rows(proj, ["src/refund.py"], git=quiet)
+    check("gd8 a `git grep` that fails is an error, never an empty answer; "
+          "git's own 'nothing matched' exit is the empty one: %r / %r"
+          % (failed, empty),
+          failed == (None, "fatal: not a git repository")
+          and empty == ([], None))
+    _harness.remove_tree(root)
+
+
 def _selftest():
     def body(check):
         # Each block staged, so one that raises still lets the other run.
+        _harness.stage(check, "gd-block", _guide_section_cases)
         _harness.stage(check, "di-block", _dependants_cases)
         _harness.stage(check, "al-block", _cases)
         _harness.stage(check, "sl-block", _success_line_cases)
