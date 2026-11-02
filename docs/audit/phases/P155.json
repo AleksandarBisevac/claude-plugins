@@ -109,8 +109,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/status/audit-lookup.py (not in the diff)",
         "issue": "contradicts task clause \"The executor brief names the PLUGIN-BUILD-GUIDE.md section per declared module.\" The diff contains no change to brief generation. The executor's outcome says so and gives the reason: audit-lookup.py is not in the task's files. F818 is therefore not closed by this diff, but the description says 'Closes F818'.",
-        "resolution": "Either widen the scope to plugins/audit/scripts/status/audit-lookup.py and its suite and implement the clause, or split it into a follow-up task and record F818 as open in the register for that half.",
-        "fixTask": "P155.21-gfj"
+        "resolution": "fixed in P155.21-gfj (897247de22e5): Either widen the scope to plugins/audit/scripts/status/audit-lookup.py and its suite and implement the clause, or split it into a follow-up task and record F818 as open in the register for that half.",
+        "fixTask": "P155.21-gfj",
+        "commit": "897247de22e5",
+        "status": "fixed"
       },
       {
         "id": "P155-R12",
@@ -230,9 +232,30 @@
         "file": "plugins/audit/scripts/status/audit-lookup.py:844-156",
         "issue": "documented_rows is unbounded and the basename-alone arm matches any heading naming the bare basename (or, for a declared directory entry, the directory's last component, e.g. 'tests' in '### Adding tests'). The guide paragraph justifies no budget with 'a module rarely has more than one heading', which holds for module files but not for a declared README.md, a directory entry or a generic basename, where the executor brief would grow by one row per heading in every tracked document. Every other brief section is bounded.",
         "resolution": "Cap the rows (as _impact.section does for dependants) with an 'N of M shown' tail naming a command that lists all, or skip the basename-alone arm for entries that are directories or have no file extension; add a case with a declared README.md or directory entry."
+      },
+      {
+        "id": "P155-R28",
+        "severity": "med",
+        "file": "plugins/audit/hooks/_config.py:4081-4098 (declared_git_rels `changed=()`), consumer plugins/audit/scripts/governance/drive-phase.py:9954-9993 (submit_strays)",
+        "issue": "The diff makes the outputs half of the shared predicate opt-in: declared_git_rels counts outputs only when a caller hands `changed`, and the default `changed=()` silently means files only. drive-phase.py submit_strays calls declared_git_rels in both arms (:9980 bound tree, :9989 serial) without `changed`. That function's docstring says it asks 'the commit's own [question], through the same function on the same basis'. After this diff that is false, and the two readers now disagree on the input this task fixed. In a serial drive, a task that writes a path its own honoured `outputs` covers (ctw-fi2's shape: reports/q3.html under ['reports/**']) gets the plan gate's allow and would get commit-task-work's count and staging. But submit_strays refuses the executor's filing first ('changed reports/q3.html outside its files'), at drive-phase.py:10110-10112. So the end-to-end path the task's tests prove is still unreachable through the driven pipeline, one step before the commit instead of one step after the gate. A bound task tree's member gets told and filed, then left to integration. This is the recurring class again, and it comes from a shared predicate whose second half each caller must remember to switch on. The executor reports it as NOT FIXED, and it is outside the task's files. But it is a caller of the function whose contract this diff changed, so it is charged to the diff.",
+        "resolution": "Make the outputs half unskippable, not per-caller. Default declared_git_rels to `changed=None` and have it list `_scoped_commit.status_paths(git_root)` itself (the tree it was asked about) when None, the way owned_rels now does, so no caller gets files alone by omission. Then pass the tree in drive-phase submit_strays for the bound arm. Add a drive-phase case: a serial task writing a path its honoured `outputs` covers is filed, not refused by strays_refusal. Add a second-direction case: a stray beside it is still refused."
+      },
+      {
+        "id": "P155-R29",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/commit-task-work.py:641-657 (owned_rels now counts every in_progress task's outputs), consumer plugins/audit/scripts/manifest/audit-task.py:7368-7424 (_declared_rels / _uncommitted_leftovers) and :8036-8062 (close refusal)",
+        "issue": "The commit now counts a changed path that a SIBLING in_progress task's honoured `outputs` covers as declared (owned_rels has no `only`). It does not refuse that path, and it does not stage it (stage_targets stages only=own task). The close that follows still reads files alone: `others` is built from _declared_rels, which reads `files` only. So that same dirty path, changed since the attempt's start, lands in `during`, and `audit-task done` refuses with '... changed during this attempt with no in_progress task declaring it'. That sentence is false, because a running task does declare it through `outputs`. The commit has already been written by then. Before the diff, commit and close agreed and refused before anything was committed. After it, the disagreement F808(a) names has moved from gate-vs-commit to commit-vs-close, and it now fires after a commit has landed. The _uncommitted_leftovers docstring (audit-task.py:7393-7394, 'the commit step stages declared files only, so its work is exactly what it left') is also made false by stage_targets' new output arm.",
+        "resolution": "Route the close's count through the same predicate. In _uncommitted_leftovers, build `others` (and `mine`'s outputs arm) from _config.declared_git_rels / output_git_rels over the tree's changed paths, not _declared_rels, so a sibling's honoured output is `covered`, not `during`. Fix the docstring. Add an audit-task case: a commit-task-work commit with a sibling's output path dirty, then `done --commit`, closes without the 'no in_progress task declaring' refusal. Add a second-direction case for a stray no pattern covers. Until that lands, F808 should not be recorded as closed for the class."
+      },
+      {
+        "id": "P155-R30",
+        "severity": "low",
+        "file": "PLUGIN-BUILD-GUIDE.md:4044-4047 vs reference/orchestrator.md step 4c; tests/test_audit_task.py:16203",
+        "issue": "PLUGIN-BUILD-GUIDE now says a task commit stages 'Exactly the four things step 4c allows', and lists the task's own honoured outputs among them. Step 4c in reference/orchestrator.md (untouched) still allows declared files only. So the guide claims a correspondence with step 4c that the diff broke. The prose in test_audit_task.py:16203 still says the commit stages declared files only (executor-reported).",
+        "resolution": "Update orchestrator.md step 4c to name the task's own honoured outputs, update the test_audit_task.py prose in the same follow-up as finding 2, or drop the 'step 4c allows' cross-reference."
       }
     ],
-    "outcome": "[findings: 27 - 1 high, 11 med, 15 low; 3 with a recorded fix commit]"
+    "outcome": "[findings: 30 - 1 high, 13 med, 16 low; 4 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1685,7 +1708,7 @@
     {
       "id": "P155.21-gfj",
       "title": "fix P155-R11: contradicts task clause \"The executor brief names the PLUGIN-BU...",
-      "status": "in_progress",
+      "status": "done",
       "description": "contradicts task clause \"The executor brief names the PLUGIN-BUILD-GUIDE.md section per declared module.\" The diff contains no change to brief generation. The executor's outcome says so and gives the reason: audit-lookup.py is not in the task's files. F818 is therefore not closed by this diff, but the description says 'Closes F818'.\n\nResolution asked: Either widen the scope to plugins/audit/scripts/status/audit-lookup.py and its suite and implement the clause, or split it into a follow-up task and record F818 as open in the register for that half.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -1721,14 +1744,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "897247de22e5",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Implemented the clause in the task's widened scope (the first option the resolution offers). plugins/audit/scripts/status/audit-lookup.py: new block `where the declared files are documented` - documented_rows(top, paths, exclude, git, read) runs one `git grep -l -z -I -F` for the declared basenames over '*.md'/'*.markdown' (the plan's own directory excluded, as _dependant_scope already does), reads only those documents, and returns one {path, doc, line, heading} per heading naming a declared git path: in full (_impact._path_word(path)) or by its basename standing alone (_impact._path_word(basename), whose lookbehind refuses a basename after a directory). Headings are _impact._headings (ATX, outside a fence) - the same reader _impact.owed grades a `section` reader by, called and not copied (_impact.py is not in this task's files). A git grep failure returns (None, error); git's exit 1 is the empty answer. documented_lines renders `- <path>: <doc>:<line> <heading> (in your files|not in your files)`, then the DOCUMENTED_SCOPE line when any document is undeclared, naming drive-phase.py submit_strays as what compares the changed paths with the task's files. If nothing is found it gives one line saying what was searched; if the grep fails it says so. compose_executor_brief adds the section `Where your files are documented` after `Who depends on this`. PLUGIN-BUILD-GUIDE.md: a paragraph in the audit-lookup.py section stating the section, the match rule, the grep, the reader shared with owed, the scope line and why it is not budgeted. tests/test_audit_lookup.py: gd-block (_guide_section_cases), gd1-gd8. Runs: red first 146/152 exit 1 (gd1-gd6 red). Then gd5 caught a defect in my first wording: the scope line repeated the row marker `not in your files`. After rewording, 152/152. After adding gd7 and gd8, `python3 tests/test_audit_lookup.py --selftest` gave ALL PASS 154/154, exit 0. The gate command from the task tree exited 0: `8/8 files ok, 2005 cases`. A sibling agent overwrote the shared scratchpad output file, so the per-file lines were lost; the exit code and final tally are my process's. ruff exit 0, vermin exit 0 on both changed .py files. Mutation probe in a scratch copy of the tree (each anchor asserted to match once, restored in finally, __pycache__ purged): m1 basename matched as a plain substring -> gd1,gd2,gd4,gd5,gd7 red. m2 basename alternative dropped -> gd1,gd4,gd5,gd7. m3 every doc called declared -> gd4,gd5. m4 scope line unconditional -> first SURVIVED, then gd7 added (all rows declared, no scope line) and it is killed. m5 fence ignored -> gd1,gd2,gd4,gd5,gd7. m6 empty-result line dropped -> gd6. m7 git error read as empty -> gd8. On the live repo with this task's files: 3 rows, each the module's own PLUGIN-BUILD-GUIDE.md heading (audit-lookup.py :3362, _deps.py :1658, stamp-verification.py :5149). For tools/lints/_ui_theme_lints.py the bare-sibling heading :1711 is found. Measured twice with a 5 s gap: 0.027 s and 0.032 s. Not done, by design: the writer's prompt and the reviewer's brief do not carry the section; the F818 clause names the executor brief only. Dependants: audit-lookup.py readers - tests/test__filed_returns.py, tests/test_audit_lookup.py and tests/test_drive_phase.py (import) are still correct: names were added only, none renamed or removed, and test_drive_phase passed in the gate sweep. tests/test_audit_lookup.py:1808's section-order case still passes, because the new section sits between Files and Docs, keeping their relative order. PLUGIN-BUILD-GUIDE.md: changed (the paragraph above). docs/research/pipeline-cost-design.md (path) is still correct: it describes brief as computing part of the brief and makes no claim about its section list. plugins/audit/schema/audit-plan.schema.json, _clause_coverage.py and drive-phase.py (basename) are still correct: none parses executor-brief section titles (grep for DEPENDANTS_TITLE/compose_executor_brief/'Where your files' outside audit-lookup.py hits only the suite). test_audit_lookup.py's readers (.github/sweep-costs.json, tools/affected.py, execute-task.md, test_audit_task.py) are still correct: the file keeps its name and _selftest/_cases names, gaining one staged block. sweep-costs gets no row for gd-block, and none is needed since the suite is not staged_main. The other declared files (test__affected_tests, test__doctor_trail, test_drive_phase, tools/lints/_deps.py, tools/prove-gates.py, tests/_harness.py, test__deps, tools/sweep-selftests.py, stamp-verification.py, test__runner_collects, test_stamp_verification) were not edited. Nothing they read changed: the new names are new, and test__deps (prose-number and layer lints over the new guide paragraph and code) passed in the gate. _deps.LAYERS needs no row, because no module was added and audit-lookup already imports _impact. Explored outside the brief, and why: I read F818's register entry (quality-gates-internal PLAN.md) and P155.8's task record to learn what the clause meant. The brief's description quotes the clause but not its intent: name the doc section because it is the most frequent undeclared edit.",
+        "descriptive": "The executor brief now lists each tracked Markdown heading that names a declared file, with its line and whether that doc is in the task's files, so the out-of-scope doc edit is visible before it is made rather than at submit."
       },
       "startedAt": "2026-11-02T17:27:47Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-02T18:09:33Z",
+      "verifiedBy": [
+        "gd1-gd8 in tests/test_audit_lookup.py: the executor brief's 'Where your files are documented' section lists exactly the headings naming each declared file (path in a span, bare basename span, plain-text path). It excludes a same-basename path under another directory, a fenced '#' line and a longer name sharing the prefix. Rows say in/not in your files, with one scope line naming submit only when a doc is undeclared, and none when all are declared. An empty result is one line, and a failing git grep is an error, never empty."
+      ],
       "notes": [
         {
           "at": "2026-11-02T16:58:56Z",
@@ -1747,6 +1772,18 @@
         "runId": "2026-11-02T17:54:59Z.d19262",
         "status": "passed",
         "at": "2026-11-02T17:54:59Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "897247de22e5",
+        "at": "2026-11-02T18:09:33Z",
+        "return": "docs/audit/evidence/returns/P155.21-gfj/20261102T172747Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-11-02T17:48:08Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_audit_lookup.py tests/test__affected_tests.py tests/test__doctor_trail.py tests/test_drive_phase.py tests/_harness.py tests/test__deps.py tests/test__runner_collects.py tests/test_stamp_verification.py` in a throwaway tree at HEAD: the run timed out after 115 s and its process group was torn down; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1866,9 +1903,9 @@
       ],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-11-02T18:01:25Z.cb8b71",
+        "runId": "2026-11-02T18:15:39Z.4c4332",
         "status": "passed",
-        "at": "2026-11-02T18:01:25Z"
+        "at": "2026-11-02T18:15:39Z"
       }
     },
     {

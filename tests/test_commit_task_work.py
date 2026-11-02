@@ -2684,6 +2684,7 @@ def _attempt_cases(check, repos):
 
 
 INDEX_ONLY = "src/indexed.py"
+OUTPUT_FILE = "reports/q3.html"
 
 
 def _index_only_row(fx):
@@ -2734,6 +2735,63 @@ def _index_only_cases(check, repos):
           and INDEX_ONLY in refusal[0]
           and not (code == 0 and dirty)
           and code2 == 0 and OWNED in carried and INDEX_ONLY not in carried)
+
+    # `outputs` IS THE GATE'S OTHER HALF OF "DECLARED". The plan gate opens a
+    # write a running task's graded `outputs` pattern covers, so the commit
+    # counts that path as declared - and, for its own task, carries it: counted
+    # and left out, the task would close `done` over a dirty file, the shape the
+    # case above refuses for a fileIndex row. (A pattern the grading refuses,
+    # `**`, cannot be planted here: `start` validates the plan and refuses it by
+    # name. `tests/test__config.py`'s `do2` holds that half on an unvalidated
+    # plan.)
+    fx = repos.make()
+    shard = _mio.read_json(fx["shard"])
+    [t for t in shard["tasks"] if t.get("id") == TASK][0]["outputs"] = [
+        "reports/**"]
+    TI._write_json(fx["shard"], shard)
+    _restartable(fx)
+    scode, _said = _start(fx)
+    _write(os.path.join(fx["root"], OWNED), "a = 2  # this attempt's work\n")
+    os.makedirs(os.path.join(fx["root"], "reports"), exist_ok=True)
+    _write(os.path.join(fx["root"], OUTPUT_FILE), "<p>q3</p>\n")
+    _gate(fx)
+    manifest, _phase, task = _phase_and_task(fx)
+    owned = M.owned_rels(manifest, fx["root"], fx["root"], task)
+    before = _head(fx)
+    code, text = _run(fx)
+    carried = _carried(fx, _head(fx)) if _head(fx) != before else []
+    dirty = OUTPUT_FILE in TI._git(fx["root"], "status", "--porcelain", "-uall")
+    check("ctw-fi2 a path the committing task's graded `outputs` covers is "
+          "counted as declared AND carried by its commit, never refused as "
+          "undeclared nor left dirty behind the closed task: %r"
+          % ((scode, sorted(owned), code, text[-300:], carried, dirty),),
+          scode == 0 and OUTPUT_FILE in owned and code == 0
+          and OWNED in carried and OUTPUT_FILE in carried and not dirty)
+    # The over-fire direction: a stray no honoured pattern covers is still
+    # refused by name, with the output beside it - a commit counting every
+    # changed path once a task declared any output would commit here.
+    fx = repos.make()
+    shard = _mio.read_json(fx["shard"])
+    [t for t in shard["tasks"] if t.get("id") == TASK][0]["outputs"] = [
+        "reports/**"]
+    TI._write_json(fx["shard"], shard)
+    _restartable(fx)
+    scode, _said = _start(fx)
+    _write(os.path.join(fx["root"], OWNED), "a = 2  # this attempt's work\n")
+    os.makedirs(os.path.join(fx["root"], "reports"), exist_ok=True)
+    _write(os.path.join(fx["root"], OUTPUT_FILE), "<p>q3</p>\n")
+    _write(os.path.join(fx["root"], "stray.txt"), "nobody's\n")
+    _gate(fx)
+    before = _head(fx)
+    code, text = _run(fx)
+    refusal = [ln for ln in text.splitlines()
+               if ln.startswith("[commit-task-work] REFUSED")]
+    check("ctw-fi3 SECOND DIRECTION: an output pattern opens only what it "
+          "covers - a stray beside the task's output is refused by name, the "
+          "output is not, and nothing is committed: %r" % ((scode, code, refusal[:1]),),
+          scode == 0 and code == 1 and _head(fx) == before
+          and len(refusal) == 1 and "stray.txt" in refusal[0]
+          and OUTPUT_FILE not in refusal[0])
 
 
 CE_TEST = "tests/test_a.py"

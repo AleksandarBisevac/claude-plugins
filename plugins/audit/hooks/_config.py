@@ -4008,16 +4008,21 @@ def declared_task_map(manifest, also=()):
     whose id is in `also`, its line suffix dropped. Empty dict for anything
     that is not a plan.
 
-    THE ONE READING OF "DECLARED". The plan gate opens an edit by it
-    (`in_progress_task_map`) and the task commit counts a changed path as
-    declared by it (`declared_git_rels`, read by `commit-task-work.py`): read
-    twice, the gate let an executor write a file the commit then refused as
-    undeclared, one gate run too late. `also` is the commit's own task, which
-    it counts whatever its status. Which path an entry reaches is
-    `covering_key`'s, through the same matcher.
+    THE `files` HALF OF THE ONE READING OF "DECLARED"; `declared_outputs` is
+    the other. The plan gate opens an edit by this map (`in_progress_task_map`)
+    and by a running task's graded `outputs` pattern (`in_progress_outputs`),
+    and the task commit counts a changed path as declared by both
+    (`declared_git_rels`, read by `commit-task-work.py`): read twice, the gate
+    let an executor write a file the commit then refused as undeclared, one
+    gate run too late. The free-file slot is outside both halves on purpose:
+    it opens one small edit to a session, not a task's declaration, and the
+    commit refuses that path when the attempt changed it. `also` is the
+    commit's own task, which it counts whatever its status. Which path an
+    entry reaches is `covering_key`'s, through the same matcher.
 
     `files` ALONE, NEVER A `fileIndex` ROW. The commit stages a task's `files`
-    and nothing wider (`commit-task-work.py` `stage_targets`), so a path this
+    and the changed paths its own honoured `outputs` cover, and no row
+    (`commit-task-work.py` `stage_targets`), so a path this
     map counted from a row alone was neither refused nor staged: the task
     closed `done` with it still dirty. `fileIndex` is derived from `files`
     (`audit-task.py reindex`) and the validator does not hold the reverse, so
@@ -4045,16 +4050,65 @@ def declared_task_map(manifest, also=()):
     return out
 
 
-def declared_git_rels(manifest, project, git_root, also=(), only=None):
+def declared_outputs(manifest, also=()):
+    """`[(pattern, taskId), ...]` - the honoured `outputs` patterns of every
+    task whose status is `in_progress`, or whose id is in `also`, over an
+    assembled `manifest`, in document order. Empty list for anything that is
+    not a plan, on any error, and when the grading rule cannot be loaded.
+
+    The `outputs` half of "declared", beside `declared_task_map`'s `files`
+    half: the gate reads it as `in_progress_outputs`, the commit through
+    `declared_git_rels`. Every pattern passes `_task_outputs.honoured` first,
+    so a pattern the rule refuses covers nothing for either reader."""
+    rule = _task_rule()
+    if rule is None or not isinstance(manifest, dict):
+        return []
+    wanted = set(also or ())
+    out = []
+    try:
+        for phase in manifest.get("phases", []) or []:
+            for task in phase.get("tasks", []) or []:
+                tid = task.get("id")
+                if task.get("status") != "in_progress" and tid not in wanted:
+                    continue
+                for pattern in rule.honoured(task.get("outputs")):
+                    out.append((pattern, tid))
+    except Exception:
+        return []
+    return out
+
+
+def declared_git_rels(manifest, project, git_root, also=(), only=None,
+                      changed=()):
     """`declared_task_map`'s entries spelled from the top of `git_root`
-    (`plan_to_git`), sorted, once each; an entry outside the checkout is left
-    out, since git lists no change there. `only` keeps the entries one task id
-    declares - a bound task tree's reading (`task_binding`)."""
+    (`plan_to_git`), plus each path of `changed` (git-root relative, as
+    `git status` prints them) a counted task's `declared_outputs` pattern
+    covers - sorted, once each. An entry outside the checkout is left out,
+    since git lists no change there. `only` keeps what one task id declares -
+    a bound task tree's reading (`task_binding`).
+
+    A PATTERN NAMES NO PATH UNTIL THE RUN MAKES ONE, so the `outputs` half is
+    answered over the paths the caller hands in rather than spelled as an
+    entry: a caller passing no `changed` counts `files` alone."""
     rels = (plan_to_git(entry, git_root, project)
             for entry, rows in declared_task_map(manifest, also).items()
             if only is None or any(str(r.get("taskId")) == str(only)
                                    for r in rows))
-    return sorted(set(rel for rel in rels if rel))
+    produced = output_git_rels(manifest, project, git_root, changed, also, only)
+    return sorted(set([rel for rel in rels if rel] + produced))
+
+
+def output_git_rels(manifest, project, git_root, changed, also=(), only=None):
+    """The paths of `changed` (git-root relative) that a `declared_outputs`
+    pattern of a counted task covers - of task `only` alone when given - in
+    the order `changed` holds them. The task commit stages its own task's
+    through this, so a path it counts as its task's output it also carries."""
+    outputs = [(pattern, tid) for pattern, tid in declared_outputs(manifest, also)
+               if only is None or str(tid) == str(only)]
+    if not outputs:
+        return []
+    return [rel for rel in (changed or ())
+            if covering_output(outputs, git_to_plan(rel, git_root, project))]
 
 
 def in_progress_task_map(root, manifest_rel):
@@ -4144,25 +4198,14 @@ def in_progress_outputs(root, manifest_rel):
     reported as uncovered), never wider. Every other fail-open in this file
     switches a FEATURE off; switching this one off the other way would switch the
     GATE off, which is the door this whole key had to be built not to open.
+
+    It is `declared_outputs` over the plan on disk, the reading the task commit
+    counts through `declared_git_rels`, so a path a pattern opens here is one
+    the commit counts as declared.
     """
-    rule = _task_rule()
-    if rule is None:
+    if _task_rule() is None:
         return []
-    out = []
-    manifest = _load_manifest_assembled(Path(root) / manifest_rel)
-    if not isinstance(manifest, dict):
-        return out
-    try:
-        for phase in manifest.get("phases", []) or []:
-            for task in phase.get("tasks", []) or []:
-                if task.get("status") != "in_progress":
-                    continue
-                tid = task.get("id")
-                for pattern in rule.honoured(task.get("outputs")):
-                    out.append((pattern, tid))
-    except Exception:
-        return []
-    return out
+    return declared_outputs(_load_manifest_assembled(Path(root) / manifest_rel))
 
 
 def covering_output(outputs, rel):

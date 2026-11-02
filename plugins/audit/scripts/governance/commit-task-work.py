@@ -307,12 +307,12 @@ VERIFY_COMMAND = _vb.VERIFY_COMMAND
 def stage_targets(manifest, phase, task, manifest_path, project, git_root,
                   config=None):
     """The allow-list, resolved: `{"paths", "declared", "work", "kinds",
-    "ignored", "ignoredRecords", "skipped", "indexRel"}`.
+    "ignored", "ignoredRecords", "skipped", "indexRel", "records", "changed"}`.
 
     `paths` are git-root-relative and are the ONLY thing anything downstream may
     stage or commit; `declared` is the subset that came from the task's own
-    `files`, kept apart so the refusal can say which half of the list a path
-    failed against; `kinds` is `_scoped_commit.classify`'s answer for each of
+    `files` and its own graded `outputs`, kept apart so the refusal can say
+    which half of the list a path failed against; `kinds` is `_scoped_commit.classify`'s answer for each of
     `paths`, which is how each is staged; `ignored` and `ignoredRecords` hold the
     declared paths and the record paths git ignores, kept out of `paths` because
     nothing may stage them and apart from each other because their repairs
@@ -334,6 +334,15 @@ def stage_targets(manifest, phase, task, manifest_path, project, git_root,
     A `:line-range` SUFFIX IS STRIPPED. `files` entries may carry one and git has
     never heard of it; staging `a/b.py:10-20` would either fail or, worse, create
     a pathspec that matches nothing and leave the real file uncommitted.
+
+    THE TASK'S OWN `outputs` ARE ITS WORK TOO. The plan gate opens a write a
+    running task's graded `outputs` pattern covers, and `owned_rels` counts
+    that path as declared; counted and not staged, it would be neither refused
+    nor carried, and the task would close `done` over it. A pattern names no
+    path until the run makes one, so the paths are the changed ones `git
+    status` lists (`changed`, handed on to `owned_rels`) that the task's own
+    honoured patterns cover (`_config.output_git_rels`); a record path stays a
+    record.
     """
     config = _journal_io.load_config(project) if config is None else config
     index_abs, phase_file_abs = _invariants.manifest_files(manifest_path, phase)
@@ -386,6 +395,21 @@ def stage_targets(manifest, phase, task, manifest_path, project, git_root,
         if rel in [c[0] for c in candidates]:
             continue
         candidates.append((rel, name, os.path.exists(absolute), True))
+
+    changed, why = _scoped_commit.status_paths(git_root)
+    if changed is None and task.get("outputs"):
+        skipped.append("the task's own `outputs` could not be matched against "
+                       "the tree's changes, so none is staged (%s)" % (why,))
+    produced = _hooks_config().output_git_rels(
+        manifest, project, git_root, changed or (), also=[task.get("id")],
+        only=task.get("id"))
+    for rel in produced:
+        if rel in [c[0] for c in candidates] or _invariants.is_record_path(
+                rel, [r for r, _label, _abs in record_rels] + list(records)):
+            continue
+        name = _hooks_config().git_to_plan(rel, git_root, project)
+        candidates.append((rel, name, os.path.exists(os.path.join(git_root, rel)),
+                           True))
 
     for rel, label, absolute in record_rels:
         if not os.path.exists(absolute):
@@ -442,7 +466,8 @@ def stage_targets(manifest, phase, task, manifest_path, project, git_root,
     return {"paths": paths, "declared": declared, "work": work,
             "kinds": dict((rel, kinds[rel]) for rel in paths),
             "ignored": ignored, "ignoredRecords": ignored_records,
-            "skipped": skipped, "indexRel": index_rel, "records": records}
+            "skipped": skipped, "indexRel": index_rel, "records": records,
+            "changed": changed}
 
 
 def with_index(git_root, targets, carry):
@@ -613,13 +638,23 @@ def _them(paths):
     return "it" if len(paths) == 1 else "them"
 
 
-def owned_rels(manifest, project, git_root, task):
-    """Every declared entry of every in_progress task, and of `task` itself,
-    git-root relative with the line suffix dropped - the plan gate's own
-    reading (`hooks/_config.declared_git_rels`), so a path the gate opened to
-    an edit is never one this commit refuses as undeclared."""
+def owned_rels(manifest, project, git_root, task, changed=None):
+    """Every declared `files` entry of every in_progress task, and of `task`
+    itself, git-root relative with the line suffix dropped, and every path of
+    `changed` one of those tasks' graded `outputs` patterns covers - the plan
+    gate's own reading of both halves (`hooks/_config.declared_git_rels`), so
+    a path the gate opened by a task's `files` or `outputs` is never one this
+    commit refuses as undeclared. The free-file slot's one edit is not a
+    task's declaration and is refused when the attempt changed it.
+
+    `changed` is the tree's changed paths as `git status` prints them, listed
+    here when the caller holds none; a tree git will not list counts `files`
+    alone, and `undeclared_changes` then refuses on git's own reason."""
+    if changed is None:
+        changed, _why = _scoped_commit.status_paths(git_root)
     return _hooks_config().declared_git_rels(manifest, project, git_root,
-                                             also=[task.get("id")])
+                                             also=[task.get("id")],
+                                             changed=changed or ())
 
 
 def _hooks_config():
@@ -688,7 +723,8 @@ def attempt_refusal(manifest, task, project, git_root, config, targets,
                    + ([targets["indexRel"]] if targets.get("indexRel") else []))
     strays, why = _scoped_commit.undeclared_changes(
         git_root, project, config, record, started,
-        owned_rels(manifest, project, git_root, task), bookkeeping)
+        owned_rels(manifest, project, git_root, task,
+                   changed=targets.get("changed")), bookkeeping)
     if strays is None:
         return why, notes, None
     named = strays["pluginOwned"]

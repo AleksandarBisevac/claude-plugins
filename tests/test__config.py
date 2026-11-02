@@ -4118,8 +4118,98 @@ def _house_lift_cases(check):
             os.environ["CLAUDE_PROJECT_DIR"] = saved
 
 
+# A plan whose running task declares output PATTERNS beside its files: one the
+# grading honours, one it refuses for covering the whole tree, and a pending
+# task's pattern. The gate opens a write by `files` and by graded `outputs`
+# alike, so the commit's count of "declared" has to hold both.
+_DO_PLAN = {
+    "meta": {"version": 2},
+    "phases": [{"id": "P1", "title": "p", "status": "in_progress", "tasks": [
+        {"id": "P1.1", "title": "own", "status": "in_progress",
+         "files": ["src/own.py"], "outputs": ["reports/**", "**"]},
+        {"id": "P1.2", "title": "unstarted", "status": "pending",
+         "files": ["src/pending.py"], "outputs": ["var/evidence/**"]}]}],
+    "fileIndex": {"src/own.py": ["P1.1"], "src/pending.py": ["P1.2"]}}
+_DO_OUTPUT = "reports/q3.html"
+_DO_REFUSED = ("var/evidence/2026-09.jsonl", "stray.txt")
+
+
+def _declared_outputs_cases(check):
+    """A path the plan gate opens through a running task's graded `outputs` is
+    one the task commit counts as declared, in a real repository.
+
+    The gate allows a write an `outputs` pattern covers; a commit whose count of
+    "declared" read only `files` then refused that same path as changed during
+    the attempt with no running task declaring it - a gate run too late. The
+    second half is the over-fire direction: a pattern the grading refuses
+    (`**`) and a pending task's pattern open nothing for either reader, so a
+    commit that counted RAW patterns would cover the stray and fail here."""
+    import _loader
+    import _manifest_io as _mio
+    import _scoped_commit
+    gate = _loader.load(os.path.join(_harness.HOOKS_DIR, "require-plan.py"),
+                        modname="require_plan_declared_outputs")
+    ctw = _loader.load_script("commit-task-work.py", "ctw_declared_outputs",
+                              cache=False)
+    root = Path(_harness.fixture_root("cfg-declared-outputs-"))
+    plan_rel = "docs/audit/audit-plan.json"
+    (root / "docs" / "audit").mkdir(parents=True)
+    (root / plan_rel).write_text(json.dumps(_DO_PLAN), encoding="utf-8")
+    _harness.git(str(root), "init", "-q", prefix=("git",), timeout=20)
+    _harness.git(str(root), "add", "-A", prefix=("git",), timeout=20)
+    _harness.git(str(root), "-c", "user.email=t@t.t", "-c", "user.name=t",
+                 "-c", "commit.gpgsign=false", "commit", "-q", "-m", "base",
+                 prefix=("git",), timeout=20)
+    for rel in (_DO_OUTPUT,) + _DO_REFUSED:
+        target = root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("x\n", encoding="utf-8")
+    held = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = str(root)
+    many = "\n".join("line %d" % (n,) for n in range(200))
+
+    def gate_opens(rel, sid):
+        # Over the threshold, so the free-file slot never decides the verdict.
+        ok, got = _harness.attempt(gate.decide, {
+            "tool_name": "Write", "session_id": sid, "cwd": str(root),
+            "tool_input": {"file_path": str(root / rel), "content": many}},
+            event="PreToolUse")
+        return ok and got[0] == "allow"
+
+    try:
+        plan = _mio.load_manifest(str(root / plan_rel))
+        task = _mio.tasks_by_id(plan)["P1.1"]
+        owned = ctw.owned_rels(plan, str(root), str(root), task)
+        changes, why = _scoped_commit.undeclared_changes(
+            str(root), str(root), {}, None, "2000-01-01T00:00:00Z", owned, [])
+        covered = sorted((changes or {}).get("covered") or [])
+        strays = sorted((changes or {}).get("strays") or [])
+        opened = [rel for n, rel in enumerate((_DO_OUTPUT,) + _DO_REFUSED)
+                  if gate_opens(rel, "do-%d" % (n,))]
+        check("do1 a path a running task's graded `outputs` covers is opened by "
+              "the plan gate AND counted as declared by the task commit - "
+              "covered, never a stray it refuses one gate run late: gate %r, "
+              "covered %r, strays %r, why %r" % (opened, covered, strays, why),
+              changes is not None and _DO_OUTPUT in opened
+              and _DO_OUTPUT in covered and _DO_OUTPUT not in strays)
+        check("do2 SECOND DIRECTION: a pattern the grading refuses (`**`) and "
+              "a pending task's pattern open nothing for either reader - the "
+              "gate refuses both paths and the commit counts both as strays, so "
+              "a commit counting raw patterns goes red here: gate %r, covered "
+              "%r, strays %r" % (opened, covered, strays),
+              changes is not None and opened == [_DO_OUTPUT]
+              and covered == [_DO_OUTPUT]
+              and all(rel in strays for rel in _DO_REFUSED))
+    finally:
+        if held is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = held
+
+
 def _all_cases(check):
     _cases(check)
+    _declared_outputs_cases(check)
     _shared_payload_cases(check)
     _git_path_pair_cases(check)
     _git_standing_cases(check)

@@ -595,14 +595,19 @@ rules). Typed getters: `state_dir`, `logs_dir`, `token_vars`, `custom_rules`,
 `extra_secret_patterns`, `tdd_reminder`. Also hosts the shared path/manifest helpers
 (`rel_path`, `within_root`, `matches_exempt`, `strip_line_suffix`, `in_progress_files`,
 `in_progress_task_map` — the latter exposes each covering task's `tests.mode` for remind-tdd).
-`declared_task_map` is the one reading of "declared" behind that map: the `files` of every
-in_progress task over an assembled manifest, and never a `fileIndex` row — the commit stages
-`files` alone, so a path counted from a row would be neither staged nor refused and left dirty
-behind a closed task (`ctw-fi1` in `tests/test_commit_task_work.py`).
-`commit-task-work.py` counts a changed path as declared through the same function
-(`declared_git_rels`, the entries spelled from the checkout's top), so a path the plan gate
-opened to an edit is never one the task commit refuses as undeclared (`dp1`, `dp2` in
-`tests/test_require_plan.py`).
+`declared_task_map` is the `files` half of the one reading of "declared" behind that map: the
+`files` of every in_progress task over an assembled manifest, and never a `fileIndex` row — the
+commit stages a task's `files` and its own outputs and no row, so a path counted from a row would
+be neither staged nor refused and left dirty behind a closed task (`ctw-fi1` in
+`tests/test_commit_task_work.py`).
+`declared_outputs` is the other half of that reading: the honoured `outputs` patterns of the same
+tasks, which the gate reads as `in_progress_outputs`. `commit-task-work.py` counts a changed path
+as declared through both (`declared_git_rels`: the `files` entries spelled from the checkout's
+top, and the changed paths `git status` lists that a counted task's pattern covers,
+`output_git_rels`), so a path the plan gate opened by a task's `files` or `outputs` is never one
+the task commit refuses as undeclared (`dp1`, `dp2` in `tests/test_require_plan.py`; `do1`, `do2`
+in `tests/test__config.py`). The free-file slot is outside both halves: it opens one small edit to
+a session, not a task's declaration, so the commit refuses that path when the attempt changed it.
 `covering_key` is the matcher over any of those file maps (exact, the path as a directory, a
 directory the path sits under), shared so a verdict and the sentence explaining it cannot answer
 it differently; `declaring_tasks` is the read-only companion that keeps every status instead of
@@ -4053,7 +4058,9 @@ a file "obviously" part of the change, a sibling the editor had also touched, th
 because the phase file was allowed. Prose cannot refuse; this can.
 
 **What a task commit stages.** Exactly the four things step 4c allows, each named in the output:
-the task's own `files` (a `:line-range` suffix stripped, because git has never heard of one), the
+the task's own `files` (a `:line-range` suffix stripped, because git has never heard of one) with
+the changed paths its own honoured `outputs` patterns cover — the gate opened those to it, so
+counting them and leaving them out would close the task over them (`ctw-fi2`) — the
 phase's manifest file, the journal directory and the evidence directory — and, beside the shard,
 the part of the manifest **index** its phase owns, and nothing else of it.
 
