@@ -51,9 +51,37 @@
         "file": "CLAUDE.md:210",
         "issue": "The task widens the ruff path list in tools/verify.sh to include .claude/hooks, but CLAUDE.md:210 (the 'Tests' command block, 'the commands a change most often reruns by hand') and the plan's meta.buildCommands.lint still spell `ruff check plugins/audit tools tests`. A contributor or a build-command-driven gate following either runs a narrower ruff than verify.sh and would not see an unused import under .claude/hooks - the very class this task closes. The executor reported this as left for the orchestrator; it is a changed shape crossing into untouched files.",
         "resolution": "Add `.claude/hooks` to the ruff line at CLAUDE.md:210 and set meta.buildCommands.lint through `/audit:task build-command` (or drop the hand copy and point at `verify.sh --list`)."
+      },
+      {
+        "id": "P155-R5",
+        "severity": "med",
+        "file": "docs/audit/phases/P155.json (P155.6 files) vs plugins/audit/README.md:452 and plugins/audit/reference/verbs-in-full.md:482-483,1047-1060,1242-1300,1318",
+        "issue": "The diff edits two files the task does not declare, plugins/audit/reference/verbs-in-full.md and plugins/audit/README.md. It also declares plugins/audit/commands/verbs-in-full.md, which does not exist: the recorded gate run's scopeBasis reads '17 declared file(s); 16 read, 1 missing'. This has two consequences. (a) This is the 1-of-292 test__refs failure in the red-first fix run. That run takes only the declared implementation files from the working tree. So task.md's argument-hint, which now has --gate-add (it is declared and was copied), met HEAD's plugins/audit/README.md, which lacks it: `git show c2c057fd:plugins/audit/README.md | grep -c -- --gate-add` gives 0. That pair is exactly what test__refs cf1 (`command_flag_drift`, tests/test__refs.py:2164-2168) compares. This is an inference from reading, not from re-running test__refs. The recorded gate run 2026-11-02T09:48:08Z.c4ebb4, on the full task tree (head c2c057fd, the same dirtyDigest), passed test__refs with exit 0. So the failure comes from the scope mismatch and not from a defect in the code. (b) commit-task-work's `_scoped_commit.undeclared_changes` (commit-task-work.py:692-713) will refuse the task commit over the two undeclared paths.",
+        "resolution": "Run `/audit:task scope P155.6 --files +plugins/audit/reference/verbs-in-full.md,plugins/audit/README.md`, then record the gate again. If the stale `plugins/audit/commands/verbs-in-full.md` entry is dropped, the red-first helper's fix run copies the README too, and can then prove or refuse on the merits."
+      },
+      {
+        "id": "P155-R6",
+        "severity": "med",
+        "file": "CHANGELOG.md:7-15 ([Unreleased]); COMPATIBILITY.md:536-560 (not-promised, 'and it changed' entries)",
+        "issue": "This is a user-visible change to a shipped verb, and neither the changelog nor the compatibility record mentions it. `audit-task.py scope <id> --gate Y` on a task whose tests.gate holds entries Y leaves out used to exit 0 and replace the list. It now exits 2 and writes nothing (`_scope_gate_refusal`, audit-task.py:10207-10244). New behaviour: `--gate-add`, the success-line clause 'tests.gate now holds [...]', and the `gateNowHolds` key in --json. COMPATIBILITY.md's contract covers the manifest and the config only, and `--gate` is still read, so no promise is broken. But the document records every earlier exit-code move on an audit-task verb 'because an exit code moved from 0 to 2 on a shipped command, and a pipeline that read ... is a pipeline that now stops' (COMPATIBILITY.md:546-556). The repo's precedent P153-R3 filed the missing CHANGELOG line for a `--gate*` behaviour change as a finding. No caller inside the repo is broken: commands, agents, skills, the drive (drive-phase.py only builds `scope --files` argvs, :3203 and :6817), tools, examples and .github build no `scope --gate` argv, and the suite's own replace-meaning callers (sn4, gc3, jf, fg1, fg3, dg4b, gx1) now pass --replace.",
+        "resolution": "Scope CHANGELOG.md and COMPATIBILITY.md into the task. Add an [Unreleased] '### Changed' entry: `scope --gate` refuses a list that leaves out a held entry unless --replace (exit 2, nothing written). Add an '### Added' entry for `--gate-add` and `gateNowHolds`. Add a COMPATIBILITY.md not-promised bullet, in the shape of the existing 'which FLAGS a verb accepts ... and it changed' entry, naming the exit-code move and the repair (`--replace`, or `--gate-add`)."
+      },
+      {
+        "id": "P155-R7",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/_manifest_phases.py:1984-1991",
+        "issue": "The validator's wide-gate warning fires when a task's tests.gate is its phase's testGate verbatim. It tells the operator to 'Narrow it to the paths this task names ... go through `/audit:task scope <id> --gate \"<command>\"`'. A narrowed list leaves out held entries by definition, so after this diff that exact call is refused without --replace. This file is outside the diff, but the diff changed the verb on the other side of that instruction. The executor disclosed this, and the plan gate refused the edit. The refusal names --replace, so the cost is one round trip.",
+        "resolution": "Scope _manifest_phases.py, and tests/test__manifest_phases.py if a case pins the text, into this task or a follow-up. Say that narrowing takes `--gate \"<command>\" --replace`, while declaring the wide gate as the answer (the same list, which drops nothing) still takes a bare `--gate`."
+      },
+      {
+        "id": "P155-R8",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:10196-10204,10502,10593-10594",
+        "issue": "`--gate-add Y` on a task that declares no gate of its own writes `[Y]` with gateBasis `declared`. Such a task has tests.gate absent, `[]` or all-blank, gateBasis not `cleared`, and `_mio.gate_entries` (_manifest_io.py:663-692) measures it by the phase's testGate. So the gate that grades the task silently shrinks from the phase's entries to `[Y]`. Yet the help text, task.md and verbs-in-full describe --gate-add as appending 'keeping every entry the task holds'. `_held_gate` and `_gate_added` read only the stored list, never the resolved one. This is the class this task closes: a call spelled as 'keep' loses entries the gate ran. The success line prints `[Y]` but not what it replaced.",
+        "resolution": "In `_locked_scope`, when `_held_gate(node)` is empty and `_mio.gate_entries(phase, node)` returns source 'phase' with entries, do one of two things. Either refuse `--gate-add`, naming the phase gate it would replace and the spelling that keeps it (`--gate <each phase entry> --gate Y`), or seed the append with those resolved entries. Add a gk case on such a task that tells the two outcomes apart."
       }
     ],
-    "outcome": "[findings: 4 - 0 high, 0 med, 4 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 8 - 0 high, 2 med, 6 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -331,7 +359,7 @@
     {
       "id": "P155.5",
       "title": "CI's records are measured: the cost table is re-recorded from run 41322244766's Windows cells, the cap comment says what the runs showed, and ruff covers .claude/hooks",
-      "status": "in_progress",
+      "status": "done",
       "description": "Closes P143-R3, P143-R16 and the unused shutil import. (1) python3 tools/sweep-selftests.py --costs-from-log <eight windows logs of run 41322244766 at fa1b0c81: plain 1-5, cp1252 1-3; gh run view 41322244766 --job <id> --log> --platform win32 --record-costs .github/sweep-costs.json; drop the scaled-figures note. (2) ci.yml:280-283: \"five of those seven runs\" (or no count) and \"Measured, and matching GitHub's documented Free-plan limit\". (3) .claude/hooks/guard-uncommitted.py:654 loses `import shutil` (ruff F401) and verify.sh's ruff path list gains .claude/hooks so the class is gated.",
       "files": [
         ".github/sweep-costs.json",
@@ -372,19 +400,32 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d59f4aa868e1",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "(1) COST TABLE. Logs of run 41322244766 (workflow_dispatch, headSha fa1b0c81, conclusion success) fetched with `gh run view 41322244766 --log --job <id>`, each exit 0, no FAILED row: plain 1=124894736364, plain 2=124894736332, plain 3=124894736385, plain 4=124894736419, plain 5=124894736363, cp1252 1=124894736373, cp1252 2=124894736437, cp1252 3=124894736204. Saved in the session scratchpad ci-logs-41322244766/ (outside the tree, so the driver carries no untracked log), concatenated into win-all-eight.log, then `python3 tools/sweep-selftests.py --costs-from-log <that> --platform windows-2025 --workers 4 --record-costs .github/sweep-costs.json` exit 0: 'recorded 194 files' seconds and 233 blocks''. --platform windows-2025 instead of the brief's win32: it is the runs-on label of those cells, the value the table already carried, and platform_family() maps both to win32; --workers 4 because the logs print 'budget: 4 slots' / 'sweep: N files, 4 workers', and swp4 requires an int there (omitting it writes null). Result: every swept file (194 of 194 sweep_files()) has a figure; tools/reach-diff.py was added; blocks gained by suites that grew since the last record (test_drive_phase e2e-*/u*-blocks, test_stamp_verification su-*, test_audit_task dd/ocg), ip-block dropped because no suite stages it. One staged block has no figure: tests/test_drive_phase.py rf-block, added by P155.3 after fa1b0c81, so no windows log carries it; the runner falls back to its suite's largest block for it. The 'scaled-figures note' does not exist at base 2f8214c1 (no 'scal' anywhere in the table; the about text is the one record_costs writes), so there was nothing to drop. Observed with stamp-verification.load_sweep_table: win32 host reads 194 files/233 blocks, problem None; darwin host gets the 'not this host's' sentence. tools/sweep-selftests.py's TIMEOUT_PER_COST comment asks for the comparison to be re-derived on every re-record; done over the per-leg logs and appended as dated history: plain vs cp1252 spread up to 8.2x (stamp_verification si-inline-closure 8.8s/72.4s) but only on entries left at the 300s floor; up to 1.59x on entries sized above it; timing at most 1.33x the previous table's figure on entries that table sized above the floor; no job the previous table timed used more than 0.48 of max(floor, 3 x figure). (2) CI.YML CAP COMMENT. 'Measured, not documented' -> 'Measured, and matching GitHub's documented Free-plan limit' (docs.github.com actions/reference/limits table: Standard GitHub-hosted runner, Free, Total concurrent jobs 20). The count: I re-derived it from first attempts (gh run view --json jobs, and gh api .../attempts/1/jobs for 40765135807, 40781798399, 40913965771, which were re-run). The range 40761628365..41070108164 holds EIGHT 22-job release-tier runs, not seven - the review finding left out 40781798399 - each with exactly two jobs held 1-4 s after the first/second completion; a Windows sweep cell was among the held in six of the eight (not in 40765135807, 40946289828). So both 'six of seven' and the plan's 'five of seven' are wrong; I took the plan's other option and dropped the count ('in most of those runs'), said 'first attempt', and added how to read a re-run's first attempt beside the existing re-derive command. (3) RUFF. Removed the unused `import shutil` in .claude/hooks/guard-uncommitted.py _selftest. `ruff check .claude/hooks` (ruff 0.16.2 = CI's pin) found a SECOND instance of the class: .claude/hooks/require-claim-block.py:454 the same unused import; it is not in this task's files, I edited it (the plan gate allowed the Edit without refusal) because the task's own gate `ruff check plugins/audit tools tests .claude/hooks` cannot pass without it. tools/verify.sh's ruff step now lists .claude/hooks. To make the list hold, tools/gate-parity.py's LINT_DIR_RULES now requires .claude/hooks for ruff (docstring bullet and the rule's comment say so), _LD_GOOD carries it, and new case ld8 asserts a ruff list without it is a named finding. Checks run (not gate runs): `python3 tools/gate-parity.py --selftest` exit 0, ALL PASS 120/120; `ruff check .claude/hooks tools/gate-parity.py tools/sweep-selftests.py` exit 0; prose_number_claims finds nothing in the touched .py. Gate commands NOT run by me: runsGate is own-tests and the brief says there is nothing of my own to run, so the orchestrator's recorded run is the evidence. LEFT FOR THE ORCHESTRATOR (outside my files): CLAUDE.md:210 and docs/audit/audit-plan.json meta.buildCommands.lint still spell `ruff check plugins/audit tools tests` without .claude/hooks (the manifest key is changed through /audit:task build-command). DEPENDANTS: sweep-costs.json readers - stamp-verification.py and tests/test_stamp_verification.py read platform/workers/costs/blocks: shape unchanged, platform still a windows label, workers int, test_drive_phase.py present (observed above); tools/sweep-selftests.py reads it for --shard balance and timeouts: every swept file timed, one new block untimed (rf-block, handled by its fallback); ci.yml, CHANGELOG.md, CLAUDE.md, CONTRIBUTING.md, PLUGIN-BUILD-GUIDE.md name the path only, still correct. ci.yml dependants (audit-task.py, _harness, test__impact, test__manifest_phases, test__refs, test_audit_task, test_drive_phase, affected.py ...) reference its path; only a comment changed, no job, slice or matrix. verify.sh dependants (.gitattributes, ci.yml, derive-phase-gate.py, test__output, test__refs, affected.py, check-example-pins, check-git-pipeline ...): path unchanged, only the ruff step's argument list grew; gate-parity's lint_dir rule reads it and is green (ld6). guard-uncommitted.py dependants (.claude/settings.json, sweep-costs.json, PLUGIN-BUILD-GUIDE.md, tests/test__config.py): no name changed, an unused local import removed. gate-parity.py dependants (sweep-costs.json, ci.yml, _areas.py, test_audit_task, affected.py, bench-hooks, _output_lints, measure-affected-miss; floating_runners/image_in_job_names/job_bound_evidence/launcher_contract names): unchanged names; only LINT_DIR_RULES, a fixture and a case changed. sweep-selftests.py dependants (evals.json, sweep-costs.json, ci.yml, _output.py, _runner_collects, _runner_output, stamp-verification, _filed_returns; _positive/ambient_env/budget_line/coverage_findings): comment-only change. prove-gates.py, stamp-verification.py, tests/_harness.py, tests/test__runner_collects.py, tests/test_stamp_verification.py, PLUGIN-BUILD-GUIDE.md, tests/test__affected_tests.py, tests/test__doctor_trail.py, tests/test_drive_phase.py, tools/lints/_deps.py, tests/test__deps.py: declared by the widening, not edited; each is a key of the table, still present with a fresh figure.",
+        "descriptive": "The windows cost table is re-recorded from the eight cells of run 41322244766, the CI cap comment no longer miscounts or calls a documented limit undocumented, and ruff now lints .claude/hooks with gate-parity holding the list."
       },
       "startedAt": "2026-11-02T09:11:49Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-02T10:02:54Z",
+      "verifiedBy": [
+        "tools/gate-parity.py ld8: a verify.sh whose ruff list lacks .claude/hooks is a named ruff finding (not bound to a tests.add entry; the task declares none)"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-11-02T10:00:33Z.20e498",
         "status": "passed",
         "at": "2026-11-02T10:00:34Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "d59f4aa868e1",
+        "at": "2026-11-02T10:02:54Z",
+        "return": "docs/audit/evidence/returns/P155.5/20261102T091149Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task with tests.expectRedFirst false and no tests.add entry, so no red was owed. The one case added (gate-parity ld8) was nevertheless shown red by mutation in a scratch copy of the tracked files (never the shared tree): rule tuple without .claude/hooks -> FAIL ld8, 119/120, exit 1; live verify.sh without .claude/hooks -> FAIL ld6 119/120 and `python3 tools/gate-parity.py` exit 1 naming `does not cover .claude/hooks`; scratch copy deleted.",
+        "at": "2026-11-02, before submit; no helper run"
       }
     },
     {
@@ -441,9 +482,9 @@
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-11-02T09:48:08Z.c4ebb4",
+        "runId": "2026-11-02T10:08:52Z.5993b5",
         "status": "passed",
-        "at": "2026-11-02T09:48:08Z"
+        "at": "2026-11-02T10:08:52Z"
       }
     },
     {

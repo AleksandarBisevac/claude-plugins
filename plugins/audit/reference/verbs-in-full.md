@@ -479,7 +479,8 @@ generated plan carries.
 to `declared`, and it does so **even when the command list does not move** — declaring the
 wide gate outright is exactly the call an operator makes here, and a verb that compared
 lists alone would report "already reads that way", write nothing, and leave the only
-remaining route a sentence in the `description` that no rule opens.
+remaining route a sentence in the `description` that no rule opens. Narrowing the gate leaves
+out entries the task holds, so that call takes `--replace` (see `scope` below).
 
 #### A failed-first fix task is gated on what the run named
 
@@ -1043,6 +1044,23 @@ cancelled task, and a task already blocked (its reason on record stands — add 
 with `note`). **The ADO echo is not sent by this verb**; on a plan with a board it says the
 echo is owed (`reference/orchestrator.md` → *ADO echo*).
 
+### Subcommand: `unblock <taskId> --reason "<why>"`
+
+`--reason` goes in unchanged, by the rule stated under `cancel` below: it reaches the hash-chained journal.
+
+Run only after a human says try again or releases a hold. It has two arms, told apart by the
+attempts spent against `maxAttempts`:
+
+- a **blocked** task goes back to `pending` with its `blockedReason` removed. Its `attempts`
+  are reset to zero when they have reached the ceiling, and kept as recorded when they have not
+  (a task held on purpose, or blocked before the ceiling) - `notes` and `movedFrom` are never
+  touched;
+- a task that is not blocked is unblocked only when its attempts have reached the ceiling (the
+  count is reset and the status stays); a pending or running task with attempts left is refused,
+  since `start` still runs it.
+
+A done or cancelled task and a phase id are refused. The reason is journaled as `task.unblock`.
+
 ### Subcommand: `note <taskId> --text TEXT`
 
 `--text` goes in unchanged, by the rule stated under `cancel` below: it reaches the hash-chained journal.
@@ -1221,11 +1239,12 @@ Give a task the files it touches, and optionally its tests, its
 description and the three fields that decide how and when it runs:
 `--tests-mode tdd|regression|gate-only`, `--tests-add TEXT`
 (repeatable — `"<path>: <what it asserts>"`, since the leading path is what
-reaches `files`), `--gate CMD` (repeatable), `--gate-clear`, `--gate-set entry ...`
-(replace the gate) and `--gate-drop entry` (repeatable; every name must be in the
-task's gate) — those last two the way `retarget` takes them on a phase, for a task
-that has **not started**; a started task is refused with the spelling it may use,
-`--gate` or `--gate-clear` — `--description TEXT`
+reaches `files`), `--gate CMD` (repeatable; `--replace` when the list leaves out an
+entry the task holds), `--gate-add CMD` (repeatable; appends), `--gate-clear`,
+`--gate-set entry ...` (replace the gate) and `--gate-drop entry` (repeatable; every name
+must be in the task's gate) — those last two the way `retarget` takes them on a phase, for
+a task that has **not started**; a started task is refused with the spellings it may use,
+`--gate-add`, `--gate ... --replace` or `--gate-clear` — `--description TEXT`
 (or `--description -` to read the brief from stdin — see *A brief the shell has
 eaten is refused* above, and prefer it whenever the text holds backticks),
 `--risk low|med|high`, `--blocked-by ids`, `--depends-on ids`. Runs `scripts/manifest/audit-task.py scope` — the same
@@ -1266,6 +1285,17 @@ back. Readiness is the **whole** rule, all four of its terms, and the owning pha
 `_status_facts.unmet_refs`, which is the same answer `/audit:status` gives — the two
 said opposite things about one manifest for as long as there were two copies of it.
 
+**A `--gate` list never drops an entry the caller did not name.** A lone `--gate Y` on a
+task holding `[X, Z]` used to replace the list with `[Y]`, on a started task and a pending
+one alike, and nothing on the success line said what was lost. Now a `--gate` list that
+leaves out a held entry is refused, naming the entries it would drop, unless `--replace`
+says the drop is meant; `--gate-add Y` appends instead, writing an entry the task already
+holds no second time (that call writes nothing). A `--gate` list naming every held entry
+drops nothing and lands as spelled. `--gate-add` beside any other gate flag, and
+`--replace` with no `--gate`, are refused. Whenever a gate flag was passed, the success
+line ends `tests.gate now holds [...]`, and `--json` carries the same list as
+`gateNowHolds`.
+
 **`--gate-clear` is how a task reaches the EMPTY gate**, and it is here for a reason
 that is not `/audit:phase retarget`'s. That verb *replaces* `testGate` too, so the
 replacement itself still left the empty gate unspellable; `scope` **replaces**
@@ -1285,8 +1315,8 @@ what still grades it.
 `regression` promise a case the task writes, and nothing would ever run it under a cleared
 gate, so `scope --gate-clear` (and `add --gate-clear`, `--tests-mode tdd` over a gate already
 cleared) refuse with nothing written - a mode `add` derived from the title counts the same.
-The line names both remedies: `--gate <command that runs its case>`, or `--tests-mode
-gate-only` when the task owes no case. `done` asks the same of a plan that already holds the
+The line names both remedies: `--gate <command that runs its case>` (with `--replace` when
+it leaves out an entry the gate holds), or `--tests-mode gate-only` when the task owes no case. `done` asks the same of a plan that already holds the
 state, and refuses to close the task until it has a gate that runs its case. It asks of the gate
 that would actually run the task (`_manifest_io.gate_entries`), not of the stored basis, so it
 also refuses a `tdd` or `regression` task that declares no gate of its own (absent, `[]` or

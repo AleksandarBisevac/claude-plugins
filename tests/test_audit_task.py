@@ -121,7 +121,9 @@ def _stderr_of(call, *args):
 # gate of a fix task), ff (`add --failing-from <runId>`
 # gates a fix task on the suites a red sign-off run's own steps NAMED as
 # failing), dd (`start` refuses a task whose declared file has a reader it
-# neither declares nor waives, and `scope --files +a,b` adds to the held list).
+# neither declares nor waives, and `scope --files +a,b` adds to the held list),
+# gk (`scope --gate` keeps every held entry it was not told to drop, and the
+# success line prints the gate a task now holds).
 def _at_kit(tmp):
     """The helpers every slice of the add-and-close cases builds on, each
     bound to `tmp`, the slice's own scratch directory.
@@ -2199,7 +2201,7 @@ def _reshape_cases(check):
               code == 0 and (_snt.get("tests") or {}).get("mode") == "gate-only"
               and (_snt.get("tests") or {}).get("gate") == ["lint"])
         code, txt = run(["scope", "P2.3", "--files", "src/b.ts", "--gate",
-                         "true", "--project-dir", sn_proj])
+                         "true", "--replace", "--project-dir", sn_proj])
         check("sn4 ...after which --gate alone is accepted, because the object "
               "now exists - the refusal is about the MISSING object and not "
               "about the flag: %r" % (txt[:80],),
@@ -2526,10 +2528,12 @@ def _reshape_cases(check):
         # THE PAIRED NEGATIVE for gc1. A guard that refused on EITHER flag rather
         # than on both would make the ordinary call unusable, and no case above
         # would notice, because both of them pass the pair.
-        code, txt = run(["scope", "P2.3", "--gate", "pytest -q",
+        code, txt = run(["scope", "P2.3", "--gate", "pytest -q", "--replace",
                          "--project-dir", gc_proj])
-        check("gc3 --gate alone still replaces the gate and says nothing about an "
-              "empty one - the refusal is about the PAIR, not about either flag: "
+        check("gc3 --gate without --gate-clear still replaces the gate (with "
+              "--replace, since it drops the held entry) and says nothing about "
+              "an empty one - the refusal is about the PAIR, not about either "
+              "flag: "
               "%r" % ((code, gc_gate()),),
               code == 0 and gc_gate() == ["pytest -q"] and "now EMPTY" not in txt)
         code, txt = run(["scope", "P2.3", "--gate-clear",
@@ -2618,7 +2622,7 @@ def _reshape_cases(check):
             "add": ["tests/import.test.ts: the case the import came with"],
             "gate": ["lint"]}
         jf_proj, jf_mp = mk("jf-from", jfm)
-        code, txt = run(["scope", "P2.3", "--gate", "pytest -q",
+        code, txt = run(["scope", "P2.3", "--gate", "pytest -q", "--replace",
                          "--tests-add",
                          "tests/fix.test.ts: the case the fix owes",
                          "--project-dir", jf_proj])
@@ -3594,7 +3598,7 @@ def _reshape_cases(check):
                 _fh.write("x\n")
         _fg_green = dict(fgm["phases"][1]["tasks"][1]["testEvidence"])
         code, txt = run(["scope", "P2.3", "--gate",
-                         "npm test -- src/known.test.ts",
+                         "npm test -- src/known.test.ts", "--replace",
                          "--project-dir", fg_proj])
         _fgt = task_in(fg_mp, "P2.3") or {}
         check("fg1 a STARTED task takes a new `tests.gate`, and the green "
@@ -3619,7 +3623,7 @@ def _reshape_cases(check):
               and "WIDENED" not in txt)
         code, txt = run(["scope", "P2.3", "--files",
                          "src/known.ts,src/added.ts", "--gate",
-                         "npm test -- src/known.test.ts --run",
+                         "npm test -- src/known.test.ts --run", "--replace",
                          "--project-dir", fg_proj])
         _fg_rows = [r for r in (_stmod.read_all(fg_proj) if _stmod else [])
                     if r.get("action") == "task.scope"]
@@ -11308,7 +11312,8 @@ def _record_cases(check):
         # ALLOW CASE, the over-fire direction: a gate the author declared is
         # never re-derived by a `--tests-add` beside it.
         run(["scope", "P1.3", "--project-dir", dg_proj,
-             "--gate", "vitest run src/Button.test.tsx --reporter dot"])
+             "--gate", "vitest run src/Button.test.tsx --reporter dot",
+             "--replace"])
         code_s3, txt_s3 = run(["scope", "P1.3", "--project-dir", dg_proj,
                                "--tests-add",
                                "src/Third.test.tsx: a third case"])
@@ -16249,17 +16254,38 @@ def _leftover_cases(check):
         git(proj, "commit", "-q", "-m", "base")
         return proj, mpath
 
+    printed = []
+
+    def run_in(proj, argv, stdin=""):
+        """(exit, text) of one verb on `proj`, every one of this block's.
+
+        Each output is kept in `printed`, which lo-po6 counts: these cases assert
+        over the WHOLE text a verb printed, and a verb run from a tree other
+        than the one it writes prefixes a warning naming both trees - so the
+        fixture directory's own name ends up in the text the asserts read.
+        So the verb stands where a session writing `proj` stands - in `proj`
+        - and the caller's own cwd is back in place afterwards."""
+        lines = []
+        real = sys.stdin
+        here = os.getcwd()
+        sys.stdin = io.StringIO(stdin)
+        os.chdir(proj)
+        try:
+            code = M.main(list(argv) + ["--project-dir", proj],
+                          out=lines.append)
+        finally:
+            sys.stdin = real
+            os.chdir(here)
+        text = "\n".join(str(x) for x in lines)
+        printed.append(text)
+        return code, text
+
     def close(proj, tid="P1.1"):
         sha = git(proj, "rev-parse", "HEAD").stdout.decode().strip()
-        lines = []
-        code = M.main(["done", tid, "--commit", sha, "--project-dir", proj],
-                      out=lines.append)
-        return code, "\n".join(str(x) for x in lines)
+        return run_in(proj, ["done", tid, "--commit", sha])
 
     def start(proj, tid):
-        lines = []
-        code = M.main(["start", tid, "--project-dir", proj], out=lines.append)
-        return code, "\n".join(str(x) for x in lines)
+        return run_in(proj, ["start", tid])
 
     def read(path):
         with open(path, "rb") as fh:
@@ -16269,10 +16295,21 @@ def _leftover_cases(check):
         # 2024-01-01: before the `startedAt` every fixture task here carries.
         os.utime(os.path.join(proj, *rel.split("/")), (1704067200, 1704067200))
 
+    # THE CALLER'S CHECKOUT, BUILT HERE. Run directly from a checkout this
+    # block failed lo-po4, while the sweep - whose scratch cwd is in no git
+    # tree - passed it; a case that reads where its caller stands is two cases.
+    # So every run of the block stands in a checkout of its own that is none of
+    # the fixtures, and the sweep sees what a direct run sees.
+    held_cwd = os.getcwd()
     try:
+        caller = os.path.join(root, "caller-checkout")
+        os.makedirs(caller)
+        git(caller, "init", "-q", "-b", "main")
+        os.chdir(caller)
         _attempt_cases(check, project, task, write, close, start, read, git,
                        backdate)
-        _held_work_cases(check, project, task, write, start, read, git)
+        _held_work_cases(check, project, task, write, start, read, git,
+                         run_in)
         _close_evidence_cases(check, project, task, write, close, read, git)
         proj, mpath = project("clean", [task("P1.1", ["src/a.ts"])])
         code, text = close(proj)
@@ -16471,7 +16508,17 @@ def _leftover_cases(check):
               "refuse it: %r" % ((code0, code, text[:600]),),
               code0 == 0 and code == 0 and config in text
               and "plugin-owned" in text and "REFUSED" not in text)
+
+        # Counted, not sampled: one verb left reading the caller's cwd is one
+        # warning, and the case names how many of the verbs printed it.
+        warned = [t for t in printed if "you are standing in" in t]
+        check("lo-po6 every verb this block runs stands in the fixture it "
+              "writes, so none of them prints the other-tree warning however "
+              "the suite was started (%d of %d warned)"
+              % (len(warned), len(printed)),
+              len(printed) > 0 and not warned)
     finally:
+        os.chdir(held_cwd)
         _harness.remove_tree(root)
 
 
@@ -16749,13 +16796,12 @@ def _remedies_pass(verdict):
             and "guard-history-rewrite.py" in verdict["guards"])
 
 
-def _held_work_cases(check, project, task, write, start, read, git):
+def _held_work_cases(check, project, task, write, start, read, git, run_in):
     """`start` charges a held change to its other declarer unless the
     evidence shows, path by path, that the bytes are the starting task's own
     filed work and nobody else could have written into them; a declarer's
     task tree is no such evidence. The way past the refusal it names is one
     no Bash guard here refuses, and it runs from anywhere in the project."""
-    import io
     import time
     sv = _loader.load_script("stamp-verification.py",
                              modname="stamp_verification_for_hw")
@@ -16783,16 +16829,7 @@ def _held_work_cases(check, project, task, write, start, read, git):
                  blockedReason="attempts exhausted"),
             task("P1.2", ["src/a.ts"], status="pending", attempts=0)])
 
-    def verb(proj, argv, stdin=""):
-        lines = []
-        real = sys.stdin
-        sys.stdin = io.StringIO(stdin)
-        try:
-            code = M.main(list(argv) + ["--project-dir", proj],
-                          out=lines.append)
-        finally:
-            sys.stdin = real
-        return code, "\n".join(str(x) for x in lines)
+    verb = run_in
 
     def node(mpath, tid):
         return _mio.tasks_by_id(_mio.load_manifest(mpath)).get(tid) or {}
@@ -21684,7 +21721,7 @@ def _gate_entry_cases(check):
                     ["add", "--from-file", batch(proj, [
                         {"title": "Fresh", "tests": {
                             "mode": "gate-only", "gate": [entry]}}])],
-                    ["scope", "P2.3", "--gate", entry],
+                    ["scope", "P2.3", "--gate", entry, "--replace"],
                     ["scope", "P2.3", "--gate-set", "test", entry]):
                 code, txt = run(argv + ["--project-dir", proj])
                 outcomes.append((argv[0], argv[-2] if argv[0] == "scope" else "",
@@ -21696,13 +21733,13 @@ def _gate_entry_cases(check):
         # THE ALLOW CASE for the refusals, so a predicate that fired on every
         # entry cannot pass: the spelled entry names the same two suites.
         ok_code, ok_txt = run(["scope", "P2.3", "--gate", spelled_both,
-                               "--project-dir", proj])
+                               "--replace", "--project-dir", proj])
         ok_gate = gate(mp)
         # ...and on a plan recording no spelling, the refusal says so rather
         # than naming a field that is not there.
         proj_n, _mp_n = mk("gx-nospell", plan(spelled=False))
         code_n, txt_n = run(["scope", "P2.3", "--gate", _GX_TWO,
-                             "--project-dir", proj_n])
+                             "--replace", "--project-dir", proj_n])
 
         proj_b, mp_b = mk("gx-batch", plan())
         code_b, txt_b = run(["add", "--from-file", batch(proj_b, [
@@ -21743,11 +21780,13 @@ def _gate_entry_cases(check):
             _pin(proj_m, proj_m)
             before_m = tree(proj_m)
             refusals = []
-            for argv in (["scope", "P2.3", "--gate", _GX_PLAN],
-                         ["scope", "P2.3", _GX_PLAN, "--gate", _GX_PLAN],
+            for argv in (["scope", "P2.3", "--gate", _GX_PLAN, "--replace"],
+                         ["scope", "P2.3", _GX_PLAN, "--gate", _GX_PLAN,
+                          "--replace"],
                          ["scope", "P2.3", _GX_PLAN, "--gate-set", "a",
                           _GX_PLAN],
-                         ["scope", "P2.3", "--gate", _GX_PLAN, _GX_PLAN]):
+                         ["scope", "P2.3", "--gate", _GX_PLAN, _GX_PLAN,
+                          "--replace"]):
                 code_m, txt_m = run(argv)
                 refusals.append((code_m, "manifest" in txt_m.lower(),
                                  tree(proj_m) == before_m))
@@ -22330,6 +22369,175 @@ def _dependant_dispatch_cases(check):
         _harness.remove_tree(tmp)
 
 
+def _gate_keep_cases(check):
+    """`scope --gate` never loses a gate entry the caller did not name.
+
+    A lone `--gate Y` on a task holding `[X, Z]` used to REPLACE the list with
+    `[Y]`, on a started task and a pending one alike, and the success line
+    named only the fields it touched - so the loss was seen by reading the
+    plan back. The fixture gate holds TWO entries, neither equal to what the
+    calls write, so a write that replaced, a write that appended, and a
+    refusal each leave a list this group can tell from the others; and both
+    a pending task and a started one hold it, because the two statuses take
+    different gate flags and the drop happened on both.
+    """
+    tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
+    (run, _run_on_stdin, base_manifest, mk, _mk_empty, task_in, _pin, _unpin,
+     _PD_SHA, _pd_fixture, _pd_repo, _git) = _at_kit(tmp)
+    held = ["lint", "pytest -q"]
+    try:
+        def plan():
+            m = base_manifest()
+            m["phases"][1]["tasks"][1]["tests"] = {
+                "mode": "gate-only", "expectRedFirst": False, "add": [],
+                "gate": list(held)}
+            m["phases"][1]["tasks"].append(
+                {"id": "P2.9", "title": "running", "status": "in_progress",
+                 "attempts": 1, "maxAttempts": 3, "commit": None,
+                 "startedAt": "2026-01-01T00:00:00Z", "completedAt": None,
+                 "outcome": {"technical": None, "descriptive": None},
+                 "verifiedBy": [],
+                 "tests": {"mode": "gate-only", "expectRedFirst": False,
+                           "add": [], "gate": list(held)}})
+            return m
+
+        def gate_of(mp, tid):
+            return ((task_in(mp, tid) or {}).get("tests") or {}).get("gate")
+
+        def bytes_of(mp):
+            with open(mp, "rb") as fh:
+                return fh.read()
+
+        def success_line(txt, tid):
+            lines = [ln for ln in txt.splitlines()
+                     if ln.startswith("[audit-task] %s scoped" % (tid,))]
+            return lines[0] if len(lines) == 1 else None
+
+        def holds(gate):
+            return "tests.gate now holds %s" % (json.dumps(gate),)
+
+        for tag, tid, state in (("gk1", "P2.3", "pending"),
+                                ("gk2", "P2.9", "started")):
+            proj, mp = mk("gk-refuse-%s" % (state,), plan())
+            before = bytes_of(mp)
+            code, txt = run(["scope", tid, "--gate", "vitest",
+                             "--project-dir", proj])
+            check("%s a lone `--gate vitest` on a %s task holding %r is "
+                  "REFUSED, writes no byte, and names the entries it would "
+                  "have dropped and both ways on - `--gate-add` to keep them, "
+                  "`--replace` to drop them on purpose: %r"
+                  % (tag, state, held, (code, gate_of(mp, tid), txt[-400:])),
+                  code == 2 and bytes_of(mp) == before
+                  and gate_of(mp, tid) == held
+                  and all(e in txt for e in held)
+                  and "--gate-add" in txt and "--replace" in txt)
+
+        for tag, tid, state in (("gk3", "P2.3", "pending"),
+                                ("gk4", "P2.9", "started")):
+            proj, mp = mk("gk-add-%s" % (state,), plan())
+            code, txt = run(["scope", tid, "--gate-add", "vitest",
+                             "--project-dir", proj])
+            want = held + ["vitest"]
+            line = success_line(txt, tid) or ""
+            check("%s `--gate-add vitest` on a %s task APPENDS, keeping both "
+                  "held entries in order, and the success line prints the "
+                  "gate the task now holds: %r"
+                  % (tag, state, (code, gate_of(mp, tid), txt[-300:])),
+                  code == 0 and gate_of(mp, tid) == want
+                  and holds(want) in line)
+
+        for tag, tid, state in (("gk5", "P2.3", "pending"),
+                                ("gk6", "P2.9", "started")):
+            proj, mp = mk("gk-replace-%s" % (state,), plan())
+            code, txt = run(["scope", tid, "--gate", "vitest", "--replace",
+                             "--project-dir", proj])
+            line = success_line(txt, tid) or ""
+            check("%s `--gate vitest --replace` on a %s task replaces the gate "
+                  "on purpose, and the success line prints what it holds now: "
+                  "%r" % (tag, state, (code, gate_of(mp, tid), txt[-300:])),
+                  code == 0 and gate_of(mp, tid) == ["vitest"]
+                  and holds(["vitest"]) in line)
+
+        # THE SECOND DIRECTION. A refusal written against the flag rather than
+        # against the entries it would drop makes every `--gate` need
+        # `--replace`, which this case fails: a list naming every held entry
+        # loses nothing, so it lands as it is spelled.
+        proj, mp = mk("gk-superset", plan())
+        code, txt = run(["scope", "P2.9", "--gate", "lint", "--gate",
+                         "pytest -q", "--gate", "vitest",
+                         "--project-dir", proj])
+        check("gk7 SECOND-DIRECTION CASE: a `--gate` list naming every held "
+              "entry drops nothing and lands without `--replace`: %r"
+              % ((code, gate_of(mp, "P2.9"), txt[-200:]),),
+              code == 0 and gate_of(mp, "P2.9") == held + ["vitest"])
+
+        # The sequence the drop was found with: swap one entry for another. On
+        # a pending task the drop lands and the lone `--gate` must then refuse
+        # rather than take the remaining entry with it; `--gate-add` after
+        # the drop leaves the list that was meant.
+        proj, mp = mk("gk-seq", plan())
+        code_d, _t = run(["scope", "P2.3", "--gate-drop", "lint",
+                          "--project-dir", proj])
+        code_g, _t = run(["scope", "P2.3", "--gate", "vitest",
+                          "--project-dir", proj])
+        after_lone = gate_of(mp, "P2.3")
+        code_a, _t = run(["scope", "P2.3", "--gate-add", "vitest",
+                          "--project-dir", proj])
+        check("gk8 drop-then-`--gate` leaves the intended list or refuses: "
+              "the lone `--gate` refuses over the entry the drop kept, and "
+              "drop-then-`--gate-add` leaves exactly the swap: %r"
+              % ((code_d, code_g, after_lone, code_a, gate_of(mp, "P2.3")),),
+              code_d == 0 and code_g == 2 and after_lone == ["pytest -q"]
+              and code_a == 0
+              and gate_of(mp, "P2.3") == ["pytest -q", "vitest"])
+
+        proj, mp = mk("gk-dup", plan())
+        before = bytes_of(mp)
+        code, txt = run(["scope", "P2.9", "--gate-add", "lint",
+                         "--project-dir", proj])
+        check("gk9 `--gate-add` of an entry already held does not write it "
+              "twice - the gate already reads that way, and no byte moves: %r"
+              % ((code, gate_of(mp, "P2.9"), txt[-200:]),),
+              code == 0 and bytes_of(mp) == before
+              and gate_of(mp, "P2.9") == held)
+
+        proj, mp = mk("gk-opposite", plan())
+        before = bytes_of(mp)
+        code, _t = run(["scope", "P2.3", "--gate-add", "vitest",
+                        "--gate-clear", "--project-dir", proj])
+        code2, _t = run(["scope", "P2.3", "--gate-add", "vitest", "--gate",
+                         "lint", "--project-dir", proj])
+        code3, txt3 = run(["scope", "P2.3", "--replace", "--files",
+                           "src/x.ts", "--project-dir", proj])
+        check("gk10 `--gate-add` with `--gate-clear` or with `--gate`, and a "
+              "`--replace` with no `--gate` to qualify, are each refused and "
+              "write nothing: %r" % ((code, code2, code3, txt3[-200:]),),
+              code == 2 and code2 == 2 and code3 == 2
+              and bytes_of(mp) == before)
+
+        # Every gate flag reports the gate it leaves; a call passing none does
+        # not grow the clause, which a line printing the gate unconditionally
+        # would fail.
+        proj, mp = mk("gk-lines", plan())
+        code_s, txt_s = run(["scope", "P2.3", "--gate-set", "a", "b",
+                             "--project-dir", proj])
+        code_r, txt_r = run(["scope", "P2.3", "--gate-drop", "a",
+                             "--project-dir", proj])
+        code_n, txt_n = run(["scope", "P2.3", "--description", "a new job",
+                             "--project-dir", proj])
+        check("gk11 `--gate-set` and `--gate-drop` print the held gate on the "
+              "success line too, and a scope passing no gate flag does not: %r"
+              % ((success_line(txt_s, "P2.3"), success_line(txt_r, "P2.3"),
+                  success_line(txt_n, "P2.3")),),
+              code_s == 0 and code_r == 0 and code_n == 0
+              and holds(["a", "b"]) in (success_line(txt_s, "P2.3") or "")
+              and holds(["b"]) in (success_line(txt_r, "P2.3") or "")
+              and success_line(txt_n, "P2.3") is not None
+              and "tests.gate now holds" not in txt_n)
+    finally:
+        _harness.remove_tree(tmp)
+
+
 STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("at3-block", "_flag_cases"), ("at4-block", "_start_cases"),
           ("at5-block", "_close_cases"), ("at6-block", "_group_cases"),
@@ -22359,7 +22567,8 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("gx-block", "_gate_entry_cases"),
           ("sh-block", "_start_head_cases"),
           ("ocg-block", "_tdd_gate_clear_cases"),
-          ("dd-block", "_dependant_dispatch_cases"))
+          ("dd-block", "_dependant_dispatch_cases"),
+          ("gk-block", "_gate_keep_cases"))
 
 
 if __name__ == "__main__":

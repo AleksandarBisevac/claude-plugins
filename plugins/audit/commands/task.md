@@ -1,6 +1,6 @@
 ---
 description: Add a tracked task to the audit manifest — every answer is a flag, and the dialogue only covers what the caller did not pass — promote one to running, close one that landed, move one between phases, or cancel work that will not be done. `add` allocates the id, initializes all orchestrator fields, updates fileIndex, and revalidates; `start` promotes a task to in_progress so the plan gate resolves its files, without spawning anything; `done` closes it against the commit its work landed in, writing status, completedAt, commit, outcome and verifiedBy in one write — or, with `--no-change --reason`, closes a task whose answer was that nothing needed to change; `reopen` puts a done task back to pending with the reason recorded; `move` renumbers a task into another phase, rewrites every reference, and records a chained task.move journal row; `block` sets a task blocked with the reason beside the status; `unblock` takes a blocked task back to pending on a human's recorded reason, resetting the attempts it has spent when they have reached the ceiling; `note` appends a dated note, the one addition a started task takes; `build-command` sets, replaces or drops one `meta.buildCommands` key on a plan that exists; `reindex` re-derives fileIndex from the files the shards declare; `cancel` closes a task — or, as the legacy spelling of `/audit:phase cancel`, a whole phase — as terminal-but-not-done, recording the reason, the moment and a journal row. `priority` is the legacy spelling of `/audit:phase priority` and still works.
-argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--outputs pat,pat] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--failing-from RUNID] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] [--dry-run] [--from-file PATH] [--fixes findingIds] [--bug bugId] [--introduces KIND ...] | start <taskId> [--force --reason "<why>"] | done <taskId> [--commit <sha>] [--no-change --reason "<why>"] [--descriptive TEXT] [--technical TEXT] [--verified-by t1,t2] [--intent ANSWER] [--intent-basis TEXT] [--override-verdict TEXT] [--from-return] | reopen <taskId> --reason "<why>" | scope <taskId> [--files [+]a,b] [--waive "<path>: <why>"] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--gate-set entry ...] [--gate-drop entry] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] [--introduces KIND ...] | move <taskId> --to <phaseId> | block <taskId> --reason "<why>" | unblock <taskId> --reason "<why>" | note <taskId> --text TEXT | couple --test <path> --sources a,b --basis-run <runId> --basis-head <sha> [--phases id,id], or --test <path> --caught <runId> | uncouple --test <path> | mute --test <path> --reason TEXT --owner NAME --until <YYYY-MM-DD> --bug <bugId> | unmute --test <path> | build-command <key> [--command "<cmd>"] [--replace] [--remove] [--reason "<why>"] | reindex | cancel <id> --reason "<why>"'
+argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--outputs pat,pat] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--failing-from RUNID] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] [--dry-run] [--from-file PATH] [--fixes findingIds] [--bug bugId] [--introduces KIND ...] | start <taskId> [--force --reason "<why>"] | done <taskId> [--commit <sha>] [--no-change --reason "<why>"] [--descriptive TEXT] [--technical TEXT] [--verified-by t1,t2] [--intent ANSWER] [--intent-basis TEXT] [--override-verdict TEXT] [--from-return] | reopen <taskId> --reason "<why>" | scope <taskId> [--files [+]a,b] [--waive "<path>: <why>"] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--replace] [--gate-add CMD] [--gate-clear] [--gate-set entry ...] [--gate-drop entry] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] [--introduces KIND ...] | move <taskId> --to <phaseId> | block <taskId> --reason "<why>" | unblock <taskId> --reason "<why>" | note <taskId> --text TEXT | couple --test <path> --sources a,b --basis-run <runId> --basis-head <sha> [--phases id,id], or --test <path> --caught <runId> | uncouple --test <path> | mute --test <path> --reason TEXT --owner NAME --until <YYYY-MM-DD> --bug <bugId> | unmute --test <path> | build-command <key> [--command "<cmd>"] [--replace] [--remove] [--reason "<why>"] | reindex | cancel <id> --reason "<why>"'
 allowed-tools: Read, Edit, Bash, Glob, Grep, AskUserQuestion
 ---
 
@@ -36,7 +36,8 @@ abandoned - ask the human (AskUserQuestion), then re-run with `--takeover`.
    since a shell eats a backticked span and the writer refuses the hole it leaves); `--files`;
    `--outputs` for files the task produces; `--tests-mode tdd|regression|gate-only`;
    `--tests-add "<path>: <what it asserts>"` - the leading path is what reaches `files` and
-   `fileIndex`; `--gate` only to override the derived gate, `--gate-clear` for none;
+   `fileIndex`; `--gate` only to override the derived gate,
+   `--gate-clear` for none (refused on tdd/regression; see verbs-in-full);
    `--failing-from <runId>` for a fix task after a red sign-off run; `--risk`; `--model`
    (`sonnet` is the floor for fix work, never `haiku`); `--blocked-by` / `--depends-on`.
    **Skills** come from one source:
@@ -85,17 +86,7 @@ them or widen the task with `scope <taskId> --files a,b`.
 ## Subcommand: `unblock <taskId> --reason "<why>"`
 
 `T unblock <taskId> --reason "<the human's words>"` - only after a human says try again or
-releases a hold. It has two arms, told apart by the attempts spent against `maxAttempts`:
-
-- a **blocked** task goes back to `pending` with its `blockedReason` removed. Its `attempts`
-  are reset to zero when they have reached the ceiling, and kept as recorded when they have not
-  (a task held on purpose, or blocked before the ceiling) - `notes` and `movedFrom` are never
-  touched;
-- a task that is not blocked is unblocked only when its attempts have reached the ceiling (the
-  count is reset and the status stays); a pending or running task with attempts left is refused,
-  since `start` still runs it.
-
-A done or cancelled task and a phase id are refused. The reason is journaled as `task.unblock`.
+releases a hold. Which attempts it resets, and what it refuses, is in verbs-in-full.
 
 ## Subcommand: `note <taskId> --text TEXT`
 
@@ -120,6 +111,8 @@ with `/audit:bug add` first.
 `T scope <taskId>` with the hint's flags. On a started task `--risk`, `--description`,
 `--tests-mode`, `--blocked-by` and `--depends-on` all keep the old refusal; `--files` and
 `--tests-add` may only grow, and `tests.gate` may be replaced outright - it is read forwards only.
+A `--gate` list leaving out an entry the task holds is refused without `--replace`; `--gate-add`
+appends. The success line prints the gate the task now holds.
 
 ## Subcommand: `move <taskId> --to <phaseId>`
 

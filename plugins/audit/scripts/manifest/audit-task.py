@@ -64,8 +64,9 @@ Usage:
   audit-task.py scope <taskId> [manifest] [--files [+]f1,f2]
                 [--waive "PATH: WHY" ...]
                 [--tests-mode tdd|regression|gate-only] [--tests-add TEXT ...]
-                [--gate CMD ... | --gate-clear | --gate-set entry ...
-                 | --gate-drop entry ...] [--description TEXT|-]
+                [--gate CMD ... [--replace] | --gate-add CMD ... | --gate-clear
+                 | --gate-set entry ... | --gate-drop entry ...]
+                [--description TEXT|-]
                 [--risk low|med|high] [--blocked-by id,id] [--depends-on id,id]
                 [--introduces KIND ...]
                 [--project-dir DIR] [--takeover] [--json]
@@ -1365,12 +1366,13 @@ def resolve_briefs(args, out, stream=None):
 # machine-path door as prose. Not on `PROSE_FLAGS`: none of these reads stdin
 # or meets the shell-gap check, and each is a list a repeated flag fills.
 _VERBATIM_LIST_FLAGS = (("gate", "--gate"), ("gate_set", "--gate-set"),
+                        ("gate_add", "--gate-add"),
                         ("verified_by", "--verified-by"))
 # ...and the gate flags write a field something EXECUTES, which the plan's save
 # keeps byte for byte (`_manifest_io.executed_positions`) rather than rewrite
 # into a command that no longer runs. So their refusal names the field a verb
 # writes and offers a spelling that runs - a placeholder would not.
-_GATE_DESTS = ("gate", "gate_set")
+_GATE_DESTS = ("gate", "gate_set", "gate_add")
 _GATE_FIELD = {"add": "tests.gate", "scope": "tests.gate",
                "add-phase": "testGate", "retarget": "testGate",
                "seed": "testGate and tests.gate"}
@@ -1531,14 +1533,18 @@ def _owed_case_gate_refusal(tid, phase, task, remedy, at_close=False):
 
 
 # What a task not yet closing does about it: either field may be the wrong one.
-_OWED_CASE_WRITE_REMEDY = ("Pass --gate <a command that runs its case>, or "
-                           "--tests-mode gate-only if it owes no case of its own.")
+_OWED_CASE_WRITE_REMEDY = ("Pass --gate <a command that runs its case> (with "
+                           "--replace when it leaves out an entry the gate "
+                           "holds), or --tests-mode gate-only if it owes no "
+                           "case of its own.")
 
 # What a STARTED task does about it: only the gate. `tests.mode` is what an
 # attempt was graded under, so `scope` refuses to move it once a task has
 # started (`_narrowings`), while `tests.gate` is `_FORWARD_ONLY`; a remedy naming
 # the mode would be a refusal's own directions into another refusal.
-_OWED_CASE_STARTED_REMEDY = "Pass --gate <a command that runs its case>."
+_OWED_CASE_STARTED_REMEDY = ("Pass --gate <a command that runs its case> (with "
+                             "--replace when it leaves out an entry the gate "
+                             "holds).")
 
 
 # --- what a gate entry may be, asked where it is written -----------------------
@@ -10132,6 +10138,73 @@ def _rederive_gate(tid, node, tests, phase, assembled, project):
     return changes
 
 
+def _scope_gate_flags(args):
+    """The gate flags a `scope` call passed, in the usage block's order."""
+    return [flag for flag, given in (
+        ("--gate", bool(args.gate)),
+        ("--gate-clear", bool(args.gate_clear)),
+        ("--gate-set", args.gate_set is not None),
+        ("--gate-drop", bool(args.gate_drop)),
+        ("--gate-add", bool(args.gate_add))) if given]
+
+
+def _held_gate(node):
+    """The `tests.gate` list a task holds now, `[]` when it holds none."""
+    tests = node.get("tests")
+    return list((tests.get("gate") if isinstance(tests, dict) else None) or [])
+
+
+def _gate_added(args, held):
+    """The `--gate-add` entries a write appends: each one once, in the order
+    given, and none the task already holds - so an add of a held entry moves
+    nothing and the call reads as the no-op it is."""
+    added = []
+    for entry in args.gate_add or []:
+        if entry not in held and entry not in added:
+            added.append(entry)
+    return added
+
+
+def _scope_gate_refusal(args, tid, node):
+    """The refusal line for a `scope` gate call that would lose an entry the
+    caller did not name, or None.
+
+    A LONE `--gate` USED TO REPLACE THE WHOLE LIST, and the call that lost an
+    entry read exactly like the call that meant to: the success line named the
+    field and not what it now held. Measured live: swapping one entry of a
+    two-entry gate as `--gate-drop X` then `--gate Y` left `[Y]` on a pending
+    task, and on a started task - where the drop is refused - `[Y]` again, both
+    seen only by reading the plan back. So a `--gate` list that leaves out a
+    held entry is refused unless `--replace` says the drop is meant, and
+    `--gate-add` is the spelling that keeps them. Asked of the entries, not of
+    the flag: a `--gate` list naming every held entry loses nothing and lands
+    as spelled.
+
+    `--gate-add` IS ONE ANSWER ABOUT THE FIELD, so it refuses beside any of
+    the other four as `_retarget_gate_contradiction` refuses two of those; and
+    `--replace` qualifies `--gate` alone, so a call carrying it with no
+    `--gate` is refused rather than read as meaning something else.
+    """
+    passed = _scope_gate_flags(args)
+    if args.gate_add and len(passed) > 1:
+        return ("[audit-task] %s say different things about the same field -- "
+                "pass one" % " and ".join(passed))
+    if args.replace and not args.gate:
+        return ("[audit-task] --replace qualifies --gate on scope: it says the "
+                "held entries a --gate list leaves out are dropped on purpose, "
+                "and this call passes no --gate. Nothing written.")
+    held = _held_gate(node)
+    dropped = [g for g in held if g not in (args.gate or [])]
+    if not args.gate or not dropped or args.replace:
+        return None
+    pronoun = "it" if len(dropped) == 1 else "them"
+    return ("[audit-task] --gate writes %s's whole tests.gate, which holds %s, "
+            "and this list leaves out %s. To keep %s, append with --gate-add "
+            "CMD instead; to drop %s on purpose, pass the same --gate list "
+            "with --replace. Nothing written."
+            % (tid, json.dumps(held), json.dumps(dropped), pronoun, pronoun))
+
+
 def _locked_scope(args, project, config, mpath, tid, out):
     """Give an unscoped task its `files` (and optionally its tests), under lock.
 
@@ -10291,13 +10364,19 @@ def _locked_scope(args, project, config, mpath, tid, out):
         out(contradiction)
         return E_USAGE
     # `--gate-set` / `--gate-drop` are the pending task's spellings. A started
-    # task keeps the rule it has: it takes `--gate` (replace) and `--gate-clear`,
-    # so the refusal says exactly those rather than leaving the caller to guess.
+    # task takes `--gate` (with `--replace` when the list drops a held entry),
+    # `--gate-add` and `--gate-clear`, so the refusal says exactly those rather
+    # than leaving the caller to guess.
     if started and (args.gate_set is not None or args.gate_drop):
         out("[audit-task] %s has started (status %s) -- --gate-set and "
-            "--gate-drop are for a task that has not. On a started task replace "
-            "the gate with `--gate CMD [--gate CMD ...]` or empty it with "
-            "`--gate-clear`." % (tid, node.get("status")))
+            "--gate-drop are for a task that has not. On a started task append "
+            "with `--gate-add CMD`, replace the gate with `--gate CMD [--gate "
+            "CMD ...] --replace`, or empty it with `--gate-clear`."
+            % (tid, node.get("status")))
+        return E_USAGE
+    refusal = _scope_gate_refusal(args, tid, node)
+    if refusal:
+        out(refusal)
         return E_USAGE
     additive, files, refusal = _files_delta(args.files)
     if refusal:
@@ -10340,12 +10419,13 @@ def _locked_scope(args, project, config, mpath, tid, out):
     if not files and args.tests_mode is None and not args.tests_add \
             and not args.gate and not args.gate_clear and not args.description \
             and args.gate_set is None and not args.gate_drop \
+            and not args.gate_add \
             and args.risk is None and args.blocked_by is None \
             and args.depends_on is None and not args.introduces \
             and not waivers:
         out("[audit-task] scope needs --files (and may take --tests-mode / "
-            "--tests-add / --gate / --gate-clear / --gate-set / --gate-drop / "
-            "--description / --risk / "
+            "--tests-add / --gate / --gate-add / --gate-clear / --gate-set / "
+            "--gate-drop / --description / --risk / "
             "--blocked-by / --depends-on / --introduces / --waive) -- a "
             "scope call that changes nothing is a lock taken for no reason")
         return E_USAGE
@@ -10417,8 +10497,11 @@ def _locked_scope(args, project, config, mpath, tid, out):
     # key, and every `scope` against it was refused with
     # `tests.mode None not in [...]` -- a message about the manifest for a
     # defect in the writer, which is the half that makes it hard to read.
+    # An add whose every entry is already held writes nothing, the basis
+    # included: the gate already reads the way the call asks.
+    added = _gate_added(args, was_gate)
     gate_writes = bool(args.gate or args.gate_clear
-                       or args.gate_set is not None or args.gate_drop)
+                       or args.gate_set is not None or args.gate_drop or added)
     tests_writes = (args.tests_mode is not None or bool(args.tests_add)
                     or gate_writes)
     tests = node.get("tests")
@@ -10507,16 +10590,20 @@ def _locked_scope(args, project, config, mpath, tid, out):
         else:
             companions = []
     if gate_writes:
-        now_gate, gate_refusal = _retarget_gate_now(
-            args, was_gate, "this task's tests.gate")
+        if added:
+            now_gate, gate_refusal = was_gate + added, None
+        else:
+            now_gate, gate_refusal = _retarget_gate_now(
+                args, was_gate, "this task's tests.gate")
         if gate_refusal:
             out(gate_refusal)
             return E_USAGE
-        # ONLY WHAT THIS CALL WRITES: the entries a `--gate-drop` leaves
-        # standing were accepted by an earlier call, or by none.
+        # ONLY WHAT THIS CALL WRITES: the entries a `--gate-drop` or a
+        # `--gate-add` leaves standing were accepted by an earlier call, or by
+        # none.
         gate_refusal = _gate_write_refusal(
-            list(args.gate or []) + list(args.gate_set or []), assembled,
-            project, "tests.gate")
+            list(args.gate or []) + list(args.gate_set or []) + added,
+            assembled, project, "tests.gate")
         if gate_refusal:
             out(gate_refusal)
             return E_USAGE
@@ -10707,6 +10794,10 @@ def _locked_scope(args, project, config, mpath, tid, out):
     # was a task parked behind a `dependsOn` id, rescoped precisely so it could
     # run. "Can it run now" is the question that call was asking.
     waiting = _waiting_on(assembled, node)
+    # THE GATE A CALL LEAVES, said whenever it passed a gate flag: the field
+    # rows below show what moved, and a call that lost an entry it did not
+    # name read the same as one that meant to until the list itself was shown.
+    held_now = _held_gate(node) if _scope_gate_flags(args) else None
     if args.as_json:
         result = {"ok": True, "id": tid, "phase": phase_id,
                   "changes": changes, "written": written,
@@ -10738,9 +10829,13 @@ def _locked_scope(args, project, config, mpath, tid, out):
         result.update(project_basis_key(args))
         result.update(_index_dirty_key(index_note))
         result.update(_phase_branch_key(branch_note))
+        if held_now is not None:
+            result["gateNowHolds"] = held_now
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
-    out("[audit-task] %s scoped in %s" % (tid, phase_id))
+    out("[audit-task] %s scoped in %s%s"
+        % (tid, phase_id, "" if held_now is None
+           else "; tests.gate now holds %s" % (json.dumps(held_now),)))
     for row in changes:
         out("  %s: %s -> %s" % (row["field"], json.dumps(row["from"]),
                                 json.dumps(row["to"])))
@@ -15358,8 +15453,8 @@ VERB_FLAGS = {
     # was computed at, which keys the file, and the tasks that brief showed.
     "file-return": ("role", "head", "shown"),
     "scope": ("files", "tests_mode", "tests_add", "gate", "gate_clear",
-              "gate_set", "gate_drop", "description", "risk", "blocked_by", "depends_on", "introduces",
-              "waive"),
+              "gate_set", "gate_drop", "gate_add", "replace", "description",
+              "risk", "blocked_by", "depends_on", "introduces", "waive"),
     "retarget": ("gate", "gate_clear", "gate_drop", "gate_set", "area",
                  "outcome", "description", "rename", "parent_branch"),
     # `seed` writes where nothing exists yet, so it has no target to describe,
@@ -15577,6 +15672,13 @@ def build_parser():
                    help="retarget, scope: drop one gate entry (repeatable)")
     p.add_argument("--gate-set", dest="gate_set", nargs="*", default=None,
                    help="retarget, scope: replace the gate with these entries")
+    # `scope` only. The way to grow a task's gate without restating it: a lone
+    # `--gate` that leaves out an entry the task holds is refused unless
+    # `--replace` says the drop is meant (`_scope_gate_refusal`).
+    p.add_argument("--gate-add", dest="gate_add", action="append",
+                   default=None,
+                   help="scope: append a gate entry, keeping every entry the "
+                        "task holds (repeatable)")
     p.add_argument("--project-dir", dest="project_dir", default=None)
     p.add_argument("--reason", default=None, help=_PROSE_HELP)
     p.add_argument("--verdict", default=None, choices=list(_mio.SIGNOFF_VERDICTS),
@@ -15818,7 +15920,8 @@ def build_parser():
                    help="build-command: overwrite a key that already exists "
                         "(refused without it, naming the current value); "
                         "default-skills: overwrite a list the plan already "
-                        "holds")
+                        "holds; scope: let a --gate list drop the entries it "
+                        "leaves out")
     p.add_argument("--remove", action="store_true", default=False,
                    help="build-command: drop the key (refused while a "
                         "phase's testGate or a task's tests.gate names it); "
