@@ -153,8 +153,10 @@
         "severity": "high",
         "file": "tools/verify.sh:801-871",
         "issue": "The window is written to $WORKDIR/live-window/audit-plan.json, outside any checkout, so render-report resolves its project through _output.project_of_manifest to /tmp/verify-*/live-window (markerless fallback; checked in memory: project_of_manifest('/tmp/verify-XYZ/live-window/audit-plan.json') -> '/tmp/verify-XYZ/live-window'). The committed evidence ledger (docs/audit/evidence) is then never read. Measured in memory with _evidence_view.load_evidence on the same manifest: at the checkout path, keys ['passed','failed','empty-gate','no-evidence'], flags ['tree-mutated','tree-unknown','no-overlap','coverage-unknown','checks-unknown'], files 60. At the window path, keys ['dangling','no-evidence'], flags [], files 0. So the leg now drives a report where every pointer is 'dangling', a status the real plan never shows, and it loses every real evidence status and flag. That was what made the live-plan leg the report that 'DOES carry evidence' (tools/check-report-interactive.mjs:766-770). Nothing goes red: validate-manifest passes and the browser check accepts either page. The new comment ('the page still shows each key and status the plan uses') and CONTRIBUTING.md:503-504 overclaim for the same reason. The project's .claude/audit.config.json (theme and panel config) is also no longer read.",
-        "resolution": "Give the window a project the renderer resolves the way it resolves the checkout. Write it under a record-shaped path, $WORKDIR/live-window/docs/audit/audit-plan.json, so the project is $WORKDIR/live-window. Copy docs/audit/evidence/ (and .claude/audit.config.json) beside it. Then make the drift fail: after the render, assert that the window's load_evidence keys and flags equal the full plan's (or, at minimum, contain no 'dangling' the full plan lacks) and fail the leg otherwise.",
-        "fixTask": "P155.24-gfj"
+        "resolution": "fixed in P155.24-gfj (22585b1d033e): Give the window a project the renderer resolves the way it resolves the checkout. Write it under a record-shaped path, $WORKDIR/live-window/docs/audit/audit-plan.json, so the project is $WORKDIR/live-window. Copy docs/audit/evidence/ (and .claude/audit.config.json) beside it. Then make the drift fail: after the render, assert that the window's load_evidence keys and flags equal the full plan's (or, at minimum, contain no 'dangling' the full plan lacks) and fail the leg otherwise.",
+        "fixTask": "P155.24-gfj",
+        "commit": "22585b1d033e",
+        "status": "fixed"
       },
       {
         "id": "P155-R17",
@@ -275,7 +277,7 @@
         "resolution": "Add `python3 tools/sweep-selftests.py tools/gate-parity.py` to the task's tests.gate, or make sure the phase gate selects tools/gate-parity.py, so a recorded run exercises lw0-lw4."
       }
     ],
-    "outcome": "[findings: 32 - 1 high, 13 med, 18 low; 7 with a recorded fix commit]"
+    "outcome": "[findings: 32 - 1 high, 13 med, 18 low; 8 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1875,7 +1877,12 @@
       "fixes": [
         "P155-R12"
       ],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-02T19:24:25Z.729ad4",
+        "status": "passed",
+        "at": "2026-11-02T19:24:25Z"
+      }
     },
     {
       "id": "P155.23-gfj",
@@ -1970,7 +1977,7 @@
     {
       "id": "P155.24-gfj",
       "title": "fix P155-R16: The window is written to $WORKDIR/live-window/audit-plan.json, ...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The window is written to $WORKDIR/live-window/audit-plan.json, outside any checkout, so render-report resolves its project through _output.project_of_manifest to /tmp/verify-*/live-window (markerless fallback; checked in memory: project_of_manifest('/tmp/verify-XYZ/live-window/audit-plan.json') -> '/tmp/verify-XYZ/live-window'). The committed evidence ledger (docs/audit/evidence) is then never read. Measured in memory with _evidence_view.load_evidence on the same manifest: at the checkout path, keys ['passed','failed','empty-gate','no-evidence'], flags ['tree-mutated','tree-unknown','no-overlap','coverage-unknown','checks-unknown'], files 60. At the window path, keys ['dangling','no-evidence'], flags [], files 0. So the leg now drives a report where every pointer is 'dangling', a status the real plan never shows, and it loses every real evidence status and flag. That was what made the live-plan leg the report that 'DOES carry evidence' (tools/check-report-interactive.mjs:766-770). Nothing goes red: validate-manifest passes and the browser check accepts either page. The new comment ('the page still shows each key and status the plan uses') and CONTRIBUTING.md:503-504 overclaim for the same reason. The project's .claude/audit.config.json (theme and panel config) is also no longer read.\n\nResolution asked: Give the window a project the renderer resolves the way it resolves the checkout. Write it under a record-shaped path, $WORKDIR/live-window/docs/audit/audit-plan.json, so the project is $WORKDIR/live-window. Copy docs/audit/evidence/ (and .claude/audit.config.json) beside it. Then make the drift fail: after the render, assert that the window's load_evidence keys and flags equal the full plan's (or, at minimum, contain no 'dangling' the full plan lacks) and fail the leg otherwise.",
       "files": [
         "tools/verify.sh",
@@ -2000,14 +2007,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "22585b1d033e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/verify.sh: the live-plan window step moved out of rendered_plan_legs into a new POSIX function live_plan_window DIR. It writes the window at DIR/docs/audit/audit-plan.json, the plan's own record-shaped path, with its shards beside it. It copytrees docs/audit/evidence into DIR/docs/audit/evidence and copies .claude/audit.config.json into DIR/.claude/. As a result _output.project_of_manifest(window) is DIR, checked in lw1. The shape closure now also keeps any phase whose task or phase evidence status or flag (read by _evidence_view.load_evidence with _evidence_io.boundary_for, as render-report.py reads it) no kept phase carries. Without that arm the window lost 'empty-gate', 'tree-unknown' and 'coverage-unknown'. After writing, the step reads the evidence of the full plan and of the window and exits 1 if either reading is absent alone, if the keys or flags chip lists differ, or if any task or phase-own view the window keeps has a different (status, flags). It prints up to 12 of the differing lines on stderr. Validation of the window plan follows. rendered_plan_legs calls live_plan_window \"$WORKDIR/live-window\" and renders $WORKDIR/live-window/docs/audit/audit-plan.json. The step's comment was rewritten to say only what the code does. It drops the overclaim 'the page still shows each key and status the plan uses' and says a project theme FILE is not copied. tools/gate-parity.py: new private section _live_window_cases, cases lw0-lw4, wired into _cases after _verify_cleanup_cases. It cuts live_plan_window out of the shipped verify.sh with the existing shell_function_text and runs it under dash/sh from REPO against the repo's real plan, with python3 as a shell function calling sys.executable. It then reads both plans through the report's own evidence reader, independently of the step. lw0: the function exists, the leg calls it once and renders the record-shaped path. lw1: exit 0, plan written, project resolves to the window. lw2: zero per-subject disagreements and equal chip lists (628 tasks today). lw3: non-vacuity, files>0, some resolved key, no dangling the full plan lacks. lw4: the step itself exits non-zero naming 'dangling' when the ledger copy is cut; the cut site is counted ==1. All new names are private (_live_window_*, _run_live_window, _evidence_of, _view_word, _window_disagreements), so none takes a lint-shaped public name for prove-gates to count. Results: gate-parity --selftest 125/125, exit 0. The lw cases took 2.8s and 2.6s, two back-to-back runs. The sweep over gate-parity, test__refs and test__output_lints passed 3/3 files with 599 cases, exit 0. prove-gates --selftest 66/66, exit 0. ruff and vermin are clean on gate-parity. The rendered window report was also checked: render-report on the window exits 0 and writes audit-report.html. Class sweep: grep 'render-report.py' tools/verify.sh gives 4 call sites. Line 652 renders the checkout's own plan in place. The one-status and all-parked legs (995, 1016, 1021) render gen-demo-manifest output, which carries its own .git, .claude and evidence/ and was measured to resolve its own ledger (2 files, keys passed/failed/...), so they are left as they are. Dependants: every verify.sh dependant (.gitattributes, ci.yml, derive-phase-gate.py, test__output.py, test__refs.py, affected.py, check-example-pins.py, check-git-pipeline.py) references the script by path. They stay correct because no slice, flag, step label or `run` line changed, only a new function and the leg's body. ci.yml:101's pointer to rendered_plan_legs still resolves. gate-parity dependants that use its public names (floating_runners, image_in_job_names, job_bound_evidence, launcher_contract and the rest) are untouched; only private names were added. prove-gates.py, tests/_harness.py, tests/test__affected_tests.py, tools/sweep-selftests.py, stamp-verification.py, tests/test__runner_collects.py, tests/test_stamp_verification.py and PLUGIN-BUILD-GUIDE.md were not edited. Their dependants are unaffected. Not edited, out of scope: CONTRIBUTING.md:503-504 ('keeps every phase and task key and status the plan uses') is now backed for evidence statuses too, by the closure arm plus the step's own equality check. tools/check-report-interactive.mjs:766-770 ('a report that DOES carry evidence') is true again. .github/sweep-costs.json does not yet include the lw cases' ~2.7s in tools/gate-parity.py's figure. Edit route: gate-parity.py was edited with Edit. verify.sh's bulk move was done by a python one-off run through Bash, which no gate had refused (asserted anchors, count==1), and the later comment fix used Edit. No plan-gate refusal was met.",
+        "descriptive": "The live-plan report leg now renders a window that reads the committed evidence ledger and config, and fails when any kept subject's evidence reads differently from the full plan's. gate-parity's selftest runs that step for real."
       },
       "startedAt": "2026-11-02T18:43:29Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-02T19:18:47Z",
+      "verifiedBy": [
+        "lw0: verify.sh defines live_plan_window, rendered_plan_legs calls it once and renders the record-shaped window path",
+        "lw1: the shipped window step, run under dash against this repo's plan, exits 0 and its plan's project resolves to the window directory",
+        "lw2: every task and phase the window keeps reads (status, flags) as in the full plan, and the chip lists are equal, read independently through the report's evidence reader",
+        "lw3: non-vacuity, so the window read ledger files, resolved at least one run, and holds no dangling pointer the full plan lacks",
+        "lw4: with the ledger copy cut from the step's text, the step itself exits non-zero and names dangling pointers"
+      ],
       "notes": [
         {
           "at": "2026-11-02T16:59:08Z",
@@ -2030,6 +2043,17 @@
         "runId": "2026-11-02T19:13:29Z.a52926",
         "status": "passed",
         "at": "2026-11-02T19:13:29Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "22585b1d033e",
+        "at": "2026-11-02T19:18:47Z",
+        "return": "docs/audit/evidence/returns/P155.24-gfj/20261102T184329Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "tests.expectRedFirst is false on this tdd task: it names no case to prove a red by, so no red-first proof is owed",
+        "at": "2026-11-02T18:59:55Z"
       }
     },
     {

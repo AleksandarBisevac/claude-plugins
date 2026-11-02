@@ -6687,16 +6687,16 @@ _AB_FIXED = '"%s" -c "import os, sys; sys.exit(0 if os.path.exists(\'fixed.txt\'
 
 
 def _ab_red_at_base(M, prefix, phase_edit=None, base=None, work=None, then=None,
-                    prepare=None):
+                    prepare=None, setup=None):
     """A two-member wave whose first member is red only on a check the base
     fails, with the phase tree then committing the fix - and `phase_edit`
     `(rel, text)` beside it when given. `base` is what `src/f1.txt` holds when
     the trees are cut, `work` what the first member writes there, and `then` what
     else it does in its tree before filing, each the fixture's default when
     None; `prepare(root)` commits what else the base holds before the trees are
-    cut. `(root, mpath, head, tree)` once the first member's gate-red decision
-    stands."""
-    root, mpath = _wave_repo(prefix, 2)
+    cut, and `setup` is `executor.worktreeSetup`. `(root, mpath, head, tree)`
+    once the first member's gate-red decision stands."""
+    root, mpath = _wave_repo(prefix, 2, setup=setup)
     if prepare is not None:
         prepare(root)
     if base is not None:
@@ -6967,14 +6967,15 @@ def _carry_at(root, task_id):
 
 
 def _ar_at_decision(M, prefix, phase_edit=_AR_PHASE, work=_AR_WORK, then=None,
-                    prepare=None):
+                    prepare=None, setup=None):
     """The member's gate-red decision answered `rerun` after the phase moved a
-    file its work also edits; `then` and `prepare` are `_ab_red_at_base`'s.
+    file its work also edits; `then`, `prepare` and `setup` are
+    `_ab_red_at_base`'s.
     -> (root, mpath, head, tree, base, rows, code, text): `rows` is the
     member's gate row count before the answer."""
     root, mpath, head, tree = _ab_red_at_base(
         M, prefix, phase_edit, base=_AR_BASE if work == _AR_WORK else None,
-        work=work, then=then, prepare=prepare)
+        work=work, then=then, prepare=prepare, setup=setup)
     base = _git_out(tree, "rev-parse", "HEAD").strip() if tree else ""
     rows = len(_rows_of(root, mpath, "P1.1"))
     code, text = _next(M, root, mpath, "--answer", "rerun")
@@ -7051,6 +7052,7 @@ def _recut_refused_move_cases(check):
     check("ar3b ...and the decision still stands, to be answered again: %r"
           % ((code_c2, again[-300:]),),
           instruction(again)[0] == "decide" and _AR_OFFERS.search(again))
+    _recut_setup_cases(check, M)
 
     # The tree holds the plan's records refreshed from the head - dirty, and
     # among the paths that moved. They are the drive's, not the member's work,
@@ -7095,6 +7097,79 @@ def _recut_refused_move_cases(check):
           and not [n for n in os.listdir(os.path.join(root_l, ".claude", "state",
                                                       "drive"))
                    if n.endswith(".patch")])
+
+
+# An `executor.worktreeSetup` that rewrites the member's own tracked file, but
+# only in a tree cut where the phase's fix stands - the head, never the base the
+# wave's trees were first cut at. Its twin runs at the same moments and writes
+# nothing, so a recut that refused every tree with a setup fails the twin.
+_AR_SETUP_REWRITES = (
+    '"%s" -c "import os; os.path.exists(\'fixed.txt\') and '
+    'open(os.path.join(\'src\', \'f1.txt\'), \'w\').write(\'one by the setup\')"'
+    % (sys.executable,))
+_AR_SETUP_QUIET = ('"%s" -c "import os; os.path.exists(\'fixed.txt\')"'
+                   % (sys.executable,))
+
+
+def _worktree_paths(root):
+    """Every worktree `git worktree list` names for `root`, sorted."""
+    return sorted(line[len("worktree "):] for line in _git_out(
+        root, "worktree", "list", "--porcelain").splitlines()
+        if line.startswith("worktree "))
+
+
+def _recut_setup_cases(check, M):
+    """The redo's conflict check is made in the tree the work would really be
+    applied in - cut at the head and put through `executor.worktreeSetup` - not
+    against the bare head: a setup that rewrites a file the work carries refuses
+    the redo by name with the old tree, its work, its base and its carry where
+    they were and no second tree left behind; a setup that writes nothing
+    recuts and closes as a redo with no setup does."""
+    root_s, mpath_s, _head_s, tree_s, base_s, rows_s, _code, text_s = \
+        _ar_at_decision(M, "arecutsu", setup=_AR_SETUP_REWRITES)
+    carry_s = _carry_at(root_s, "P1.1")
+    bases_s = dict((_drive_state(root_s).get("wave") or {}).get("bases") or {})
+    trees_s = _worktree_paths(root_s)
+    code_s, refused_s = _next(M, root_s, mpath_s, "--answer", "redo")
+    marked_s = M._worktrees.read_provenance(tree_s, expect_task="P1.1").get("ours")
+    pins_s = _git_out(root_s, "for-each-ref", "refs/audit/redo/").strip()
+    code_s2, again_s = _next(M, root_s, mpath_s)
+    check("ar3s a redo whose work the setup's rewrite of a carried file refuses "
+          "in the recut tree is refused by name and undone: the old tree is the "
+          "task's again, its marker naming the task, its work, base and carry "
+          "unchanged, no gate ran, no recut tree, patch or pin is left, and "
+          "the decision still stands: %r"
+          % ((code_s, carry_s, marked_s, pins_s, trees_s, _worktree_paths(root_s),
+              refused_s[-600:], again_s[-300:]),),
+          marked_s is True and not pins_s and _no_patch(root_s)
+          and instruction(again_s)[0] == "decide" and _AR_OFFERS.search(again_s)
+          and
+          _AR_OFFERS.search(text_s) and carry_s
+          and code_s != 0 and "src/f1.txt" in refused_s and "redo" in refused_s
+          and os.path.isdir(tree_s) and _tree_of(root_s, "P1.1") == tree_s
+          and _git_out(tree_s, "rev-parse", "HEAD").strip() == base_s
+          and _read(os.path.join(tree_s, "src", "f1.txt")) == _AR_WORK.encode()
+          and _carry_at(root_s, "P1.1") == carry_s
+          and dict((_drive_state(root_s).get("wave") or {}).get("bases") or {})
+          == bases_s
+          and _worktree_paths(root_s) == trees_s
+          and len(_rows_of(root_s, mpath_s, "P1.1")) == rows_s
+          and tasks_of(mpath_s)["P1.1"].get("status") == "in_progress")
+
+    # The twin: a setup is configured and runs in the recut tree, writing
+    # nothing - the redo goes through exactly as `ar2`'s does.
+    root_q, mpath_q, head_q, _tree_q, _base_q, _rows_q, _c, _t = \
+        _ar_at_decision(M, "arecutsq", setup=_AR_SETUP_QUIET)
+    code_q, after_q = _next(M, root_q, mpath_q, "--answer", "redo")
+    row_q = _ab_last_row(root_q, mpath_q, "P1.1")
+    check("ar3t ...and with a setup that writes nothing the redo recuts at the "
+          "head, gates green there and the member closes on both edits: %r"
+          % ((code_q, row_q.get("status"), after_q[-600:]),),
+          code_q == 0
+          and _evio.same_head((row_q.get("testedState") or {}).get("head"), head_q)
+          and row_q.get("status") == "passed"
+          and tasks_of(mpath_q)["P1.1"].get("status") == "done"
+          and _read(os.path.join(root_q, "src", "f1.txt")) == _AR_MERGED)
 
 
 # The groups of recut cases that follow `ar8` are blocks of their own: each

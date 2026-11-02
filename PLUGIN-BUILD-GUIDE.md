@@ -4829,7 +4829,18 @@ the HEAD, and a `submodule foreach --recursive` push carries each submodule's HE
 is forced - a plan that cannot be read offers a task's key `task-remove` for when it reads, never
 `--force`, since a blocked task's tree is one a later wave adopts, and a key that is neither gets
 git's unforced remover (`kt9`, `kt9b`; `kt9c` pins status's copy of the shape to the driver's).
-The redo then cuts the new tree at the phase HEAD, applies the work
+The redo then cuts the new tree at the phase HEAD - through `executor.worktreeSetup`, which may
+rewrite what it checked out, so the scratch-index check at the bare head answers for the head
+alone. The work is checked again in the recut tree as the setup left it, over its own index, and
+applied there (`apply_in_recut`); a refusal there - a file the setup rewrote, or a conflict - is
+the one refusal that comes after the old tree is kept, and it is undone (`undo_recut`): the recut
+tree goes through the one remover, which takes it down since it holds only what the setup wrote,
+then the drive state and the old tree's marker are put back as they stood, and the patch and the
+pin go, so the redo is refused by name with the tree, its work, its base and its carry ref as
+they were (`ar3s`; `ar3t` recuts under a setup that writes nothing). The new tree cannot be cut
+first: `task-add` adopts the tree whose marker names the task, and rewriting that marker is the
+keeping. Where the undo itself stops, the drive stops naming the kept patch, as below. The redo
+applies the work
 three-way, checks every carried path the head did not move byte for byte, and clears the gate mark
 so the gate is measured over the new tree - no executor is dispatched and no attempt is spent,
 because the work was not what failed (`wd1`-`wd4`, `ar2`). Once the recut tree holds the work, the
@@ -4837,8 +4848,8 @@ kept tree is offered to the one remover, which takes it down when it holds nothi
 (`ta2`) and otherwise keeps it, the did-line naming where and why (`ta1`, `ar18b`).
 
 **One remover, and it keeps a tree on any doubt.** `remove_task_tree` is the only place the drive
-force-removes a task tree; the recut's kept tree and `retire_member` (a closed member's tree, then
-each tree a redo of it kept) both go through it. It asks, before touching anything, that the
+force-removes a task tree; the recut's kept tree, the recut tree a refused redo undoes, and
+`retire_member` (a closed member's tree, then each tree a redo of it kept) all go through it. It asks, before touching anything, that the
 work commit reads every file it looks at, that the strict reading of `tree_undescribed` names
 nothing - no checked-out submodule or link directory holding files, no repository below the top,
 no staged state, no submodule repository in the tree's own git directory - that the work is

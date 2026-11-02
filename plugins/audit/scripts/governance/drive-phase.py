@@ -5236,8 +5236,9 @@ def remove_task_tree(ctx, tree, marker, records=(), followers=(), carried=None):
       directory;
     - what the work holds is carried - its tree is the tree of the commit
       `carried` names, the work a recut verified in the tree that replaced this
-      one - or integrated: `tree_holds_only_integrated`, the record paths and
-      `followers` aside;
+      one, or, for a recut tree a refused redo undoes, what its setup wrote
+      (`undo_recut`) - or integrated: `tree_holds_only_integrated`, the record
+      paths and `followers` aside;
     - the commit the tree stands on is one the phase head holds;
     - the tree's marker names `marker` - the task, or the key a tree a redo
       kept is recorded under - and this process does not stand inside it.
@@ -5605,10 +5606,13 @@ def _changed_between(where, a, b, paths=None):
 
 
 def recut_conflicts(ctx, patch, head):
-    """`(paths, why)` - the paths a three-way apply of `patch` at `head` leaves
-    unmerged, [] when it applies, asked in a scratch index so no tree, index
-    or ref is touched; None beside the reason the check could not be made. The
-    recut tree is a fresh checkout of `head`, so this answers for it."""
+    """`(paths, why)` - the paths a three-way apply of `patch` at `head` - a
+    commit, or a tree object - leaves unmerged, [] when it applies, asked in a
+    scratch index so no tree, index or ref is touched; None beside the reason
+    the check could not be made. Asked at the phase head this answers for the
+    head alone: the recut tree is the head put through `executor.worktreeSetup`,
+    which may rewrite what it checked out, so `apply_in_recut` asks again in
+    that tree."""
     scratch = tempfile.mkdtemp(prefix="audit-recut-")
     try:
         env = dict(os.environ, GIT_INDEX_FILE=os.path.join(scratch, "index"))
@@ -5627,6 +5631,67 @@ def recut_conflicts(ctx, patch, head):
         return unmerged, ""
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
+
+
+def apply_in_recut(ctx, tree, patch):
+    """'' once `patch` is applied three-way in `tree`, the recut tree as its
+    setup left it; else why not, with nothing of the patch written there.
+
+    The conflict check runs first, over the tree's own index (`recut_conflicts`
+    at the tree object `git write-tree` makes of it), because a three-way apply
+    that conflicts writes its markers and unmerged entries into the tree, and
+    `remove_task_tree` keeps a tree holding an unmerged path. Past it, the apply
+    refuses before it writes anything - git applies a patch whole or not at all
+    - a file the setup left differing from its index among them."""
+    code, out, err = carry_git(tree, ["write-tree"], env=_own_index_env())
+    if code != 0:
+        return "its index could not be read as a tree (%s)" % (
+            err or "git write-tree exited %d" % (code,),)
+    conflicts, why = recut_conflicts(ctx, patch, out.decode("ascii", "replace")
+                                     .strip())
+    if conflicts is None:
+        return "whether the work applies there could not be checked (%s)" % (why,)
+    if conflicts:
+        return "it conflicts there in %s" % (", ".join(conflicts),)
+    code, _out, err = carry_git(tree, ["apply", "--3way", "--whitespace=nowarn"],
+                                stdin=patch)
+    return "" if code == 0 else (err or "git apply exited %d" % (code,))
+
+
+def undo_recut(ctx, state, task_id, before, old, marked, new, records):
+    """'' once a redo whose work its recut tree refused is undone: `new` taken
+    down and the old tree the task's again, its marker `marked` and the drive
+    state `before` as they stood before `keep_old_tree` - else why it stopped,
+    the redo's kept patch then naming the work as after any step that failed
+    once the old tree was kept.
+
+    `new` goes through `remove_task_tree`, the one remover, with what the tree
+    holds now as `carried`: it was cut by this call under the phase lock, and
+    holds nothing but what `executor.worktreeSetup` wrote into it - the setup
+    writes it again in the next tree cut - since `apply_in_recut` wrote nothing
+    of the work. The state is put back before the marker: a run that dies
+    between them leaves the state naming the old tree the task's while its
+    marker names the kept key, which `settle_kept_markers` settles by the
+    marker, as for a keeping that died half way."""
+    if not isinstance(marked, dict):
+        return "the marker of the old tree at %s was not read before it was kept" % (
+            old["path"],)
+    left, why = carry_commit(new, records, task_id)
+    if left is None:
+        return "what the recut tree at %s holds could not be read (%s)" % (new, why)
+    removed, why = remove_task_tree(ctx, new, task_id, records, carried=left)
+    if not removed:
+        return "the recut tree at %s was kept (%s)" % (new, why)
+    state.clear()
+    state.update(before)
+    write_state(ctx, state)
+    _path, why = _worktrees.write_record(old["path"], marked)
+    if why:
+        return "the marker of the old tree at %s could not name %s again (%s)" % (
+            old["path"], task_id, why)
+    ctx["did"].append("recut tree of %s at %s taken down; its tree at %s is its "
+                      "own again" % (task_id, new, old["path"]))
+    return ""
 
 
 def carry_beside_work(ctx, task_id, records, work, carry):
@@ -6395,8 +6460,9 @@ def recut_tree(ctx, state, task):
     otherwise keeps it and says why. So what a reading of the old tree could
     miss costs disk, never the work.
 
-    Every refusal comes before the old tree is touched, and each leaves the
-    tree, its work and its carry ref as they were. What the recut stands on is
+    Every refusal but one comes before the old tree is touched, and each -
+    that one undone - leaves the tree, its work and its carry ref as they
+    were. What the recut stands on is
     asked first (`recut_standing`): the tree is there - a tree that is gone is
     refused, naming the carry ref where the work then lives, never recut empty
     - it carries its marker, and its HEAD is the base the marker records, so
@@ -6414,7 +6480,16 @@ def recut_tree(ctx, state, task):
     carry ref holds as work and
     the tree's work lacks refuses the redo (`carry_beside_work`); a three-way
     apply of the work at the head is tried in a scratch index
-    (`recut_conflicts`), a conflict refusing it by name. Past them, the work commit is pinned to `refs/audit/redo/<id>`
+    (`recut_conflicts`), a conflict refusing it by name. That check answers for
+    the bare head, and the recut tree is the head put through
+    `executor.worktreeSetup`, which may rewrite a file the work changes - so
+    the work is checked again, and applied, in the recut tree itself
+    (`apply_in_recut`). The one refusal that comes after the old tree is kept is
+    that one, and it is undone (`undo_recut`): the recut tree taken down, the
+    old tree's marker and the drive state put back as they stood, so it too
+    leaves the tree, its work and its carry ref as they were. A tree cannot be
+    cut for the task before its old tree is kept, since `task-add` adopts the
+    tree whose marker names the task. Past them, the work commit is pinned to `refs/audit/redo/<id>`
     and the patch written whole to a file of the state directory, both kept
     until the recut tree holds every carried path as `recut_wrong` checks it,
     so a step failing after the old tree was kept names a copy of its own;
@@ -6504,6 +6579,10 @@ def recut_tree(ctx, state, task):
         # A verb's own stop keeps its kind and words; the keeping is added.
         return stop if not work["patch"] else (stop[0], "%s\n%s" % (stop[1],
                                                                     keeping(where)))
+    # What `undo_recut` puts back when the recut tree refuses the work: the
+    # state and the old tree's marker as they stand before the keeping.
+    before = json.loads(json.dumps(state))
+    marked = _worktrees.read_provenance(tree, expect_task=str(task["id"]))
     old, stop = keep_old_tree(ctx, state, task["id"])
     if stop is not None:
         return kept_beside(stop, "as its old tree was being kept")
@@ -6515,12 +6594,27 @@ def recut_tree(ctx, state, task):
     if stop is not None:
         return kept_beside(stop, past)
     if work["patch"]:
-        code, _out, err = carry_git(new, ["apply", "--3way", "--whitespace=nowarn"],
-                                    stdin=work["patch"])
-        if code != 0:
-            return after_kept("the work does not apply in the tree recut at %s "
-                               "(%s)" % (head[:12], err or "git apply exited %d"
-                                         % (code,)))
+        refused = apply_in_recut(ctx, new, work["patch"])
+        if refused:
+            said = ("the work of %s does not apply in the tree recut at %s once "
+                    "executor.worktreeSetup ran there (%s)"
+                    % (task["id"], head[:12], _clip(refused, 300)))
+            undone = undo_recut(ctx, state, task["id"], before, old,
+                                marked.get("record"), new, records)
+            if undone:
+                return after_kept("%s, and the recut could not be undone: %s"
+                                  % (said, undone))
+            why = drop_redo_work(task["id"], kept, ctx["gitRoot"])
+            if why:
+                return _stopped(ctx, "redo refused: %s; the recut tree is taken "
+                                "down and its old tree is the task's again, and "
+                                "what the redo kept could not be taken away (%s); "
+                                "remove it by hand, then next" % (said, why))
+            return _stopped(ctx, "redo refused: %s; the recut tree is taken down, "
+                            "nothing was recut, and its tree, its work and %s are "
+                            "as they were - block, or have the setup leave the "
+                            "files the work changes as it checked them out and "
+                            "answer again" % (said, ref))
         wrong = recut_wrong(ctx, new, task["id"], records, work, moved)
         if wrong:
             return after_kept("the recut tree does not hold the work as it was: "
