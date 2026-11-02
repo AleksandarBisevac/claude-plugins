@@ -499,8 +499,12 @@ and stays interactive, or that the panel's controls do what their labels say: a 
 asserts what the CSS SAYS. The panel slice is the long one, and serial on purpose. The
 report slice drives the committed reports - docs/index.html is not among them, since the
 manifests slice proves it a byte copy of one - and the rendered-plan legs no commit holds:
-this repo's own live plan, a plan whose phases all share one status, an all-parked plan
-with and without `--no-proposals`, and a report older than the checks.
+a window of this repo's own live plan, a plan whose phases all share one status, an
+all-parked plan with and without `--no-proposals`, and a report older than the checks. The
+window keeps every phase and task key and status the plan uses, and drops most of its
+finished phases, so the leg stops costing more with each phase merged; `rendered_plan_legs`
+in `tools/verify.sh` says which phases it keeps, and the leg prints how many it kept of how
+many.
 
 The report gate carries TWO arms over the phone layout and they fail apart. The absolute
 one bounds the share of the screen an open filter panel may pin over the table; the

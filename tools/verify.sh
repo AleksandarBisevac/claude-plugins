@@ -775,8 +775,8 @@ slice_plugin() {
 # instances, sharing no port and no server. docs/index.html is not among them: it is a
 # byte copy of the acme report, which the manifests slice proves.
 #
-# THE RENDERED-PLAN LEGS are reports nothing commits: this repo's own live plan (whose
-# shape moves with every phase merged), a plan whose phases all share one status, an
+# THE RENDERED-PLAN LEGS are reports nothing commits: a window of this repo's own live
+# plan (whose shape moves with every phase merged), a plan whose phases all share one status, an
 # all-parked plan with and without --no-proposals, and a report older than the checks.
 rendered_plan_legs() {
   lp="$WORKDIR/live-plan"
@@ -785,8 +785,89 @@ rendered_plan_legs() {
   dl="$WORKDIR/dl"
   mkdir -p "$lp" "$ap" || return 1
   echo "== live plan: render and check"
-  python3 plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json \
-    --out-dir "$lp" --format html || return 1
+  # A WINDOW of the live plan, not the whole of it: the leg drives every phase
+  # the page holds at every rung of the width ladder, so rendering the whole
+  # plan made its cost grow with each merged phase. The window keeps every
+  # phase that is not done, the most recent done ones (the third argument),
+  # every phase carrying a top-level phase or task key, or a status, no kept
+  # phase carries, and every phase that a kept phase's blockedBy, or a kept
+  # task's dependsOn or blockedBy, points into - so the page still shows each
+  # key and status the plan uses, and grows only with the phases not done and
+  # the references the kept ones make. The validation below is what fails
+  # when that closure misses a reference; nothing fails when the key-and-status
+  # arm misses a shape, so that arm is the reading of this code. Shards are copied
+  # untouched; the index lists are narrowed to what was kept, and a proposal
+  # stays when the phase it became was kept or it became none.
+  python3 - docs/audit/audit-plan.json "$WORKDIR/live-window" 20 <<'PYEOF' || return 1
+import io, json, os, shutil, sys
+src_plan, dst, recent = sys.argv[1], sys.argv[2], int(sys.argv[3])
+src = os.path.dirname(os.path.abspath(src_plan))
+plan = json.load(io.open(src_plan, encoding="utf-8"))
+order = [p["id"] for p in plan["phases"]]
+shards = dict((p["id"], json.load(io.open(os.path.join(src, p["shard"]),
+                                          encoding="utf-8")))
+              for p in plan["phases"])
+owner = dict((t["id"], pid) for pid in order for t in shards[pid]["tasks"])
+
+
+def shape(pid):
+    s = shards[pid]
+    got = set(("phase", k) for k in s) | set([("phase-status", s["status"])])
+    for t in s["tasks"]:
+        got |= set(("task", k) for k in t) | set([("task-status", t.get("status"))])
+    return got
+
+
+def named(pid):
+    s = shards[pid]
+    out = set(s.get("blockedBy") or [])
+    for t in s["tasks"]:
+        for key in ("dependsOn", "blockedBy"):
+            out |= set(owner.get(r, r) for r in t.get(key) or [])
+    return out
+
+
+done = [pid for pid in order if shards[pid]["status"] == "done"]
+keep = set(pid for pid in order if shards[pid]["status"] != "done")
+keep |= set(done[-recent:])
+seen = set()
+for pid in keep:
+    seen |= shape(pid)
+for pid in order:
+    if pid not in keep and shape(pid) - seen:
+        keep.add(pid)
+        seen |= shape(pid)
+todo = sorted(keep)
+while todo:
+    for ref in named(todo.pop()):
+        if ref in shards and ref not in keep:
+            keep.add(ref)
+            todo.append(ref)
+ids = set(t["id"] for pid in keep for t in shards[pid]["tasks"])
+for p in plan["phases"]:
+    if p["id"] in keep:
+        out = os.path.join(dst, p["shard"])
+        if not os.path.isdir(os.path.dirname(out)):
+            os.makedirs(os.path.dirname(out))
+        shutil.copyfile(os.path.join(src, p["shard"]), out)
+plan["phases"] = [p for p in plan["phases"] if p["id"] in keep]
+plan["fileIndex"] = dict((f, [t for t in ts if t in ids])
+                         for f, ts in plan["fileIndex"].items()
+                         if any(t in ids for t in ts))
+plan["bugs"] = [b for b in plan["bugs"]
+                if b.get("taskId") is None or b.get("taskId") in ids]
+plan["proposals"] = [x for x in plan.get("proposals") or []
+                     if x.get("materializedAs") is None
+                     or x.get("materializedAs") in keep]
+io.open(os.path.join(dst, "audit-plan.json"), "w",
+        encoding="utf-8").write(json.dumps(plan, indent=2))
+print("live plan window: %d of %d phases, %d of %d tasks"
+      % (len(keep), len(order), len(ids), len(owner)))
+PYEOF
+  python3 plugins/audit/scripts/manifest/validate-manifest.py \
+    "$WORKDIR/live-window/audit-plan.json" || return 1
+  python3 plugins/audit/scripts/report/render-report.py \
+    "$WORKDIR/live-window/audit-plan.json" --out-dir "$lp" --format html || return 1
   # The ONE report step that asks for the long-print stress check: it grows the
   # page past the length that once crashed Chrome's printer and prints it, which
   # costs tens of seconds and gigabytes of renderer memory. Here because this

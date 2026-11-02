@@ -128,9 +128,37 @@
         "file": "tests/test_drive_phase.py:8747-8784 (sd9-sd11)",
         "issue": "In sd9, sd10 and sd11 no patch is written, so in each case `not patch_stands` alone makes redo_pin_spent true. The status arm (TERMINAL, blocked) never decides a case. From reading, the mutation `return not patch_stands` would leave sd9-sd13 green; the probe's m6/m7 do not try it. The clause 'gone after done, cancel, block' is proved only for tasks that have no patch.",
         "resolution": "Add a case where a patch still stands on a done or cancelled task, and assert the pin is gone. Probe it with the mutation `return not patch_stands`."
+      },
+      {
+        "id": "P155-R16",
+        "severity": "high",
+        "file": "tools/verify.sh:801-871",
+        "issue": "The window is written to $WORKDIR/live-window/audit-plan.json, outside any checkout, so render-report resolves its project through _output.project_of_manifest to /tmp/verify-*/live-window (markerless fallback; checked in memory: project_of_manifest('/tmp/verify-XYZ/live-window/audit-plan.json') -> '/tmp/verify-XYZ/live-window'). The committed evidence ledger (docs/audit/evidence) is then never read. Measured in memory with _evidence_view.load_evidence on the same manifest: at the checkout path, keys ['passed','failed','empty-gate','no-evidence'], flags ['tree-mutated','tree-unknown','no-overlap','coverage-unknown','checks-unknown'], files 60. At the window path, keys ['dangling','no-evidence'], flags [], files 0. So the leg now drives a report where every pointer is 'dangling', a status the real plan never shows, and it loses every real evidence status and flag. That was what made the live-plan leg the report that 'DOES carry evidence' (tools/check-report-interactive.mjs:766-770). Nothing goes red: validate-manifest passes and the browser check accepts either page. The new comment ('the page still shows each key and status the plan uses') and CONTRIBUTING.md:503-504 overclaim for the same reason. The project's .claude/audit.config.json (theme and panel config) is also no longer read.",
+        "resolution": "Give the window a project the renderer resolves the way it resolves the checkout. Write it under a record-shaped path, $WORKDIR/live-window/docs/audit/audit-plan.json, so the project is $WORKDIR/live-window. Copy docs/audit/evidence/ (and .claude/audit.config.json) beside it. Then make the drift fail: after the render, assert that the window's load_evidence keys and flags equal the full plan's (or, at minimum, contain no 'dangling' the full plan lacks) and fail the leg otherwise."
+      },
+      {
+        "id": "P155-R17",
+        "severity": "low",
+        "file": "tools/verify.sh:801",
+        "issue": "The fixed count `20` of recent done phases carries no basis. The comment calls it only 'the third argument'. Running the selection in memory on today's plan gives: not-done 6, recent +20, shape arm +2, reference closure +19, total 47 of 158. So the 20 is the largest single share of the window. It adds no key or status, since the shape arm already guarantees those, so its only effect is size. Nothing says what a recent done phase exercises that the other arms do not, or why 20 rather than 5.",
+        "resolution": "State in the comment what the recent done phases exist for (e.g. the merged/review/sign-off surfaces of recently merged phases) and why that count covers it. Or derive the count from that property instead of a literal. Otherwise drop the arm and let the shape arm and the closure decide."
+      },
+      {
+        "id": "P155-R18",
+        "severity": "low",
+        "file": "tools/verify.sh:813-818; CONTRIBUTING.md:503-504",
+        "issue": "shape() reads only top-level phase and task keys, so nested shapes the full plan holds are dropped silently. In memory the window loses task.outcome.filesTouched and task.outcome.summary (the legacy object form of outcome, a distinct render branch) and task.tests.falsifiers. CONTRIBUTING.md says 'The window keeps every phase and task key and status the plan uses', which is true only of top-level keys.",
+        "resolution": "Extend shape() one level into dict-valued phase and task keys (('task.outcome', k) etc.), or narrow the CONTRIBUTING sentence and the comment to 'top-level key'."
+      },
+      {
+        "id": "P155-R19",
+        "severity": "low",
+        "file": "tools/verify.sh:80,983",
+        "issue": "Inherited-test shape: the task's gate entry `sh tools/verify.sh --list` sets LIST=1, and `run \"rendered-plan legs ...\" rendered_plan_legs` then prints the step name without executing the function. So no command in tests.gate reaches the window heredoc. Deleting its closure, its proposal filter or its shape arm leaves both gate commands green. The executor's red demonstrations were scratch copies, not a recorded check. (This is from reading verify.sh, not from a run.)",
+        "resolution": "Move the window selection into a stdlib tools/ script with a tests/ suite. Run it against a fixture plan holding a cross-phase dependsOn, a materialized proposal, a bug on a dropped task and a phase with a unique key, and assert closure, filtering and shape-set equality. Proving red is part of the case."
       }
     ],
-    "outcome": "[findings: 15 - 0 high, 7 med, 8 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 19 - 1 high, 7 med, 11 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -624,7 +652,7 @@
     {
       "id": "P155.8",
       "title": "submit refuses an undeclared edit while the executor is there, scope-changed reruns the gate before offering close, the redo pin is dropped on every terminal path, and the plan gate and commit-task-work read one predicate for declared",
-      "status": "in_progress",
+      "status": "done",
       "description": "Closes F818, F808. Evidence at fa1b0c81: drive-phase.py:9617-9780 submit compares nothing with the task's files (\"changed outside its files\" only at :541/:4437, the close-time decision); drop_redo_work (:6114) has one caller (:6278); drop_carry (:5956-5970) drops only the carry ref; accept_scope (:3105-3113) marks scopeAccepted and reruns nothing. The executor brief names the PLUGIN-BUILD-GUIDE.md section per declared module. Hooks may not import scripts/: the shared predicate lives in hooks/_config.py.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -671,31 +699,59 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b0dc8d6a31a3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "One predicate for declared: hooks/_config.py gains declared_task_map(manifest, also=()) - the files of every in_progress task (and of any id in `also`) plus each fileIndex row keyed to one, line suffix and whitespace dropped - and declared_git_rels(manifest, project, git_root, also=(), only=None), its entries spelled from the checkout top via plan_to_git. in_progress_task_map is now declared_task_map over the plan on disk, and commit-task-work.py owned_rels is declared_git_rels(..., also=[task id]); before, the commit read task files only and the hook also read fileIndex rows, so a path only a fileIndex row named was opened by the gate and refused by the commit (dp1 showed exactly that red on unfixed code). drive-phase.py: (1) submit runs submit_strays before the red-first helper: serial path asks _scoped_commit.undeclared_changes over declared_git_rels and the start snapshot (the commit's own basis; dirt from before the start is not counted, sd3) and refuses with strays_refusal naming each path, the basis and `/audit:task scope <id> --files +<paths>` with the reason as a note; a wave member's tree is read against the task's own declarations (declared_git_rels only=<id>, the bound-tree reading) and is TOLD on the filing line, not refused, because integrate-task settles each such path by name (followers widened, the rest widen|discard|block) and a refusal would take that away - refusing there broke the follower, discard and recut cases (fm/fh, wt8, ar9/ar15/ar17) in the first sweep. git unable to list -> did-line, carry on (the commit asks again). (2) gate_step stores the declared scope in the `gated` mark; scope_gate runs before the scope-changed decision is printed and, unless a green of the current list is marked (scope_run_current), spends the mark and re-measures with --no-reuse; `--answer close` accepts nothing without such a run (did-line, then the step measures and asks again). The decision rule text now says close goes on over the gate just run under that scope. (3) settle_redo_pins runs at the end of every drive call (inside drive(), after drive_locked) and takes down refs/audit/redo/<id> for every phase task redo_pin_spent says is spent - terminal, blocked, or no patch standing; advance() now checks the redo patch on the serial path too (was `elif` on the wave path only); redo_left names the pin only when it resolves, gives `cd <tree> && git apply --3way <patch>` as the verb that finishes from the patch and `rm <patch> && git -C <root> update-ref -d <pin>` as the removal, and has a serial-path stop. Existing cases ce4 and xs3 now make their undeclared edit after the filing (before it, submit refuses - sd1), so they still reach the close-time backstop. PLUGIN-BUILD-GUIDE.md: _config section (declared_task_map), the submit paragraph, a scope-change paragraph under DECISIONS, and the redo-pin sentences. Runs: gate sweep exit 0, 5/5 files ok, 1675 cases (test_drive_phase 787, test_commit_task_work 227, test__config 386, test_require_plan 240, tools/_suite 35) - made before sd13's fixture moved to per_task always, after which `tests/test_drive_phase.py --selftest --stage sd-block` printed ALL PASS 13/13; check-git-pipeline exit 0; bench-hooks --gate exit 0 (measured on 3.14.7 only, the tool says 3.8-3.13 not measured). Dependants swept: test__scoped_commit 87, test_audit_task 1212, test_guard_bash_writes 239, test_guard_secrets_read 707, test_remind_tdd 36, test__deps 266, test__output_lints 182, test_integrate_task 35, test__doctor_setup 116 - 9/9 files ok, exit 0. ruff and vermin clean. Red first: on unfixed code sd-block printed 1/13 (only sd3, the over-fire twin, passed) and require-plan 238/240 (dp1, dp2 red). Mutation probe (11 rows, each anchor asserted to match once, restored in finally): every row killed - m1 sd1; m1b (wave refused too) sd4; m2 sd3; m3 sd6, sd7; m4 sd8; m5 sd9-sd11, sd13; m6 sd11, sd13 (first run SURVIVED on sd13 because the task closed in the same call; fixed by keeping it in progress with a per-task reviewer); m7 (pin dropped while patch stands) sd12; m8 sd12; m9 dp1, dp2; m10 dp2. Probe: <scratchpad>/mutations.py, usage `python3 mutations.py <tree> [row ids]`. NOT DONE, with reasons: the executor brief naming the PLUGIN-BUILD-GUIDE.md section per declared module lives in scripts/status/audit-lookup.py, not in this task's files; the recut's conflict pre-check after executor.worktreeSetup needs recut_tree to cut the new tree before keeping the old one (recut_path hands out a fresh path only once a tree is kept), a reorder of the redo's crash-safety order left for its own task; integrate-task.py undeclared_paths still reads task.files rather than declared_task_map (a fileIndex-only row would differ there; not this task's file). Dependants: drive-phase.py readers (tests/test_drive_phase.py, tools/affected.py, tools/reach-diff.py, README.md, pipeline-cost-design.md, detect-plan-skip.py, record-risk-confirmation.py) - still correct: no name they use was renamed or removed, redo_left's wording kept every phrase ar6b/ar6d/ar6e/ar6f/ta21 pin (green in the sweep); commit-task-work.py readers - owned_rels keeps its signature and now includes fileIndex rows of in_progress tasks, test_commit_task_work 227/227 and test__invariants untouched; require-plan.py - unchanged, its verdict reads in_progress_task_map, whose answer is unchanged except duplicate entries are folded; _config.py importers (guard-*, journal-writes, remind-tdd, guard-release) - in_progress_task_map/in_progress_files keep their signatures and answers, test_guard_bash_writes/test_guard_secrets_read/test_remind_tdd green; tests/test__config.py tb13 still holds (task_covered_files == in_progress_task_map); PLUGIN-BUILD-GUIDE.md readers - only prose added, test__deps/test__output_lints green; test__affected_tests, test__doctor_trail, tools/lints/_deps.py, tools/prove-gates.py, tests/_harness.py, test__deps, tools/sweep-selftests.py, stamp-verification.py, test__runner_collects, test_stamp_verification - declared on this task by the start-time dependants check and not edited; nothing they read changed (declared_task_map takes a manifest, not a tree, so _deps.HOOK_TREE_READERS needs no row).",
+        "descriptive": "An undeclared edit is refused at the executor's submit on the serial path and named on a wave member's filing; scope-changed re-measures the gate before close; redo pins go on every terminal path; the plan gate and the task commit read one declared predicate."
       },
       "startedAt": "2026-11-02T10:09:42Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-02T11:02:45Z",
+      "verifiedBy": [
+        "tests/test_drive_phase.py sd-block: submit refuses an undeclared path changed during the attempt with the scope remedy and files nothing (sd1), files once it is back (sd2), ignores dirt from before the start (sd3), tells but files a wave member (sd4) and stays silent for a clean one (sd5); scope-changed records a fresh green before the decision (sd6) so close lands (sd7), close with no run under the scope accepts nothing and is asked again (sd8); the redo pin is gone after done (sd9), cancel (sd10), block (sd11); the serial step stops on a standing patch keeping the pin (sd12) and drops the pin once the patch is gone with the task still in progress (sd13)",
+        "tests/test_require_plan.py dp stage: the paths the plan gate opens to a large edit equal the paths commit-task-work counts as declared over one plan (dp1), and swapping _config.declared_task_map moves both readers (dp2)"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-11-02T10:53:32Z.51d4ec",
         "status": "passed",
         "at": "2026-11-02T10:53:32Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "b0dc8d6a31a3",
+        "at": "2026-11-02T11:02:45Z",
+        "return": "docs/audit/evidence/returns/P155.8/20261102T100942Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-11-02T10:45:31Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_commit_task_work.py tests/test__config.py tests/test_require_plan.py tools/_suite.py` in a throwaway tree at HEAD exited 1 with failing cases ta9 (house FAIL), sd1 (house FAIL), sd2 (house FAIL), sd4 (house FAIL), sd6 (house FAIL), sd7 (house FAIL), sd8 (house FAIL), sd9 (house FAIL) and 6 more, but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 773/774 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 238/240 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P155.9",
       "title": "The browser (report) job's live-plan leg stops being killed: the sender is found, the leg's input is bounded, and the job's longest line is a measurement",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Closes F816 - three sightings: runs 40913965771 (10-29), 41281241772 and 41308006702 (11-01), each exit 143 about 143 s after \"wrote .../live-plan/audit-report.html\", inside timeout-minutes 15. Green run 41322244766's browser (report) took 9m05s against ci.yml:103 \"longest browser-report: 7m19s (estimate)\". No SIGTERM/.kill( sender in check-report-interactive.mjs; verify.sh:208 only relays TERM. Find the sender first (rerun the leg on a ci/ branch with /usr/bin/time -v and runner diagnostics; the orchestrator pushes and dispatches), then bound the live-plan input, then record the measured longest line. The browser gate runs in CI, never in the task tree.",
       "files": [
         "tools/verify.sh",
         "tools/check-report-interactive.mjs",
         ".github/workflows/ci.yml",
-        "CONTRIBUTING.md"
+        "CONTRIBUTING.md",
+        "tools/gate-parity.py",
+        "tools/lints/_deps.py",
+        "tools/prove-gates.py",
+        "tools/sweep-selftests.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "tests/_harness.py",
+        "tests/test__deps.py",
+        "tests/test__runner_collects.py",
+        "tests/test_stamp_verification.py",
+        "tests/test__affected_tests.py",
+        "tests/test__doctor_trail.py",
+        "tests/test_drive_phase.py"
       ],
       "tests": {
         "mode": "gate-only",
@@ -714,21 +770,27 @@
         "P155.5"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-02T11:03:35Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-02T11:19:00Z.f5bebf",
+        "status": "passed",
+        "at": "2026-11-02T11:19:00Z"
+      }
     },
     {
       "id": "P155.10",
       "title": "The dispatch's dependants question is bounded by what the task edits, and a declared delete or rename demands its import readers",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Closes F825, P153-R14. Evidence at fa1b0c81: _impact.py:519-545 owed() grades every reader of every declared path by file content; :414-417 states that delete/rename readers are not refused over. Measure the waiver count P153's tasks would have owed before and after (a probe over P153.json) and record it in the outcome.",
       "files": [
         "plugins/audit/scripts/status/_impact.py",
@@ -736,7 +798,18 @@
         "tests/test__impact.py",
         "tests/test_audit_task.py",
         "plugins/audit/commands/verbs-in-full.md",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "tests/test__affected_tests.py",
+        "tests/test__doctor_trail.py",
+        "tests/test_drive_phase.py",
+        "tools/lints/_deps.py",
+        "tools/prove-gates.py",
+        "tests/_harness.py",
+        "tests/test__deps.py",
+        "tools/sweep-selftests.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "tests/test__runner_collects.py",
+        "tests/test_stamp_verification.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -757,21 +830,22 @@
         "P155.6"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-02T11:03:54Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P155.11",
       "title": "A task commit's Co-Authored-By names the model that wrote the work, or nothing",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Closes F804. Evidence at fa1b0c81: _scoped_commit.py:1069-1077 coauthor_of returns meta.commit.coauthor; commit-task-work.py:835,1610 take it. Derive the trailer from the executor's recorded model for that start; keep reading meta.commit.coauthor as the fallback (COMPATIBILITY.md: a key the plugin reads keeps being read); omit the trailer when nothing is recorded. State the drive's own state-commit trailer rule explicitly.",
       "files": [
         "plugins/audit/scripts/governance/commit-task-work.py",
@@ -779,7 +853,26 @@
         "tests/test_commit_task_work.py",
         "tests/test__scoped_commit.py",
         "plugins/audit/reference/config.md",
-        "COMPATIBILITY.md"
+        "COMPATIBILITY.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/config/_config_rules.py",
+        "plugins/audit/scripts/manifest/_branch.py",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "tests/test__manifest_phases.py",
+        "tests/test__affected_tests.py",
+        "tests/test__branch.py",
+        "tests/test__config_rules.py",
+        "tests/test__doctor_trail.py",
+        "tests/test__manifest_vocab.py",
+        "tests/test_drive_phase.py",
+        "tools/lints/_deps.py",
+        "tools/prove-gates.py",
+        "tests/_harness.py",
+        "tests/test__deps.py",
+        "tools/sweep-selftests.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "tests/test__runner_collects.py",
+        "tests/test_stamp_verification.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -801,16 +894,17 @@
         "P155.8"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-02T11:04:18Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P155.12",
