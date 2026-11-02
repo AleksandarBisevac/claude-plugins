@@ -167,6 +167,16 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   to, and its tasks with it; **absent keeps meaning tracked**, which is what makes
   adding the key free — a plan that never writes it behaves exactly as it did before,
   so it is a minor. Ceasing to read it, or reversing what absence means, is a major.
+- **`meta.commit.coauthor` is under the same promise, and absence still means no trailer.**
+  It is read as the plan asking for a `Co-Authored-By` trailer on a task commit; unset or
+  blank asks for none, exactly as before, so a model the usage ledger records never starts
+  putting one on a plan that did not ask. **What changed is whose name the trailer carries:**
+  set, the trailer names the model the ledger recorded as that start's executor, and with
+  nothing recorded there is none — the line's own text is no longer written, because it named
+  whichever model somebody typed, which was a false authorship claim whenever another one did
+  the work. That correction is the fix of a wrong claim, not a dropped key. A `--state`
+  commit, which carried the line when it was set, now carries no trailer: it holds the plan's
+  record, which no model wrote. The trailer's spelling is not promised.
 - **`meta.merge` is under the same promise, and absence is the load-bearing half.**
   Three booleans — `auto`, `removeWorktree`, `deleteBranch` — decide what phase
   sign-off does once every task is done. **Absent reads as ON, per key rather than

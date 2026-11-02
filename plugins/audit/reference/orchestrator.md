@@ -183,7 +183,7 @@ never hardcode branch names, package ids, skills, or build tools here:
   the `<gitRoot>/` prefix.
 - **Git: read / pull / commit allowed.** Commit after each successful task and after phase sign-off.
   **NEVER `git push` or force-push.** All other `git reset`/`rebase`/`clean` require explicit human confirmation.
-  If `meta.commit.coauthor` is set, end every commit message with it.
+  Write no `Co-Authored-By` (unchecked); `commit-task-work.py` adds it.
 - **Branch operations pre-approved:** `git switch -c <glob>` and `git switch <glob>` for every glob
   `resolve-branch.py <manifestPath> --globs` prints — that is **phase entry**, and it is the only
   branch operation you still compose yourself. All other branch/checkout ops need confirmation.

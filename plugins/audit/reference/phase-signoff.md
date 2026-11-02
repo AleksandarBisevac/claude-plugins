@@ -498,7 +498,8 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
       `validate-manifest` warns about a stored status its derivation disagrees with, naming
       `audit-task.py settle`. (All shard writes in the sharded layout; the stub mirror and a
       settle write the index.)
-   b. **Sign-off commit** on the phase branch (`<meta.commit.type>(<phaseId>): phase sign-off — …`, + coauthor;
+   b. **Sign-off commit** on the phase branch (`<meta.commit.type>(<phaseId>): phase sign-off — …`, no
+      co-author trailer: it carries the plan's record of a review, not a task's work;
       the subject and body rule is `reference/execute-task.md`'s step 4c, and a phase TITLE pasted in whole is what overruns it here).
       Stage the journal directory **and the evidence directory** here too, for the same reason as
       the task commits: the sign-off gate's own run was recorded a moment ago, and its row has to

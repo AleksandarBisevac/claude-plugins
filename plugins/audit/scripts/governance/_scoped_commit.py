@@ -1073,13 +1073,38 @@ def fitted_header(fixed, subject, limit=HEADER_MAX_CHARS):
 def coauthor_of(manifest):
     """`meta.commit.coauthor` when it is a string with something in it, else None.
 
-    THE ONE DERIVATION of that key for the three commands, so a trailer one of
-    them writes is a trailer the others write too: a value that is blank, or not
-    a string, is the same "none" to all of them.
+    THE ONE READING of that key: a value that is blank, or not a string, is
+    "none". Its text is no longer a trailer anywhere - see `task_coauthor`, which
+    reads it as the plan asking for one.
     """
     block = ((manifest or {}).get("meta") or {}).get("commit")
     value = block.get("coauthor") if isinstance(block, dict) else None
     return value if isinstance(value, str) and value.strip() else None
+
+
+# The trailer naming one model, by the id the usage ledger recorded for it.
+COAUTHOR_TRAILER = "Co-Authored-By: %s <noreply@anthropic.com>"
+
+
+def task_coauthor(manifest, models):
+    """The co-author paragraph of a task commit: one `COAUTHOR_TRAILER` line per
+    model in `models` - the ids the record names as having written the task's
+    current start, in the caller's order - or None.
+
+    A TRAILER IS A PUBLISHED CLAIM ABOUT AUTHORSHIP, so its name comes from the
+    record and never from configuration. `meta.commit.coauthor` is still read,
+    as the plan ASKING for a trailer: absent or blank it asks for none, which is
+    what it always meant, so a record never starts writing one onto a plan that
+    did not ask. Its text is not written: a configured line names whichever
+    model somebody typed, and that was a false claim whenever another one did
+    the work. With nothing recorded there is no trailer, rather than that line.
+    """
+    if coauthor_of(manifest) is None:
+        return None
+    names = [m for m in (models or []) if isinstance(m, str) and m.strip()]
+    if not names:
+        return None
+    return "\n".join(COAUTHOR_TRAILER % (name,) for name in names)
 
 
 def commit_message(header, coauthor, claims=None):

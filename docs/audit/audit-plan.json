@@ -2321,7 +2321,8 @@
       "P153.6",
       "P153.10-34e",
       "P153.8-34e",
-      "P155.6"
+      "P155.6",
+      "P155.11"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -3279,7 +3280,8 @@
       "P131.6",
       "P132.3",
       "P142.1",
-      "P148.5"
+      "P148.5",
+      "P155.11"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -3405,7 +3407,8 @@
       "P131.5",
       "P142.1",
       "P148.5",
-      "P155.3"
+      "P155.3",
+      "P155.11"
     ],
     "plugins/audit/reference/phase-signoff.md": [
       "P61.5",
@@ -3454,7 +3457,8 @@
       "P142.1",
       "P142.12-6yq",
       "P142.51-6yq",
-      "P148.5"
+      "P148.5",
+      "P155.11"
     ],
     "plugins/audit/schema/audit-config.schema.json": [
       "P41.1",

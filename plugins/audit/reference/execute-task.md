@@ -800,9 +800,11 @@ verb writes and refuses, and what the run commands leave behind, is
           tests pass on the files you have while the commit carries files nobody ran. A live run
           came within one commit of shipping a shared module importing a feature while the
           manifest recorded the opposite.
-        - The message is `<meta.commit.type>(<taskId>): audit - <your --subject>`, and
-          `meta.commit.coauthor` is appended as its own paragraph when set — the script composes
-          both. What is yours is the **subject**: say what the task did, in a few words.
+        - The message is `<meta.commit.type>(<taskId>): audit - <your --subject>`, and, when
+          `meta.commit.coauthor` is set, a `Co-Authored-By` paragraph naming the model the usage
+          ledger recorded as this start's executor — none when nothing is recorded; the line's
+          own text is never written. The script composes both. What is yours is the **subject**:
+          say what the task did, in a few words.
         - **Write the subject to fit a commit linter's header cap, and hard-wrap the body** —
           this applies to every commit this run writes, the sign-off commit `reference/phase-signoff.md` describes included. The
           prefix plus `audit - ` already spends part of that budget before your words start, so

@@ -46,3 +46,24 @@ credentials and never reads stdin on these calls.
 
 Not done by this key: reading which jobs and cases failed. The bug names the
 run; its URL is where the failing jobs are.
+
+## `usage.ledgerDir` — the record a commit's co-author trailer is read from
+
+The commits the driver makes through `commit-task-work.py` follow one trailer
+rule, and it reads the usage ledger the metering hook writes under this key
+(default `.claude/usage`), through the same `hooks/_config.ledger_dir` the
+writer uses:
+
+- **A task commit**, on a plan whose `meta.commit.coauthor` is set, carries one
+  `Co-Authored-By: <model id> <noreply@anthropic.com>` line per model the
+  ledger recorded as the task's executor since its start - rows labelled with
+  the task from the executor's own Agent description, by the plugin's executor
+  agent. Nothing recorded is no trailer, said on a `degraded:` line; the
+  plan's line itself is never written. `meta.commit.coauthor` unset is no
+  trailer, as it always was.
+- **The driver's own state commits** - `--state` after a block, at sign-off and
+  at a landing - carry **no** co-author trailer, whatever the plan says: they
+  hold the plan's record, which the plugin's verbs wrote, and no model's work.
+
+`usage.enabled: false` writes no ledger rows, so a task started while it is off
+commits with no trailer.

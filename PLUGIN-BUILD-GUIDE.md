@@ -437,7 +437,7 @@ L9:
   audit-version -> _claude_home, _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
   close-phase -> _branch, _claude_home, _config_rules, _evidence_io, _excerpt, _filed_returns, _invariants, _journal_io, _loader, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _scoped_commit, _tree_stamp, _utc_stamp, _verdict_binding, _worktrees
-  commit-task-work -> _claude_home, _evidence_io, _filed_returns, _invariants, _journal_io, _loader, _manifest_io, _manifest_vocab, _output, _panel_write, _scoped_commit, _verdict_binding
+  commit-task-work -> _claude_home, _evidence_io, _filed_returns, _invariants, _journal_io, _loader, _manifest_io, _manifest_vocab, _output, _panel_write, _scoped_commit, _verdict_binding, usage_ledger
   derive-phase-gate -> _claude_home, _evidence_io, _gate_derive, _invariants, _loader, _machine_paths, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _utc_stamp
   drive-phase -> _areas, _claude_home, _clause_coverage, _config_rules, _doctor_setup, _evidence_io, _excerpt, _filed_returns, _gate_derive, _invariants, _journal_io, _loader, _manifest_io, _manifest_phases, _output, _proc_group, _runner_collects, _scope_companions, _scoped_commit, _status_facts, _tree_stamp, _verdict_binding, _wave, _worktrees
   explain-ado-drift -> _ado_drift, _manifest_io, _output
@@ -4057,6 +4057,19 @@ with an `audit.task.committed` row in the meantime, which is redundant the momen
 the row — and an override's row — is written before the commit and carried by it, keyed by the
 commit's `Audit-Row` trailer, and an override whose row cannot be written is refused before
 anything is staged.
+
+**The co-author trailer names the model the record names, or nothing.** A `Co-Authored-By` line is a
+published claim about who wrote the work, so its name comes from the usage ledger and never from
+configuration: `recorded_models()` reads the rows the metering hook labelled with the task from the
+executor's own Agent description, whose agent type is the plugin's executor, at the start's hour or
+later, and `_scoped_commit.task_coauthor()` writes one `Co-Authored-By: <model id>
+<noreply@anthropic.com>` line per model. `meta.commit.coauthor` is read as the plan asking for a
+trailer: unset asks for none, as it always meant; set, its text is never written, because it named
+whichever model somebody typed. Nothing recorded is no trailer, and the run says so on a
+`degraded:` line. The ledger keeps hours, so an earlier start of the same task inside the start's
+hour is read as this one; a session that is not an Agent - the drive's writer session - has no
+agent type on its rows and gets no trailer. **The state commit carries none**: the plan's record
+is written by the plugin's verbs, and no model is its author.
 
 **A task commit takes no lock**: it touches the phase's own shard, which only that phase's run
 writes, the task's own files, which the plan gate has already bound to one task, and an index blob

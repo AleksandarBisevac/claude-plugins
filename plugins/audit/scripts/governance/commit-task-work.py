@@ -213,6 +213,7 @@ import _manifest_vocab as _vocab  # noqa: E402  (one reading of a `files` entry'
 import _panel_write  # noqa: E402  (the index lock a state commit takes, the way every structural write takes it)
 import _scoped_commit  # noqa: E402  (the staging discipline and the answer shape, shared by both commits)
 import _verdict_binding as _vb  # noqa: E402  (the one rule for whether a recorded verdict binds the work)
+import usage_ledger as _ul  # noqa: E402  (the usage ledger: which model wrote a task's start)
 
 E_OK, E_FAIL, E_USAGE = 0, 1, 2
 
@@ -802,10 +803,89 @@ def override_row(project, task_id, phase_id, nonce, verdict, reason,
     }, config=config)
 
 
+# --- who wrote the work -------------------------------------------------------
+# The agent whose spend counts as the task's author: the plugin's executor, by
+# the name after any plugin namespace (`audit:audit-executor` in an install).
+# A reviewer reads the work and the orchestrator's spend is attributed by time
+# window rather than by label, so neither is a writer of it.
+EXECUTOR_AGENT_NAME = "audit-executor"
+
+
+def _is_executor(agent_type):
+    return (isinstance(agent_type, str)
+            and agent_type.rsplit(":", 1)[-1] == EXECUTOR_AGENT_NAME)
+
+
+def recorded_models(rows, task_id, started_at):
+    """The model ids the usage ledger `rows` record as the executor of
+    `task_id`'s start at `started_at`, each once, sorted; `[]` when none.
+
+    A row counts when it is labelled with the task (`attr` `task`, read off the
+    executor's own Agent description), its agent is the executor, its model is
+    a model (`usage_ledger.is_model_id`), and its hour is the start's or later.
+    The tier suffix the ledger adds for a long prompt is dropped: it says how
+    the row was priced, not which model wrote.
+
+    THE LEDGER KEEPS HOURS, NOT MOMENTS, so an earlier start of the same task
+    within the start's own hour is read as this one. A start with no moment
+    (`started_at` missing or unreadable) is nothing recorded rather than every
+    row ever written."""
+    start = _ul.hour_bucket(started_at) if started_at else None
+    if start is None:
+        return []
+    found = set()
+    for row in rows or []:
+        if not isinstance(row, dict) or row.get("taskId") != task_id:
+            continue
+        hour = row.get("ts")
+        model = row.get("model")
+        if (row.get("attr") != "task" or not _is_executor(row.get("agentType"))
+                or not isinstance(hour, str) or hour[:13] < start
+                or not _ul.is_model_id(model)):
+            continue
+        if model.endswith(_ul.LONG_PROMPT_SUFFIX):
+            model = model[:-len(_ul.LONG_PROMPT_SUFFIX)]
+        found.add(model)
+    return sorted(found)
+
+
+def executor_models(project, config, task):
+    """`(models, ledger)` - `recorded_models` over the usage ledger this
+    project's metering writes (`hooks/_config.ledger_dir`, the writer's own
+    reading of where it is), and that directory. A ledger that cannot be read
+    is nothing recorded: the commit then writes no trailer, which claims
+    nothing, and the caller says so."""
+    started = task.get("startedAt")
+    try:
+        ledger = str(_hooks_config().ledger_dir(pathlib.Path(project),
+                                                config or {}))
+        rows = _ul.read_ledger(ledger, since=started[:10]
+                               if isinstance(started, str) else None)
+    except Exception:                                          # noqa: BLE001
+        return [], None
+    return recorded_models(rows, task.get("id"), started), ledger
+
+
+def coauthor_note(manifest, task, models, ledger):
+    """The `degraded:` line for a plan that asks for a co-author trailer
+    (`meta.commit.coauthor` set) when no model is recorded to name, else None -
+    so a commit without the trailer says why rather than leaving the reader to
+    wonder whether the line was dropped."""
+    if models or _scoped_commit.coauthor_of(manifest) is None:
+        return None
+    return ("no co-author trailer: the usage ledger%s records no model for "
+            "%s's executor since its start (%s), and the plan's "
+            "`meta.commit.coauthor` line is never written in its place"
+            % (" at %s" % (ledger,) if ledger else " (unreadable)",
+               task.get("id"), task.get("startedAt") or "no start recorded"))
+
+
 # --- the commit ---------------------------------------------------------------
-def message_parts(task_id, subject, manifest):
+def message_parts(task_id, subject, manifest, models=()):
     """`(header, coauthor)` of a task commit: the conventional subject, and the
-    trailer the manifest names or None.
+    co-author paragraph naming `models` - the ids `executor_models` read for
+    the task's current start - when the plan asks for one, else None
+    (`_scoped_commit.task_coauthor`).
 
     The paragraphs are `_scoped_commit.commit_message`'s, with the executor's
     filed `claims` between them: a repository hook that asks a Bash command for a
@@ -828,7 +908,7 @@ def message_parts(task_id, subject, manifest):
         else DEFAULT_COMMIT_TYPE
     header = "%s(%s): %s - %s" % (ctype.strip(), task_id, SUBJECT_LEAD,
                                   subject or DEFAULT_SUBJECT)
-    return header, _scoped_commit.coauthor_of(manifest)
+    return header, _scoped_commit.task_coauthor(manifest, models)
 
 
 def filing_rows(project, config=None):
@@ -1146,6 +1226,11 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
                                      journal_rows)
     if why:
         return E_FAIL, _scoped_commit.answer(skipped, refused=why)
+    # The model the record names as the executor of this start: the co-author
+    # trailer's only source.
+    models, ledger = executor_models(project, config, task)
+    note = coauthor_note(manifest, task, models, ledger)
+    skipped = skipped + ([note] if note else [])
     # The part of the index the phase owns, when its shard moved it: built by
     # `stage_and_commit` from the parent it commits onto, not from this read;
     # and the shard at the bytes that part was derived from.
@@ -1172,7 +1257,7 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
     done = _scoped_commit.commit_with_rows(
         git_root, carrying["paths"], carrying["kinds"],
         _scoped_commit.commit_message(
-            *message_parts(task_id, subject, manifest), claims=claims),
+            *message_parts(task_id, subject, manifest, models), claims=claims),
         lambda paths: foreign_refusal(paths, targets), rows,
         lambda nonce, why: _scoped_commit.withdraw(
             project, config, nonce, "commit-task-work",
@@ -1600,10 +1685,12 @@ def _commit_state(manifest, phase, manifest_path, project, git_root, subject,
     # git holds for it, the index read back against this same list, a commit
     # with the list as its pathspec, the index put back as it was found on any
     # refusal after staging, and the row withdrawn when no commit was made.
+    # NO CO-AUTHOR TRAILER, whatever the plan's `meta.commit.coauthor` says: a
+    # state commit carries the plan's record, which the plugin's own verbs
+    # wrote, and none of a task's work, so no model is its author to name.
     done = _scoped_commit.commit_with_rows(
         git_root, paths, kinds,
-        _scoped_commit.commit_message(state_header(phase_id, subject),
-                                      _scoped_commit.coauthor_of(manifest)),
+        _scoped_commit.commit_message(state_header(phase_id, subject), None),
         lambda found: ("staging produced paths outside the allow-list (%s), so "
                        "nothing was committed" % (", ".join(found),)),
         lambda nonce: ([record_state_row(project, phase_id, nonce,

@@ -815,9 +815,9 @@ def _records_cases(check, repos):
     # --- the message, asked directly ----------------------------------------
     manifest, phase, task = _phase_and_task(fx)
 
-    def task_message(task_id, subject, manifest, claims=None):
+    def task_message(task_id, subject, manifest, claims=None, models=()):
         return _scoped_commit.commit_message(
-            *M.message_parts(task_id, subject, manifest), claims=claims)
+            *M.message_parts(task_id, subject, manifest, models), claims=claims)
 
     check("ctw26 the conventional TYPE comes from `meta.commit.type` - a "
           "task commit carries implementation, so a project's own convention "
@@ -836,19 +836,26 @@ def _records_cases(check, repos):
           repr(task_message(TASK, "s", {})))
     check("ctw28 the coauthor is its OWN paragraph rather than a second "
           "sentence of the subject line - a list is how it reaches git, one "
-          "`-m` each, so the trailer is a trailer",
-          task_message(TASK, "s",
-                       {"meta": {"commit": {"coauthor": "Co: x"}}})
-          == ["chore(%s): %s - s" % (TASK, M.SUBJECT_LEAD), "Co: x"],
+          "`-m` each, so the trailer is a trailer - and it names the recorded "
+          "model, not the plan's line",
+          task_message(TASK, "s", {"meta": {"commit": {"coauthor": "Co: x"}}},
+                       models=["m-1"])
+          == ["chore(%s): %s - s" % (TASK, M.SUBJECT_LEAD),
+              "Co-Authored-By: m-1 <noreply@anthropic.com>"],
           repr(task_message(TASK, "s",
-                                {"meta": {"commit": {"coauthor": "Co: x"}}})))
+                            {"meta": {"commit": {"coauthor": "Co: x"}}},
+                            models=["m-1"])))
 
     # --- both commits' messages, as they were before they shared one -------
     # THE EXPECTED LISTS ARE LITERALS read off the code at 571becfd, not built
     # from the constants the command owns: a case that composed its expectation
     # from `SUBJECT_LEAD` would pass for a command that changed the lead. The
     # long subject separates a bounded header from an unbounded one -- a state
-    # commit cuts it to fit, a task commit never has.
+    # commit cuts it to fit, a task commit never has. One literal moved since:
+    # the task commit's co-author paragraph names the recorded model rather
+    # than repeating the plan's line, which was a false claim whenever another
+    # model wrote the work. The state rows hand the composer a trailer
+    # directly, so they still pin its paragraph order.
     _long = "y" * 200
     _claims = "claims:\n1 x"
     _seen = [
@@ -856,7 +863,8 @@ def _records_cases(check, repos):
         _scoped_commit.commit_message(M.state_header("P9", None), None),
         _scoped_commit.commit_message(M.state_header("P9", _long), "Co: x"),
         task_message("P9.1", "why", {"meta": {"commit": {
-            "type": "fix", "coauthor": "Co: x"}}}, claims=_claims),
+            "type": "fix", "coauthor": "Co: x"}}}, claims=_claims,
+            models=["claude-opus-5-5"]),
         task_message("P9.1", None, {}),
         task_message("P9.1", _long, {}),
     ]
@@ -865,7 +873,8 @@ def _records_cases(check, repos):
         ["chore(audit-state): phase P9 - the record of a run, without the "
          "work it ran on"],
         ["chore(audit-state): phase P9 - " + "y" * 57 + " [truncated]", "Co: x"],
-        ["fix(P9.1): audit - why", _claims, "Co: x"],
+        ["fix(P9.1): audit - why", _claims,
+         "Co-Authored-By: claude-opus-5-5 <noreply@anthropic.com>"],
         ["chore(P9.1): audit - the task's own files, and the record beside "
          "them"],
         ["chore(P9.1): audit - " + _long],
@@ -4412,6 +4421,172 @@ def _lock_json_cases(check, repos):
           and os.path.exists(fx["shard"]))
 
 
+# --- the co-author trailer: the model the record names, or none ---------------
+# THE PLAN'S LINE NAMES A MODEL THAT DID NOT WRITE THE WORK, on purpose: a
+# trailer that came from `meta.commit.coauthor` reads "Fable", one that came from
+# the record reads the opus id, and the two can never be confused.
+_FABLE = "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+_STARTED = "2026-01-01T00:00:00Z"
+
+
+def _set_coauthor(fx, value):
+    """`meta.commit.coauthor` set to `value` in the index, in a fixture commit
+    of its own, so the tree the task commit starts from is clean. The value
+    the fixture already holds is no change and no commit."""
+    index = _mio.read_json(fx["manifest"])
+    index["meta"]["commit"] = dict(index["meta"].get("commit") or {},
+                                   coauthor=value)
+    TI._write_json(fx["manifest"], index)
+    if TI._git(fx["root"], "status", "--porcelain", "--", INDEX_REL).strip():
+        TI._git(fx["root"], "commit", "-q", "-m", "fixture: the co-author line",
+                "--", INDEX_REL)
+
+
+def _ledger_rows(fx, rows):
+    """`rows` as the usage ledger's month file under the project's default
+    `.claude/usage`, which git is told to ignore the way a real project's
+    ignore file does - the ledger is the plugin's record, never a task's edit."""
+    ledger = os.path.join(fx["root"], ".claude", "usage")
+    os.makedirs(ledger, exist_ok=True)
+    with io.open(os.path.join(ledger, "2026-01.jsonl"), "w",
+                 encoding="utf-8") as fh:
+        for row in rows:
+            fh.write(json.dumps(row) + "\n")
+    with io.open(os.path.join(fx["root"], ".git", "info", "exclude"), "a",
+                 encoding="utf-8") as fh:
+        fh.write(".claude/usage/\n")
+
+
+def _usage_row(model, task=TASK, ts="2026-01-01T00", attr="task",
+               agent="audit:audit-executor"):
+    """One ledger row of the shape `usage_ledger.scan_transcripts` writes."""
+    return {"ts": ts, "taskId": task, "phaseId": PHASE, "attr": attr,
+            "agentType": agent, "model": model, "msgs": 1}
+
+
+def _task_commit_with(fx, coauthor, rows):
+    """`(code, sha, text)` of the task commit of the fixture task, started and
+    its return filed, on a plan whose co-author line is `coauthor` and with
+    `rows` in the usage ledger (None: no ledger at all)."""
+    _set_coauthor(fx, coauthor)
+    _file_executor_return(fx)
+    if rows is not None:
+        _ledger_rows(fx, rows)
+    _write(os.path.join(fx["root"], OWNED), "a = 2  # the task's own work\n")
+    _gate(fx)
+    code, text = _run(fx, TASK, "--subject", "the work")
+    return code, _head(fx), text
+
+
+@_own_repos
+def _coauthor_cases(check, repos):
+    """The trailer names the model the usage ledger recorded writing the task's
+    current start, never the plan's configured line; nothing recorded is no
+    trailer; a plan with no line asks for none; a state commit carries none."""
+    fx = repos.make()
+    code, sha, text = _task_commit_with(
+        fx, _FABLE, [_usage_row("claude-opus-5-5")])
+    rows = _task_rows(fx)
+    nonce = ((rows[-1].get("details") or {}).get(_invariants.NONCE_KEY)
+             if rows else None)
+    check("co1 a task executed by opus on a plan whose `meta.commit.coauthor` "
+          "names Fable commits with the opus trailer and no other - and git "
+          "still reads the Audit-Row trailer beside it: %r"
+          % ((code, _git_trailer(fx, sha, "Co-Authored-By"),
+              _git_trailer(fx, sha, _invariants.ROW_TRAILER), nonce,
+              text[-300:]),),
+          code == 0
+          and _git_trailer(fx, sha, "Co-Authored-By")
+          == ["claude-opus-5-5 <noreply@anthropic.com>"]
+          and "Fable" not in _message(fx, sha)
+          and "no co-author trailer" not in text
+          and nonce is not None
+          and _git_trailer(fx, sha, _invariants.ROW_TRAILER) == [nonce])
+
+    bare = repos.make()
+    bcode, bsha, btext = _task_commit_with(bare, _FABLE, None)
+    check("co2 ...and a task with NO recorded model commits without a "
+          "co-author trailer, though the plan's line names one - the configured "
+          "constant is never the claim - and the run says why: %r"
+          % ((bcode, _message(bare, bsha), btext[-300:]),),
+          bcode == 0
+          and _git_trailer(bare, bsha, "Co-Authored-By") == []
+          and btext.count("degraded: no co-author trailer") == 1
+          and "Fable" not in _message(bare, bsha)
+          and len(_git_trailer(bare, bsha, _invariants.ROW_TRAILER)) == 1)
+
+    # SECOND DIRECTION, for the mutation that drops the opt-in: a plan with no
+    # co-author line asked for no trailer before this change, and a record of
+    # the model must not start writing one onto its commits.
+    absent = repos.make()
+    acode, asha, atext = _task_commit_with(
+        absent, None, [_usage_row("claude-opus-5-5")])
+    check("co3 SECOND DIRECTION: a plan with no co-author line gets no trailer "
+          "even with a model recorded - absence keeps meaning no trailer: %r"
+          % ((acode, _message(absent, asha)),),
+          acode == 0 and _git_trailer(absent, asha, "Co-Authored-By") == []
+          and "no co-author trailer" not in atext)
+
+    # THE RECORD'S READING, asked directly. Every excluded row is one the
+    # buggy reading would have to name to pass, and each stands for a different
+    # writer: the reviewer, the orchestrator's window-attributed spend, an
+    # executor placed on the task by time window rather than by its own label,
+    # another task's executor, an earlier start of this task, a host
+    # placeholder turn, and a row with no hour on it.
+    mixed = [
+        _usage_row("claude-opus-5-5", ts="2026-01-01T05"),
+        _usage_row("claude-haiku-5-5:long-prompt", ts="2026-01-01T07"),
+        _usage_row("claude-opus-5-5", ts="2026-01-01T06"),
+        _usage_row("claude-sonnet-5-5", agent="audit:audit-reviewer",
+                   ts="2026-01-01T06"),
+        _usage_row("claude-fable-5", attr="window", agent=None,
+                   ts="2026-01-01T06"),
+        _usage_row("claude-fable-5", attr="window", ts="2026-01-01T06"),
+        _usage_row("claude-fable-5", task="P1.2", ts="2026-01-01T06"),
+        _usage_row("claude-fable-5", ts="2026-01-01T04"),
+        _usage_row("<synthetic>", ts="2026-01-01T06"),
+        _usage_row("claude-fable-5", ts=None),
+    ]
+    got = M.recorded_models(mixed, TASK, "2026-01-01T05:30:00Z")
+    check("co4 the recorded models are the executor's own, for this start and "
+          "after it, one entry each, the tier suffix dropped and sorted: %r"
+          % (got,),
+          got == ["claude-haiku-5-5", "claude-opus-5-5"])
+    check("co5 ...and a start with no moment, or a ledger with no row, is "
+          "nothing recorded rather than every row ever written: %r"
+          % ((M.recorded_models(mixed, TASK, None),
+              M.recorded_models([], TASK, _STARTED)),),
+          M.recorded_models(mixed, TASK, None) == []
+          and M.recorded_models(None, TASK, _STARTED) == []
+          and M.recorded_models([], TASK, _STARTED) == [])
+    plan = {"meta": {"commit": {"coauthor": _FABLE}}}
+    check("co6 two recorded models give ONE paragraph of two trailer lines, in "
+          "order; no model, or no co-author line, gives None: %r"
+          % (_scoped_commit.task_coauthor(
+              plan, ["claude-haiku-5-5", "claude-opus-5-5"]),),
+          _scoped_commit.task_coauthor(
+              plan, ["claude-haiku-5-5", "claude-opus-5-5"])
+          == "Co-Authored-By: claude-haiku-5-5 <noreply@anthropic.com>\n"
+             "Co-Authored-By: claude-opus-5-5 <noreply@anthropic.com>"
+          and _scoped_commit.task_coauthor(plan, []) is None
+          and _scoped_commit.task_coauthor({}, ["claude-opus-5-5"]) is None)
+
+    # THE DRIVE'S OWN STATE COMMIT: it carries the plan's record, which the
+    # plugin's verbs wrote, and no model's work - so no co-author trailer, on a
+    # plan whose line names one and with a model recorded for the phase's task.
+    st = repos.make(leave_dirty=True)
+    _set_coauthor(st, _FABLE)
+    _ledger_rows(st, [_usage_row("claude-opus-5-5", task="P1.2")])
+    _exhaust(st)
+    scode, stext = _state(st)
+    ssha = _head(st)
+    check("co7 a state commit carries no co-author trailer: what it commits is "
+          "the record the plugin's verbs wrote, not a model's work: %r"
+          % ((scode, _message(st, ssha), stext[-300:]),),
+          scode == 0 and _git_trailer(st, ssha, "Co-Authored-By") == []
+          and "Fable" not in _message(st, ssha))
+
+
 STAGES = (("nm-block", "_no_maintenance_cases"),
           ("fg-block", "_fixture_git_cases"),("or-block", "_ordinary_cases"),("dc-block", "_declared_cases"),
           ("rc-block", "_records_cases"), ("ix-block", "_index_cases"),
@@ -4438,7 +4613,8 @@ STAGES = (("nm-block", "_no_maintenance_cases"),
           ("si-block", "_state_index_cases"),
           ("tr-block", "_state_terse_cases"),
           ("lk-block", "_index_lock_cases"),
-          ("lj-block", "_lock_json_cases"))
+          ("lj-block", "_lock_json_cases"),
+          ("co-block", "_coauthor_cases"))
 
 
 if __name__ == "__main__":
