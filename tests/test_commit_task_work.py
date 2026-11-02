@@ -2683,6 +2683,59 @@ def _attempt_cases(check, repos):
           and all(isinstance(why, str) and why for _p, why in owned))
 
 
+INDEX_ONLY = "src/indexed.py"
+
+
+def _index_only_row(fx):
+    """P1.1 holds a committed fileIndex row for `INDEX_ONLY` that its `files`
+    never names - drift the validator accepts, since it asks only that `files`
+    sit inside fileIndex, not the reverse."""
+    index = _mio.read_json(fx["manifest"])
+    index["fileIndex"][INDEX_ONLY] = [TASK]
+    TI._write_json(fx["manifest"], index)
+    TI._git(fx["root"], "commit", "-q", "-m",
+            "fixture: a fileIndex row no task's files names", "--", INDEX_REL)
+
+
+@_own_repos
+def _index_only_cases(check, repos):
+    """`files` alone is what a task declares. A path only the committing task's
+    fileIndex row names is not counted as its work, so the commit refuses it by
+    name rather than counting it as declared, staging only `files`, and closing
+    the task with that path still dirty."""
+    fx = repos.make()
+    _restartable(fx)
+    _index_only_row(fx)
+    scode, said = _start(fx)
+    _write(os.path.join(fx["root"], OWNED), "a = 2  # this attempt's work\n")
+    _write(os.path.join(fx["root"], INDEX_ONLY), "indexed = 1\n")
+    _gate(fx)
+    manifest, _phase, task = _phase_and_task(fx)
+    owned = M.owned_rels(manifest, fx["root"], fx["root"], task)
+    before = _head(fx)
+    code, text = _run(fx)
+    held = _head(fx)
+    dirty = INDEX_ONLY in TI._git(fx["root"], "status", "--porcelain", "-uall")
+    refusal = [ln for ln in text.splitlines()
+               if ln.startswith("[commit-task-work] REFUSED")]
+    # The ALLOW half: with the index-only path gone the task's own file is
+    # committed, so the refusal above was about that path and nothing else.
+    os.remove(os.path.join(fx["root"], INDEX_ONLY))
+    code2, text2 = _run(fx)
+    carried = _carried(fx, _head(fx)) if _head(fx) != held else []
+    check("ctw-fi1 RED-FIRST: a path only the committing task's fileIndex row "
+          "names is not counted as declared, and the commit REFUSES it by name "
+          "and commits nothing - never commits around it and leaves it dirty "
+          "behind a closed task; removed, the task's own file is committed: %r"
+          % ((scode, sorted(owned), code, refusal[:1], dirty, code2,
+              text2[-200:], carried),),
+          scode == 0 and INDEX_ONLY not in owned and OWNED in owned
+          and code == 1 and held == before and len(refusal) == 1
+          and INDEX_ONLY in refusal[0]
+          and not (code == 0 and dirty)
+          and code2 == 0 and OWNED in carried and INDEX_ONLY not in carried)
+
+
 CE_TEST = "tests/test_a.py"
 
 
@@ -4600,6 +4653,7 @@ STAGES = (("nm-block", "_no_maintenance_cases"),
           ("cl-block", "_claims_cases"), ("sl-block", "_success_line_cases"),
           ("dp-block", "_default_project_cases"),
           ("ae-block", "_attempt_cases"),
+          ("fi-block", "_index_only_cases"),
           ("cs-block", "_clean_at_start_cases"),
           ("bl-block", "_bug_link_cases"),
           ("ir-block", "_index_row_cases"),

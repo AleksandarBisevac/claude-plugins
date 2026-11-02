@@ -596,7 +596,9 @@ rules). Typed getters: `state_dir`, `logs_dir`, `token_vars`, `custom_rules`,
 (`rel_path`, `within_root`, `matches_exempt`, `strip_line_suffix`, `in_progress_files`,
 `in_progress_task_map` — the latter exposes each covering task's `tests.mode` for remind-tdd).
 `declared_task_map` is the one reading of "declared" behind that map: the `files` of every
-in_progress task, plus each `fileIndex` row keyed to one, over an assembled manifest.
+in_progress task over an assembled manifest, and never a `fileIndex` row — the commit stages
+`files` alone, so a path counted from a row would be neither staged nor refused and left dirty
+behind a closed task (`ctw-fi1` in `tests/test_commit_task_work.py`).
 `commit-task-work.py` counts a changed path as declared through the same function
 (`declared_git_rels`, the entries spelled from the checkout's top), so a path the plan gate
 opened to an edit is never one the task commit refuses as undeclared (`dp1`, `dp2` in
@@ -5614,8 +5616,8 @@ anonymous and nothing on the row said so.
 
 **`start <taskId>` is the promotion the plan gate reads.** `add` writes `status: "pending"`,
 and `hooks/_config.in_progress_task_map` — what `require-plan.py` resolves an allowed path
-through — skips every task that is not `in_progress`, its `fileIndex` arm included (that arm
-only re-adds paths for ids already in the filtered set). So a task added to a phase that is
+through — skips every task that is not `in_progress`, and reads `files` alone, never a
+`fileIndex` row. So a task added to a phase that is
 already running has its OWN declared `files` denied on the first `Edit`, and the only
 promotions were `/audit:run`, which promotes AND spawns, and a hand edit. The verb writes
 exactly what `reference/orchestrator.md` → *Execute the task*, step 2 prescribes as an

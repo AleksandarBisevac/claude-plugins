@@ -606,8 +606,8 @@ Promote a task to `in_progress` **without spawning anything**. This is the verb 
 case `add` creates: a task added to a phase that is already running is written
 `status: "pending"`, `startedAt: null`, `attempts: 0`, and the plan gate resolves an
 allowed path only through tasks that are `in_progress` — `hooks/require-plan.py` reads
-`hooks/_config.in_progress_task_map`, which skips every other status and whose
-`fileIndex` arm only re-adds paths for ids already in that filtered set. So the new
+`hooks/_config.in_progress_task_map`, which skips every other status and reads those
+tasks' `files` alone, never a `fileIndex` row. So the new
 task's **own** declared files are refused on its first `Edit`. Measured: two executors
 returned zero edits, each having spent a subagent's budget, both denied on a path their
 task's `files` declared.

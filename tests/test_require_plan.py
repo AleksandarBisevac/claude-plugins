@@ -926,8 +926,8 @@ def _cases(check):
     # started it, the first is flatly false and the second sends the
     # orchestrator to write a second task for a file the plan already declares.
     # The gate had the fact and dropped it: `in_progress_task_map` filters every
-    # other status away before `decide` looks, and its fileIndex arm re-adds
-    # only ids already inside that filtered set.
+    # other status away before `decide` looks, and reads only the `files` of
+    # what is left - never a fileIndex row.
     SAN = "src/search/sanitize.ts"
     MAN = "docs/audit/audit-plan.json"
 
@@ -2346,11 +2346,12 @@ def _declared_predicate_cases(check):
         commit = [p for p in _DP_PATHS if commit_counts(p, owned)]
         check("dp1 the plan gate and commit-task-work read one predicate for "
               "declared: every path the gate opens to a large edit is one the "
-              "commit counts as declared, and none other (a `fileIndex` row, a "
-              "line suffix, a directory entry, a sibling's file; never a pending "
-              "or a finished task's): gate %r, commit %r" % (gate, commit),
-              gate == commit == ["src/own.py", "src/dir/x.py", "src/sibling.py",
-                                 "src/indexed.py"])
+              "commit counts as declared, and none other (a line suffix, a "
+              "directory entry, a sibling's file; never a row only `fileIndex` "
+              "carries, which the commit would neither stage nor refuse, nor a "
+              "pending or a finished task's): gate %r, commit %r"
+              % (gate, commit),
+              gate == commit == ["src/own.py", "src/dir/x.py", "src/sibling.py"])
         # THE SAME FUNCTION, NOT TWO THAT AGREE TODAY: the predicate is swapped
         # for one declaring only a path nobody declares, and both readers move
         # with it - a reader holding a reading of its own would not.

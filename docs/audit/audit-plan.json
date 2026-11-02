@@ -2331,7 +2331,8 @@
       "P153.10-34e",
       "P153.8-34e",
       "P155.6",
-      "P155.11"
+      "P155.11",
+      "P155.19-gfj"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -10845,7 +10846,8 @@
       "P153.10-34e",
       "P153.8-34e",
       "P155.6",
-      "P155.10"
+      "P155.10",
+      "P155.19-gfj"
     ],
     "docs/research/pipeline-cost-results.md": [
       "P118.19-v7t",
@@ -12265,7 +12267,8 @@
       "P152.28-6jb",
       "P155.6",
       "P155.10",
-      "P155.13"
+      "P155.13",
+      "P155.19-gfj"
     ],
     "tests/test_audit_usage.py": [
       "P131.1"
@@ -12533,7 +12536,8 @@
     ],
     "tests/test_require_plan.py": [
       "P131.1",
-      "P155.8"
+      "P155.8",
+      "P155.19-gfj"
     ],
     "tests/test_resolve_ado_parent.py": [
       "P131.1"

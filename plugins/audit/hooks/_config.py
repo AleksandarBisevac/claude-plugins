@@ -4005,21 +4005,28 @@ def manifest_lock_conflict(root, cfg, manifest_rel, rel, session_id):
 def declared_task_map(manifest, also=()):
     """Project-relative entry -> [{"taskId", "testsMode"}] over an assembled
     `manifest`: every `files` entry of a task whose status is `in_progress`, or
-    whose id is in `also`, its line suffix dropped, plus each `fileIndex` row
-    keyed to one of those ids. Empty dict for anything that is not a plan.
+    whose id is in `also`, its line suffix dropped. Empty dict for anything
+    that is not a plan.
 
     THE ONE READING OF "DECLARED". The plan gate opens an edit by it
     (`in_progress_task_map`) and the task commit counts a changed path as
     declared by it (`declared_git_rels`, read by `commit-task-work.py`): read
-    twice, the gate let an executor write a file only a `fileIndex` row named
-    and the commit then refused it as undeclared, one gate run too late.
-    `also` is the commit's own task, which it counts whatever its status. Which
-    path an entry reaches is `covering_key`'s, through the same matcher."""
+    twice, the gate let an executor write a file the commit then refused as
+    undeclared, one gate run too late. `also` is the commit's own task, which
+    it counts whatever its status. Which path an entry reaches is
+    `covering_key`'s, through the same matcher.
+
+    `files` ALONE, NEVER A `fileIndex` ROW. The commit stages a task's `files`
+    and nothing wider (`commit-task-work.py` `stage_targets`), so a path this
+    map counted from a row alone was neither refused nor staged: the task
+    closed `done` with it still dirty. `fileIndex` is derived from `files`
+    (`audit-task.py reindex`) and the validator does not hold the reverse, so
+    a row no counted task's `files` covers is drift, and reading it could only
+    widen the gate past what the commit carries."""
     out = {}
     if not isinstance(manifest, dict):
         return out
     wanted = set(also or ())
-    modes = {}  # counted task id -> tests.mode (or None)
     try:
         for phase in manifest.get("phases", []) or []:
             for task in phase.get("tasks", []) or []:
@@ -4028,8 +4035,6 @@ def declared_task_map(manifest, also=()):
                     continue
                 tests = task.get("tests")
                 mode = tests.get("mode") if isinstance(tests, dict) else None
-                if tid:
-                    modes[tid] = mode
                 entry = {"taskId": tid, "testsMode": mode}
                 for f in task.get("files", []) or []:
                     rel = strip_line_suffix(f).strip()
@@ -4037,18 +4042,6 @@ def declared_task_map(manifest, also=()):
                         out.setdefault(rel, []).append(entry)
     except Exception:
         pass
-
-    try:
-        for fpath, task_ids in (manifest.get("fileIndex", {}) or {}).items():
-            for tid in task_ids or []:
-                if tid in modes:
-                    rel = strip_line_suffix(fpath).strip()
-                    entry = {"taskId": tid, "testsMode": modes[tid]}
-                    if rel and entry not in out.get(rel, []):
-                        out.setdefault(rel, []).append(entry)
-    except Exception:
-        pass
-
     return out
 
 
@@ -4065,9 +4058,9 @@ def declared_git_rels(manifest, project, git_root, also=(), only=None):
 
 
 def in_progress_task_map(root, manifest_rel):
-    """Rel-file -> [{"taskId", "testsMode"}] for tasks whose status == 'in_progress',
-    including fileIndex siblings keyed by the same task ids - `declared_task_map`
-    over the plan on disk. Empty dict on any error.
+    """Rel-file -> [{"taskId", "testsMode"}] for the `files` of tasks whose
+    status == 'in_progress' - `declared_task_map` over the plan on disk. Empty
+    dict on any error.
 
     Reads via the dual-format loader so the guard hooks see in-progress coverage on
     both the single-file and the sharded manifest layout."""

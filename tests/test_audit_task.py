@@ -4919,9 +4919,9 @@ def _start_cases(check):
         # ---- (pr) `start`: the promotion the plan gate reads ------------------
         # THE DEFECT, driven: `add` writes `status: "pending"`, and
         # `hooks/_config.in_progress_task_map` - what `require-plan.py` resolves
-        # an allowed path through - skips every task that is not `in_progress`,
-        # its `fileIndex` arm included (that arm only re-adds paths for ids
-        # already in the filtered set). So a task added to a phase that is
+        # an allowed path through - skips every task that is not `in_progress`
+        # and reads the `files` of the rest alone, never a `fileIndex` row. So
+        # a task added to a phase that is
         # ALREADY RUNNING is born with its own declared files denied on the
         # first Edit, and the only promotions were `/audit:run`, which promotes
         # AND spawns, and a hand edit. A field report measured two executors
