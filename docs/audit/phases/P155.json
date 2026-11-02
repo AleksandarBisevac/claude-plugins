@@ -80,12 +80,17 @@
       "startedAt": "2026-11-02T08:16:45Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-02T08:57:38Z.af3b88",
+        "status": "passed",
+        "at": "2026-11-02T08:57:38Z"
+      }
     },
     {
       "id": "P155.2",
       "title": "The place memo retries only git's bare-repository refusal, its two witnesses read the same facts, and a same-second arm and revoke reads as not armed",
-      "status": "in_progress",
+      "status": "done",
       "description": "Closes P143-R8, P143-R9, F820 (B). Evidence at fa1b0c81: hooks/_config.py:862-867 (unconditional second ask), :780-787 vs :790-805 (the two witnesses), :4362-4379 (standing_approval walks rows in read_all order). Do not add GIT_CONFIG_COUNT to _DISCOVERY_ENV (the sweep sets it for every child). Where the config identity costs too much on the hook path, state both limits in the block comment above _STANDING_FIELDS and record the choice.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -122,19 +127,33 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "278288ae58b7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/hooks/_config.py: (1) git_place asks git a second time, for the fields alone, only when the refused combined question is a top git cannot give (_top_refused: a git directory stands at or above the directory before any .git entry - _git_dir_above, a locale-free disk fact - or git's refusal carries 'must be run in a work tree', _REFUSED_TOP) AND time is left of the caller's timeout; the retry gets only what is left (time.monotonic around the first ask). A timeout or an unrunnable git is asked once. Chosen over asking --is-bare-repository because that is a second process on exactly the paths (timeout, exception) the acceptance says must not ask twice. (2) One predicate, _holds_repository (a .git entry or the HEAD/objects/refs git-dir shape, _git_dir_shaped), is now read by both witnesses: _no_repository_above (refusals) and _inside_known_tree (answers, and _tree_of_dir's containment), so a bare repository made between a directory and its top drops the kept answer. _dot_git_identity for a .git directory now carries (st_ino, st_size, st_mtime_ns) of .git/config (one lstat), so core.bare/core.worktree changes drop the answer. Cost was judged acceptable, so the config identity is implemented, not merely documented; the block comment above _STANDING_FIELDS states the two limits that remain (a .git FILE's config in the common dir is not read; the shape test does not validate HEAD) and the retry rule, including that a translated git in a checkout configured bare is answered None. _DISCOVERY_ENV untouched. (3) standing_approval reads arm/revoke rows through _journal_io.last_words (loaded via journal_lib(), the hooks' existing path loader - hooks still import nothing from scripts/ at module scope); a revoking among the newest second's last words reads as not armed with revokedAt kept; arming rows alone keep the one read last; raises RuntimeError when the journal reader cannot be loaded (every caller already catches and reports 'could not be read'). tests/test__config.py: new st8, st9 (_git_place_ask_cases, stubbed _ask_rev_parse), st10, st11 (_git_witness_cases, real git fixtures, each first showing git's fresh answer moved), sp1 (_standing_tie_cases). Suite 386/386. Gate: sweep of the four files exit 0 (4/4 files ok, 725 cases); bench-hooks --gate exit 0 (10 hooks within budget on 3.14.7; 3.8-3.13 NOT MEASURED, no interpreter here). ruff exit 0, vermin exit 0 (min 3.7), house_style_violations/prose_number_claims over the tree: 0 hits. Mutation probe (delivered at <scratchpad>/P155.2-probe/mutations.py, run with a tree as cwd; the plan gate refused writing probe/mutations.py inside the task tree as undeclared) run in a throwaway copy of the tree, never the task tree: 9 of 9 mutations killed, exit 0 - retry gate dropped -> st8; budget check dropped -> st8; whole timeout passed to the retry -> st9; shape gate dropped -> st9; text gate dropped -> st9+st11; answer witness back to .git-only -> st10; config identity dropped -> st11; tie read as last row -> sp1; over-fire (any revoke ever) -> sp1. Dependants: _locks.lock_dir and _worktrees (git_place callers) still correct - test__locks 148 and test__worktrees 156 cases green; _journal_io.git_place caller and _scoped_commit/audit-task callers green (test__journal_io 276, test__scoped_commit 81, test_audit_task 1200); _tree_of_dir/guard-bash-writes now hand a git-dir-shaped intermediate directory back to git, the conservative direction - test_guard_bash_writes 239 green; standing_approval readers drive-phase.standing_use, _doctor_trail.check_standing_approval, audit-status.standing_approval_block all wrap the call in try/except, so the new RuntimeError reads as 'could not be read' - test__doctor_trail 155, test_audit_doctor 173, test_audit_status 408, test_detect_plan_skip 46, test_drive_phase --stage uv-block 15/15 (sh1a-sh1d) green; every hook imports _config - bench-hooks gate green. The other declared files (PLUGIN-BUILD-GUIDE.md, tests/test__affected_tests.py, tests/test__doctor_trail.py, tests/test_drive_phase.py, tools/lints/_deps.py, tools/prove-gates.py, tests/_harness.py, tests/test__deps.py, tools/sweep-selftests.py, stamp-verification.py, tests/test__runner_collects.py, tests/test_stamp_verification.py) were not edited: none names the changed functions' behaviour (grep of PLUGIN-BUILD-GUIDE.md not needed - no new module, no new public name).",
+        "descriptive": "The git place memo no longer asks git twice after a timeout or an unrunnable git, both of its witnesses read one 'a repository stands here' predicate plus the top's .git/config identity, and a same-second arm and revoke from two sessions reads as not armed."
       },
       "startedAt": "2026-11-02T08:17:19Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-02T08:49:25Z",
+      "verifiedBy": [
+        "st8: a stubbed _ask_rev_parse that times out (in a checkout and in a bare repository) or reports git unrunnable is called once by git_place, its reason handed back; st9: the fields-alone retry still runs where a git directory stands (refusal in another language) or the refusal names a work tree, with no more than what is left of the timeout; st10: a bare repository made between a directory and its top drops the kept answer; st11: core.bare set in top/.git/config drops it; sp1: an arm and a revoke in one second from two sessions read as not armed whichever file sorts first, while a later second or one session's own order still decides"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-11-02T08:49:13Z.05fa32",
         "status": "passed",
         "at": "2026-11-02T08:49:13Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "278288ae58b7",
+        "at": "2026-11-02T08:49:25Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-02T08:37:57Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__config.py tests/test__locks.py tests/test__worktrees.py tools/_suite.py` in a throwaway tree at HEAD exited 1 with 5 of 386 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - st8 (house FAIL), st9 (house FAIL), st10 (house FAIL), st11 (house FAIL), sp1 (house FAIL): SELFTEST FAILED: 381/386 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {

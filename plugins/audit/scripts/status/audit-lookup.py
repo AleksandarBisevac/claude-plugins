@@ -142,6 +142,7 @@ import _filed_returns as _fr  # noqa: E402  (where `submit` filed a return, and
 import _config_rules  # noqa: E402  (review_per_task_mode: the config's reading now)
 import _gate_feed  # noqa: E402  (review_asks: what the plan asks a reviewer to refuse)
 import _impact  # noqa: E402  (who among the tracked files reads a task's files)
+import _scoped_commit  # noqa: E402  (head_sha: the one reader of HEAD)
 
 E_OK = 0
 E_NOMATCH = 1
@@ -1440,17 +1441,17 @@ def _choices_lines(phase):
 
 
 def _head(ctx):
-    """`(sha, None)` - the head this brief is computed at - or `(None, why)`."""
-    try:
-        done = subprocess.run(["git", "-C", ctx["gitRoot"], "rev-parse", "HEAD"],
-                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                              timeout=60)
-    except (OSError, subprocess.SubprocessError) as exc:
-        return None, "git could not be run here (%s)" % (exc,)
-    sha = done.stdout.decode("utf-8", "replace").strip()
-    if done.returncode != 0 or not sha:
-        return None, ("`git rev-parse HEAD` exited %d (%s)" % (
-            done.returncode, _excerpt.excerpt(done.stderr.decode("utf-8", "replace"))))
+    """`(sha, None)` - the head this brief is computed at - or `(None, why)`.
+
+    Read through `_scoped_commit.head_sha`, the one reader of HEAD: plain
+    `rev-parse HEAD` on an unborn branch whose tree holds an entry named
+    `HEAD` (or `head`, where the filesystem folds case) exits 0 and prints the
+    word, which a brief would then carry as the head it was computed at."""
+    sha = _scoped_commit.head_sha(ctx["gitRoot"])
+    if sha is None:
+        return None, ("`git rev-parse --verify -q HEAD` in %s named no commit "
+                      "(an unborn branch, a broken ref, or no git to ask)"
+                      % (ctx["gitRoot"],))
     return sha, None
 
 

@@ -2572,7 +2572,49 @@ def _selftest():
         _harness.stage(check, "rq-block", _red_command_reader_cases)
         _harness.stage(check, "ow-block", _owed_red_first_brief_cases)
         _harness.stage(check, "co-block", _conventions_order_cases)
+        _harness.stage(check, "hd-block", _unborn_head_entry_cases)
     return _harness.run(body)
+
+
+def _unborn_head_entry_cases(check):
+    """The head a brief is computed at, on an unborn branch whose tree holds an
+    entry git can read as the path `HEAD`: a `HEAD` directory anywhere, a `head`
+    file where the filesystem folds case. Plain `rev-parse HEAD` exits 0 there
+    and prints the word, which names no commit."""
+    root = _harness.fixture_root("audit-lookup-hd-")
+    try:
+        named = os.path.join(root, "unborn-HEAD-dir")
+        folded = os.path.join(root, "unborn-head-file")
+        for repo in (named, folded):
+            os.makedirs(repo)
+            _harness.git(None, "init", "-q", repo)
+        os.makedirs(os.path.join(named, "HEAD"))
+        with open(os.path.join(folded, "head"), "w", encoding="utf-8") as fh:
+            fh.write("not a ref\n")
+        plain = subprocess.run(["git", "-C", named, "rev-parse", "HEAD"],
+                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        echoed = (plain.returncode, plain.stdout.decode("utf-8", "replace").strip())
+        heads = [M._head({"gitRoot": repo}) for repo in (named, folded)]
+        check("hd1 an unborn branch whose tree holds a `HEAD` directory or a "
+              "`head` file gives the brief no head and a reason - plain "
+              "`rev-parse HEAD` is shown to echo the word on that fixture: %r"
+              % ((echoed, heads),),
+              echoed == (0, "HEAD")
+              and [sha for sha, _why in heads] == [None, None]
+              and all(why for _sha, why in heads))
+        for key, value in (("user.email", "fixture@example.com"),
+                           ("user.name", "Fixture"), ("commit.gpgsign", "false")):
+            _harness.git(named, "config", key, value)
+        with open(os.path.join(named, "a.txt"), "w", encoding="utf-8") as fh:
+            fh.write("a\n")
+        _harness.git(named, "add", "a.txt")
+        _harness.git(named, "commit", "-q", "-m", "first")
+        sha = _harness.git(named, "rev-parse", "--verify", "-q", "HEAD").strip()
+        check("hd2 the other direction: once that tree has a commit the brief's "
+              "head is the commit: %r" % ((M._head({"gitRoot": named}), sha),),
+              len(sha) == 40 and M._head({"gitRoot": named}) == (sha, None))
+    finally:
+        _harness.remove_tree(root)
 
 
 def _conventions_order_cases(check):

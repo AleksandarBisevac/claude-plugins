@@ -430,7 +430,7 @@ L9:
   audit-journal -> _claude_home, _evidence_io, _journal_io, _output
   audit-lock -> _claude_home, _locks, _output
   audit-logs -> _claude_home, _gate_feed, _output
-  audit-lookup -> _areas, _claude_home, _clause_coverage, _config_rules, _evidence_io, _excerpt, _filed_returns, _gate_feed, _impact, _journal_io, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output
+  audit-lookup -> _areas, _claude_home, _clause_coverage, _config_rules, _evidence_io, _excerpt, _filed_returns, _gate_feed, _impact, _journal_io, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _scoped_commit
   audit-status -> _areas, _claude_home, _cli_fmt, _evidence_io, _filed_returns, _fmt, _invariants, _live_copy, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
   audit-task -> _affected_tests, _areas, _branch, _claude_home, _commit_trail, _config_rules, _evidence_io, _filed_returns, _gate_derive, _id_refs, _id_shape, _impact, _invariants, _journal_io, _loader, _locks, _machine_paths, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proc_group, _proposals, _scope_companions, _scoped_commit, _status_facts, _task_outputs, _tree_stamp, _utc_stamp, _verdict_binding, _warning_groups, _worktrees
   audit-usage -> _areas, _claude_home, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme, _usage_economics

@@ -223,6 +223,7 @@ def _cases(check):
     _readers_share_the_question_cases(check)
     _harness.stage(check, "sc-hd", lambda c: _head_memo_cases(c, tmp))
     _harness.stage(check, "sc-tb", lambda c: _tracking_batch_cases(c, tmp))
+    _harness.stage(check, "sc-sh", _start_head_cases)
 
 
 # --- which paths an attempt changed that no task declares ----------------------
@@ -1811,9 +1812,46 @@ def _head_memo_cases(check, tmp):
         _unborn_head_entry_cases(check, tmp)
         _submodule_head_cases(check, tmp, repo)
         _reftable_cases(check, tmp)
+        _empty_loose_ref_cases(check, tmp, asks)
     finally:
         restore()
         M.forget_heads()
+
+
+def _git_head_or_none(repo):
+    """git's own answer for HEAD under `--verify -q`, or None when it refuses."""
+    done = subprocess.run(["git", "-C", repo, "rev-parse", "--verify", "-q",
+                           "HEAD"],
+                          stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    sha = done.stdout.decode("utf-8", "replace").strip()
+    return sha if done.returncode == 0 and sha else None
+
+
+def _empty_loose_ref_cases(check, tmp, asks):
+    """A branch whose packed-refs line names a commit and whose loose file is
+    there but empty - what a power loss mid-write leaves. git calls that ref
+    broken and names no commit; a reader that takes the empty file for "no
+    loose file" answers the packed line instead, and once that answer was kept
+    it is returned without git being asked at all."""
+    repo = _repo(tmp, "head-memo-empty-loose")
+    base = _git(repo, "rev-parse", "--abbrev-ref", "HEAD").strip()
+    _git(repo, "pack-refs", "--all")
+    loose = os.path.join(repo, ".git", "refs", "heads", *base.split("/"))
+    packed_only = not os.path.exists(loose)
+    kept = M.head_sha(repo)
+    with io.open(loose, "wb"):
+        pass
+    before = len(asks)
+    files = M._files_head(repo)
+    got = M.head_sha(repo)
+    git_says = _git_head_or_none(repo)
+    check("sc-hd14 a zero-length loose ref beside a packed line is not the "
+          "files' answer: the file reader gives none, git is asked, and the "
+          "answer is git's, which names no commit - while the packed line "
+          "alone had been read and kept: %r"
+          % ((packed_only, kept, files, got, git_says, len(asks) - before),),
+          packed_only and kept is not None and files is None
+          and git_says is None and got is None and len(asks) - before == 1)
 
 
 def _plain_rev_parse(repo):
@@ -1952,10 +1990,12 @@ def _tracking_batch_cases(check, tmp):
     want = dict((rel, _alone(repo, rel)) for rel in rels)
     check("sc-tb1 one listing answers each plain path as git asked about it "
           "alone does - a directory by what lies under it, a prefix that is "
-          "not a directory as nothing - and a wildcard is asked alone: %r"
+          "not a directory as nothing - and a wildcard, or a spelling ending "
+          "in a slash, is asked alone: %r"
           % ((got, want, listings),),
-          got == want and len(listings) == 2
-          and listings[1][3:] == ["keep/*.txt"] and len(listings[0]) > 4)
+          got == want and len(listings) == 3
+          and [listing[3:] for listing in listings[1:]]
+          == [["docs/"], ["keep/*.txt"]] and len(listings[0]) > 4)
     # A listing git refuses, stood in by a runner that refuses every listing
     # naming one path, so the refusal lands on the shared listing and then on
     # that path's own.
@@ -1976,6 +2016,108 @@ def _tracking_batch_cases(check, tmp):
           % (got,),
           got == {".claude/audit.config.json": M.TRACKED, refused: M.UNKNOWN,
                   ".claude/.gitignore": M.UNTRACKED})
+    _tracking_shapes_cases(check, tmp, repo)
+
+
+def _tracked_listings(repo, rels):
+    """`(answers, listings)` - `_tracking`'s answers and every `ls-files` it
+    sent, each as the pathspecs after `--`."""
+    real, listings = M.run_git, []
+
+    def counted(git_root, args, *rest, **kwargs):
+        if list(args[:1]) == ["ls-files"]:
+            listings.append(list(args[3:]))
+        return real(git_root, args, *rest, **kwargs)
+    M.run_git = counted
+    try:
+        return M._tracking(repo, rels), listings
+    finally:
+        M.run_git = real
+
+
+def _tracking_shapes_cases(check, tmp, repo):
+    """Two spellings git reads differently from the shared listing's matching
+    rule: a trailing slash naming a gitlink, which git lists as the bare name,
+    and any pathspec under GIT_ICASE_PATHSPECS, which git matches ignoring
+    case. Each answer is compared with git asked about that path alone."""
+    inner = _repo(tmp, "tracking-batch-inner")
+    _git(repo, "-c", "protocol.file.allow=always", "submodule", "add", "-q",
+         inner, "sm")
+    _git(repo, "commit", "-q", "-m", "gitlink")
+    rels = ["sm/", "sm", ".claude/audit.config.json", "keep/a.txt"]
+    got, listings = _tracked_listings(repo, rels)
+    want = dict((rel, _alone(repo, rel)) for rel in rels)
+    check("sc-tb3 `sm/` naming a submodule is tracked, as git asked about it "
+          "alone answers, and is asked in a listing of its own: %r"
+          % ((got, want, listings),),
+          want["sm/"] == M.TRACKED and got == want and ["sm/"] in listings)
+    rels = ["KEEP/a.txt", "Docs", ".claude/audit.config.json", "keep/a.txt"]
+    was = os.environ.get("GIT_ICASE_PATHSPECS")
+    os.environ["GIT_ICASE_PATHSPECS"] = "1"
+    try:
+        got, listings = _tracked_listings(repo, rels)
+        want = dict((rel, _alone(repo, rel)) for rel in rels)
+    finally:
+        if was is None:
+            os.environ.pop("GIT_ICASE_PATHSPECS", None)
+        else:
+            os.environ["GIT_ICASE_PATHSPECS"] = was
+    check("sc-tb4 under GIT_ICASE_PATHSPECS every path is asked alone, so a "
+          "spelling in another case is tracked as git answers it: %r"
+          % ((got, want, listings),),
+          want["KEEP/a.txt"] == M.TRACKED and want["Docs"] == M.TRACKED
+          and got == want and sorted(listings) == sorted([r] for r in rels))
+    # The other direction: with the variable absent the plain paths still share
+    # one listing, so asking alone is not what every call now does.
+    got, listings = _tracked_listings(repo, rels)
+    check("sc-tb5 with GIT_ICASE_PATHSPECS unset the plain paths share one "
+          "listing and a spelling in another case is untracked, as git says: %r"
+          % ((got, listings),),
+          len(listings) == 1 and got["KEEP/a.txt"] == M.UNTRACKED
+          and got["keep/a.txt"] == M.TRACKED)
+
+
+# --- the HEAD an attempt started at, read off the journal ----------------------
+# `read_all` orders rows of one second across two journal files by file name,
+# which records nothing about which was written first, so the newest second of
+# the attempt's starts is read per writer and two writers naming two heads
+# there are "cannot tell".
+_SH_TS = "2026-10-30T12:00:00Z"
+_SH_LATER = "2026-10-30T12:00:01Z"
+
+
+def _sh_row(action, ts, writer, **details):
+    return {"action": action, "ts": ts, "_file": "2026-10.%s.jsonl" % (writer,),
+            "details": details}
+
+
+def _sh_start(ts, writer, head, attempt=1):
+    return _sh_row("task.start", ts, writer, taskId="P1.1", attempt=attempt,
+                   commit=head)
+
+
+def _start_head_cases(check):
+    first, second = "a" * 40, "b" * 40
+    task = {"id": "P1.1", "attempts": 1}
+    # In read_all's order: one second, so writer `a`'s file sorts first and
+    # writer `b`'s first start is the row read last.
+    tied = [_sh_row("task.reopen", _SH_TS, "a", taskId="P1.1"),
+            _sh_start(_SH_TS, "a", second),
+            _sh_start(_SH_TS, "b", first)]
+    check("sc-sh1 a start, a reopen and a restart of one task by two writers "
+          "in one second name no head: which of the two came last is not "
+          "recorded: %r" % (M.start_head_of(tied, task),),
+          M.start_head_of(tied, task) is None)
+    one_writer = [_sh_start(_SH_TS, "b", first),
+                  _sh_row("task.reopen", _SH_TS, "b", taskId="P1.1"),
+                  _sh_start(_SH_TS, "b", second)]
+    later = tied + [_sh_start(_SH_LATER, "b", second)]
+    agreed = [_sh_start(_SH_TS, "a", second), _sh_start(_SH_TS, "b", second)]
+    got = [M.start_head_of(rows, task) for rows in (one_writer, later, agreed)]
+    check("sc-sh2 the other direction: one writer's rows in one second keep "
+          "their order, a later second settles it, and two writers naming one "
+          "head name it: %r" % (got,),
+          got == [second, second, second])
 
 
 def _selftest():

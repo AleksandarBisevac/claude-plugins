@@ -29,6 +29,7 @@ import json
 import os
 import io
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -353,6 +354,15 @@ def check_git_instructions(rep, project, home=None):
 # never as clean, which is the same rule every other basis in this command follows.
 _INTEGRITY_TIMEOUT = 10
 _ARCHIVE_TIMEOUT = 60
+# What a commit's full name looks like, for the HEAD this row carries. HEAD is
+# asked with `--verify -q` and the answer kept only when it has this shape:
+# plain `rev-parse HEAD` on an unborn branch whose tree holds an entry named
+# `HEAD` (or `head`, where the filesystem folds case) exits 0 and prints the
+# word. `_scoped_commit.head_sha` is the one reader of HEAD, and it sits in a
+# layer above this module (`_deps.LAYERS`), so its question is asked again here
+# rather than imported; `tests/test__doctor_setup.py` holds the two shapes to
+# one answer.
+_OBJECT_NAME = re.compile(r"\A(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 
 
 def _git_out(argv, cwd):
@@ -596,9 +606,10 @@ def plugin_integrity(plugin_root, project=None, home=None):
                 return out
         except Exception:
             pass
-    head, _why = _git_out(["git", "-C", plugin_root, "rev-parse", "HEAD"],
-                          plugin_root)
-    out["commit"] = None if head is None else head.strip()[:12] or None
+    head, _why = _git_out(["git", "-C", plugin_root, "rev-parse", "--verify",
+                           "-q", "HEAD"], plugin_root)
+    head = (head or "").strip()
+    out["commit"] = head[:12] if _OBJECT_NAME.match(head) else None
     status, why = _git_out(
         ["git", "-C", plugin_root, "status", "--porcelain", "-uno", "--",
          plugin_root], plugin_root)

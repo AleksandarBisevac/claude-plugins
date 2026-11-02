@@ -1520,7 +1520,67 @@ def _selftest():
         _merge_driver_cases(check)
         _binding_cases(check)
         _ci_cadence_cases(check)
+        _harness.stage(check, "ds-hd", _unborn_head_entry_cases)
     return _harness.run(body)
+
+
+def _unborn_head_entry_cases(check):
+    """The commit a copy is carried at, for a checkout on an unborn branch whose
+    tree holds an entry git can read as the path `HEAD`: a `HEAD` directory
+    anywhere, a `head` file where the filesystem folds case. Plain
+    `rev-parse HEAD` exits 0 there and prints the word, which names no commit."""
+    if not shutil.which("git"):
+        _harness.skip(check, "ds-hd1 an unborn checkout carries no commit", "git",
+                      "git is not on PATH")
+        return
+    root = _harness.fixture_root("doctor-unborn-head-")
+    elsewhere = os.path.join(root, "elsewhere")
+    os.makedirs(elsewhere)
+    try:
+        named = os.path.join(root, "unborn-HEAD-dir")
+        folded = os.path.join(root, "unborn-head-file")
+        for repo in (named, folded):
+            os.makedirs(repo)
+            _harness.git(None, "init", "-q", repo)
+        os.makedirs(os.path.join(named, "HEAD"))
+        with open(os.path.join(folded, "head"), "w", encoding="utf-8") as fh:
+            fh.write("not a ref\n")
+        plain = subprocess.run(["git", "-C", named, "rev-parse", "HEAD"],
+                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        echoed = (plain.returncode, plain.stdout.decode("utf-8", "replace").strip())
+        commits = [M.plugin_integrity(repo, project=elsewhere)["commit"]
+                   for repo in (named, folded)]
+        check("ds-hd1 a checkout on an unborn branch whose tree holds a `HEAD` "
+              "directory or a `head` file carries no commit - plain "
+              "`rev-parse HEAD` is shown to echo the word on that fixture: %r"
+              % ((echoed, commits),),
+              echoed == (0, "HEAD") and commits == [None, None])
+        for key, value in (("user.email", "fixture@example.com"),
+                           ("user.name", "Fixture"), ("commit.gpgsign", "false")):
+            _harness.git(named, "config", key, value)
+        with open(os.path.join(named, "a.txt"), "w", encoding="utf-8") as fh:
+            fh.write("a\n")
+        _harness.git(named, "add", "a.txt")
+        _harness.git(named, "commit", "-q", "-m", "first")
+        sha = _harness.git(named, "rev-parse", "--verify", "-q", "HEAD").strip()
+        got = M.plugin_integrity(named, project=elsewhere)["commit"]
+        check("ds-hd2 the other direction: once that checkout has a commit, the "
+              "commit it carries is that commit's: %r" % ((got, sha),),
+              len(sha) == 40 and got == sha[:12])
+    finally:
+        _harness.remove_tree(root)
+    # The doctor asks HEAD's shape again because `_scoped_commit` sits above it;
+    # the two shapes are held to one answer here, over every kind of answer git
+    # or a stub could give.
+    import _scoped_commit
+    said = ["HEAD", "", "abc1234", "x" * 40, "a" * 40, "a" * 64, "A" * 40,
+            "a" * 41, "a" * 40 + "\n", "a" * 39]
+    pairs = [(bool(M._OBJECT_NAME.match(s)),
+              bool(_scoped_commit._OBJECT_NAME.match(s))) for s in said]
+    check("ds-hd3 the doctor's reading of a commit name is head_sha's, answer "
+          "for answer: %r" % (pairs,),
+          all(mine == theirs for mine, theirs in pairs)
+          and [mine for mine, _theirs in pairs].count(True) == 2)
 
 
 if __name__ == "__main__":

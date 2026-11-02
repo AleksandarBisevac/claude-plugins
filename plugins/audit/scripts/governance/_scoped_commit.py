@@ -162,14 +162,18 @@ _OBJECT_NAME = re.compile(r"\A(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 
 def _ref_file(path):
     """The bytes of one ref file, b"" when there is none, None when it cannot be
-    read for any other reason."""
+    read for any other reason - or when it is there and EMPTY. git calls an
+    empty loose ref broken (a power loss mid-write leaves one) and names no
+    commit through it, where reading it as "no loose file" would let the
+    `packed-refs` line answer instead."""
     try:
         with open(path, "rb") as fh:
-            return fh.read()
+            data = fh.read()
     except (FileNotFoundError, NotADirectoryError):
         return b""
     except OSError:
         return None
+    return data if data else None
 
 
 def _packed_name(packed, ref):
@@ -1398,18 +1402,22 @@ def _tracking(git_root, rels):
     `plan_to_git` as an entry of a project that IS the top: the pathspec is the
     one every other listing here is asked with.
 
-    ONE LISTING FOR ALL OF THEM, and the same answer one listing each would give.
-    A plain pathspec matches a listed path that is it or lies under it, so the
-    paths git lists are matched back to each pathspec by that rule here; a
-    pathspec git could read or print another way (`_plain_pathspec`) is asked
-    alone. When the shared listing is refused, each
-    pathspec is asked alone, so one that git rejects - outside the repository,
-    say - leaves the others answered as they would have been."""
+    ONE LISTING FOR THE PLAIN ONES, and the same answer one listing each would
+    give. The matching rule reproduces git's for one shape only: a pathspec
+    `_plain_pathspec` accepts - a literal path with no trailing slash, matching
+    a listed path that is it or lies under it, compared case for case. Every
+    other shape is asked alone: a wildcard or magic prefix git reads as a
+    pattern, a trailing slash (git lists a submodule `sm` for `sm/`, which no
+    prefix rule over the listed name can tell from a file), and every pathspec
+    while `GIT_ICASE_PATHSPECS` is set, under which git matches ignoring case.
+    When the shared listing is refused, each pathspec is asked alone, so one
+    that git rejects - outside the repository, say - leaves the others answered
+    as they would have been."""
     hc = _loader.load_hooks_config(modname="audit__config")
     specs = dict((rel, hc.plan_to_git(rel, git_root, git_root)) for rel in rels)
     asked = sorted(set(spec for spec in specs.values() if spec is not None))
     shared = [spec for spec in asked if _plain_pathspec(spec)]
-    if len(shared) < 2:
+    if len(shared) < 2 or os.environ.get("GIT_ICASE_PATHSPECS"):
         shared = []
     queue = ([shared] if shared else []) + [[spec] for spec in asked
                                             if spec not in shared]
@@ -1432,20 +1440,20 @@ def _tracking(git_root, rels):
 
 def _plain_pathspec(spec):
     """Whether git reads `spec` as the literal path it spells and prints it back
-    the same way: no wildcard, no magic prefix, no empty, `.` or `..` segment, no
-    backslash, and ASCII only - git may print a non-ASCII name in another
-    Unicode form than it was asked in (`core.precomposeUnicode`)."""
+    the same way: no wildcard, no magic prefix, no empty, `.` or `..` segment
+    (a trailing slash leaves an empty last one), no backslash, and ASCII only -
+    git may print a non-ASCII name in another Unicode form than it was asked in
+    (`core.precomposeUnicode`)."""
     if (not spec or not spec.isascii() or spec.startswith((":", "/"))
             or any(c in spec for c in "*?[]\\")):
         return False
-    return all(part not in ("", ".", "..") for part in spec.rstrip("/").split("/"))
+    return all(part not in ("", ".", "..") for part in spec.split("/"))
 
 
 def _spec_holds(spec, path):
     """Whether a plain pathspec matches a path git listed: the path itself, or
     one under it."""
-    bare = spec.rstrip("/")
-    return (path == spec and not spec.endswith("/")) or path.startswith(bare + "/")
+    return path == spec or path.startswith(spec + "/")
 
 
 def split_plugin_owned(paths, owned):
@@ -1572,14 +1580,27 @@ def declared_work(task, project, git_root, records=()):
 def start_head_of(rows, task):
     """The HEAD the task's current attempt recorded on its newest `task.start`
     journal row (`rows`, the journal's full read), or None when no row of this
-    attempt names one - a journal off, a start older than the record."""
-    head = None
-    for row in rows or []:
+    attempt names one - a journal off, a start older than the record.
+
+    NEWEST SECOND PER WRITER (`_journal_io.last_words`). A reopen sets the
+    attempt count back, so a restart's row carries the same attempt number as
+    the start it replaced; when two writers' files hold both in one second,
+    `read_all`'s order between them is by file name and says nothing about
+    which came last. Two heads there are "cannot tell" - None - rather than
+    the earlier attempt's head read as this one's."""
+    tid, attempt = task.get("id"), task.get("attempts")
+
+    def words_of(row):
         details = row.get("details") if isinstance(row, dict) else None
-        if (row.get("action") == "task.start" and isinstance(details, dict)
-                and details.get("taskId") == task.get("id")
-                and details.get("attempt") == task.get("attempts")):
-            head = details.get("commit") or None
+        if (isinstance(details, dict) and row.get("action") == "task.start"
+                and details.get("taskId") == tid
+                and details.get("attempt") == attempt):
+            commit = details.get("commit")
+            return [(tid, commit if isinstance(commit, str) and commit else None)]
+        return []
+    heads = _journal_io.last_words(
+        [row for row in rows or [] if isinstance(row, dict)], words_of).get(tid)
+    head = next(iter(heads)) if heads and len(heads) == 1 else None
     return head if re.match(r"^[0-9a-fA-F]{7,40}$", head or "") else None
 
 
