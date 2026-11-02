@@ -22214,6 +22214,11 @@ def _dependant_dispatch_cases(check):
     document mentioning its basename in passing, a module importing it that is
     not its suite, and a file quoting one of its identifiers - a bare word, not
     a pinned passage - beside its path.
+
+    `tools/pins.py` has a suite of its own (`tests/test_pins.py`): declared by
+    a `+` before the first start it ANSWERS a reading, so that suite is never
+    asked (`dd11`, `dd12`). `src/e.py` is read only by an importer, which an
+    edit does not owe and a recorded delete does (`dd13`, `dd14`).
     """
     tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
     (run, _run_on_stdin, base_manifest, mk, _mk_empty, task_in, _pin, _unpin,
@@ -22237,6 +22242,11 @@ def _dependant_dispatch_cases(check):
         "tools/runc.sh": "python3 src/c.py\n",
         "src/d.py": "import c\n\nprint(c.gamma())\n",
         "docs/more.md": "See c.py for gamma.\n",
+        # A reader's own reader, and a file only an importer reads.
+        "tests/test_pins.py": "import pins\n\nassert pins.ROWS\n",
+        "src/e.py": "def eps():\n    return 1\n",
+        "src/f.py": "import e\n\nprint(e.eps())\n",
+        "tools/rune.sh": "python3 src/e.py\n",
     }
 
     def task(tid, files):
@@ -22254,8 +22264,13 @@ def _dependant_dispatch_cases(check):
         fx = base_manifest()
         fx["phases"][1]["tasks"][1] = task("P2.3", ["src/a.py"])
         fx["phases"][1]["tasks"].append(task("P2.5", ["src/c.py"]))
-        fx["fileIndex"]["src/a.py"] = ["P2.3"]
+        fx["phases"][1]["tasks"].append(task("P2.6", ["src/e.py"]))
+        # Lines 1-2 of src/a.py hold `alpha_answer_value`; the pinned passage
+        # sits on line 5, outside the range this task declares.
+        fx["phases"][1]["tasks"].append(task("P2.7", ["src/a.py:1-2"]))
+        fx["fileIndex"]["src/a.py"] = ["P2.3", "P2.7"]
         fx["fileIndex"]["src/c.py"] = ["P2.5"]
+        fx["fileIndex"]["src/e.py"] = ["P2.6"]
         return fx
 
     def bytes_of(mp):
@@ -22348,6 +22363,21 @@ def _dependant_dispatch_cases(check):
               "the task starts: %r" % ((code, txt[-300:]),),
               code == 0
               and (task_in(mp, "P2.3") or {}).get("status") == "in_progress")
+        held = task_in(mp, "P2.3") or {}
+        readers = [n.get("reader") for n in (held.get("notes") or [])
+                   if isinstance(n, dict) and n.get("reader")]
+        check("dd11 the `+` that answered two demanded readers before the "
+              "first start recorded each as a reader, in one dated note apiece "
+              "naming the file it reads: %r" % (held.get("notes"),),
+              readers == ["tests/test_a.py", "tools/pins.py"]
+              and all(n.get("reads") == "src/a.py" and n.get("at")
+                      for n in held.get("notes") or [] if n.get("reader")))
+        check("dd12 ...and so the reader's own suite was never asked: the task "
+              "started with tests/test_pins.py neither declared nor waived "
+              "(a start that asked it would have refused): %r"
+              % ((code, held.get("files"), txt[-300:]),),
+              code == 0 and "tests/test_pins.py" not in (held.get("files") or [])
+              and "tests/test_pins.py" not in str(held.get("notes")))
 
         code, txt = said(["scope", "P2.3", "--files", "+src/b.py",
                           "--project-dir", proj])
@@ -22365,6 +22395,37 @@ def _dependant_dispatch_cases(check):
               "with no waiver asked: %r" % ((code, txt[-300:]),),
               code == 0
               and (task_in(mp, "P2.5") or {}).get("status") == "in_progress")
+
+        code, txt = said(["scope", "P2.6", "--introduces", "delete:src/e.py",
+                          "--project-dir", proj])
+        removes = [n for n in (task_in(mp, "P2.6") or {}).get("notes") or []
+                   if isinstance(n, dict) and n.get("removes")]
+        before = bytes_of(mp)
+        code2, txt2 = said(["start", "P2.6", "--project-dir", proj])
+        check("dd13 a delete `--introduces` records is read at start: the "
+              "file's importer is demanded, and the script running it by path "
+              "is not: %r" % ((code, removes, code2, txt2[-400:]),),
+              code == 0 and len(removes) == 1
+              and removes[0].get("removes") == "src/e.py"
+              and removes[0].get("how") == "delete"
+              and code2 != 0 and bytes_of(mp) == before
+              and "src/f.py reads src/e.py" in txt2
+              and "tools/rune.sh" not in txt2)
+        code, txt = said(["scope", "P2.6", "--introduces", "rename:../out.py",
+                          "--project-dir", proj])
+        check("dd14 a removal naming a path that climbs out of the tree is "
+              "refused by name, like any `--files` value: %r"
+              % ((code, txt[-300:]),),
+              code != 0 and "../out.py" in txt)
+
+        code, txt = said(["start", "P2.7", "--project-dir", proj])
+        check("dd15 a `files` entry's `:<range>` bounds the pins asked: the "
+              "file pinning a passage outside lines 1-2 is not demanded, while "
+              "its suite and the section headed by its path still are: %r"
+              % ((code, txt[-500:]),),
+              code != 0 and "tools/pins.py" not in txt
+              and "tests/test_a.py reads src/a.py" in txt
+              and "docs/guide.md reads src/a.py" in txt)
     finally:
         _harness.remove_tree(tmp)
 

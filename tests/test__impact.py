@@ -29,6 +29,14 @@ reads a file a task is about to change.
 - **The readers a dispatch demands stand beside their near misses** (`ow1`-`ow4`):
   a passage quoted beside the path is a pin and each shape one step off it is
   not, a heading naming the full path is a section and a longer path is not.
+- **What is owed is bounded by what the task edits** (`eb1`-`eb4`, `rd1`-`rd2`):
+  a pin outside the declared lines or outside the sections a declared path
+  heads is not owed, a file declared to answer a reading is not asked for its
+  own readers - each beside the twin that keeps the demand when the edit can
+  reach it.
+- **A delete or a rename owes its import readers** (`rm1`-`rm2`): a Python
+  import, a basename loader call, a JS import - and not a CI step running the
+  path or a document quoting the import.
 
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
@@ -440,6 +448,154 @@ def _owed_cases(check):
           and "test_run" not in stems)
 
 
+# The bounded fixture: one module with a passage in each half, a reader pinning
+# each, a guide with a section per module (a fenced comment inside the first),
+# a reader of a reader, and the four ways code reaches a file it would lose.
+_HEAD = "the head passage stands here"
+_TAIL = "the tail passage stands here"
+_CORE_SECTION = "The core section text lives here"
+_FENCED = "the fenced line under core"
+_OTHER_SECTION = "The other section text lives here"
+_PIN_NOTE = "a note only the pin file carries"
+_BOUNDED = {
+    "src/core.py": ('"""Core."""\n\n\ndef head():\n    return "%s"\n\n\n'
+                    'def tail():\n    return "%s"\n' % (_HEAD, _TAIL)),
+    "tests/test_core.py": "import core\n",
+    "tools/pin_head.py": ('ROWS = (("src/core.py", "%s"),)\n'
+                          'NOTE = "%s"\n' % (_HEAD, _PIN_NOTE)),
+    "tools/pin_tail.py": 'ROWS = (("src/core.py", "%s"),)\n' % (_TAIL,),
+    # A reader of the reader: its suite, and a file pinning its own text.
+    "tests/test_pin_head.py": "import pin_head\n",
+    "tools/pin_pin.py": 'PIN = ("tools/pin_head.py", "%s")\n' % (_PIN_NOTE,),
+    "docs/guide.md": ("# Guide\n\n## `src/core.py`\n\n%s.\n\n```python\n"
+                      "# a comment in a fence is no heading\nx = \"%s\"\n```\n\n"
+                      "## `src/other.py`\n\n%s.\n"
+                      % (_CORE_SECTION, _FENCED, _OTHER_SECTION)),
+    "tools/doc_core.py": 'PIN = ("docs/guide.md", "%s")\n' % (_CORE_SECTION,),
+    "tools/doc_fence.py": 'PIN = ("docs/guide.md", "%s")\n' % (_FENCED,),
+    "tools/doc_other.py": 'PIN = ("docs/guide.md", "%s")\n' % (_OTHER_SECTION,),
+    # What a delete or a rename breaks, and what it does not.
+    "pkg/gone.py": "def g():\n    return 1\n",
+    "pkg/uses.py": "import gone\n\nprint(gone.g())\n",
+    "hooks/h.py": "import _config\n\nPATH = _config.find_script(\"gone.py\")\n",
+    "scripts/run-it.py": "print(1)\n",
+    "scripts/load.py": "import _loader\n\nM = _loader.load_script(\"run-it.py\")\n",
+    "web/gone.js": "export const g = 1;\n",
+    "web/use.js": "import {g} from './gone'\nconsole.log(g);\n",
+    "ci.yml": "steps:\n  - run: python3 pkg/gone.py\n",
+    "docs/d.md": "Write `import gone` to call it; scripts/run-it.py runs alone.\n",
+}
+
+
+def _bounded_repo():
+    root = os.path.join(_harness.fixture_root("impact-bounded-"), "repo")
+    os.makedirs(root)
+    _harness.git(root, "init", "-q")
+    _write(root, _BOUNDED)
+    _harness.git(root, "add", "-A")
+    _harness.git(root, "commit", "-q", "-m", "fixture")
+    return root
+
+
+def _owed_files(result):
+    return sorted(set(r["file"] for r in result["owed"]))
+
+
+def _owed(root, paths, **bounds):
+    """`M.owed` with the bounding arguments. A signature that takes none of them
+    answers with no rows and the TypeError as its error, so each case reads it
+    as a failed assertion naming the missing argument rather than a block that
+    never ran; every case passing a bound asserts a row present or no error."""
+    try:
+        return M.owed(root, paths, **bounds)
+    except TypeError as exc:
+        return {"owed": [], "errors": [{"path": None, "error": str(exc)}]}
+
+
+def _bounded_cases(check):
+    root = _bounded_repo()
+    try:
+        _region_cases(check, root)
+        _reader_cases(check, root)
+        _removal_cases(check, root)
+    finally:
+        _harness.remove_tree(os.path.dirname(root))
+
+
+def _region_cases(check, root):
+    # Lines 1-5 hold head(); tail()'s passage sits on line 9.
+    head_only = _owed(root, ["src/core.py"], regions={"src/core.py": [(1, 5)]})
+    whole = _owed(root, ["src/core.py"])
+    check("eb1 a reader quoting a passage OUTSIDE the lines a task declares "
+          "(`src/core.py:1-5`) is not owed - the edit cannot reach the text it "
+          "pins: %r" % (_owed_files(head_only),),
+          "tools/pin_tail.py" not in _owed_files(head_only)
+          and not head_only["errors"])
+    check("eb2 THE OVER-FIRE TWIN: the reader pinning a passage INSIDE the "
+          "region is still owed, and with no region declared both pins are: "
+          "%r / %r" % (_owed_files(head_only), _owed_files(whole)),
+          "tools/pin_head.py" in _owed_files(head_only)
+          and "tests/test_core.py" in _owed_files(head_only)
+          and {"tools/pin_head.py", "tools/pin_tail.py"} <= set(_owed_files(whole)))
+
+    sectioned = _owed(root, ["docs/guide.md", "src/core.py"])
+    got = _owed_files(sectioned)
+    check("eb3 a declared document is edited in the sections a declared path "
+          "heads: a reader pinning text under `src/core.py`'s heading is owed "
+          "(a fenced `#` comment does not end that section), one pinning the "
+          "section headed by an undeclared path is not: %r" % (got,),
+          "tools/doc_core.py" in got and "tools/doc_fence.py" in got
+          and "tools/doc_other.py" not in got)
+    alone = _owed_files(_owed(root, ["docs/guide.md"]))
+    named = _owed_files(_owed(root, ["docs/guide.md", "src/core.py"],
+                               regions={"docs/guide.md": None}))
+    check("eb4 THE OVER-FIRE TWIN: a document no declared path heads a "
+          "section of, or one the task names whole, is edited anywhere, so "
+          "every pin of it is owed: %r / %r" % (alone, named),
+          all(p in alone and p in named for p in (
+              "tools/doc_core.py", "tools/doc_fence.py", "tools/doc_other.py")))
+
+
+def _reader_cases(check, root):
+    declared = ["src/core.py", "tools/pin_head.py"]
+    as_reader = _owed_files(_owed(root, declared, readers=["tools/pin_head.py"]))
+    as_edit = _owed_files(_owed(root, declared))
+    check("rd1 a file declared to ANSWER a reading (`--files +reader`) is not "
+          "asked for its own readers - its suite and the file pinning its text "
+          "are not owed - while the edited file's readers still are: %r"
+          % (as_reader,),
+          "tests/test_pin_head.py" not in as_reader
+          and "tools/pin_pin.py" not in as_reader
+          and "tests/test_core.py" in as_reader)
+    check("rd2 THE OVER-FIRE TWIN: the same file declared as an EDIT is asked "
+          "for its readers - its suite and its pinner are owed: %r" % (as_edit,),
+          "tests/test_pin_head.py" in as_edit and "tools/pin_pin.py" in as_edit)
+
+
+def _removal_cases(check, root):
+    gone = ["pkg/gone.py", "scripts/run-it.py", "web/gone.js"]
+    removed = _owed(root, gone, removed=gone)
+    rows = dict((r["file"], r) for r in removed["owed"])
+    importers = ("pkg/uses.py", "hooks/h.py", "scripts/load.py", "web/use.js")
+    check("rm1 a declared delete or rename owes every import reader of the "
+          "file - a Python import, a hook's find_script basename, a "
+          "load_script of a hyphenated entry point, a JS import - each under "
+          "the kind `import`: %r"
+          % (sorted((f, r["kind"], r["reads"]) for f, r in rows.items()),),
+          all(rows.get(f, {}).get("kind") == "import" for f in importers)
+          and rows["pkg/uses.py"]["reads"] == "pkg/gone.py"
+          and rows["hooks/h.py"]["reads"] == "pkg/gone.py"
+          and rows["scripts/load.py"]["reads"] == "scripts/run-it.py"
+          and rows["web/use.js"]["reads"] == "web/gone.js")
+    kept = _owed_files(_owed(root, gone))
+    check("rm2 THE OVER-FIRE TWIN: the same files edited in place owe none of "
+          "those importers, and a delete still does not owe a CI step running "
+          "the path or a document quoting the import in prose: %r / %r"
+          % (kept, sorted(rows)),
+          not any(f in kept for f in importers)
+          and "ci.yml" not in rows and "docs/d.md" not in rows)
+
+
 def _selftest():
     def body(check):
         _harness.stage(check, "im-block", _cases)
@@ -447,6 +603,7 @@ def _selftest():
         _harness.stage(check, "rk-block", _ranking_cases)
         _harness.stage(check, "bd-block", _budget_cases)
         _harness.stage(check, "ow-block", _owed_cases)
+        _harness.stage(check, "eb-block", _bounded_cases)
     return _harness.run(body)
 
 

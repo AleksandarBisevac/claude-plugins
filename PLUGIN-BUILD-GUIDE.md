@@ -3429,14 +3429,21 @@ most `FILE_BUDGET` files in `scan_order` (those the description names, then sour
 documents), renders at most `LINE_BUDGET` lines, and closes a cut with the counts and the
 command it is given. `render(results)` is the unbounded text. A file nothing names says what it
 was searched by — and, for JS/TS, that aliased or dynamic imports are not seen. What else it
-cannot see is listed in its docstring. `owed(root, paths, exclude)` is the narrower question a
-dispatch asks: which of those readers an EDIT to an existing declared file can reach — the
-file's own suite by name, a code file quoting a passage of its text within `ANCHOR_WINDOW`
-lines of its full path, and a document with a Markdown heading naming its full path. A reader
-that only runs or names the path, an importer that is not the suite, and a passing basename
-mention are not demanded: an edit that keeps the path cannot break them, and no field a
-dispatch reads says a task deletes or renames. `audit-task.py start` refuses over what `owed`
-returns. Stdlib and git only. Its cases are `tests/test__impact.py`.
+cannot see is listed in its docstring. A Python file is also imported by a call to one of
+`BASENAME_LOADERS` (`find_script`, `load_script`, `script_path`) passing its basename, which is
+how a hyphenated entry point is loaded at all. `owed(root, paths, exclude, regions, readers,
+removed)` is the narrower question a dispatch asks: which of those readers an EDIT to an
+existing declared file can reach — the file's own suite by name, a code file quoting a passage
+of its text within `ANCHOR_WINDOW` lines of its full path, and a document with a Markdown
+heading naming its full path. A reader that only runs or names the path, an importer that is
+not the suite, and a passing basename mention are not demanded: an edit that keeps the path
+cannot break them. The question is bounded by what the task edits: a pin is owed only when its
+passage lies in the file's edit region — the lines `regions` gives it, or for a Markdown
+document the sections (`section_spans`, fenced code skipped) whose heading names another
+declared path; a declared file in `readers` answers a reading and is not scanned for readers of
+its own. A path in `removed` (a delete or a rename) owes its importers too, code files only.
+`audit-task.py start` refuses over what `owed` returns. Stdlib and git only. Its cases are
+`tests/test__impact.py`.
 
 ### `plugins/audit/scripts/governance/_locks.py`
 The lock library: where a lock lives (`lock_dir`), what it may be called
@@ -5552,7 +5559,13 @@ orchestrator's). It also refuses a first start while a reader `_impact.owed` fin
 declared file is neither in `files` nor waived, naming each reader and its answers —
 `scope <id> --files +<reader>` or `scope <id> --waive "<reader>: <why>"`; the brief already
 listed every dependant for the executor to answer, and this is the subset graded before the
-work begins. A scan git could not complete is passed only by `--force --reason`, on the row.
+work begins. What the task edits bounds it, read off the task's own record: a `files` entry's
+`:<range>` is the region of that file it edits; a `+` that answered a demanded reader before
+the first start is recorded as a dated note carrying `reader`, and that file is not asked for
+readers of its own unless `tests.add`, the title or the description names it; and
+`--introduces delete:<path>` / `rename:<path>` records a note carrying `removes`, which adds
+the file's importers to what is asked. A scan git could not complete is passed only by
+`--force --reason`, on the row.
 
 **`done <taskId> --commit <sha>` is `start`'s twin at the other end**, and it exists for the
 same reason: the conventions prescribed the close as a pair of hand `Edit`s, which is how one

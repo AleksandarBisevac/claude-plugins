@@ -13,8 +13,9 @@ check the answer.
 
 WHAT COUNTS AS A REFERENCE. A tracked file references a declared file when one
 of its lines carries, as a whole word, the declared file's module name inside a
-Python `import`/`from` statement (`import`, `.py` files only), its path
-(`path`), or its basename (`basename`); a JS/TS file (`JS_EXTS`) is also
+Python `import`/`from` statement or its basename passed to one of
+`BASENAME_LOADERS` (`import`, `.py` files only), its path (`path`), or its
+basename (`basename`); a JS/TS file (`JS_EXTS`) is also
 imported by a relative specifier written without its extension, or with the
 `.js` an ESM build resolves, or by its directory when it is an index file - each
 resolved against the importing file's own directory (`import`). A dependant is
@@ -30,9 +31,11 @@ every file it indexes and reads none of them).
 
 WHICH READERS A DISPATCH DEMANDS. `owed` narrows the dependants to the ones an
 edit to the declared file can reach - its own suite, a file quoting its text
-beside its path, a document section headed by its path - and `audit-task.py
-start` refuses a task until each is declared or waived. The comment above
-`owed` says why the rest of the listing is not demanded.
+beside its path, a document section headed by its path - bounded by the region
+of the file the task edits and by which declared files are edits rather than
+answers, plus the importers of a file the task deletes or renames; and
+`audit-task.py start` refuses a task until each is declared or waived. The
+comment above `owed` says why the rest of the listing is not demanded.
 
 WHAT IT CANNOT SEE. Only `git grep` over TRACKED files is read, so an untracked
 or gitignored file is never a dependant - by design, since neither ships. A
@@ -146,12 +149,34 @@ def _module_name(path):
     return stem
 
 
-def _import_pattern(module):
-    word = re.escape(module)
-    return re.compile(
-        r"\bfrom\s+(?:\w+\.)*%s\b"
-        r"|\bimport\s+(?:[\w.]+(?:\s+as\s+\w+)?\s*,\s*)*(?:\w+\.)*%s\b"
-        r"|\bfrom\s+[\w.]+\s+import\s+\(?[\w\s,]*\b%s\b" % (word, word, word))
+# The calls this plugin's own code reaches a file through by its BASENAME rather
+# than an `import`: a hook's `_config.find_script`, and `_loader.load_script` /
+# `_loader.script_path` under `scripts/` - a hyphenated entry point has no
+# import name, so these are how other code in this plugin reaches one. A line
+# passing the basename as the call's quoted first argument is that file's
+# importer. Another project's loader by another name is not read;
+# `tools/lints/_deps.py` keeps its own `_LOADER_FUNCS` for a different question
+# (which loads are import-graph edges), and `tools/` sits outside the plugin
+# directory an install copies, which is why this is a second table rather than
+# an import of that one.
+BASENAME_LOADERS = ("find_script", "load_script", "script_path")
+
+
+def _import_pattern(module, basename=None):
+    """A line importing `module` by a Python `import`/`from`, or - given a
+    `.py` basename - passing it to one of `BASENAME_LOADERS`; None when the
+    file has neither form."""
+    parts = []
+    if module:
+        word = re.escape(module)
+        parts.append(r"\bfrom\s+(?:\w+\.)*%s\b"
+                     r"|\bimport\s+(?:[\w.]+(?:\s+as\s+\w+)?\s*,\s*)*(?:\w+\.)*%s\b"
+                     r"|\bfrom\s+[\w.]+\s+import\s+\(?[\w\s,]*\b%s\b"
+                     % (word, word, word))
+    if basename and basename.endswith(".py"):
+        parts.append(r"\b(?:%s)\(\s*(?P<q>['\"])%s(?P=q)"
+                     % ("|".join(BASENAME_LOADERS), re.escape(basename)))
+    return re.compile("|".join(parts)) if parts else None
 
 
 def _line_kind(text, path, basename, importer):
@@ -261,7 +286,7 @@ def _references(root, path, exclude, git):
     error = _grep_error(code, err)
     if error is not None:
         return None, error
-    importer = _import_pattern(module) if module else None
+    importer = _import_pattern(module, basename)
     best = {}
     for name, text in _grep_lines(out):
         if _norm(name) == path:
@@ -406,21 +431,45 @@ def dependants(root, paths, cap=CAP, exclude=(), git=None):
 #              ANCHOR_MIN characters holding whitespace and naming no path, found
 #              verbatim in the file - the shape of a mutation row or a source pin;
 #   section  - a document with a Markdown heading naming the file's full path:
-#              prose that describes this file specifically.
+#              prose that describes this file specifically;
+#   import   - for a file the task DELETES OR RENAMES (`removed`) only: a code
+#              file importing it - a Python `import`, a call to one of
+#              `BASENAME_LOADERS` with its basename, a relative JS/TS import.
 #
 # NOT DEMANDED, because an edit that keeps the path cannot break them by being
 # made: a file that only runs or names the path, an importer that is not the
 # suite, a passing basename mention, and a quoted identifier (no whitespace) or
-# path beside the path. A delete or a rename breaks every one of those - and no
-# field a dispatch reads says a task deletes or renames, so those readers stay in
-# the brief's listing, answered by the executor, and are not refused over. A
-# declared file that does not exist yet is a creation, and nothing reads it.
+# path beside the path. A delete or a rename breaks the importers, which is the
+# one reach `removed` adds; a CI step running the path and a document naming it
+# go stale too, and stay in the brief's listing for the executor to answer
+# rather than refused over. A declared file that does not exist yet is a
+# creation, and nothing reads it.
+#
+# BOUNDED BY WHAT THE TASK EDITS, which is two questions, not one:
+#
+#   WHERE in the file - a `text` pin is owed only when the passage it quotes
+#   lies in the declared file's edit region: the lines a `files` entry's
+#   `:<range>` suffix names (`regions`), or, for a Markdown document declared
+#   whole, the sections whose heading names another declared path - the task
+#   names those sections by declaring the files they describe. A document no
+#   declared path heads, a file with no suffix, and a path `regions` maps to
+#   None are edited anywhere. `suite` and `section` read the file as a whole,
+#   so no region narrows them.
+#
+#   WHICH declared files - a file declared to ANSWER a reading (`readers`: what
+#   `scope --files +reader` added before the task started) is not an edit seed,
+#   so its own readers are not asked. Asking them is how one answer pulled in
+#   the reader's readers and the closure grew instead of settling; the caller
+#   passes such a file as an edit again once the task names an edit to it.
 ANCHOR_WINDOW = 4
 ANCHOR_MIN = 12
 _QUOTED = re.compile(r'"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\'')
 _PATHISH = re.compile(r"[\w.-]+/[\w.-]|\w\.(?:py|md|json|ya?ml|sh|mjs|cjs|js|"
                       r"ts|tsx|jsx|txt|toml|cfg|ini|html|css)\b")
-OWED_KINDS = ("suite", "text", "section")
+OWED_KINDS = ("suite", "text", "section", "import")
+_HEADING = re.compile(r"^ {0,3}(#{1,6})(?:\s|$)")
+_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+_MARKDOWN_EXTS = (".md", ".markdown")
 
 
 def suite_stems(path):
@@ -461,9 +510,27 @@ def _is_passage(value, path):
             and _PATHISH.search(text) is None)
 
 
-def pinned_passage(reader_text, path, file_text):
+def _occurrences(file_text, value):
+    """`[(first, last)]` - the 1-based lines each verbatim occurrence of
+    `value` spans in `file_text`."""
+    found, at = [], file_text.find(value)
+    while at >= 0:
+        first = file_text.count("\n", 0, at) + 1
+        found.append((first, first + value.count("\n")))
+        at = file_text.find(value, at + 1)
+    return found
+
+
+def _within(spans, first, last):
+    """Whether lines `first`..`last` meet any `(lo, hi)` of `spans`; None is
+    the whole file."""
+    return spans is None or any(lo <= last and first <= hi for lo, hi in spans)
+
+
+def pinned_passage(reader_text, path, file_text, spans=None):
     """The first passage of `file_text` that `reader_text` quotes within
-    ANCHOR_WINDOW lines of a line naming `path`, or None."""
+    ANCHOR_WINDOW lines of a line naming `path` - and, given `spans`, that
+    occurs in `file_text` within one of those 1-based line spans - or None."""
     if path not in reader_text:
         return None
     lines = reader_text.split("\n")
@@ -472,18 +539,61 @@ def pinned_passage(reader_text, path, file_text):
             continue
         for near in lines[max(0, i - ANCHOR_WINDOW):i + ANCHOR_WINDOW + 1]:
             for value in _literals(near):
-                if _is_passage(value, path) and value in file_text:
+                if _is_passage(value, path) and any(
+                        _within(spans, first, last)
+                        for first, last in _occurrences(file_text, value)):
                     return value
     return None
+
+
+def _headings(doc_text):
+    """`[(line, level, text)]` - each Markdown ATX heading, 1-based, outside a
+    fenced code block: a `#` comment inside a fence is code, not a heading."""
+    found, fence = [], None
+    for number, line in enumerate(doc_text.split("\n"), 1):
+        opened = _FENCE.match(line)
+        if fence is not None:
+            if opened and opened.group(1)[0] == fence[0] \
+                    and len(opened.group(1)) >= len(fence):
+                fence = None
+            continue
+        if opened:
+            fence = opened.group(1)
+            continue
+        heading = _HEADING.match(line)
+        if heading:
+            found.append((number, len(heading.group(1)), line))
+    return found
+
+
+def _path_word(path):
+    return re.compile(r"(?<![\w./-])%s(?![\w-]|\.\w)" % re.escape(path))
 
 
 def heads_section(doc_text, path):
     """Whether a document has a Markdown heading naming `path` in full."""
     if path not in doc_text:
         return False
-    word = re.compile(r"(?<![\w./-])%s(?![\w-]|\.\w)" % re.escape(path))
-    return any(line.lstrip().startswith("#") and word.search(line)
-               for line in doc_text.split("\n"))
+    word = _path_word(path)
+    return any(word.search(text) for _n, _l, text in _headings(doc_text))
+
+
+def section_spans(doc_text, paths):
+    """`[(first, last)]` - the 1-based line span of each section whose heading
+    names one of `paths` in full: the heading to the line before the next
+    heading of the same or a higher level, or the end of the document."""
+    words = [_path_word(p) for p in paths if p and p in doc_text]
+    if not words:
+        return []
+    heads = _headings(doc_text)
+    end = doc_text.count("\n") + 1
+    spans = []
+    for i, (number, level, text) in enumerate(heads):
+        if not any(w.search(text) for w in words):
+            continue
+        after = [n for n, lv, _t in heads[i + 1:] if lv <= level]
+        spans.append((number, (after[0] - 1) if after else end))
+    return spans
 
 
 def _read_text(root, path):
@@ -496,9 +606,9 @@ def _read_text(root, path):
         return ""
 
 
-def _owed_reason(root, path, reader, file_text, read):
+def _owed_reason(root, path, reader, file_text, read, spans=None):
     """`(kind, basis)` when `reader` is a reader an edit to `path` can reach,
-    else None."""
+    else None; `spans` bounds the passages a `text` pin may quote."""
     stem = posixpath.splitext(posixpath.basename(reader))[0]
     if stem in suite_stems(path):
         return "suite", "its own suite"
@@ -507,7 +617,7 @@ def _owed_reason(root, path, reader, file_text, read):
         if heads_section(text, path):
             return "section", "a section headed by its path"
         return None
-    passage = pinned_passage(text, path, file_text)
+    passage = pinned_passage(text, path, file_text, spans)
     if passage is not None:
         shown = passage.strip()
         shown = shown if len(shown) <= 60 else shown[:57] + "..."
@@ -515,34 +625,75 @@ def _owed_reason(root, path, reader, file_text, read):
     return None
 
 
-def owed(root, paths, exclude=(), git=None, read=None):
+def _edit_spans(path, file_text, declared, regions):
+    """The line spans of `path` a task edits, or None for the whole file - the
+    rule the comment above `ANCHOR_WINDOW` states."""
+    if path in regions:
+        return regions[path]
+    if posixpath.splitext(path)[1].lower() in _MARKDOWN_EXTS:
+        spans = section_spans(file_text, [p for p in declared if p != path])
+        return spans or None
+    return None
+
+
+def _unique(paths):
+    found = []
+    for path in paths:
+        if path not in found:
+            found.append(path)
+    return found
+
+
+def owed(root, paths, exclude=(), git=None, read=None, regions=None,
+         readers=(), removed=()):
     """The readers an edit to the declared `paths` can reach:
     `{"owed": [{"file", "reads", "kind", "basis"}], "errors": [{"path",
     "error"}]}`, one row per reader (the first declared path it reads), in the
-    order `dependants` ranks them. A path not on disk is a creation and is
-    skipped; a path whose references could not be read is an error, never an
-    empty answer."""
+    order `dependants` ranks them. `regions` maps a declared path to the
+    1-based `(first, last)` line spans the task edits, None meaning all of it;
+    `readers` are declared paths that answer a reading and are not scanned;
+    `removed` are paths the task deletes or renames, whose importers are owed.
+    A path not on disk is a creation and is skipped unless it is removed; a
+    path whose references could not be read is an error, never an empty
+    answer."""
     run = git if git is not None else run_git
     read = read if read is not None else _read_text
+    declared = _unique(_norm(p) for p in paths)
+    answering = set(_norm(p) for p in readers)
+    gone = set(_norm(p) for p in removed)
+    bounds = dict((_norm(k), v) for k, v in (regions or {}).items())
+    seeds = [p for p in declared if p not in answering]
     rows, errors, seen = [], [], set()
-    for raw in paths:
-        path = _norm(raw)
-        if not os.path.isfile(os.path.join(root, *path.split("/"))):
+
+    def add(reader, path, kind, basis):
+        seen.add(reader)
+        rows.append({"file": reader, "reads": path, "kind": kind,
+                     "basis": basis})
+
+    for path in _unique(seeds + sorted(gone)):
+        on_disk = os.path.isfile(os.path.join(root, *path.split("/")))
+        if not on_disk and path not in gone:
             continue
         refs, error = _references(root, path, exclude, run)
         if error is not None:
             errors.append({"path": path, "error": error})
             continue
+        if path in gone:
+            for ref in refs:
+                if ref["via"] == "import" and not is_doc(ref["file"]) \
+                        and ref["file"] not in seen:
+                    add(ref["file"], path, "import",
+                        "imports or loads it, and the task deletes or renames it")
+        if not on_disk or path not in seeds:
+            continue
         file_text = read(root, path)
+        spans = _edit_spans(path, file_text, declared, bounds)
         for ref in refs:
-            reader = ref["file"]
-            if reader in seen:
+            if ref["file"] in seen:
                 continue
-            reason = _owed_reason(root, path, reader, file_text, read)
+            reason = _owed_reason(root, path, ref["file"], file_text, read, spans)
             if reason is not None:
-                seen.add(reader)
-                rows.append({"file": reader, "reads": path, "kind": reason[0],
-                             "basis": reason[1]})
+                add(ref["file"], path, reason[0], reason[1])
     return {"owed": rows, "errors": errors}
 
 

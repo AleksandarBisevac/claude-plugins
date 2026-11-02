@@ -173,9 +173,14 @@ Usage:
   `start` refuses a task while a tracked file an edit to one of its declared
   files can reach - the file's own suite, a file quoting its text beside its
   path, a document section headed by its path (`_impact.owed`) - is neither in
-  its `files` nor waived. `scope --files +a,b` adds to the list a task holds
-  instead of replacing it; `scope --waive "<path>: <why>"` records, as a dated
-  note, why the change cannot reach a reader the task will not edit.
+  its `files` nor waived - bounded by what the task edits: a pin outside a
+  `files` entry's `:<range>` (or outside the sections of a declared document
+  that a declared path heads) is not asked, and a file `scope --files +`
+  added before the first start to answer a reader is not asked for readers of
+  its own. `--introduces delete:<path>` / `rename:<path>` adds the file's
+  importers to what is asked. `scope --files +a,b` adds to the list a task
+  holds instead of replacing it; `scope --waive "<path>: <why>"` records, as a
+  dated note, why the change cannot reach a reader the task will not edit.
   `done` closes a task the way `start` opens one, and it is the only verb
   here whose flag is REQUIRED for the record rather than for the field:
   `--commit` is the SHA the work landed in, without which the close is the
@@ -695,14 +700,25 @@ def _waivers_of(raw):
     return found, None
 
 
-def _waived_paths(node):
-    """The readers a task has waived, in the order the waivers were recorded."""
+def _note_paths(node, key):
+    """The paths a task's dated notes record under `key`, first-recorded order."""
     paths = []
     for note in (node.get("notes") or []):
-        path = note.get("waives") if isinstance(note, dict) else None
+        path = note.get(key) if isinstance(note, dict) else None
         if isinstance(path, str) and path not in paths:
             paths.append(path)
     return paths
+
+
+def _waived_paths(node):
+    """The readers a task has waived, in the order the waivers were recorded."""
+    return _note_paths(node, "waives")
+
+
+def _reader_paths(node):
+    """The files a task declared to ANSWER a reading - `scope --files +` on a
+    task not yet started, naming a reader `start` demands - in order."""
+    return _note_paths(node, "reader")
 
 
 def _files_delta(raw):
@@ -1827,8 +1843,10 @@ def _readiness_lines(waiting, tid):
 #
 # `waivers` is the set of readers a task has answered with a reason rather than a
 # declaration (`--waive`, kept as dated notes): it is append-only like the notes
-# that hold it, and a waiver added mid-run releases nothing.
-_WIDENABLE = ("files", "tests.add", "waivers")
+# that hold it, and a waiver added mid-run releases nothing. `readers` (the files a
+# `+` declared to answer a reading) and `removes` (the deletes and renames
+# `--introduces` named) are dated notes of the same kind and grow the same way.
+_WIDENABLE = ("files", "tests.add", "waivers", "readers", "removes")
 
 # ...AND `tests.gate` IS NOT ONE OF THEM, BECAUSE IT IS NOT A SCOPE CLAIM.
 # Every field above is graded BACKWARDS against work already recorded, which is
@@ -4179,23 +4197,56 @@ def _fix_task_args(args, targets, project, fixes, records=()):
     return args, notes
 
 
+# The two kinds of change that take a path rather than a name: the task deletes
+# or renames a file, so every importer of it breaks - the one reach an edit that
+# keeps the path does not have. `start` reads them back off the task's notes.
+_REMOVAL_KINDS = ("delete", "rename")
+
+
 def _introduces_intent(values):
-    """`(intent, refusal)` for `--introduces`: `dependency:<name>` (repeatable) and
-    `user-strings`. Anything else is refused by name rather than ignored - an
-    unrecognised kind of change owes no companion, and silence would say it does."""
-    deps, strings, bad = [], False, []
+    """`(intent, refusal)` for `--introduces`: `dependency:<name>` (repeatable),
+    `user-strings`, and `delete:<path>` / `rename:<path>` (repeatable). Anything
+    else is refused by name rather than ignored - an unrecognised kind of change
+    owes no companion, and silence would say it does."""
+    deps, strings, removes, bad = [], False, [], []
     for raw in _split_csv(values):
+        kind, _sep, rest = raw.partition(":")
+        rest = rest.strip()
         if raw == "user-strings":
             strings = True
-        elif raw.startswith("dependency:") and raw[len("dependency:"):].strip():
-            deps.append(raw[len("dependency:"):].strip())
+        elif kind == "dependency" and rest:
+            deps.append(rest)
+        elif kind in _REMOVAL_KINDS and rest:
+            path = _vocab._strip_line_suffix(rest)
+            problems = _path_problems([path])
+            if problems:
+                bad.extend(problems)
+            else:
+                removes.append((path, kind))
         else:
-            bad.append(raw)
+            bad.append(repr(raw))
     if bad:
         return None, ("[audit-task] --introduces takes `dependency:<name>` (the flag "
-                      "may repeat for several) or `user-strings`, not %s. Nothing "
-                      "written." % (", ".join(repr(b) for b in bad),))
-    return {"dependencies": deps, "userStrings": strings}, None
+                      "may repeat for several), `user-strings`, or `delete:<path>` "
+                      "/ `rename:<path>` for a file the task removes, not %s. "
+                      "Nothing written." % (", ".join(bad),))
+    return {"dependencies": deps, "userStrings": strings, "removes": removes}, None
+
+
+def _removal_notes(intent, stamp, held=()):
+    """The dated notes recording each delete or rename `--introduces` names
+    that `held` (the paths already recorded) does not; `start` reads them as
+    `removes` and demands each file's importers."""
+    return [{"at": stamp, "removes": path, "how": how,
+             "text": "this task %ss %s, so each file importing it is a reader "
+                     "start demands" % (how, path)}
+            for path, how in (intent or {}).get("removes") or []
+            if path not in held]
+
+
+def _removed_paths(node):
+    """The paths a task has recorded that it deletes or renames, in order."""
+    return _note_paths(node, "removes")
 
 
 def _companions_for(project, files, intent, tests_by_runner=None):
@@ -4382,6 +4433,9 @@ def _locked_add(args, project, config, mpath, title, out):
         fix_notes = fix_notes + ([bare_runner] if bare_runner else [])
     for text in fix_notes + ([_companion_basis(companions)] if companions else []):
         task.setdefault("notes", []).append({"at": _utc_stamp.utc_stamp(), "text": text})
+    removals = _removal_notes(intent, _utc_stamp.utc_stamp())
+    if removals:
+        task.setdefault("notes", []).extend(removals)
     if args.bug:
         # RECIPROCAL, in this one write: the validator refuses a task naming a
         # bug whose taskId does not name the task back.
@@ -6259,27 +6313,94 @@ def _held_dirt_refusal(tid, held, git_root):
 # beside its path, a document section headed by its path) is neither declared nor
 # waived. Which readers that is, and why the rest of the listing is not demanded,
 # is `_impact`'s comment above `owed`.
-def _unanswered_readers(project, config, mpath, node):
-    """`(unanswered, unread)` for a task about to start: the owed readers its
-    `files` do not cover and its waivers do not name, and the declared files
-    whose readers could not be searched. A project that is not a git work tree
-    tracks nothing, so nothing there reads anything and both come back empty."""
+#
+# What the task EDITS bounds the question, and the task's own record says it:
+# a `files` entry's `:<range>` suffix is the region of that file it edits; a file
+# a `+` declared to answer a reading (`_reader_paths`) is not asked for its own
+# readers; a delete or rename `--introduces` recorded (`_removed_paths`) owes the
+# file's importers. A file the task NAMES as an edit - a `tests.add` path, or a
+# path or basename its title or description says - is an edit whole, whatever
+# else its record says.
+def _entry_spans(entry):
+    """The 1-based `(first, last)` line spans a `files` entry's `:<range>`
+    suffix names, or None for an entry without one - the whole file."""
+    match = _vocab._LINE_SUFFIX.search(entry)
+    if not match:
+        return None
+    spans = []
+    for part in match.group(0)[1:].split(","):
+        first, _sep, last = part.partition("-")
+        if first.isdigit():
+            spans.append((int(first), int(last) if last.isdigit() else int(first)))
+    return spans or None
+
+
+def _named_edits(node, paths):
+    """The `paths` the task names as an edit: a `tests.add` path, or a path or
+    basename its title or description says as a whole word."""
+    named = set(_tests_add_paths((node.get("tests") or {}).get("add") or [])[0])
+    text = "%s\n%s" % (node.get("title") or "", node.get("description") or "")
+    for path in paths:
+        for word in set([path, path.rsplit("/", 1)[-1]]):
+            if re.search(r"(?<![\w./-])%s(?![\w-])" % re.escape(word), text):
+                named.add(path)
+    return named
+
+
+def _owed_now(project, config, mpath, node):
+    """`(found, declared, waived, git_root)` - `_impact.owed` over the task as it
+    stands, bounded by what the task edits; `found` is None outside a git work
+    tree, where nothing is tracked and so nothing reads anything."""
     git_root = os.path.abspath(os.path.join(project,
                                             (config or {}).get("gitRoot") or "."))
     code, inside = _git_answer(git_root, "rev-parse", "--is-inside-work-tree")
     if code != 0 or inside != "true":
-        return [], []
+        return None, [], [], git_root
     hc = _loader.load_hooks_config(modname="audit__config")
 
     def spec_of(entry):
         return hc.plan_to_git(_vocab._strip_line_suffix(entry), git_root, project)
 
-    declared = [s for s in (spec_of(f) for f in (node.get("files") or [])
-                            if isinstance(f, str)) if s]
+    entries = [f for f in (node.get("files") or []) if isinstance(f, str)]
+    declared, ranged, bare = [], {}, set()
+    for entry in entries:
+        spec = spec_of(entry)
+        if not spec:
+            continue
+        if spec not in declared:
+            declared.append(spec)
+        spans = _entry_spans(entry)
+        if spans is None:
+            bare.add(spec)
+        else:
+            ranged.setdefault(spec, []).extend(spans)
+    named = set(s for s in (spec_of(p) for p in _named_edits(
+        node, [_vocab._strip_line_suffix(e) for e in entries])) if s)
+    # A range is the task's word for where it edits. A bare entry leaves the
+    # bound to `owed` (a document's sections), unless the task names the file,
+    # which makes it an edit anywhere.
+    regions = dict((spec, spans) for spec, spans in ranged.items()
+                   if spec not in bare)
+    regions.update((spec, None) for spec in named if spec in bare)
+    readers = [s for s in (spec_of(p) for p in _reader_paths(node))
+               if s and s not in named]
+    removed = [s for s in (spec_of(p) for p in _removed_paths(node)) if s]
     waived = [s for s in (spec_of(p) for p in _waived_paths(node)) if s]
     plan_dir = _output.posix_rel(os.path.dirname(os.path.abspath(mpath)), project)
     exclude = [s for s in [spec_of(plan_dir)] if s and s not in (".", "./")]
-    found = _impact.owed(git_root, declared, exclude=exclude)
+    found = _impact.owed(git_root, declared, exclude=exclude, regions=regions,
+                         readers=readers, removed=removed)
+    return found, declared, waived, git_root
+
+
+def _unanswered_readers(project, config, mpath, node):
+    """`(unanswered, unread)` for a task about to start: the owed readers its
+    `files` do not cover and its waivers do not name, and the declared files
+    whose readers could not be searched. A project that is not a git work tree
+    tracks nothing, so nothing there reads anything and both come back empty."""
+    found, declared, waived, git_root = _owed_now(project, config, mpath, node)
+    if found is None:
+        return [], []
     unanswered = [row for row in found["owed"]
                   if not any(_touts.covers(entry, row["file"])
                              for entry in declared + waived)]
@@ -6292,12 +6413,39 @@ def _unanswered_readers(project, config, mpath, node):
     return unanswered, found["errors"]
 
 
+def _answered_readers(project, config, mpath, node, additions):
+    """The unanswered readers of `node` as it stands that one of `additions` (a
+    `scope --files +` value) covers: `[{"entry", "reads", "basis"}]`, the
+    entry spelled the way `--files` reads it."""
+    if not additions:
+        return []
+    unanswered, _unread = _unanswered_readers(project, config, mpath, node)
+    return [row for row in unanswered
+            if any(_touts.covers(_vocab._strip_line_suffix(a), row["entry"])
+                   for a in additions)]
+
+
+def _reader_notes(answered, stamp, held=()):
+    """One dated note per reader a `+` answered that `held` does not hold yet;
+    `start` reads them back through `_reader_paths`."""
+    notes, seen = [], set(held)
+    for row in answered:
+        if row["entry"] in seen:
+            continue
+        seen.add(row["entry"])
+        notes.append({"at": stamp, "reader": row["entry"], "reads": row["reads"],
+                      "text": "declared to answer a reading: %s reads %s - %s"
+                              % (row["entry"], row["reads"], row["basis"])})
+    return notes
+
+
 def _unanswered_refusal(tid, unanswered, unread):
     """The refusal naming each reader `start` will not dispatch over, and how
     each is answered."""
     lines = ["[audit-task] REFUSED: %s is not started - a file it declares is "
              "read by a tracked file it neither declares nor waives, and an "
-             "edit to the declared file can reach that reader:" % (tid,)]
+             "edit to the declared file - or the delete or rename the task "
+             "records - can reach that reader:" % (tid,)]
     lines += ["  - %s reads %s - %s" % (row["file"], row["reads"], row["basis"])
               for row in unanswered]
     lines += ["  - %s: its readers could not be searched: %s"
@@ -6306,7 +6454,9 @@ def _unanswered_refusal(tid, unanswered, unread):
         lines.append(
             "Declare them - /audit:task scope %s --files +%s - or waive each "
             "with the reason this task's change cannot reach it - /audit:task "
-            "scope %s --waive \"<path>: <why>\" - then start again."
+            "scope %s --waive \"<path>: <why>\" - then start again. A file "
+            "declared that way answers its reading, and is not asked for "
+            "readers of its own."
             % (tid, ",".join(row["entry"] for row in unanswered), tid))
     if unread:
         lines.append("A scan that could not be read is passed only by "
@@ -10431,6 +10581,13 @@ def _locked_scope(args, project, config, mpath, tid, out):
         return E_USAGE
 
     was_files = list(node.get("files") or [])
+    # A `+` addition to a task that has not started is, when it names a reader
+    # `start` demands, that reader's ANSWER rather than an edit of its own - so
+    # it is recorded as one, and `start` does not ask the reader's own readers.
+    # Read off the scope the task holds BEFORE this call; after the first start
+    # a widening is the plan gate's remedy for an edit and is recorded as none.
+    answered = (_answered_readers(project, config, mpath, node, files)
+                if additive and not started else [])
     if additive:
         files = _union_paths(was_files, files)
     # READ BEFORE ANY WRITE, and that ordering IS the repair rather than a
@@ -10670,6 +10827,20 @@ def _locked_scope(args, project, config, mpath, tid, out):
             changes.append({"id": tid, "field": "waivers",
                             "from": was_waived,
                             "to": was_waived + [path for path, _w in fresh]})
+    # The two other kinds of dated note `start` reads: the readers a `+` answered
+    # (computed above, off the scope before this call) and the deletes and
+    # renames `--introduces` named. Each is append-only, as the waivers are.
+    stamp = _utc_stamp.utc_stamp()
+    for field, key, fresh_notes in (
+            ("readers", "reader", _reader_notes(answered, stamp,
+                                                _reader_paths(node))),
+            ("removes", "removes", _removal_notes(intent, stamp,
+                                                 _removed_paths(node)))):
+        if fresh_notes:
+            was_held = _note_paths(node, key)
+            node["notes"] = list(node.get("notes") or []) + fresh_notes
+            changes.append({"id": tid, "field": field, "from": was_held,
+                            "to": was_held + [n[key] for n in fresh_notes]})
     if not changes:
         return _unchanged(args, out, tid)
 
@@ -15601,8 +15772,10 @@ def build_parser():
                    metavar="KIND",
                    help="add, scope: a change the task makes whose files its "
                         "description does not name - `dependency:<name>` (the "
-                        "package manifest and the lockfile on disk) or "
-                        "`user-strings` (every locale file); the flag may repeat")
+                        "package manifest and the lockfile on disk), "
+                        "`user-strings` (every locale file), or `delete:<path>` "
+                        "/ `rename:<path>` (start then demands each file "
+                        "importing it); the flag may repeat")
     p.add_argument("--outputs", default=None)
     # `scope` only. A reader of a declared file that `start` would refuse over,
     # answered with the reason the task's change cannot reach it instead of a

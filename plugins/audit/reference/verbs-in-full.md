@@ -398,7 +398,7 @@ refuses, writing nothing, a phase that is done or signed off, a finding outside 
 already naming a fix task, and one finding named by two tasks of the batch. `/audit:phase`'s
 drive answers `--answer fix` through this form.
 
-#### `--introduces dependency:<name>|user-strings` — the files a change cannot avoid
+#### `--introduces dependency:<name>|user-strings|delete:<path>|rename:<path>` — the files a change cannot avoid
 
 `add` and `scope` take `--introduces`, repeatable: `dependency:<name>` for a package the
 task adds, `user-strings` for text a user reads. The caller states the kind of change; the
@@ -407,7 +407,12 @@ absent lockfile adds nothing and is said), or every locale file of the one messa
 (none or two candidates adds nothing and is said). Each companion is appended to `files`
 and keyed in `fileIndex`, listed in the report with its basis, written to the task's notes
 on `add`, and carried in the journal row's summary. A path the task already declares is not
-added twice, and a call without the flag changes nothing. Any other value is refused by name.
+added twice, and a call without the flag changes nothing. `delete:<path>` and `rename:<path>`
+say the task removes a file: they add no companion, and record a dated note carrying `removes`
+that `start` reads, demanding each code file importing that file — a Python `import`, a
+`find_script` / `load_script` / `script_path` call passing its basename, a relative JS/TS
+import — until each is declared or waived. A path that climbs out of the tree is refused like
+a `--files` value. Any other value is refused by name.
 On a started task `scope --introduces` is a widening and is taken as one.
 
 #### `--bug <bugId>` — the fix task of a bug, with the discipline its files imply

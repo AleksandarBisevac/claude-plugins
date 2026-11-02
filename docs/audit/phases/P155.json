@@ -732,7 +732,7 @@
     {
       "id": "P155.9",
       "title": "The browser (report) job's live-plan leg stops being killed: the sender is found, the leg's input is bounded, and the job's longest line is a measurement",
-      "status": "in_progress",
+      "status": "done",
       "description": "Closes F816 - three sightings: runs 40913965771 (10-29), 41281241772 and 41308006702 (11-01), each exit 143 about 143 s after \"wrote .../live-plan/audit-report.html\", inside timeout-minutes 15. Green run 41322244766's browser (report) took 9m05s against ci.yml:103 \"longest browser-report: 7m19s (estimate)\". No SIGTERM/.kill( sender in check-report-interactive.mjs; verify.sh:208 only relays TERM. Find the sender first (rerun the leg on a ci/ branch with /usr/bin/time -v and runner diagnostics; the orchestrator pushes and dispatches), then bound the live-plan input, then record the measured longest line. The browser gate runs in CI, never in the task tree.",
       "files": [
         "tools/verify.sh",
@@ -772,19 +772,30 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c1cc8ec4fe46",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "SENDER. All four browser (report) failures in the ci.yml runs 40194747670..41349318354 end the same way: the job log reads 'wrote /tmp/verify-*/live-plan/audit-report.html', then two 'Terminated' lines, then '##[error]Process completed with exit code 143.' and '##[error]The runner has received a shutdown signal. This can happen when the runner service is stopped, or a manually started runner is canceled.' Runs/jobs: 40913965771 attempt 1 job 123589129616 (e6f4c0c0, 10-29, killed 171 s after the write), 41212909456 job 124571443610 (f1ad5aad, 10-31, 127 s - a sighting the register did not have), 41281241772 job 124773437950 (438838a0, 165 s), 41308006702 job 124852303910 (a5c8d566, 143 s). So the SIGTERM comes from the runner: its listener got a shutdown signal and stopped the step's processes. It is not the job timeout (that ends the job as cancelled with a max-execution-time message, and every failure ended between 3m40s and 4m23s, inside 15 minutes), and it is not our code (no SIGTERM or kill sender in check-report-interactive.mjs; verify.sh only passes TERM on). WHY the runner shut down cannot be read from these logs. Hosted runners do not expose dmesg after the fact, and check-report-interactive buffers its output, so the log does not show which check was running when the job died. SAME DEFECT AS BUG-32: very likely, but not proven. For: all four killed SHAs lack 12937474 (git merge-base --is-ancestor: e6f4c0c0, f1ad5aad, 438838a0 and a5c8d566 lack it; fa1b0c81 has it). At those SHAs the live-plan leg calls page.pdf twice, portrait and landscape, over one table that spans the whole plan (check-report-interactive.mjs:2132 at a5c8d566). BUG-32 shows that same page failing printToPDF locally, and its own 'actual' field names run 41281241772 as the CI form of it. Both browser (report) jobs that ran after the fix passed: 41322244766 (9m05s) and the main push 41349318354 (7m53s). Against: the pre-fix code also passed on the same kind of input, for example 40913965771 attempt 2 on the very SHA its attempt 1 died on (5m56s), and 41210168802/41215763718 on 10-31 (8m53s, 8m26s). So the kill is intermittent, which fits memory pressure close to the VM's limit better than a fixed 'Printing failed'. Two green samples after the fix are weak evidence against a failure rate that ran at three of the last four pre-fix runs. The 10-29 sighting is the same shape: it predates 12937474 and was printing the same single-table page. WHAT REMAINS AFTER THE FIX, AND WHAT CHANGED: (1) tools/verify.sh rendered_plan_legs now renders a WINDOW of docs/audit/audit-plan.json instead of the whole plan. An inline python heredoc, written like the one-status leg's, writes $WORKDIR/live-window. It keeps every phase that is not done, the 20 most recent done phases, every phase carrying a top-level phase or task key or status that no kept phase carries, and every phase that kept phase/task blockedBy/dependsOn references point into. It copies the shards untouched, narrows fileIndex, bugs and proposals to what was kept, and prints 'live plan window: K of N phases, k of n tasks'. validate-manifest then runs on the window before render-report. On this tree it printed 'live plan window: 47 of 158 phases, 610 of 1439 tasks' twice, validate-manifest said OK, and the rendered report is 3899168 bytes against 10749127 for the whole plan. The output name is still audit-report.html, so the aged step's \"$lp/audit-report.html\" and the --stress-print call are unchanged. The stress print is bounded already (STRESS_PRINT_PX fixed, STRESS_BOUND_MS 300 s), so it covers the print-crash length whatever size the window is. The window now grows only with the phases not done and the references the kept phases make. vermin -t=3.8- on the extracted code: minimum 3.0, rc 0; sh -n tools/verify.sh rc 0. (2) .github/workflows/ci.yml: the browser-report longest line is now the measurement '9m05s (run 41322244766, 15:38:30 to 15:47:35)', the longest finished browser (report) job of the 36 non-skipped attempts across the 39 runs from 40194747670 to 41349318354, enumerated with gh api .../runs/<id>/attempts/<n>/jobs. timeout-minutes moves 15 -> 19, the first whole minute at or above 2 x 9m05s = 18m10s and under the 3x ceiling of 27m15s. The estimate list now says browser-report is measured and asks for a re-measure on the first run of the windowed shape. (3) CONTRIBUTING.md: the report-slice paragraph says the leg renders a window and points at rendered_plan_legs and the printed line. Gates: python3 tools/gate-parity.py rc 0; sh tools/verify.sh --list rc 0, and its output equals HEAD's copy except the version lines, which differ only because HEAD's copy ran from the scratch directory; _deps.doc_prose_numbers() reports nothing in CONTRIBUTING.md. No browser gate was run (machine-wide lock). DEPENDANTS: tools/verify.sh's (.gitattributes, ci.yml, derive-phase-gate.py, test__output.py, test__refs.py, affected.py, check-example-pins.py, check-git-pipeline.py, and the rest): still correct. They name verify.sh by path or read its slices, and the slice set is unchanged. tools/check-report-interactive.mjs: not edited, so its dependants are unchanged; its header's /tmp/live-plan/*.html glob still names $lp. .github/workflows/ci.yml's: still correct. No job, job name, slice or matrix changed, only one timeout and comments; gate-parity is green and job_bound_evidence reads the new line (shown both ways above). tools/gate-parity.py, tools/lints/_deps.py, tools/prove-gates.py, tools/sweep-selftests.py, PLUGIN-BUILD-GUIDE.md, stamp-verification.py, tests/_harness.py, test__deps.py, test__runner_collects.py, test_stamp_verification.py, test__affected_tests.py, test__doctor_trail.py, test_drive_phase.py: declared but not edited. None of them pins the edited text: a grep for 'live plan', live-plan, rendered_plan_legs, 'timeout-minutes: 15', 7m19s and browser-report over tests/, tools/*.py, tools/lints and plugins/audit/scripts found only unrelated 'live plan' prose. The orchestrator's sweep is the verdict on them. tools/check-rendered-artifacts.py: renders the committed reports, not the live plan, so unaffected. FOR THE ORCHESTRATOR - the CI that settles what this tree cannot: (A) push the phase branch with this change to ci/P155 and dispatch: gh workflow run ci.yml --ref ci/P155, then gh run view <id> --json jobs --jq '.jobs[]|select(.name==\"browser (report)\")|[.conclusion,.startedAt,.completedAt]'. Settled when browser (report) is success and its log carries 'live plan window: ...' and 'report is interactive: N checks passed in /tmp/verify-*/live-plan/audit-report.html'. Its duration then replaces the 9m05s line, and the bound comes down to the first whole minute at or above twice it, never below 5. (B) optional, to name WHY the runner shut down: a throwaway branch ci/diag-f816 at a5c8d566 (a known-killed SHA) whose browser-report 'verify slice' step reads: run: |\\n  ( while :; do printf 'MEM %s ' \"$(date -u +%T)\"; free -m | awk '/^Mem:/{print \"used\",$3,\"avail\",$7}'; sleep 3; done ) &\\n  ( sudo dmesg -w 2>/dev/null | grep -i --line-buffered -E 'oom|killed process' | sed 's/^/KERN /' ) &\\n  sh tools/verify.sh --only report. Dispatch it two or three times (the kill is intermittent). The samplers stream into the step's own log, so they survive a shutdown that skips every later step. Settled as memory exhaustion if 'avail' falls toward zero, or a KERN oom line appears, just before 'Terminated'; refuted if avail stays high up to the shutdown. Never merge that branch.",
+        "descriptive": "The SIGTERM is the hosted runner shutting the job down. It hit only SHAs before the BUG-32 fix, inside the live-plan leg that was printing one whole-plan table, so it is very likely BUG-32. The leg now renders a bounded window of the live plan (47 of 158 phases today), and the browser-report bound rests on the measured 9m05s, raised to 19 minutes."
       },
       "startedAt": "2026-11-02T11:03:35Z",
-      "completedAt": null,
+      "completedAt": "2026-11-02T11:24:33Z",
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-11-02T11:19:00Z.f5bebf",
         "status": "passed",
         "at": "2026-11-02T11:19:00Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c1cc8ec4fe46",
+        "at": "2026-11-02T11:24:33Z",
+        "return": "docs/audit/evidence/returns/P155.9/20261102T110335Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task with tests.add none and expectRedFirst false; no regression case is owed. The checks that hold the change were still shown to fire: job_bound_evidence() run on ci.yml text with the bound put back to 15 reports 'timeout-minutes is 15, under 2 times its longest recorded run of 9m05s (18m10s needed)', and at 28 reports 'over 3 times ... (27m15s allowed)'; at 19 it reports nothing. Removing the window's reference closure makes validate-manifest exit 1 (P86 blockedBy P74/P82/P81, P109.7 blockedBy P100 unresolved); removing the proposal filter makes it exit 1 (PROP-10 materializedAs P110 does not resolve).",
+        "at": "2026-11-02, in the task tree on scratch copies of the extracted window code; no helper run"
       }
     },
     {
@@ -809,7 +820,8 @@
         "tools/sweep-selftests.py",
         "plugins/audit/scripts/governance/stamp-verification.py",
         "tests/test__runner_collects.py",
-        "tests/test_stamp_verification.py"
+        "tests/test_stamp_verification.py",
+        "plugins/audit/reference/verbs-in-full.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -840,7 +852,18 @@
       "startedAt": "2026-11-02T11:03:54Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-02T11:57:18Z.2777ad",
+        "status": "passed",
+        "at": "2026-11-02T11:57:18Z"
+      },
+      "notes": [
+        {
+          "at": "2026-11-02T11:51:34Z",
+          "text": "files widened by plugins/audit/reference/verbs-in-full.md: widened by the integration answer"
+        }
+      ]
     },
     {
       "id": "P155.11",
@@ -904,7 +927,12 @@
       "startedAt": "2026-11-02T11:04:18Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-02T11:51:18Z.14a7f1",
+        "status": "passed",
+        "at": "2026-11-02T11:51:18Z"
+      }
     },
     {
       "id": "P155.12",
