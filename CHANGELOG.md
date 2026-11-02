@@ -11,8 +11,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   answers a reader with a reason.** The `+` spelling appends instead of restating the held list (a
   `+` value beside a plain one is refused), and a waiver is recorded as a dated note carrying
   `waives`, append-only like the list.
+- **`scope --gate-add CMD` grows a task's `tests.gate` without restating it, and a `scope` call
+  that passed a gate flag says what the gate now holds.** `--gate-add` is repeatable, keeps every
+  entry the task holds, appends each new entry once and an entry already held not at all, and is
+  refused beside `--gate`, `--gate-set`, `--gate-drop` or `--gate-clear`. It is accepted on a
+  started task as well as a pending one. A `scope` that passed one of those flags and wrote ends
+  its success line with `; tests.gate now holds [...]`, and its `--json` result carries the same
+  list as `gateNowHolds`; a call that changes nothing still answers `already reads that way`.
 
 ### Changed
+- **`audit-task.py scope <id> --gate CMD` refuses a list that leaves out an entry the task's
+  `tests.gate` holds, unless `--replace` is passed.** It used to exit 0 and replace the whole
+  list, and a call that lost an entry read exactly like one that meant to. It now **exits 2** and
+  writes nothing, naming the held list, the entries the call leaves out and both repairs: append
+  with `--gate-add CMD`, or pass the same `--gate` list with `--replace` to drop them on purpose. A
+  `--gate` list naming every held entry lands as spelled, `--gate-set` on a pending task still
+  replaces, and `--replace` with no `--gate` on `scope` is refused rather than ignored.
+  `COMPATIBILITY.md` records the exit-code move among what is not promised.
 - **`audit-task start` refuses a first start while a file the task changes has an unanswered
   reader.** A reader `_impact.owed` finds for a declared file - its suite, a code file quoting a
   passage of it beside its path, a document heading naming its path - must be in the task's

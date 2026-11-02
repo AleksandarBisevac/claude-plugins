@@ -564,6 +564,16 @@ depending on an implementation:
   whose exit code changed was already not getting what it asked for. It is recorded here
   rather than passed over because an exit code moved from 0 to 2 on a shipped command, and a
   pipeline that read a discarded flag as success is a pipeline that now stops,
+- **what `scope --gate` does to entries the list leaves out — and it changed.**
+  `audit-task.py scope <id> --gate CMD` (`/audit:task scope`) used to replace the task's whole
+  `tests.gate` and exit 0, so a call that dropped an entry it never named read exactly like one
+  that meant to. A `--gate` list that leaves out an entry the task holds now **exits 2**, writing
+  nothing and naming the entries it would have lost. Unlike the flags entry above, something that
+  used to take effect now does not: a pipeline that replaced a gate by restating only part of it
+  is a pipeline that now stops. The repair is `--replace` beside the same `--gate` list, when the
+  drop is meant, or `--gate-add CMD`, when the held entries should stay. `--gate` is still read,
+  and a list naming every held entry lands exactly as before; `--gate-add`, the success line's
+  `tests.gate now holds [...]` clause and the `--json` result's `gateNowHolds` key are additive,
 - **a `--record` gate run that stored nothing — and it changed.** `run-test-gate.py --record`
   used to print `evidence: NOT recorded - …`, then `GATE GREEN`, and exit 0 when the evidence
   row could not be written (a ledger file the reader cannot decode, an unwritable directory),

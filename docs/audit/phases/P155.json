@@ -50,8 +50,10 @@
         "severity": "low",
         "file": "CLAUDE.md:210",
         "issue": "The task widens the ruff path list in tools/verify.sh to include .claude/hooks, but CLAUDE.md:210 (the 'Tests' command block, 'the commands a change most often reruns by hand') and the plan's meta.buildCommands.lint still spell `ruff check plugins/audit tools tests`. A contributor or a build-command-driven gate following either runs a narrower ruff than verify.sh and would not see an unused import under .claude/hooks - the very class this task closes. The executor reported this as left for the orchestrator; it is a changed shape crossing into untouched files.",
-        "resolution": "Add `.claude/hooks` to the ruff line at CLAUDE.md:210 and set meta.buildCommands.lint through `/audit:task build-command` (or drop the hand copy and point at `verify.sh --list`).",
-        "fixTask": "P155.17-gfj"
+        "resolution": "fixed in P155.17-gfj (fa53e61bae2a): Add `.claude/hooks` to the ruff line at CLAUDE.md:210 and set meta.buildCommands.lint through `/audit:task build-command` (or drop the hand copy and point at `verify.sh --list`).",
+        "fixTask": "P155.17-gfj",
+        "commit": "fa53e61bae2a",
+        "status": "fixed"
       },
       {
         "id": "P155-R5",
@@ -210,9 +212,16 @@
         "file": "docs/audit/audit-plan.json:24 (meta.buildCommands.lint)",
         "issue": "contradicts task clause: the task asked to 'set meta.buildCommands.lint through /audit:task build-command (or drop the hand copy and point at verify.sh --list)', and the diff changes only CLAUDE.md:210. The plan still reads `ruff check plugins/audit tools tests && vermin ...` (read at docs/audit/audit-plan.json:24), while tools/verify.sh:589 runs `ruff check plugins/audit tools tests .claude/hooks`. A build-command-driven gate therefore still runs the narrower ruff and misses an unused import under .claude/hooks, which is the class this task closes. The executor reported this as NOT DONE and left it for the orchestrator.",
         "resolution": "Run the build-command verb from the project to set lint to `ruff check plugins/audit tools tests .claude/hooks && vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints`, matching tools/verify.sh's ruff path list."
+      },
+      {
+        "id": "P155-R26",
+        "severity": "low",
+        "file": "tests.gate (P155.18-gfj): tests/test__manifest_phases.py, tests/test__branch.py, tests/test__config_rules.py, tests/test__manifest_vocab.py",
+        "issue": "The task's own gate selects four suites, and none of them opens CHANGELOG.md or COMPATIBILITY.md. The only matches are message strings that name the document (tests/test__manifest_phases.py:368,379,518 and tests/test__manifest_vocab.py:595); none of them reads the file. So the gate stays green whatever the two edited documents say, including when both new bullets are deleted (an assertion the behaviour never reaches). The suites that do read these documents are outside tests.gate: COMPATIBILITY.md is a BARE path-reference surface at tools/lints/_refs.py:162 (tests/test__refs.py), and _deps.doc_prose_numbers reads both documents (tests/test__deps.py). This is a judgement from reading, not a run. The recorded green says nothing about the edit.",
+        "resolution": "For a documentation-only task, derive or declare tests.gate from the suites that read the edited documents (tests/test__refs.py and tests/test__deps.py) rather than from the code files scoped in as readers. Alternatively, record in the task that the gate is a regression guard only and that the documents were checked by a direct _deps.doc_prose_numbers(['CHANGELOG.md','COMPATIBILITY.md']) run (it returns 15 on the edited tree, none in the new lines)."
       }
     ],
-    "outcome": "[findings: 25 - 1 high, 11 med, 13 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 26 - 1 high, 11 med, 14 low; 1 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1364,7 +1373,7 @@
     {
       "id": "P155.17-gfj",
       "title": "fix P155-R4: The task widens the ruff path list in tools/verify.sh to include...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The task widens the ruff path list in tools/verify.sh to include .claude/hooks, but CLAUDE.md:210 (the 'Tests' command block, 'the commands a change most often reruns by hand') and the plan's meta.buildCommands.lint still spell `ruff check plugins/audit tools tests`. A contributor or a build-command-driven gate following either runs a narrower ruff than verify.sh and would not see an unused import under .claude/hooks - the very class this task closes. The executor reported this as left for the orchestrator; it is a changed shape crossing into untouched files.\n\nResolution asked: Add `.claude/hooks` to the ruff line at CLAUDE.md:210 and set meta.buildCommands.lint through `/audit:task build-command` (or drop the hand copy and point at `verify.sh --list`).",
       "files": [
         "CLAUDE.md",
@@ -1387,13 +1396,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "fa53e61bae2a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "CLAUDE.md:210 (in the task's tree) now reads `ruff check plugins/audit tools tests .claude/hooks   # verify.sh's \"ruff\" paths; nothing holds this copy to them` - the same path list as tools/verify.sh:589, with the line saying about itself that no lint compares it (gate-parity.py's lint_dir_findings reads verify.sh's text only, tools/gate-parity.py:2270). Observation, not a gate: `ruff check plugins/audit tools tests .claude/hooks` run in the task's tree printed `All checks passed!`, exit 0, so the widened hand command is green as written. NOT DONE, left for the orchestrator: meta.buildCommands.lint lives in the project's docs/audit/audit-plan.json, outside this task's tree and its files, and the brief bars edits outside the tree; it still reads `ruff check plugins/audit tools tests && vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints`. The command that settles it, from the project with the driver's plugin copy: `python3 plugins/audit/scripts/manifest/audit-task.py docs/audit/audit-plan.json build-command lint --replace --command \"ruff check plugins/audit tools tests .claude/hooks && vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints\" --reason \"match tools/verify.sh's ruff path list, which lints .claude/hooks\"` (shape per commands/task.md's build-command section; check the script's usage for where it takes the manifest). Class sweep, `git grep -n 'plugins/audit tools tests' -- ':!docs/audit'`: 4 hits - CLAUDE.md:210 fixed; tools/verify.sh:589 is the source; tools/gate-parity.py:3713 and :3759 are lint_dir_findings' own fixture (already widened) and its old-shape mutation, left on purpose. Other `git grep -n 'ruff check'` hits are test fixtures (test_audit_lookup.py:2107/2126, test_drive_phase.py:13779 and others) modelling a manifest, not this repo's gate - left. CLAUDE.md:211's vermin list matches verify.sh:592-593, unchanged. Dependants: CLAUDE.md's listed ones (guard-history-rewrite.py, _harness.py, test__output_lints.py, test_guard_history_rewrite.py, test_hooks.py, affected.py, check-example-ledgers.py, check-prohibitions.py) name CLAUDE.md in prose or select it as a path (affected.py:1347) and none parses the Tests block's ruff line - still correct; _refs.py's BARE scan sees only `verify.sh`, which exists, and the added text carries no number for _deps.doc_prose_numbers. tests/test__output_lints.py and docs/research/pipeline-cost-levers.md were not edited: the first holds no ruff path list, the second's CLAUDE.md is the arm C fixture's, not this repo's (pipeline-cost-levers.md:240) - their own dependants (sweep-costs.json, test__output.py, affected.py, _output_lints.py, prove-gates.py, PLUGIN-BUILD-GUIDE.md; pipeline-cost-results.md) are untouched and still correct. Gates: executor.runsGate is own-tests and the brief says this task has nothing of its own to run, so no gate command was run; the orchestrator's recorded run of `python3 tools/sweep-selftests.py tests/test__output_lints.py` is the evidence.",
+        "descriptive": "CLAUDE.md's by-hand ruff command now lints .claude/hooks like verify.sh does; the plan's meta.buildCommands.lint still needs the orchestrator's build-command call"
       },
       "startedAt": "2026-11-02T16:59:43Z",
-      "completedAt": null,
+      "completedAt": "2026-11-02T17:05:36Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -1417,6 +1426,17 @@
         "runId": "2026-11-02T17:03:55Z.5eb5cc",
         "status": "passed",
         "at": "2026-11-02T17:03:55Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "fa53e61bae2a",
+        "at": "2026-11-02T17:05:36Z",
+        "return": "docs/audit/evidence/returns/P155.17-gfj/20261102T165943Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "tests.mode is gate-only with expectRedFirst false and tests.add none: no case of this task's own exists to watch red",
+        "at": ""
       }
     },
     {
