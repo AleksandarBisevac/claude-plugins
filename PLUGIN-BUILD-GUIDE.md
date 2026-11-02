@@ -1112,8 +1112,11 @@ younger one as a write that may be in flight (`un3`). The stop over
 an unsettled tree names where the work is and `drive-phase.py restore <taskId>`, which runs
 `restore_copy`: the tree checked out at the base the copy was taken at, every held path and the
 git index written back, and the copy dropped once the tree answers as it did before the move
-(`un6`) - refused, with nothing written, over a path the copy does not account for (`un7`) or a
-move the marker already recorded. Whether a moved path still holds a commit's bytes is asked
+(`un6`) - refused, with nothing written, over a path the copy does not account for (`un7`), over
+a held path whose bytes are none a killed move or undo can leave - not the copy's, the base's or
+the move's target's - so an edit made after the kill is never written over (`un9`, while a held
+path already holding the copy's bytes is restored over, `un10`), or a move the marker already
+recorded. Whether a moved path still holds a commit's bytes is asked
 through `hash-object --no-filters`, so a file differing only in its line endings is not read as
 the commit's and reset (`un5`).
 

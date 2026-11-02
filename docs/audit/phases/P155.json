@@ -101,8 +101,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py:10039-10050 (submit), :4416-4435 (advance)",
         "issue": "contradicts task clause \"Closes F818\" (F818 Do / tests.add: submit 'refuses with the scope remedy (or the return carries the widened list and scope-changed is asked once)', 'while the executor is still there', not after the review round). On the wave path a member's undeclared edit is only appended to a did-line. The filed return carries no widened list and no reason, and no decision is raised. The question is first asked by integrate_member's undeclared-change decision (:4432). That runs after the reviewer is dispatched (:4416) and after the risk confirmation. For wave members, F818's defect is unchanged: the change is found after the review round, and the orchestrator answers it without the executor's reason.",
-        "resolution": "For a member, record the strays submit_strays found in the drive state (or in the filed return, with the executor's reason). Make the step after the member's gate ask undeclared-change or scope-changed for those paths before the reviewer is dispatched, leaving out the paths the gate row's followersOwed names (integration widens those). Keep sd4's assertion that the member is filed, and add a case: the decision about the stray comes before `dispatch reviewer`.",
-        "fixTask": "P155.20-gfj"
+        "resolution": "fixed in P155.20-gfj (578cfd35a657): For a member, record the strays submit_strays found in the drive state (or in the filed return, with the executor's reason). Make the step after the member's gate ask undeclared-change or scope-changed for those paths before the reviewer is dispatched, leaving out the paths the gate row's followersOwed names (integration widens those). Keep sd4's assertion that the member is filed, and add a case: the decision about the stray comes before `dispatch reviewer`.",
+        "fixTask": "P155.20-gfj",
+        "commit": "578cfd35a657",
+        "status": "fixed"
       },
       {
         "id": "P155-R11",
@@ -257,7 +259,7 @@
         "resolution": "Update orchestrator.md step 4c to name the task's own honoured outputs, update the test_audit_task.py prose in the same follow-up as finding 2, or drop the 'step 4c allows' cross-reference."
       }
     ],
-    "outcome": "[findings: 30 - 1 high, 13 med, 16 low; 5 with a recorded fix commit]"
+    "outcome": "[findings: 30 - 1 high, 13 med, 16 low; 6 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1650,7 +1652,7 @@
     {
       "id": "P155.20-gfj",
       "title": "fix P155-R10: contradicts task clause \"Closes F818\" (F818 Do / tests.add: sub...",
-      "status": "in_progress",
+      "status": "done",
       "description": "contradicts task clause \"Closes F818\" (F818 Do / tests.add: submit 'refuses with the scope remedy (or the return carries the widened list and scope-changed is asked once)', 'while the executor is still there', not after the review round). On the wave path a member's undeclared edit is only appended to a did-line. The filed return carries no widened list and no reason, and no decision is raised. The question is first asked by integrate_member's undeclared-change decision (:4432). That runs after the reviewer is dispatched (:4416) and after the risk confirmation. For wave members, F818's defect is unchanged: the change is found after the review round, and the orchestrator answers it without the executor's reason.\n\nResolution asked: For a member, record the strays submit_strays found in the drive state (or in the filed return, with the executor's reason). Make the step after the member's gate ask undeclared-change or scope-changed for those paths before the reviewer is dispatched, leaving out the paths the gate row's followersOwed names (integration widens those). Keep sd4's assertion that the member is filed, and add a case: the decision about the stray comes before `dispatch reviewer`.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1680,14 +1682,21 @@
       "dependsOn": [],
       "attempts": 3,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "578cfd35a657",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Attempt 3, in the redo tree at base 198cab9c, which carries P155.21 and P155.23; attempt 2's work arrived there intact. The prove-gates re-gate failure (c1, a4: ['follower_claims']) came from the NAME arm, not the walk arm. tools/prove-gates.py _GATE_SHAPES = (\"_violations\", \"_drift\", \"_claims\") derives every public function whose name ends in one of those shapes. `_derived_gates` applies `excused` (NOT_A_GATE) only to the walks_the_tree arm, and the file's own comment says NOT_A_GATE 'refuses by construction to excuse anything the name arm reaches'. Its recorded precedent is bench-hooks.render_violations, renamed to render_budget_findings. So a NOT_A_GATE row would not have cleared it, and the repair is the name: `follower_claims` is renamed `claimed_followers` in _evidence_io.py, integrate-task.py, drive-phase.py (claimed_strays), tests/test__evidence_io.py (fc1, fc2 and their block, now _claimed_followers_cases) and PLUGIN-BUILD-GUIDE.md. Its docstring now states the naming constraint. tools/prove-gates.py is NOT edited. `git grep follower_claims` outside docs/ finds 0 hits; the only remaining hit is attempt 1's committed return, which is history. Runs in the redo tree: `python3 tools/prove-gates.py --selftest` -> ALL PASS 66/66, exit 0, run twice, before and after the docstring edit. `python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__evidence_io.py tests/test_integrate_task.py` -> exit 0, '3/3 files ok, 1154 cases' (804, 315 and 35). `python3 tools/sweep-selftests.py tests/test__deps.py tests/test__output_lints.py` -> '2/2 files ok, 448 cases', which covers the guide enumeration and prose lints over the edited text. ruff check plugins/audit tools plus the three suites: pass. vermin -t=3.8- on the five edited .py files: exit 0. Everything from attempts 1 and 2 stands as filed: undeclaredPaths in the return; stray_step after the gate and before the reviewer, leaving out declared, gate-owed and owner-claimed paths, with owners asked once per start; early widen; the integration's subset check; tests sd4b-sd4e, su1-su7, fc1-fc2. The red-first command is narrowed to sd-block, for attempt 2's reason: under the full sweep, uy-block raises on HEAD's driver for STRAYS_ASKED, a symbol this task introduces. Dependants: tools/prove-gates.py dependants (sweep-costs.json, guard-bash-writes.py, _harness, test__deps, test__gate_feed, test_drive_phase, test_guard_bash_writes, affected.py) are unaffected, because the file is unchanged. The _evidence_io.py, integrate-task.py, drive-phase.py and test-file dependants are as in attempt 2, still correct; the only change since is the rename of a function this task introduced, which nothing outside this task's files calls. PLUGIN-BUILD-GUIDE.md basename dependants are still correct: two inline names changed.",
+        "descriptive": "The shared follower-claim reader is renamed claimed_followers so prove-gates no longer derives it as a lint; prove-gates selftest 66/66 and the drive-phase gate stay green on the redo tree."
       },
       "startedAt": "2026-11-02T18:31:09Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-02T18:42:46Z",
+      "verifiedBy": [
+        "sd4b: a wave member's submit files the strays it named in its return (undeclaredPaths)",
+        "sd4c: the undeclared-change decision for that path comes before that member's `dispatch reviewer`",
+        "sd4d/sd4e: widen and discard each answer it once; with widen the path is declared before the reviewer is dispatched",
+        "su1-su5: declared and gate-owed paths are left out, the over-fire twins are quiet, no re-ask once answered, an early discard does not reach a later-found path",
+        "su6/su7: a follower-claimed path is not asked early, with owners asked once per start; the twin, an unclaimed path, is still asked",
+        "fc1/fc2 (tests/test__evidence_io.py): claimed_followers reads only the asked paths, each record once; no owner, no claims"
+      ],
       "notes": [
         {
           "at": "2026-11-02T16:58:52Z",
@@ -1706,6 +1715,18 @@
         "runId": "2026-11-02T18:42:41Z.4390ed",
         "status": "passed",
         "at": "2026-11-02T18:42:41Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "578cfd35a657",
+        "at": "2026-11-02T18:42:46Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-02T18:36:22Z",
+        "basis": "`python3 tests/test_drive_phase.py --selftest --stage sd-block` in a throwaway tree at HEAD exited 1 with 3 of 17 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sd4b (house FAIL), sd4c (house FAIL), sd4d (house FAIL): SELFTEST FAILED: 14/17 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1792,11 +1813,12 @@
     {
       "id": "P155.22-gfj",
       "title": "fix P155-R12: contradicts task clause \"Closes F808\" (F808 Do: 'the dry run ma...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "contradicts task clause \"Closes F808\" (F808 Do: 'the dry run made in the tree after setup'). recut_conflicts still checks a three-way apply against the bare phase head. The real apply (:6362) runs in a tree that add_tree has already put through executor.worktreeSetup. A setup that rewrites a tracked file still fails after the old tree was kept. The executor states it did not do this, so F808 is not closed by this diff.\n\nResolution asked: Cut the new tree (with setup) before the old one is kept, and run the conflict check there. Or file this half as its own task and keep F808 open in the register for it.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
-        "tests/test_drive_phase.py"
+        "tests/test_drive_phase.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -1814,14 +1836,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-02T18:43:05Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -1836,7 +1858,8 @@
       ],
       "fixes": [
         "P155-R12"
-      ]
+      ],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P155.23-gfj",
@@ -1931,41 +1954,42 @@
     {
       "id": "P155.24-gfj",
       "title": "fix P155-R16: The window is written to $WORKDIR/live-window/audit-plan.json, ...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The window is written to $WORKDIR/live-window/audit-plan.json, outside any checkout, so render-report resolves its project through _output.project_of_manifest to /tmp/verify-*/live-window (markerless fallback; checked in memory: project_of_manifest('/tmp/verify-XYZ/live-window/audit-plan.json') -> '/tmp/verify-XYZ/live-window'). The committed evidence ledger (docs/audit/evidence) is then never read. Measured in memory with _evidence_view.load_evidence on the same manifest: at the checkout path, keys ['passed','failed','empty-gate','no-evidence'], flags ['tree-mutated','tree-unknown','no-overlap','coverage-unknown','checks-unknown'], files 60. At the window path, keys ['dangling','no-evidence'], flags [], files 0. So the leg now drives a report where every pointer is 'dangling', a status the real plan never shows, and it loses every real evidence status and flag. That was what made the live-plan leg the report that 'DOES carry evidence' (tools/check-report-interactive.mjs:766-770). Nothing goes red: validate-manifest passes and the browser check accepts either page. The new comment ('the page still shows each key and status the plan uses') and CONTRIBUTING.md:503-504 overclaim for the same reason. The project's .claude/audit.config.json (theme and panel config) is also no longer read.\n\nResolution asked: Give the window a project the renderer resolves the way it resolves the checkout. Write it under a record-shaped path, $WORKDIR/live-window/docs/audit/audit-plan.json, so the project is $WORKDIR/live-window. Copy docs/audit/evidence/ (and .claude/audit.config.json) beside it. Then make the drift fail: after the render, assert that the window's load_evidence keys and flags equal the full plan's (or, at minimum, contain no 'dangling' the full plan lacks) and fail the leg otherwise.",
       "files": [
-        "tools/verify.sh"
+        "tools/verify.sh",
+        "tools/gate-parity.py",
+        "tools/prove-gates.py",
+        "tests/_harness.py",
+        "tests/test__affected_tests.py",
+        "tools/sweep-selftests.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "tests/test__runner_collects.py",
+        "tests/test_stamp_verification.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
         "add": [],
         "expectRedFirst": false,
         "gate": [
-          "selftests",
-          "validate",
-          "plugin-validate",
-          "gate",
-          "report",
-          "lint",
-          "shots",
-          "interactive",
-          "vitest"
+          "python3 tools/sweep-selftests.py tests/_harness.py tests/test__affected_tests.py tests/test__runner_collects.py tests/test_stamp_verification.py"
         ],
-        "gateBasis": "files-no-suite"
+        "gateBasis": "files"
       },
       "model": "sonnet",
       "skills": [],
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-02T18:43:29Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -1984,7 +2008,8 @@
       ],
       "fixes": [
         "P155-R16"
-      ]
+      ],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P155.25-gfj",
@@ -2047,11 +2072,12 @@
     {
       "id": "P155.26-gfj",
       "title": "fix P155-R20: restore_copy can write over newer work at a path the copy holds...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "restore_copy can write over newer work at a path the copy holds. It drops every path in `held` from `_newer_work`'s answer (`[p for p in _newer_work(...) if p not in held]`), and `_undo` then `_put`s each held path unconditionally. Suppose a.txt is a held work path and, after the kill, someone (a human, or a writer session that was already running) edits it to bytes that are neither the copy's nor `start`'s nor `end`'s. The restore overwrites that edit without saying so. un7 covers only an unheld path (c.txt), so this direction has no test. The docstring narrows the contract to 'the paths it holds are what a restore is asked to write over', which conflicts with 'never write over newer work'.\n\nResolution asked: Before `_undo`, refuse any held path whose bytes match none of these: the copy (`_holds(tree, rel, held[rel])`), `start`'s blob, or `end`'s blob (`_reads_as`, absent where the commit has none). Those are the only states a killed move or a killed undo can leave. un6's tree (a.txt at base, n.txt absent) still passes. Add a case like un7 that edits a.txt and expects a refusal with nothing changed.",
       "files": [
         "plugins/audit/scripts/git/_worktrees.py",
-        "tests/test__worktrees.py"
+        "tests/test__worktrees.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -2069,14 +2095,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-02T18:43:38Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -2091,7 +2117,13 @@
       ],
       "fixes": [
         "P155-R20"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-02T19:04:42Z.385a51",
+        "status": "passed",
+        "at": "2026-11-02T19:04:42Z"
+      }
     },
     {
       "id": "P155.27-gfj",

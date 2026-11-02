@@ -1863,7 +1863,10 @@
       "P155.23-gfj",
       "P155.28-gfj",
       "P155.20-gfj",
-      "P155.21-gfj"
+      "P155.21-gfj",
+      "P155.22-gfj",
+      "P155.24-gfj",
+      "P155.26-gfj"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -4633,7 +4636,8 @@
       "P155.11",
       "P155.19-gfj",
       "P155.21-gfj",
-      "P155.23-gfj"
+      "P155.23-gfj",
+      "P155.24-gfj"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -8434,7 +8438,8 @@
       "P151.6-3z1",
       "P151.8-3z1",
       "P155.5",
-      "P155.9"
+      "P155.9",
+      "P155.24-gfj"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -8568,7 +8573,8 @@
       "P155.19-gfj",
       "P155.21-gfj",
       "P155.23-gfj",
-      "P155.20-gfj"
+      "P155.20-gfj",
+      "P155.24-gfj"
     ],
     "tools/redfirst.sh": [
       "P55.13",
@@ -8641,7 +8647,8 @@
       "P155.11",
       "P155.19-gfj",
       "P155.21-gfj",
-      "P155.23-gfj"
+      "P155.23-gfj",
+      "P155.24-gfj"
     ],
     "tools/ui-tests/evidence-badge.test.mjs": [
       "P32.7",
@@ -11697,7 +11704,8 @@
       "P155.11",
       "P155.19-gfj",
       "P155.21-gfj",
-      "P155.23-gfj"
+      "P155.23-gfj",
+      "P155.24-gfj"
     ],
     "tests/fixtures/pricing-page-2026-10-10.md": [
       "P131.1"
@@ -11741,7 +11749,8 @@
       "P155.11",
       "P155.19-gfj",
       "P155.21-gfj",
-      "P155.23-gfj"
+      "P155.23-gfj",
+      "P155.24-gfj"
     ],
     "tests/test__areas.py": [
       "P131.1",
@@ -12094,7 +12103,8 @@
       "P155.11",
       "P155.19-gfj",
       "P155.21-gfj",
-      "P155.23-gfj"
+      "P155.23-gfj",
+      "P155.24-gfj"
     ],
     "tests/test__runner_output.py": [
       "P131.1",
@@ -12632,7 +12642,8 @@
       "P155.11",
       "P155.19-gfj",
       "P155.21-gfj",
-      "P155.23-gfj"
+      "P155.23-gfj",
+      "P155.24-gfj"
     ],
     "tests/test_usage_ledger.py": [
       "P131.1",

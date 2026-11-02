@@ -2098,6 +2098,16 @@ def _newer_work(fn, tree, meta, held, heads, is_record):
     return diverged
 
 
+def _held_moved_on(fn, tree, held, commits):
+    """The paths of the copy `held` whose bytes in `tree` are none a killed
+    move or a killed undo can leave there - not the copy's (`_holds`), and
+    not what any of `commits` holds (`_reads_as`, absent where the commit has
+    none) - sorted. Each is an edit made after the copy was taken, which a
+    restore writing the copy back would destroy unsaid."""
+    return sorted(rel for rel in held if not _holds(tree, rel, held[rel])
+                  and not any(_reads_as(fn, tree, rel, c) for c in commits))
+
+
 def _holds(tree, rel, kind):
     """Whether `rel` in `tree` holds `kind` (a `_snap`) - no, too, when it
     cannot be read."""
@@ -2248,11 +2258,12 @@ def restore_copy(tree, task_id, is_record=None, run=None):
     before anything is written when the marker does not name `task_id` with
     the base the copy was taken from - a move the marker recorded leaves a
     copy that is the next move's to drop, not a restore's - when the copy
-    cannot be read, and when the tree holds anything neither the copy nor its
-    move accounts for (`_newer_work`) at a path the copy does not hold: the
-    paths it holds are what a restore is asked to write over, and no other
-    is. `is_record(rel)` names the caller's record paths, which the copy's own
-    non-work paths join."""
+    cannot be read, and when the restore would write over newer work: a path
+    the copy does not hold that neither the copy nor its move accounts for
+    (`_newer_work`), or a path it does hold whose bytes are none a killed move
+    or undo can leave (`_held_moved_on`) - not the copy's, the base's or the
+    move's target's. `is_record(rel)` names the caller's record paths, which
+    the copy's own non-work paths join."""
     fn = _runner(run)
     copy = _copy_path(tree, run)
     answer = {"restored": False, "kept": None, "paths": [], "error": None}
@@ -2301,8 +2312,9 @@ def restore_copy(tree, task_id, is_record=None, run=None):
 
     def record(rel):
         return rel in held_records or record_of(rel)
-    newer = [p for p in _newer_work(fn, tree, meta, held, (start, end) if end
-                                    else (start,), record) if p not in held]
+    heads = (start, end) if end else (start,)
+    newer = [p for p in _newer_work(fn, tree, meta, held, heads, record)
+             if p not in held] + _held_moved_on(fn, tree, held, heads)
     if newer:
         return _with_kept(dict(answer, error=(
             "%s holds what neither the copy at %s nor the move from %s to %s "

@@ -2066,6 +2066,37 @@ def _unsettled_cases(check):
           nothing.get("restored") is None and "no copy" in (nothing.get("error") or "")
           and (_av_bytes(tree, ("a.txt", "b.txt", "c.txt")), _av_status(tree)) == before
           and _av_head(tree) == base, repr(nothing))
+    tree, base, head, copy, killed = _killed_in_undo("unsettled-restoreheld-")
+    with open(os.path.join(tree, "a.txt"), "wb") as fh:
+        fh.write(b"an edit made after the kill\n")
+    before = (_av_bytes(tree, ("a.txt", "c.txt", "n.txt")), _av_status(tree))
+    refused = _asked("restore_copy", tree, "T1")
+    check("un9 the restore never writes over a path the copy holds when its bytes "
+          "are none a killed move or undo can leave - not the copy's, not the "
+          "base's, not the head's: refused, the path named, the copy kept and no "
+          "byte changed",
+          killed and refused.get("restored") is False and refused.get("kept") == copy
+          and "a.txt" in (refused.get("error") or "") and os.path.isdir(copy)
+          and (_av_bytes(tree, ("a.txt", "c.txt", "n.txt")), _av_status(tree)) == before
+          and _av_head(tree) == base,
+          repr((killed, refused)))
+    tree, base, head, copy, killed = _killed_in_undo("unsettled-restorecopied-")
+    with open(os.path.join(tree, "a.txt"), "wb") as fh:
+        fh.write(b"the task's a\n")
+    copied = _asked("restore_copy", tree, "T1")
+    status = _av_status(tree)
+    # The over-fire twin: a held path already holding the copy's own bytes - an
+    # undo killed part way through writing them back - is a state the refusal
+    # must let through, or a restore resumed after such a kill could never run.
+    check("un10 a held path already holding the copy's bytes is restored over, "
+          "not refused: the task's bytes, the staged file staged again, the copy "
+          "gone (the twin a refusal of every held path that differs from the "
+          "base fails)",
+          killed and copied.get("restored") is True and not os.path.exists(copy)
+          and _av_bytes(tree, ("a.txt", "n.txt")) == {
+              "a.txt": b"the task's a\n", "n.txt": b"a file the task staged\n"}
+          and status.get("n.txt") == "A ",
+          repr((killed, copied, status)))
 
 
 # The task's work in the kill fixture, beside a deletion of d.txt; the record
