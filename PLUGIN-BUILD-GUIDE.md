@@ -431,7 +431,7 @@ L9:
   audit-lock -> _claude_home, _locks, _output
   audit-logs -> _claude_home, _gate_feed, _output
   audit-lookup -> _areas, _claude_home, _clause_coverage, _config_rules, _evidence_io, _excerpt, _filed_returns, _gate_feed, _impact, _journal_io, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _scoped_commit
-  audit-status -> _areas, _claude_home, _cli_fmt, _evidence_io, _filed_returns, _fmt, _invariants, _live_copy, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
+  audit-status -> _areas, _claude_home, _cli_fmt, _evidence_io, _filed_returns, _fmt, _invariants, _live_copy, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme, _worktrees
   audit-task -> _affected_tests, _areas, _branch, _claude_home, _commit_trail, _config_rules, _evidence_io, _filed_returns, _gate_derive, _id_refs, _id_shape, _impact, _invariants, _journal_io, _loader, _locks, _machine_paths, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proc_group, _proposals, _scope_companions, _scoped_commit, _status_facts, _task_outputs, _tree_stamp, _utc_stamp, _verdict_binding, _warning_groups, _worktrees
   audit-usage -> _areas, _claude_home, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme, _usage_economics
   audit-version -> _claude_home, _output
@@ -1103,9 +1103,17 @@ grades reachability from HEAD and will delete a branch that never reached its de
 work in the tree's own admin directory before it moves the tree to the phase head - each changed
 path's bytes as a numbered `N.bin`, listed in `index.json`, and the git index as `git-index` - and
 `git worktree remove` deletes that directory with the tree. So `tree_unsettled` is the one
-reading every verb that touches a task tree takes first: the drive's dispatch into it, its
-integration, its retirement (`remove_task_tree` refuses while a copy or its tombstone stands, `un4`)
-and the move itself (`advance_member` reads it again after the move). It answers could-not-ask
+reading every verb that removes a task tree or runs a session in it takes first: the drive's
+`dispatch` into it and its `resume_writer` (`ut4`), its integration, its retirement
+(`remove_task_tree` refuses while a copy or its tombstone stands, `un4`) and the move itself
+(`advance_member` reads it again after the move); `manage-worktrees.py`'s `task-remove` and
+`remove` through `refuse_unsettled`, forced or not, naming the copy and the restore verb (`ut1`,
+`ut2`); and the remedy `audit-status.py` prints for a kept tree, which offers no remover over a
+copy and names the restore verb instead (`ut3`), a verb that finds a tree kept outside any wave
+(`uv2`). Which functions ask is read off the code rather than listed: `ut5` names every function
+under `scripts/` and `hooks/` that removes a worktree or opens a writer session in a tree without
+reaching the question, itself or through every caller it has. `integrate-task.py` run by hand is
+outside that reading - it removes nothing, and the drive asks before it calls it. It answers could-not-ask
 when git will not name the admin directory, never settled (`un2`), and clears the `.audit-*` temp
 files a hard kill left there once they are older than `STRAY_AGE_SECONDS`, leaving a
 younger one as a write that may be in flight (`un3`). The stop over

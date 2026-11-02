@@ -4004,7 +4004,8 @@
       "P131.1",
       "P131.2",
       "P142.1",
-      "P142.18-6yq"
+      "P142.18-6yq",
+      "P155.28-gfj"
     ],
     "plugins/audit/scripts/governance/_evidence_io.py": [
       "P29.4",
@@ -5960,7 +5961,8 @@
       "P142.49-6yq",
       "P144.2-6yq",
       "P148.7",
-      "P148.15-xpz"
+      "P148.15-xpz",
+      "P155.28-gfj"
     ],
     "plugins/audit/scripts/status/audit-version.py": [
       "P67.1",
@@ -10600,7 +10602,8 @@
       "P155.16-gfj",
       "P155.20-gfj",
       "P155.22-gfj",
-      "P155.27-gfj"
+      "P155.27-gfj",
+      "P155.28-gfj"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -12266,7 +12269,8 @@
       "P142.49-6yq",
       "P144.2-6yq",
       "P148.7",
-      "P148.15-xpz"
+      "P148.15-xpz",
+      "P155.28-gfj"
     ],
     "tests/test_audit_task.py": [
       "P131.1",
@@ -12445,7 +12449,8 @@
       "P155.20-gfj",
       "P155.22-gfj",
       "P155.27-gfj",
-      "P155.21-gfj"
+      "P155.21-gfj",
+      "P155.28-gfj"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -12525,7 +12530,8 @@
     ],
     "tests/test_manage_worktrees.py": [
       "P131.1",
-      "P142.18-6yq"
+      "P142.18-6yq",
+      "P155.28-gfj"
     ],
     "tests/test_materialize_proposal.py": [
       "P131.1"

@@ -4399,7 +4399,16 @@ def _kept_quoting_cases(check):
     space or on Windows, so on a plain POSIX run an unquoted path left them
     green; this one hands the remedy such a path itself."""
     path = "/tmp/kept tree/it's a\\path"
-    got = M._kept_tree_remedy("P2.1 set aside 1", path, None)
+    # No such tree exists, so git cannot be asked whether a move's copy stands
+    # beside it, and that unanswered question would offer no remover at all.
+    # The question is answered "settled" here: this case is about quoting.
+    real = M._worktrees.refuse_unsettled
+    M._worktrees.refuse_unsettled = lambda *_a, **_kw: None
+    try:
+        got = M._kept_tree_remedy("P2.1 set aside 1", path, None,
+                                  "/tmp/audit-plan.json", "/tmp")
+    finally:
+        M._worktrees.refuse_unsettled = real
     saves = [_posix_words(s) or [] for s in got.get("saveFirst") or []]
     push = (_posix_words(saves[1][6]) or [])[:6] \
         if len(saves) == 2 and len(saves[1]) == 7 else []

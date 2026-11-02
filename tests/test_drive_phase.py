@@ -6944,6 +6944,24 @@ def _unsettled_verb_cases(check):
                       for t in stops)
               and "fixture: past the tree check" in gone_d[1]
               and reached == ["integrate-task.py"] and "not settled" not in gone_i[1])
+
+        # The restore verb status names for a kept tree finds that tree: one a
+        # wave ended without removing is recorded under `keptTrees`, not under
+        # the wave. The fixture tree carries no copy, so reaching it reads as
+        # "no copy beside <tree>"; a state naming neither says it names neither.
+        M.run_verb = lambda c, script, args, stdin=None: (
+            0, "[audit-lock] acquired\n", "")
+        M.member_records = lambda c, s: ()
+        said = []
+        for held in ({"keptTrees": {"P1.1": tree}}, {}):
+            M.write_state(ctx, held)
+            said.append(M.restore_tree(ctx, "P1.1"))
+        check("uv2 the restore verb finds a tree the drive's state keeps under "
+              "the task's key outside any wave, and a state recording no tree "
+              "of the task says it records neither: %r" % (said,),
+              "no copy of the work stands beside %s" % (tree,) in said[0][1]
+              and "records no" not in said[0][1]
+              and "no wave tree and no kept tree of P1.1" in said[1][1])
     finally:
         _harness.remove_tree(base)
 

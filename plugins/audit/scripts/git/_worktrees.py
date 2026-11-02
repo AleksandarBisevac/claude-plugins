@@ -39,13 +39,15 @@ the copy a killed move left holds: each is a write and the byte check that decid
 it counted as one operation, and a caller holding only the argv could run the
 first without the second. `write_record` writes the marker file a worktree's
 provenance is read from, and `advance_task_tree` uses it to record a move.
-`tree_unsettled` is the one reading of whether such a copy stands beside a tree.
+`tree_unsettled` is the one reading of whether such a copy stands beside a tree,
+and `refuse_unsettled` the refusal a remover built on it says.
 
 This module carries no `--selftest` of its own; its cases live in
 `tests/test__worktrees.py`.
 """
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -2194,10 +2196,14 @@ def _settle(answer, wrong, copy, why):
 
 # --- whether a task tree is settled, and putting its work back -------------------
 # The copy a move keeps lives in the tree's admin directory, and `git worktree
-# remove` deletes that directory with the tree. So a verb that dispatches into a
-# task tree, integrates it, retires it or moves it asks `tree_unsettled` first, and
-# a stop over a tree it names unsettled names `restore_copy`'s verb beside where
-# the work is.
+# remove` deletes that directory with the tree. So a function that removes a
+# worktree or opens a writer session in a task tree asks `tree_unsettled`
+# first - itself, through `refuse_unsettled` or the drive's `unsettled_stop`, or
+# through every caller it has - and a stop over a tree it names unsettled names
+# the restore verb (`restore_command`) beside where the work is. `ut5` in
+# `tests/test__worktrees.py` reads every such function in `scripts/` and `hooks/`
+# and names each one that reaches none of the three; a removal or dispatch
+# spelled some other way is outside what it reads.
 
 def _clear_strays(admin, now=None):
     """The temp files `_write_aside` left in `admin` older than
@@ -2239,9 +2245,11 @@ def kept_where(left):
 
 
 def tree_unsettled(tree, run=None, now=None):
-    """{"unsettled", "kept", "why", "cleared"} - THE ONE QUESTION every verb
-    that touches a task tree asks before it does: is a move's copy of the
-    work, or its tombstone, standing beside `tree`.
+    """{"unsettled", "kept", "why", "cleared"} - THE ONE QUESTION a verb that
+    removes a task tree or runs a session in it asks before it does (the
+    section comment above names how, and the case that reads it off the
+    code): is a move's copy of the work, or its tombstone, standing beside
+    `tree`.
 
     `unsettled` is True with `kept` naming what stands and `why` where the
     work is (`kept_where`); False with neither when nothing does; None beside
@@ -2261,6 +2269,46 @@ def tree_unsettled(tree, run=None, now=None):
         return {"unsettled": False, "kept": None, "why": "", "cleared": cleared}
     return {"unsettled": True, "kept": left, "why": kept_where(left),
             "cleared": cleared}
+
+
+def restore_command(task_id, manifest, project):
+    """The command that puts `task_id`'s work back from the copy beside its
+    tree - `drive-phase.py restore`, which runs `restore_copy` under the phase
+    lock - spelled to run as printed: the one spelling every stop over an
+    unsettled tree names. A `manifest` or `project` the caller does not hold
+    is printed as its placeholder, `<manifest>` or `<project>`, never as a
+    path guessed for it."""
+    return "python3 %s restore %s %s --project-dir %s" % (
+        shlex.quote(_loader.script_path("drive-phase.py")), shlex.quote(str(task_id)),
+        shlex.quote(os.path.abspath(manifest)) if manifest else "<manifest>",
+        shlex.quote(os.path.abspath(project)) if project else "<project>")
+
+
+def refuse_unsettled(tree, manifest, project, task_id=None, run=None):
+    """None when `tree` is settled (`tree_unsettled` answers False), else
+    {"error", "kept", "remedy"}: the refusal a verb that would remove the tree
+    says, forced or not - the removal deletes the tree's admin directory, and
+    the copy in it may be the only record of the work. `kept` names what
+    stands (None when the question could not be asked), and `remedy` the
+    restore verb for `task_id`, or for the task the tree's marker names when
+    `task_id` is None (`<taskId>` when it names none)."""
+    left = tree_unsettled(tree, run=run)
+    if left["unsettled"] is False:
+        return None
+    if left["unsettled"] is None:
+        return {"error": left["why"], "kept": None,
+                "remedy": "nothing takes the tree down, forced or not, until git "
+                          "names its admin directory and the question can be asked"}
+    if task_id is None:
+        task_id = (read_provenance(tree, run=run).get("record") or {}).get(
+            "taskId") or "<taskId>"
+    return {"error": "%s is not settled - %s" % (tree, left["why"]),
+            "kept": left["kept"],
+            "remedy": "nothing takes the tree down, forced or not, while that "
+                      "stands: the removal deletes it with the tree's admin "
+                      "directory. `%s` puts the work back from the copy, or "
+                      "clears a tombstone, and takes it down"
+                      % (restore_command(task_id, manifest, project),)}
 
 
 def restore_copy(tree, task_id, is_record=None, run=None):

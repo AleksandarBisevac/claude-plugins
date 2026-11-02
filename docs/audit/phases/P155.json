@@ -199,8 +199,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/git/_worktrees.py:2110-2133 (_reads_as) with :2316-2323 (restore_copy) and drive-phase.py:4801-4812 (unsettled_said)",
         "issue": "`hash-object --no-filters` costs more than the docstring says. With core.autocrlf=true, the Git for Windows installer default, every text file checkout writes with CRLF hashes differently from its LF blob. So a move killed partway through its checkout leaves moved paths that `_newer_work` reads as newer work. The resume holds the tree, and so does the restore verb the new stop names: restore_copy runs the same `_newer_work` and refuses those paths, because moved paths are not in `held`. On a default Windows checkout, the stop's sentence '`restore` puts the work back from it and takes it down' is then false and no verb can settle the tree. The filtered hash this replaces accepted those files.",
-        "resolution": "Compare the file's raw bytes with what checkout itself would write, `git cat-file --filters <commit>:<rel>` (smudge and EOL conversion applied under this tree's attributes and config). That rejects a file whose only change is its line endings and still accepts a CRLF checkout. Add a variant of un5 that sets core.autocrlf=true, checks out the head, and expects the file to read as the commit's.",
-        "fixTask": "P155.27-gfj"
+        "resolution": "fixed in P155.27-gfj (9f7eb77c3929): Compare the file's raw bytes with what checkout itself would write, `git cat-file --filters <commit>:<rel>` (smudge and EOL conversion applied under this tree's attributes and config). That rejects a file whose only change is its line endings and still accepts a CRLF checkout. Add a variant of un5 that sets core.autocrlf=true, checks out the head, and expects the file to read as the commit's.",
+        "fixTask": "P155.27-gfj",
+        "commit": "9f7eb77c3929",
+        "status": "fixed"
       },
       {
         "id": "P155-R22",
@@ -295,7 +297,7 @@
         "resolution": "Pin the filters against a fixture plan with a deterministic shape, as finding 1 asks, so the result does not depend on what the live plan holds today."
       }
     ],
-    "outcome": "[findings: 34 - 1 high, 14 med, 19 low; 10 with a recorded fix commit]"
+    "outcome": "[findings: 34 - 1 high, 14 med, 19 low; 11 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2244,7 +2246,7 @@
     {
       "id": "P155.27-gfj",
       "title": "fix P155-R21: `hash-object --no-filters` costs more than the docstring says. ...",
-      "status": "in_progress",
+      "status": "done",
       "description": "`hash-object --no-filters` costs more than the docstring says. With core.autocrlf=true, the Git for Windows installer default, every text file checkout writes with CRLF hashes differently from its LF blob. So a move killed partway through its checkout leaves moved paths that `_newer_work` reads as newer work. The resume holds the tree, and so does the restore verb the new stop names: restore_copy runs the same `_newer_work` and refuses those paths, because moved paths are not in `held`. On a default Windows checkout, the stop's sentence '`restore` puts the work back from it and takes it down' is then false and no verb can settle the tree. The filtered hash this replaces accepted those files.\n\nResolution asked: Compare the file's raw bytes with what checkout itself would write, `git cat-file --filters <commit>:<rel>` (smudge and EOL conversion applied under this tree's attributes and config). That rejects a file whose only change is its line endings and still accepts a CRLF checkout. Add a variant of un5 that sets core.autocrlf=true, checks out the head, and expects the file to read as the commit's.",
       "files": [
         "plugins/audit/scripts/git/_worktrees.py",
@@ -2271,14 +2273,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9f7eb77c3929",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/scripts/git/_worktrees.py: _reads_as now compares the file's raw bytes with `git cat-file --filters <commit>:<rel>` (smudge + EOL conversion under the tree's attributes and config) instead of `hash-object --no-filters`; docstring rewritten to state the comparison and its reason. The byte read needs undecoded stdout, so the subprocess call moved into a new _git_bytes(git_root, args, timeout) returning (code, bytes, stderr-text), and _git is now that answer with stdout decoded utf-8/replace exactly as before (same signature, same return shape, same (None, '', why) on no git). The rev-parse in _reads_as still goes through the injected runner; the content read goes to _git_bytes, said in the docstring. tests/test__worktrees.py: new _autocrlf_repo/_crlf_killed_move fixtures and _autocrlf_cases (un11 _reads_as under autocrlf: CRLF checkout True, LF-only False, foreign bytes False, and the on-disk CRLF asserted so the fixture cannot go vacuous; un12 restore_copy after a move killed part way through its checkout of the head - HEAD still at base, b.txt written CRLF - restores; un13 the next advance_task_tree finishes that move). un5's fixture now pins core.eol=lf: with `*.txt text` a checkout uses core.eol, native by default, which on windows is CRLF and would have turned un5 red there under the new comparison; its label reworded off the old mechanism. PLUGIN-BUILD-GUIDE.md _worktrees.py section: the hash-object --no-filters sentence replaced with the cat-file --filters comparison and un11-un13. drive-phase.py and tests/test_drive_phase.py unchanged. Runs: sweep over test__worktrees.py + test_drive_phase.py exit 0 (2/2 files ok, 975 cases); test__worktrees.py 169/169; prove-gates.py --selftest exit 0 (66/66); sweep over test__deps.py, test__output_lints.py, test__refs.py exit 0 (3/3 files ok, 740 cases); ruff exit 0; vermin -t=3.8- exit 0. Over-fire mutation (a clean-filtered `hash-object -- rel` in place of the byte comparison) run in a scratch git-archive export, never in the tree: un5 and un11 red, 167/169. Dependants: every importer of _worktrees.py (guard-release.py, close-phase.py, integrate-task.py, manage-worktrees.py, _evidence_io.py, drive-phase.py, run-test-gate.py, stamp-verification.py, and the rest) still correct - _git keeps its signature and decoded return, _reads_as/_newer_work/_held_moved_on are module-private with no caller outside _worktrees.py and tests/test__worktrees.py (grep), and _git_bytes is new. drive-phase.py's restore stop sentence ('restore puts the work back from it and takes it down') is true again under autocrlf, as un12 shows; no text in it changed. tests/test__worktrees.py dependants (sweep-costs.json, test__affected_tests.py, tools/affected.py) read the path and _cases/_selftest, both unchanged. PLUGIN-BUILD-GUIDE.md dependants read basenames; the doc lints (test__deps, test__output_lints, test__refs) are green. P155.28 has not touched tree_unsettled-skipping verbs here; I left them alone.",
+        "descriptive": "A move killed part way through its checkout on a core.autocrlf=true (Git for Windows default) checkout no longer leaves a tree that no verb can settle: moved files are compared with what checkout writes, not with the raw blob."
       },
       "startedAt": "2026-11-02T19:25:11Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-02T19:57:56Z",
+      "verifiedBy": [
+        "un11: under core.autocrlf=true a file as checkout wrote it (CRLF) reads as the commit's; LF-only and foreign bytes do not",
+        "un12: under core.autocrlf=true restore_copy puts back a move killed part way through its checkout",
+        "un13: under core.autocrlf=true the next advance_task_tree finishes a move killed part way through its checkout"
+      ],
       "notes": [
         {
           "at": "2026-11-02T16:59:19Z",
@@ -2301,17 +2307,35 @@
         "runId": "2026-11-02T19:54:52Z.299d57",
         "status": "passed",
         "at": "2026-11-02T19:54:52Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "9f7eb77c3929",
+        "at": "2026-11-02T19:57:56Z",
+        "return": "docs/audit/evidence/returns/P155.27-gfj/20261102T192511Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-11-02T19:45:44Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__worktrees.py tests/test_drive_phase.py` in a throwaway tree at HEAD exited 1 with failing cases un11 (house FAIL), un12 (house FAIL), un13 (house FAIL), but the fix run could not be made: the run timed out after 93 s and its process group was torn down - SELFTEST FAILED: 166/169 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P155.28-gfj",
       "title": "fix P155-R22: The diff writes that `tree_unsettled` is 'the one reading every...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The diff writes that `tree_unsettled` is 'the one reading every verb that touches a task tree takes first' and that 'a verb that dispatches into a task tree, integrates it, retires it or moves it asks tree_unsettled first'. The code does not hold that. (a) manage-worktrees.py:700-746 `task-remove` (the `/audit:worktree task-remove` remover of a task tree) never asks. It is not only `--force`, as the executor's outcome says: after a move killed inside its undo, the forced checkout leaves the tree clean, so even the unforced remove passes the dirtiness check, and `git worktree remove` then deletes the admin directory holding the only copy of the work. audit-status.py:2131/2135 prints that remover as the remedy for a kept tree, and retire_member now keeps exactly those trees. (b) drive-phase.py:2223-2250 `resume_writer` opens a writer session in the task tree through `open_dispatch` without going through `dispatch()`, so it never asks either. That path is only reachable if a copy appears after a gate-red-writer decision was parked.\n\nResolution asked: Either make the claim true by having manage-worktrees `task-remove` ask `_worktrees.tree_unsettled` and refuse anything but False, forced or not, naming the copy and the restore verb, and by routing `resume_writer` through `unsettled_stop`. Or narrow both sentences to the drive's own dispatch, integration, retirement and move, and file task-remove as a fault. Prefer the first, since the copy is the only record of the work.",
       "files": [
         "PLUGIN-BUILD-GUIDE.md",
         "plugins/audit/scripts/git/_worktrees.py",
-        "tests/test__worktrees.py"
+        "tests/test__worktrees.py",
+        "plugins/audit/scripts/git/manage-worktrees.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "tests/test_audit_status.py",
+        "tests/test_manage_worktrees.py",
+        "tests/test_drive_phase.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -2329,14 +2353,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-02T19:58:11Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -2351,11 +2375,21 @@
         {
           "at": "2026-11-02T16:59:23Z",
           "text": "no suite: PLUGIN-BUILD-GUIDE.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__affected_tests.py, tests/test__deps.py, tests/test__doctor_trail.py, tests/test__output.py, tests/test__refs.py, tests/test_drive_phase.py and 6 more"
+        },
+        {
+          "at": "2026-11-02T20:10:48Z",
+          "text": "Scope widened by the orchestrator: task-remove and remove --path in manage-worktrees.py are the removers the finding names; resume_writer and restore_command live in drive-phase.py; the status remedy lives in audit-status.py; their suites follow"
         }
       ],
       "fixes": [
         "P155-R22"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-02T20:28:26Z.f826eb",
+        "status": "passed",
+        "at": "2026-11-02T20:28:26Z"
+      }
     }
   ],
   "reviewPerTask": "signals",

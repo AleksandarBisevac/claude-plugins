@@ -38,6 +38,8 @@ WHAT IS PINNED, and why each one is here rather than trusted:
 
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
+import ast
+import copy as copymod
 import io
 import json
 import os
@@ -47,6 +49,7 @@ import tempfile
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 import _loader                                     # noqa: E402
+import _output                                     # noqa: E402
 from _output import safe_stdio                     # noqa: E402
 import _worktrees as M                             # noqa: E402
 
@@ -1905,9 +1908,10 @@ def _advance_sync_cases(check):
 # --- a tree left unsettled, and the verb that puts its work back -----------------
 # A copy beside a tree is the only record of what the tree held before a move,
 # and it lives in the tree's admin directory, which `git worktree remove` deletes.
-# So every verb that touches a task tree asks one question first - is a copy, or
-# its tombstone, standing beside it - and the stop that names the copy names the
-# verb that puts the work back from it.
+# So a verb that removes a task tree or runs a session in it asks one question
+# first - is a copy, or its tombstone, standing beside it - and the stop that
+# names the copy names the verb that puts the work back from it (`ut5` reads
+# which functions ask off the code).
 def _undo_killer(tree, head):
     """A runner whose checkout of `head` succeeds and leaves a.txt holding bytes
     the move never wrote - so the move's own check fails and its undo runs - and
@@ -2100,7 +2104,233 @@ def _unsettled_cases(check):
               "a.txt": b"the task's a\n", "n.txt": b"a file the task staged\n"}
           and status.get("n.txt") == "A ",
           repr((killed, copied, status)))
+    _touch_cases(check)
     _autocrlf_cases(check)
+
+
+# --- every verb that touches a task tree asks first ------------------------------
+# What lands in a worktree, read off the code: a `git worktree remove` argv, which
+# deletes the admin directory a move's copy lives in, and a writer session opened
+# in a tree (`open_dispatch` given a tree that is not the literal None). A function
+# doing either reaches the one question - directly, or through every caller it has
+# in its module - or is a row below with the reason it never meets a task tree.
+_TOUCH_ASKS = ("tree_unsettled", "refuse_unsettled", "unsettled_stop")
+_TOUCH_EXEMPT = {
+    ("stamp-verification.py", "_remove_throwaway"):
+        "removes the throwaway tree the red-first proof built for itself at HEAD; "
+        "no move ever ran in it",
+    ("_worktrees.py", "cleanup_plan"):
+        "a pure planner over the tree holding a phase BRANCH; a task tree is "
+        "detached, so it is never the tree this plans to remove",
+}
+
+
+def _call_name(node):
+    func = node.func
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    return func.id if isinstance(func, ast.Name) else None
+
+
+def _is_none(node):
+    return isinstance(node, ast.Constant) and node.value is None
+
+
+def _touches(fn):
+    """What in function `fn` lands in a worktree, one word per site."""
+    found = []
+    for node in ast.walk(fn):
+        if isinstance(node, (ast.List, ast.Tuple)) and len(node.elts) >= 2 \
+                and all(isinstance(e, ast.Constant) for e in node.elts[:2]) \
+                and [e.value for e in node.elts[:2]] == ["worktree", "remove"]:
+            found.append("worktree remove")
+        if isinstance(node, ast.Call) and _call_name(node) == "open_dispatch":
+            tree = node.args[5] if len(node.args) > 5 else None
+            for kw in node.keywords:
+                if kw.arg == "tree":
+                    tree = kw.value
+            if tree is not None and not _is_none(tree):
+                found.append("open_dispatch")
+    return found
+
+
+def _touch_scan(sources):
+    """`(unasked, touching)` over `sources`, `[(label, text)]`: each touching
+    top-level function that reaches none of `_TOUCH_ASKS` - itself, or every
+    caller it has in its module, transitively, with one caller at least - as
+    `label:name (what)`, exemptions aside; and every touching function seen."""
+    unasked, touching = [], []
+    for label, text in sources:
+        fns = dict((n.name, n) for n in ast.parse(text).body
+                   if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)))
+        calls = dict((name, set(_call_name(c) for c in ast.walk(fn)
+                                if isinstance(c, ast.Call)))
+                     for name, fn in fns.items())
+
+        def asks(name, seen):
+            if calls[name] & set(_TOUCH_ASKS):
+                return True
+            up = [c for c in fns if name in calls[c] and c not in seen and c != name]
+            return bool(up) and all(asks(c, seen | {name}) for c in up)
+        for name, fn in fns.items():
+            what = _touches(fn)
+            if not what:
+                continue
+            touching.append((label, name))
+            if (label, name) not in _TOUCH_EXEMPT and not asks(name, frozenset()):
+                unasked.append("%s:%s (%s)" % (label, name, ", ".join(what)))
+    return unasked, touching
+
+
+def _plugin_sources():
+    found = []
+    for top in (_output.SCRIPTS_DIR, _output.HOOKS_DIR):
+        for dirpath, _dirs, names in os.walk(top):
+            for name in sorted(names):
+                if name.endswith(".py"):
+                    with open(os.path.join(dirpath, name), "r", encoding="utf-8") as fh:
+                        found.append((name, fh.read()))
+    return found
+
+
+def _called(fn, *args, **kw):
+    """`fn(*args, **kw)`, or {"raised": repr} - a failing case, never a raise
+    that ends the suite before the cases after it ran."""
+    try:
+        return fn(*args, **kw)
+    except Exception as exc:                                 # noqa: BLE001
+        return {"raised": repr(exc)}
+
+
+def _copy_beside(copy):
+    os.mkdir(copy)
+    with open(os.path.join(copy, M.COPY_INDEX), "w", encoding="utf-8") as fh:
+        fh.write("{}")
+
+
+def _plan_file(root):
+    path = os.path.join(root, "audit-plan.json")
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump({"phases": [{"id": "P1", "tasks": [{"id": "T1"}]}]}, fh)
+    return path
+
+
+def _touch_cases(check):
+    mw = _loader.load_script("manage-worktrees.py", "mw_for_worktrees_touch",
+                             cache=False)
+    plan = {"phases": [{"id": "P1", "tasks": [{"id": "T1"}]}]}
+    repo, tree, copy = _removable_tree("touch-taskremove-")
+    _copy_beside(copy)
+    plain = _called(mw.do_task_remove, repo, plan, "T1")
+    forced = _called(mw.do_task_remove, repo, plan, "T1", force=True)
+    stood = os.path.isdir(tree) and os.path.isdir(copy)
+    words = [json.dumps(a, default=str) for a in (plain, forced)]
+    if stood:
+        _harness.remove_tree(copy)
+    gone = _called(mw.do_task_remove, repo, plan, "T1")
+    check("ut1 `task-remove` refuses a task tree a copy of its work stands beside, "
+          "unforced and forced alike - a clean tree passes git's dirtiness check, "
+          "and the removal deletes the copy - naming the copy and the restore "
+          "verb, the tree and the copy left standing; the same tree with the copy "
+          "gone is removed (the twin a remover refusing every tree fails)",
+          all(isinstance(a, tuple) and a[0] != mw.E_OK for a in (plain, forced))
+          and all(copy in w and "restore" in w for w in words) and stood
+          and isinstance(gone, tuple) and gone[0] == mw.E_OK
+          and not os.path.isdir(tree),
+          repr((plain, forced, stood, gone)))
+
+    repo, tree, copy = _removable_tree("touch-pathremove-")
+    _copy_beside(copy)
+    forced = _called(mw.do_remove, repo, plan, None, force=True, path=tree)
+    stood = os.path.isdir(tree) and os.path.isdir(copy)
+    check("ut2 `remove --path` naming a task tree a copy stands beside is refused "
+          "even forced, naming the copy and the restore verb, the tree and the "
+          "copy left standing",
+          isinstance(forced, tuple) and forced[0] != mw.E_OK
+          and copy in json.dumps(forced, default=str)
+          and "restore" in json.dumps(forced, default=str) and stood,
+          repr((forced, stood)))
+    if os.path.isdir(copy):
+        _harness.remove_tree(copy)
+
+    st = _loader.load_script("audit-status.py", "st_for_worktrees_touch", cache=False)
+    repo, tree, copy = _removable_tree("touch-remedy-")
+    mpath = _plan_file(os.path.dirname(repo))
+    _copy_beside(copy)
+    held = [_called(st._kept_tree_remedy, key, tree, {"T1"}, mpath, repo)
+            for key in ("T1", "T1 set aside 1")]
+    _harness.remove_tree(copy)
+    free = _called(st._kept_tree_remedy, "T1", tree, {"T1"}, mpath, repo)
+    check("ut3 the remedy status prints for a kept tree a copy stands beside "
+          "names the copy and the restore verb and offers no remover - not "
+          "`task-remove`, not git's, forced or not - for a task's key and for a "
+          "set-aside key; the same tree with the copy gone keeps `task-remove` "
+          "(the twin a remedy that always named the restore fails)",
+          all(isinstance(h, dict) and copy in (h.get("remedy") or "")
+              and "restore" in (h.get("remedy") or "")
+              and "task-remove" not in (h.get("remedy") or "")
+              and "worktree remove" not in (h.get("remedy") or "")
+              and not h.get("saveFirst") and h.get("warning") is None for h in held)
+          and isinstance(free, dict)
+          and free.get("remedy") == "/audit:worktree task-remove T1",
+          repr((held, free)))
+
+    dp = _loader.load_script("drive-phase.py", "dp_for_worktrees_touch", cache=False)
+    repo, tree, copy = _removable_tree("touch-resume-")
+    root = os.path.dirname(repo)
+    state_dir = os.path.join(root, "state")
+    ctx = {"manifest": _plan_file(root), "project": repo, "gitRoot": repo,
+           "phase": "P1", "did": [], "stateDir": state_dir,
+           "config": {"executor": {"writerModel": "claude-sonnet-4-5",
+                                   "writerBudgetUsd": 1}}}
+    pending = {"decision": "gate-red-writer", "session": "s-1", "failing": []}
+    _copy_beside(copy)
+    state = {"wave": {"trees": {"T1": tree}}}
+    before = copymod.deepcopy(state)
+    said = _called(dp.resume_writer, ctx, state, {"id": "T1"}, pending, tree)
+    text = json.dumps(said, default=str)
+    _harness.remove_tree(copy)
+    bare = dict(ctx, config={}, did=[])
+    free = _called(dp.resume_writer, bare, {}, {"id": "T1"}, pending, tree)
+    check("ut4 resuming a writer session in a task tree a copy stands beside "
+          "stops, naming the copy and the restore verb, and opens no dispatch: "
+          "the state untouched, nothing written under the state directory; over "
+          "the same tree settled the stop is not that one (the twin a resume "
+          "refusing every tree fails)",
+          isinstance(said, tuple) and said[0] == dp.E_STOPPED
+          and copy in text and "restore" in text and state == before
+          and not os.path.exists(state_dir)
+          and isinstance(free, tuple) and "not settled" not in free[1],
+          repr((said, state, free)))
+
+    unasked, touching = _touch_scan(_plugin_sources())
+    seen = set(touching)
+    stale = sorted(k for k in _TOUCH_EXEMPT if k not in seen)
+    planted = ("def go(t):\n    run(['worktree', 'remove', t])\n\n"
+               "def opened(c, s, t, tree):\n"
+               "    open_dispatch(c, s, t, 0, None, tree)\n\n"
+               "def phase(c, s, t):\n    open_dispatch(c, s, t, 0, None, None)\n\n"
+               "def asked(t):\n    if tree_unsettled(t)['unsettled'] is not False:\n"
+               "        return\n    run(['worktree', 'remove', '--force', t])\n\n"
+               "def inner(t):\n    run(('worktree', 'remove', t))\n\n"
+               "def outer(t):\n    stop = refuse_unsettled(t, 'T1', 'm', 'p')\n"
+               "    return stop or inner(t)\n")
+    fixture, _t = _touch_scan([("planted.py", planted)])
+    check("ut5 every function that removes a worktree or opens a writer session "
+          "in a tree reaches the one question first - itself, or every caller "
+          "it has - or is an exemption with its reason; a new verb doing either "
+          "without asking is named here. Pinned both ways on a planted module: "
+          "the unasked remover and dispatch are named, the asking one, the one "
+          "only reached through an asking caller and the dispatch into the "
+          "phase tree are not",
+          not unasked and not stale
+          and {("drive-phase.py", "remove_task_tree"),
+               ("drive-phase.py", "resume_writer"),
+               ("manage-worktrees.py", "do_task_remove"),
+               ("manage-worktrees.py", "do_remove")} <= seen
+          and sorted(fixture) == ["planted.py:go (worktree remove)",
+                                  "planted.py:opened (open_dispatch)"],
+          repr((unasked, stale, fixture)))
 
 
 def _autocrlf_repo(prefix, base_files, head_files):

@@ -105,6 +105,7 @@ import _evidence_io  # noqa: E402  (where a run's record lives - and WHEN this
 import _filed_returns as _fr  # noqa: E402  (where the phase driver keeps its state)
 import _live_copy  # noqa: E402  (which copy holds a phase in flight live - the one
 #                                 reader the panel and the report read it through too)
+import _worktrees  # noqa: E402  (refuse_unsettled: no remover offered over a move's copy)
 
 # --- the facts, under the names this command has always called them --------------
 # NOT copies. `_status_facts` owns every one of these; the aliases exist
@@ -2113,10 +2114,17 @@ def _kept_tree_saves(task_id, path):
             "git -C %s submodule foreach --recursive %s" % (word, _shell_word(push))]
 
 
-def _kept_tree_remedy(task_id, path, task_ids):
+def _kept_tree_remedy(task_id, path, task_ids, manifest_path, project):
     """`{"remedy", "warning", "saveFirst"}` for the kept tree recorded under
     `task_id`: the command that takes it down, and - for the forced one alone -
     what it destroys and the commands that save that first.
+
+    Asked first, whatever the key: a move's copy of the work, or its
+    tombstone, standing beside the tree (`_worktrees.refuse_unsettled`, the
+    refusal `task-remove` says too). Then no remover is offered - every one
+    deletes the admin directory the copy lives in - and the remedy is where
+    the work is and the restore verb for `task_id`, spelled against
+    `manifest_path` and `project`.
 
     --force goes only to a key a redo keeps an old tree under
     (`_is_aside_key`), which no task id has: `task-remove` refuses it, so it
@@ -2127,6 +2135,11 @@ def _kept_tree_remedy(task_id, path, task_ids):
     a forced remover, since a blocked task's tree is one a later wave adopts.
     Any other key gets git's remover unforced, which git refuses while the
     tree holds work or a submodule."""
+    held = _worktrees.refuse_unsettled(path, manifest_path, project,
+                                       task_id=str(task_id))
+    if held is not None:
+        return {"remedy": "%s; %s" % (held["error"], held["remedy"]),
+                "warning": None, "saveFirst": []}
     if _is_aside_key(task_id):
         return {"remedy": "git worktree remove --force %s" % (_shell_word(path),),
                 "warning": KEPT_TREE_FORCE,
@@ -2179,7 +2192,8 @@ def kept_trees_block(manifest_path, project, manifest=None):
         body, _problem = _fr.drive_state(os.path.dirname(drive), phase)
         for task_id, path in sorted((body.get("keptTrees") or {}).items()):
             if isinstance(path, str) and os.path.isdir(path):
-                trees.append(dict(_kept_tree_remedy(task_id, path, task_ids),
+                trees.append(dict(_kept_tree_remedy(task_id, path, task_ids,
+                                                    manifest_path, project),
                                   phase=phase, taskId=task_id, path=path))
     return {"trees": trees}
 

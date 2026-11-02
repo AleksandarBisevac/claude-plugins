@@ -2222,7 +2222,12 @@ def without_writer_way(name):
 
 def resume_writer(ctx, state, task, pending, tree=None):
     """`--answer resume` on a red gate: the failing lines go to the recorded
-    session as its prompt, in the next round, and no attempt is spent."""
+    session as its prompt, in the next round, and no attempt is spent - never
+    into a tree a move's copy stands beside (`unsettled_stop`), asked before
+    the prompt is written or the dispatch opened, as `dispatch` asks."""
+    stop = unsettled_stop(ctx, task, tree)
+    if stop is not None:
+        return stop
     writer, problem = writer_setting(ctx["config"])
     if problem or not writer:
         return _stopped(ctx, problem or "executor.%s is no longer set, so there "
@@ -4799,11 +4804,9 @@ def member_records(ctx, state):
 
 def restore_command(ctx, task_id):
     """The command that puts `task_id`'s work back from the copy beside its
-    tree: this script's `restore`, spelled to run as printed."""
-    return "python3 %s restore %s %s --project-dir %s" % (
-        shlex.quote(_loader.script_path("drive-phase.py")), shlex.quote(task_id),
-        shlex.quote(os.path.abspath(ctx["manifest"])),
-        shlex.quote(os.path.abspath(ctx["project"])))
+    tree: this script's `restore`, spelled by `_worktrees.restore_command`,
+    the one spelling every remover's refusal names too."""
+    return _worktrees.restore_command(task_id, ctx["manifest"], ctx["project"])
 
 
 def unsettled_said(ctx, task_id, tree, left, detail=None):
@@ -4824,8 +4827,10 @@ def unsettled_said(ctx, task_id, tree, left, detail=None):
 
 def unsettled_stop(ctx, task, tree):
     """None when `tree` - the task's own, or None for a step in the phase
-    tree - is settled, else the stop `unsettled_said` words. The one reading
-    every verb that touches a task tree takes (`_worktrees.tree_unsettled`).
+    tree - is settled, else the stop `unsettled_said` words: the reading
+    (`_worktrees.tree_unsettled`) the drive's dispatch, resume and integration
+    take before they act in a task tree. `ut5` in `tests/test__worktrees.py`
+    names a remover or a dispatch that reaches neither this nor that.
     A tree whose directory is gone is no stop here: nothing can run in it, the
     verb that would is the one to refuse it by name, and its retirement runs
     no removal that could reach the copy (`retire_member`)."""
@@ -4862,7 +4867,8 @@ def advance_member(ctx, state, task, tree):
     work the copy does not account for, a
     copy that would not come down, or one nobody can read - stops the drive:
     the tree is read again after the move through `_worktrees.tree_unsettled`,
-    the one reading every verb that touches a task tree takes, and the stop
+    the reading the drive's dispatch, resume, integration and retirement take
+    too, and the stop
     names where the work is and the verb that puts it back (`unsettled_said`)."""
     wave = state.get("wave") or {}
     base = (wave.get("bases") or {}).get(task["id"])
@@ -10907,13 +10913,18 @@ def restore_tree(ctx, task_id):
     """`(code, text)` for `restore`: the work of `task_id`'s wave tree put back
     from the copy a killed move left beside it (`_worktrees.restore_copy`),
     under the phase lock - released again unless a drive held it before. The
-    tree is the one the drive's state records for the task; the next `next`
-    measures what was put back."""
+    tree is the one the drive's state records for the task: its wave tree, or
+    the tree kept under that key (`keptTrees` - one a wave ended without
+    removing, or one a redo set aside, whose marker names the key), which is
+    what status names this verb for; the next `next` measures what was put
+    back."""
     state = read_state(ctx)
-    tree = ((state.get("wave") or {}).get("trees") or {}).get(task_id)
+    tree = (((state.get("wave") or {}).get("trees") or {}).get(task_id)
+            or (state.get("keptTrees") or {}).get(task_id))
     if not tree:
         return E_USAGE, ("%s %s: nothing restored - the drive's state records no "
-                         "wave tree of %s" % (PREFIX, ctx["phase"], task_id))
+                         "wave tree and no kept tree of %s"
+                         % (PREFIX, ctx["phase"], task_id))
     held_before = state.get("lock") == "taken"
     stop = take_lock(ctx, state)
     if stop is not None:

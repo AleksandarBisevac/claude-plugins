@@ -313,7 +313,8 @@ def do_add(git_root, manifest, phase_id, path=None, run=None):
                            % (why,))}
 
 
-def do_remove(git_root, manifest, phase_id, force=False, run=None, path=None):
+def do_remove(git_root, manifest, phase_id, force=False, run=None, path=None,
+              manifest_path=None, project=None):
     """(exit, answer) -- remove ONE worktree, our questions before git's.
 
     `--path` names a directory directly, and it is the ONLY way to remove a worktree
@@ -321,8 +322,11 @@ def do_remove(git_root, manifest, phase_id, force=False, run=None, path=None):
     the shape of consent: a human named this exact directory, once, in an argument.
     What the sweep may never do is DECIDE that for a worktree it did not start.
 
-    Every other refusal still applies on that path - dirty, locked, standing in it -
-    because those are about losing work rather than about whose work it is.
+    Every other refusal still applies on that path - a copy of a task's work
+    standing beside the tree (`_worktrees.refuse_unsettled`, forced or not), dirty,
+    locked, standing in it - because those are about losing work rather than about
+    whose work it is. `manifest_path` and `project` spell the restore verb the first
+    one names.
     """
     fn = _wt._runner(run)
     listing = _wt.list_worktrees(git_root, run=run)
@@ -379,6 +383,9 @@ def do_remove(git_root, manifest, phase_id, force=False, run=None, path=None):
                         "remedy": "git does NOT ask this - it removes the caller's "
                                   "own directory, silently, exit 0. Run it from "
                                   "somewhere else"}
+    held = _wt.refuse_unsettled(tree.get("path"), manifest_path, project, run=run)
+    if held is not None:
+        return E_FAIL, held
     dirt = _wt.dirtiness(tree.get("path"), run=run)
     if dirt["dirty"] is None and not force:
         return E_FAIL, {"error": "%s could not be described by git"
@@ -694,12 +701,15 @@ def adopt_task_tree(git_root, path, held, setup, setup_timeout, run=None):
     return provision(git_root, path, record, answer, setup, setup_timeout, run=run)
 
 
-def do_task_remove(git_root, manifest, task_id, force=False, run=None):
+def do_task_remove(git_root, manifest, task_id, force=False, run=None,
+                   manifest_path=None, project=None):
     """(exit, answer) -- remove the tree whose marker names THIS task.
 
     Found by marker, not by path: the path is a default a caller may have overridden,
     and a marker for another task is not ours to remove. The refusals are `remove`'s:
-    dirty, unreadable, and the tree the process stands in.
+    a copy of the work standing beside the tree (`_worktrees.refuse_unsettled`,
+    forced or not), dirty, unreadable, and the tree the process stands in.
+    `manifest_path` and `project` spell the restore verb that refusal names.
     """
     fn = _wt._runner(run)
     if _find_task(manifest, task_id)[1] is None:
@@ -728,6 +738,10 @@ def do_task_remove(git_root, manifest, task_id, force=False, run=None):
                         "remedy": "git does NOT ask this - it removes the caller's "
                                   "own directory, silently, exit 0. Run it from "
                                   "somewhere else"}
+    held = _wt.refuse_unsettled(tree.get("path"), manifest_path, project,
+                                task_id=str(task_id), run=run)
+    if held is not None:
+        return E_FAIL, held
     dirt = _wt.dirtiness(tree.get("path"), run=run)
     if dirt["dirty"] is None and not force:
         return E_FAIL, {"error": "%s could not be described by git" % (tree.get("path"),),
@@ -981,10 +995,12 @@ def main(argv, out=print):
                                    project=project, path=args.path, setup=setup)
     elif args.verb == "task-remove":
         code, answer = do_task_remove(git_root, manifest, args.task,
-                                      force=args.force)
+                                      force=args.force, manifest_path=args.manifest,
+                                      project=project)
     elif args.verb == "remove":
         code, answer = do_remove(git_root, manifest, args.phase,
-                                 force=args.force, path=args.path)
+                                 force=args.force, path=args.path,
+                                 manifest_path=args.manifest, project=project)
     else:
         code, answer = do_sweep(git_root, manifest,
                                 verbs or ("removeWorktrees", "deleteBranches"),
