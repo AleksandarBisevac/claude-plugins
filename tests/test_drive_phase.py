@@ -338,15 +338,21 @@ def _windows_stdout():
 # suite's own pid, which outlives the verb: a lock a verb run here left behind
 # reads as "held by this process" to the next verb run here, never as a holder
 # that died. So no case here may rely on a verb's pid being dead once the verb
-# returns; a case that needs a dead holder starts that verb as a process
-# (`_needs_process`), or writes the lock record itself. Nothing checks a case
+# returns; a case that needs a dead holder starts that verb as a process by
+# hand - `_needs_process` has no reading that sends it there - or writes the
+# lock record itself. Nothing checks a case
 # for this: a case that relied on it would read re-entry where a process of its
 # own reads a dead holder, and nothing here tells the two apart.
 def _needs_process(module=None):
     """True when a verb has to run as a process for the case to mean anything:
     a fixture planted a `sitecustomize` on `PYTHONPATH` (a pinned clock, a
     Windows-shaped stdout), which only a fresh interpreter imports, or the case
-    replaced `module`'s own `subprocess` to watch what crosses the boundary."""
+    replaced `module`'s own `subprocess` to watch what crosses the boundary.
+    It does not ask whether a case needs a lock holder that died: in-process,
+    every verb's holder pid is this suite's own and never dies, and nothing
+    here can tell that case from re-entry (the comment above says why), so
+    such a case starts its verb as a process itself or writes the lock record
+    it needs."""
     if _harness.planted_sitecustomize(os.environ):
         return True
     return (module is not None
@@ -4691,6 +4697,28 @@ def _same_moment_handback_cases(check, M, tick, tick_after):
                    "2026-10.b-drive.jsonl": [reopen(tick_after, handback)]})
     check("hr12 THE TWIN: a hand-back a second after the human's re-open is "
           "carried: %r" % (got,), got == (True, None, None))
+    # The two other readings `spent` words: the newest re-open is ONE row and
+    # it is the human's, and no re-open row of the task at all. Each wording
+    # is asserted whole enough that the three cannot stand in for each other.
+    got = carried({"2026-10.a-drive.jsonl": [reopen(tick, handback)],
+                   "2026-10.b-human.jsonl": [reopen(tick_after, human)]})
+    check("hr13 a human's re-open a second after the hand-back keeps the "
+          "findings out and names that re-open's reason as the newest: %r"
+          % (got,),
+          got[0] is False and got[2] is None
+          and "the newest re-open of it is a re-open for '%s'" % (human,)
+          in str(got[1])
+          and "same second" not in str(got[1])
+          and "absent from the journal" not in str(got[1]))
+    got = carried({"2026-10.one-writer.jsonl": [
+        {"ts": tick, "action": M.RISK_CONFIRMED, "target": PHASE,
+         "summary": (M.RISK_COVERED % (PHASE,)) + "P1.1"}]})
+    check("hr14 a journal holding no re-open of the task keeps the findings "
+          "out and says the re-open is absent from the journal: %r" % (got,),
+          got[0] is False and got[2] is None
+          and "the newest re-open of it is absent from the journal"
+          in str(got[1])
+          and "a re-open for" not in str(got[1]))
 
 
 def _owner_types(root, prompt):
@@ -11977,18 +12005,25 @@ def _reopened_risk_verb_cases(check, M):
             "reopen", "P1.1", mpath, "--project-dir", root, "--reason",
             "the human wants P1.1 done again"])
     after = sorted(M.confirmed_in_advance({"project": root}, PHASE))
-    tied = [(r.get("ts"), r.get("_file")) for r in _journal_io.read_all(root)
+    tied = [(r.get("ts"), r.get("_file"), r.get("action"))
+            for r in _journal_io.read_all(root)
             if r.get("action") in (M.RISK_CONFIRMED, M.TASK_REOPEN)]
     risk = {"risk": "high", "confirmed": False, "standing": lambda: None}
     turn = (M._advance_plan("risk", dict(risk, inAdvance="P1.1" in before)),
             M._advance_plan("risk", dict(risk, inAdvance="P1.1" in after)))
+    # The precondition names WHICH row sorts first, not only that two files
+    # differ: the reopen's file must sort before the confirmation's, or a
+    # replay in file-name order would read the reopen as the older row and
+    # the case would pass on the reading it exists to refuse.
     check("hr3 a high-risk task reopened after the confirmation, in the same "
           "second from another writer whose file sorts first, stops at the "
-          "high-risk decision on its second run: %r"
+          "high-risk decision on its second run (the first row read is the "
+          "reopen, the second the confirmation): %r"
           % ((confirmed[0], reopened, before, after, tied, turn),),
           confirmed[0] == 0 and reopened[0] == 0 and before == ["P1.1"]
           and after == [] and len(tied) == 2 and tied[0][0] == tied[1][0]
           and tied[0][1] < tied[1][1]
+          and tied[0][2] == M.TASK_REOPEN and tied[1][2] == M.RISK_CONFIRMED
           and turn == (("in-advance", None), ("decision", None)))
 
 
@@ -15731,15 +15766,22 @@ def _template_head(node):
     return ""
 
 
+# A function, a lambda and a class each hold names of their own; a comprehension
+# is read as part of the scope around it.
+_NAME_SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
+
+
 def _scope_nodes(scope):
     """The nodes of one function (or of the module's own statements), not those
-    of a function defined inside it: a name in two functions is two lists."""
+    of a function defined inside it: a name in two functions is two lists. The
+    nested scope's own node is yielded, its body is not, so every node belongs
+    to exactly one scope - a nested function's decorators and default values
+    to the nested one, one scope off from where Python evaluates them."""
     stack = list(ast.iter_child_nodes(scope))
     while stack:
         node = stack.pop()
         yield node
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
-                                 ast.Lambda, ast.ClassDef)):
+        if not isinstance(node, _NAME_SCOPES):
             stack.extend(ast.iter_child_nodes(node))
 
 
@@ -16482,19 +16524,50 @@ def _names_git(node, bound=()):
     return False
 
 
+def _local_names(scope, held):
+    """The names `scope` makes its own: every plain assignment target, and a
+    function's or lambda's parameters. Such a name hides the one of that
+    spelling outside, whatever it is assigned from."""
+    names = set(t.id for node in held if isinstance(node, ast.Assign)
+                for t in node.targets if isinstance(t, ast.Name))
+    if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+        spec = scope.args
+        names |= set(a.arg for a in (list(getattr(spec, "posonlyargs", []))
+                                     + spec.args + spec.kwonlyargs))
+        names |= set(a.arg for a in (spec.vararg, spec.kwarg) if a is not None)
+    return names
+
+
 def _git_bound_names(tree):
-    """Every name the module assigns from an expression spelling git, followed
-    through chains of assignment - so `cmd = ["git", "init"]` and a second
-    name copied from it are both read as git."""
-    bound = set()
-    while True:
-        more = set(t.id for node in ast.walk(tree)
-                   if isinstance(node, ast.Assign) and _names_git(node.value, bound)
-                   for t in node.targets
-                   if isinstance(t, ast.Name) and t.id not in bound)
-        if not more:
-            return bound
-        bound |= more
+    """`{scope node: names}` - for the module and every function, lambda and
+    class in it, the names a call in that scope reads as git: those it assigns
+    from an expression spelling git, followed through chains of assignment
+    (`cmd = ["git", "init"]` and a second name copied from it), and those it
+    sees from the scopes around it and does not make its own. A local that
+    shares a name with a git-bound one elsewhere is read by its own
+    assignment, so a binding does not leak from one function into another.
+    A class body's names are not seen by the functions inside it."""
+    found = {}
+    todo = [(tree, frozenset())]
+    while todo:
+        scope, outer = todo.pop()
+        held = list(_scope_nodes(scope))
+        seen = set(outer) - _local_names(scope, held)
+        bound = set()
+        while True:
+            more = set(t.id for node in held
+                       if isinstance(node, ast.Assign)
+                       and _names_git(node.value, seen | bound)
+                       for t in node.targets
+                       if isinstance(t, ast.Name) and t.id not in bound)
+            if not more:
+                break
+            bound |= more
+        found[scope] = frozenset(seen | bound)
+        inner = outer if isinstance(scope, ast.ClassDef) else found[scope]
+        todo.extend((node, inner) for node in held
+                    if isinstance(node, _NAME_SCOPES))
+    return found
 
 
 def _subprocess_spellings(tree):
@@ -16530,18 +16603,18 @@ def bare_git_calls(source):
     `check` reads its own exit and is not one."""
     tree = ast.parse(source)
     modules, direct = _subprocess_spellings(tree)
-    bound = _git_bound_names(tree)
     found = []
-    for node in ast.walk(tree):
-        if not (isinstance(node, ast.Call) and node.args):
-            continue
-        runner = _runner_of(node.func, modules, direct)
-        checked = runner in ("check_call", "check_output") or (
-            runner == "run"
-            and any(kw.arg == "check" and isinstance(kw.value, ast.Constant)
-                    and kw.value.value is True for kw in node.keywords))
-        if checked and _names_git(node.args[0], bound):
-            found.append(node.lineno)
+    for scope, bound in _git_bound_names(tree).items():
+        for node in _scope_nodes(scope):
+            if not (isinstance(node, ast.Call) and node.args):
+                continue
+            runner = _runner_of(node.func, modules, direct)
+            checked = runner in ("check_call", "check_output") or (
+                runner == "run"
+                and any(kw.arg == "check" and isinstance(kw.value, ast.Constant)
+                        and kw.value.value is True for kw in node.keywords))
+            if checked and _names_git(node.args[0], bound):
+                found.append(node.lineno)
     return sorted(found)
 
 
@@ -16634,6 +16707,34 @@ def _fixture_git_case(check, preferred):
           "git call, a checked call of anything else and the helper are not: %r"
           % (bare_git_calls(twin),),
           bare_git_calls(twin) == [1, 2])
+    # A name bound to git in one function is not git in another that assigns
+    # it from something else, nor in a name copied from that local; a name the
+    # module binds is still git in a function that only reads it, and a
+    # parameter hides it. The module-wide reading reports lines 8, 16 and 18
+    # too.
+    scoped = ("import subprocess, sys\n"
+              "def builds():\n"
+              "    cmd = ['git', 'init']\n"
+              "    subprocess.run(cmd, check=True)\n"
+              "def runs_python():\n"
+              "    cmd = [sys.executable, 'x.py']\n"
+              "    again = cmd\n"
+              "    subprocess.run(again, check=True)\n"
+              "_ini = ['git', 'init', '-q']\n"
+              "def reads_module():\n"
+              "    subprocess.run(_ini, check=True)\n"
+              "class Holder(object):\n"
+              "    cmd = ['git', 'status']\n"
+              "    def method(self):\n"
+              "        cmd = [sys.executable, 'y.py']\n"
+              "        subprocess.run(cmd, check=True)\n"
+              "def hides(_ini):\n"
+              "    subprocess.run(_ini, check=True)\n")
+    check("fg2 a local named like a git-bound name in another scope is read "
+          "by its own assignment and does not cascade, while a module-level "
+          "git name a function only reads is still git: %r"
+          % (bare_git_calls(scoped),),
+          bare_git_calls(scoped) == [4, 11])
 
 
 # --- a phase brief past the reader's budget ------------------------------------
@@ -17406,6 +17507,39 @@ def _template_cases(check):
           "before it nor one copied after it from the same template: %r"
           % (seen,),
           seen == [(True, b"v0\n", "", True)] * 2)
+    _template_reuse_case(check)
+
+
+def _template_reuse_case(check):
+    """A second fixture with the arguments of one already built is a copy of
+    that one's template, not a second build: the table gains one entry for
+    the first call and none for the second, and the build ran once. The gate
+    is one no other fixture names, so the first call is a build in whichever
+    stage process runs this block."""
+    global _build_repo
+    real, builds = _build_repo, []
+
+    def counted(where, files):
+        builds.append(where)
+        return real(where, files)
+    gate = ("fx4-only-this-case-names-this-gate",)
+    sizes = [len(_REPO_TEMPLATES)]
+    _build_repo = counted
+    try:
+        root_1, _m = _repo("tmpl-reuse-1", task_ids=TASKS[:1], gate=gate)
+        sizes.append(len(_REPO_TEMPLATES))
+        root_2, _m = _repo("tmpl-reuse-2", task_ids=TASKS[:1], gate=gate)
+        sizes.append(len(_REPO_TEMPLATES))
+    finally:
+        _build_repo = real
+    heads = [_git_out(where, "rev-parse", "HEAD^{tree}").strip()
+             for where in (root_1, root_2)]
+    check("fx4 a second fixture built with the arguments of the first reuses "
+          "its template: the table grows by one on the first call and not on "
+          "the second, the build runs once, and both copies commit one tree "
+          "(sizes, builds, trees): %r" % ((sizes, len(builds), heads),),
+          sizes[1] == sizes[0] + 1 and sizes[2] == sizes[1]
+          and len(builds) == 1 and heads[0] and heads[0] == heads[1])
 
 
 def _git_head_cases(check):

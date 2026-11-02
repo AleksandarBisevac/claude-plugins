@@ -1075,7 +1075,7 @@
     {
       "id": "P155.13",
       "title": "The red-first helper lays a test-support module over HEAD only in the run that shows the fix, and binds case ids to the run that printed them",
-      "status": "in_progress",
+      "status": "done",
       "description": "Closes F801, F814, F829, F813 (open half), F815 - one class: what is laid over HEAD and which run the labels are read from. Evidence at fa1b0c81: stamp-verification.py:4444 shown falls back to the task-held run when run[\"fix\"] is None; :4410-4418 makes a fix run only when verdict1 is red AND baseline_problem is None; :961-965 _is_test_path counts any file under a test dir; :3248 lays the whole list. _filed_returns.is_test_path('tests/_harness.py') is True, so _inline_suite_discipline (audit-task.py:3474-3495) leaves the F813 shape at tdd. _proc_group.py:279 docstring vs readers drive-phase.py:8585, stamp-verification.py:3351, run-test-gate.py:3138.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -1110,30 +1110,52 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8f896d6f5d30",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "stamp-verification.py: (1) a declared test-support module HEAD has and the task changed (support_at_head: _filed_returns.is_test_support_path, present at HEAD, changed_source, not an inline suite) is held at HEAD's copy in a re-run of the task's run made only when the task's run with it laid over was GREEN (tag task-support); the fix and --introduces second runs lay it over as before. A support module new at HEAD is never held (the suite would die importing it). Design choice, stated against the brief's wording 'only in the fix run': holding every support module in the first task run regressed the shape where a task adds a helper/fixture to an existing support module and its red is the implementation's (sr226 goes red under that mutation, m3) - e.g. a pytest conftest fixture would turn an assertion red into a fixture-not-found error; the re-run mirrors the existing task-held re-run for inline pulled-in code. (2) printed labels now come from printed_run(): the fix run, else the --introduces second run, else the task's own run under its tag; the payload gains printedFrom (which run) and supportAtHead (what was held). (3) support_clause() rides every basis and the not-red note when a module was held; the text output prints the held modules. (4) sources include support modules so --derive-introduces reads the symbols they add. _filed_returns.py: new is_test_support_path (source extension, inside a test dir, no test name). audit-task.py: _inline_suite_shape treats a tests.add list of only support modules as an inline suite (default regression with the same sentence as tools/x.py inline suites); an explicit --tests-mode tdd over that shape stays tdd and gets a note on the task plus a printed NOTE line (_inline_suite_tdd_note). Corrected two docstrings (_bug_fix_discipline, _inline_suite_discipline) that claimed the red-first helper grades with _filed_returns.is_test_path - it has its own _is_test_path. _proc_group.stop_and_drain docstring now names how each reader words an unconfirmed teardown (run_lint_probe and _run_in append ' (not confirmed)', run-test-gate _shell records teardown: unconfirmed). PLUGIN-BUILD-GUIDE.md: the red section describes the support re-run, printed/printedFrom, and the deadline paragraph lists the new run. Tests: stage sr-support (sr223-sr226) in tests/test_stamp_verification.py, is6-is8 in tests/test_audit_task.py is-block, tsp1 (tsp-block) in tests/test__filed_returns.py. First red on unfixed code: sr223 FAIL (exit 1 'not red', printed from=None), sr225 FAIL (printed=None), is6 FAIL (mode tdd), is8 FAIL (no note); sr224 passed as the allow case. Gate: `python3 tools/sweep-selftests.py tests/test_stamp_verification.py tests/test_audit_task.py tests/test__filed_returns.py tests/test__proc_group.py tools/_suite.py` exit 0, '5/5 files ok, 1776 cases'. Extra static checks (not gate commands): ruff check on the 7 touched .py files exit 0, vermin -t=3.8- exit 0. Mutation probe: <scratchpad>/p15513/mutations.py, usage `python3 mutations.py <checkout> [row-id ...]` (copies tracked+untracked-not-ignored files into a temp dir, never writes the checkout); run 1 exit 0, 11/11 rows KILLED and clean on restore (probe-run1.txt beside it). Left, out of scope: plugins/audit/reference/verbs-in-full.md:427 carries the same false 'the one the red-first helper grades with' claim (not a declared file); scope with an explicit --tests-mode tdd over an inline suite is not told (add only, as the task asks); the sweep-shaped command's payload printed is None (pre-existing, printed_labels reads no sweep output), so binding against a sweep command is unaffected by this change. Dependants: stamp-verification.py importers (tests/test__claude_home.py, test__filed_returns.py, test__proc_group.py, test_audit_lookup.py, test_audit_task.py, test_stamp_verification.py) still correct - names only added (support_at_head, support_clause, printed_run), none removed or re-signed; payload keys added, printed keeps its shape (list or None), so drive-phase.py's readers of payload['printed'] are unchanged and now get the second run's labels on the introduced route; _binds/_build_throwaway/_decisive_line/_definition untouched; the suite's _judged stand-in has no slot for tag task-support, and no judged fixture reaches it (364/364 stamp cases pass); tools/affected.py and PLUGIN-BUILD-GUIDE.md path readers unaffected. _proc_group.py: docstring only - every importer (derive-phase-gate, drive-phase, run-agent-session, run-test-gate, stamp-verification, audit-task, tests) unaffected; _gone/_in_system_dir/_reaped_group_empty/_kill untouched. audit-task.py: _inline_suite_discipline keeps signature and return shape and answers differently only for a tests.add of support modules alone; importers (full-gate, run-test-gate, tests) and the names they use unaffected. _filed_returns.py: is_test_support_path added, is_test_path unchanged, so its 25 readers are unaffected. tests/test_stamp_verification.py: new block sr-support has no figure in .github/sweep-costs.json and is weighed by the suite's figure over its blocks; _crlf_cases/_scan/_worktrees untouched; sweep-selftests/verify.sh path readers unaffected. tests/test_audit_task.py: only is-block grew; _attempt_cases/_close_evidence_cases/_held_cases/_remedies_pass untouched. tests/test__filed_returns.py: new tsp-block; _cases/_selftest/_entry untouched, so tools/affected.py, tools/prove-gates.py and tools/lints/_refs.py still read it. tests/test__proc_group.py: not edited, still passes (39 cases). PLUGIN-BUILD-GUIDE.md: basename readers unaffected; its stop_and_drain paragraph already said what the corrected docstring now says.",
+        "descriptive": "The red-first helper now proves a task whose work lives in a test-support module and binds case ids to the run that printed them; add tells a tdd task whose only test file is a tests/ support module."
       },
       "startedAt": "2026-11-02T12:52:07Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-02T13:21:04Z",
+      "verifiedBy": [
+        "sr223: a helper added to an existing tests/ support module plus a suite case calling it is proved red at HEAD and green with the work; the re-run held the module at HEAD's copy, the basis says so, and printed/printedFrom come from the fix run",
+        "sr224 (allow): a support module NEW at HEAD is still laid over in the red run, so the red is the case's assertion, not an import error",
+        "sr225: an --introduces proof whose HEAD run crashes before any case binds every tests.add id; printed comes from the second run and printedFrom says 'second'",
+        "sr226 (allow): a support module HEAD has, whose new helper the case needs while the red is the implementation's, proves with nothing held",
+        "is6: add with only tests/_harness.py in tests.add defaults to regression with the inline note",
+        "is7 (allow): tests/_harness.py beside tests/test_thing.py stays tdd with no inline note",
+        "is8: an explicit --tests-mode tdd over tests/_harness.py stays tdd and is told so (task note and printed NOTE)",
+        "tsp1 (tests/test__filed_returns.py, beyond tests.add): is_test_support_path's table - support vs test-named, data, outside a test dir, bare dir"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-11-02T13:20:59Z.690edc",
         "status": "passed",
         "at": "2026-11-02T13:20:59Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "8f896d6f5d30",
+        "at": "2026-11-02T13:21:04Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-02T13:14:28Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_stamp_verification.py tests/test_audit_task.py tests/test__filed_returns.py tests/test__proc_group.py tools/_suite.py` in a throwaway tree at HEAD exited 1 with 5 of 364 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - is6 (house FAIL), is8 (house FAIL), sr223 (house FAIL), sr226 (house FAIL), sr225 (house FAIL): SELFTEST FAILED: 361/364 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P155.14",
       "title": "The drive suite's own debts: template reuse asserted, hr3 names which row sits first, the two re-open wordings have a case, _git_bound_names is scope-aware, the runner says what it does not exercise, ta9's red inside the throwaway tree is explained",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Closes P143-R12, P143-R19, P143-R20, P143-R2 (residual), F820 (C), F823. Evidence at fa1b0c81: tests/test_drive_phase.py:189/209/213 (_REPO_TEMPLATES unasserted), :11682 (tied compares files only), drive-phase.py:8205/:8210 strings with 0 hits in tests/, :15940-15952 (_git_bound_names walks the whole module), :345-353 (_needs_process says nothing about holder liveness), :8100 (ta9). Reproduce ta9 under the helper's throwaway tree first; if the product side is wrong, record the red by hand and say so.",
       "files": [
         "tests/test_drive_phase.py",
         "plugins/audit/scripts/governance/stamp-verification.py",
-        "tests/test_stamp_verification.py"
+        "tests/test_stamp_verification.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "regression",
@@ -1154,16 +1176,22 @@
         "P155.13"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-02T13:21:18Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-02T13:41:20Z.b96754",
+        "status": "passed",
+        "at": "2026-11-02T13:41:20Z"
+      }
     },
     {
       "id": "P155.15",
@@ -1212,6 +1240,40 @@
       "completedAt": null,
       "verifiedBy": [],
       "bugId": "BUG-31-z9j"
+    },
+    {
+      "id": "P155.16-gfj",
+      "title": "A kept task tree's refusal names the marker's own task id before the reason is cut, so a long temp or project path never hides which task the marker names",
+      "status": "pending",
+      "description": "remove_task_tree in drive-phase.py (near line 5186) cuts the marker's reason to 200 bytes, and that reason starts with the marker file's absolute path. Under a long TMPDIR or project path the cut falls before \"for task 'P1.9'\", so the kept-tree line loses the task name. This is why tests/test_drive_phase.py ta9 is red inside the red-first helper's throwaway tree, which forced could-not-prove on several P155 tasks. Fix: put the marker's own task id ahead of the cut reason (\"its marker names P1.9, not P1.1 (...)\"). A proposed patch, already proven on a scratch copy (ta9 FAIL to PASS under a long TMPDIR), is at <scratchpad>/p15514/product-fix.py in the orchestrator's session scratchpad. Acceptance: ta9 passes under a long TMPDIR, and the red-first helper's run over tests/test_drive_phase.py at the fixed head reports HEAD's own tests green; quote that verdict line.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tools/_suite.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "reviewPerTask": "signals",
