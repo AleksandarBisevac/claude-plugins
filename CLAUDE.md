@@ -207,7 +207,7 @@ python3 tools/bench-hooks.py --gate        # the hook import budget; no flag pri
 python3 tools/measure-context.py --gate    # what each pipeline entry makes the main loop read, vs its ceiling
 python3 tools/check-git-pipeline.py        # the write half, against a REAL git repo
 npx vitest run                             # the JavaScript unit tests
-ruff check plugins/audit tools tests
+ruff check plugins/audit tools tests .claude/hooks   # verify.sh's "ruff" paths; nothing holds this copy to them
 vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints
 python3 tools/check-rendered-artifacts.py  # vs a fresh render AND vs HEAD; verify.sh's
                                            # plain run passes --before-commit (the render
