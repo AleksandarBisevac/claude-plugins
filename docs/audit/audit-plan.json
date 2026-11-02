@@ -994,6 +994,12 @@
       "title": "The release tier is green again: a large plan's report prints, and reach-diff runs on Windows",
       "status": "done",
       "shard": "phases/P154.json"
+    },
+    {
+      "id": "P155",
+      "title": "3.8.0 low batch",
+      "status": "in_progress",
+      "shard": "phases/P155.json"
     }
   ],
   "fileIndex": {
@@ -1014,7 +1020,9 @@
       "P153.17-34e",
       "P153.18-34e",
       "P153.19-34e",
-      "P153.20-34e"
+      "P153.20-34e",
+      "P155.3",
+      "P155.5"
     ],
     ".claude/hooks/require-claim-block.py": [
       "P37.2",
@@ -1109,7 +1117,9 @@
       "P151.3-3z1",
       "P151.4-3z1",
       "P151.5-3z1",
-      "P151.7-3z1"
+      "P151.7-3z1",
+      "P155.5",
+      "P155.9"
     ],
     ".gitignore": [
       "P4.4",
@@ -1399,7 +1409,8 @@
       "P129.8-izt",
       "P130.8",
       "P131.1",
-      "P138.2"
+      "P138.2",
+      "P155.11"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -1483,7 +1494,9 @@
       "P152.22-6jb",
       "P152.23-6jb",
       "P152.30-6jb",
-      "P152.31-6jb"
+      "P152.31-6jb",
+      "P155.7",
+      "P155.9"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -1825,7 +1838,15 @@
       "P152.16-6jb",
       "P152.17-6jb",
       "P152.24-6jb",
-      "P154.3-mkf"
+      "P154.3-mkf",
+      "P155.1",
+      "P155.2",
+      "P155.3",
+      "P155.8",
+      "P155.10",
+      "P155.12",
+      "P155.13",
+      "P155.15"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1855,7 +1876,8 @@
       "P124.8",
       "P125.95-0h5",
       "P128.34-0h5",
-      "P148.15-xpz"
+      "P148.15-xpz",
+      "P155.6"
     ],
     "SECURITY.md": [
       "P2.2",
@@ -2741,7 +2763,8 @@
       "P130.16-ywo",
       "P130.39-ywo",
       "P153.6",
-      "P153.10-34e"
+      "P153.10-34e",
+      "P155.6"
     ],
     "plugins/audit/commands/usage.md": [
       "P26.2",
@@ -2882,7 +2905,9 @@
       "P153.17-34e",
       "P153.18-34e",
       "P153.19-34e",
-      "P153.20-34e"
+      "P153.20-34e",
+      "P155.2",
+      "P155.8"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -3173,7 +3198,8 @@
       "P130.34-ywo",
       "P130.39-ywo",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P155.8"
     ],
     "plugins/audit/reference/execute-task.md": [
       "P55.21",
@@ -3371,7 +3397,8 @@
       "P131.3",
       "P131.5",
       "P142.1",
-      "P148.5"
+      "P148.5",
+      "P155.3"
     ],
     "plugins/audit/reference/phase-signoff.md": [
       "P61.5",
@@ -3859,7 +3886,8 @@
       "P148.5",
       "P149.1",
       "P143.7-z9j",
-      "P143.10-z9j"
+      "P143.10-z9j",
+      "P155.12"
     ],
     "plugins/audit/scripts/git/close-phase.py": [
       "P18.3",
@@ -4203,7 +4231,9 @@
       "P148.6",
       "P148.16-xpz",
       "P143.10-z9j",
-      "P143.11-z9j"
+      "P143.11-z9j",
+      "P155.1",
+      "P155.11"
     ],
     "plugins/audit/scripts/governance/_tree_stamp.py": [
       "P43.4",
@@ -4364,7 +4394,9 @@
       "P142.19-6yq",
       "P142.30-6yq",
       "P142.39-6yq",
-      "P148.6"
+      "P148.6",
+      "P155.8",
+      "P155.11"
     ],
     "plugins/audit/scripts/governance/record-risk-confirmation.py": [
       "P42.6",
@@ -4470,7 +4502,8 @@
       "P148.19-xpz",
       "P149.6-hwg",
       "P149.8-hwg",
-      "P149.9-hwg"
+      "P149.9-hwg",
+      "P155.15"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -4552,7 +4585,12 @@
       "P149.3-hwg",
       "P149.9-hwg",
       "P149.10-hwg",
-      "P143.9-z9j"
+      "P143.9-z9j",
+      "P155.1",
+      "P155.2",
+      "P155.3",
+      "P155.13",
+      "P155.14"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -5057,7 +5095,10 @@
       "P153.6",
       "P153.8-34e",
       "P153.9-34e",
-      "P153.11-34e"
+      "P153.11-34e",
+      "P155.6",
+      "P155.10",
+      "P155.13"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -5610,7 +5651,8 @@
       "P130.5",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P155.1"
     ],
     "plugins/audit/scripts/status/_doctor_trail.py": [
       "P36.9",
@@ -5796,7 +5838,8 @@
       "P132.4",
       "P138.3-myr",
       "P148.7",
-      "P153.6"
+      "P153.6",
+      "P155.1"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -8257,7 +8300,8 @@
       "P125.140-0h5",
       "P130.9",
       "P131.2",
-      "P154.3-mkf"
+      "P154.3-mkf",
+      "P155.9"
     ],
     "tools/gate-parity.py": [
       "P19.2",
@@ -8459,7 +8503,10 @@
       "P153.19-34e",
       "P152.8",
       "P152.9",
-      "P152.10"
+      "P152.10",
+      "P155.1",
+      "P155.2",
+      "P155.3"
     ],
     "tools/redfirst.sh": [
       "P55.13",
@@ -8519,7 +8566,10 @@
       "P148.13-xpz",
       "P143.8-z9j",
       "P151.2",
-      "P151.4-3z1"
+      "P151.4-3z1",
+      "P155.1",
+      "P155.2",
+      "P155.3"
     ],
     "tools/ui-tests/evidence-badge.test.mjs": [
       "P32.7",
@@ -8578,7 +8628,9 @@
       "P143.3-6yq",
       "P143.12-z9j",
       "P151.2",
-      "P154.3-mkf"
+      "P154.3-mkf",
+      "P155.5",
+      "P155.9"
     ],
     "plugins/audit/scripts/governance/_gate_derive.py": [
       "P79.2",
@@ -8602,7 +8654,8 @@
       "P148.18-xpz",
       "P148.21-xpz",
       "P148.23-xpz",
-      "P149.4-hwg"
+      "P149.4-hwg",
+      "P155.15"
     ],
     "plugins/audit/tests/test__gate_derive.py": [
       "P79.2",
@@ -8865,7 +8918,8 @@
       "P131.1",
       "P131.2",
       "P149.3-hwg",
-      "P149.9-hwg"
+      "P149.9-hwg",
+      "P155.13"
     ],
     "plugins/audit/tests/test__proc_group.py": [
       "P77.3-6u9",
@@ -10451,7 +10505,10 @@
       "P152.1",
       "P152.4",
       "P152.13-6jb",
-      "P152.24-6jb"
+      "P152.24-6jb",
+      "P155.3",
+      "P155.8",
+      "P155.12"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -10629,7 +10686,8 @@
       "P131.1",
       "P131.2",
       "P131.6",
-      "P132.3"
+      "P132.3",
+      "P155.13"
     ],
     "plugins/audit/tests/test__filed_returns.py": [
       "P118.3",
@@ -11113,7 +11171,8 @@
       "P152.3",
       "P152.4",
       "P152.11",
-      "P152.13-6jb"
+      "P152.13-6jb",
+      "P155.5"
     ],
     "docs/audit/phases/P127.json": [
       "P127.8-bgr"
@@ -11133,7 +11192,8 @@
       "P131.2",
       "P143.1-6yq",
       "P143.2-6yq",
-      "P153.5"
+      "P153.5",
+      "P155.15"
     ],
     "plugins/audit/tests/test__affected_tests.py": [
       "P125.8",
@@ -11162,7 +11222,8 @@
       "P140.1",
       "P140.2-ohy",
       "P148.8",
-      "P148.13-xpz"
+      "P148.13-xpz",
+      "P155.7"
     ],
     "plugins/audit/hooks/hold-handback.py": [
       "P128.6-0h5"
@@ -11177,7 +11238,8 @@
       "P128.8-0h5"
     ],
     "plugins/audit/reference/config.md": [
-      "P128.2-0h5"
+      "P128.2-0h5",
+      "P155.11"
     ],
     "plugins/audit/tests/test__usage_routing.py": [
       "P125.2",
@@ -11364,7 +11426,10 @@
       "P144.6-ttw",
       "P144.7-ttw",
       "P148.5",
-      "P152.9"
+      "P152.9",
+      "P155.1",
+      "P155.2",
+      "P155.3"
     ],
     "tools/lints/_refs.py": [
       "P130.8",
@@ -11527,7 +11592,10 @@
       "P148.13-xpz",
       "P152.5",
       "P152.16-6jb",
-      "P152.17-6jb"
+      "P152.17-6jb",
+      "P155.1",
+      "P155.2",
+      "P155.3"
     ],
     "tests/fixtures/pricing-page-2026-10-10.md": [
       "P131.1"
@@ -11557,7 +11625,11 @@
       "P131.1",
       "P143.1-6yq",
       "P143.2-6yq",
-      "P153.5"
+      "P153.5",
+      "P155.1",
+      "P155.2",
+      "P155.3",
+      "P155.15"
     ],
     "tests/test__areas.py": [
       "P131.1",
@@ -11592,7 +11664,9 @@
       "P153.17-34e",
       "P153.18-34e",
       "P153.19-34e",
-      "P153.20-34e"
+      "P153.20-34e",
+      "P155.2",
+      "P155.8"
     ],
     "tests/test__config_rules.py": [
       "P131.1",
@@ -11611,7 +11685,10 @@
       "P131.19-dau",
       "P142.8",
       "P142.1",
-      "P152.9"
+      "P152.9",
+      "P155.1",
+      "P155.2",
+      "P155.3"
     ],
     "tests/test__doctor_ado.py": [
       "P131.1"
@@ -11637,12 +11714,16 @@
     "tests/test__doctor_setup.py": [
       "P131.1",
       "P109.2",
-      "P86.1"
+      "P86.1",
+      "P155.1"
     ],
     "tests/test__doctor_trail.py": [
       "P131.1",
       "P132.5-5mm",
-      "P148.14-xpz"
+      "P148.14-xpz",
+      "P155.1",
+      "P155.2",
+      "P155.3"
     ],
     "tests/test__evidence_io.py": [
       "P131.1",
@@ -11661,7 +11742,8 @@
     "tests/test__filed_returns.py": [
       "P131.1",
       "P131.6",
-      "P132.3"
+      "P132.3",
+      "P155.13"
     ],
     "tests/test__fmt.py": [
       "P131.1"
@@ -11858,7 +11940,10 @@
       "P131.1"
     ],
     "tests/test__runner_collects.py": [
-      "P131.1"
+      "P131.1",
+      "P155.1",
+      "P155.2",
+      "P155.3"
     ],
     "tests/test__runner_output.py": [
       "P131.1",
@@ -11883,7 +11968,9 @@
       "P148.16-xpz",
       "P148.20-xpz",
       "P143.10-z9j",
-      "P143.11-z9j"
+      "P143.11-z9j",
+      "P155.1",
+      "P155.11"
     ],
     "tests/test__status_facts.py": [
       "P131.1",
@@ -11899,7 +11986,8 @@
     "tests/test__tree_stamp.py": [
       "P131.1",
       "P143.10-z9j",
-      "P143.16-z9j"
+      "P143.16-z9j",
+      "P155.4"
     ],
     "tests/test__ui_theme.py": [
       "P131.1",
@@ -11958,7 +12046,8 @@
       "P131.1",
       "P142.18-6yq",
       "P142.20-6yq",
-      "P148.14-xpz"
+      "P148.14-xpz",
+      "P155.12"
     ],
     "tests/test_ado_connect.py": [
       "P131.1"
@@ -11989,7 +12078,8 @@
       "P138.3-myr",
       "P148.7",
       "P153.6",
-      "P152.25-6jb"
+      "P152.25-6jb",
+      "P155.1"
     ],
     "tests/test_audit_status.py": [
       "P131.1",
@@ -12040,7 +12130,10 @@
       "P152.7",
       "P152.16-6jb",
       "P152.17-6jb",
-      "P152.28-6jb"
+      "P152.28-6jb",
+      "P155.6",
+      "P155.10",
+      "P155.13"
     ],
     "tests/test_audit_usage.py": [
       "P131.1"
@@ -12074,11 +12167,14 @@
       "P142.39-6yq",
       "P148.6",
       "P148.16-xpz",
-      "P143.1-6yq"
+      "P143.1-6yq",
+      "P155.8",
+      "P155.11"
     ],
     "tests/test_derive_phase_gate.py": [
       "P131.1",
-      "P148.23-xpz"
+      "P148.23-xpz",
+      "P155.15"
     ],
     "tests/test_detect_plan_skip.py": [
       "P131.1",
@@ -12154,7 +12250,13 @@
       "P152.24-6jb",
       "P152.25-6jb",
       "P152.26-6jb",
-      "P152.27-6jb"
+      "P152.27-6jb",
+      "P155.1",
+      "P155.2",
+      "P155.3",
+      "P155.8",
+      "P155.12",
+      "P155.14"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -12286,7 +12388,8 @@
       "P131.1"
     ],
     "tests/test_require_plan.py": [
-      "P131.1"
+      "P131.1",
+      "P155.8"
     ],
     "tests/test_resolve_ado_parent.py": [
       "P131.1"
@@ -12309,7 +12412,8 @@
       "P148.19-xpz",
       "P149.6-hwg",
       "P149.8-hwg",
-      "P149.9-hwg"
+      "P149.9-hwg",
+      "P155.15"
     ],
     "tests/test_set_priority.py": [
       "P131.1"
@@ -12342,7 +12446,12 @@
       "P152.19-6jb",
       "P152.20-6jb",
       "P152.29-6jb",
-      "P152.33-6jb"
+      "P152.33-6jb",
+      "P155.1",
+      "P155.2",
+      "P155.3",
+      "P155.13",
+      "P155.14"
     ],
     "tests/test_usage_ledger.py": [
       "P131.1",
@@ -12463,13 +12572,15 @@
     "plugins/audit/scripts/status/_impact.py": [
       "P131.18-dau",
       "P148.6",
-      "P153.6"
+      "P153.6",
+      "P155.10"
     ],
     "tests/test__impact.py": [
       "P131.18-dau",
       "P132.5-5mm",
       "P148.6",
-      "P153.6"
+      "P153.6",
+      "P155.10"
     ],
     ".claude/audit.config.json": [
       "P132.4"
@@ -12535,6 +12646,10 @@
     ],
     "plugins/audit/scripts/ui/report/date-range.js": [
       "P154.3-mkf"
+    ],
+    "plugins/audit/commands/verbs-in-full.md": [
+      "P155.6",
+      "P155.10"
     ]
   },
   "bugs": [
@@ -13182,7 +13297,7 @@
     {
       "id": "BUG-31-z9j",
       "title": "P143 low review findings carried to the 3.8.0 low batch",
-      "status": "open",
+      "status": "in_progress",
       "severity": "low",
       "reportedAt": "2026-10-30T19:02:54Z",
       "reportedBy": "orchestrator",
@@ -13191,7 +13306,7 @@
       "expected": "Every listed low finding is fixed or closed with a recorded reason before 3.8.0 ships",
       "actual": "The listed low findings are open",
       "files": [],
-      "taskId": null,
+      "taskId": "P155.15",
       "fixedIn": null,
       "notes": null
     },

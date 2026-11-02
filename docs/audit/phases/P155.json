@@ -1,0 +1,700 @@
+{
+  "id": "P155",
+  "title": "3.8.0 low batch",
+  "status": "in_progress",
+  "description": "D9: every open register low scheduled for 3.8.0 and every carried P143 review finding (BUG-31-z9j), grouped one task per file cluster with one shared fix per recurring class. Plan: quality-gates-internal/plans/2026-11-02-low-batch-3-8-0.md.",
+  "desiredOutcome": "Every open low scheduled for 3.8.0 is fixed or closed with a reason, and BUG-31-z9j is closed",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [],
+  "baseRef": "531fe6ec7213c84315db54bceb3092d5618bee00",
+  "branch": "audit/p155-3-8-0-low-batch",
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P155.1",
+      "title": "One reader of HEAD and of a ref file: an empty loose ref is asked of git, an unreproducible pathspec is asked alone, doctor and lookup read HEAD through head_sha, a two-writer start head reads as cannot-tell",
+      "status": "in_progress",
+      "description": "Closes P143-R14, P143-R15, F819, F820 (A). See plan section T2 for the acceptance clauses (1)-(4) and the evidence lines at fa1b0c81: _scoped_commit.py:163-172 (_ref_file), :1401/:1433-1441 (_tracking, _plain_pathspec), :1572-1583 (start_head_of); audit-lookup.py:1445 and _doctor_setup.py:599 (plain rev-parse HEAD). Same-second ties go through _journal_io.last_words (:973). Check _deps.LAYERS before importing _scoped_commit from status/.",
+      "files": [
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/scripts/status/_doctor_setup.py",
+        "tests/test__scoped_commit.py",
+        "tests/test_audit_lookup.py",
+        "tests/test__doctor_setup.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tests/test__affected_tests.py",
+        "tests/test__doctor_trail.py",
+        "tests/test_drive_phase.py",
+        "tools/lints/_deps.py",
+        "tools/prove-gates.py",
+        "tests/_harness.py",
+        "tests/test__deps.py",
+        "tools/sweep-selftests.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "tests/test__runner_collects.py",
+        "tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__scoped_commit.py: a zero-length loose ref makes _files_head None and git is asked; sm/ against a gitlink and GIT_ICASE_PATHSPECS=1 are asked alone; start_head_of returns None on a same-second start/reopen/restart from two writers",
+          "tests/test_audit_lookup.py: an unborn branch with a root entry named head prints no HEAD",
+          "tests/test__doctor_setup.py: the same fixture prints no HEAD"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__scoped_commit.py tests/test_audit_lookup.py tests/test__doctor_setup.py tests/test__deps.py tools/_suite.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-02T08:16:45Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
+    },
+    {
+      "id": "P155.2",
+      "title": "The place memo retries only git's bare-repository refusal, its two witnesses read the same facts, and a same-second arm and revoke reads as not armed",
+      "status": "in_progress",
+      "description": "Closes P143-R8, P143-R9, F820 (B). Evidence at fa1b0c81: hooks/_config.py:862-867 (unconditional second ask), :780-787 vs :790-805 (the two witnesses), :4362-4379 (standing_approval walks rows in read_all order). Do not add GIT_CONFIG_COUNT to _DISCOVERY_ENV (the sweep sets it for every child). Where the config identity costs too much on the hook path, state both limits in the block comment above _STANDING_FIELDS and record the choice.",
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "tests/test__config.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tests/test__affected_tests.py",
+        "tests/test__doctor_trail.py",
+        "tests/test_drive_phase.py",
+        "tools/lints/_deps.py",
+        "tools/prove-gates.py",
+        "tests/_harness.py",
+        "tests/test__deps.py",
+        "tools/sweep-selftests.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "tests/test__runner_collects.py",
+        "tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__config.py: a stub _ask_rev_parse that times out is called once by git_place; a bare shape between the directory and its top drops the kept answer; a changed top/.git/config drops it; standing_approval reads a same-second arm+revoke from two sessions as not armed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__config.py tests/test__locks.py tests/test__worktrees.py tools/_suite.py",
+          "python3 tools/bench-hooks.py --gate"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-02T08:17:19Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-02T08:49:13Z.05fa32",
+        "status": "passed",
+        "at": "2026-11-02T08:49:13Z"
+      }
+    },
+    {
+      "id": "P155.3",
+      "title": "The drive runs ready tasks before it offers a triage, a sign-off or a wave step, offers leave per finding at the triage, and briefs a task started by the verb",
+      "status": "in_progress",
+      "description": "Closes F812 (open halves), F831, F828 - one shared answer: ready tasks are asked before any triage, sign-off or wave walk decides. Evidence at fa1b0c81: drive-phase.py:781 (triage answers), :9235 refresh_triage, :7555-7600 (no ready re-read), :6385-6388 step_member starts any non-in_progress member, :6407-6432 walk_wave never asks ready_tasks. orchestrator.md sits at 61994/62000 - a new answer word must fit.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "plugins/audit/reference/orchestrator.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        ".claude/hooks/guard-uncommitted.py",
+        "tests/test__affected_tests.py",
+        "tests/test__doctor_trail.py",
+        "tools/lints/_deps.py",
+        "tools/prove-gates.py",
+        "tests/_harness.py",
+        "tests/test__deps.py",
+        "tools/sweep-selftests.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "tests/test__runner_collects.py",
+        "tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: a task added at triage is dispatched by the next signal; leave --reason per finding leaves a med with no fix task; offer and refusal agree about a finding naming a cancelled fix task; a wave whose unstarted member gained a blocker walks on with the other member; brief writes for a verb-started task"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tools/_suite.py",
+          "python3 tools/measure-context.py --gate"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-02T08:17:37Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
+    },
+    {
+      "id": "P155.4",
+      "title": "The tree-stamp suite's tab-name skip carries the error that caused it",
+      "status": "pending",
+      "description": "Closes P143-R22. Evidence at fa1b0c81: tests/test__tree_stamp.py:864-878 (_write_shapes appends the name only), :965-969 (absent=bool(tab_refused), always true in that branch). Hand the owner the Windows command and the expected SKIPPED line.",
+      "files": [
+        "tests/test__tree_stamp.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test__tree_stamp.py: _write_shapes returns (name, exc) and the SKIPPED line prints the errno; the skip's absent argument is a fact that can be false"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__tree_stamp.py tools/_suite.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P155.5",
+      "title": "CI's records are measured: the cost table is re-recorded from run 41322244766's Windows cells, the cap comment says what the runs showed, and ruff covers .claude/hooks",
+      "status": "pending",
+      "description": "Closes P143-R3, P143-R16 and the unused shutil import. (1) python3 tools/sweep-selftests.py --costs-from-log <eight windows logs of run 41322244766 at fa1b0c81: plain 1-5, cp1252 1-3; gh run view 41322244766 --job <id> --log> --platform win32 --record-costs .github/sweep-costs.json; drop the scaled-figures note. (2) ci.yml:280-283: \"five of those seven runs\" (or no count) and \"Measured, and matching GitHub's documented Free-plan limit\". (3) .claude/hooks/guard-uncommitted.py:654 loses `import shutil` (ruff F401) and verify.sh's ruff path list gains .claude/hooks so the class is gated.",
+      "files": [
+        ".github/sweep-costs.json",
+        ".github/workflows/ci.yml",
+        "tools/verify.sh",
+        ".claude/hooks/guard-uncommitted.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_stamp_verification.py .claude/hooks/guard-uncommitted.py",
+          "python3 tools/sweep-selftests.py --selftest",
+          "python3 tools/gate-parity.py",
+          "ruff check plugins/audit tools tests .claude/hooks"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P155.6",
+      "title": "scope says which gate a task now holds and never drops entries unasked; lo-po4 reads its own fixture, not the caller's checkout; task.md carries the --gate-clear caveat",
+      "status": "pending",
+      "description": "Closes F827, F826, P153-R6. Evidence at fa1b0c81: audit-task.py:2753 (success line prints field names), :10294-10300 (started task: --gate replaces, --gate-set/--gate-drop refused); python3 tests/test_audit_task.py --selftest --stage lo-block from the checkout -> 57/58, FAIL lo-po4 with the \"you are standing in\" warning; commands/task.md:39 and measure-context 7989/8000 - free bytes by moving a passage to verbs-in-full.md, then add \"(refused on tdd/regression; see verbs-in-full)\". vf6 derives VERB_FLAGS against the call graph: declare any new flag where it reads.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "tests/test_audit_task.py",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/commands/verbs-in-full.md",
+        "README.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_audit_task.py: scope --gate Y on [X, Z] refuses without --replace or appends with --gate-add, on started and pending tasks; the success line prints the held gate; lo-po4 passes when the suite is run directly from a checkout"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__refs.py tests/test_run_test_gate.py tools/_suite.py",
+          "python3 tools/measure-context.py --gate"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P155.7",
+      "title": "release.py run --version X starts a fresh run when the default state file holds a finished run of another version",
+      "status": "pending",
+      "description": "Closes F817. Evidence at fa1b0c81: tools/release.py:103 DEFAULT_STATE_REL = .claude/state/release-run.json. Key the default by version or read a finished other-version file as absent, saying so in one line. Check whether .claude/hooks/guard-release.py reads the state file before renaming it.",
+      "files": [
+        "tools/release.py",
+        "CONTRIBUTING.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/release.py: a completed 3.5.0 state file at the default path and run --version 3.7.0 start a fresh run without --state"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tools/release.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P155.8",
+      "title": "submit refuses an undeclared edit while the executor is there, scope-changed reruns the gate before offering close, the redo pin is dropped on every terminal path, and the plan gate and commit-task-work read one predicate for declared",
+      "status": "pending",
+      "description": "Closes F818, F808. Evidence at fa1b0c81: drive-phase.py:9617-9780 submit compares nothing with the task's files (\"changed outside its files\" only at :541/:4437, the close-time decision); drop_redo_work (:6114) has one caller (:6278); drop_carry (:5956-5970) drops only the carry ref; accept_scope (:3105-3113) marks scopeAccepted and reruns nothing. The executor brief names the PLUGIN-BUILD-GUIDE.md section per declared module. Hooks may not import scripts/: the shared predicate lives in hooks/_config.py.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/hooks/require-plan.py",
+        "plugins/audit/hooks/_config.py",
+        "tests/test_drive_phase.py",
+        "tests/test_commit_task_work.py",
+        "tests/test__config.py",
+        "tests/test_require_plan.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: submit with an undeclared changed path refuses with the scope remedy (or the return carries the widened list and scope-changed is asked once); scope-changed reruns the gate before close; refs/audit/redo/<id> is gone after done, cancel, block and a stop after the drop; redo_left guards the serial path",
+          "tests/test_require_plan.py: the hook's declared predicate is the one commit-task-work reads"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_commit_task_work.py tests/test__config.py tests/test_require_plan.py tools/_suite.py",
+          "python3 tools/check-git-pipeline.py",
+          "python3 tools/bench-hooks.py --gate"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P155.3",
+        "P155.2"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P155.9",
+      "title": "The browser (report) job's live-plan leg stops being killed: the sender is found, the leg's input is bounded, and the job's longest line is a measurement",
+      "status": "pending",
+      "description": "Closes F816 - three sightings: runs 40913965771 (10-29), 41281241772 and 41308006702 (11-01), each exit 143 about 143 s after \"wrote .../live-plan/audit-report.html\", inside timeout-minutes 15. Green run 41322244766's browser (report) took 9m05s against ci.yml:103 \"longest browser-report: 7m19s (estimate)\". No SIGTERM/.kill( sender in check-report-interactive.mjs; verify.sh:208 only relays TERM. Find the sender first (rerun the leg on a ci/ branch with /usr/bin/time -v and runner diagnostics; the orchestrator pushes and dispatches), then bound the live-plan input, then record the measured longest line. The browser gate runs in CI, never in the task tree.",
+      "files": [
+        "tools/verify.sh",
+        "tools/check-report-interactive.mjs",
+        ".github/workflows/ci.yml",
+        "CONTRIBUTING.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/gate-parity.py",
+          "sh tools/verify.sh --list"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P155.5"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P155.10",
+      "title": "The dispatch's dependants question is bounded by what the task edits, and a declared delete or rename demands its import readers",
+      "status": "pending",
+      "description": "Closes F825, P153-R14. Evidence at fa1b0c81: _impact.py:519-545 owed() grades every reader of every declared path by file content; :414-417 states that delete/rename readers are not refused over. Measure the waiver count P153's tasks would have owed before and after (a probe over P153.json) and record it in the outcome.",
+      "files": [
+        "plugins/audit/scripts/status/_impact.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "tests/test__impact.py",
+        "tests/test_audit_task.py",
+        "plugins/audit/commands/verbs-in-full.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__impact.py: a reader quoting a passage outside the region the task edits is not owed; a +reader is not re-asked for its own readers; a declared delete/rename owes each import reader (Python import, hook find_script basename, JS import)"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__impact.py tests/test_audit_task.py tests/test__deps.py tools/_suite.py",
+          "python3 tools/measure-context.py --gate"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P155.6"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P155.11",
+      "title": "A task commit's Co-Authored-By names the model that wrote the work, or nothing",
+      "status": "pending",
+      "description": "Closes F804. Evidence at fa1b0c81: _scoped_commit.py:1069-1077 coauthor_of returns meta.commit.coauthor; commit-task-work.py:835,1610 take it. Derive the trailer from the executor's recorded model for that start; keep reading meta.commit.coauthor as the fallback (COMPATIBILITY.md: a key the plugin reads keeps being read); omit the trailer when nothing is recorded. State the drive's own state-commit trailer rule explicitly.",
+      "files": [
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "tests/test_commit_task_work.py",
+        "tests/test__scoped_commit.py",
+        "plugins/audit/reference/config.md",
+        "COMPATIBILITY.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_commit_task_work.py: a task executed by opus on a plan whose meta.commit.coauthor names another model commits with the opus trailer; a task with no recorded model commits without one"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_commit_task_work.py tests/test__scoped_commit.py tools/_suite.py",
+          "python3 tools/check-git-pipeline.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [
+        "P155.1",
+        "P155.8"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P155.12",
+      "title": "A task tree is unsettled by one predicate every verb reads, the stop names a restore verb, and the move's byte comparison bypasses filters",
+      "status": "pending",
+      "description": "Closes F805. Evidence at fa1b0c81: git/_worktrees.py:2112 hash-object without --no-filters; the only restore verb is drive-phase.restore_carry (:5920), from the carry ref, not from the kept copy. One shared \"unsettled\" predicate read by dispatch, integration, retirement and advance_member.",
+      "files": [
+        "plugins/audit/scripts/git/_worktrees.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test__worktrees.py",
+        "tests/test_drive_phase.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__worktrees.py: retire refuses while a kept copy exists; _reads_as rejects a file differing only in line endings (hash-object --no-filters); a restore verb restores from <copy>/N.bin plus git-index"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__worktrees.py tests/test_drive_phase.py tests/test_integrate_task.py tools/_suite.py",
+          "python3 tools/check-git-pipeline.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P155.8"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P155.13",
+      "title": "The red-first helper lays a test-support module over HEAD only in the run that shows the fix, and binds case ids to the run that printed them",
+      "status": "pending",
+      "description": "Closes F801, F814, F829, F813 (open half), F815 - one class: what is laid over HEAD and which run the labels are read from. Evidence at fa1b0c81: stamp-verification.py:4444 shown falls back to the task-held run when run[\"fix\"] is None; :4410-4418 makes a fix run only when verdict1 is red AND baseline_problem is None; :961-965 _is_test_path counts any file under a test dir; :3248 lays the whole list. _filed_returns.is_test_path('tests/_harness.py') is True, so _inline_suite_discipline (audit-task.py:3474-3495) leaves the F813 shape at tdd. _proc_group.py:279 docstring vs readers drive-phase.py:8585, stamp-verification.py:3351, run-test-gate.py:3138.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/scripts/governance/_proc_group.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "tests/test_stamp_verification.py",
+        "tests/test_audit_task.py",
+        "tests/test__filed_returns.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_stamp_verification.py: a task adding a helper to tests/_harness.py and a suite calling it is red at HEAD and green with the work; an introduced-symbol proof whose HEAD run crashes binds every tests.add id and the payload names the run read",
+          "tests/test_audit_task.py: a tdd task whose only test file is a tests/ file holding its own implementation is told so at add"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_stamp_verification.py tests/test_audit_task.py tests/test__filed_returns.py tests/test__proc_group.py tools/_suite.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P155.6",
+        "P155.10"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P155.14",
+      "title": "The drive suite's own debts: template reuse asserted, hr3 names which row sits first, the two re-open wordings have a case, _git_bound_names is scope-aware, the runner says what it does not exercise, ta9's red inside the throwaway tree is explained",
+      "status": "pending",
+      "description": "Closes P143-R12, P143-R19, P143-R20, P143-R2 (residual), F820 (C), F823. Evidence at fa1b0c81: tests/test_drive_phase.py:189/209/213 (_REPO_TEMPLATES unasserted), :11682 (tied compares files only), drive-phase.py:8205/:8210 strings with 0 hits in tests/, :15940-15952 (_git_bound_names walks the whole module), :345-353 (_needs_process says nothing about holder liveness), :8100 (ta9). Reproduce ta9 under the helper's throwaway tree first; if the product side is wrong, record the red by hand and say so.",
+      "files": [
+        "tests/test_drive_phase.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test_drive_phase.py: a second _repo call with equal arguments does not grow _REPO_TEMPLATES; hr3 asserts tied[0] is the reopen and tied[1] the confirmation; a human re-open a second after the hand-back and a journal with no re-open each print their wording; a local named like a git-bound name elsewhere does not cascade"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_stamp_verification.py tools/_suite.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [
+        "P155.12",
+        "P155.13"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P155.15",
+      "title": "A task's effective gate adds every lint whose walk covers an edited suite, and the test-support widening is satisfied by a declared unscoped sweep",
+      "status": "pending",
+      "description": "Closes F830 (class; the instance landed in 54f0c646) and P143-R5, and closes BUG-31-z9j: it is blocked on every other P143 closer so the bug closes last. Evidence at fa1b0c81: _affected_tests.py:341-347 widens on any unpicked suite-path regardless of declared entries; run-test-gate.py:2642-2649 then adds every phase-gate entry; no lint arm in _affected_tests.py/_gate_derive.py. In the outcome, walk the bug's repro list: each P143 id names the P155 task and commit that closed it; P143-R4 is closed with the recorded reason (the probe's path and size are in P143.json; no code change). Re-run tools/measure-affected-miss.py over at least 20 commits and record the figure.",
+      "files": [
+        "plugins/audit/scripts/governance/_affected_tests.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/_gate_derive.py",
+        "tests/test__affected_tests.py",
+        "tests/test_run_test_gate.py",
+        "tests/test_derive_phase_gate.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__affected_tests.py: a task editing a suite that tools/_suite.py walks gets that lint in its effective gate; gate [selftests] with only tests/_harness.py changed adds no phase-gate step and names the covering key; a narrow path-scoped gate with the same change still widens"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__affected_tests.py tests/test_run_test_gate.py tests/test_derive_phase_gate.py tests/test__deps.py tools/_suite.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P155.1",
+        "P155.2",
+        "P155.14",
+        "P155.4",
+        "P155.5"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "bugId": "BUG-31-z9j"
+    }
+  ],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "4331b4e9-59c2-4a61-9004-3102aba69ea2",
+    "branch": "audit/p155-3-8-0-low-batch",
+    "at": "2026-11-02T08:16:45Z"
+  },
+  "startedAt": "2026-11-02T08:16:45Z"
+}

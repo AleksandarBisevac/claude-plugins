@@ -749,6 +749,33 @@ def _same_dir(a, b):
 # ancestor of the directory asked about (`core.worktree`) keeps nothing, for the
 # same reason.
 #
+# ONE READING OF "A REPOSITORY STANDS HERE" SERVES BOTH WITNESSES
+# (`_holds_repository`): a `.git` entry, or the directory itself shaped as a git
+# directory (`HEAD`, `objects`, `refs` - a bare repository, or the inside of a
+# `.git`), which git's discovery stops at too. The answer's witness walks it
+# from the directory up to the top, the refusal's from the directory up to the
+# root, so a bare repository made between a directory and its top drops the
+# answer as surely as a `git init` there does. The answer's witness also holds
+# the identity of `.git/config` at the top - `(st_ino, st_size, st_mtime_ns)`,
+# one `lstat` - because `core.bare` and `core.worktree` move git's answer
+# without touching the `.git` entry. Two limits stand, each costing a question
+# kept too long rather than one asked needlessly: a `.git` FILE's config (a
+# linked worktree's, a submodule's) lives in a directory the file names, which
+# is not read here, so a `core.bare` set in the common dir leaves a linked
+# worktree's kept answer standing until the process ends; and the shape test
+# does not validate `HEAD` as git does, which can only send git a question it
+# would have answered from the memo.
+#
+# A REFUSED COMBINED QUESTION IS ASKED AGAIN, FOR THE FIELDS ALONE, ONLY WHERE A
+# TOP IS WHAT GIT REFUSED: a git directory stands at or above the directory
+# before any `.git` entry (`_git_dir_above`, a disk fact in any locale), or
+# git's refusal names a work tree (`_REFUSED_TOP`, the sentence git prints for a
+# checkout configured bare - in English only, so a translated git there is
+# answered None where git would answer a git dir). A timeout or a git that
+# could not be run is not git refusing a top, and asking again would only spend
+# the caller's time twice; the second ask gets what is left of the first one's
+# timeout, and none at all once it is spent.
+#
 # MODULE STATE, deliberately: the point is that the callers in one process
 # share the answers. Every scripts-side caller reaches one copy through
 # `_loader.load_hooks_config()`, which caches the module it loads by path; a
@@ -758,29 +785,55 @@ _STANDING_FIELDS = frozenset(("--show-toplevel", "--git-dir", "--git-common-dir"
                               "--absolute-git-dir"))
 _DISCOVERY_ENV = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR",
                   "GIT_CEILING_DIRECTORIES", "GIT_DISCOVERY_ACROSS_FILESYSTEM")
+# The words git's refusal of `--show-toplevel` carries in a checkout configured
+# bare ("fatal: this operation must be run in a work tree"), untranslated.
+_REFUSED_TOP = "must be run in a work tree"
 _STANDING = {}
 
 
 def _dot_git_identity(top):
     """What the `.git` entry at `top` is, as a value that changes when the entry
-    is replaced: a directory by device and inode, a file (a linked worktree's or
-    a submodule's) by those and its size and modification time, since `git
+    is replaced: a directory by device and inode and by the identity of the
+    `config` inside it (None when it has none), a file (a linked worktree's or
+    a submodule's) by device, inode, size and modification time, since `git
     worktree add` at a path once removed writes a new file there. None when
     there is no entry."""
     import stat
+    dot_git = os.path.join(top, ".git")
     try:
-        st = os.lstat(os.path.join(top, ".git"))
+        st = os.lstat(dot_git)
     except OSError:
         return None
-    if stat.S_ISDIR(st.st_mode):
-        return ("dir", st.st_dev, st.st_ino)
-    return ("file", st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns)
+    if not stat.S_ISDIR(st.st_mode):
+        return ("file", st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns)
+    try:
+        conf = os.lstat(os.path.join(dot_git, "config"))
+        config = (conf.st_ino, conf.st_size, conf.st_mtime_ns)
+    except OSError:
+        config = None
+    return ("dir", st.st_dev, st.st_ino, config)
+
+
+def _git_dir_shaped(at):
+    """Is the directory `at` itself shaped as a git directory - `HEAD`,
+    `objects` and `refs` - the shape git's discovery stops at besides a `.git`
+    entry? A bare repository, or the inside of a `.git`."""
+    return (os.path.isfile(os.path.join(at, "HEAD"))
+            and os.path.isdir(os.path.join(at, "objects"))
+            and os.path.isdir(os.path.join(at, "refs")))
+
+
+def _holds_repository(at):
+    """Would git's discovery stop at the directory `at`: a `.git` entry there,
+    or `at` shaped as a git directory. The one reading both witnesses of the
+    place memo walk with."""
+    return os.path.lexists(os.path.join(at, ".git")) or _git_dir_shaped(at)
 
 
 def _standing_witness(real, top):
     """The disk facts a place answer for the resolved directory `real` rests on,
     when git named `top` as its top: the identity of `top`'s `.git` entry, with
-    no `.git` entry between `real` and `top` (`_inside_known_tree`). None when
+    no repository between `real` and `top` (`_inside_known_tree`). None when
     `real` does not lie under `top` that way, or `top` holds no `.git`."""
     if not _inside_known_tree(real, top):
         return None
@@ -788,22 +841,41 @@ def _standing_witness(real, top):
 
 
 def _no_repository_above(real):
-    """True when no directory from `real` up to the root holds a `.git` entry
-    or is itself a git directory (a bare repository: `HEAD`, `objects` and
-    `refs`, the shape git's own discovery checks), so discovery from `real`
-    finds no repository and a second question would be refused like the
-    first."""
+    """True when no directory from `real` up to the root holds a repository
+    (`_holds_repository`), so discovery from `real` finds none and a second
+    question would be refused like the first."""
     at = real
     while True:
-        if (os.path.lexists(os.path.join(at, ".git"))
-                or (os.path.isfile(os.path.join(at, "HEAD"))
-                    and os.path.isdir(os.path.join(at, "objects"))
-                    and os.path.isdir(os.path.join(at, "refs")))):
+        if _holds_repository(at):
             return False
         parent = os.path.dirname(at)
         if parent == at:
             return True
         at = parent
+
+
+def _git_dir_above(real):
+    """True when the first directory from `real` up that git's discovery stops
+    at is a git directory rather than a checkout's `.git` entry - so the
+    repository there has no top to give, and its git dir is still an answer.
+    `.git` is read first at each directory, as git reads it."""
+    at = real
+    while True:
+        if os.path.lexists(os.path.join(at, ".git")):
+            return False
+        if _git_dir_shaped(at):
+            return True
+        parent = os.path.dirname(at)
+        if parent == at:
+            return False
+        at = parent
+
+
+def _top_refused(real, why):
+    """Is a refused `--show-toplevel` git refusing a top, which the fields
+    alone can still answer: a git directory above `real`, or a refusal naming
+    a work tree (the block above)."""
+    return _git_dir_above(real) or _REFUSED_TOP in _why(why)
 
 
 def forget_git_standing():
@@ -830,11 +902,12 @@ def git_place(cwd, fields, timeout=5):
     discovery, goes to git every time. Otherwise a kept answer is reused when
     its witness still holds; when not, git is asked for the fields with
     `--show-toplevel` beside them (the top is the witness's anchor) - and, only
-    when that combined question is refused while a repository stands somewhere
-    above (`_no_repository_above`), asked again for the fields alone, as a bare
-    repository answers a git dir but no top; that second answer is not kept. A
-    refusal with no repository anywhere above is kept, with that absence as its
-    witness: it holds until a repository appears on the way up."""
+    when that combined question is refused as a top git cannot give
+    (`_top_refused`) while time is left of `timeout`, asked again for the
+    fields alone with what is left, as a bare repository answers a git dir but
+    no top; that second answer is not kept. A refusal with no repository
+    anywhere above is kept, with that absence as its witness: it holds until a
+    repository appears on the way up."""
     fields = list(fields)
     why = []
     if (not fields or any(f not in _STANDING_FIELDS for f in fields)
@@ -853,15 +926,19 @@ def git_place(cwd, fields, timeout=5):
             return list(held[2]), ""
         _STANDING.pop(key, None)
     asked = fields if "--show-toplevel" in fields else ["--show-toplevel"] + fields
+    started = time.monotonic()
     got = _ask_rev_parse(cwd, asked, timeout, why)
     if got is None:
         if _no_repository_above(real):
             _STANDING[key] = (None, None, _why(why))
             return None, _why(why)
-        if asked is fields:
+        left = (None if timeout is None
+                else timeout - (time.monotonic() - started))
+        if (asked is fields or (left is not None and left <= 0)
+                or not _top_refused(real, why)):
             return None, _why(why)
         del why[:]
-        return _ask_rev_parse(cwd, fields, timeout, why), _why(why)
+        return _ask_rev_parse(cwd, fields, left, why), _why(why)
     answer = got[len(asked) - len(fields):]
     top = _resolved(got[asked.index("--show-toplevel")])
     witness = _standing_witness(real, top)
@@ -1089,14 +1166,15 @@ def _memo_rev_parse(cache, cwd, fields):
 def _inside_known_tree(real, top):
     """True when the resolved directory `real` lies in the working tree whose
     resolved toplevel is `top`, with no repository of its own in between: no
-    directory from `real` up to, but not including, `top` holds a `.git`
-    entry - a nested clone, a submodule or a linked worktree placed inside
-    the tree, each of which git would name as a toplevel of its own."""
+    directory from `real` up to, but not including, `top` holds a repository
+    (`_holds_repository`) - a nested clone, a submodule or a linked worktree
+    placed inside the tree, each of which git would name as a toplevel of its
+    own, or a git directory, where git's discovery stops with no top at all."""
     if real != top and not real.startswith(top.rstrip(os.sep) + os.sep):
         return False
     at = real
     while at != top:
-        if os.path.lexists(os.path.join(at, ".git")):
+        if _holds_repository(at):
             return False
         parent = os.path.dirname(at)
         if parent == at:
@@ -4360,22 +4438,37 @@ def _owner_written(row):
 
 
 def standing_approval(rows):
-    """What the trail says about the standing approval, read oldest first:
-    `{"armed", "since", "row", "words", "uses", "revokedAt"}`.
+    """What the trail says about the standing approval, over rows in
+    `_journal_io.read_all`'s order: `{"armed", "since", "row", "words", "uses",
+    "revokedAt"}`.
 
-    The last owner-written arming or revoking row decides. `row` is the arming
-    row's hash prefix, the name a use row cites, and `uses` counts the use rows
-    citing THIS arming - a use under an earlier arming went through a different
-    approval. A revocation leaves `revokedAt` set until the next arming."""
-    current, revoked_at = None, None
+    The last owner-written arming or revoking row decides, read through
+    `_journal_io.last_words`: two sessions' rows in one second carry no order
+    between them, so when the newest second holds a revoking among the last
+    words it reads as not armed - the reading that asks before a high-risk
+    commit - and arming rows alone in it leave the one read last. `row` is the
+    arming row's hash prefix, the name a use row cites, and `uses` counts the
+    use rows citing THIS arming - a use under an earlier arming went through a
+    different approval. A revocation leaves `revokedAt` set until the next
+    arming. Raises RuntimeError when the journal reader cannot be loaded:
+    "not armed" is a claim that case does not support."""
+    journal = journal_lib()
+    if journal is None:
+        raise RuntimeError("the journal reader (_journal_io.py) could not be "
+                           "loaded, so the order of the trail cannot be read")
     rows = [r for r in (rows or []) if isinstance(r, dict)]
-    for row in rows:
-        if not _owner_written(row):
-            continue
-        if row.get("action") == STANDING_ARMED:
-            current, revoked_at = row, None
-        elif row.get("action") == STANDING_REVOKED:
-            current, revoked_at = None, row.get("ts")
+    position = dict((id(r), i) for i, r in enumerate(rows))
+
+    def words_of(row):
+        if _owner_written(row) and row.get("action") in (STANDING_ARMED,
+                                                         STANDING_REVOKED):
+            return [("standing", position[id(row)])]
+        return []
+    last = sorted(journal.last_words(rows, words_of).get("standing", ()))
+    said = [rows[i] for i in last]
+    revoked = [r for r in said if r.get("action") == STANDING_REVOKED]
+    current = None if revoked or not said else said[-1]
+    revoked_at = revoked[-1].get("ts") if revoked else None
     if current is None:
         return {"armed": False, "since": None, "row": None, "words": None,
                 "uses": 0, "revokedAt": revoked_at}

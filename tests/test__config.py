@@ -3215,6 +3215,202 @@ def _git_standing_cases(check):
         _harness.remove_tree(str(root))
 
 
+def _git_place_ask_cases(check):
+    """When `git_place` asks git a second time after a refused first question.
+
+    The second ask - the fields alone, without `--show-toplevel` - is owed
+    only where a top is what git refused: a git directory (a bare repository,
+    or the inside of a `.git`) or a checkout configured bare. A refusal that
+    is not git's answer at all - a timeout, git not runnable - is asked again
+    for nothing, and a timeout asked again doubles the wait the caller set.
+    The stubs stand in for `_ask_rev_parse` and keep its contract: a reason
+    appended to `why`, None returned."""
+    root = Path(os.path.realpath(_harness.fixture_root("cfg-place-ask-")))
+    fresh = M._ask_rev_parse
+    seen = []
+
+    def timing_out(cwd, fields, timeout=5, why=None):
+        seen.append((str(cwd), tuple(fields), timeout))
+        # A second ask handed a spent budget gets a negative one; it is
+        # counted here, not allowed to crash the suite before st8 reads it.
+        time.sleep(max(timeout, 0))
+        if why is not None:
+            why.append("Command '%r' timed out after %s seconds"
+                       % (["git", "-C", str(cwd), "rev-parse"] + list(fields),
+                          timeout))
+        return None
+
+    def unrunnable(cwd, fields, timeout=5, why=None):
+        seen.append((str(cwd), tuple(fields), timeout))
+        if why is not None:
+            why.append("[Errno 2] No such file or directory: 'git'")
+        return None
+
+    def refusing_top(refusal):
+        """git's refusal of a top, given after spending `spent` seconds of the
+        first question's time, then an answer to the fields alone."""
+        def ask(cwd, fields, timeout=5, why=None):
+            seen.append((str(cwd), tuple(fields), timeout))
+            if "--show-toplevel" in fields:
+                time.sleep(spent)
+                if why is not None:
+                    why.append(refusal)
+                return None
+            return ["%s-answer" % (f,) for f in fields]
+        return ask
+
+    def asks(stub, cwd, fields, timeout):
+        M.forget_git_standing()
+        del seen[:]
+        M._ask_rev_parse = stub
+        try:
+            got = M.git_place(cwd, fields, timeout)
+        finally:
+            M._ask_rev_parse = fresh
+        return got, list(seen)
+    try:
+        repo = root / "repo"
+        (repo / "a").mkdir(parents=True)
+        _harness.git(None, "init", "-q", str(repo))
+        bare = root / "bare.git"
+        _harness.git(None, "init", "-q", "--bare", str(bare))
+        configured = root / "configured"
+        (configured / "sub").mkdir(parents=True)
+        _harness.git(None, "init", "-q", str(configured))
+
+        budget = 0.2
+        spent = 0.05
+        once = [("timeout in a checkout",)
+                + asks(timing_out, repo / "a", ["--git-dir"], budget),
+                ("timeout in a bare repository",)
+                + asks(timing_out, bare, ["--git-dir"], budget),
+                ("git not runnable",)
+                + asks(unrunnable, repo / "a", ["--git-common-dir"], budget)]
+        check("st8 a first question that timed out, or that git could not be "
+              "run for, is asked once - never again for the fields alone, in "
+              "a checkout or in a bare repository - and its reason is "
+              "handed back: %r" % (once,),
+              all(len(calls) == 1 and got[0] is None and got[1]
+                  for _what, got, calls in once))
+
+        english = "fatal: this operation must be run in a work tree"
+        localised = ("Schwerwiegend: Diese Operation muss in einem "
+                     "Arbeitsverzeichnis ausgeführt werden.")
+        retried = [("a bare repository, git's refusal in another language",)
+                   + asks(refusing_top(localised), bare, ["--git-dir"], budget),
+                   ("a checkout configured bare, the refusal naming a work tree",)
+                   + asks(refusing_top(english), configured / "sub",
+                          ["--git-dir"], budget)]
+        check("st9 a refused top is asked again for the fields alone where a "
+              "top is what git refused - a git directory stands there, or the "
+              "refusal names a work tree - with no more than what is left of "
+              "the first question's time: %r" % (retried,),
+              all(len(calls) == 2 and calls[1][1] == ("--git-dir",)
+                  and 0 < calls[1][2] <= budget - spent * 0.6
+                  and got == (["--git-dir-answer"], "")
+                  for _what, got, calls in retried))
+    finally:
+        M._ask_rev_parse = fresh
+        M.forget_git_standing()
+        _harness.remove_tree(str(root))
+
+
+def _git_witness_cases(check):
+    """The facts a kept place answer rests on include the two that change
+    git's answer without touching the `.git` entry at the top: a git
+    directory appearing between the directory and that top, and the top's
+    own `.git/config` (`core.bare`, `core.worktree`). Each case first shows
+    git's fresh answer moved, then that the memo moved with it."""
+    root = Path(os.path.realpath(_harness.fixture_root("cfg-witness-")))
+    fresh = M._ask_rev_parse
+
+    def disagree(places):
+        return [(str(p), f, M._git_rev_parse(p, f), fresh(p, f))
+                for p in places for f in PLACE_FIELDS
+                if M._git_rev_parse(p, f) != fresh(p, f)]
+    try:
+        M.forget_git_standing()
+        repo = root / "repo"
+        deep = repo / "x" / "y"
+        deep.mkdir(parents=True)
+        _harness.git(None, "init", "-q", str(repo))
+        kept = M._git_rev_parse(deep, ["--show-toplevel"])
+        _harness.git(None, "init", "-q", "--bare", str(repo / "x"))
+        check("st10 a git directory made between a directory and the top it "
+              "had drops the kept answer, and every place field is answered "
+              "as git answers it now: %r"
+              % ((kept, fresh(deep, ["--show-toplevel"]), disagree([deep])),),
+              kept == fresh(repo, ["--show-toplevel"])
+              and fresh(deep, ["--show-toplevel"]) != kept
+              and disagree([deep]) == [])
+
+        conf = root / "conf"
+        sub = conf / "sub"
+        sub.mkdir(parents=True)
+        _harness.git(None, "init", "-q", str(conf))
+        before = [M._git_rev_parse(sub, f) for f in PLACE_FIELDS]
+        _harness.git(str(conf), "config", "core.bare", "true")
+        check("st11 a changed .git/config at the top drops the kept answer: a "
+              "checkout configured bare after it was answered has no top, as "
+              "git says: %r"
+              % ((before, fresh(sub, ["--show-toplevel"]), disagree([sub])),),
+              before[0] is not None
+              and fresh(sub, ["--show-toplevel"]) is None
+              and disagree([sub]) == [])
+    finally:
+        M.forget_git_standing()
+        _harness.remove_tree(str(root))
+
+
+def _standing_tie_cases(check):
+    """`standing_approval` over rows in `read_all`'s order, `_file` included.
+
+    A `ts` is one second. Two sessions' rows in the same second carry no order
+    between them, and `read_all` breaks the tie by file name - a fixed order to
+    print in. An arming and a revoking in one second from two sessions is
+    therefore read as not armed: the direction that asks before a high-risk
+    commit. One session's rows in one second keep the order it wrote them."""
+    tick = "2026-11-02T08:00:00Z"
+    later = "2026-11-02T08:00:01Z"
+
+    def row(act, ts, writer, n):
+        entry = M.standing_entry(act, "words %d" % (n,), writer, None)
+        entry.update({"ts": ts, "hash": "%064x" % (n,),
+                      "_file": "2026-11.%s.jsonl" % (writer,)})
+        return entry
+
+    def order(rows):
+        return sorted(rows, key=lambda r: (r["ts"], r["_file"]))
+
+    shapes = [
+        ("arm and revoke, one second, revoke's file sorting first",
+         order([row("arm", tick, "bbb", 1), row("revoke", tick, "aaa", 2)]),
+         False),
+        ("arm and revoke, one second, arm's file sorting first",
+         order([row("arm", tick, "aaa", 1), row("revoke", tick, "bbb", 2)]),
+         False),
+        ("revoke, then an arming a second later from another session",
+         order([row("revoke", tick, "aaa", 1), row("arm", later, "bbb", 2)]),
+         True),
+        ("one session revokes then arms in one second",
+         [row("revoke", tick, "aaa", 1), row("arm", tick, "aaa", 2)],
+         True),
+        ("one session arms then revokes in one second",
+         [row("arm", tick, "aaa", 1), row("revoke", tick, "aaa", 2)],
+         False),
+    ]
+    got = [(what, M.standing_approval(rows)) for what, rows, _want in shapes]
+    wrong = [(what, state) for (what, state), (_w, _r, want)
+             in zip(got, shapes) if state["armed"] is not want]
+    tied = got[0][1]
+    check("sp1 an arming and a revoking in one second from two sessions read "
+          "as not armed whichever file sorts first, with the revoking's moment "
+          "kept; a later second, or one session's own order, still decides: %r"
+          % (wrong or got,),
+          not wrong and tied["revokedAt"] == tick and tied["row"] is None
+          and got[2][1]["row"] == ("%064x" % (2,))[:M.STANDING_REF_CHARS])
+
+
 # --- the house-form lift ------------------------------------------------------
 # Spelled in pieces so the strings that name a destructive operation are not
 # typed whole into a command line by whoever edits this file.
@@ -3927,6 +4123,9 @@ def _all_cases(check):
     _shared_payload_cases(check)
     _git_path_pair_cases(check)
     _git_standing_cases(check)
+    _git_place_ask_cases(check)
+    _git_witness_cases(check)
+    _standing_tie_cases(check)
     _house_lift_cases(check)
 
 
