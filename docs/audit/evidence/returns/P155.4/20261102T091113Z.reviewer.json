@@ -1,0 +1,19 @@
+{
+ "findings": [],
+ "preExisting": [
+  {"id": 1, "severity": "low", "file": "tests/test__output.py:1096; tests/test_stamp_verification.py:5868",
+   "issue": "Executor reports (not re-verified by me) two other _harness.skip sites, rt3 and sw11, that grade any caught exception as absence - the same shape this task fixed. Outside this task's file.",
+   "resolution": "Give each its own task; this task does not own them."}
+ ],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clause: 'Evidence at fa1b0c81: _write_shapes appends the name only, absent=bool(tab_refused), always true in that branch. Hand the owner the Windows command and the expected SKIPPED line.' The diff makes _write_shapes return (name, exc) pairs and routes the skip through _skip_tab_case, whose absent argument is exc.errno in TAB_REFUSAL_ERRNOS (EINVAL only). The line now prints '[Errno N] <strerror>'. An EACCES or errno-less refusal makes the skip FAIL instead of passing as 'the filesystem cannot hold the name'. The only other caller change is TAB_LABEL, which holds the tso3 label once; the non-refused branch (tests/test__tree_stamp.py:1025-1049) still reads the list's truthiness and is unchanged. The executor's outcome describes this diff accurately, and each listed dependant is correctly called unaffected: the diff touches only the one test file, no helper that test_stamp_verification.py shares by name, and no product code. Windows: I believe a tab name makes open() fail with EINVAL, so the skip can still pass there. Python's io.FileIO opens through the CRT _wopen, and the usual 'OSError: [Errno 22] Invalid argument' for names like 'a:b' on Windows is the same ERROR_INVALID_NAME path. That is from memory, not run, and the executor also flags it as unverified on real NTFS. If it is wrong, tso3 goes red on Windows with the errno in the line, and TAB_REFUSAL_ERRNOS is the single place to widen. The expected line is therefore only as good as the 'strerror == Invalid argument' assumption. The owner command is handed over, and the failure mode is loud rather than silent.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "The executor filed not-attempted: the task is mode regression with expectRedFirst false, and the fix lives wholly in the declared test file, so a HEAD-plus-file comparison cannot separate the versions. That basis holds. Separately I ran the executor's mutation probe on a copy of the task tree under the scratchpad (rev-copy), never the shared tree: python3 mutations.py --root <copy> exit 0, baseline tso4/tso6/tso7 green (3 of 3), m1 name-only builder -> tso4 case-failed, m2 skip line without the error -> tso6 case-failed, m3 absent=bool(refusal) -> tso7 case-failed, m4 absent never true -> tso6 case-failed; 4 of 4 rows red. So tso4, tso6 and tso7 can each go red, and the skip can still pass for an EINVAL refusal, which is baseline tso6. I read the rows' anchors in the file and they match the diff.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "Gate command read: `python3 tools/sweep-selftests.py tests/test__tree_stamp.py tools/_suite.py`, which selects those two files. I read the changed region of tests/test__tree_stamp.py (the shape writer, the skip, tso3, tso4, tso6, tso7) and the _harness.skip helper that grades absent. I did not read the rest of tests/test__tree_stamp.py or tools/_suite.py line by line, so none-found is scoped to the changed region. In it, the non-refusing branch of tso3 actually reads the git listings and the skip branch is graded by absent, so no assertion there is unreachable."
+ },
+ "verdict": "clean",
+ "tasks": []
+}

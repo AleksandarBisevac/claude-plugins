@@ -861,46 +861,120 @@ SHAPE_NAMES = ("del.txt", "skip.txt", "assumed.txt", TAB_NAME, "n\u00e4me.txt",
                "conflict.txt")
 
 
+# What `open()` raises for a name the filesystem's own name rule forbids: on
+# Windows the invalid-name refusal reaches Python as EINVAL. A tab name failing
+# with any other errno failed for some other reason - a permission, a full disk -
+# and a skip claiming the filesystem cannot hold the name would be false.
+TAB_REFUSAL_ERRNOS = (errno.EINVAL,)
+# The tab-name case's label, one string for the case and for the cases that
+# read the skip it takes where the name is refused.
+TAB_LABEL = "tso3 a name holding a tab is read whole in both halves"
+
+
 def _write_shapes(root, write):
-    """Write every shape's base file through `write`; return the names the
-    filesystem refused.
+    """Write every shape's base file through `write`; return `(name, error)`
+    for each name the filesystem refused, the error being the one it raised.
 
     Only the tab name may be refused. Any other refusal raises, because a shape
     missing from the fixture would let `tso1` agree with itself over a narrower
-    tree than its label names."""
+    tree than its label names. The error is kept so the skip that follows can
+    print it and be graded on it, rather than on the bare fact of a refusal."""
     refused = []
     for name in SHAPE_NAMES:
         try:
             write(os.path.join(root, name), "base\n")
-        except OSError:
+        except OSError as exc:
             if name != TAB_NAME:
                 raise
-            refused.append(name)
+            refused.append((name, exc))
     return refused
 
 
-def _refusing(refused_name):
+def _refusal_text(exc):
+    """The error in `[Errno N] <strerror>` form, without the path: the skip's
+    sentence already names the file, and the errno is what tells one cause of a
+    refusal from another."""
+    return "[Errno %s] %s" % (exc.errno, exc.strerror)
+
+
+def _skip_tab_case(check, label, refusal):
+    """Record the tab-name case as skipped, carrying the error that caused it.
+
+    `absent` is the refusal's errno read against `TAB_REFUSAL_ERRNOS`, so it is
+    false - and the skip a failure - when the tab name failed for any reason
+    other than the filesystem refusing the name."""
+    name, exc = refusal
+    _harness.skip(check, label,
+                  "this filesystem refused to create a file named %r: %s"
+                  % (name, _refusal_text(exc)),
+                  exc.errno in TAB_REFUSAL_ERRNOS)
+
+
+def _refusing(refused_name, exc=None):
     """A writer standing in for a filesystem that will not hold `refused_name`,
-    raising what NTFS raised for the tab name."""
+    raising `exc` - by default what Windows raises for the tab name."""
     def write(path, text):
         if os.path.basename(path) == refused_name:
-            raise OSError(errno.EINVAL, "Invalid argument", path)
+            raise (exc if exc is not None
+                   else OSError(errno.EINVAL, "Invalid argument", path))
         _write(path, text)
     return write
+
+
+def _recording():
+    """A `check` that keeps every call instead of printing it, so a case can
+    read the exact line a skip would print and whether that line would pass."""
+    calls = []
+
+    def check(label, cond, detail=""):
+        calls.append((label, bool(cond)))
+    return check, calls
 
 
 def _shape_writer_cases(check):
     """The fixture builder itself, on every platform: a refused tab name leaves
     the rest of the block running, and no other refusal is absorbed."""
     tabless = _harness.fixture_root("tree-stamp-shapes-tabless-")
-    skipped = _write_shapes(tabless, _refusing(TAB_NAME))
+    raised = OSError(errno.EINVAL, "Invalid argument",
+                     os.path.join(tabless, TAB_NAME))
+    skipped = _write_shapes(tabless, _refusing(TAB_NAME, raised))
     built = sorted(n for n in SHAPE_NAMES
                    if os.path.isfile(os.path.join(tabless, n)))
     check("tso4 a filesystem refusing the tab name leaves every other shape "
-          "built and names the one it refused, so the block's other cases still "
-          "run there: %r" % ((skipped, built),),
-          skipped == [TAB_NAME]
+          "built and names the one it refused beside the very error it raised, "
+          "so the block's other cases still run there: %r" % ((skipped, built),),
+          skipped == [(TAB_NAME, raised)]
           and built == sorted(n for n in SHAPE_NAMES if n != TAB_NAME))
+    # The skip the block takes on such a filesystem, read off a recording check
+    # so its line and its verdict are both visible on every platform.
+    label = TAB_LABEL
+    rec, calls = _recording()
+    _skip_tab_case(rec, label, (TAB_NAME, raised))
+    carries = ": [Errno %d] Invalid argument" % (errno.EINVAL,)
+    check("tso6 the tab-name skip prints the error that caused it, errno and "
+          "strerror, and passes when that errno is the filesystem's refusal of "
+          "the name: %r" % (calls,),
+          len(calls) == 1 and calls[0][1]
+          and calls[0][0].startswith(label + " SKIPPED HERE")
+          and calls[0][0].endswith(carries))
+    # The other direction, which tso6 cannot see: a skip whose evidence is the
+    # bare fact of a refusal passes tso6 and fails here. A tab name refused for
+    # a permission, or by an error carrying no errno at all, is not a filesystem
+    # that cannot hold the name, so the skip's claim is false and must fail.
+    denied = OSError(errno.EACCES, "Permission denied",
+                     os.path.join(tabless, TAB_NAME))
+    verdicts = []
+    for exc in (denied, OSError("no errno")):
+        rec, calls = _recording()
+        _skip_tab_case(rec, label, (TAB_NAME, exc))
+        verdicts.append(calls)
+    check("tso7 a tab-name refusal with any other errno fails the skip rather "
+          "than reading as a filesystem that cannot hold the name: %r"
+          % (verdicts,),
+          [len(v) for v in verdicts] == [1, 1]
+          and [v[0][1] for v in verdicts] == [False, False]
+          and verdicts[0][0][0].endswith(
+              ": [Errno %d] Permission denied" % (errno.EACCES,)))
     # The over-fire twin: a builder that swallowed every OSError passes tso4 and
     # must fail here.
     other = _harness.fixture_root("tree-stamp-shapes-other-")
@@ -962,11 +1036,9 @@ def _one_listing_cases(check):
           problem is None and got == (tracked, differing) and stages == 3
           and "new.txt" in differing and "ign1" not in differing
           and "skip.txt" not in differing and "assumed.txt" not in differing)
-    tab_label = "tso3 a name holding a tab is read whole in both halves"
+    tab_label = TAB_LABEL
     if tab_refused:
-        _harness.skip(check, tab_label,
-                      "this filesystem refused to create a file named %r"
-                      % (TAB_NAME,), bool(tab_refused))
+        _skip_tab_case(check, tab_label, tab_refused[0])
     else:
         got_tracked = [p for p, _h in got[0]] if got[0] is not None else []
         got_current = got[1] or []

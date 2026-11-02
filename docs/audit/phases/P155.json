@@ -198,7 +198,7 @@
     {
       "id": "P155.3",
       "title": "The drive runs ready tasks before it offers a triage, a sign-off or a wave step, offers leave per finding at the triage, and briefs a task started by the verb",
-      "status": "in_progress",
+      "status": "done",
       "description": "Closes F812 (open halves), F831, F828 - one shared answer: ready tasks are asked before any triage, sign-off or wave walk decides. Evidence at fa1b0c81: drive-phase.py:781 (triage answers), :9235 refresh_triage, :7555-7600 (no ready re-read), :6385-6388 step_member starts any non-in_progress member, :6407-6432 walk_wave never asks ready_tasks. orchestrator.md sits at 61994/62000 - a new answer word must fit.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -236,25 +236,39 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "2f8214c110e8",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "One shared question, runnable_tasks(manifest, phase_id) in drive-phase.py (the phase's tasks _status_facts.ready_tasks names, or in progress), asked before a sign-off decision or a wave member's start. (1) pending_still_applies: a decision with no task (every one of sign-off's) no longer applies while a task is runnable, so drive_locked sets it aside with a did-line naming the task and drive_phase runs it; an --answer sent to the set-aside decision is refused (exit 2) naming the runnable task; a blocked or waiting task leaves the decision standing. (2) Triage: new answer `leave` (DECISIONS['triage'], needs --reason) with --fix <ids>, refused by leave_refusal for no --fix or an id the triage does not offer; recorded in drive state LEFT_FIELD ('leftOpen'), read by left_now (shared _answered_open with carried_now), excluded from the offered findings in triage() and refresh_triage(), shown as 'left open' lines, and recorded by run_signoff as --accept-open id=<the leave reason>. fix_takes(finding) is the one predicate the offer (finding_lines options, render_triage's fix answer line, which now names the findings it takes) and fix_refusal both ask, so a finding naming a cancelled fix task is offered [leave] (or [carry|leave]) and never fix. (3) step_member drops an unstarted member that not_ready_why says is not ready ('dropped', why); walk_wave removes it from wave.tasks and prints '<id> dropped from wave <wave>, not started: waits on <refs>', and the walk goes on. (4) run_brief: for --role executor on an in-progress task whose brief --read finds none (started by the verb), it writes the brief through the audit-lookup call dispatch makes, then reads it back; a never-started task is not attempted. Tests: new stage rf-block (_ready_first_cases) in tests/test_drive_phase.py, cases rf1-rf11; sn3's fixture now reads phase-level decisions against a plan whose tasks are all done (a sign-off decision with open tasks is the state this change no longer prints), and expects `leave` among the triage+answers options; pv6's stand-in ctx now names the phase as the drive's ctx does. PLUGIN-BUILD-GUIDE.md: a paragraph on the ready-first rule (after 'What the driver keeps') and the triage paragraph extended with fix_takes and leave. orchestrator.md NOT edited (61994/62000 unchanged; the triage print carries the leave answer line itself). Runs: rf-block red at HEAD code 2/11 (rf2, rf11 pass at HEAD by construction - they are the over-fire twins); after the fix rf-block 11/11; gate `python3 tools/sweep-selftests.py tests/test_drive_phase.py tools/_suite.py` exit 0, '2/2 files ok, 809 cases' (final run, after the last test edit); `python3 tools/measure-context.py --gate` exit 0, GATE OK; ruff on both .py files: all checks passed; vermin -t=3.8- on both: exit 0; _output_lints.prose_number_claims / house_style_violations and _deps.doc_prose_numbers: no finding in the edited files. Mutation probe delivered at .claude/state/scratch/P155.3/mutations.py in the task tree (gitignored): copies the tree, applies one mutation per row with an exactly-once anchor check, runs rf-block; final run 11/11 mutations killed (exit 0), each row naming its red case. A first probe run had 9/11: one row expected rf7 red where only rf6 can be (row corrected), and the brief-written-for-unstarted mutant survived because the brief writer also refuses a task with no start - rf11 now also asserts no write was attempted, and goes red under that mutant. One earlier gate run was red only on the sweep's .claude/ watcher seeing my probe file appear mid-run (my own write, not a suite's); the reruns were on a quiet tree. Dependants: tests/test_drive_phase.py - changed (the cases above); tools/affected.py, tools/reach-diff.py, README.md, docs/research/pipeline-cost-design.md, plugins/audit/hooks/detect-plan-skip.py, plugins/audit/scripts/governance/record-risk-confirmation.py - still correct: none names the triage answers, the wave walk, pending_still_applies or run_brief (grep for 'answer fix|answer carry|[fix|leave]' over them: no hit), and no function they import changed signature; tests/test_commit_task_work.py (_carries) - untouched name. plugins/audit/reference/phase-signoff.md:45 and verbs-in-full.md:399 describe carry and fix only - still true, but they do not mention `leave`; not in this task's files, so left (a doc follow-up). orchestrator.md and the other declared files (guard-uncommitted.py, test__affected_tests.py, test__doctor_trail.py, _deps.py, prove-gates.py, _harness.py, test__deps.py, sweep-selftests.py, stamp-verification.py, test__runner_collects.py, test_stamp_verification.py) were not edited, so their dependants are unchanged. claims: 1 drive-phase.py pending_still_applies (runnable_tasks branch), walk_wave/step_member 'dropped' arm, fix_takes, leave_refusal, apply_phase_answer leave arm, run_signoff left arm, run_brief write-then-read are the lines each docstring/guide sentence names; 2 mutations.py rows -> 11/11 killed, over-fire twins rf2/rf9/rf11 each killed by their over-fire mutant; 3 class not instance: one predicate runnable_tasks asked by the sign-off decision path and (as not_ready_why) the wave walk; one predicate fix_takes asked by the offer and the refusal; grep of pending_still_applies callers: drive_locked, step_member, walk_wave, explain - all now read the same rule; 4 n/a - no rule addressed to an agent added (orchestrator.md untouched); 5 n/a - no property measured; 6 n/a - no guard; 7 no number written in prose (prose lints clean).",
+        "descriptive": "The drive now runs a ready or started task before it re-offers a triage or any sign-off decision, drops a wave member that lost readiness instead of stopping on it, offers and takes a per-finding `leave --fix <id> --reason` at the triage with the offer and refusal of `fix` agreeing, and writes the executor brief for a task started by the verb."
       },
       "startedAt": "2026-11-02T08:17:37Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-02T09:11:09Z",
+      "verifiedBy": [
+        "rf-block in tests/test_drive_phase.py: rf1 a task added at the triage is dispatched by the next signal (rf2 its blocked twin keeps the triage); rf3-rf5 leave --fix --reason leaves a med with no fix task, sign-off records its reason, bare/unknown leave refused; rf6-rf7 offer and refusal of fix agree for a finding naming a cancelled fix task, which is offered leave; rf8-rf9 a wave member that gained a blocker is dropped and the walk goes on (twin keeps both); rf10-rf11 brief --role executor writes and prints a brief for a verb-started task (twin: never-started task gets none and no write attempt)"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-11-02T09:02:12Z.41a85f",
         "status": "passed",
         "at": "2026-11-02T09:02:12Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "2f8214c110e8",
+        "at": "2026-11-02T09:11:09Z",
+        "return": "docs/audit/evidence/returns/P155.3/20261102T081737Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-11-02T08:50:33Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py tools/_suite.py` in a throwaway tree at HEAD exited 1 with failing cases ta9 (house FAIL), sn3 (house FAIL), rf1 (house FAIL), rf3 (house FAIL), rf4 (house FAIL), rf5 (house FAIL), rf6 (house FAIL), rf7 (house FAIL), rf8 (house FAIL) and 1 more, but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 762/763 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 764/774 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P155.4",
       "title": "The tree-stamp suite's tab-name skip carries the error that caused it",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Closes P143-R22. Evidence at fa1b0c81: tests/test__tree_stamp.py:864-878 (_write_shapes appends the name only), :965-969 (absent=bool(tab_refused), always true in that branch). Hand the owner the Windows command and the expected SKIPPED line.",
       "files": [
         "tests/test__tree_stamp.py"
@@ -275,27 +289,46 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-02T09:11:13Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-02T09:21:50Z.1fce32",
+        "status": "passed",
+        "at": "2026-11-02T09:21:50Z"
+      }
     },
     {
       "id": "P155.5",
       "title": "CI's records are measured: the cost table is re-recorded from run 41322244766's Windows cells, the cap comment says what the runs showed, and ruff covers .claude/hooks",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Closes P143-R3, P143-R16 and the unused shutil import. (1) python3 tools/sweep-selftests.py --costs-from-log <eight windows logs of run 41322244766 at fa1b0c81: plain 1-5, cp1252 1-3; gh run view 41322244766 --job <id> --log> --platform win32 --record-costs .github/sweep-costs.json; drop the scaled-figures note. (2) ci.yml:280-283: \"five of those seven runs\" (or no count) and \"Measured, and matching GitHub's documented Free-plan limit\". (3) .claude/hooks/guard-uncommitted.py:654 loses `import shutil` (ruff F401) and verify.sh's ruff path list gains .claude/hooks so the class is gated.",
       "files": [
         ".github/sweep-costs.json",
         ".github/workflows/ci.yml",
         "tools/verify.sh",
-        ".claude/hooks/guard-uncommitted.py"
+        ".claude/hooks/guard-uncommitted.py",
+        "tools/gate-parity.py",
+        "tools/prove-gates.py",
+        "tools/sweep-selftests.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "tests/_harness.py",
+        "tests/test__runner_collects.py",
+        "tests/test_stamp_verification.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tests/test__affected_tests.py",
+        "tests/test__doctor_trail.py",
+        "tests/test_drive_phase.py",
+        "tools/lints/_deps.py",
+        "tests/test__deps.py"
       ],
       "tests": {
         "mode": "gate-only",
@@ -314,28 +347,41 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-02T09:11:49Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P155.6",
       "title": "scope says which gate a task now holds and never drops entries unasked; lo-po4 reads its own fixture, not the caller's checkout; task.md carries the --gate-clear caveat",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Closes F827, F826, P153-R6. Evidence at fa1b0c81: audit-task.py:2753 (success line prints field names), :10294-10300 (started task: --gate replaces, --gate-set/--gate-drop refused); python3 tests/test_audit_task.py --selftest --stage lo-block from the checkout -> 57/58, FAIL lo-po4 with the \"you are standing in\" warning; commands/task.md:39 and measure-context 7989/8000 - free bytes by moving a passage to verbs-in-full.md, then add \"(refused on tdd/regression; see verbs-in-full)\". vf6 derives VERB_FLAGS against the call graph: declare any new flag where it reads.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
         "tests/test_audit_task.py",
         "plugins/audit/commands/task.md",
         "plugins/audit/commands/verbs-in-full.md",
-        "README.md"
+        "README.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tools/prove-gates.py",
+        "tests/_harness.py",
+        "tests/test__affected_tests.py",
+        "tests/test__doctor_trail.py",
+        "tests/test_drive_phase.py",
+        "tools/lints/_deps.py",
+        "tests/test__deps.py",
+        "tools/sweep-selftests.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "tests/test__runner_collects.py",
+        "tests/test_stamp_verification.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -354,16 +400,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-02T09:12:07Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P155.7",
