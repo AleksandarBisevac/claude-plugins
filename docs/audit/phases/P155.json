@@ -121,8 +121,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py:6320-6326 (recut_conflicts before keep_old_tree/add_tree)",
         "issue": "contradicts task clause \"Closes F808\" (F808 Do: 'the dry run made in the tree after setup'). recut_conflicts still checks a three-way apply against the bare phase head. The real apply (:6362) runs in a tree that add_tree has already put through executor.worktreeSetup. A setup that rewrites a tracked file still fails after the old tree was kept. The executor states it did not do this, so F808 is not closed by this diff.",
-        "resolution": "Cut the new tree (with setup) before the old one is kept, and run the conflict check there. Or file this half as its own task and keep F808 open in the register for it.",
-        "fixTask": "P155.22-gfj"
+        "resolution": "fixed in P155.22-gfj (a836e844fc1e): Cut the new tree (with setup) before the old one is kept, and run the conflict check there. Or file this half as its own task and keep F808 open in the register for it.",
+        "fixTask": "P155.22-gfj",
+        "commit": "a836e844fc1e",
+        "status": "fixed"
       },
       {
         "id": "P155-R13",
@@ -275,9 +277,23 @@
         "file": "docs/audit/phases/P155.json (P155.24-gfj tests.gate)",
         "issue": "The task's recorded gate, `python3 tools/sweep-selftests.py tests/_harness.py tests/test__affected_tests.py tests/test__runner_collects.py tests/test_stamp_verification.py`, selects no suite that reaches this diff. A grep for verify.sh|gate-parity|live.window|rendered_plan_legs over those four files gives zero hits. So the passed gate run 2026-11-02T19:13:29Z.a52926 is no evidence for the change, and every suite it selects would still pass with live_plan_window or _live_window_cases deleted. The executor's own gate-parity run (125/125) carries a stamp that `stamp-verification.py compare` grades stale: head 578cfd35 -> 32b4ca49, and scopeDigest moved because P155.26 edited PLUGIN-BUILD-GUIDE.md. The dirty bytes of verify.sh and gate-parity.py did not move.",
         "resolution": "Add `python3 tools/sweep-selftests.py tools/gate-parity.py` to the task's tests.gate, or make sure the phase gate selects tools/gate-parity.py, so a recorded run exercises lw0-lw4."
+      },
+      {
+        "id": "P155-R33",
+        "severity": "med",
+        "file": "tools/affected.py:968-980",
+        "issue": "contradicts task clause \"Move the window selection into a stdlib tools/ script with a tests/ suite. Run it against a fixture plan holding a cross-phase dependsOn, a materialized proposal, a bug on a dropped task and a phase with a unique key, and assert closure, filtering and shape-set equality\". The diff touches tools/affected.py only (select() arm plus cases a3e/a3f): the live_plan_window heredoc in tools/verify.sh:805-940 is unmoved, no tools/ script or tests/ suite was added, and no fixture plan exists. What shipped is a different fix (a verify.sh-only edit now selects gate-parity's own cases), which is useful but is not the asked one.",
+        "resolution": "Extract the window selection from tools/verify.sh into a stdlib tools/ script, add a tests/ suite that builds a fixture plan with a cross-phase dependsOn, a materialized proposal, a bug on a dropped task and a phase with a unique key, and asserts closure, proposal/bug filtering and shape-set equality. Prove each assertion red by mutating the closure, the proposal filter, the bug filter and the shape arm. Keep the affected.py selection change as a companion if wanted."
+      },
+      {
+        "id": "P155-R34",
+        "severity": "low",
+        "file": "tools/gate-parity.py:2757-2830",
+        "issue": "Inherited-test shape, from reading only: task gate 2 selects tools/gate-parity.py, so the lw0-lw4 cases do run the shipped window step, but only against this repo's live plan, whose shape moves with every merged phase. lw2 compares the evidence reader's view of window vs full plan, and that view reads tasks and phases only. Deleting the proposal filter (verify.sh plan[\"proposals\"] line) or the shape arm's manifest-key/status part stays green whenever the live plan holds no proposal pointing at a dropped phase or no phase uniquely carrying such a key. verify.sh's own comment says \"nothing fails when it misses a manifest key or status, so that arm is the reading of this code\". The executor's claim that deleting closure, proposal filter, shape arm or bugs filter each exits 1 rests on an attempt-1 scratch probe that is not a recorded check and that I did not see.",
+        "resolution": "Pin the filters against a fixture plan with a deterministic shape, as finding 1 asks, so the result does not depend on what the live plan holds today."
       }
     ],
-    "outcome": "[findings: 32 - 1 high, 13 med, 18 low; 8 with a recorded fix commit]"
+    "outcome": "[findings: 34 - 1 high, 14 med, 19 low; 9 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1831,7 +1847,7 @@
     {
       "id": "P155.22-gfj",
       "title": "fix P155-R12: contradicts task clause \"Closes F808\" (F808 Do: 'the dry run ma...",
-      "status": "in_progress",
+      "status": "done",
       "description": "contradicts task clause \"Closes F808\" (F808 Do: 'the dry run made in the tree after setup'). recut_conflicts still checks a three-way apply against the bare phase head. The real apply (:6362) runs in a tree that add_tree has already put through executor.worktreeSetup. A setup that rewrites a tracked file still fails after the old tree was kept. The executor states it did not do this, so F808 is not closed by this diff.\n\nResolution asked: Cut the new tree (with setup) before the old one is kept, and run the conflict check there. Or file this half as its own task and keep F808 open in the register for it.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1856,14 +1872,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a836e844fc1e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: recut_tree now checks the work again in the recut tree after executor.worktreeSetup has run, and applies it there, through the new apply_in_recut. It runs the scratch-index conflict check over that tree's own index (git write-tree, then recut_conflicts), and only then the real three-way apply, which git makes whole or not at all. A refusal there is undone by the new undo_recut: the recut tree goes through remove_task_tree (the only remover), with what it holds now as carried, since it was cut under the lock and holds only what the setup wrote. Then the drive state snapshot taken before keep_old_tree is restored, then the old tree's original marker, in that order so a crash between them is settled by settle_kept_markers. Then drop_redo_work removes the patch and pin, and the redo is refused by name with the old tree, work, base and carry ref unchanged. If the undo stops part way, the existing after_kept stop naming the kept patch still applies. The recut_conflicts docstring claimed 'the recut tree is a fresh checkout of head, so this answers for it', which was false under a setup; it now says it answers for the bare head only. The recut_tree and remove_task_tree docstrings and PLUGIN-BUILD-GUIDE.md (the redo paragraph and the one-remover paragraph) are updated. DEVIATION FROM THE LITERAL RESOLUTION: the new tree cannot be cut before the old one is kept. manage-worktrees.py task-add adopts any tree whose marker names the task (manage-worktrees.py:603-614), and rewriting that marker is the keeping. So the order is: keep, cut with setup, check there, and undo the keep on refusal. The end state is the same as a refusal made before the keep, and that end state is what ar3s asserts. Doing it literally would need manage-worktrees.py, which is outside this task's files. tests/test_drive_phase.py: _ab_red_at_base and _ar_at_decision take setup=, passed to _wave_repo. New _recut_setup_cases is called from _recut_refused_move_cases (stage ar-block) and adds two cases. ar3s: a setup that rewrites src/f1.txt only where fixed.txt exists (the head, never the first cut). The redo is refused naming src/f1.txt; afterwards the old tree is wave.trees' entry with its marker naming P1.1 again, HEAD at base, work bytes, carry ref and wave.bases unchanged, git worktree list the same as before the redo, no gate rows, no patch, no refs/audit/redo pin, and the decision still stands. ar3t is the over-fire twin: a setup that writes nothing, and the redo recuts, gates green at head and closes on the merged bytes. Mutations, each made and restored in one script in this tree with __pycache__ purged: marker restore removed -> ar3s FAIL (8/9); state restore removed -> ar3s FAIL (8/9); undo replaced by a fixed failure -> ar3s FAIL (8/9); apply_in_recut always refusing -> ar2, ar2b, ar3s, ar3t, ar4 FAIL (4/9). Gate runs: python3 tools/sweep-selftests.py tests/test_drive_phase.py -> '1/1 files ok, 806 cases', exit 0. python3 tools/prove-gates.py --selftest -> 'ALL PASS: 66/66 cases passed', exit 0. ruff check and vermin -t=3.8- on both .py files are clean; prose_number_claims, doc_prose_numbers and house_style_violations have no hits on the touched files. DEPENDANTS: tests importing drive-phase.py (test__filed_returns, test__invariants, test__worktrees, test_audit_status, test_commit_task_work, test_detect_plan_skip, test_stamp_verification) are still correct. No signature or return shape changed: keep_old_tree still returns {key, path} (ta22 pins this), recut_conflicts keeps its signature (its head argument may now also be a tree object), and only two functions were added. tools/stream-cost.py is still correct: no new journal action. undo_recut writes a did-line, not a journal row. The task.worktree row add_tree wrote for the undone tree stays as history. Path dependants of test_drive_phase.py (sweep-costs.json, ci.yml, affected.py, reach-diff.py, test_run_test_gate.py, test__runner_output.py, test_stamp_verification.py) are still correct: no stage was added or renamed, and the new cases run inside the existing ar-block stage. That stage takes about 26s locally, so .github/sweep-costs.json may under-weigh ar-block, which is a re-record question, not breakage. The PLUGIN-BUILD-GUIDE.md basename dependants are unaffected: no heading or anchor was renamed. F808 is in the private register, which this task cannot edit; whether it closes is the orchestrator's call, with the deviation above.",
+        "descriptive": "A redo whose work the recut tree's setup refuses is now refused by name and undone, so the old tree, its work, base and carry ref are left as they were and no recut tree is left standing."
       },
       "startedAt": "2026-11-02T18:43:05Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-02T19:24:30Z",
+      "verifiedBy": [
+        "ar3s: a setup that rewrites a carried file in the recut tree refuses the redo by name and undoes it: the old tree is the task's again, its marker names the task, work/base/carry are unchanged, no extra worktree, patch or pin is left, and the decision still stands",
+        "ar3t: over-fire twin - with a setup that writes nothing the redo recuts at the head, gates green and closes on both edits"
+      ],
       "notes": [
         {
           "at": "2026-11-02T16:59:00Z",
@@ -1882,6 +1901,18 @@
         "runId": "2026-11-02T19:24:25Z.729ad4",
         "status": "passed",
         "at": "2026-11-02T19:24:25Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "a836e844fc1e",
+        "at": "2026-11-02T19:24:30Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-02T19:10:26Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD exited 1 with 1 of 806 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ar3s (house FAIL): SELFTEST FAILED: 805/806 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -2059,41 +2090,44 @@
     {
       "id": "P155.25-gfj",
       "title": "fix P155-R19: Inherited-test shape: the task's gate entry `sh tools/verify.sh...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Inherited-test shape: the task's gate entry `sh tools/verify.sh --list` sets LIST=1, and `run \"rendered-plan legs ...\" rendered_plan_legs` then prints the step name without executing the function. So no command in tests.gate reaches the window heredoc. Deleting its closure, its proposal filter or its shape arm leaves both gate commands green. The executor's red demonstrations were scratch copies, not a recorded check. (This is from reading verify.sh, not from a run.)\n\nResolution asked: Move the window selection into a stdlib tools/ script with a tests/ suite. Run it against a fixture plan holding a cross-phase dependsOn, a materialized proposal, a bug on a dropped task and a phase with a unique key, and assert closure, filtering and shape-set equality. Proving red is part of the case.",
       "files": [
-        "tools/verify.sh"
+        "tools/verify.sh",
+        "tools/gate-parity.py",
+        "tools/prove-gates.py",
+        "tests/_harness.py",
+        "tests/test__affected_tests.py",
+        "tools/sweep-selftests.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "tests/test__runner_collects.py",
+        "tests/test_stamp_verification.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tools/affected.py"
       ],
       "tests": {
         "mode": "tdd",
         "add": [],
         "expectRedFirst": false,
         "gate": [
-          "selftests",
-          "validate",
-          "plugin-validate",
-          "gate",
-          "report",
-          "lint",
-          "shots",
-          "interactive",
-          "vitest"
+          "python3 tools/sweep-selftests.py tests/_harness.py tests/test__affected_tests.py tests/test__runner_collects.py tests/test_stamp_verification.py",
+          "python3 tools/sweep-selftests.py tools/affected.py tools/gate-parity.py"
         ],
-        "gateBasis": "files-no-suite"
+        "gateBasis": "declared"
       },
       "model": "sonnet",
       "skills": [],
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-02T19:30:55Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -2112,7 +2146,13 @@
       ],
       "fixes": [
         "P155-R19"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-02T19:48:41Z.aba280",
+        "status": "passed",
+        "at": "2026-11-02T19:48:41Z"
+      }
     },
     {
       "id": "P155.26-gfj",
@@ -2188,13 +2228,14 @@
     {
       "id": "P155.27-gfj",
       "title": "fix P155-R21: `hash-object --no-filters` costs more than the docstring says. ...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "`hash-object --no-filters` costs more than the docstring says. With core.autocrlf=true, the Git for Windows installer default, every text file checkout writes with CRLF hashes differently from its LF blob. So a move killed partway through its checkout leaves moved paths that `_newer_work` reads as newer work. The resume holds the tree, and so does the restore verb the new stop names: restore_copy runs the same `_newer_work` and refuses those paths, because moved paths are not in `held`. On a default Windows checkout, the stop's sentence '`restore` puts the work back from it and takes it down' is then false and no verb can settle the tree. The filtered hash this replaces accepted those files.\n\nResolution asked: Compare the file's raw bytes with what checkout itself would write, `git cat-file --filters <commit>:<rel>` (smudge and EOL conversion applied under this tree's attributes and config). That rejects a file whose only change is its line endings and still accepts a CRLF checkout. Add a variant of un5 that sets core.autocrlf=true, checks out the head, and expects the file to read as the commit's.",
       "files": [
         "plugins/audit/scripts/git/_worktrees.py",
         "plugins/audit/scripts/governance/drive-phase.py",
         "tests/test__worktrees.py",
-        "tests/test_drive_phase.py"
+        "tests/test_drive_phase.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -2212,14 +2253,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-02T19:25:11Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -2238,7 +2279,13 @@
       ],
       "fixes": [
         "P155-R21"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-02T19:54:52Z.299d57",
+        "status": "passed",
+        "at": "2026-11-02T19:54:52Z"
+      }
     },
     {
       "id": "P155.28-gfj",

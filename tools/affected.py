@@ -135,7 +135,8 @@ VITEST = "npx vitest run"
 # the workflow to the runner's `--list` - so editing either is what makes them
 # disagree. The documents that describe the sweep select it too (the sweep-document
 # branch), which is a widening this file is allowed.
-PARITY = "python3 tools/gate-parity.py"
+PARITY_TOOL = "tools/gate-parity.py"
+PARITY = "python3 %s" % (PARITY_TOOL,)
 
 # The sweep with no path: what the phase gate's `selftests` and verify.sh's per-run
 # tier run, and so what runs the tree scanners a task's listing leaves out.
@@ -967,6 +968,15 @@ def select(paths, graph=None, scanners=True):
                 gates.append(PARITY)
                 reasons.append("%s - part of the gate set, so gate parity is "
                                "re-checked" % (posix,))
+                if not own:
+                    # The parity tool's OWN cases cut shell functions out of the
+                    # runner by name and run them under a POSIX sh - an edge by path
+                    # no import graph shows, and one the parity check above, which
+                    # is not `--selftest`, never exercises. The tool itself takes
+                    # its own cases through `own`.
+                    gates.append(TOOL_SELFTEST % (PARITY_TOOL,))
+                    reasons.append("%s - the parity tool's own cases run functions "
+                                   "cut out of it, so they run" % (posix,))
             elif not own:
                 # SAID AS A PROPERTY OF THIS FILE, not of the tool. It read "a tool
                 # no suite covers", which is a claim about the tool - and it was
@@ -1372,6 +1382,42 @@ def _cases(check):
           % (report_part["gates"],),
           len([g for g in report_part["gates"]
                if g.startswith("node tools/check-report")]) == len(REPORT_DOCS))
+
+    # THE PARITY TOOL'S OWN CASES cut shell functions out of the runner by name
+    # and run them, so a change to the runner alone owes them - and the parity
+    # check by itself (no `--selftest`) runs none of them. Asked of the CLI as
+    # well as of the function, because the printed listing is what a derived
+    # task or phase gate reads.
+    parity_cases = TOOL_SELFTEST % (PARITY_TOOL,)
+    runner = sel("tools/verify.sh")
+    listed = subprocess.run(
+        [sys.executable, os.path.join(REPO, "tools", "affected.py"),
+         "--list-related", "tools/verify.sh"],
+        cwd=REPO, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    printed = listed.stdout.decode("utf-8", "replace").splitlines()
+    check("a3e a change to the runner alone selects the parity tool's own cases, "
+          "beside the parity check, and `--list-related` prints the tool's path: "
+          "gates %r, listing exit %r %r"
+          % (runner["gates"], listed.returncode, printed),
+          (not runner["full"]) and PARITY in runner["gates"]
+          and parity_cases in runner["gates"]
+          and listed.returncode == 0 and PARITY_TOOL in printed)
+
+    # THE SECOND DIRECTION: the over-fire mutation is the cases riding on every
+    # path that selects the parity check. A sweep document selects that check
+    # through another branch, and a shell tool beside the runner falls to the
+    # same tools/ branch; neither runs a function of the runner.
+    doc = sel("CLAUDE.md")
+    shell_tool = sel("tools/redfirst.sh")
+    check("a3f THE PAIR: a path that is not the runner does not pull the parity "
+          "tool's cases in - a document that selects the parity check, and a "
+          "shell tool beside the runner: %r / %r"
+          % (doc["gates"], shell_tool["gates"]),
+          PARITY in doc["gates"]
+          and parity_cases not in doc["gates"]
+          and parity_cases not in shell_tool["gates"]
+          and PARITY_TOOL not in _related_suite_paths(
+              ["CLAUDE.md", "tools/redfirst.sh"], graph))
 
     surfaces = [sfc for sfc, _m in _refs.SURFACES]
     reached = [sfc for sfc in surfaces if refs_reads(sfc.replace(os.sep, "/"))]
