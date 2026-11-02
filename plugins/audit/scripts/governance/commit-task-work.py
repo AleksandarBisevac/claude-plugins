@@ -614,15 +614,11 @@ def _them(paths):
 
 def owned_rels(manifest, project, git_root, task):
     """Every declared entry of every in_progress task, and of `task` itself,
-    git-root relative with the line suffix dropped."""
-    nodes = [t for t in _mio.tasks_by_id(manifest).values()
-             if isinstance(t, dict) and (t.get("status") == "in_progress"
-                                         or t.get("id") == task.get("id"))]
-    names = [_vocab._strip_line_suffix(entry).strip() for node in nodes
-             for entry in (node.get("files") or []) if isinstance(entry, str)]
-    rels = [_invariants._rel(os.path.join(project, name), git_root)
-            for name in names if name]
-    return sorted(set(rel for rel in rels if rel is not None))
+    git-root relative with the line suffix dropped - the plan gate's own
+    reading (`hooks/_config.declared_git_rels`), so a path the gate opened to
+    an edit is never one this commit refuses as undeclared."""
+    return _hooks_config().declared_git_rels(manifest, project, git_root,
+                                             also=[task.get("id")])
 
 
 def _hooks_config():

@@ -595,6 +595,12 @@ rules). Typed getters: `state_dir`, `logs_dir`, `token_vars`, `custom_rules`,
 `extra_secret_patterns`, `tdd_reminder`. Also hosts the shared path/manifest helpers
 (`rel_path`, `within_root`, `matches_exempt`, `strip_line_suffix`, `in_progress_files`,
 `in_progress_task_map` — the latter exposes each covering task's `tests.mode` for remind-tdd).
+`declared_task_map` is the one reading of "declared" behind that map: the `files` of every
+in_progress task, plus each `fileIndex` row keyed to one, over an assembled manifest.
+`commit-task-work.py` counts a changed path as declared through the same function
+(`declared_git_rels`, the entries spelled from the checkout's top), so a path the plan gate
+opened to an edit is never one the task commit refuses as undeclared (`dp1`, `dp2` in
+`tests/test_require_plan.py`).
 `covering_key` is the matcher over any of those file maps (exact, the path as a directory, a
 directory the path sits under), shared so a verdict and the sentence explaining it cannot answer
 it differently; `declaring_tasks` is the read-only companion that keeps every status instead of
@@ -4549,6 +4555,14 @@ its options; an option it does not offer, or one that records a reason given non
 commit with nothing in it, a reviewer answer only a human settles, a phase with no ready task,
 and the decisions sign-off adds, below.
 
+**A scope change is closed only over a run of the scope.** A filing stamped under another file
+list is the `scope-changed` decision, and before it is printed the drive measures the gate
+under the list the task holds now (`scope_gate`, `--no-reuse`): the commit binds the run's
+declared-scope digest, so a `close` over a green of the old list was refused at the commit. The
+green mark carries the list it was measured under, and `--answer close` accepts nothing unless
+that list is the task's now (`scope_run_current`) - the step then measures and asks again
+(`sd6`-`sd8`).
+
 **A task the drive can run comes before any decision that stands on the phase's tasks.**
 `runnable_tasks` - the phase's tasks `_status_facts.ready_tasks` names, or already in progress -
 is asked in two places. A decision with no task is one of sign-off's, raised only once every task
@@ -4748,7 +4762,14 @@ where the tree lacks the work (`redo_held`): a redo stopped before the old tree 
 marker never rewritten - or once the recut tree held the work, leaves a tree an
 apply would fail over, and the stop says it holds the work (`ar6d`, `ar6e`); where the tree
 could not be read, it says how a path the head moved
-reads once merged and prescribes the apply only where the tree lacks the work (`ar6f`).
+reads once merged and prescribes the apply only where the tree lacks the work (`ar6f`). Each
+remedy is a command naming the patch and the pin - the apply that finishes from the patch, and
+the removals that take both away. A serial step on a task whose patch stands is stopped the same
+way, since a wave dropped since the redo leaves its member to the serial path, with the apply
+made in the phase tree (`sd12`). The pin itself is taken down at the end of every drive call once
+`redo_pin_spent` says it keeps nothing - its task done, cancelled or blocked, or no patch of its
+left - whichever path got it there (`settle_redo_pins`; `sd9`-`sd11`, and `sd13` for a pin a
+stop left once its patch was gone).
 
 Before a wave opens, `hooks_width` asks `_doctor_setup.hooks_task_binding` whether the hooks
 Claude Code loads - the copy `installed_plugins.json` records and the live copies the hook run
@@ -4771,7 +4792,15 @@ executor|reviewer [--head SHA] [--case ...] [--introduces ...] [--deps-from DIR]
 [-- <test command>]` reads the return on stdin and runs, in order, what the agent prompts used
 to explain step by step: the shape check (`submitted_shape`, with the fields `submit` fills set
 aside, so a malformed return costs no red run and writes nothing); for an executor whose return
-is already filed for this start, a refusal before anything runs (`already_filed`); with a test
+is already filed for this start, a refusal before anything runs (`already_filed`); for an
+executor whose attempt changed a path its task does not declare, a refusal naming each path and
+the scope remedy (`submit_strays`), asked as the task commit asks it -
+`_scoped_commit.undeclared_changes` over `_config.declared_git_rels` and the start snapshot, so dirt from before
+the start is not the attempt's - while the executor is still there to say why, rather than at the
+commit after the gate and the review (`sd1`-`sd3`). A wave member is told rather than refused:
+every change in its tree past the records is read against the task's own declarations, named on
+the filing's line, and settled by its integration, which widens a follower and asks about the rest
+(`sd4`, `sd5`); with a test
 command, `stamp-verification.py red --json`, whose `redFirst` block replaces the agent's - owed
 on a task that owes a red-first proof, which is refused without one, while a `tdd` task whose
 `expectRedFirst` is false, given no command, has its `not-attempted` block filed by `submit`, and a test that passes without the fix gets no

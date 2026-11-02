@@ -2280,6 +2280,108 @@ def _cases(check):
         shutil.rmtree(tmp_ig, ignore_errors=True)
 
     _harness.stage(check, "ss", _shell_slot_cases)
+    _harness.stage(check, "dp", _declared_predicate_cases)
+
+
+# One plan whose `files` and `fileIndex` reach paths every way a declaration can
+# be read: an entry with a line suffix, a directory entry, a sibling's file, a
+# row only `fileIndex` carries, a pending task's and a finished task's files,
+# and a path nobody declares.
+_DP_PLAN = {
+    "meta": {"version": 2},
+    "phases": [{"id": "P1", "title": "p", "status": "in_progress", "tasks": [
+        {"id": "P1.1", "title": "own", "status": "in_progress",
+         "files": ["src/own.py:10-20", "src/dir/"]},
+        {"id": "P1.2", "title": "sibling", "status": "in_progress",
+         "files": ["src/sibling.py"]},
+        {"id": "P1.3", "title": "unstarted", "status": "pending",
+         "files": ["src/pending.py"]},
+        {"id": "P1.4", "title": "finished", "status": "done",
+         "files": ["src/done.py"]}]}],
+    "fileIndex": {"src/own.py": ["P1.1"], "src/dir/": ["P1.1"],
+                  "src/indexed.py": ["P1.1"], "src/sibling.py": ["P1.2"],
+                  "src/pending.py": ["P1.3"], "src/pending-row.py": ["P1.3"],
+                  "src/done.py": ["P1.4"]}}
+_DP_PATHS = ("src/own.py", "src/dir/x.py", "src/sibling.py", "src/indexed.py",
+             "src/pending.py", "src/pending-row.py", "src/done.py",
+             "src/nobody.py")
+
+
+def _declared_predicate_cases(check):
+    """The plan gate and the task commit read ONE predicate for "declared".
+
+    The gate let an executor write a file its task's commit then refused as
+    undeclared, a gate run too late, because the two answered the question with
+    two readings of the plan. Asked of the same plan, every path the gate opens
+    to a large edit is one the commit counts as declared, and none other."""
+    ctw = _loader.load_script("commit-task-work.py", "ctw_declared_predicate",
+                              cache=False)
+    import _manifest_io as _mio
+    import _task_outputs
+    root = Path(_harness.fixture_root("require-plan-declared-"))
+    (root / "docs" / "audit").mkdir(parents=True)
+    (root / "docs" / "audit" / "audit-plan.json").write_text(
+        json.dumps(_DP_PLAN), encoding="utf-8")
+    held = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = str(root)
+    many = "\n".join("line %d" % (n,) for n in range(200))
+
+    def gate_opens(rel, sid):
+        # Over the threshold, so the free-file slot never decides the verdict.
+        ok, got = _harness.attempt(M.decide, {
+            "tool_name": "Write", "session_id": sid, "cwd": str(root),
+            "tool_input": {"file_path": str(root / rel), "content": many}},
+            event="PreToolUse")
+        return ok and got[0] == "allow"
+
+    def commit_counts(rel, owned):
+        return any(_task_outputs.covers(entry, rel) for entry in owned)
+
+    try:
+        plan = _mio.load_manifest(str(root / "docs" / "audit" /
+                                      "audit-plan.json"))
+        task = _mio.tasks_by_id(plan)["P1.1"]
+        owned = ctw.owned_rels(plan, str(root), str(root), task)
+        gate = [p for n, p in enumerate(_DP_PATHS) if gate_opens(p, "dp-%d" % n)]
+        commit = [p for p in _DP_PATHS if commit_counts(p, owned)]
+        check("dp1 the plan gate and commit-task-work read one predicate for "
+              "declared: every path the gate opens to a large edit is one the "
+              "commit counts as declared, and none other (a `fileIndex` row, a "
+              "line suffix, a directory entry, a sibling's file; never a pending "
+              "or a finished task's): gate %r, commit %r" % (gate, commit),
+              gate == commit == ["src/own.py", "src/dir/x.py", "src/sibling.py",
+                                 "src/indexed.py"])
+        # THE SAME FUNCTION, NOT TWO THAT AGREE TODAY: the predicate is swapped
+        # for one declaring only a path nobody declares, and both readers move
+        # with it - a reader holding a reading of its own would not.
+        loaded = _loader.load_hooks_config(modname="audit__config")
+        real = (getattr(_config, "declared_task_map", None),
+                getattr(loaded, "declared_task_map", None))
+
+        def only_nobody(manifest, also=()):
+            return {"src/nobody.py": [{"taskId": "P1.1", "testsMode": None}]}
+        _config.declared_task_map = only_nobody
+        loaded.declared_task_map = only_nobody
+        try:
+            swapped_owned = ctw.owned_rels(plan, str(root), str(root), task)
+            swapped = ([p for n, p in enumerate(_DP_PATHS)
+                        if gate_opens(p, "dp-swap-%d" % n)],
+                       [p for p in _DP_PATHS if commit_counts(p, swapped_owned)])
+        finally:
+            for module, was in zip((_config, loaded), real):
+                if was is None:
+                    delattr(module, "declared_task_map")
+                else:
+                    module.declared_task_map = was
+        check("dp2 ...and it is one function, `_config.declared_task_map`, both "
+              "read: swapped for one declaring only src/nobody.py, the gate opens "
+              "and the commit counts exactly that path: %r" % (swapped,),
+              swapped == (["src/nobody.py"], ["src/nobody.py"]))
+    finally:
+        if held is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = held
 
 
 def _shell_slot_cases(check):

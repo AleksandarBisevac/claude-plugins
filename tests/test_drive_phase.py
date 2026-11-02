@@ -1521,8 +1521,10 @@ def _writer_scope_cases(check):
     root_e, mpath_e = _repo("xs-executor", task_ids=TASKS[:1], per_task="phase")
     _xs_with_aside(root_e)
     _next(M, root_e, mpath_e)
-    _write_lf(os.path.join(root_e, _XS_ASIDE), _XS_EDIT)
+    # Made after the filing: one made before it is refused at `submit` itself
+    # (`sd1`), so the close's own refusal is reached only by an edit since.
     _file_executor(root_e, mpath_e, "P1.1")
+    _write_lf(os.path.join(root_e, _XS_ASIDE), _XS_EDIT)
     code_e, text_e = _next(M, root_e, mpath_e)
     task_e = tasks_of(mpath_e).get("P1.1") or {}
     with open(os.path.join(root_e, _XS_ASIDE), encoding="utf-8") as fh:
@@ -8593,9 +8595,11 @@ def _close_evidence_cases(check):
     _harness.git(root, "add", "notes.txt")
     _harness.git(root, "commit", "-qm", "fixture: notes")
     _next(M, root, mpath)
+    # Written after the filing: before it, `submit` refuses it (`sd1`), so the
+    # close's own refusal is reached only by an edit since.
+    _file_executor(root, mpath, "P1.1")
     with open(os.path.join(root, "notes.txt"), "w", encoding="utf-8") as fh:
         fh.write("an allowlist the gate needed\n")
-    _file_executor(root, mpath, "P1.1")
     code, text = _next(M, root, mpath)
     task = tasks_of(mpath).get("P1.1", {})
     check("ce4 a TRACKED file outside the task's files, clean at the start and "
@@ -8736,6 +8740,228 @@ def _scope_retry_ok(state):
             and new_return is not None and new_return != old_return
             and not os.path.exists(new_return)
             and None not in briefs and briefs[0] != briefs[1])
+
+
+# --- what the executor declared, asked while it is still there ----------------
+def _redo_pins(root):
+    """The refs a redo pinned work under, as git lists them."""
+    return [ln.split()[-1] for ln in _git_out(
+        root, "for-each-ref", "refs/audit/redo/").splitlines() if ln.strip()]
+
+
+def _pin_redo(M, root, task_id):
+    """A redo pin for `task_id` at HEAD, as a redo leaves one."""
+    _harness.git(root, "update-ref", M.redo_pin(task_id), _head(root))
+
+
+def _high_risk_repo(prefix):
+    """A one-task fixture whose task is high risk, so the drive stops at the
+    confirmation between its green gate and its close."""
+    root, mpath = _repo(prefix, task_ids=TASKS[:1], per_task="phase")
+    plan = _mio.read_json(mpath)
+    plan["phases"][0]["tasks"][0]["risk"] = "high"
+    with open(mpath, "w", encoding="utf-8", newline="\n") as fh:
+        json.dump(plan, fh, indent=2)
+    _harness.git(root, "commit", "-qam", "fixture: high risk")
+    return root, mpath
+
+
+def _scope_declared_cases(check):
+    """`submit` compares the attempt's changed paths with the task's files while
+    the executor is there; a scope change re-measures the gate before `close`
+    is offered; and a redo's pin goes on every terminal path."""
+    M, why = _load("drive_phase_scope_declared")
+    if M is None:
+        check("sd1 the driver loads", False, why)
+        return
+    # A tracked file no task declares, changed during the attempt.
+    root, mpath, _t = _started(M, "sd-undeclared")
+    _edit(root, "P1.1", "changed\n")
+    _write_lf(os.path.join(root, "src", "f2.txt"), "an edit the task never declared\n")
+    path = _filed_path(mpath, "P1.1")
+    code, text = _submit(None, root, mpath, "P1.1", _executor_body("P1.1"))
+    check("sd1 submit with a changed path the task does not declare is refused "
+          "while the executor is there: it names the path and the scope remedy "
+          "(`--files +src/f2.txt`, with the reason), takes no stamp and files "
+          "nothing: %r" % ((code, text),),
+          code == 1 and "src/f2.txt" in text and "--files +src/f2.txt" in text
+          and "reason" in text and "stamp taken" not in text
+          and path is not None and not os.path.exists(path))
+    _write_lf(os.path.join(root, "src", "f2.txt"), "v0\n")
+    code, text = _submit(None, root, mpath, "P1.1", _executor_body("P1.1"))
+    check("sd2 THE ALLOW TWIN: the same attempt with that file back at its "
+          "committed bytes files: %r" % ((code, text),),
+          code == 0 and os.path.exists(path))
+
+    # The same basis the commit reads: dirt from before the start is not the
+    # attempt's, so a status listing minus the declared files would over-fire.
+    root, mpath = _repo("sd-predates", task_ids=TASKS[:1])
+    _write_lf(os.path.join(root, "src", "f3.txt"), "dirty before the start\n")
+    _next(M, root, mpath)
+    _edit(root, "P1.1", "changed\n")
+    code, text = _submit(None, root, mpath, "P1.1", _executor_body("P1.1"))
+    check("sd3 OVER-FIRE: a path dirty before the start is read as the commit "
+          "reads it, by the start snapshot, and does not refuse the submit: %r"
+          % ((code, text),),
+          code == 0 and os.path.exists(_filed_path(mpath, "P1.1")))
+
+    # A wave member's tree: everything in it past the records is the task's,
+    # and its integration settles each such path by name - a follower widened,
+    # the rest asked - so the member is told and filed, never refused.
+    root, mpath = _wave_repo("sd-wave", 2)
+    _code, first = _next_wave(M, root, mpath)
+
+    def stray(tree):
+        _write_lf(os.path.join(tree, "notes.txt"), "written by P1.2\n")
+    code, text = _file_wave_executor(root, mpath, "P1.2", then=stray)
+    check("sd4 a wave member's submit with an undeclared file in its tree is "
+          "filed and names the path and the integration's question about it, "
+          "while the executor is there: %r" % ((code, text[-400:]),),
+          _dispatched(first) == ["P1.1", "P1.2"] and code == 0
+          and "notes.txt changed outside P1.2's files" in text
+          and "widen, discard or block" in text
+          and os.path.exists(_filed_path(mpath, "P1.2")))
+    code, text = _file_wave_executor(root, mpath, "P1.1")
+    check("sd5 THE TWIN: a member whose tree holds only its declared work is "
+          "filed with no such line: %r" % ((code, text[-300:]),),
+          code == 0 and os.path.exists(_filed_path(mpath, "P1.1"))
+          and "outside" not in text)
+
+    # A green gate recorded under the old scope, then the scope widened: the
+    # drive measures again before it offers `close`, and `close` then lands.
+    root, mpath = _high_risk_repo("sd-scope")
+    _next(M, root, mpath)
+    _file_executor(root, mpath, "P1.1")
+    _code, risky = _next(M, root, mpath)
+    rows = len(_rows_of(root, mpath, "P1.1"))
+    with _Env(root):
+        scode, sout = _verb(root, "audit-task.py", [
+            "scope", "P1.1", mpath, "--project-dir", root,
+            "--files", "src/f1.txt,src/f2.txt"])
+    code, asked = _next(M, root, mpath, "--answer", "confirm")
+    newest = (_rows_of(root, mpath, "P1.1") or [{}])[-1]
+    check("sd6 scope-changed re-runs the gate under the scope the task holds "
+          "now before it offers close: one more green row is recorded before "
+          "the decision is printed: %r"
+          % ((instruction(risky), scode, sout[-200:], rows,
+              len(_rows_of(root, mpath, "P1.1")), newest.get("status"),
+              asked[-400:]),),
+          instruction(risky)[1] == "high-risk" and scode == 0 and rows == 1
+          and instruction(asked)[1] == "scope-changed"
+          and len(_rows_of(root, mpath, "P1.1")) == rows + 1
+          and newest.get("status") == "passed")
+    code, closed = _next(M, root, mpath, "--answer", "close", "--reason",
+                         "the widened file is read, not changed")
+    task = tasks_of(mpath).get("P1.1", {})
+    check("sd7 ...so `close` lands: the commit is bound to the run made under "
+          "the widened scope, not refused for a moved scope digest: %r"
+          % ((code, task.get("status"), closed[-400:]),),
+          task.get("status") == "done" and "%s P1.1" % (M.CLOSED,) in closed)
+
+    # `close` with no run under the scope the task holds records nothing: the
+    # drive measures, and asks again.
+    root, mpath = _high_risk_repo("sd-norun")
+    _next(M, root, mpath)
+    _file_executor(root, mpath, "P1.1")
+    _next(M, root, mpath)
+    with _Env(root):
+        _verb(root, "audit-task.py", ["scope", "P1.1", mpath, "--project-dir",
+                                      root, "--files", "src/f1.txt,src/f2.txt"])
+    _next(M, root, mpath, "--answer", "confirm")
+    state_file = os.path.join(root, ".claude", "state", "drive", "%s.json" % (PHASE,))
+    state = _drive_state(root)
+    state.pop("gated", None)
+    with open(state_file, "w", encoding="utf-8", newline="\n") as fh:
+        json.dump(state, fh)
+    rows = len(_rows_of(root, mpath, "P1.1"))
+    code, again = _next(M, root, mpath, "--answer", "close", "--reason",
+                        "no run stands under this scope")
+    check("sd8 `close` with no gate run under the scope the task holds now "
+          "accepts nothing: the task is not closed, the gate is measured, and "
+          "scope-changed is asked again: %r"
+          % ((code, tasks_of(mpath)["P1.1"].get("status"), rows,
+              len(_rows_of(root, mpath, "P1.1")), again[-400:]),),
+          tasks_of(mpath)["P1.1"].get("status") == "in_progress"
+          and instruction(again)[1] == "scope-changed"
+          and len(_rows_of(root, mpath, "P1.1")) == rows + 1
+          and "scopeAccepted" not in _drive_state(root))
+
+    # The redo pin, on every terminal path.
+    root, mpath = _repo("sd-pin-done", task_ids=TASKS[:1], per_task="phase")
+    _pin_redo(M, root, "P1.1")
+    _next(M, root, mpath)
+    _file_executor(root, mpath, "P1.1")
+    _code, text = _next(M, root, mpath)
+    check("sd9 a redo pin is gone once its task is done: %r"
+          % ((tasks_of(mpath)["P1.1"].get("status"), _redo_pins(root),
+              text[-300:]),),
+          tasks_of(mpath)["P1.1"].get("status") == "done"
+          and _redo_pins(root) == [])
+
+    root, mpath = _repo("sd-pin-cancel", task_ids=TASKS[:2], per_task="phase")
+    _pin_redo(M, root, "P1.2")
+    with _Env(root):
+        ccode, cout = _verb(root, "audit-task.py", [
+            "cancel", "P1.2", mpath, "--project-dir", root, "--reason",
+            "not wanted"])
+    _next(M, root, mpath)
+    check("sd10 ...once its task is cancelled: %r"
+          % ((ccode, cout[-200:], tasks_of(mpath)["P1.2"].get("status"),
+              _redo_pins(root)),),
+          tasks_of(mpath)["P1.2"].get("status") == "cancelled"
+          and _redo_pins(root) == [])
+
+    root, mpath = _repo("sd-pin-block", task_ids=TASKS[:1], gate=("false",),
+                        per_task="phase")
+    _pin_redo(M, root, "P1.1")
+    _next(M, root, mpath)
+    _file_executor(root, mpath, "P1.1")
+    _code, red = _next(M, root, mpath)
+    _code, blocked = _next(M, root, mpath, "--answer", "block", "--reason",
+                           "the gate is red and a human looks")
+    check("sd11 ...once its task is blocked: %r"
+          % ((instruction(red), tasks_of(mpath)["P1.1"].get("status"),
+              _redo_pins(root), blocked[-300:]),),
+          instruction(red)[0] == "decide"
+          and tasks_of(mpath)["P1.1"].get("status") == "blocked"
+          and _redo_pins(root) == [])
+
+    # A serial step on a task whose redo left its work in a patch runs nothing
+    # in the phase tree; the pin stays while the patch does, and goes once the
+    # patch is taken away - the stop after the drop. A reviewer per task keeps
+    # the task in progress past that step, so the pin is seen going on the
+    # patch's absence alone and not on a close in the same call.
+    root, mpath = _repo("sd-serial", task_ids=TASKS[:1], per_task="always")
+    _next(M, root, mpath)
+    _file_executor(root, mpath, "P1.1")
+    patch = M.redo_patch(_drive_ctx(root, mpath), "P1.1")
+    if not os.path.isdir(os.path.dirname(patch)):
+        os.makedirs(os.path.dirname(patch))
+    with open(patch, "wb") as fh:
+        fh.write(b"")
+    _pin_redo(M, root, "P1.1")
+    code, held = _next(M, root, mpath)
+    check("sd12 redo_left guards the serial path as it does the wave path: a "
+          "serial step on a task whose redo kept its work in a patch stops, "
+          "naming the patch, the pin and a verb that applies the patch, with no "
+          "gate run and the pin kept: %r"
+          % ((code, len(_rows_of(root, mpath, "P1.1")), _redo_pins(root),
+              held[-600:]),),
+          code != 0 and patch in held and M.redo_pin("P1.1") in held
+          and ("git apply --3way %s" % (patch,)) in held
+          and len(_rows_of(root, mpath, "P1.1")) == 0
+          and tasks_of(mpath)["P1.1"].get("status") == "in_progress"
+          and _redo_pins(root) == [M.redo_pin("P1.1")])
+    os.remove(patch)
+    code, went = _next(M, root, mpath)
+    check("sd13 ...and once the patch is taken away the pin it named goes at "
+          "the next step, the task still in progress, and the drive goes on to "
+          "its reviewer: %r"
+          % ((code, _redo_pins(root), tasks_of(mpath)["P1.1"].get("status"),
+              went[-300:]),),
+          _redo_pins(root) == []
+          and tasks_of(mpath)["P1.1"].get("status") == "in_progress"
+          and instruction(went) == ("dispatch", "reviewer", "P1.1"))
 
 
 # --- the signal: one line per step, the full text behind --explain ----------
@@ -15297,6 +15523,7 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("e2e-wave", "_e2e_wave_cases"),
           ("uy-block", "_wave_unit_cases"),
           ("rf-block", "_ready_first_cases"),
+          ("sd-block", "_scope_declared_cases"),
           ("sb-block", "_stage_cases"))
 
 

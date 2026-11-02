@@ -606,8 +606,9 @@ STEPS = {
         "line": "decide scope-changed %(task)s: the filing was made under a "
                 "different file list: %(why)s",
         "rule": ("retry dispatches the executor again under the scope the task "
-                 "holds now and spends an attempt; close goes on with --reason "
-                 "recorded; block needs a reason.",)},
+                 "holds now and spends an attempt; close goes on over the gate "
+                 "just run under that scope, with --reason recorded; block "
+                 "needs a reason.",)},
     "resume-executor": {
         "line": "resume the executor dispatched for %(task)s (the agent id your "
                 "dispatch returned) and have it run its submit block",
@@ -3107,6 +3108,34 @@ def scope_change_why(was, now):
         len(was), len(now), ", ".join(added), ", ".join(dropped)), 180)
 
 
+def scope_run_current(state, task):
+    """Whether `task`'s green gate mark for this start was measured under the
+    file list the task declares now - what a `close` at scope-changed stands
+    on. A mark from before the scope rode with it answers False."""
+    held = _marked(state, "gated", task)
+    return (isinstance(held, dict) and "scope" in held
+            and held["scope"] == _tree_stamp.declared_scope(task.get("files")))
+
+
+def scope_gate(ctx, state, manifest, phase, task, tree=None):
+    """Measure `task`'s gate under the scope it holds now, before scope-changed
+    offers `close`: None once a green run of that list is marked, else the
+    decision or stop the gate step returns.
+
+    A GREEN RECORDED UNDER THE OLD LIST IS NOT ONE TO CLOSE ON. The commit binds
+    the run's declared-scope digest, so a `close` accepted over it was refused
+    three steps later with a sentence about digests, and the orchestrator
+    re-recorded the gate by hand. The run is measured afresh (`--no-reuse`): a
+    repeated verdict stands on the run it repeats, which recorded the old
+    list."""
+    if scope_run_current(state, task):
+        return None
+    _spend(state, "gated", task)
+    _mark(state, "rerun", task)
+    write_state(ctx, state)
+    return gate_step(ctx, state, manifest, phase, task, tree)
+
+
 def accept_scope(ctx, state, task, why):
     """Record that the scope `task` holds now is the one its filing is closed
     under, so the drive does not ask about it again within this start."""
@@ -4284,12 +4313,14 @@ def advance(ctx, state, manifest, phase, task, tree=None):
     and its bytes are integrated into the phase tree before the close. A
     serial step (`tree` None) on a task whose kept tree stands is stopped
     instead: it would run the task in the phase tree, without its work - and
-    so is a step over a tree whose redo left the work in a patch."""
+    so is a step over a tree whose redo left the work in a patch, on either
+    path: a wave dropped since the redo leaves its member to the serial step,
+    and the patch is still the only place its work may be."""
     if tree is None:
         stop = kept_tree_stop(ctx, state, task)
         if stop is not None:
             return stop
-    elif os.path.lexists(redo_patch(ctx, task["id"])):
+    if os.path.lexists(redo_patch(ctx, task["id"])):
         return redo_left(ctx, state, task["id"], tree)
     # Before anything reads the session: a writer session that ended since the
     # last step leaves its cost on the task whatever the step does next, and a
@@ -4341,6 +4372,9 @@ def advance(ctx, state, manifest, phase, task, tree=None):
         "changed": scope_change(executor, task),
         "accepted": lambda: _marked(state, "scopeAccepted", task)})
     if turn == "decision":
+        stop = scope_gate(ctx, state, manifest, phase, task, tree)
+        if stop is not None:
+            return stop
         return decision(ctx, state, "scope-changed", task,
                         scope_change_why(*changed),
                         extra={"was": changed[0], "now": changed[1]})
@@ -4429,7 +4463,11 @@ def gate_step(ctx, state, manifest, phase, task, tree=None):
                                  tree)
     if code != 0:
         return relay_refusal(ctx, "run-test-gate.py", code, out + err)
-    _mark(state, "gated", task, verdict_taken(ctx, out + err, tree))
+    # The scope the run was measured under rides with it: a `close` at
+    # scope-changed is accepted only over a run of the list the task holds.
+    _mark(state, "gated", task, dict(
+        verdict_taken(ctx, out + err, tree),
+        scope=_tree_stamp.declared_scope(task.get("files"))))
     write_state(ctx, state)
     banners = gate_banners(out + err)
     ctx["did"].append("gate %s green%s" % (task["id"], " (%s)" % (
@@ -6037,33 +6075,55 @@ def redo_left(ctx, state, task_id, tree):
     until a human has put it back or taken it away. The remedy follows what
     `redo_held` reads in the tree: an apply over a tree already holding the
     work fails on every path it names, so it is prescribed only where the tree
-    lacks it, and where that could not be read the stop says how to tell."""
+    lacks it, and where that could not be read the stop says how to tell.
+
+    EACH REMEDY IS A COMMAND, NAMING THE PATCH AND THE PIN: the apply that
+    finishes from the patch, in the tree it belongs in, and the two removals
+    that take what the redo kept away. A serial step - no tree of the task's
+    own stands - is stopped the same way, its work being nowhere the phase
+    tree holds; there the apply is made in the phase tree, or the phase is
+    driven at a width that runs the task in a tree again."""
     kept, pin = redo_patch(ctx, task_id), redo_pin(task_id)
+    pinned = carry_git(ctx["gitRoot"], ["rev-parse", "--verify", "--quiet",
+                                        pin + "^{commit}"])[0] == 0
+    head = "a redo of %s stopped part way and its work is kept as %s%s" % (
+        task_id, kept, (" and in %s" % (pin,)) if pinned else
+        (" alone (%s is gone)" % (pin,)))
+    take = "rm %s%s" % (shlex.quote(kept), (" && git -C %s update-ref -d %s" % (
+        shlex.quote(ctx["gitRoot"]), pin)) if pinned else "")
+
+    def apply_in(where):
+        return "cd %s && git apply --3way %s" % (shlex.quote(where),
+                                                 shlex.quote(kept))
+    if not tree:
+        return _stopped(ctx, "%s, which may be its only copy; no tree of %s's own "
+                        "stands, so this step would run it in the phase tree %s "
+                        "without that work. Finish from the patch there (%s) - or "
+                        "drive the phase at executor.waveWidth 2 or more, which "
+                        "runs it in a tree again - and take what the redo kept "
+                        "away (%s); then next"
+                        % (head, task_id, ctx["gitRoot"], apply_in(ctx["gitRoot"]),
+                           take))
     held, why = redo_held(ctx, state, task_id, tree)
-    head = "a redo of %s stopped part way and its work is kept as %s and in %s" % (
-        task_id, kept, pin)
     if held is True:
         return _stopped(ctx, "%s; its tree %s already holds that work (no path of "
                         "it unmerged, each path the tree's HEAD did not move "
                         "reads as %s holds it, each it moved is changed there), "
                         "so nothing is to be put back: take the patch away "
-                        "(remove the file, then git update-ref -d %s), then next"
-                        % (head, tree, pin, pin))
+                        "(%s), then next" % (head, tree, pin, take))
     if held is False:
         return _stopped(ctx, "%s, which may be its only copy; its tree %s lacks it "
-                        "at %s, so nothing runs there until a human applies it "
-                        "(git apply --3way, in that tree) and takes it away "
-                        "(remove the file, then git update-ref -d %s), then next"
-                        % (head, tree, _clip(why, 200), pin))
+                        "at %s, so nothing runs there until a human finishes from "
+                        "the patch (%s) and takes it away (%s), then next"
+                        % (head, tree, _clip(why, 200), apply_in(tree), take))
     return _stopped(ctx, "%s, which may be its only copy; whether its tree holds "
                     "it could not be read (%s). A path the tree's HEAD did not "
                     "move since %s^ holds the work when it reads as %s holds it; "
                     "one it moved holds the work merged with the phase's change, "
                     "so it reads as neither side and only a reading of the file "
-                    "tells. Apply the patch there (git apply --3way) only where "
-                    "the tree lacks the work, then take it away (remove the "
-                    "file, then git update-ref -d %s); then next"
-                    % (head, _clip(why, 200), pin, pin, pin))
+                    "tells. Finish from the patch there (%s) only where the tree "
+                    "lacks the work, then take it away (%s); then next"
+                    % (head, _clip(why, 200), pin, pin, apply_in(tree), take))
 
 
 REDO_PIN_NS = "refs/audit/redo/"
@@ -6125,6 +6185,42 @@ def drop_redo_work(task_id, kept, git_root):
         return "%s: %s" % (kept, exc.strerror or exc)
     code, _out, err = carry_git(git_root, ["update-ref", "-d", redo_pin(task_id)])
     return "" if code == 0 else "update-ref -d %s: %s" % (redo_pin(task_id), err)
+
+
+def redo_pin_spent(status, patch_stands):
+    """Whether a task's redo pin has nothing left to keep: its task is
+    terminal or blocked, or no patch of its stands. The pin exists so the
+    objects a kept patch names outlive a gc; with no patch it names nothing
+    anybody will apply, and a task no drive steps further never applies one."""
+    return status in _mio.TERMINAL or status == "blocked" or not patch_stands
+
+
+def settle_redo_pins(ctx):
+    """Take down every redo pin of this phase's tasks that `redo_pin_spent`
+    says is spent, each named on a did-line; one that will not go is named
+    with why. Run at the end of every drive call, whichever path got the task
+    there: a close, a cancel or block by the verb, a block answered here, or a
+    redo stopped after its patch was taken away and before its pin went -
+    each left the pin behind when the one remover was the redo that held."""
+    code, out, _err = carry_git(ctx["gitRoot"], ["for-each-ref",
+                                                 "--format=%(refname)", REDO_PIN_NS])
+    if code != 0 or not out.strip():
+        return
+    pins = set(out.decode("utf-8", "replace").split())
+    try:
+        _manifest, phase = load_phase(ctx)
+    except (ValueError, OSError) as exc:
+        ctx["did"].append("redo pins not settled: the plan could not be read (%s)"
+                          % (exc,))
+        return
+    for task in _tasks(phase):
+        pin = redo_pin(task["id"])
+        if pin not in pins or not redo_pin_spent(
+                task.get("status"), os.path.lexists(redo_patch(ctx, task["id"]))):
+            continue
+        code, _out, err = carry_git(ctx["gitRoot"], ["update-ref", "-d", pin])
+        ctx["did"].append("%s taken down" % (pin,) if code == 0 else
+                          "%s could not be taken down (%s)" % (pin, err))
 
 
 def recut_tree(ctx, state, task):
@@ -6747,6 +6843,13 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
         ctx["did"].append("blocked %s" % (task["id"],))
         return keep_record(ctx, phase)
     if answer == "close":
+        if not scope_run_current(state, task):
+            # Nothing is accepted over a run of another list: the step goes
+            # on, measures the gate under this one, and asks again.
+            ctx["did"].append("%s: scope change not accepted - no gate run "
+                              "stands under the files it declares now"
+                              % (task["id"],))
+            return None
         accept_scope(ctx, state, task, reason)
         ctx["did"].append("%s: scope change accepted (%s)" % (
             task["id"], _clip(reason, 80)))
@@ -9281,6 +9384,7 @@ def drive(ctx, answer=None, reason=None, fixes=()):
         return stop
     try:
         code, said = drive_locked(ctx, state, answer, reason, fixes)
+        settle_redo_pins(ctx)
     except ValueError as exc:
         code, said = E_STOPPED, "%s %s: stopped - %s" % (PREFIX, ctx["phase"], exc)
     except BaseException:
@@ -9776,6 +9880,70 @@ def submit_tree(ctx, phase, task):
     return tree, None
 
 
+def submit_strays(ctx, manifest, phase, task, tree):
+    """`(paths, basis, why)` - the changed paths of `task`'s attempt that it
+    does not declare, spelled as the plan spells them, beside the basis that
+    dated them; `paths` None beside why when git would not list the tree.
+
+    ASKED WHERE THE COMMIT ASKS IT, while the executor is still there to say
+    why. The commit refuses such a path (`commit-task-work.py`
+    `attempt_refusal`), and it reached that refusal after the gate and the
+    review had both run: a round lost each time, and the orchestrator's to
+    repair by hand. So the question is the commit's own, through the same
+    function on the same basis - `_scoped_commit.undeclared_changes` over the
+    plan gate's reading of "declared" (`_config.declared_git_rels`) and the
+    attempt's start snapshot, a change dirty before the start being no change
+    of this attempt's. A member's tree holds its task's work alone, so there
+    every changed path past the records is the task's, and only what the task
+    itself declares counts - the plan gate's reading of a bound tree
+    (`_config.task_binding`). The caller refuses the serial filing on an
+    answer; a member's is told and filed, since its integration settles each
+    such path by name, a follower included, which a refusal here would take
+    away."""
+    hc = _loader.load_hooks_config(modname="audit__config")
+    records = list(dict.fromkeys(_invariants.record_rels(
+        ctx["manifest"], phase, ctx["project"], ctx["gitRoot"])
+        + list(wave_state(ctx, phase).get("records") or [])))
+    if tree:
+        where = member_project(ctx, tree) or tree
+        owned = hc.declared_git_rels(manifest, ctx["project"], ctx["gitRoot"],
+                                     also=[task["id"]], only=task["id"])
+        changes, why = _scoped_commit.undeclared_changes(
+            tree, where, ctx["config"], None, None, owned, records)
+        top, project = tree, where
+    else:
+        record, _none = _scoped_commit.read_attempt(
+            str(hc.state_dir(pathlib.Path(ctx["project"]), ctx["config"] or {})),
+            task["id"])
+        owned = hc.declared_git_rels(manifest, ctx["project"], ctx["gitRoot"],
+                                     also=[task["id"]])
+        changes, why = _scoped_commit.undeclared_changes(
+            ctx["gitRoot"], ctx["project"], ctx["config"], record,
+            task.get("startedAt"), owned, records)
+        top, project = ctx["gitRoot"], ctx["project"]
+    if changes is None:
+        return None, None, why
+    found = changes["strays"] if tree else changes["during"]
+    paths = [hc.git_to_plan(p, top, project) for p in found]
+    return paths, ("the tree's changes against its base" if tree
+                   else changes["basis"]), ""
+
+
+def strays_refusal(task, paths, basis):
+    """The stop for a submit whose attempt changed paths its task does not
+    declare: which, on what basis, and the two ways on."""
+    spelled = ",".join(paths)
+    return ("%s changed %s outside its files (basis: %s). Nothing filed: its "
+            "commit would refuse %s after the gate and the review, so it is "
+            "settled now, while you can say why. Take the edit out and submit "
+            "again - or hand this refusal back with the reason each path is "
+            "part of %s, and the orchestrator widens the scope with it "
+            "(/audit:task scope %s --files +%s, the reason as a note), then "
+            "has you submit again" % (task["id"], ", ".join(paths), basis,
+                                      "it" if len(paths) == 1 else "them",
+                                      task["id"], task["id"], spelled))
+
+
 _HEX_SHA = re.compile(r"^[0-9a-f]{7,40}$")
 
 
@@ -9868,6 +10036,23 @@ def submit(ctx, manifest, args, cmd, text):
         tree, stop = submit_tree(ctx, phase, task)
         if stop is not None:
             return stop
+        strays, basis, why = submit_strays(ctx, manifest, phase, task, tree)
+        if strays and not tree:
+            return _stopped(ctx, strays_refusal(task, strays, basis))
+        if strays:
+            # A member's tree reaches the phase through its integration, which
+            # settles these by name - a follower its owner's recipe reproduces
+            # is widened, anything else is the undeclared-change decision - so
+            # the filing goes on and the executor is told while it is there.
+            ctx["did"].append("%s changed outside %s's files; its integration "
+                              "widens a follower its owner's recipe writes and "
+                              "asks widen, discard or block for the rest"
+                              % (", ".join(strays), task["id"]))
+        if strays is None:
+            # Not a pass: the commit asks the same question again, and says so
+            # when it cannot either.
+            ctx["did"].append("changed paths not compared with %s's files: %s"
+                              % (task["id"], why))
         if cmd:
             block, stop = (red_block(ctx, task, args, cmd, tree) if tree
                            else red_block(ctx, task, args, cmd))
