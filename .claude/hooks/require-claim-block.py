@@ -451,7 +451,6 @@ def _rmtree_git_safe(path):
 def _selftest():
     """Both directions, driven against a REAL git repository built in a temp dir, because
     the staged-path read is the half of this guard that a mocked git would not test."""
-    import shutil
     import tempfile
     results = []
 

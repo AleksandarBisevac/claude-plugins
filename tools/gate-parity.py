@@ -53,8 +53,9 @@ here was a second reader of the same files:
   * every CI job pins its runner image: no `runs-on`, and no value of a matrix it
     reads, is a floating `*-latest` label (`floating_runners()`).
   * ruff and vermin are pointed at the directories the code lives in: the suites
-    at the repository root and the two lint modules under `tools/lints/`, never
-    the directory the suites left (`lint_dir_findings()`, `lint_dir_verdict()`).
+    at the repository root and the two lint modules under `tools/lints/`, and
+    ruff at the repository's own guards under `.claude/hooks/` too, never the
+    directory the suites left (`lint_dir_findings()`, `lint_dir_verdict()`).
   * every reason-carrying exemption table names who audits it
     (`exemption_audit_drift()`).
   * no tier's run starts more jobs at once than GitHub's concurrent-job cap
@@ -2227,13 +2228,16 @@ def job_cap_verdict(repo=None):
 # claim about where the code is. The suites and the two lint modules left the
 # plugin, so a list still naming the old suite directory lints a directory that is
 # gone and silently stops linting the suites that moved - the cheap failure being
-# a `ruff` or `vermin` that exits 0 over fewer files than it did.
+# a `ruff` or `vermin` that exits 0 over fewer files than it did. Ruff's list also
+# owes `.claude/hooks`, this repository's own guards: the sweep runs them, and an
+# unused import sat in one of them for as long as no list named the directory.
 #
 # `required` is by COVERAGE, not spelling: `tools` covers `tools/lints`, which is
 # why ruff's list does not have to name it. `retired` is a spelling that must not
 # come back, matched as a prefix so a subdirectory of it does not slip through.
 LINT_DIR_RULES = (
-    ("ruff", ("ruff", "check"), ("plugins/audit", "tools", "tests")),
+    ("ruff", ("ruff", "check"), ("plugins/audit", "tools", "tests",
+                                 ".claude/hooks")),
     ("vermin", ("vermin",), ("plugins/audit/scripts", "plugins/audit/hooks",
                              "tests", "tools/lints")),
 )
@@ -3706,7 +3710,7 @@ def _runner_image_cases(check):
 _LD_GOOD = (
     "# ruff check is run below, and vermin -t=3.8- after it\n"
     "slice_lint() {\n"
-    "  run \"ruff\" ruff check plugins/audit tools tests\n"
+    "  run \"ruff\" ruff check plugins/audit tools tests .claude/hooks\n"
     "  run \"vermin (3.8 floor)\" vermin -t=3.8- --no-tips --violations \\\n"
     "    plugins/audit/scripts plugins/audit/hooks tests tools/lints\n"
     "}\n")
@@ -3758,6 +3762,14 @@ def _lint_dir_cases(check):
           "is not satisfied by vermin's list alone: %r" % (ruff_old,),
           [t for t, _w in ruff_old["findings"]] == ["ruff"]
           and "`tests`" in ruff_old["findings"][0][1])
+
+    no_hooks = lint_dir_findings(_LD_GOOD.replace(" .claude/hooks\n", "\n"))
+    check("ld8 ruff's list without `.claude/hooks` is a finding naming that "
+          "directory, so the repository's own guards cannot drop out of the "
+          "lint the way an unused import in one of them once went unseen: %r"
+          % (no_hooks,),
+          [t for t, _w in no_hooks["findings"]] == ["ruff"]
+          and "`.claude/hooks`" in no_hooks["findings"][0][1])
 
     check("ld6 THE LIVE CLAIM: this repository's verify.sh points ruff and vermin "
           "at the directories the code lives in, and `parity()` renders that "

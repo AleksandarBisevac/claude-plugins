@@ -651,7 +651,6 @@ def _rmtree_git_safe(path):
 
 
 def _selftest():
-    import shutil
     import tempfile
     cases, failed = [], []
 

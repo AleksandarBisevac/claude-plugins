@@ -584,7 +584,9 @@ slice_lint() {
   # What each pipeline entry makes the main loop read before any work, against the
   # pipeline-cost design's ceilings.
   run "pipeline context ceilings" python3 tools/measure-context.py --gate
-  run "ruff" ruff check plugins/audit tools tests
+  # `.claude/hooks` is the repo's own guards, which the sweep runs like any suite;
+  # left off this list, an unused import there went unreported.
+  run "ruff" ruff check plugins/audit tools tests .claude/hooks
   # `-t=3.8-` carries the trailing dash on purpose: "the detected floor must not
   # exceed 3.8". A bare `-t=3.8` demands the floor EQUAL it.
   run "vermin (3.8 floor)" vermin -t=3.8- --no-tips --violations \

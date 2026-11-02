@@ -277,12 +277,14 @@ jobs:
 
   # THE STATIC CHECKS ARE ONE JOB - lint, the runner's cases, e2e, and the manifests,
   # js and plugin slices - because GitHub runs at most twenty of this account's jobs
-  # at once and holds the rest until a running job finishes. Measured, not documented:
-  # in each release-tier run from 40761628365 to 41070108164 (twenty-two jobs each)
-  # exactly two jobs started late, each one to four seconds after the first and the
-  # second job to finish, and in six of those seven runs a held job was a Windows
-  # sweep cell, the critical path, so its wait landed on the run's wall. Re-derive
-  # it from any run with
+  # at once and holds the rest until a running job finishes. Measured, and matching
+  # GitHub's documented Free-plan limit: in the first attempt of each release-tier
+  # run from 40761628365 to 41070108164 (twenty-two jobs each) exactly two jobs
+  # started late, each one to four seconds after the first and the second job to
+  # finish, and in most of those runs a held job was a Windows sweep cell, the
+  # critical path, so its wait landed on the run's wall. Re-derive it from any run
+  # with the command below - a run that was re-run reports its last attempt there,
+  # so read its first through `gh api repos/<owner>/<repo>/actions/runs/<id>/attempts/1/jobs`
   #   gh run view <id> --json jobs --jq '.jobs[] | [.name, .startedAt, .completedAt]'
   # The sweep cells are what the rest of the cap pays for: the windows legs take the
   # most parts the cap leaves room for, because a windows cell is the critical path,

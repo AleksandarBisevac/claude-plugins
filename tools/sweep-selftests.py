@@ -215,7 +215,13 @@ STAGE_GRANT_MAX = 6
 # `tools/prove-gates.py` spanned 3.22x, the slowest of them 2.44x the figure
 # the table recorded from the second run. A factor of three still sits over
 # that last ratio, which is the one a timeout has to fit; it is no longer
-# twice the spread. Re-derive the comparison when the table is re-recorded:
+# twice the spread. Re-recorded from run 41322244766's windows logs on
+# 2026-11-02: a plain and a cp1252 timing of one entry differed by up to 8.2x,
+# but only on entries the new table leaves at the floor - on those it sizes
+# above it, by up to 1.59x; a timing of an entry the previous table sized above
+# the floor was at most 1.33x that table's figure; and no job that table timed
+# used more than 0.48 of the larger of the floor and the factor times its
+# figure there. Re-derive the comparison when the table is re-recorded:
 # `costs_from_render` over each saved leg's logs, then the largest ratio
 # between the timings of each file above 20s, and of each timing to the
 # figure the table holds.

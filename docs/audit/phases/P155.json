@@ -44,9 +44,16 @@
         "file": "plugins/audit/scripts/governance/drive-phase.py:6868-6872 (not_ready_why)",
         "issue": "_status_facts.unmet_refs already folds a blocked phase's refs into each task's entry as '<ref> (phase)' (_status_facts.py:1424). not_ready_why then appends unmet[phase_id] a second time. A wave member dropped because its phase gained a blocker therefore prints that ref twice in the dropped-from-wave line: 'waits on P9 (phase), P9'.",
         "resolution": "Read unmet.get(task_id) alone, since it already carries the phase's refs, and fall back to 'nothing the plan names' only when it is empty."
+      },
+      {
+        "id": "P155-R4",
+        "severity": "low",
+        "file": "CLAUDE.md:210",
+        "issue": "The task widens the ruff path list in tools/verify.sh to include .claude/hooks, but CLAUDE.md:210 (the 'Tests' command block, 'the commands a change most often reruns by hand') and the plan's meta.buildCommands.lint still spell `ruff check plugins/audit tools tests`. A contributor or a build-command-driven gate following either runs a narrower ruff than verify.sh and would not see an unused import under .claude/hooks - the very class this task closes. The executor reported this as left for the orchestrator; it is a changed shape crossing into untouched files.",
+        "resolution": "Add `.claude/hooks` to the ruff line at CLAUDE.md:210 and set meta.buildCommands.lint through `/audit:task build-command` (or drop the hand copy and point at `verify.sh --list`)."
       }
     ],
-    "outcome": "[findings: 3 - 0 high, 0 med, 3 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 4 - 0 high, 0 med, 4 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -268,7 +275,7 @@
     {
       "id": "P155.4",
       "title": "The tree-stamp suite's tab-name skip carries the error that caused it",
-      "status": "in_progress",
+      "status": "done",
       "description": "Closes P143-R22. Evidence at fa1b0c81: tests/test__tree_stamp.py:864-878 (_write_shapes appends the name only), :965-969 (absent=bool(tab_refused), always true in that branch). Hand the owner the Windows command and the expected SKIPPED line.",
       "files": [
         "tests/test__tree_stamp.py"
@@ -291,19 +298,34 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c2c057fd7972",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tests/test__tree_stamp.py only. _write_shapes now returns (name, exc) pairs. New TAB_REFUSAL_ERRNOS = (errno.EINVAL,) (what open() raises on Windows for a name NTFS forbids), _refusal_text(exc) -> '[Errno N] <strerror>', _skip_tab_case(check, label, refusal) calls _harness.skip with the mechanism 'this filesystem refused to create a file named %r: [Errno N] <strerror>' and absent = exc.errno in TAB_REFUSAL_ERRNOS (false, so the skip FAILS, for any other errno or none). _refusing() takes an optional exc; _recording() is a check that keeps calls. TAB_LABEL holds the tso3 label once. Cases: tso4 rewritten to require [(TAB_NAME, the very OSError raised)]; tso6 new (EINVAL refusal -> one recorded line, passing, starting '<tso3 label> SKIPPED HERE' and ending ': [Errno 22] Invalid argument'); tso7 new (EACCES and an errno-less OSError -> skip recorded as failing, line carries '[Errno 13] Permission denied'). Gate: python3 tools/sweep-selftests.py tests/test__tree_stamp.py tools/_suite.py exit 0, run twice ('2/2 files ok, 102 cases'; suite 67 cases). ruff check tests/test__tree_stamp.py exit 0; vermin -t=3.8- exit 0; prose_number_claims/house_style_violations report nothing for the file. Simulated Windows (the suite's _write patched to raise OSError(EINVAL, 'Invalid argument') for the tab name, _one_listing_cases run through _harness.run): exit 0, 7/7, and printed: PASS tso3 a name holding a tab is read whole in both halves SKIPPED HERE - this filesystem refused to create a file named 'tab\\there.txt': [Errno 22] Invalid argument. WINDOWS, for the owner (not run here, unverified on a real NTFS): from the checkout root, py -3 tests\\test__tree_stamp.py --selftest ; expected exit 0 and the line above verbatim among the PASS lines (find it with: py -3 tests\\test__tree_stamp.py --selftest | findstr /C:\"tso3\"). If Windows raises a different errno for the name, tso3 prints FAIL with that errno in the line, which is the new behaviour working, and TAB_REFUSAL_ERRNOS is the one place to widen. Plan gate: writing the probe at <tree>/probe/mutations.py was refused ('[require-plan] probe/mutations.py is outside task P155.4, the task this worktree is bound to ... Only that task's files are open here.'), so the probe lives at <scratchpad>/probe/mutations.py (takes --root, asserts one anchor occurrence and the landing, purges __pycache__, output to files, baseline green first, sha256 restore). Run it against a COPY (rsync of tests/ plugins/ tools/), not a shared tree. Dependants: .github/sweep-costs.json (path) still correct - the added cases are pure, no new git fixture, suite still ~2.7s against its 16.1 figure; plugins/audit/scripts/governance/_tree_stamp.py (path) still correct - untouched, its docstring only points at this suite; tests/test_stamp_verification.py (basename) still correct - it shares only same-named private helpers (_cases, _git, _seeded_repo, _recorder_dirty_cases), imports nothing from this suite, and none of those changed; tools/_suite.py ran green in the gate (35 cases). Class sweep, left: an AST walk over tests/*.py for _harness.skip(...) with a literal True as absent prints 50 sites (command: the ast walk in this session, rerunnable); most sit under a branch whose condition is the evidence, but test__output.py:1096 (rt3) and test_stamp_verification.py:5868 (sw11) grade any caught exception as absence, the same shape this task fixed - outside this task's files, not edited; worth a Faults row.",
+        "descriptive": "The tree-stamp suite's tab-name skip now prints the errno that caused it and fails instead of skipping when the refusal is not the filesystem's name rule."
       },
       "startedAt": "2026-11-02T09:11:13Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-02T09:23:27Z",
+      "verifiedBy": [
+        "tso4 (rewritten): a refusing builder returns the refused name paired with the very OSError it raised, every other shape built",
+        "tso6: the tab-name skip line ends with ': [Errno 22] Invalid argument' and passes for an EINVAL refusal",
+        "tso7: an EACCES refusal and an errno-less OSError make the tab-name skip fail, the line carrying '[Errno 13] Permission denied'"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-11-02T09:21:50Z.1fce32",
         "status": "passed",
         "at": "2026-11-02T09:21:50Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c2c057fd7972",
+        "at": "2026-11-02T09:23:27Z",
+        "return": "docs/audit/evidence/returns/P155.4/20261102T091113Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "None owed: the task is mode regression with tests.expectRedFirst false. The submit helper also cannot separate the two versions here, because the fix lives entirely in the declared test file (tests/test__tree_stamp.py), so HEAD with that file copied over it is byte-identical to the fixed tree. The red was watched by mutation instead, in a scratch copy of the tree (never the shared tree): python3 <scratchpad>/probe/mutations.py --root <copy> exit 0, baseline tso4/tso6/tso7 PASS, then m1 builder keeps the name only (the unfixed shape) -> FAIL tso4; m2 skip line without the error -> FAIL tso6; m3 absent=bool(refusal) (the unfixed always-true evidence) -> FAIL tso7; m4 over-fire absent never true -> FAIL tso6; file restored and sha256-checked after every row. Run three times (09:1x UTC), 4 of 4 rows red each time.",
+        "at": "2026-11-02T09:17:38Z (second probe run); third run after the TAB_LABEL refactor, also 4 of 4"
       }
     },
     {
@@ -328,7 +350,8 @@
         "tests/test__doctor_trail.py",
         "tests/test_drive_phase.py",
         "tools/lints/_deps.py",
-        "tests/test__deps.py"
+        "tests/test__deps.py",
+        ".claude/hooks/require-claim-block.py"
       ],
       "tests": {
         "mode": "gate-only",
@@ -357,7 +380,12 @@
       "startedAt": "2026-11-02T09:11:49Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-02T10:00:33Z.20e498",
+        "status": "passed",
+        "at": "2026-11-02T10:00:34Z"
+      }
     },
     {
       "id": "P155.6",
@@ -368,7 +396,6 @@
         "plugins/audit/scripts/manifest/audit-task.py",
         "tests/test_audit_task.py",
         "plugins/audit/commands/task.md",
-        "plugins/audit/commands/verbs-in-full.md",
         "README.md",
         "PLUGIN-BUILD-GUIDE.md",
         "tools/prove-gates.py",
@@ -381,7 +408,9 @@
         "tools/sweep-selftests.py",
         "plugins/audit/scripts/governance/stamp-verification.py",
         "tests/test__runner_collects.py",
-        "tests/test_stamp_verification.py"
+        "tests/test_stamp_verification.py",
+        "plugins/audit/reference/verbs-in-full.md",
+        "plugins/audit/README.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -410,7 +439,12 @@
       "startedAt": "2026-11-02T09:12:07Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-02T09:48:08Z.c4ebb4",
+        "status": "passed",
+        "at": "2026-11-02T09:48:08Z"
+      }
     },
     {
       "id": "P155.7",
