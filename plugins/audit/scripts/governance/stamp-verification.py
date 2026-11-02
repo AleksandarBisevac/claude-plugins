@@ -353,7 +353,7 @@ import _proc_group  # noqa: E402  (a child tree stopped whole; a stop signal as 
 import _locks  # noqa: E402  (pid_alive: whether a leftover throwaway's owner still runs)
 import _worktrees  # noqa: E402  (git's worktree list read, and two spellings of one tree compared)
 import _runner_output  # noqa: E402  (every reading of what a test runner printed, shared with run-test-gate)
-import _filed_returns  # noqa: E402  (title_names_clause: the one reading of a case title)
+import _filed_returns  # noqa: E402  (title_names_clause, is_test_support_path)
 import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 
 USAGE = ("usage: stamp-verification.py take|compare|red [--project DIR] ...\n")
@@ -683,7 +683,9 @@ SCRUBBED_ENV = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR",
 # A task's declared file is a TEST file when `tests.add` names it or its path has
 # the conventional test shape; everything else it declares is implementation and
 # stays at HEAD. The split is printed with every run, because it decides what the
-# red is a red OF.
+# red is a red OF. A test file that is a test-support module HEAD has may hold
+# the work too, and a task's run that passes with it is made again without it
+# (`support_at_head`).
 _TEST_DIRS = ("tests", "test", "__tests__", "spec")
 _TEST_NAME = re.compile(r"^(test_.+|.+_test\.[^.]+|.+\.(test|spec)\.[^.]+)$")
 
@@ -1625,6 +1627,48 @@ def inline_overlays(root, tests, deadline=None):
             return {}, {}, ("inline suite %s (its test file is its implementation "
                             "file): %s" % (rel, reason))
     return overlays, notes, None
+
+
+def support_at_head(root, tests, present, deadline=None):
+    """The declared test files that are test-support modules
+    (`_filed_returns.is_test_support_path`) HEAD holds and the task changed,
+    in declared order - the ones a run can hold at HEAD's copy. An inline
+    suite is split by its test hunks instead, and a support module new at
+    HEAD has no copy to hold: left out of the run, the suite importing it would
+    stop on the import rather than on its own assertion."""
+    return [rel for rel in tests
+            if rel in present and _filed_returns.is_test_support_path(rel)
+            and not is_inline_suite(rel)
+            and changed_source(root, rel, deadline)[0]]
+
+
+def support_clause(support):
+    """The sentence for a run made again with test-support modules at HEAD's
+    copy, or "" when none was."""
+    if not support:
+        return ""
+    return ("; the run with the task's copy of test-support module%s %s laid "
+            "over passed, so %s may carry the work the new cases test, and the "
+            "run was made again with HEAD's copy - the run with the fix lays %s "
+            "over" % ("" if len(support) == 1 else "s", ", ".join(support),
+                      "it" if len(support) == 1 else "they",
+                      "it" if len(support) == 1 else "them"))
+
+
+def printed_run(run):
+    """`(text, tag)` - the output whose labels bind a task's case ids, and the
+    run that printed it: the fix run when one was made, else the second run
+    (`--introduces`: the task's test files with the working tree's
+    implementation, made when the task's run stopped on a symbol the task
+    adds - a run that printed no label of the new cases), else the task's own
+    run under the tag it was made with. The tag is None when no run printed
+    anything at all."""
+    for tag in ("fix", "second"):
+        if run.get(tag) is not None:
+            return run[tag]["text"], tag
+    if run.get("code") is None and not run.get("text"):
+        return "", None
+    return run.get("text") or "", run.get("tag") or "task"
 
 
 def _pulled_in(notes):
@@ -3401,7 +3445,9 @@ def _refused_clause(refused):
 def red_verdict(run, ctx):
     """`(exit, verdict, block, note)` - what the run in the throwaway proved.
 
-    `run` is `{"cmd", "code", "text", "problem", "second", "head", "fix"}`;
+    `run` is `{"cmd", "code", "text", "problem", "second", "head", "fix",
+    "withdrawn", "support"}`; `support` the test-support modules the task's
+    run held at HEAD's copy (`support_at_head`), empty when it held none;
     `second` is the `--introduces` re-run with the working tree's
     implementation copied in, `head` the baseline - HEAD's own test files on
     HEAD's code, made FIRST in the fresh throwaway with the new declared test
@@ -3422,7 +3468,8 @@ def red_verdict(run, ctx):
     env_clause += deps_clause(ctx.get("deps"))
     env_clause += deadline_clause(ctx.get("sized"))
     env_clause += budget_clause(ctx.get("budget"))
-    env_clause = withdrawn_clause(run.get("withdrawn")) + env_clause
+    env_clause = (withdrawn_clause(run.get("withdrawn"))
+                  + support_clause(run.get("support")) + env_clause)
     if run["problem"] is not None:
         return E_CANNOT_PROVE, V_NOT_RUN, {
             "status": RED_CANNOT, "at": at,
@@ -3449,8 +3496,9 @@ def red_verdict(run, ctx):
             "%s (%s): the test PASSED in the throwaway - HEAD's implementation with "
             "this task's test files, run with %s removed from its environment - so "
             "it proves nothing yet; fix the test, there is no redFirst word to "
-            "record for this%s" % (where, line, ", ".join(ctx["dropped"]) or "nothing",
-                                   deps_clause(ctx.get("deps"))))
+            "record for this%s%s" % (where, line, ", ".join(ctx["dropped"]) or "nothing",
+                                     support_clause(run.get("support")),
+                                     deps_clause(ctx.get("deps"))))
     failing = (_failing_cases(text, tally["runner"], run["cmd"])
                if tally is not None and tally["runner"] is not None else [])
     absent = ctx.get("absent") or []
@@ -4288,9 +4336,11 @@ def run_red(args, cmd, out):
     early = deadline - (budget["reserve"] if budget else 0)
     overlays, inline, inline_problem = inline_overlays(root, scope["tests"], deadline)
     # An inline suite is a source too: the symbols it adds are read off it, and
-    # a missing module may be it.
+    # a missing module may be it. So is a test-support module: a run made with
+    # HEAD's copy of it (`support_at_head`) may stop on a helper the task adds.
     sources = scope["implementation"] + [rel for rel in scope["tests"]
-                                         if is_inline_suite(rel)]
+                                         if is_inline_suite(rel)
+                                         or _filed_returns.is_test_support_path(rel)]
     if args.derive_introduces:
         args.introduces = list(args.introduces) + [
             n for n in derive_introduced(root, sources, deadline)
@@ -4328,7 +4378,9 @@ def run_red(args, cmd, out):
     except OSError:
         pass
     run = {"cmd": cmd, "code": None, "text": "", "problem": None, "second": None,
-           "head": None, "fix": None, "withdrawn": None}
+           "head": None, "fix": None, "withdrawn": None, "tag": "task",
+           "support": []}
+    present = set()
     state = {"new": [], "absent": [], "stages": [], "head_files": None, "head_defs": None,
              "head_modules": None, "head_js": None}
     copied = []
@@ -4395,6 +4447,28 @@ def run_red(args, cmd, out):
                 run["code"], run["text"], run["problem"] = (
                     task["code"], task["text"], task["problem"])
                 run["withdrawn"] = _pulled_in(inline)
+                run["tag"] = "task-held"
+            # A test-support module HEAD has may carry the work the new cases
+            # test - the helper they call, or the fix itself - so a pass with
+            # the task's copy laid over cannot be credited: run again with
+            # HEAD's copy. Only the run that shows the fix lays it over then.
+            support = (support_at_head(root, scope["tests"], present, deadline)
+                       if run["problem"] is None and classify_run(
+                           run["code"], run["text"], cmd)[0] == V_GREEN else [])
+            if support:
+                run["problem"] = start_problem(["task-support"], budget,
+                                               _left(early))
+            if support and run["problem"] is None:
+                texts = (dict((rel, n["plain"]) for rel, n in inline.items())
+                         if run["withdrawn"] else overlays)
+                task, copied = _isolated_run(
+                    root, path, [rel for rel in scope["declared"]
+                                 if rel not in support], cmd, early,
+                    args.timeout, env, holder, "task-support", deps=deps,
+                    texts=texts)
+                run["code"], run["text"], run["problem"] = (
+                    task["code"], task["text"], task["problem"])
+                run["support"], run["tag"] = support, "task-support"
             second = run["problem"] is None and _wants_second(
                 run["code"], run["text"], args.introduces, cmd, sources,
                 _roots(root, path))
@@ -4440,12 +4514,14 @@ def run_red(args, cmd, out):
                    else _remove_throwaway(root, holder, path))
         if previous is not None:
             _proc_group.disarm_interrupt(previous)
-    # The labels the suite printed, from the run that shows the work whole: the
-    # fix run when one was made, else the task's own. None when the runner
+    # The labels the suite printed, from the run that shows the work whole
+    # (`printed_run`), named in the payload beside them. None when the runner
     # prints none this reads - `drive-phase.py submit` grades a case id against it.
-    shown = run["fix"]["text"] if run["fix"] is not None else run["text"]
+    shown, printed_from = printed_run(run)
     payload = {"verdict": verdict, "redFirst": block, "note": note,
                "printed": _runner_output.printed_labels(shown, cmd),
+               "printedFrom": printed_from,
+               "supportAtHead": run["support"],
                "testDigest": digest,
                "implementationDigest": implementation_digest,
                "atHead": scope["implementation"], "copied": copied,
@@ -4484,6 +4560,9 @@ def run_red(args, cmd, out):
             % (verdict, (head or "?")[:12], "yes" if removed else "NO"))
         out("  at HEAD: %s" % (", ".join(scope["implementation"]) or "(none declared)"))
         out("  from the working tree: %s" % (", ".join(copied) or "(none)"))
+        if run["support"]:
+            out("  test support at HEAD's copy in the task's run: %s"
+                % (", ".join(run["support"]),))
         out("  environment: inherited, without %s" % (", ".join(dropped) or "nothing"))
         out("  dependencies:%s" % (deps_clause(deps)[1:],))
         if naming:

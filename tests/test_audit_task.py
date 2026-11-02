@@ -18748,6 +18748,46 @@ def _inline_suite_mode_cases(check):
               "inline default fills an absent or gate-only mode, never "
               "overrules a red-first one: %r" % ((code, t.get("tests")),),
               code == 0 and (t.get("tests") or {}).get("mode") == "tdd")
+
+        # A test-support module - code under tests/ that no runner collects as
+        # a suite - named as the task's only test file holds its own cases
+        # beside the code they test: the inline shape, though it sits in a
+        # test directory.
+        support = "tests/_harness.py"
+        proj, mpath = project("add-support")
+        code, text = verb(proj, "add", "Support", "--phase", "P1", "--tests-add",
+                          "%s: the new case" % (support,))
+        t = task(mpath)
+        check("is6 add of a task whose only test file is a tests/ support module "
+              "holding its own implementation defaults to regression and says "
+              "why, in the inline sentence: %r"
+              % ((code, t.get("tests"), notes(t), text[-200:]),),
+              code == 0 and (t.get("tests") or {}).get("mode") == "regression"
+              and (t.get("tests") or {}).get("expectRedFirst") is False
+              and "inline" in notes(t) and support in notes(t))
+
+        proj, mpath = project("add-support-suite")
+        code, text = verb(proj, "add", "Support and suite", "--phase", "P1",
+                          "--tests-add", "%s: the helper" % (support,),
+                          "--tests-add", "tests/test_thing.py: the caller")
+        t = task(mpath)
+        check("is7 ALLOW: a support module beside a suite that calls it keeps "
+              "the tdd default and gets no inline note - the suite is a test "
+              "file a red run can lay over HEAD: %r"
+              % ((code, t.get("tests"), notes(t)),),
+              code == 0 and (t.get("tests") or {}).get("mode") == "tdd"
+              and "inline" not in notes(t))
+
+        proj, mpath = project("add-support-tdd")
+        code, text = verb(proj, "add", "Support tdd", "--phase", "P1",
+                          "--tests-mode", "tdd", "--tests-add",
+                          "%s: the new case" % (support,))
+        t = task(mpath)
+        check("is8 an explicit --tests-mode tdd over that shape stays tdd - the "
+              "caller's answer - and add tells the caller so, naming the file: "
+              "%r" % ((code, t.get("tests"), notes(t), text[-300:]),),
+              code == 0 and (t.get("tests") or {}).get("mode") == "tdd"
+              and "inline" in (text + notes(t)) and support in (text + notes(t)))
     finally:
         shutil.rmtree(root, ignore_errors=True)
 

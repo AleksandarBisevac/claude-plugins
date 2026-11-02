@@ -3474,8 +3474,10 @@ def _bug_fix_discipline(bug):
     passes at HEAD, and "the suite could not run, now it runs" is what the gate
     already proves -- so a tdd task there is cancelled and re-added. A bug naming
     no file is tdd: `all([])` is True and would read "nothing named" as "only
-    tests". The test-path reading is `_filed_returns.is_test_path`, the one the
-    red-first helper grades with.
+    tests". The test-path reading is `_filed_returns.is_test_path`; the
+    red-first helper splits a task's files with a reading of its own
+    (`stamp-verification.py`'s `_is_test_path`), which also counts every path
+    `tests.add` names.
     """
     files = [str(f) for f in (bug.get("files") or []) if str(f).strip()]
     return _paths_discipline([_vocab._strip_line_suffix(f) for f in files],
@@ -3496,27 +3498,57 @@ def _paths_discipline(paths, named_by):
         % (named_by, ", ".join(paths)))
 
 
+def _inline_suite_shape(paths):
+    """The clause naming `paths` as an inline suite, or None when one of them
+    is a suite of the ordinary shape.
+
+    An inline suite is a test file whose cases live in the file they test:
+    one with none of the test shapes (`tools/x.py` carrying its own cases), or
+    a test-support module (`_filed_returns.is_test_support_path`, e.g.
+    `tests/_harness.py`), which sits in a test directory but is no suite a
+    runner collects. A file named as a test (`tests/test_x.py`) beside either
+    is a suite a red run can lay over HEAD by itself."""
+    if not paths or any(_fr.is_test_path(p) and not _fr.is_test_support_path(p)
+                        for p in paths):
+        return None
+    return ("%s %s the task's only test file%s and %s %s own implementation (an "
+            "inline suite), so a red run at HEAD would lay the fix over with the "
+            "cases"
+            % (", ".join(paths), "is" if len(paths) == 1 else "are",
+               "" if len(paths) == 1 else "s", "is" if len(paths) == 1 else "are",
+               "its" if len(paths) == 1 else "their"))
+
+
 def _inline_suite_discipline(paths):
     """`(mode, note)` for a task whose `tests.add` names `paths`: `regression`
-    and the reason when every one has none of the test shapes - an inline
-    suite, whose cases live in the file they test - else `(None, None)`.
+    and the reason when they are an inline suite (`_inline_suite_shape`), else
+    `(None, None)`.
 
     A red run lays a task's test files over HEAD; an inline suite's copy
     carries the fix with it, so the red-first helper has to split the file's
-    test hunks from its code by the definitions they lie in. That works when
-    the cases sit in test definitions and is refused otherwise, so red-first
-    is the caller's to ask for and not the default. The test-path reading is
-    `_filed_returns.is_test_path`, the one the red-first helper grades with."""
-    if not paths or any(_fr.is_test_path(p) for p in paths):
+    test hunks from its code by the definitions they lie in - or, for a
+    test-support module, run again at HEAD's copy, where the file's own new
+    cases do not exist. That works when the cases sit in test definitions of
+    a file outside a test directory and is refused or comes back not red
+    otherwise, so red-first is the caller's to ask for and not the default."""
+    shape = _inline_suite_shape(paths)
+    if shape is None:
         return None, None
     return "regression", (
-        "regression by default: %s %s the task's only test file%s and %s %s own "
-        "implementation (an inline suite), so a red run at HEAD would lay the fix "
-        "over with the cases; pass --tests-mode tdd to ask for the red-first "
-        "split of its test hunks"
-        % (", ".join(paths), "is" if len(paths) == 1 else "are",
-           "" if len(paths) == 1 else "s", "is" if len(paths) == 1 else "are",
-           "its" if len(paths) == 1 else "their"))
+        "regression by default: %s; pass --tests-mode tdd to ask for the "
+        "red-first split of its test hunks" % (shape,))
+
+
+def _inline_suite_tdd_note(paths):
+    """The note for a caller who asked for `tdd` over an inline suite, or
+    None: the mode is the caller's answer and stays, and the caller is told,
+    in `_inline_suite_shape`'s words, what the red-first helper will meet."""
+    shape = _inline_suite_shape(paths)
+    if shape is None:
+        return None
+    return ("tdd as asked: %s; the red-first helper may answer could-not-prove "
+            "or not red for it, and --tests-mode regression files without a "
+            "red-first proof" % (shape,))
 
 
 # A signal word counts only as the title's first word, which is also where a
@@ -4399,6 +4431,10 @@ def _locked_add(args, project, config, mpath, title, out):
     fix_notes = []
     if fixes:
         args, fix_notes = _fix_task_args(args, targets, project, fixes, records)
+    # A tdd mode the caller typed over an inline suite stays theirs; the note
+    # saying what the red-first helper will meet is printed with the add as
+    # well as kept on the task.
+    tdd_note = None
     if args.tests_mode is None:
         inline_mode, inline_note = _inline_suite_discipline(
             _tests_add_paths(args.tests_add)[0])
@@ -4406,6 +4442,9 @@ def _locked_add(args, project, config, mpath, title, out):
             args = argparse.Namespace(**vars(args))
             args.tests_mode = inline_mode
             fix_notes = fix_notes + [inline_note]
+    elif args.tests_mode == "tdd":
+        tdd_note = _inline_suite_tdd_note(_tests_add_paths(args.tests_add)[0])
+        fix_notes = fix_notes + ([tdd_note] if tdd_note else [])
     declared = _union_paths(_split_csv(args.files), _tests_add_paths(args.tests_add)[0])
     by_runner = _unit_runner_paths(phase, assembled, project, declared) if fixes else {}
     companions, companion_notes = _companions_for(project, declared, intent, by_runner)
@@ -4550,6 +4589,8 @@ def _locked_add(args, project, config, mpath, title, out):
     out("  tests.mode %s  model %s  risk %s  skills %s"
         % (task["tests"]["mode"], task["model"], task["risk"],
            json.dumps(task["skills"])))
+    if tdd_note:
+        out("  NOTE: " + tdd_note)
     # The basis rides every gate line, narrow or wide, exactly as it does under
     # `add-phase`: the entries alone cannot tell a scope this command derived
     # from a scope it inherited, and an operator who cannot tell reads the shard

@@ -275,8 +275,13 @@ def stop_and_drain(proc, tear=None, drain_eof=None):
     (`drain_to_eof`) so nothing outside the killed tree still holds it, and
     the root has exited. On Windows a `taskkill` that returned has only asked
     for the kill, so the kill's own answer confirms nothing alone. This is the
-    rule's one home: every reader that stops a timed-out child calls it and
-    words the answer its own way, so the readers cannot come to disagree.
+    rule's one home: every reader that stops a timed-out child calls it, so
+    the readers cannot come to disagree about what confirmed means. Two of
+    them word an unconfirmed answer the same way, appending " (not
+    confirmed)" to the sentence saying the group was torn down
+    (`drive-phase.py`'s `run_lint_probe`, `stamp-verification.py`'s
+    `_run_in`); `run-test-gate.py`'s `_shell` records it as the fact
+    `teardown: unconfirmed` instead.
 
     `tear` and `drain_eof` are seams. Left None they are this module's
     `tear_down` and `drain_to_eof`, looked up at CALL time, so a case that

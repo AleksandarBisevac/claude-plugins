@@ -1050,7 +1050,29 @@ def _selftest():
         _harness.stage(check, "rc-block", _crlf_cases)
         _harness.stage(check, "ds-block", _digest_site_cases)
         _harness.stage(check, "rm-block", _red_command_cases)
+        _harness.stage(check, "tsp-block", _support_path_cases)
     return _harness.run(body)
+
+
+def _support_path_cases(check):
+    """`is_test_support_path`: source in a test directory that no runner
+    collects as a suite. The red-first helper may hold one at HEAD's copy and
+    `audit-task.py add` reads one alone as an inline suite, so a file this
+    calls support when it is a suite, or data, moves both."""
+    support = ["tests/_harness.py", "tests/conftest.py", "tests/helpers/fx.ts",
+               "spec/support.mjs", "tests\\_win.py", "tests/_harness.py::case"]
+    other = ["tests/test_x.py", "tests/x_test.go", "tests/x.test.js",
+             "tests/fixtures/data.json", "tests/golden.txt", "src/x.py",
+             "_harness.py", "tests", "tests/", ""]
+    said = dict((p, M.is_test_support_path(p)) for p in support + other)
+    check("tsp1 source in a test directory with no test name is support "
+          "(a `::case` suffix and a backslash path read the same); a test-named "
+          "file, data under a test directory, source outside one and a bare "
+          "directory are not - and every support path is still a test path: %r"
+          % (said,),
+          [said[p] for p in support] == [True] * len(support)
+          and [said[p] for p in other] == [False] * len(other)
+          and all(M.is_test_path(p) for p in support))
 
 
 def _red_command_cases(check):

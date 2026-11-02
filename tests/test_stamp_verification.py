@@ -1462,6 +1462,123 @@ def _directory_scope_cases(check):
           and (got_o.get("redFirst") or {}).get("status") != "proved")
 
 
+# --- a test-support module, and which run the labels are read from ---
+# A support module is code under a test directory that no runner collects as a
+# suite: suites import it. When HEAD already has one and the task edits it, the
+# edit may be the work the new cases test - laid over HEAD, it hands the red
+# run the helper the new case calls, and that run passes on the task's own
+# work. So a red run that passes with it laid over is made again with HEAD's
+# copy.
+_SUPPORT_HEAD = "def old():\n    return 1\n"
+_SUPPORT_WT = _SUPPORT_HEAD + "\n\ndef doubled(n):\n    return n * 2\n"
+
+
+def _support_suite(cases):
+    return _house_test("import mine\nimport _support", cases)
+
+
+def _support_module_cases(check):
+    py = sys.executable
+    old = [("old1", "_support.old() == 1")]
+    # The case asserts on the helper alone, so only the support module decides
+    # it: with the task's copy laid over HEAD it passes there, and the helper
+    # would answer "not red".
+    new = [("new1", "getattr(_support, 'doubled', lambda n: None)(2) == 4")]
+    root, man = _tree_repo(
+        "stamp-red-sr223-",
+        {"tests/_support.py": _SUPPORT_HEAD, "tests/test_mine.py": _support_suite(old)},
+        {"tests/_support.py": _SUPPORT_WT,
+         "tests/test_mine.py": _support_suite(old + new)},
+        ["tests/test_mine.py", "tests/_support.py"])
+    code, got = _red(root, man, [py, "tests/test_mine.py"])
+    block = got.get("redFirst") or {}
+    check("sr223 a task adding a helper to a test-support module HEAD already has, "
+          "and a suite case calling it, is red at HEAD and green with the work: the "
+          "red run passing with the task's copy laid over is made again with HEAD's "
+          "copy, the module is laid over in the run that shows the fix, and the "
+          "payload reads that run's labels: "
+          "exit=%r %r printed=%r from=%r note=%r"
+          % (code, block.get("basis", "")[:300], got.get("printed"),
+             got.get("printedFrom"), got.get("note")),
+          code == M.E_PROVED and block.get("status") == "proved"
+          and "new1" in block.get("basis", "")
+          and "made again with HEAD's copy" in block.get("basis", "")
+          and got.get("supportAtHead") == ["tests/_support.py"]
+          and got.get("printed") == ["old1", "new1"]
+          and got.get("printedFrom") == "fix")
+
+    # The allow twin for a support module HEAD has: the new case calls the
+    # helper the task adds AND asserts the fixed value, so the run with the
+    # task's copy laid over is red on HEAD's implementation. That red is the
+    # implementation's - the run with the fix differs from it only there - and
+    # is credited as it always was, with nothing held. A helper that held every
+    # support module HEAD has at HEAD's copy goes red here: the case would stop
+    # on the missing helper, not on its assertion.
+    calls = [("new1", "_support.doubled(mine.v) == 4")]
+    root_n, man_n = _tree_repo(
+        "stamp-red-sr226-",
+        {"tests/_support.py": _SUPPORT_HEAD, "tests/test_mine.py": _support_suite(old)},
+        {"tests/_support.py": _SUPPORT_WT,
+         "tests/test_mine.py": _support_suite(old + calls)},
+        ["tests/test_mine.py", "tests/_support.py"])
+    code_n, got_n = _red(root_n, man_n, [py, "tests/test_mine.py"])
+    block_n = got_n.get("redFirst") or {}
+    check("sr226 ALLOW: a support module HEAD has, laid over in the red run, whose "
+          "new helper the case needs while its red is the implementation's, is "
+          "proved on the case's assertion with no support module held: "
+          "exit=%r %r held=%r"
+          % (code_n, block_n.get("basis", "")[:300] or got_n.get("note"),
+             got_n.get("supportAtHead")),
+          code_n == M.E_PROVED and block_n.get("status") == "proved"
+          and "new1" in block_n.get("basis", "")
+          and "AttributeError" not in block_n.get("basis", "")
+          and "test-support" not in block_n.get("basis", "")
+          and got_n.get("supportAtHead") == [])
+
+    # The other direction: a support module NEW in the task has no HEAD copy to
+    # keep, so it is laid over in the red run as before - held back, the new
+    # suite would die importing it and the red would be an import error, not the
+    # case's own assertion. A helper that held back every support module goes
+    # red here.
+    fresh = _house_test("import mine\nimport _fresh",
+                        [("old1", "True"), ("new1", "_fresh.two() == mine.v")])
+    root_f, man_f = _tree_repo(
+        "stamp-red-sr224-", {"tests/test_mine.py": _red_test(
+            "import mine", "mine.v >= 1", label="old1")},
+        {"tests/_fresh.py": "def two():\n    return 2\n", "tests/test_mine.py": fresh},
+        ["tests/test_mine.py", "tests/_fresh.py"])
+    code_f, got_f = _red(root_f, man_f, [py, "tests/test_mine.py"])
+    block_f = got_f.get("redFirst") or {}
+    check("sr224 ALLOW: a support module the task ADDS is laid over HEAD in the red "
+          "run, so the new case fails on its own assertion against HEAD's code "
+          "rather than on importing a module HEAD lacks: exit=%r %r"
+          % (code_f, block_f.get("basis", "")[:300] or got_f.get("note")),
+          code_f == M.E_PROVED and block_f.get("status") == "proved"
+          and "new1" in block_f.get("basis", "")
+          and "ModuleNotFoundError" not in block_f.get("basis", ""))
+
+    # An introduced-symbol proof: HEAD's run dies importing a module the task
+    # adds, so it prints no label at all, and every tests.add id is bound only
+    # by the labels of the run that holds the work.
+    files = ["src/mine.py", "src/newmod.py", "tests/test_mine.py"]
+    root_i, man_i = _red_repo(
+        "stamp-red-sr225-",
+        _red_test("from newmod import helper_fn", "helper_fn() == 2"),
+        extra={"src/newmod.py": "def helper_fn():\n    return 2\n"}, files=files)
+    code_i, got_i = _red(root_i, man_i, [py, "tests/test_mine.py"],
+                         "--introduces", "newmod")
+    task = {"tests": {"add": ["tests/test_mine.py: v is two"]}}
+    gaps = _filed_returns.case_binding_gaps(task, ["new1"], got_i.get("printed"))
+    check("sr225 an introduced-symbol proof whose HEAD run crashes before any case "
+          "binds every tests.add id: the payload's labels come from the run that "
+          "holds the work, never the HEAD run that printed none, and the payload "
+          "names the run it read - the second run, as no fix run is made on "
+          "this route: exit=%r printed=%r from=%r gaps=%r"
+          % (code_i, got_i.get("printed"), got_i.get("printedFrom"), gaps),
+          code_i == M.E_PROVED and got_i.get("printed") == ["old1", "new1"]
+          and got_i.get("printedFrom") == "second" and gaps == [])
+
+
 def _sandbox_words_cases(check):
     """The sandbox description lands in the committed shard, so it names the
     project root and the home directory by role, never by machine path."""
@@ -6834,6 +6951,7 @@ STAGES = (
     ("si-inline", "_inline_suite_cases"),
     ("si-inline-closure", "_inline_closure_cases"),
     ("sr-directory", "_directory_scope_cases"),
+    ("sr-support", "_support_module_cases"),
     ("su-wording", "_su_wording_cases"),
     ("sr-process", "_process_cases"),
     ("sr-sigterm", "_sigterm_cases"),

@@ -1477,6 +1477,30 @@ def is_test_path(path):
                                                     for p in parts[:-1])
 
 
+# The extensions of a file a suite can import. Data under a test directory (a
+# fixture's JSON, a golden text) is read by a suite, never run as one, and holds
+# no code a task's work could live in.
+_SOURCE_EXTENSIONS = (".py", ".js", ".mjs", ".cjs", ".jsx", ".ts", ".mts", ".cts",
+                      ".tsx")
+
+
+def is_test_support_path(path):
+    """Whether `path` is a test-support module: source inside a test directory
+    whose name has none of the test shapes, so no runner collects it as a
+    suite and suites import it (`tests/_harness.py`, `conftest.py`).
+
+    `is_test_path` counts it as a test, and that is right for where it lives,
+    but it can hold the work a task's new cases test - a helper the suite
+    calls, or cases of its own beside the code they cover. The red-first
+    helper (`stamp-verification.py`) and `audit-task.py`'s inline-suite default
+    both read it here."""
+    parts = [p for p in str(path or "").split("::", 1)[0].replace("\\", "/")
+             .split("/") if p not in ("", ".")]
+    return (len(parts) > 1 and any(p in TEST_DIRS for p in parts[:-1])
+            and not _TEST_NAME.match(parts[-1])
+            and parts[-1].lower().endswith(_SOURCE_EXTENSIONS))
+
+
 def _names_tests(token):
     name = token.split("=", 1)[0]
     if name in SELECTION_FLAGS:

@@ -5154,7 +5154,15 @@ work. `red --manifest M --task T [--deps-from DIR] -- <cmd>` checks HEAD out wit
 temp directory (hooks pointed nowhere), copies the task's declared **test** files from the working
 tree over it — a declared file is a test when `tests.add` names it or its path has a test shape;
 the rest stay at HEAD, and the split is printed — runs the command there, and removes the
-throwaway in a `finally`, asking git afterwards whether it still lists it. A throwaway it could
+throwaway in a `finally`, asking git afterwards whether it still lists it. A declared
+**test-support module** (`_filed_returns.is_test_support_path()`: source in a test directory with
+no test name, such as `tests/_harness.py` or `conftest.py`) that HEAD has and the task changed may
+carry the work itself, so a task's run that passes with it laid over is made again with HEAD's copy
+of it (`support_at_head()`), and only the fix run lays it over then; one new at HEAD is laid over
+as before, since the suite importing it would otherwise stop on the import. The payload's
+`printed` labels, which `drive-phase.py submit` binds a task's case ids against, come from the
+run that holds the work — the fix run, else the `--introduces` second run, else the task's own —
+and `printedFrom` names which (`printed_run()`). A throwaway it could
 not remove is exit `4`, never folded into the verdict. A command naming the shared tree by path is
 refused before anything is built, because it would run the shared files and grade the fix.
 
@@ -5163,7 +5171,9 @@ refused before anything is built, because it would run the shared files and grad
 interrupt tears the whole group down, and SIGINT/SIGTERM raise so the `finally` runs.
 ONE deadline, `--timeout`, starts before anything runs and covers every git call that builds or
 reads the throwaway and every run - HEAD's own, the task's, the task's again with what it pulled
-in held back (made only when its run was green with that code in), the second (`--introduces`)
+in held back (made only when its run was green with that code in), the task's again with its
+test-support modules at HEAD's copy (made only when its run was green with them laid over), the
+second (`--introduces`)
 and the fix run - each getting what the earlier ones left, except that a sweep command holds the
 fix run's wall time back from the runs before it (`sweep_budget`, never more than half the
 deadline). A figure in

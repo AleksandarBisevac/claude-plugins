@@ -1009,7 +1009,7 @@
     {
       "id": "P155.12",
       "title": "A task tree is unsettled by one predicate every verb reads, the stop names a restore verb, and the move's byte comparison bypasses filters",
-      "status": "in_progress",
+      "status": "done",
       "description": "Closes F805. Evidence at fa1b0c81: git/_worktrees.py:2112 hash-object without --no-filters; the only restore verb is drive-phase.restore_carry (:5920), from the carry ref, not from the kept copy. One shared \"unsettled\" predicate read by dispatch, integration, retirement and advance_member.",
       "files": [
         "plugins/audit/scripts/git/_worktrees.py",
@@ -1039,25 +1039,43 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "89e7f7cbfab7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "CHANGES.\nplugins/audit/scripts/git/_worktrees.py: (a) `tree_unsettled(tree, run=None, now=None)` -> {unsettled True|False|None, kept, why, cleared}: the one reading of whether a move's copy (admin_dir/audit-advance) or its tombstone stands beside a task tree, read through the same `_left_beside` every move's `kept` uses; None (could-not-ask, never settled) when git will not name the admin dir; `why` is `kept_where()`, which names <copy>/N.bin, <copy>/index.json and <copy>/git-index. (b) `_clear_strays`: the `.audit-*` temp files `_write_aside` leaves in the admin dir after a hard kill are removed by tree_unsettled once older than STRAY_AGE_SECONDS (a younger one may be a write in flight and is left); `_write_aside` now takes its prefix from STRAY_PREFIX (same value). (c) `restore_copy(tree, task_id, is_record=None, run=None)` -> {restored True|False|None, kept, paths, error}: puts the tree back at the copy's `from` from N.bin + git-index through `_undo` and its `_answers_as` check, drops the copy; refuses with nothing written when the marker does not name the task at the copy's base (a recorded move: the next move drops it), the copy has no index.json or will not read, or `_newer_work` names a path the copy does not hold; None when no copy stands (a tombstone alone is cleared). (d) `_reads_as` hashes with `hash-object --no-filters`; its docstring states the cost (under core.autocrlf, a moved file a killed checkout already wrote reads as differing, so a resumed move holds instead of finishing). Module docstring: writes git in two places now (advance_tree, restore_copy).\nplugins/audit/scripts/governance/drive-phase.py: `unsettled_stop(ctx, task, tree)` and `unsettled_said(...)` (stop names the copy's files and `restore_command()` = `python3 <drive-phase.py> restore <id> <manifest> --project-dir <project>`); read by `dispatch` (when a tree is given), `integrate_member` (before integrating), `remove_task_tree` (first check, so retirement and both kept-tree removers refuse while a copy or tombstone stands) and `advance_member` (re-reads the predicate after the move; could-not-ask there stays the move's own tree-not-moved decision). A tree directory that is gone is no stop in unsettled_stop (the verb refuses it by name; retire_member runs no removal for it). New subcommand `restore <taskId> [manifest] [--project-dir DIR]` (`run_restore`/`restore_tree`): tree from the drive state's wave.trees, records from member_records, under the phase lock (released unless a drive held it before); exit 0 restored, 1 refused (copy stays), 2 no tree / no copy. Usage and exit-code docstring updated.\ntests/test__worktrees.py: un1-un8 in a new `_unsettled_cases` (called from _advance_crash_cases); calls to the new functions go through `_asked`, so a module without them fails the case instead of raising. tests/test_drive_phase.py: ab9 (after ab8: stop names <copy>/git-index and the restore command; `main([\"restore\", ...])` exit 0, copy gone, work bytes back; the next `next` integrates the member) and uv1 (`_unsettled_verb_cases`: dispatch and integrate_member stop over a copy without running their verb, and go on with the copy gone). PLUGIN-BUILD-GUIDE.md: a paragraph in the _worktrees section and a sentence in drive-phase's 'A wave's edges'.\n\nTDD ORDER AND RED. Tests drafted first; I read only the test file and the function names/signatures of _worktrees (plus remove_task_tree, which is where the retire seam is) before writing them. First run on unfixed code: `python3 tests/test__worktrees.py --selftest` -> exit 1, 156/164, FAIL un1..un8 by assertion (un4 printed (True, '', ...): today's remover deleted the tree with its copy; un5 printed (True, True): the filtered hash accepted the CRLF file). Against HEAD's code in a scratch `git archive HEAD` export with my two test files copied over (never the shared tree): test__worktrees 156/164 with un1-un8 FAIL; test_drive_phase --stage ab-block 9/10 with ab9 FAIL (argparse: invalid choice 'restore'). uv1 was written after and is proved by mutation rows m13/m14/m15 below and by the submit helper's run.\n\nGATE (own-tests: the sweep command the brief names). First run: exit 1 - ar12, wc1, wc2 (test_drive_phase) and _suite s23 red, all from my change: the could-not-ask stop fired over a tree that is gone or fake, and a bare shutil.rmtree in my test. Fixed in my files (gone-directory guard in unsettled_stop; advance_member stops on `is True`; _harness.remove_tree). Second run: `python3 tools/sweep-selftests.py tests/test__worktrees.py tests/test_drive_phase.py tests/test_integrate_task.py tools/_suite.py` -> exit 0, '4/4 files ok, 1023 cases'. After a later one-line test edit (un3's cleanup made tolerant), `python3 tools/sweep-selftests.py tests/test__worktrees.py` -> 164 cases ok. `python3 tools/check-git-pipeline.py` was NOT run (the brief's own-tests reading names only the sweep). Development checks, not gates: ruff check on the four .py files -> 'All checks passed!'; vermin -t=3.8- on them -> exit 0; house_style_violations / prose_number_claims / doc_prose_numbers -> no hit in the touched files.\n\nMUTATION PROBE: <scratchpad>/p15512/mutations.py - usage: `python3 <scratchpad>/p15512/mutations.py [--repo CHECKOUT] [--only ID,...] [--jobs N]` from the checkout (copies the tracked files as on disk into a scratch tree per row, asserts the anchor occurs exactly once, purges __pycache__). Run: 16 rows; the full run killed 14 and reported m9 ANCHOR-MISSING (my anchor was wrong); after fixing the anchor and un3's cleanup, `--only m4,m9` killed both -> every row killed: m1 retire skips predicate->un4; m2 always unsettled->un1,un3,un4; m3 could-not-ask as settled->un2; m4 any age cleared->un3; m5 never cleared->un3; m6 filters back->un5; m7 never matches->un5,av39; m8 restore over newer work->un7; m9 refuse own paths->un6; m10 no git-index->un6; m11 no copy reads restored->un8; m12 stop without verb->ab9,uv1; m13 dispatch skips->uv1; m14 integration skips->uv1; m15 stop on every tree->ab1-ab9,uv1; m16 verb unwired->ab9.\n\nDEPENDANTS. _worktrees.py (guard-release.py, close-phase.py, integrate-task.py, manage-worktrees.py, _evidence_io.py, drive-phase.py, run-test-gate.py, stamp-verification.py): still correct - only names were added and `import time`; `_reads_as` is private and its one caller is `_newer_work` in the same module (grep found no other reader); `_write_aside`'s prefix value is unchanged; `_place`, `_keep_copy`, `_put`, `_read_copy` untouched. BUT the class lives on in two files outside this task: manage-worktrees.py task-remove (~line 740) runs `git worktree remove [--force]` on a task tree without asking tree_unsettled, so `--force` still deletes a copy with the admin directory; and audit-status.py (~line 2131) prints `git worktree remove --force <path>` as a kept tree's remedy. Neither was edited (not in files). drive-phase.py (test__filed_returns, test__invariants, test_audit_status, test_commit_task_work, test_detect_plan_skip, test_stamp_verification, tools/stream-cost.py, test_drive_phase): the names they use (_advance_plan, _attempt_start_moment, _carries, _close_plan, ...) are unchanged; the new checks return a stop only for an existing tree directory with a copy or tombstone beside it, or could-not-ask - none of those suites was run here (own-tests). test__worktrees.py (.github/sweep-costs.json, tools/affected.py): _cases/_selftest unchanged; the suite gains cases so its recorded cost is now low (not re-recorded; the sweep measured it at 32.3s). test_drive_phase.py (sweep-costs.json, ci.yml, test__runner_output, test_run_test_gate, test_stamp_verification, tools/affected.py, tools/reach-diff.py): STAGES unchanged; ab-block gains ab9 and uv1, so its recorded cost is low too. PLUGIN-BUILD-GUIDE.md: paragraphs added, nothing renamed; the doc prose lint is clean.\n\nDOCUMENTS OUTSIDE MY FILES. No sentence I found became false: no command or agent document lists drive-phase's subcommands beyond submit/brief/next, and no document described the old 'until a human has read the copy' stop. CHANGELOG.md carries no entry for this change (not in files).\n\nORCHESTRATOR NOTES. The post-setup conflict dry run in recut_conflicts does not belong in this predicate: tree_unsettled asks one thing about the disk (does a move's copy stand beside a tree), and a recut's conflict dry run asks whether a patch applies over a head - different inputs, different answer. I did not touch the redo pin settler or recut_conflicts. Not tested: restore refusing when another session holds the phase lock (take_lock's stop path), and restore of a move the marker recorded (the refusal is written, no case drives it).",
+        "descriptive": "A task tree with a move's copy beside it is now unsettled by one predicate that dispatch, integration, retirement and the move all read; the stop names the copy's files and a `drive-phase.py restore` verb that puts the work back; the move's byte check no longer accepts a line-ending-only difference."
       },
       "startedAt": "2026-11-02T12:03:56Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-02T12:51:54Z",
+      "verifiedBy": [
+        "un1-un4: tree_unsettled answers unsettled/kept for a copy and for a tombstone, settled for a clean tree, could-not-ask for a non-tree directory, clears a stale .audit-* temp file and leaves a fresh one; drive-phase.remove_task_tree refuses a tree with a copy beside it and removes the same tree once the copy is gone",
+        "un5: _reads_as rejects a file differing from the commit only in CRLF line endings under a `text` attribute, and accepts the commit's own bytes",
+        "un6-un8: restore_copy after a move killed inside its undo puts back the task's bytes and the staged new file (git-index), drops the copy; refuses over a path the copy does not account for with nothing changed; answers None with 'no copy' when none stands",
+        "ab9: the drive's not-settled stop names <copy>/git-index and the restore command; `drive-phase.py restore` run as named restores and the next `next` integrates the member",
+        "uv1: dispatch and integrate_member stop over a tree with a copy beside it without running their verb, and go on once the copy is gone"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-11-02T12:46:30Z.cd0504",
         "status": "passed",
         "at": "2026-11-02T12:46:30Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "89e7f7cbfab7",
+        "at": "2026-11-02T12:51:54Z",
+        "return": "docs/audit/evidence/returns/P155.12/20261102T120356Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-11-02T12:36:38Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__worktrees.py tests/test_drive_phase.py tests/test_integrate_task.py tools/_suite.py` in a throwaway tree at HEAD exited 1 with failing cases un1 (house FAIL), un2 (house FAIL), un3 (house FAIL), un4 (house FAIL), un5 (house FAIL), un6 (house FAIL), un7 (house FAIL), un8 (house FAIL), ab9 (house FAIL) and 2 more, but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 786/787 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 786/789 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P155.13",
       "title": "The red-first helper lays a test-support module over HEAD only in the run that shows the fix, and binds case ids to the run that printed them",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Closes F801, F814, F829, F813 (open half), F815 - one class: what is laid over HEAD and which run the labels are read from. Evidence at fa1b0c81: stamp-verification.py:4444 shown falls back to the task-held run when run[\"fix\"] is None; :4410-4418 makes a fix run only when verdict1 is red AND baseline_problem is None; :961-965 _is_test_path counts any file under a test dir; :3248 lays the whole list. _filed_returns.is_test_path('tests/_harness.py') is True, so _inline_suite_discipline (audit-task.py:3474-3495) leaves the F813 shape at tdd. _proc_group.py:279 docstring vs readers drive-phase.py:8585, stamp-verification.py:3351, run-test-gate.py:3138.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -1067,7 +1085,8 @@
         "tests/test_stamp_verification.py",
         "tests/test_audit_task.py",
         "tests/test__filed_returns.py",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "tests/test__proc_group.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -1089,16 +1108,22 @@
         "P155.10"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-02T12:52:07Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-02T13:20:59Z.690edc",
+        "status": "passed",
+        "at": "2026-11-02T13:20:59Z"
+      }
     },
     {
       "id": "P155.14",
