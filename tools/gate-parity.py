@@ -2673,6 +2673,161 @@ def _verify_cleanup_cases(check):
           not re.search(r"^[^#\n]*\btrap\b[^\n]*\bRETURN\b", source, re.M))
 
 
+# --- the live-plan window reads the evidence the full plan reads ---------------
+# The report leg renders a WINDOW of this repo's own plan, and it is the one leg
+# whose page carries real evidence. Written outside any checkout under a path
+# that is not record-shaped, the renderer resolved the window's own directory as
+# its project, read no ledger there, and the page showed every pointer as
+# dangling - a status the real plan never shows - while validation and the
+# browser check both passed. These cases RUN the window step verify.sh runs (its
+# shell function cut out of the shipped file, against this repo's real plan) and
+# then ask the renderer's own evidence reader of both plans, independently of the
+# step's own comparison: every subject the window keeps reads as it reads in the
+# full plan, and the step itself refuses a window whose ledger is missing.
+_LIVE_WINDOW_FUNC = "live_plan_window"
+# The one statement in the step that puts the ledger beside the window; the
+# mutation case cuts it, so it is matched whole and counted.
+_LIVE_WINDOW_LEDGER = 'shutil.copytree(os.path.join(src, "evidence"),'
+
+
+def _live_window_shell():
+    """A POSIX shell to run the step under: dash when there is one, else sh."""
+    return shutil.which("dash") or shutil.which("sh")
+
+
+def _run_live_window(shell, func_text, workdir):
+    """(exit code, output) of the window step run into `workdir`, from REPO.
+
+    `python3` is a function calling this interpreter, which is what verify.sh
+    does itself when the name on PATH does not run - so the step meets the
+    interpreter the suite is running under, on every runner."""
+    script = ("python3() { \"$LW_PY\" \"$@\"; }\n" + func_text
+              + "%s \"$LW_DIR\"\n" % (_LIVE_WINDOW_FUNC,))
+    env = dict(os.environ)
+    env["LW_PY"] = sys.executable
+    env["LW_DIR"] = os.path.join(workdir, "live-window")
+    done = subprocess.run([shell, "-c", script], cwd=REPO, env=env,
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    return done.returncode, done.stdout.decode("utf-8", "replace")
+
+
+def _evidence_of(manifest_path):
+    """What the report's evidence reader answers for the plan at the path, read
+    with the boundary render-report.py hands it."""
+    import _evidence_io
+    import _evidence_view
+    import _manifest_io
+    manifest = _manifest_io.load_manifest(manifest_path)
+    return _evidence_view.load_evidence(
+        manifest, manifest_path,
+        boundary=_evidence_io.boundary_for(manifest_path))
+
+
+def _view_word(view):
+    return (view["key"], [k for k, _w in view["flags"]])
+
+
+def _window_disagreements(full, window):
+    """Each way the window's evidence reads differently from the full plan's.
+
+    Per subject, because the chip sets alone could agree while a task the window
+    kept had lost its run to another status."""
+    if window is None or full is None:
+        return ([] if window is None and full is None
+                else ["evidence: full %r, window %r"
+                      % (full is not None, window is not None)])
+    out = []
+    for field in ("keys", "flags"):
+        if window[field] != full[field]:
+            out.append("%s: full %r, window %r" % (field, full[field], window[field]))
+    for kind in ("tasks", "phases"):
+        for sid in sorted(window[kind]):
+            mine = window[kind][sid]
+            theirs = full[kind].get(sid)
+            if kind == "phases":
+                mine = mine["own"]
+                theirs = theirs["own"] if theirs is not None else None
+            if theirs is None or _view_word(mine) != _view_word(theirs):
+                out.append("%s %s: full %r, window %r"
+                           % (kind, sid, theirs and _view_word(theirs),
+                              _view_word(mine)))
+    return out
+
+
+def _live_window_cases(check):
+    from _suite import remove_tree
+    with io.open(os.path.join(REPO, VERIFY_REL), encoding="utf-8") as fh:
+        source = fh.read()
+    func = shell_function_text(source, _LIVE_WINDOW_FUNC)
+    legs = shell_function_text(source, "rendered_plan_legs") or ""
+    calls = legs.count("%s \"$WORKDIR/live-window\"" % (_LIVE_WINDOW_FUNC,))
+    renders = legs.count("\"$WORKDIR/live-window/docs/audit/audit-plan.json\"")
+    check("lw0 the window step is a function of the shipped script, the report "
+          "leg calls it once, and the leg renders the plan it writes under a "
+          "record-shaped path: function %r, calls %d, record-shaped renders %d"
+          % (func is not None, calls, renders),
+          func is not None and calls == 1 and renders >= 1)
+    shell = _live_window_shell()
+    if func is None or shell is None:
+        check("lw1 a POSIX shell and the window step to run under it: shell %r, "
+              "function %r" % (shell, func is not None), False)
+        return
+    ran = os.path.basename(shell)
+    full_path = os.path.join(REPO, "docs", "audit", "audit-plan.json")
+    root = tempfile.mkdtemp(prefix="live-window-selftest-")
+    try:
+        code, out = _run_live_window(shell, func, os.path.join(root, "ok"))
+        window_root = os.path.join(root, "ok", "live-window")
+        window_path = os.path.join(window_root, "docs", "audit", "audit-plan.json")
+        written = os.path.isfile(window_path)
+        project = _output.project_of_manifest(window_path) if written else None
+        check("lw1 the shipped window step, run under %s against this repo's "
+              "plan, exits 0 and writes its plan under a record-shaped path "
+              "whose project is the window itself: code=%r project=%r out=%r"
+              % (ran, code, project, out[-1500:]),
+              code == 0 and written
+              and os.path.realpath(project or "") == os.path.realpath(window_root))
+        if code != 0 or not written:
+            return
+        full = _evidence_of(full_path)
+        window = _evidence_of(window_path)
+        diff = _window_disagreements(full, window)
+        check("lw2 every subject the window keeps reads as the full plan reads "
+              "it, and the chip sets are the full plan's - asked of the "
+              "report's own evidence reader, not of the step: %d disagreement(s) "
+              "over %d task(s), first %r"
+              % (len(diff), len((window or {}).get("tasks") or {}), diff[:6]),
+              window is not None and diff == [])
+        # THE FIXTURE-VALUE CASE: lw2 compares two readings, and two readings
+        # that both found no ledger agree perfectly. The window must hold runs
+        # the reader actually resolved, and no pointer it cannot.
+        found = sorted(set(v["key"] for v in ((window or {}).get("tasks") or {})
+                           .values()))
+        full_keys = (full or {}).get("keys") or []
+        check("lw3 ...and the window's reading resolved runs - a ledger was read "
+              "and some task's pointer reached a recorded run - with no dangling "
+              "pointer the full plan lacks: files=%r keys=%r full keys=%r"
+              % ((window or {}).get("files"), found, full_keys),
+              window is not None and (window.get("files") or 0) > 0
+              and any(k not in ("no-evidence", "dangling") for k in found)
+              and ("dangling" not in found or "dangling" in full_keys))
+        # THE STEP'S OWN REFUSAL. The cases above read the window independently;
+        # this one is the step failing the leg when the window's ledger is not
+        # there, which is the shape every pointer turned dangling under.
+        cut = func.count(_LIVE_WINDOW_LEDGER)
+        broken = func.replace(_LIVE_WINDOW_LEDGER,
+                              "(lambda *a: None)(os.path.join(src, \"evidence\"),")
+        code_b, out_b = (_run_live_window(shell, broken, os.path.join(root, "cut"))
+                         if cut == 1 else (None, ""))
+        check("lw4 the step itself refuses a window whose ledger was not copied: "
+              "the copy cut (%d site), it exits non-zero and names the dangling "
+              "pointers, under %s: code=%r out=%r"
+              % (cut, ran, code_b, out_b[-1500:]),
+              cut == 1 and code_b not in (None, 0) and "dangling" in out_b)
+    finally:
+        remove_tree(root)
+
+
 # --- the slices ci.yml runs against the slices verify.sh lists: the cases ------
 _SLICE_CLAUSE = ("a slice ci.yml names that verify.sh --list does not print is "
                  "red, a per-run slice no job runs is red, and shards that do not "
@@ -4396,6 +4551,7 @@ def _cases(check):
           and len(_jt_absent) == 1 and "could not be read" in _jt_absent[0][1])
 
     _verify_cleanup_cases(check)
+    _live_window_cases(check)
     _slice_cases(check)
     _ci_shape_cases(check)
     _encoding_leg_cases(check)

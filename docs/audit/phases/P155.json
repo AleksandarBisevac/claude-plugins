@@ -183,8 +183,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/git/_worktrees.py:2245-2329 (restore_copy, lines 316-324 of the brief's diff)",
         "issue": "restore_copy can write over newer work at a path the copy holds. It drops every path in `held` from `_newer_work`'s answer (`[p for p in _newer_work(...) if p not in held]`), and `_undo` then `_put`s each held path unconditionally. Suppose a.txt is a held work path and, after the kill, someone (a human, or a writer session that was already running) edits it to bytes that are neither the copy's nor `start`'s nor `end`'s. The restore overwrites that edit without saying so. un7 covers only an unheld path (c.txt), so this direction has no test. The docstring narrows the contract to 'the paths it holds are what a restore is asked to write over', which conflicts with 'never write over newer work'.",
-        "resolution": "Before `_undo`, refuse any held path whose bytes match none of these: the copy (`_holds(tree, rel, held[rel])`), `start`'s blob, or `end`'s blob (`_reads_as`, absent where the commit has none). Those are the only states a killed move or a killed undo can leave. un6's tree (a.txt at base, n.txt absent) still passes. Add a case like un7 that edits a.txt and expects a refusal with nothing changed.",
-        "fixTask": "P155.26-gfj"
+        "resolution": "fixed in P155.26-gfj (32b4ca49159c): Before `_undo`, refuse any held path whose bytes match none of these: the copy (`_holds(tree, rel, held[rel])`), `start`'s blob, or `end`'s blob (`_reads_as`, absent where the commit has none). Those are the only states a killed move or a killed undo can leave. un6's tree (a.txt at base, n.txt absent) still passes. Add a case like un7 that edits a.txt and expects a refusal with nothing changed.",
+        "fixTask": "P155.26-gfj",
+        "commit": "32b4ca49159c",
+        "status": "fixed"
       },
       {
         "id": "P155-R21",
@@ -257,9 +259,23 @@
         "file": "PLUGIN-BUILD-GUIDE.md:4044-4047 vs reference/orchestrator.md step 4c; tests/test_audit_task.py:16203",
         "issue": "PLUGIN-BUILD-GUIDE now says a task commit stages 'Exactly the four things step 4c allows', and lists the task's own honoured outputs among them. Step 4c in reference/orchestrator.md (untouched) still allows declared files only. So the guide claims a correspondence with step 4c that the diff broke. The prose in test_audit_task.py:16203 still says the commit stages declared files only (executor-reported).",
         "resolution": "Update orchestrator.md step 4c to name the task's own honoured outputs, update the test_audit_task.py prose in the same follow-up as finding 2, or drop the 'step 4c allows' cross-reference."
+      },
+      {
+        "id": "P155-R31",
+        "severity": "low",
+        "file": "tools/gate-parity.py:2779-2792; tools/verify.sh:831,901,911",
+        "issue": "The window and the full plan are read at two different moments from a live ledger and plan. In lw2/lw3, the full plan's evidence (_evidence_of(full_path), line 2792) is read only after the step has finished copying and reading the window (line 2779). Inside the step, full = evidence(src_plan) (831) is read before the plan/shards are re-read and before copytree (901). In this repo's own checkout, the drive appends rows to docs/audit/evidence/*.jsonl and rewrites the plan while other trees run. A row or pointer that lands between the two reads makes a subject read differently in the two readings, so lw2 or the step goes red with no defect behind it. CI's static checkout cannot show this.",
+        "resolution": "Read both sides over the same bytes. In the step, take the full reading after copying, from the copied plan and ledger, or snapshot plan+shards+ledger once and derive both readings from the snapshot. In lw2, take the full reading before running the step and re-read once on disagreement, so a moving ledger is told apart from a real disagreement."
+      },
+      {
+        "id": "P155-R32",
+        "severity": "low",
+        "file": "docs/audit/phases/P155.json (P155.24-gfj tests.gate)",
+        "issue": "The task's recorded gate, `python3 tools/sweep-selftests.py tests/_harness.py tests/test__affected_tests.py tests/test__runner_collects.py tests/test_stamp_verification.py`, selects no suite that reaches this diff. A grep for verify.sh|gate-parity|live.window|rendered_plan_legs over those four files gives zero hits. So the passed gate run 2026-11-02T19:13:29Z.a52926 is no evidence for the change, and every suite it selects would still pass with live_plan_window or _live_window_cases deleted. The executor's own gate-parity run (125/125) carries a stamp that `stamp-verification.py compare` grades stale: head 578cfd35 -> 32b4ca49, and scopeDigest moved because P155.26 edited PLUGIN-BUILD-GUIDE.md. The dirty bytes of verify.sh and gate-parity.py did not move.",
+        "resolution": "Add `python3 tools/sweep-selftests.py tools/gate-parity.py` to the task's tests.gate, or make sure the phase gate selects tools/gate-parity.py, so a recorded run exercises lw0-lw4."
       }
     ],
-    "outcome": "[findings: 30 - 1 high, 13 med, 16 low; 6 with a recorded fix commit]"
+    "outcome": "[findings: 32 - 1 high, 13 med, 18 low; 7 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2009,7 +2025,12 @@
       "fixes": [
         "P155-R16"
       ],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-02T19:13:29Z.a52926",
+        "status": "passed",
+        "at": "2026-11-02T19:13:29Z"
+      }
     },
     {
       "id": "P155.25-gfj",
@@ -2072,7 +2093,7 @@
     {
       "id": "P155.26-gfj",
       "title": "fix P155-R20: restore_copy can write over newer work at a path the copy holds...",
-      "status": "in_progress",
+      "status": "done",
       "description": "restore_copy can write over newer work at a path the copy holds. It drops every path in `held` from `_newer_work`'s answer (`[p for p in _newer_work(...) if p not in held]`), and `_undo` then `_put`s each held path unconditionally. Suppose a.txt is a held work path and, after the kill, someone (a human, or a writer session that was already running) edits it to bytes that are neither the copy's nor `start`'s nor `end`'s. The restore overwrites that edit without saying so. un7 covers only an unheld path (c.txt), so this direction has no test. The docstring narrows the contract to 'the paths it holds are what a restore is asked to write over', which conflicts with 'never write over newer work'.\n\nResolution asked: Before `_undo`, refuse any held path whose bytes match none of these: the copy (`_holds(tree, rel, held[rel])`), `start`'s blob, or `end`'s blob (`_reads_as`, absent where the commit has none). Those are the only states a killed move or a killed undo can leave. un6's tree (a.txt at base, n.txt absent) still passes. Add a case like un7 that edits a.txt and expects a refusal with nothing changed.",
       "files": [
         "plugins/audit/scripts/git/_worktrees.py",
@@ -2097,14 +2118,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "32b4ca49159c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/scripts/git/_worktrees.py: new _held_moved_on(fn, tree, held, commits) returns the sorted held paths whose bytes match neither the copy (_holds) nor any of the commits (_reads_as, absent where the commit has none). restore_copy now refuses before _undo when any path is either the existing unheld newer work (_newer_work, minus held) or one of these held paths. It reuses the existing refusal: restored False, the paths named, the copy kept, nothing written. The heads tuple is computed once and passed to both. restore_copy's docstring now states the full contract: never write over newer work, held or not. The old wording ('the paths it holds are what a restore is asked to write over') is gone. tests/test__worktrees.py: un9 edits held a.txt after a kill-in-undo to bytes that are none of copy/base/head and expects a refusal naming a.txt, with the copy kept, bytes, status and HEAD unchanged. un10 is the over-fire twin: a.txt already holds the copy's bytes, and the restore must still run and restage n.txt. PLUGIN-BUILD-GUIDE.md: the _worktrees section's restore sentence (around line 1115) now names the held-path refusal (un9) and the copy-bytes allowance (un10). Runs: `python3 tools/sweep-selftests.py tests/test__worktrees.py` exit 0, 166 cases. `python3 tools/sweep-selftests.py tests/test_drive_phase.py` exit 0, 804 cases (ab9 drives a real restore). `python3 tools/sweep-selftests.py tests/test__output_lints.py tests/test__deps.py` exit 0, 448 cases. `python3 tools/prove-gates.py --selftest` exit 0 (ALL PASS 66/66). ruff on both .py files: exit 0. vermin -t=3.8- on both: exit 0. Mutations were made in a scratch rsync copy, never the worktree, with __pycache__ purged and the copy deleted afterwards: (a) dropping the _holds arm turned un10 red (165/166); (b) dropping the _held_moved_on call turned un9 red (165/166); (c) dropping the commit arm turned un6 and un10 red (164/166). Design note for the reviewer: the check covers every held path, record paths included, as the resolution asks. _newer_work exempts is_record paths. A held record a drive refresh leaves at the move target's bytes passes through the end arm, and the kill matrix with records under docs/ stays green. A record refreshed past `end` would now be refused rather than overwritten. Dependants: the importers (guard-release.py, close-phase.py, integrate-task.py, manage-worktrees.py, _evidence_io.py, drive-phase.py, run-test-gate.py, stamp-verification.py and the rest) still behave correctly: only restore_copy's refusal widened and no signature changed. Its one production caller, drive-phase.restore_tree, already maps restored False to a stop, and test_drive_phase stays green. The names other files use (_keep_copy, _place, _put, _read_copy) are unchanged. tests/test__worktrees.py's dependants (.github/sweep-costs.json, test__affected_tests.py, tools/affected.py) still hold: the path is unchanged, and _cases/_selftest are untouched; the added cases are cheap. PLUGIN-BUILD-GUIDE.md's dependants refer to it by basename, which has not changed; only one sentence in the _worktrees section changed. Sibling scope: the hash-object/autocrlf code (P155.27) and tree_unsettled callers (P155.28) were left alone.",
+        "descriptive": "restore_copy no longer silently overwrites an edit made after a kill at a path the copy holds; it refuses, naming the path, and keeps the copy."
       },
       "startedAt": "2026-11-02T18:43:38Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-02T19:04:50Z",
+      "verifiedBy": [
+        "un9: a held path (a.txt) edited after a kill-in-undo to bytes that are none of copy/base/head makes restore_copy refuse, naming a.txt, keeping the copy and changing nothing",
+        "un10: over-fire twin - a held path already holding the copy's bytes is still restored over"
+      ],
       "notes": [
         {
           "at": "2026-11-02T16:59:12Z",
@@ -2123,6 +2147,18 @@
         "runId": "2026-11-02T19:04:42Z.385a51",
         "status": "passed",
         "at": "2026-11-02T19:04:42Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "32b4ca49159c",
+        "at": "2026-11-02T19:04:50Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-02T18:55:24Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__worktrees.py` in a throwaway tree at HEAD exited 1 with 1 of 166 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - un9 (house FAIL): SELFTEST FAILED: 165/166 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
