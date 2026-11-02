@@ -286,18 +286,22 @@ Usage:
                  [--project-dir DIR] [--case ID ...]
                  [--introduces SYMBOL ...] [--deps-from DIR] [--verbose]
                  [-- <test command>]  < return.json
+  drive-phase.py restore <taskId> [manifest] [--project-dir DIR]
 
 Exit codes:
   0  an instruction was printed - dispatch, decide or done; or, for `submit`,
-     the return was filed; for `brief` and `--explain`, the text was printed
+     the return was filed; for `brief` and `--explain`, the text was printed;
+     for `restore`, the task tree's work was put back from its copy
   1  a verb refused, or a filed return will not read: the drive stopped and the
      words that stopped it are printed; for `submit`, the return was refused and
-     nothing was written
+     nothing was written; for `restore`, the work was not put back and the copy
+     stays
   2  usage error - no manifest, no such phase, an answer no pending decision
      offers, or an option that needs --reason given none; for `submit`, no such
      task or phase, or red-first options with no test command; for `brief`, no
      brief written for the id's current start; for `--explain`, nothing to
-     explain for the id
+     explain for the id; for `restore`, no wave tree recorded for the task, or
+     no copy beside it to restore from
 
 This module carries no `--selftest` of its own; its cases live in
 `tests/test_drive_phase.py`.
@@ -1758,7 +1762,12 @@ def start_task(ctx, task):
 def dispatch(ctx, state, phase, task, role, tree=None):
     """Write `role`'s brief through `audit-lookup.py` and hand back the dispatch:
     for the executor under `executor.writerModel`, the writer session's, run in
-    `tree` when the task has one of its own."""
+    `tree` when the task has one of its own - and never into a tree a move's
+    copy stands beside (`unsettled_stop`): an agent's edits there are what the
+    next move reads as newer work and holds the tree over."""
+    stop = unsettled_stop(ctx, task, tree)
+    if stop is not None:
+        return stop
     session, problem = writer_setting(ctx["config"]) if role in (
         "executor", "reviewer") else (None, None)
     if problem:
@@ -4778,6 +4787,46 @@ def member_records(ctx, state):
         + list((state.get("wave") or {}).get("records") or [])))
 
 
+def restore_command(ctx, task_id):
+    """The command that puts `task_id`'s work back from the copy beside its
+    tree: this script's `restore`, spelled to run as printed."""
+    return "python3 %s restore %s %s --project-dir %s" % (
+        shlex.quote(_loader.script_path("drive-phase.py")), shlex.quote(task_id),
+        shlex.quote(os.path.abspath(ctx["manifest"])),
+        shlex.quote(os.path.abspath(ctx["project"])))
+
+
+def unsettled_said(ctx, task_id, tree, left, detail=None):
+    """The words of a stop over `task_id`'s tree that `left`
+    (`_worktrees.tree_unsettled`) or a move named not settled: where the work
+    is, what the move said, and the verb that puts the work back."""
+    if left.get("unsettled") is None:
+        return ("whether the tree of %s at %s is settled is not known (%s). "
+                "Nothing runs in that tree until it can be asked"
+                % (task_id, tree, _clip(left.get("why") or "", 300)))
+    where = left.get("why") or "a copy of its work stands beside it"
+    return ("the tree of %s at %s is not settled - %s%s. Nothing runs in that "
+            "tree while the copy stands: `%s` puts the work back from it and "
+            "takes it down" % (task_id, tree, where,
+                               "; %s" % (_clip(detail, 400),) if detail else "",
+                               restore_command(ctx, task_id)))
+
+
+def unsettled_stop(ctx, task, tree):
+    """None when `tree` - the task's own, or None for a step in the phase
+    tree - is settled, else the stop `unsettled_said` words. The one reading
+    every verb that touches a task tree takes (`_worktrees.tree_unsettled`).
+    A tree whose directory is gone is no stop here: nothing can run in it, the
+    verb that would is the one to refuse it by name, and its retirement runs
+    no removal that could reach the copy (`retire_member`)."""
+    if not tree or not os.path.isdir(tree):
+        return None
+    left = _worktrees.tree_unsettled(tree)
+    if left["unsettled"] is False:
+        return None
+    return _stopped(ctx, unsettled_said(ctx, task["id"], tree, left))
+
+
 def advance_member(ctx, state, task, tree):
     """Bring a member's tree to the phase HEAD before its gate is measured,
     when the phase has moved past the base the tree was cut at. None, or the
@@ -4802,8 +4851,9 @@ def advance_member(ctx, state, task, tree):
     of the work beside the tree - a move not put back or not recorded, newer
     work the copy does not account for, a
     copy that would not come down, or one nobody can read - stops the drive:
-    `kept` is advance_task_tree's one word for a tree that is not settled, read
-    off the disk as the answer is made."""
+    the tree is read again after the move through `_worktrees.tree_unsettled`,
+    the one reading every verb that touches a task tree takes, and the stop
+    names where the work is and the verb that puts it back (`unsettled_said`)."""
     wave = state.get("wave") or {}
     base = (wave.get("bases") or {}).get(task["id"])
     head = git_head(ctx)
@@ -4815,11 +4865,12 @@ def advance_member(ctx, state, task, tree):
         return _invariants.is_record_path(rel, records)
     said = _worktrees.advance_task_tree(tree, task["id"], head, at=_utc_stamp(),
                                         is_record=is_record)
-    if said["kept"]:
-        return _stopped(ctx, "the tree of %s at %s is not settled - a copy of its "
-                        "work stays at %s: %s. Nothing runs in that tree until "
-                        "the next drive settles it or a human has read the copy"
-                        % (task["id"], tree, said["kept"], _clip(said["error"], 400)))
+    # Could-not-ask is the move's own to answer: a tree git cannot describe was
+    # refused by the move already, and is `tree-not-moved` below.
+    left = _worktrees.tree_unsettled(tree)
+    if said["kept"] or left["unsettled"] is True:
+        return _stopped(ctx, unsettled_said(ctx, task["id"], tree, left,
+                                            said["error"]))
     if not (said["advanced"] or said["already"]):
         refusal = said["refusal"] or {}
         return decision(ctx, state, "tree-behind" if refusal.get("kind") ==
@@ -4890,9 +4941,15 @@ def integrate_member(ctx, state, phase, task):
     recipe writes are the orchestrator's follow, and on the next drive the paths
     whose bytes that run moved are widened - one it left unmoved makes the set
     the undeclared-change decision. None when the close may run, else the
-    decision or the stop."""
+    decision or the stop. Nothing is integrated from a tree a move's copy
+    stands beside (`unsettled_stop`): what it holds is not yet known to be the
+    work."""
     held = _marked(state, "integrated", task)
     if held is None:
+        stop = unsettled_stop(ctx, task, ((state.get("wave") or {}).get("trees")
+                                          or {}).get(task["id"]))
+        if stop is not None:
+            return stop
         prior = (state.get("integrated") or {}).get(task["id"])
         if prior:
             reopen_integration(ctx, task["id"])
@@ -5081,6 +5138,10 @@ def remove_task_tree(ctx, tree, marker, records=(), followers=(), carried=None):
     cost the only copy of work.
 
     Asked in order, all before anything is touched:
+    - no copy a move kept, and no tombstone of one, stands beside the tree
+      (`_worktrees.tree_unsettled`): the copy lives in the tree's admin
+      directory, which the removal deletes, and it may be the only record of
+      the work;
     - the work commit `carry_commit` builds holds every file it looks at as the
       tree holds it;
     - `tree_undescribed`, the strict reading, names nothing that commit cannot
@@ -5099,6 +5160,9 @@ def remove_task_tree(ctx, tree, marker, records=(), followers=(), carried=None):
     every file in it git is told to ignore, whatever wrote it."""
     if not os.path.isdir(tree):
         return False, "no directory stands at it"
+    left = _worktrees.tree_unsettled(tree)
+    if left["unsettled"] is not False:
+        return False, _clip(left["why"], 600)
     sha, why = carry_commit(tree, records, marker)
     if sha is None:
         return False, "its work could not be read whole: %s" % (_clip(why, 300),)
@@ -10547,6 +10611,14 @@ def build_parser():
                      help="passed to the red-first helper; needs a test command")
     sbm.add_argument("--verbose", action="store_true",
                      help="print each verb's run above the result")
+    rst = sub.add_parser("restore", help="put a wave task tree's work back from "
+                         "the copy a killed move left beside it, as a stop names")
+    rst.add_argument("id", help="the task id whose tree the stop named")
+    rst.add_argument("manifest", nargs="?", default=None,
+                     help="the manifest (default: the project's configured one)")
+    rst.add_argument("--project-dir", dest="project_dir", default=None)
+    rst.add_argument("--verbose", action="store_true",
+                     help="print each verb's run above the result")
     return _claude_home.attach_usage_hint(parser)
 
 
@@ -10631,6 +10703,59 @@ def context(args):
     return ctx
 
 
+def restore_tree(ctx, task_id):
+    """`(code, text)` for `restore`: the work of `task_id`'s wave tree put back
+    from the copy a killed move left beside it (`_worktrees.restore_copy`),
+    under the phase lock - released again unless a drive held it before. The
+    tree is the one the drive's state records for the task; the next `next`
+    measures what was put back."""
+    state = read_state(ctx)
+    tree = ((state.get("wave") or {}).get("trees") or {}).get(task_id)
+    if not tree:
+        return E_USAGE, ("%s %s: nothing restored - the drive's state records no "
+                         "wave tree of %s" % (PREFIX, ctx["phase"], task_id))
+    held_before = state.get("lock") == "taken"
+    stop = take_lock(ctx, state)
+    if stop is not None:
+        return stop
+    try:
+        records = member_records(ctx, state)
+        said = _worktrees.restore_copy(tree, task_id, is_record=lambda rel: (
+            _invariants.is_record_path(rel, records)))
+    finally:
+        refused = None if held_before else give_back_lock(ctx, state)
+    if said["restored"] is True:
+        code, text = E_OK, ("%s %s: the work of %s put back into %s from its copy "
+                            "(%s)%s; `next` goes on from here" % (
+                                PREFIX, ctx["phase"], task_id, tree,
+                                ", ".join(said["paths"]) or "no path",
+                                " - %s" % (said["error"],) if said["error"] else ""))
+    elif said["restored"] is None:
+        code, text = E_USAGE, "%s %s: nothing restored - %s" % (
+            PREFIX, ctx["phase"], said["error"])
+    else:
+        code, text = E_STOPPED, "%s %s: stopped - %s" % (
+            PREFIX, ctx["phase"], said["error"])
+    if refused is not None:
+        text = "%s\n%s" % (text, refused[1])
+    return code, text
+
+
+def run_restore(args, out):
+    args.phase, args.task_only = args.id, False
+    try:
+        ctx = context(args)
+    except Exception as exc:                                   # noqa: BLE001
+        sys.stderr.write("drive-phase.py: %s\n" % (exc,))
+        return E_USAGE
+    if ctx["only"] != args.id:
+        out("drive-phase.py: restore takes a task id; %s is a phase" % (args.id,))
+        return E_USAGE
+    code, text = restore_tree(ctx, args.id)
+    out(text)
+    return code
+
+
 def handback_lines(code):
     """The line `submit` ends on: hand back the filed line, or the refusal."""
     return step_text("handback-filed" if code == E_OK else "handback-refused")
@@ -10671,6 +10796,8 @@ def main(argv, out=print, stdin=None):
         return run_submit(args, cmd, out, stdin)
     if args.action == "brief" and cmd is None:
         return run_brief(args, out)
+    if args.action == "restore" and cmd is None:
+        return run_restore(args, out)
     if cmd is not None:
         sys.stderr.write("drive-phase.py: only `submit` takes a command after "
                          "`--`\n")

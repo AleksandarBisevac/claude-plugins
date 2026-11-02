@@ -6827,6 +6827,30 @@ def _wave_advance_cases(check):
               and "audit-advance" in text_d and os.path.isdir(copy_d)
               and len(_rows_of(root_d, mpath_d, "P1.1")) == rows_d
               and os.path.isfile(f1_d) and _read(f1_d) == b"changed by P1.1\n")
+    # ab8's stop names where the work is - the copy's git-index among it - and
+    # the verb that puts it back. Run as named, the verb restores the tree from
+    # the copy and takes it down, and the next drive goes on past the stop.
+    # Asked through getattr: a driver without the verb is this case failing,
+    # never a raise that takes the block's other cases with it.
+    named = getattr(M, "restore_command", lambda _ctx, _id: "no restore verb")(
+        {"manifest": mpath_d, "project": root_d}, "P1.1") if tree_d else "no tree"
+    said_r = []
+    with _Env(root_d):
+        code_r = M.main(["restore", "P1.1", mpath_d, "--project-dir", root_d],
+                        out=said_r.append)
+    restored = (not os.path.exists(copy_d), _read(f1_d) if os.path.isfile(f1_d)
+                else None)
+    code_n, text_n = _next(M, root_d, mpath_d)
+    check("ab9 the not-settled stop names the copy's git-index and the restore "
+          "verb; the verb run as named puts the work back and takes the copy "
+          "down, and the next drive goes on past the tree to integrate the "
+          "member's work: %r"
+          % ((text_d[-400:], code_r, said_r, restored, code_n, text_n[-300:]),),
+          tree_d and os.path.join(copy_d, "git-index") in text_d
+          and named in text_d and code_r == 0
+          and restored == (True, b"changed by P1.1\n")
+          and "not settled" not in text_n and "audit-advance" not in text_n
+          and _read(os.path.join(root_d, "src", "f1.txt")) == b"changed by P1.1\n")
 
     # The deny direction: the phase moved the member's own file too, so the
     # tree is not moved, the drive names the file, and the work stays put.
@@ -6843,6 +6867,57 @@ def _wave_advance_cases(check):
           and not [r for r in _journal_io.read_all(root_o)
                    if isinstance(r, dict)
                    and r.get("action") == "task.tree.advanced"])
+    _unsettled_verb_cases(check)
+
+
+def _unsettled_verb_cases(check):
+    """Dispatch and integration read the one predicate a retirement and a move
+    read (`_worktrees.tree_unsettled`): over a tree a move's copy stands
+    beside, neither runs its verb - the stop names the copy and the restore
+    verb - and over the same tree with the copy gone, each goes on to its verb
+    (the twin a check that stopped on every tree fails)."""
+    M, why = _load("drive_phase_unsettled_verbs")
+    if M is None:
+        check("uv1 the driver loads", False, why)
+        return
+    base = _harness.fixture_root("drive-unsettled-")
+    try:
+        repo, tree = os.path.join(base, "repo"), os.path.join(base, "tree")
+        os.makedirs(repo)
+        _write_lf(os.path.join(repo, "a.txt"), "a\n")
+        for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "base"]):
+            _harness.git(repo, *argv)
+        _harness.git(repo, "worktree", "add", "-q", "--detach", tree, "HEAD")
+        copy = os.path.join(M._worktrees.admin_dir(tree), M._worktrees.ADVANCE_BACKUP)
+        ctx = {"gitRoot": repo, "project": repo, "phase": PHASE, "config": {},
+               "manifest": os.path.join(repo, "docs", "audit", "audit-plan.json"),
+               "stateDir": os.path.join(base, "state"), "did": [], "log": []}
+        task = {"id": "P1.1", "status": "in_progress",
+                "startedAt": "2026-11-02T00:00:00Z"}
+        state = {"wave": {"trees": {"P1.1": tree}}}
+        reached = []
+        M.writer_setting = lambda config: (None, "fixture: past the tree check")
+        M.run_verb = lambda c, script, args: (reached.append(script)
+                                              or (2, "", "fixture: refused"))
+        os.mkdir(copy)
+        held_d = M.dispatch(ctx, state, {"id": PHASE}, task, "executor", tree)
+        held_i = M.integrate_member(ctx, state, {"id": PHASE}, task)
+        stood, verbs = os.path.isdir(copy), list(reached)
+        os.rmdir(copy)
+        gone_d = M.dispatch(ctx, state, {"id": PHASE}, task, "executor", tree)
+        gone_i = M.integrate_member(ctx, state, {"id": PHASE}, task)
+        stops = [held_d[1], held_i[1]]
+        check("uv1 over a tree a move's copy stands beside, neither a dispatch nor "
+              "an integration runs its verb: each stops naming the copy and the "
+              "restore verb; with the copy gone each goes on past the check: %r"
+              % ((stops, verbs, gone_d, gone_i, reached),),
+              stood and not verbs
+              and all("not settled" in t and copy in t and " restore P1.1 " in t
+                      for t in stops)
+              and "fixture: past the tree check" in gone_d[1]
+              and reached == ["integrate-task.py"] and "not settled" not in gone_i[1])
+    finally:
+        _harness.remove_tree(base)
 
 
 # A file a member and the phase both edit, on lines a three-way apply tells

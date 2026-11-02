@@ -156,9 +156,37 @@
         "file": "tools/verify.sh:80,983",
         "issue": "Inherited-test shape: the task's gate entry `sh tools/verify.sh --list` sets LIST=1, and `run \"rendered-plan legs ...\" rendered_plan_legs` then prints the step name without executing the function. So no command in tests.gate reaches the window heredoc. Deleting its closure, its proposal filter or its shape arm leaves both gate commands green. The executor's red demonstrations were scratch copies, not a recorded check. (This is from reading verify.sh, not from a run.)",
         "resolution": "Move the window selection into a stdlib tools/ script with a tests/ suite. Run it against a fixture plan holding a cross-phase dependsOn, a materialized proposal, a bug on a dropped task and a phase with a unique key, and assert closure, filtering and shape-set equality. Proving red is part of the case."
+      },
+      {
+        "id": "P155-R20",
+        "severity": "med",
+        "file": "plugins/audit/scripts/git/_worktrees.py:2245-2329 (restore_copy, lines 316-324 of the brief's diff)",
+        "issue": "restore_copy can write over newer work at a path the copy holds. It drops every path in `held` from `_newer_work`'s answer (`[p for p in _newer_work(...) if p not in held]`), and `_undo` then `_put`s each held path unconditionally. Suppose a.txt is a held work path and, after the kill, someone (a human, or a writer session that was already running) edits it to bytes that are neither the copy's nor `start`'s nor `end`'s. The restore overwrites that edit without saying so. un7 covers only an unheld path (c.txt), so this direction has no test. The docstring narrows the contract to 'the paths it holds are what a restore is asked to write over', which conflicts with 'never write over newer work'.",
+        "resolution": "Before `_undo`, refuse any held path whose bytes match none of these: the copy (`_holds(tree, rel, held[rel])`), `start`'s blob, or `end`'s blob (`_reads_as`, absent where the commit has none). Those are the only states a killed move or a killed undo can leave. un6's tree (a.txt at base, n.txt absent) still passes. Add a case like un7 that edits a.txt and expects a refusal with nothing changed."
+      },
+      {
+        "id": "P155-R21",
+        "severity": "med",
+        "file": "plugins/audit/scripts/git/_worktrees.py:2110-2133 (_reads_as) with :2316-2323 (restore_copy) and drive-phase.py:4801-4812 (unsettled_said)",
+        "issue": "`hash-object --no-filters` costs more than the docstring says. With core.autocrlf=true, the Git for Windows installer default, every text file checkout writes with CRLF hashes differently from its LF blob. So a move killed partway through its checkout leaves moved paths that `_newer_work` reads as newer work. The resume holds the tree, and so does the restore verb the new stop names: restore_copy runs the same `_newer_work` and refuses those paths, because moved paths are not in `held`. On a default Windows checkout, the stop's sentence '`restore` puts the work back from it and takes it down' is then false and no verb can settle the tree. The filtered hash this replaces accepted those files.",
+        "resolution": "Compare the file's raw bytes with what checkout itself would write, `git cat-file --filters <commit>:<rel>` (smudge and EOL conversion applied under this tree's attributes and config). That rejects a file whose only change is its line endings and still accepts a CRLF checkout. Add a variant of un5 that sets core.autocrlf=true, checks out the head, and expects the file to read as the commit's."
+      },
+      {
+        "id": "P155-R22",
+        "severity": "med",
+        "file": "PLUGIN-BUILD-GUIDE.md:1095-1098; plugins/audit/scripts/git/_worktrees.py:2165-2170 (section comment)",
+        "issue": "The diff writes that `tree_unsettled` is 'the one reading every verb that touches a task tree takes first' and that 'a verb that dispatches into a task tree, integrates it, retires it or moves it asks tree_unsettled first'. The code does not hold that. (a) manage-worktrees.py:700-746 `task-remove` (the `/audit:worktree task-remove` remover of a task tree) never asks. It is not only `--force`, as the executor's outcome says: after a move killed inside its undo, the forced checkout leaves the tree clean, so even the unforced remove passes the dirtiness check, and `git worktree remove` then deletes the admin directory holding the only copy of the work. audit-status.py:2131/2135 prints that remover as the remedy for a kept tree, and retire_member now keeps exactly those trees. (b) drive-phase.py:2223-2250 `resume_writer` opens a writer session in the task tree through `open_dispatch` without going through `dispatch()`, so it never asks either. That path is only reachable if a copy appears after a gate-red-writer decision was parked.",
+        "resolution": "Either make the claim true by having manage-worktrees `task-remove` ask `_worktrees.tree_unsettled` and refuse anything but False, forced or not, naming the copy and the restore verb, and by routing `resume_writer` through `unsettled_stop`. Or narrow both sentences to the drive's own dispatch, integration, retirement and move, and file task-remove as a fault. Prefer the first, since the copy is the only record of the work."
+      },
+      {
+        "id": "P155-R23",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/_worktrees.py:2291-2295, 2304-2310 (restore_copy refusals)",
+        "issue": "Two refusals tell the user that 'the next move drops it': a copy with no index.json, and a copy of a move the marker already recorded (base == end). Both still stand beside the tree, so `unsettled_stop` stops dispatch and integration over them before any move runs. If the drive's next step is integration over a reusable stored green (gate_step skipped, so no advance_member), the stop names `restore`, restore refuses and points at a move, and the next `next` stops again, with no verb that gets out. `_resume` already settles both shapes by dropping the copy.",
+        "resolution": "In restore_copy, settle both shapes the way `_resume` does: drop the copy (`_drop_copy`) when it has no index.json, or when base == end and `_newer_work` names nothing. Return restored=None with what was dropped instead of a refusal. Add a case for the recorded-move copy, which the executor lists as untested."
       }
     ],
-    "outcome": "[findings: 19 - 1 high, 7 med, 11 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 23 - 1 high, 10 med, 12 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -888,7 +916,7 @@
     {
       "id": "P155.11",
       "title": "A task commit's Co-Authored-By names the model that wrote the work, or nothing",
-      "status": "in_progress",
+      "status": "done",
       "description": "Closes F804. Evidence at fa1b0c81: _scoped_commit.py:1069-1077 coauthor_of returns meta.commit.coauthor; commit-task-work.py:835,1610 take it. Derive the trailer from the executor's recorded model for that start; keep reading meta.commit.coauthor as the fallback (COMPATIBILITY.md: a key the plugin reads keeps being read); omit the trailer when nothing is recorded. State the drive's own state-commit trailer rule explicitly.",
       "files": [
         "plugins/audit/scripts/governance/commit-task-work.py",
@@ -943,14 +971,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "dbc6e3d73ea0",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Trailer source moved from configuration to the usage ledger. commit-task-work.py: new recorded_models(rows, task_id, started_at) - the model ids of ledger rows labelled `attr: task` for the task, whose agentType is the plugin's executor (`audit-executor` after any plugin namespace), at the start's hour bucket or later, usage_ledger.is_model_id true, `:long-prompt` tier suffix dropped, each once, sorted; no start moment -> []. executor_models(project, config, task) reads the ledger at hooks/_config.ledger_dir(project, config) (the metering hook's own reading) via usage_ledger.read_ledger(since=start date); a ledger that cannot be read is [] (no trailer, no claim). coauthor_note() adds a `degraded:` line when the plan asks for a trailer and none is recorded. message_parts(task_id, subject, manifest, models=()) now returns _scoped_commit.task_coauthor(manifest, models). The --state commit passes no co-author at all (comment states the rule: it carries the plan's record, written by the plugin's verbs, so no model is its author). _scoped_commit.py: COAUTHOR_TRAILER = 'Co-Authored-By: %s <noreply@anthropic.com>' and task_coauthor(manifest, models) - one line per model in one paragraph, None when the plan's meta.commit.coauthor is unset/blank (absence keeps meaning no trailer) or nothing is recorded; coauthor_of stays the one reading of the key, docstring updated. New import edge commit-task-work -> usage_ledger (an entry point reading a lower layer); PLUGIN-BUILD-GUIDE.md module-map line updated to match `python3 tools/lints/_deps.py --render` (map_drift() -> []). DIVERGENCE FROM THE BRIEF'S WORD 'fallback', stated: meta.commit.coauthor is still read, but as the plan asking for a trailer, not as the trailer text when nothing is recorded - F804's own Do says never from a configured constant, the orchestrator's note says nothing recorded is no trailer, and COMPATIBILITY.md's absence rule forbids a record starting to write trailers onto plans that never set the key; a text fallback would re-issue the exact false claim F804 records whenever the ledger has no row. Docs in scope: COMPATIBILITY.md (meta.commit.coauthor bullet under manifest keys: still read, absence still no trailer, set value's text no longer written, --state carries none), plugins/audit/reference/config.md (new `usage.ledgerDir` section stating the task-commit rule and the drive's own state-commit rule: no trailer on --state after a block, at sign-off, at a landing), PLUGIN-BUILD-GUIDE.md (commit-task-work section paragraph + map edge). Docs OUTSIDE the declared files, edited because this change made their sentences false, each through Edit and ALLOWED by the plan gate: plugins/audit/reference/execute-task.md (step 4c message sentence), plugins/audit/reference/orchestrator.md (guardrail 'If meta.commit.coauthor is set, end every commit message with it' replaced by 'Write no `Co-Authored-By` (unchecked); `commit-task-work.py` adds it.' - kept to +2 bytes because `python3 tools/measure-context.py --gate` breached the 62000-byte ceiling at 62653 with a longer wording; now 61996/62000, GATE OK), plugins/audit/reference/phase-signoff.md (sign-off commit: no co-author trailer), plugins/audit/README.md (meta table `commit` row). REFUSED by the plan gate: plugins/audit/schema/audit-plan.schema.json (declared by many other tasks) - its coauthor description still reads 'Trailer appended to commit messages, or null.', which is now false; not worked around, needs a scope widening or a follow-up. Tests: test_commit_task_work.py new staged block co-block (_coauthor_cases, co1-co7) added to STAGES; ctw28 and the 571becfd literal case updated to pass models and expect the derived trailer (they pinned the configured line as the trailer, which is the defect). Gate: `python3 tools/sweep-selftests.py tests/test_commit_task_work.py tests/test__scoped_commit.py tools/_suite.py` exit 0, '3/3 files ok, 356 cases', run twice (after the code and after the docs). Extra checks, not gates: ruff check on the three .py files exit 0; vermin -t=3.8- exit 0 (min 3.7); _output_lints.prose_number_claims() and _deps.doc_prose_numbers() report nothing; _deps.layer_violations() reports only panel/_panel_state.py (not mine). Mutation probe: <scratchpad>/p15511/mutations.py, usage `python3 mutations.py <tree>` - eleven mutations each in a scratch copy with the anchor asserted to match once, every one red: m1 trailer is the plan's line -> ctw28, 571becfd case, co1, co2, co6; m2 opt-in dropped -> co3, co6; m3 executor filter -> co4; m4 start-hour filter -> co4; m5 tier suffix kept -> co4; m6 attr filter dropped -> co4 (survived first, fixture gained an executor row attributed by window); m7 state commit carries the line -> co7; m8 note never said -> co2; m9 note always said -> co1; m10 no start reads every row -> co5; m11 placeholder model kept -> co4. Known limits, stated in the guide: the ledger keeps hours, so an earlier start of the same task within the start's hour is read as this one; a non-Agent session (the drive's writer session) has no agentType on its rows and gets no trailer; in a layout where commit-task-work's --project is a linked worktree without its own .claude/usage, nothing is recorded there and no trailer is written (the start snapshot is read from the same project, so the two agree). Not built on: the open owned_rels/stage_targets asymmetry. Dependants: PLUGIN-BUILD-GUIDE.md changed (above). docs/research/pipeline-cost-design.md, docs/handbook.html, hooks/_config.py, hooks/guard-bash-writes.py, git/_worktrees.py, git/close-phase.py, governance/_invariants.py - still correct: none mentions the co-author or calls message_parts/coauthor_of (grep count 0 each); close-phase reaches the trailer only through commit-task-work --state, whose new rule is stated. _scoped_commit importers (close-phase, commit-task-work, drive-phase, audit-task, _live_copy, audit-lookup, test__doctor_setup, test__scoped_commit) - still correct: only additions (COAUTHOR_TRAILER, task_coauthor) and coauthor_of's docstring; no signature they call changed; drive-phase own_commit reads Audit-Row in the last paragraph, and with_row_trailer joins it onto the model-trailer paragraph (co1 asserts git reads it; a two-model paragraph checked by hand gives 'Co-Authored-By: ...\\nCo-Authored-By: ...\\nAudit-Row: n1'). COMPATIBILITY.md changed (above); its basename dependants (_config.py, schema, _config_rules, _evidence_io, _ado_*, _areas, _branch) are unaffected - prose only. tests/test_commit_task_work.py dependants (sweep-costs.json, affected.py, gate-parity.py, test__filed_returns, test__manifest_phases, test__invariants, test__verdict_binding) - still correct: no name they use changed; .github/sweep-costs.json has no figure for co-block, so the sweep weighs it by the suite's figure over its blocks. tests/test__scoped_commit.py unchanged. _config_rules.py, _branch.py, _manifest_vocab.py and the remaining declared files were not edited (the start-time dependants check widened the list; not a request to edit).",
+        "descriptive": "A task commit's Co-Authored-By now names the model the usage ledger recorded as that start's executor, or nothing; the plan's configured line is never written, and state commits carry no trailer."
       },
       "startedAt": "2026-11-02T11:04:18Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-02T12:03:52Z",
+      "verifiedBy": [
+        "tests/test_commit_task_work.py co-block: an opus-executed task on a plan whose meta.commit.coauthor names Fable commits with the opus trailer and Audit-Row intact (co1); no recorded model -> no trailer and a degraded line (co2); no co-author line -> no trailer even with a record (co3, second direction); the ledger reading excludes reviewer, window-attributed, other-task, earlier-start, placeholder and hourless rows and drops the tier suffix (co4); no start moment or no rows -> nothing (co5); two models -> one paragraph of two lines, opt-in honoured (co6); a --state commit carries no trailer (co7)"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-11-02T12:03:48Z.7aa845",
@@ -962,12 +992,24 @@
           "at": "2026-11-02T11:57:40Z",
           "text": "files widened by plugins/audit/README.md, plugins/audit/reference/execute-task.md, plugins/audit/reference/orchestrator.md, plugins/audit/reference/phase-signoff.md: widened by the integration answer"
         }
-      ]
+      ],
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "dbc6e3d73ea0",
+        "at": "2026-11-02T12:03:52Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-02T11:28:42Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_commit_task_work.py tests/test__scoped_commit.py tools/_suite.py` in a throwaway tree at HEAD exited 1 with 2 of 225 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - co1 (house FAIL), co2 (house FAIL): SELFTEST FAILED: 221/225 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
     },
     {
       "id": "P155.12",
       "title": "A task tree is unsettled by one predicate every verb reads, the stop names a restore verb, and the move's byte comparison bypasses filters",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Closes F805. Evidence at fa1b0c81: git/_worktrees.py:2112 hash-object without --no-filters; the only restore verb is drive-phase.restore_carry (:5920), from the carry ref, not from the kept copy. One shared \"unsettled\" predicate read by dispatch, integration, retirement and advance_member.",
       "files": [
         "plugins/audit/scripts/git/_worktrees.py",
@@ -995,16 +1037,22 @@
         "P155.8"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-02T12:03:56Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-02T12:46:30Z.cd0504",
+        "status": "passed",
+        "at": "2026-11-02T12:46:30Z"
+      }
     },
     {
       "id": "P155.13",

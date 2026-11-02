@@ -30,14 +30,16 @@ I/O IS AT THE EDGE. `parse_list` and every planner below it are pure functions o
 text and dicts, so their cases need no `git init` and can drive branches a fixture
 cannot reach. The three functions that must ask git take an injectable `run`.
 
-Reads git, and writes it in one place only. The plans it returns name the argv a
+Reads git, and writes it in two places only. The plans it returns name the argv a
 caller would run; running them is `close-phase.py`'s and `manage-worktrees.py`'s
-job, and the lock, the journal row and the revalidation are theirs too. The one
-git write is `advance_tree`, which moves a task tree's detached HEAD to the phase
-head with its uncommitted work carried: the move and the byte check that decides
-it counted are one operation, and a caller holding only the argv could run the
+job, and the lock, the journal row and the revalidation are theirs too. The git
+writes are `advance_tree`, which moves a task tree's detached HEAD to the phase
+head with its uncommitted work carried, and `restore_copy`, which puts back what
+the copy a killed move left holds: each is a write and the byte check that decides
+it counted as one operation, and a caller holding only the argv could run the
 first without the second. `write_record` writes the marker file a worktree's
 provenance is read from, and `advance_task_tree` uses it to record a move.
+`tree_unsettled` is the one reading of whether such a copy stands beside a tree.
 
 This module carries no `--selftest` of its own; its cases live in
 `tests/test__worktrees.py`.
@@ -48,6 +50,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -1420,6 +1423,13 @@ def sweep_plan(trees, wanted_branches, parent_of, contained_by_branch,
 ADVANCE_BACKUP = "audit-advance"
 COPY_INDEX, COPY_GIT_INDEX = "index.json", "git-index"
 DROPPED = ".dropped"
+# `_write_aside` names its temp file with this prefix and holds it for one write
+# and one sync; a hard kill between the two leaves it in the admin directory. One
+# older than the age below was left by a process that is gone, and the next
+# reading of the directory (`tree_unsettled`) clears it; a younger one may be a
+# write in flight, and is left.
+STRAY_PREFIX = ".audit-"
+STRAY_AGE_SECONDS = 600
 
 
 def advance_plan(base, to, changed, moved, is_record=None, occupied=()):
@@ -1581,7 +1591,7 @@ def _write_aside(path, data):
     synced to the disk, and rename it over `path`, so a reader sees the old
     bytes or the new ones and never a half-written file. The temp file is
     removed on any failure. Raises OSError."""
-    fd, aside = tempfile.mkstemp(prefix=".audit-", dir=os.path.dirname(path))
+    fd, aside = tempfile.mkstemp(prefix=STRAY_PREFIX, dir=os.path.dirname(path))
     try:
         with os.fdopen(fd, "wb") as fh:
             fh.write(data)
@@ -2099,9 +2109,19 @@ def _holds(tree, rel, kind):
 
 def _reads_as(fn, tree, rel, commit):
     """Whether `rel` in `tree` holds what `commit` holds there: absent where
-    the commit has none, else a regular file whose blob git hashes to the
-    commit's. A link or a directory never answers yes, and neither does a
-    question git could not answer."""
+    the commit has none, else a regular file whose own bytes hash to the
+    commit's blob. A link or a directory never answers yes, and neither does a
+    question git could not answer.
+
+    THE BYTES, PAST EVERY FILTER (`--no-filters`): a hash through the clean
+    filters and the line-ending conversion reads a file differing from the
+    commit only in its line endings as the commit's, and a path read as the
+    move's own state is put back by the undo - so a filtered hash would let an
+    edit of the line endings alone be reset as if no one had made it. The cost
+    is on a checkout that converts line endings on the way out (core.autocrlf):
+    a moved file a killed checkout already wrote there reads as differing, so
+    the resumed move holds the tree for a human rather than finishing it - a
+    hold costs a look, an acceptance the bytes."""
     path = os.path.join(tree, *rel.split("/"))
     code, out, _err = fn(tree, ["rev-parse", "--verify", "--quiet",
                                 "%s:%s" % (commit, rel)])
@@ -2109,7 +2129,7 @@ def _reads_as(fn, tree, rel, commit):
         return not os.path.lexists(path)
     if code != 0 or os.path.islink(path) or not os.path.isfile(path):
         return False
-    code, blob, _err = fn(tree, ["hash-object", "--", rel])
+    code, blob, _err = fn(tree, ["hash-object", "--no-filters", "--", rel])
     return code == 0 and (blob or "").strip() == (out or "").strip()
 
 
@@ -2140,6 +2160,162 @@ def _settle(answer, wrong, copy, why):
     if not wrong:
         said.append(_drop_copy(copy))
     return dict(answer, restored=not wrong, error="; ".join(filter(None, said)))
+
+
+# --- whether a task tree is settled, and putting its work back -------------------
+# The copy a move keeps lives in the tree's admin directory, and `git worktree
+# remove` deletes that directory with the tree. So a verb that dispatches into a
+# task tree, integrates it, retires it or moves it asks `tree_unsettled` first, and
+# a stop over a tree it names unsettled names `restore_copy`'s verb beside where
+# the work is.
+
+def _clear_strays(admin, now=None):
+    """The temp files `_write_aside` left in `admin` older than
+    `STRAY_AGE_SECONDS`, removed - their paths. One that will not go is left
+    for the next reading, unnamed: nothing reads a temp file, so one left
+    behind costs disk and nothing else."""
+    moment = time.time() if now is None else now
+    try:
+        names = sorted(os.listdir(admin))
+    except OSError:
+        return []
+    gone = []
+    for name in names:
+        path = os.path.join(admin, name)
+        if not name.startswith(STRAY_PREFIX) or os.path.islink(path) \
+                or not os.path.isfile(path):
+            continue
+        try:
+            if moment - os.path.getmtime(path) < STRAY_AGE_SECONDS:
+                continue
+            os.remove(path)
+        except OSError:
+            continue
+        gone.append(path)
+    return gone
+
+
+def kept_where(left):
+    """Where the work is, for `left` - the copy or its tombstone `_left_beside`
+    found: the words every stop over an unsettled tree carries."""
+    if left.endswith(DROPPED):
+        return ("the tombstone of a copy being taken down stands at %s: the move "
+                "it was taken for was settled, and the next move or restore "
+                "clears it" % (left,))
+    return ("a copy of its work stands at %s: each path it held is a numbered "
+            "file there (%s) as %s lists them, and the git index as it was is %s"
+            % (left, os.path.join(left, "N.bin"), os.path.join(left, COPY_INDEX),
+               os.path.join(left, COPY_GIT_INDEX)))
+
+
+def tree_unsettled(tree, run=None, now=None):
+    """{"unsettled", "kept", "why", "cleared"} - THE ONE QUESTION every verb
+    that touches a task tree asks before it does: is a move's copy of the
+    work, or its tombstone, standing beside `tree`.
+
+    `unsettled` is True with `kept` naming what stands and `why` where the
+    work is (`kept_where`); False with neither when nothing does; None beside
+    `why` when git will not name the tree's admin directory - not a settled
+    tree, a question nobody could ask. Read off the disk each time, through
+    the same `_left_beside` every move's `kept` is read through. `cleared`
+    names the temp files a hard kill left there, which this reading removes
+    (`_clear_strays`)."""
+    admin = admin_dir(tree, run=run)
+    if not admin:
+        return {"unsettled": None, "kept": None, "cleared": [], "why": (
+            "git would not name the admin directory of %s, so whether a copy of "
+            "its work stands beside it is not known" % (tree,))}
+    cleared = _clear_strays(admin, now)
+    left = _left_beside(os.path.join(admin, ADVANCE_BACKUP))
+    if not left:
+        return {"unsettled": False, "kept": None, "why": "", "cleared": cleared}
+    return {"unsettled": True, "kept": left, "why": kept_where(left),
+            "cleared": cleared}
+
+
+def restore_copy(tree, task_id, is_record=None, run=None):
+    """{"restored", "kept", "paths", "error"} - the work of the task tree
+    `tree`, marked for `task_id`, put back from the copy a move left beside
+    it: the tree checked out at the base the copy was taken at, each path the
+    copy holds written back from its numbered file, the git index from its
+    `git-index`, and the copy dropped once the tree answers as it did before
+    the move (`_undo`'s own check). The verb a stop over an unsettled tree
+    names; a human runs it, and nothing runs it on its own.
+
+    `restored` is True once the work is back and checked; None when no copy
+    stands beside the tree, so there was nothing to put back (a tombstone
+    alone is cleared); False beside why otherwise, the copy kept. Refused
+    before anything is written when the marker does not name `task_id` with
+    the base the copy was taken from - a move the marker recorded leaves a
+    copy that is the next move's to drop, not a restore's - when the copy
+    cannot be read, and when the tree holds anything neither the copy nor its
+    move accounts for (`_newer_work`) at a path the copy does not hold: the
+    paths it holds are what a restore is asked to write over, and no other
+    is. `is_record(rel)` names the caller's record paths, which the copy's own
+    non-work paths join."""
+    fn = _runner(run)
+    copy = _copy_path(tree, run)
+    answer = {"restored": False, "kept": None, "paths": [], "error": None}
+    if not copy:
+        return dict(answer, error="git would not name the admin directory of %s, "
+                                  "so no copy beside it could be read" % (tree,))
+    if not os.path.lexists(copy):
+        said = ["no copy of the work stands beside %s, so there is nothing to "
+                "restore" % (tree,)]
+        if os.path.lexists(copy + DROPPED):
+            try:
+                shutil.rmtree(copy + DROPPED)
+                said.append("the tombstone at %s was cleared" % (copy + DROPPED,))
+            except OSError as exc:
+                said.append("the tombstone at %s could not be cleared (%s)"
+                            % (copy + DROPPED, exc))
+        return _with_kept(dict(answer, restored=None, error="; ".join(said)), copy)
+    mine = read_provenance(tree, run=run, expect_task=str(task_id))
+    base = (mine.get("record") or {}).get("base")
+    if mine.get("ours") is not True or not base:
+        return _with_kept(dict(answer, error=(
+            "%s carries no marker naming task %s with a base commit (%s); nothing "
+            "was restored" % (tree, task_id, mine.get("basis") or "no base"))), copy)
+    if not os.path.lexists(os.path.join(copy, COPY_INDEX)):
+        return _with_kept(dict(answer, error=(
+            "the copy at %s has no %s: it was cut short before its move began, so "
+            "the tree still holds its work, and the next move drops it; nothing "
+            "was restored" % (copy, COPY_INDEX))), copy)
+    try:
+        held, meta, index_bytes = _read_copy(copy)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        return _with_kept(dict(answer, error="the copy at %s cannot be read (%s); "
+                                             "nothing was restored" % (copy, exc)),
+                          copy)
+    start, end = meta.get("from"), meta.get("to") or ""
+    answer = dict(answer, paths=sorted(held))
+    if base != start:
+        return _with_kept(dict(answer, error=(
+            "the copy at %s was taken for a move from %s to %s and the marker "
+            "names %s - %s; nothing was restored"
+            % (copy, str(start)[:12], end[:12], base[:12],
+               "the move was recorded, and the next move drops the copy"
+               if base == end else "a base this copy was not taken at"))), copy)
+    record_of = is_record if is_record is not None else (lambda _rel: False)
+    held_records = set(held) - set(meta.get("work") or [])
+
+    def record(rel):
+        return rel in held_records or record_of(rel)
+    newer = [p for p in _newer_work(fn, tree, meta, held, (start, end) if end
+                                    else (start,), record) if p not in held]
+    if newer:
+        return _with_kept(dict(answer, error=(
+            "%s holds what neither the copy at %s nor the move from %s to %s "
+            "accounts for: %s; a restore would write over it, so nothing was "
+            "restored and the copy stays"
+            % (tree, copy, str(start)[:12], end[:12], ", ".join(newer)))), copy)
+    wrong = _undo(fn, tree, start, held, _index_path(fn, tree), index_bytes)
+    if wrong:
+        return _with_kept(dict(answer, error=(
+            "the work could NOT be put back (%s) - its copy stays at %s"
+            % ("; ".join(wrong), copy))), copy)
+    return _with_kept(dict(answer, restored=True, error=_drop_copy(copy) or None),
+                      copy)
 
 
 # --- cli ------------------------------------------------------------------------

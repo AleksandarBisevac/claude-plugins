@@ -46,6 +46,7 @@ import sys
 import tempfile
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
+import _loader                                     # noqa: E402
 from _output import safe_stdio                     # noqa: E402
 import _worktrees as M                             # noqa: E402
 
@@ -1609,6 +1610,7 @@ def _advance_crash_cases(check):
     _advance_low_cases(check)
     _advance_settle_cases(check)
     _advance_sync_cases(check)
+    _unsettled_cases(check)
 
 
 def _advance_low_cases(check):
@@ -1898,6 +1900,172 @@ def _advance_sync_cases(check):
           said.get("advanced") is True and not wrong
           and any(e[0] == "index" and e[1] for e in events),
           repr((wrong, events[:12], said.get("error"))))
+
+
+# --- a tree left unsettled, and the verb that puts its work back -----------------
+# A copy beside a tree is the only record of what the tree held before a move,
+# and it lives in the tree's admin directory, which `git worktree remove` deletes.
+# So every verb that touches a task tree asks one question first - is a copy, or
+# its tombstone, standing beside it - and the stop that names the copy names the
+# verb that puts the work back from it.
+def _undo_killer(tree, head):
+    """A runner whose checkout of `head` succeeds and leaves a.txt holding bytes
+    the move never wrote - so the move's own check fails and its undo runs - and
+    that dies once the undo's forced checkout of the base has run, before any
+    byte of the copy is written back."""
+    def run(cwd, args, timeout=60):
+        done = M._git(cwd, args, timeout)
+        if args[:3] == ["checkout", "-q", "--detach"] and head in args \
+                and done[0] == 0:
+            with open(os.path.join(tree, "a.txt"), "wb") as fh:
+                fh.write(b"bytes the move should never have written\n")
+        if args[:3] == ["checkout", "-q", "-f"] and done[0] == 0:
+            raise _Killed("killed inside the undo, after its forced checkout")
+        return done
+    return run
+
+
+def _killed_in_undo(prefix):
+    """`(tree, base, head, copy, killed)`: `_settle_tree`'s tree, whose work also
+    stages a new file n.txt - so the git index is part of what the copy holds -
+    after a move killed inside its undo: HEAD back at the base, the forced
+    checkout having reset a.txt and deleted the staged n.txt, the copy whole
+    beside the tree."""
+    tree, base, head, copy = _settle_tree(prefix)
+    with open(os.path.join(tree, "n.txt"), "wb") as fh:
+        fh.write(b"a file the task staged\n")
+    _harness.git(tree, "add", "n.txt")
+    killed, _said = _armed([], lambda: M.advance_task_tree(
+        tree, "T1", head, run=_undo_killer(tree, head)))
+    return tree, base, head, copy, killed
+
+
+def _removable_tree(prefix):
+    """`(repo, tree, copy)`: a tree of `repo` at its head, holding nothing the
+    head lacks and marked for T1 - a tree nothing but a copy beside it would
+    keep from being retired."""
+    root, repo, _base, head = _av_pair(prefix, {"a.txt": b"a\n"}, {"a.txt": b"a2\n"})
+    tree = os.path.join(root, "t")
+    _harness.git(repo, "worktree", "add", "-q", "--detach", tree, head)
+    M.write_record(tree, {"createdBy": M.PROVENANCE_MARK, "taskId": "T1",
+                          "phaseId": "P1", "base": head})
+    return repo, tree, os.path.join(M.admin_dir(tree), M.ADVANCE_BACKUP)
+
+
+def _asked(name, *args):
+    """`M.<name>(*args)`, or {"missing": name} when the module has no such
+    function yet - a failing case, never a raise that ends the suite before
+    the cases after it ran."""
+    fn = getattr(M, name, None)
+    return fn(*args) if fn is not None else {"missing": name}
+
+
+def _unsettled_cases(check):
+    tree, _base, _head, copy = _settle_tree("unsettled-")
+    clean = _asked("tree_unsettled", tree)
+    os.mkdir(copy)
+    standing = _asked("tree_unsettled", tree)
+    os.rename(copy, copy + M.DROPPED)
+    tomb = _asked("tree_unsettled", tree)
+    os.rmdir(copy + M.DROPPED)
+    check("un1 one predicate says whether a task tree is settled: a copy beside "
+          "it is unsettled and named, its tombstone alone is unsettled and "
+          "named, and a tree with neither is settled (the twin a predicate that "
+          "always answered unsettled fails)",
+          clean.get("unsettled") is False and clean.get("kept") is None
+          and standing.get("unsettled") is True and standing.get("kept") == copy
+          and copy in (standing.get("why") or "")
+          and tomb.get("unsettled") is True and tomb.get("kept") == copy + M.DROPPED,
+          repr((clean, standing, tomb)))
+    stray = os.path.join(_harness.fixture_root("unsettled-plain-"), "not-a-tree")
+    os.makedirs(stray)
+    asked = _asked("tree_unsettled", stray)
+    check("un2 a directory git names no admin directory for is could-not-ask "
+          "(None, with why) - never read as settled",
+          asked.get("unsettled") is None and asked.get("why"), repr(asked))
+    admin = M.admin_dir(tree)
+    old = os.path.join(admin, ".audit-killed")
+    fresh = os.path.join(admin, ".audit-writing")
+    for path in (old, fresh):
+        with open(path, "wb") as fh:
+            fh.write(b"a marker half written\n")
+    hour_ago = os.path.getmtime(old) - 3600
+    os.utime(old, (hour_ago, hour_ago))
+    swept = _asked("tree_unsettled", tree)
+    check("un3 a temp file a hard kill left in the admin directory is cleared by "
+          "the next reading of it, and named; one being written now is left alone",
+          not os.path.exists(old) and os.path.exists(fresh)
+          and swept.get("cleared") == [old] and swept.get("unsettled") is False,
+          repr((swept, os.listdir(admin))))
+    if os.path.exists(fresh):
+        os.remove(fresh)
+
+    dp = _loader.load_script("drive-phase.py", "dp_for_worktrees_retire", cache=False)
+    repo, tree, copy = _removable_tree("unsettled-retire-")
+    os.mkdir(copy)
+    with open(os.path.join(copy, M.COPY_INDEX), "w", encoding="utf-8") as fh:
+        fh.write("{}")
+    held, held_why = dp.remove_task_tree({"gitRoot": repo, "did": []}, tree, "T1")
+    stood = os.path.isdir(tree) and os.path.isdir(copy)
+    if stood:
+        _harness.remove_tree(copy)
+    gone, gone_why = dp.remove_task_tree({"gitRoot": repo, "did": []}, tree, "T1")
+    check("un4 retiring a task tree is refused while a copy of its work stands "
+          "beside it - the refusal names the copy, the tree and the copy stay - "
+          "and the same tree with the copy gone is retired (the twin a remover "
+          "that refused every tree fails)",
+          held is False and copy in (held_why or "") and stood
+          and gone is True and not os.path.isdir(tree),
+          repr((held, held_why, stood, gone, gone_why)))
+
+    root, repo, _base, head = _av_pair("unsettled-eol-", {
+        ".gitattributes": b"*.txt text\n", "c.txt": b"c\n"}, {"c.txt": b"c at head\n"})
+    with open(os.path.join(repo, "c.txt"), "wb") as fh:
+        fh.write(b"c at head\r\n")
+    crlf = M._reads_as(M._git, repo, "c.txt", head)
+    with open(os.path.join(repo, "c.txt"), "wb") as fh:
+        fh.write(b"c at head\n")
+    same = M._reads_as(M._git, repo, "c.txt", head)
+    check("un5 a file differing from the commit only in its line endings does not "
+          "read as the commit - the comparison is of the bytes, past every clean "
+          "filter - and the file holding the commit's own bytes does (the twin "
+          "a comparison that never matched fails)",
+          crlf is False and same is True, repr((crlf, same)))
+
+    tree, base, head, copy, killed = _killed_in_undo("unsettled-restore-")
+    held = M.advance_task_tree(tree, "T1", head)
+    restored = _asked("restore_copy", tree, "T1")
+    status = _av_status(tree)
+    check("un6 a move killed inside its undo leaves the work only in its copy; "
+          "the restore verb puts it back from the copy's files and its git-index: "
+          "the task's bytes, the staged file staged again, HEAD at the base, the "
+          "copy gone",
+          killed and held.get("kept") == copy and restored.get("restored") is True
+          and not restored.get("kept") and not os.path.exists(copy)
+          and _av_head(tree) == base
+          and _av_bytes(tree, ("a.txt", "n.txt")) == {
+              "a.txt": b"the task's a\n", "n.txt": b"a file the task staged\n"}
+          and status.get("n.txt") == "A " and status.get("a.txt") == " M",
+          repr((killed, held, restored, status)))
+    tree, base, head, copy, killed = _killed_in_undo("unsettled-restorenewer-")
+    with open(os.path.join(tree, "c.txt"), "wb") as fh:
+        fh.write(b"the agent's edit of c\n")
+    before = (_av_bytes(tree, ("a.txt", "c.txt", "n.txt")), _av_status(tree))
+    refused = _asked("restore_copy", tree, "T1")
+    check("un7 the restore never writes over a path the copy does not account "
+          "for: refused, the path named, the copy kept and no byte changed",
+          killed and refused.get("restored") is False and refused.get("kept") == copy
+          and "c.txt" in (refused.get("error") or "")
+          and (_av_bytes(tree, ("a.txt", "c.txt", "n.txt")), _av_status(tree)) == before,
+          repr((killed, refused)))
+    tree, base, _head, copy = _settle_tree("unsettled-restorenone-")
+    before = (_av_bytes(tree, ("a.txt", "b.txt", "c.txt")), _av_status(tree))
+    nothing = _asked("restore_copy", tree, "T1")
+    check("un8 with no copy beside the tree there is nothing to restore, said as "
+          "that - not as a restore that ran - and nothing changed",
+          nothing.get("restored") is None and "no copy" in (nothing.get("error") or "")
+          and (_av_bytes(tree, ("a.txt", "b.txt", "c.txt")), _av_status(tree)) == before
+          and _av_head(tree) == base, repr(nothing))
 
 
 # The task's work in the kill fixture, beside a deletion of d.txt; the record

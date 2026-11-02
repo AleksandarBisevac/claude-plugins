@@ -1092,6 +1092,24 @@ out in ANY worktree, so removal comes strictly before deletion; and deletion is 
 `merge-base --is-ancestor <branch> <parent>` rather than on `git branch -d`'s own net, which
 grades reachability from HEAD and will delete a branch that never reached its declared parent.
 
+**A copy beside a task tree is the one word for unsettled.** `advance_tree` keeps a copy of the
+work in the tree's own admin directory before it moves the tree to the phase head - each changed
+path's bytes as a numbered `N.bin`, listed in `index.json`, and the git index as `git-index` - and
+`git worktree remove` deletes that directory with the tree. So `tree_unsettled` is the one
+reading every verb that touches a task tree takes first: the drive's dispatch into it, its
+integration, its retirement (`remove_task_tree` refuses while a copy or its tombstone stands, `un4`)
+and the move itself (`advance_member` reads it again after the move). It answers could-not-ask
+when git will not name the admin directory, never settled (`un2`), and clears the `.audit-*` temp
+files a hard kill left there once they are older than `STRAY_AGE_SECONDS`, leaving a
+younger one as a write that may be in flight (`un3`). The stop over
+an unsettled tree names where the work is and `drive-phase.py restore <taskId>`, which runs
+`restore_copy`: the tree checked out at the base the copy was taken at, every held path and the
+git index written back, and the copy dropped once the tree answers as it did before the move
+(`un6`) - refused, with nothing written, over a path the copy does not account for (`un7`) or a
+move the marker already recorded. Whether a moved path still holds a commit's bytes is asked
+through `hash-object --no-filters`, so a file differing only in its line endings is not read as
+the commit's and reset (`un5`).
+
 ### `plugins/audit/scripts/git/close-phase.py`
 Sign-off steps 5c–5e as one command. It merges the phase branch into its resolved parent, writes
 `phase.mergedAt`, and performs whatever cleanup `meta.merge` asks for — each step planned in full
@@ -4693,7 +4711,12 @@ session's stream never shows.
 `block`, never `retry`, and so is a member whose tree the mover would not bring to the phase
 head because its work changes files that moved there - the one refusal whose `kind` is
 `_worktrees.REFUSED_WORK_MOVED` (`advance_member` stops at `tree-behind` and records no gate run
-at the base the phase has left, `ar1`). Every other way the mover declines - a tree not at its
+at the base the phase has left, `ar1`). A move that leaves its copy beside the tree - not put
+back, not recorded, or a copy that will not come down - stops the drive, and so does a dispatch
+into, or an integration of, a tree `_worktrees.tree_unsettled` names unsettled (`uv1`): the stop
+names the copy's files and `drive-phase.py restore <taskId> [manifest] [--project-dir DIR]`, the
+verb that puts the work back from it under the phase lock, after which the next `next` goes on
+(`ab9`). Every other way the mover declines - a tree not at its
 recorded base, one gone or without its marker, a nested repository - stops at `tree-not-moved`,
 which offers `block` alone and gates nothing either (`ar9`, `ar10b`, `ar12`, `ar13`). `redo`
 (`recut_tree`, the one recut for both) refuses before the old tree is touched unless the tree is
