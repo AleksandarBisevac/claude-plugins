@@ -289,8 +289,17 @@ def _git(git_root, args, timeout=60):
     LAYER-MATE, and a sideways edge is the one `_deps.layer_violations()`
     refuses.
     """
+    code, out, err = _git_bytes(git_root, args, timeout)
+    return (code, out.decode("utf-8", "replace"), err)
+
+
+def _git_bytes(git_root, args, timeout=60):
+    """`_git`'s answer with stdout left as git wrote it: (code, bytes, stderr),
+    or (None, b"", why). For a read whose answer IS the bytes - a decode with
+    "replace" turns every invalid sequence into one character, so two files
+    differing only there would read as equal."""
     if not shutil.which("git"):
-        return (None, "", "git is not on PATH")
+        return (None, b"", "git is not on PATH")
     argv = ["git"]
     if git_root:
         argv.extend(["-C", git_root])
@@ -299,10 +308,8 @@ def _git(git_root, args, timeout=60):
         out = subprocess.run(argv, stdout=subprocess.PIPE,
                              stderr=subprocess.PIPE, timeout=timeout)
     except Exception as exc:
-        return (None, "", "%s" % (exc,))
-    return (out.returncode,
-            out.stdout.decode("utf-8", "replace"),
-            out.stderr.decode("utf-8", "replace"))
+        return (None, b"", "%s" % (exc,))
+    return (out.returncode, out.stdout, out.stderr.decode("utf-8", "replace"))
 
 
 _REAL_GIT = _git
@@ -2119,28 +2126,41 @@ def _holds(tree, rel, kind):
 
 def _reads_as(fn, tree, rel, commit):
     """Whether `rel` in `tree` holds what `commit` holds there: absent where
-    the commit has none, else a regular file whose own bytes hash to the
-    commit's blob. A link or a directory never answers yes, and neither does a
-    question git could not answer.
+    the commit has none, else a regular file whose own bytes are the bytes a
+    checkout of the commit writes there. A link or a directory never answers
+    yes, and neither does a question git could not answer.
 
-    THE BYTES, PAST EVERY FILTER (`--no-filters`): a hash through the clean
-    filters and the line-ending conversion reads a file differing from the
-    commit only in its line endings as the commit's, and a path read as the
-    move's own state is put back by the undo - so a filtered hash would let an
-    edit of the line endings alone be reset as if no one had made it. The cost
-    is on a checkout that converts line endings on the way out (core.autocrlf):
-    a moved file a killed checkout already wrote there reads as differing, so
-    the resumed move holds the tree for a human rather than finishing it - a
-    hold costs a look, an acceptance the bytes."""
+    THE FILE'S RAW BYTES AGAINST WHAT CHECKOUT WRITES (`cat-file --filters`,
+    smudge and line-ending conversion applied under this tree's attributes and
+    config), never two hashes of the file. A hash through the clean filters
+    reads a file differing from the commit only in its line endings as the
+    commit's, and a path read as the move's own state is put back by the undo -
+    so it would let an edit of the line endings alone be reset as if no one had
+    made it. A hash of the bytes with no filter at all refuses that edit, and
+    under core.autocrlf=true also refuses every text file a checkout wrote with
+    CRLF, so a move killed part way through its checkout leaves moved paths no
+    verb can settle (`un11`-`un13`). Only the commit's side is filtered, so a
+    CRLF checkout matches and an LF file beside it does not.
+
+    The rev-parse goes through `fn`; the content read goes to `_git_bytes`,
+    because `fn` answers decoded text and a byte comparison of decoded text is
+    lossy."""
     path = os.path.join(tree, *rel.split("/"))
-    code, out, _err = fn(tree, ["rev-parse", "--verify", "--quiet",
-                                "%s:%s" % (commit, rel)])
+    code, _out, _err = fn(tree, ["rev-parse", "--verify", "--quiet",
+                                 "%s:%s" % (commit, rel)])
     if code == 1:
         return not os.path.lexists(path)
     if code != 0 or os.path.islink(path) or not os.path.isfile(path):
         return False
-    code, blob, _err = fn(tree, ["hash-object", "--no-filters", "--", rel])
-    return code == 0 and (blob or "").strip() == (out or "").strip()
+    code, checked_out, _err = _git_bytes(tree, ["cat-file", "--filters",
+                                                "%s:%s" % (commit, rel)])
+    if code != 0:
+        return False
+    try:
+        with open(path, "rb") as fh:
+            return fh.read() == checked_out
+    except OSError:
+        return False
 
 
 def _record_move(tree, record, move, record_of, at, run):

@@ -179,8 +179,10 @@
         "severity": "low",
         "file": "tools/verify.sh:80,983",
         "issue": "Inherited-test shape: the task's gate entry `sh tools/verify.sh --list` sets LIST=1, and `run \"rendered-plan legs ...\" rendered_plan_legs` then prints the step name without executing the function. So no command in tests.gate reaches the window heredoc. Deleting its closure, its proposal filter or its shape arm leaves both gate commands green. The executor's red demonstrations were scratch copies, not a recorded check. (This is from reading verify.sh, not from a run.)",
-        "resolution": "Move the window selection into a stdlib tools/ script with a tests/ suite. Run it against a fixture plan holding a cross-phase dependsOn, a materialized proposal, a bug on a dropped task and a phase with a unique key, and assert closure, filtering and shape-set equality. Proving red is part of the case.",
-        "fixTask": "P155.25-gfj"
+        "resolution": "fixed in P155.25-gfj (e88eb3e0278f): Move the window selection into a stdlib tools/ script with a tests/ suite. Run it against a fixture plan holding a cross-phase dependsOn, a materialized proposal, a bug on a dropped task and a phase with a unique key, and assert closure, filtering and shape-set equality. Proving red is part of the case.",
+        "fixTask": "P155.25-gfj",
+        "commit": "e88eb3e0278f",
+        "status": "fixed"
       },
       {
         "id": "P155-R20",
@@ -293,7 +295,7 @@
         "resolution": "Pin the filters against a fixture plan with a deterministic shape, as finding 1 asks, so the result does not depend on what the live plan holds today."
       }
     ],
-    "outcome": "[findings: 34 - 1 high, 14 med, 19 low; 9 with a recorded fix commit]"
+    "outcome": "[findings: 34 - 1 high, 14 med, 19 low; 10 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2090,7 +2092,7 @@
     {
       "id": "P155.25-gfj",
       "title": "fix P155-R19: Inherited-test shape: the task's gate entry `sh tools/verify.sh...",
-      "status": "in_progress",
+      "status": "done",
       "description": "Inherited-test shape: the task's gate entry `sh tools/verify.sh --list` sets LIST=1, and `run \"rendered-plan legs ...\" rendered_plan_legs` then prints the step name without executing the function. So no command in tests.gate reaches the window heredoc. Deleting its closure, its proposal filter or its shape arm leaves both gate commands green. The executor's red demonstrations were scratch copies, not a recorded check. (This is from reading verify.sh, not from a run.)\n\nResolution asked: Move the window selection into a stdlib tools/ script with a tests/ suite. Run it against a fixture plan holding a cross-phase dependsOn, a materialized proposal, a bug on a dropped task and a phase with a unique key, and assert closure, filtering and shape-set equality. Proving red is part of the case.",
       "files": [
         "tools/verify.sh",
@@ -2122,14 +2124,17 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e88eb3e0278f",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "FIX: tools/affected.py only (+47/-1, `git diff --stat`).\n(1) New constant PARITY_TOOL = \"tools/gate-parity.py\". PARITY is now built from it (same string as before).\n(2) In the select() arm for paths ending in verify.sh or gate-parity.py, when the path is not a .py tool (`not own`, which is verify.sh), the arm also appends TOOL_SELFTEST % (PARITY_TOOL,). The comment states the constraint: gate-parity's own cases cut shell functions out of the runner by name and run them, an edge by path that no import graph shows. The reason line reads \"<path> - the parity tool's own cases run functions cut out of it, so they run\". gate-parity.py itself still gets its own cases through `own`, unchanged.\n(3) _related_suite_paths derives runners from TOOL_SELFTEST gates, so the listing follows with no further edit. `python3 tools/affected.py tools/verify.sh` now runs tests/test__refs.py --selftest, tools/gate-parity.py, and tools/gate-parity.py --selftest. `--list-related tools/verify.sh` now prints tests/test__refs.py and tools/gate-parity.py.\n\nCASES, in affected.py's own _cases next to the parity topic (a3b-a3d):\n- a3e: sel('tools/verify.sh') is not full and holds both PARITY and the gate-parity selftest. The real CLI `--list-related tools/verify.sh`, run as a subprocess with this interpreter, exits 0 and prints tools/gate-parity.py.\n- a3f, the twin: CLAUDE.md (a sweep document that selects PARITY through another branch) and tools/redfirst.sh (a shell tool that falls into the same tools/ chain) do not get the gate-parity selftest, and _related_suite_paths of both does not list the tool.\n\nRED, WATCHED:\n- Base plus the name only: 58/59, FAIL a3e (see redFirst).\n- After the fix: 59/59, exit 0.\n- Mutations of the fixed source, executed in memory with its real __file__ so no tree file was rewritten. Each was asserted to land the expected number of times.\n  - doc-overfire (gate-parity selftest appended at all 3 PARITY appends): exit 1, 58/59, FAIL a3f (CLAUDE.md gates held the selftest).\n  - shell-overfire (arm widened to any .sh): exit 1, 57/59, FAIL a3f and the existing a9c.\n  - fix-removed: exit 1, 58/59, FAIL a3e on its in-process half (the subprocess half ran the real fixed file; that half was shown red on base above).\n- The first mutation attempt crashed on `ModuleNotFoundError: _suite` before any case ran. It was treated as could-not-run, not red, and rerun with tools/ on sys.path.\n\nGATES:\n- Task gate 1, sweep of tests/_harness.py, test__affected_tests.py, test__runner_collects.py, test_stamp_verification.py: exit 0, 4/4 files ok, 637 cases.\n- Task gate 2, `python3 tools/sweep-selftests.py tools/affected.py tools/gate-parity.py`: exit 0, 2/2 files ok, 184 cases.\n- `python3 tools/prove-gates.py --selftest`: exit 0, ALL PASS 66/66.\n\nEXTRA CHECKS:\n- Cross-file: `python3 tools/affected.py --list-related tools/affected.py | xargs python3 tools/sweep-selftests.py` exit 0, 24/24 files ok, 4836 cases. A first attempt passed the list as one zsh string and the sweep refused it with nothing run: a could-not-run, rerun via xargs.\n- `ruff check tools/affected.py` exit 0.\n- `vermin -t=3.8- --no-tips --violations tools/affected.py` exit 0.\n\nThe finding's first half was already closed at base by gate-parity's lw0-lw4 (attempt 1's probe: deleting the closure, proposal filter, shape arm or bugs filter each makes the window step exit 1). This change closes the selection half and does not duplicate the lw cases.\n\nDEPENDANTS:\n- tools/affected.py's dependants (.github/sweep-costs.json, tests/test__affected_tests.py, tests/test__gate_derive.py, tests/test__refs.py, tests/test_derive_phase_gate.py, tools/bench-hooks.py, tools/lints/_refs.py, tools/measure-affected-miss.py): still correct. No public name changed or was removed: PARITY is the same string, and PARITY_TOOL and the two cases are additions. The suites among them are in the 24-file green sweep. A changed verify.sh now selects one more gate, which is a widening, the direction affected.py's docstring allows. sweep-costs.json has no entry for the two new cases; they are in affected.py's file figure, and the whole selftest took seconds.\n- tools/verify.sh, tools/gate-parity.py, tools/prove-gates.py, tests/_harness.py, tests/test__affected_tests.py, tools/sweep-selftests.py, stamp-verification.py, tests/test__runner_collects.py, tests/test_stamp_verification.py, PLUGIN-BUILD-GUIDE.md and their listed dependants: still correct, because none of those files changed. verify.sh --affected now runs gate-parity --selftest for a verify.sh edit, read off the same select().",
+        "descriptive": "A change to tools/verify.sh alone now selects tools/gate-parity.py's own cases, including the live-window lw cases, in both the narrowed run and the --list-related listing. Pinned by a3e and its over-fire twin a3f."
       },
       "startedAt": "2026-11-02T19:30:55Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-02T19:57:51Z",
+      "verifiedBy": [
+        "a3e: a verify.sh-only change selects `python3 tools/gate-parity.py --selftest` beside the parity check, and the real `--list-related tools/verify.sh` CLI prints tools/gate-parity.py",
+        "a3f: the over-fire twin, where a sweep document that selects the parity check and a shell tool beside the runner do not pull the parity tool's cases in, in select() or in the related listing"
+      ],
       "notes": [
         {
           "at": "2026-11-02T16:59:08Z",
@@ -2152,6 +2157,17 @@
         "runId": "2026-11-02T19:48:41Z.aba280",
         "status": "passed",
         "at": "2026-11-02T19:48:41Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "e88eb3e0278f",
+        "at": "2026-11-02T19:57:51Z",
+        "return": "docs/audit/evidence/returns/P155.25-gfj/20261102T193055Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "tests.expectRedFirst is false on this tdd task: it names no case to prove a red by, so no red-first proof is owed",
+        "at": "2026-11-02T19:44:44Z"
       }
     },
     {

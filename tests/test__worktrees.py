@@ -2020,6 +2020,9 @@ def _unsettled_cases(check):
 
     root, repo, _base, head = _av_pair("unsettled-eol-", {
         ".gitattributes": b"*.txt text\n", "c.txt": b"c\n"}, {"c.txt": b"c at head\n"})
+    # A checkout writes `text` files with core.eol, native by default - CRLF on
+    # windows - so the case pins the LF a checkout writes everywhere else.
+    _harness.git(repo, "config", "core.eol", "lf")
     with open(os.path.join(repo, "c.txt"), "wb") as fh:
         fh.write(b"c at head\r\n")
     crlf = M._reads_as(M._git, repo, "c.txt", head)
@@ -2027,8 +2030,8 @@ def _unsettled_cases(check):
         fh.write(b"c at head\n")
     same = M._reads_as(M._git, repo, "c.txt", head)
     check("un5 a file differing from the commit only in its line endings does not "
-          "read as the commit - the comparison is of the bytes, past every clean "
-          "filter - and the file holding the commit's own bytes does (the twin "
+          "read as the commit - the comparison is of the file's bytes with what "
+          "checkout writes - and the file holding those bytes does (the twin "
           "a comparison that never matched fails)",
           crlf is False and same is True, repr((crlf, same)))
 
@@ -2097,6 +2100,92 @@ def _unsettled_cases(check):
               "a.txt": b"the task's a\n", "n.txt": b"a file the task staged\n"}
           and status.get("n.txt") == "A ",
           repr((killed, copied, status)))
+    _autocrlf_cases(check)
+
+
+def _autocrlf_repo(prefix, base_files, head_files):
+    """`_av_pair`'s `(root, repo, base, head)` with core.autocrlf=true in the
+    repository's own config - the Git for Windows installer's default - so
+    every checkout of a text file writes it with CRLF line endings."""
+    root, repo, base, head = _av_pair(prefix, base_files, head_files)
+    _harness.git(repo, "config", "core.autocrlf", "true")
+    return root, repo, base, head
+
+
+def _crlf_killed_move(prefix):
+    """`(tree, base, head, copy, killed)`: a marked tree at `base` under
+    core.autocrlf=true, its work editing a.txt, after a move to `head` killed
+    part way through its checkout of the head - b.txt already written as that
+    checkout writes it, with CRLF, HEAD not yet moved off the base, and the
+    copy whole beside the tree."""
+    root, repo, base, head = _autocrlf_repo(
+        prefix, {"a.txt": b"a\n", "b.txt": b"b\n", "c.txt": b"c\n"},
+        {"b.txt": b"b at head\n"})
+    tree = _av_plain_tree(root, repo, base, "t", {"a.txt": b"the task's a\n"})
+    _av_marked(tree, base)
+
+    def killer(cwd, args, timeout=60):
+        if args[:3] == ["checkout", "-q", "--detach"] and head in args:
+            with open(os.path.join(tree, "b.txt"), "wb") as fh:
+                fh.write(b"b at head\r\n")
+            raise _Killed("killed part way through the checkout of the head")
+        return M._git(cwd, args, timeout)
+    killed, _said = _armed([], lambda: M.advance_task_tree(
+        tree, "T1", head, run=killer))
+    return tree, base, head, os.path.join(M.admin_dir(tree), M.ADVANCE_BACKUP), killed
+
+
+def _autocrlf_cases(check):
+    """A checkout under core.autocrlf=true writes CRLF, so a comparison of the
+    raw bytes with the commit's blob reads every file a checkout wrote as
+    changed. What a file is compared with is what checkout itself would write."""
+    _root, repo, _base, head = _autocrlf_repo(
+        "unsettled-autocrlf-", {"c.txt": b"c\n"}, {"c.txt": b"c at head\n"})
+    path = os.path.join(repo, "c.txt")
+    os.remove(path)
+    _harness.git(repo, "checkout", "-q", "--", "c.txt")
+    with open(path, "rb") as fh:
+        written = fh.read()
+    checked_out = M._reads_as(M._git, repo, "c.txt", head)
+    with open(path, "wb") as fh:
+        fh.write(b"c at head\n")
+    lf_only = M._reads_as(M._git, repo, "c.txt", head)
+    with open(path, "wb") as fh:
+        fh.write(b"bytes no checkout wrote\r\n")
+    foreign = M._reads_as(M._git, repo, "c.txt", head)
+    # Two twins: a comparison that matched anything fails the LF and foreign
+    # halves; the comparison of the raw blob fails the CRLF half.
+    check("un11 under core.autocrlf=true a file as checkout wrote it, with CRLF, "
+          "reads as the commit's; the same text with LF endings - a change of "
+          "line endings alone - and foreign bytes do not",
+          written == b"c at head\r\n" and checked_out is True
+          and lf_only is False and foreign is False,
+          repr((written, checked_out, lf_only, foreign)))
+
+    tree, base, head, copy, killed = _crlf_killed_move("unsettled-autocrlf-restore-")
+    moved = _av_bytes(tree, ("b.txt",))
+    restored = _asked("restore_copy", tree, "T1")
+    check("un12 under core.autocrlf=true a move killed part way through its "
+          "checkout is put back by the restore verb: a moved file as checkout "
+          "wrote it is not read as newer work - restored, HEAD at the base, "
+          "the task's bytes back, the copy gone",
+          killed and moved == {"b.txt": b"b at head\r\n"}
+          and _av_head(tree) == base
+          and restored.get("restored") is True and not os.path.exists(copy)
+          and _av_head(tree) == base
+          and _av_bytes(tree, ("a.txt", "b.txt")) == {
+              "a.txt": b"the task's a\n", "b.txt": b"b\r\n"},
+          repr((killed, moved, restored)))
+
+    tree, base, head, copy, killed = _crlf_killed_move("unsettled-autocrlf-resume-")
+    resumed = M.advance_task_tree(tree, "T1", head)
+    check("un13 under core.autocrlf=true a move killed part way through its "
+          "checkout is finished by the next move rather than held: advanced, HEAD at the "
+          "head, the task's bytes in place, the copy gone",
+          killed and resumed.get("advanced") is True and not os.path.exists(copy)
+          and _av_head(tree) == head
+          and _av_bytes(tree, ("a.txt",)) == {"a.txt": b"the task's a\n"},
+          repr((killed, resumed)))
 
 
 # The task's work in the kill fixture, beside a deletion of d.txt; the record

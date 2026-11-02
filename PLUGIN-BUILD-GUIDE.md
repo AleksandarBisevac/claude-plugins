@@ -1116,9 +1116,12 @@ git index written back, and the copy dropped once the tree answers as it did bef
 a held path whose bytes are none a killed move or undo can leave - not the copy's, the base's or
 the move's target's - so an edit made after the kill is never written over (`un9`, while a held
 path already holding the copy's bytes is restored over, `un10`), or a move the marker already
-recorded. Whether a moved path still holds a commit's bytes is asked
-through `hash-object --no-filters`, so a file differing only in its line endings is not read as
-the commit's and reset (`un5`).
+recorded. Whether a moved path still holds a commit's bytes is asked by comparing the file's raw
+bytes with what checkout itself writes there (`git cat-file --filters`, under the tree's own
+attributes and config), so a file differing only in its line endings is not read as the commit's
+and reset (`un5`), while a file a checkout wrote with CRLF under `core.autocrlf=true` is (`un11`) -
+so a move killed part way through such a checkout is put back by `restore` (`un12`) and finished
+by the next move (`un13`) instead of holding the tree for good.
 
 ### `plugins/audit/scripts/git/close-phase.py`
 Sign-off steps 5c–5e as one command. It merges the phase branch into its resolved parent, writes
