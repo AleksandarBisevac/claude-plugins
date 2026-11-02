@@ -184,9 +184,16 @@
         "file": "plugins/audit/scripts/git/_worktrees.py:2291-2295, 2304-2310 (restore_copy refusals)",
         "issue": "Two refusals tell the user that 'the next move drops it': a copy with no index.json, and a copy of a move the marker already recorded (base == end). Both still stand beside the tree, so `unsettled_stop` stops dispatch and integration over them before any move runs. If the drive's next step is integration over a reusable stored green (gate_step skipped, so no advance_member), the stop names `restore`, restore refuses and points at a move, and the next `next` stops again, with no verb that gets out. `_resume` already settles both shapes by dropping the copy.",
         "resolution": "In restore_copy, settle both shapes the way `_resume` does: drop the copy (`_drop_copy`) when it has no index.json, or when base == end and `_newer_work` names nothing. Return restored=None with what was dropped instead of a refusal. Add a case for the recorded-move copy, which the executor lists as untested."
+      },
+      {
+        "id": "P155-R24",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:5185-5192",
+        "issue": "The fallback wording ('does not name P') and the case where read_provenance returns a record with a foreign createdBy but a taskId (_worktrees.py:198-201 returns the record) are driven by no case: ta9 only exercises the 'names X, not P' arm, and the executor says so in claim 2. In the foreign-createdBy case the new line reads 'its marker names X, not P' for a marker this plugin did not write, which is true of the taskId field but suggests a plugin marker for another task.",
+        "resolution": "Add one small over-fire twin of ta9 for a marker with no record (no marker file) asserting the old 'does not name' wording, and optionally gate `named` on rec createdBy so a foreign marker keeps the old wording."
       }
     ],
-    "outcome": "[findings: 23 - 1 high, 10 med, 12 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 24 - 1 high, 10 med, 13 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1149,7 +1156,7 @@
     {
       "id": "P155.14",
       "title": "The drive suite's own debts: template reuse asserted, hr3 names which row sits first, the two re-open wordings have a case, _git_bound_names is scope-aware, the runner says what it does not exercise, ta9's red inside the throwaway tree is explained",
-      "status": "in_progress",
+      "status": "done",
       "description": "Closes P143-R12, P143-R19, P143-R20, P143-R2 (residual), F820 (C), F823. Evidence at fa1b0c81: tests/test_drive_phase.py:189/209/213 (_REPO_TEMPLATES unasserted), :11682 (tied compares files only), drive-phase.py:8205/:8210 strings with 0 hits in tests/, :15940-15952 (_git_bound_names walks the whole module), :345-353 (_needs_process says nothing about holder liveness), :8100 (ta9). Reproduce ta9 under the helper's throwaway tree first; if the product side is wrong, record the red by hand and say so.",
       "files": [
         "tests/test_drive_phase.py",
@@ -1178,25 +1185,42 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "fbd3e2d70fec",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Only tests/test_drive_phase.py changed. (1) fx4 (_template_reuse_case, sb-block): wraps _build_repo, calls _repo twice with a gate no other fixture names; asserts the template table grows by one then not at all, the build runs once, and both copies commit one tree. (2) hr3: tied now carries the action; asserts tied[0][2] == TASK_REOPEN and tied[1][2] == RISK_CONFIRMED, so a fixture whose file order flipped can no longer pass on the reading the case refuses. (3) hr13/hr14 in _same_moment_handback_cases: a human re-open a second after the hand-back prints \"the newest re-open of it is a re-open for 'the human wants...'\"; a journal with no re-open prints \"...is absent from the journal\"; each excludes the other wordings. (4) _git_bound_names now returns {scope: names} per module/function/lambda/class: locals and parameters hide outer names, class-body names are not seen by methods, bindings follow assignment chains inside a scope; bare_git_calls reads each call against its own scope's set. It reuses the file's existing _scope_nodes (the tuple became _NAME_SCOPES; docstring says every node belongs to exactly one scope). fg2 pins it: twin reports [4, 11]; the module-wide reading reports 8, 16, 18 too. The scan over tests/ still reports {}; wide and fg1m twins unchanged ([2, 4, 5, 7, 10], [1, 2]). (5) _needs_process docstring says it does not detect a case that needs a dead lock holder; the block comment above it no longer implies _needs_process routes such a case. (6) ta9 REPRODUCED, CAUSE FOUND, NOT FIXED (out of scope): the helper at HEAD 8f896d6f printed `red-first: red (throwaway at HEAD 8f896d6f5d30, removed: yes)` and redFirst could-not-prove, `failing cases ta9 (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 788/789 cases passed)`. Cause, in the PRODUCT: drive-phase.py remove_task_tree (the `its marker does not name %s (%s)` return, about line 5186) clips read_provenance's basis to 200 bytes, and that basis opens with the marker file's absolute path (<fixture root>/.git/worktrees/P1.1/audit-worktree.json). Under the throwaway the sweep's TMPDIR is nested several directories deeper, so the clip falls before \"for task 'P1.9'\" and the did-line loses the task the marker names, which is the fact ta9 asserts. Reproduced by hand: the ta block under a long TMPDIR prints `FAIL ta9 ... (its marker does not name P1.1 (<long path>/bbbbbbbb...))`, 27/28. The test is right; the product is wrong on any machine with a long temp or project path. Proposed fix (<scratchpad>/p15514/product-fix.py, applied ONLY to a scratch copy): name the marker's own taskId before the clipped basis - `its marker names P1.9, not P1.1 (<basis>)`, falling back to the old wording when the record names no task or names this one. Probe row ta9-head FAIL, ta9-fixed PASS (28/28) under the same long TMPDIR. drive-phase.py is not in this task's files and the orchestrator said to edit only declared files in the checkout, so it was not edited and the helper proof after the fix (acceptance 6) is still owed. Gate: `python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_stamp_verification.py tools/_suite.py` exit 0, `3/3 files ok, 1192 cases`; drive suite 793 cases (HEAD's ran 789 inside the helper's throwaway). ruff check and vermin -t=3.8- on the suite: exit 0. Dependants: tests/test_drive_phase.py's dependants are still correct: no stage label added or renamed (sweep-costs.json, ci.yml, affected.py, reach-diff.py, test__runner_output.py, test_run_test_gate.py, test_stamp_verification.py and drive-phase.py name the file or its labels, not the edited helpers); _actions/_bindings/_counting/_follower_cases are untouched; _git_bound_names, bare_git_calls and _scope_nodes have no readers outside this file (repo-wide grep). stamp-verification.py, tests/test_stamp_verification.py and PLUGIN-BUILD-GUIDE.md are unchanged; PLUGIN-BUILD-GUIDE.md names none of the edited helpers (grep), so nothing needs updating there.",
+        "descriptive": "The drive suite's debts are paid: template reuse, hr3's row order, both re-open wordings and a scope-aware git-name scan each have a case, each proven red by mutation. ta9's throwaway-only red has a confirmed cause in drive-phase.py, which is outside this task's files, and a proposed fix proven in a scratch copy."
       },
       "startedAt": "2026-11-02T13:21:18Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-02T13:45:28Z",
+      "verifiedBy": [
+        "fx4: a second _repo call with the same arguments copies the first one's template; the table grows once and the build runs once",
+        "hr3 (strengthened): the first tied row is the reopen and the second the confirmation, not only two different files",
+        "hr13: a human re-open a second after the hand-back prints the single-re-open wording with the human's reason",
+        "hr14: a journal with no re-open of the task prints the 'absent from the journal' wording",
+        "fg2: a local named like a git-bound name in another function, a method's local shadowing a class attribute, and a parameter shadowing a module name are not read as git, while a module-level git name a function only reads still is"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-11-02T13:41:20Z.b96754",
         "status": "passed",
         "at": "2026-11-02T13:41:20Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "fbd3e2d70fec",
+        "at": "2026-11-02T13:45:28Z",
+        "return": "docs/audit/evidence/returns/P155.14/20261102T132118Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "Regression mode with expectRedFirst false: the product strings and behaviour these cases lock already exist at HEAD, so HEAD's code under the new test file is green and the helper has no red to show; fg2's subject (the scanner) lives in the test file itself. Each case was instead shown red by a mutation of a scratch export (git archive HEAD plus the edited suite), never the shared tree: <scratchpad>/p15514/mutations.py, usage `python3 mutations.py <checkout> [row ...]`, exit 0, every row as expected - m1 store line removed -> fx4 FAIL; m2 confirmer's writer token sorts first -> hr3 FAIL (HEAD's own hr3 stays PASS under the same swap, run by hand); m3 single re-open worded as a tie -> hr13 FAIL; m4 absent worded as a re-open -> hr14 FAIL; m5 module-wide binding restored -> fg2 FAIL; m5b parameter no longer hides -> fg2 FAIL; m6 function blind to module names -> fg2 FAIL; unmutated baseline -> all five PASS.",
+        "at": ""
       }
     },
     {
       "id": "P155.15",
       "title": "A task's effective gate adds every lint whose walk covers an edited suite, and the test-support widening is satisfied by a declared unscoped sweep",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Closes F830 (class; the instance landed in 54f0c646) and P143-R5, and closes BUG-31-z9j: it is blocked on every other P143 closer so the bug closes last. Evidence at fa1b0c81: _affected_tests.py:341-347 widens on any unpicked suite-path regardless of declared entries; run-test-gate.py:2642-2649 then adds every phase-gate entry; no lint arm in _affected_tests.py/_gate_derive.py. In the outcome, walk the bug's repro list: each P143 id names the P155 task and commit that closed it; P143-R4 is closed with the recorded reason (the probe's path and size are in P143.json; no code change). Re-run tools/measure-affected-miss.py over at least 20 commits and record the figure.",
       "files": [
         "plugins/audit/scripts/governance/_affected_tests.py",
@@ -1205,7 +1229,9 @@
         "tests/test__affected_tests.py",
         "tests/test_run_test_gate.py",
         "tests/test_derive_phase_gate.py",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "tests/test__gate_derive.py",
+        "tools/check-example-ledgers.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -1229,26 +1255,28 @@
         "P155.5"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-02T13:45:33Z",
       "completedAt": null,
       "verifiedBy": [],
-      "bugId": "BUG-31-z9j"
+      "bugId": "BUG-31-z9j",
+      "reviewPerTask": "signals"
     },
     {
       "id": "P155.16-gfj",
       "title": "A kept task tree's refusal names the marker's own task id before the reason is cut, so a long temp or project path never hides which task the marker names",
-      "status": "pending",
+      "status": "in_progress",
       "description": "remove_task_tree in drive-phase.py (near line 5186) cuts the marker's reason to 200 bytes, and that reason starts with the marker file's absolute path. Under a long TMPDIR or project path the cut falls before \"for task 'P1.9'\", so the kept-tree line loses the task name. This is why tests/test_drive_phase.py ta9 is red inside the red-first helper's throwaway tree, which forced could-not-prove on several P155 tasks. Fix: put the marker's own task id ahead of the cut reason (\"its marker names P1.9, not P1.1 (...)\"). A proposed patch, already proven on a scratch copy (ta9 FAIL to PASS under a long TMPDIR), is at <scratchpad>/p15514/product-fix.py in the orchestrator's session scratchpad. Acceptance: ta9 passes under a long TMPDIR, and the red-first helper's run over tests/test_drive_phase.py at the fixed head reports HEAD's own tests green; quote that verdict line.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
-        "tests/test_drive_phase.py"
+        "tests/test_drive_phase.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "regression",
@@ -1264,16 +1292,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-02T13:45:48Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-02T14:04:16Z.e3d197",
+        "status": "passed",
+        "at": "2026-11-02T14:04:16Z"
+      }
     }
   ],
   "reviewPerTask": "signals",

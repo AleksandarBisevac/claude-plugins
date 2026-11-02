@@ -8199,16 +8199,22 @@ def _set_aside_cases(check):
           and any("kept" in d and agent[:12] in d for d in did))
 
     # A tree whose marker names another task is not this task's to take down.
+    # The other task is named ahead of the marker's clipped basis: the basis
+    # opens with the marker's absolute path, so a name found only inside it is
+    # cut off under a long temp path, and a bare "P1.9 in the line" passed or
+    # failed on the length of TMPDIR rather than on the wording.
     root_o, mpath_o, tree_o = _retire_fixture("taother")
     M._worktrees.write_record(tree_o, {
         "createdBy": "audit", "taskId": "P1.9", "phaseId": PHASE,
         "base": _git_out(root_o, "rev-parse", "HEAD").strip()})
     stop, did, standing = _retired(M, root_o, mpath_o, tree_o)
     check("ta9 retiring a member whose tree's marker names another task keeps "
-          "the tree, says so, and does not stop the drive: %r"
+          "the tree, says which task the marker names ahead of its clipped "
+          "basis, and does not stop the drive: %r"
           % ((stop, did, standing),),
           stop is None and standing
-          and any("kept" in d and "P1.9" in d for d in did))
+          and any("kept" in d and "its marker names P1.9, not P1.1 (" in d
+                  for d in did))
 
     # A tree a redo kept, clean and integrated, goes when the task is retired,
     # and its entry with it; the member's own tree too.

@@ -1853,7 +1853,8 @@
       "P155.7",
       "P155.9",
       "P155.11",
-      "P155.14"
+      "P155.14",
+      "P155.16-gfj"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -8263,7 +8264,8 @@
       "P84.7-791",
       "P103.13-xi3",
       "P130.9",
-      "P131.2"
+      "P131.2",
+      "P155.15"
     ],
     "tools/check-example-ledgers.py: a committed row whose status is not a schema enum member is a finding, and so is a passed verdict carrying a mutated tree": [
       "P32.10"
@@ -11832,7 +11834,8 @@
       "P148.18-xpz",
       "P148.21-xpz",
       "P148.23-xpz",
-      "P149.4-hwg"
+      "P149.4-hwg",
+      "P155.15"
     ],
     "tests/test__gate_feed.py": [
       "P131.1"

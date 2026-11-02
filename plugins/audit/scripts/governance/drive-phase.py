@@ -5182,8 +5182,15 @@ def remove_task_tree(ctx, tree, marker, records=(), followers=(), carried=None):
         return False, why
     mine = _worktrees.read_provenance(tree, expect_task=str(marker))
     if mine.get("ours") is not True:
-        return False, "its marker does not name %s (%s)" % (
-            marker, _clip(mine.get("basis") or "", 200))
+        # The basis opens with the marker's absolute path, so under a long temp
+        # or project path its clip cuts off the task the marker names - the one
+        # fact a reader of the kept line needs - and that goes before it.
+        named = (mine.get("record") or {}).get("taskId")
+        said = ("names %s, not %s" % (named, marker)
+                if named and str(named) != str(marker)
+                else "does not name %s" % (marker,))
+        return False, "its marker %s (%s)" % (
+            said, _clip(mine.get("basis") or "", 200))
     if _worktrees.within_tree(tree, os.getcwd()):
         return False, "this process stands inside it"
     code, _out, err = carry_git(ctx["gitRoot"], ["worktree", "remove", "--force",

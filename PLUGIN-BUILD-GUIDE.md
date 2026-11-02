@@ -4793,7 +4793,10 @@ no staged state, no submodule repository in the tree's own git directory - that 
 carried (a recut verified it) or integrated (`tree_holds_only_integrated`, read over the work
 commit's paths so an assume-unchanged edit is compared too), that the phase head holds the commit
 the tree stands on, and that the tree's marker names the task or the key it is kept under. Any doubt keeps
-the tree with a did-line naming why, and the drive goes on (`ta3`-`ta5`, `ta7c`); a clean tree
+the tree with a did-line naming why, and the drive goes on (`ta3`-`ta5`, `ta7c`). A marker naming
+another task is named by that task ahead of the marker's clipped basis, since the basis opens with
+the marker's absolute path and a long temp or project path would otherwise cut the name off
+(`ta9`); a clean tree
 whose work the phase tree holds is removed, with and without a submodule it never checked out
 (`ta6`, `ta6b`). Ignored files are not part of what it asks, and a removal deletes them with the
 tree, whatever wrote them. The

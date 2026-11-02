@@ -1,0 +1,19 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "plugins/audit/scripts/governance/drive-phase.py:5185-5192",
+   "issue": "The fallback wording ('does not name P') and the case where read_provenance returns a record with a foreign createdBy but a taskId (_worktrees.py:198-201 returns the record) are driven by no case: ta9 only exercises the 'names X, not P' arm, and the executor says so in claim 2. In the foreign-createdBy case the new line reads 'its marker names X, not P' for a marker this plugin did not write, which is true of the taskId field but suggests a plugin marker for another task.",
+   "resolution": "Add one small over-fire twin of ta9 for a marker with no record (no marker file) asserting the old 'does not name' wording, and optionally gate `named` on rec createdBy so a foreign marker keeps the old wording."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clause: 'put the marker's own task id ahead of the cut reason (\"its marker names P1.9, not P1.1 (...)\")'. Diff drive-phase.py:5185-5192 derives `named` from mine['record']['taskId'], and returns 'its marker names %s, not %s (%s)' only when named is set and differs from marker, else the old 'its marker does not name %s (%s)' with the clipped 200-byte basis unchanged. Read-through of _worktrees.read_provenance confirms the not-ours branches with a differing taskId are the expect_task one (record carried) and the foreign-createdBy one (record carried); no-file, unreadable and admin-dir cases carry record None and keep the old wording. The executor's outcome describes this diff accurately, including the ta9 predicate tightening and the guide sentence. Its dependants answer holds: no name or signature changed, remove_task_tree's three callers (5224, 5293, 6456) use the why string verbatim, and a grep over tests, tools, plugins and .claude/hooks for the old wording finds nothing else parsing it. Verified: under TMPDIR with a 120-character component, `python3 tests/test_drive_phase.py --selftest --stage ta-block` in the task tree ended 'ALL PASS: 28/28 cases passed' (ta9 included).",
+  "missing": [],
+  "redFirst": "could-not-prove",
+  "redFirstBasis": "The executor's report: the helper over the task tree printed that HEAD's own tests are not green (SELFTEST FAILED: 792/793, ta9 FAIL), so no green baseline exists until the fix is committed; the HEAD red is the defect itself, as the caller expected. Its out-of-helper red (tightened ta9 on a scratch HEAD export, ta-block 27/28 with ta9 FAIL, then 28/28 with the fix) is a named command and an assertion failing but was not seen by me, so I echo could-not-prove, which the stated reason holds.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "tests.gate is `python3 tools/sweep-selftests.py tests/test_drive_phase.py tools/_suite.py`, selecting tests/test_drive_phase.py and the tools/_suite.py suite. I read ta9 (test_drive_phase.py:8199-8217) and grepped tests, tools, plugins and .claude/hooks for the old and new wording: the only case reaching this refusal text is ta9, whose predicate now pins the full 'its marker names P1.9, not P1.1 (' prefix, so it fails if the behaviour is removed. I did not read the rest of the 793-case drive suite for unrelated cases."
+ },
+ "verdict": "findings",
+ "tasks": []
+}
