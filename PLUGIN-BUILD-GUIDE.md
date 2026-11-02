@@ -1239,7 +1239,7 @@ file path, so a lockfile inside a declared directory is caught) and otherwise me
 undeclared paths a **decision** (exit 3: widen, discard or block) — except a **follower**. Each
 script `_evidence_io.FOLLOWER_OWNERS` names that the task tree holds is asked as
 `<script> --follower-for <path>...` and answers with a `FOLLOWER-OWED` line for each path it
-owns (`owned`). `reproduced` copies the task tree's work into a scratch directory, puts every
+owns (`_evidence_io.claimed_followers`, the one reading the drive's `stray_step` shares). `reproduced` copies the task tree's work into a scratch directory, puts every
 claimed path back at its base bytes, runs the owner's recipe there (`_evidence_io.run_recipe`)
 and accepts a path only when the result matches the task tree's bytes exactly. An accepted path
 is integrated with no decision and reported in `followers`, which the state file keeps, and
@@ -4894,8 +4894,14 @@ the scope remedy (`submit_strays`), asked as the task commit asks it -
 the start is not the attempt's - while the executor is still there to say why, rather than at the
 commit after the gate and the review (`sd1`-`sd3`). A wave member is told rather than refused:
 every change in its tree past the records is read against the task's own declarations, named on
-the filing's line, and settled by its integration, which widens a follower and asks about the rest
-(`sd4`, `sd5`); with a test
+the filing's line and filed in the return (`undeclaredPaths`), and asked about by the drive as
+`undeclared-change` at the step after the member's gate, before its reviewer is dispatched
+(`stray_step`) - less a path declared since, a follower the gated run's row owes, and a path a
+follower owner in the member's tree claims (`_evidence_io.claimed_followers`, asked once per start),
+which the integration reproduces or sends to a browser follow. A `widen` is applied there, so the
+reviewer reads the widened scope; the integration then passes the answer's word only when its own
+question is within the paths that answer was given for, and asks again otherwise
+(`sd4`-`sd4e`, `su1`-`su7`); with a test
 command, `stamp-verification.py red --json`, whose `redFirst` block replaces the agent's - owed
 on a task that owes a red-first proof, which is refused without one, while a `tdd` task whose
 `expectRedFirst` is false, given no command, has its `not-attempted` block filed by `submit`, and a test that passes without the fix gets no

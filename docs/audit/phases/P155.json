@@ -127,8 +127,10 @@
         "severity": "med",
         "file": "plugins/audit/hooks/_config.py:4011-4016; plugins/audit/scripts/governance/commit-task-work.py:616-619; PLUGIN-BUILD-GUIDE.md (added _config paragraph: 'a path the plan gate opened to an edit is never one the task commit refuses as undeclared')",
         "issue": "contradicts task clause \"Closes F808\" (Do (a): 'the plan gate and commit-task-work read one predicate for \"declared\"'). The plan gate has a second reading of declared, which the shared predicate leaves out. require-plan.py:970-974 allows an edit as a 'declared output of in_progress task' via task_covered_outputs. Neither declared_task_map nor owned_rels reads `outputs`. So a path a task's graded outputs pattern covers is opened by the gate, then refused by the commit as 'changed during this attempt and no in_progress task declares it', one gate run late. That is F808(a)'s shape. The three new sentences claiming 'never' are false for this input. Found by reading.",
-        "resolution": "Have the commit's reading count the counted tasks' graded outputs (_config.in_progress_outputs, or an `outputs` arm in declared_git_rels passed to undeclared_changes), and add a dp case where one outputs path is opened by the gate and counted by the commit. If outputs are meant to stay outside the commit, rewrite the three sentences so they name outputs (and the free-file slot) as outside the shared predicate.",
-        "fixTask": "P155.23-gfj"
+        "resolution": "fixed in P155.23-gfj (198cab9c48f3): Have the commit's reading count the counted tasks' graded outputs (_config.in_progress_outputs, or an `outputs` arm in declared_git_rels passed to undeclared_changes), and add a dp case where one outputs path is opened by the gate and counted by the commit. If outputs are meant to stay outside the commit, rewrite the three sentences so they name outputs (and the free-file slot) as outside the shared predicate.",
+        "fixTask": "P155.23-gfj",
+        "commit": "198cab9c48f3",
+        "status": "fixed"
       },
       {
         "id": "P155-R14",
@@ -255,7 +257,7 @@
         "resolution": "Update orchestrator.md step 4c to name the task's own honoured outputs, update the test_audit_task.py prose in the same follow-up as finding 2, or drop the 'step 4c allows' cross-reference."
       }
     ],
-    "outcome": "[findings: 30 - 1 high, 13 med, 16 low; 4 with a recorded fix commit]"
+    "outcome": "[findings: 30 - 1 high, 13 med, 16 low; 5 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1657,7 +1659,8 @@
         "plugins/audit/scripts/governance/_evidence_io.py",
         "plugins/audit/scripts/git/integrate-task.py",
         "tests/test__evidence_io.py",
-        "tests/test_integrate_task.py"
+        "tests/test_integrate_task.py",
+        "tools/prove-gates.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -1675,14 +1678,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 1,
+      "attempts": 3,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-11-02T17:27:25Z",
+      "startedAt": "2026-11-02T18:31:09Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -1700,9 +1703,9 @@
       ],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-11-02T18:09:27Z.894df5",
-        "status": "failed",
-        "at": "2026-11-02T18:09:27Z"
+        "runId": "2026-11-02T18:42:41Z.4390ed",
+        "status": "passed",
+        "at": "2026-11-02T18:42:41Z"
       }
     },
     {
@@ -1838,7 +1841,7 @@
     {
       "id": "P155.23-gfj",
       "title": "fix P155-R13: contradicts task clause \"Closes F808\" (Do (a): 'the plan gate a...",
-      "status": "in_progress",
+      "status": "done",
       "description": "contradicts task clause \"Closes F808\" (Do (a): 'the plan gate and commit-task-work read one predicate for \"declared\"'). The plan gate has a second reading of declared, which the shared predicate leaves out. require-plan.py:970-974 allows an edit as a 'declared output of in_progress task' via task_covered_outputs. Neither declared_task_map nor owned_rels reads `outputs`. So a path a task's graded outputs pattern covers is opened by the gate, then refused by the commit as 'changed during this attempt and no in_progress task declares it', one gate run late. That is F808(a)'s shape. The three new sentences claiming 'never' are false for this input. Found by reading.\n\nResolution asked: Have the commit's reading count the counted tasks' graded outputs (_config.in_progress_outputs, or an `outputs` arm in declared_git_rels passed to undeclared_changes), and add a dp case where one outputs path is opened by the gate and counted by the commit. If outputs are meant to stay outside the commit, rewrite the three sentences so they name outputs (and the free-file slot) as outside the shared predicate.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -1872,14 +1875,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "198cab9c48f3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The task commit's reading of 'declared' now counts the counted tasks' graded `outputs` as well as their `files`. _config.py: new declared_outputs(manifest, also) - honoured `outputs` patterns of in_progress tasks or ids in `also`, via _task_outputs.honoured; in_progress_outputs now delegates to it (same answer, so the gate is unchanged: test_require_plan 240/240, op1-op11 included); declared_git_rels gained `changed=()` and returns, beside the `files` entries, each changed git-root path a counted task's graded pattern covers (new output_git_rels, matched through covering_output after git_to_plan). commit-task-work.py: owned_rels(..., changed=None) lists `git status` itself when not handed the paths and passes them on; stage_targets lists the changed paths once (`changed` key added to its answer), and adds the changed paths the task's OWN honoured outputs cover to its candidates as the task's work, so a path the commit counts as its own output it also stages - counting without staging would close the task done over a dirty file, the shape ctw-fi1 refuses for a fileIndex row; a record path stays a record; attempt_refusal hands targets['changed'] to owned_rels. The three 'never' sentences (_config.declared_task_map docstring, commit-task-work.owned_rels docstring, PLUGIN-BUILD-GUIDE.md _config section) now name both halves and state that the free-file slot is outside both on purpose (one small edit to a session, refused by the commit when the attempt changed it). PLUGIN-BUILD-GUIDE.md's 'What a task commit stages' and the declared_task_map 'files alone' sentences now say the commit stages its own outputs too. Commands, all exit 0 after the fix: the gate `python3 tools/sweep-selftests.py tests/test__config.py tests/test_commit_task_work.py tests/_harness.py tests/test__affected_tests.py tests/test__runner_collects.py tests/test_stamp_verification.py` -> '6/6 files ok, 1262 cases'; test_require_plan.py 240/240; test__scoped_commit.py 87/87 (reader lints sc-ua5/sc-ua6 still hold: the commit asks undeclared_changes once); test__deps.py 266/266; ruff and vermin -t=3.8- clean on the four .py files. Second-direction mutation in a scratch copy: declared_outputs reading raw `outputs` instead of honoured ones -> do2 FAIL (gate and commit both opened var/evidence and stray.txt), restored copy deleted. Dependants: _config.py importers (guard-*, detect-plan-skip, journal-writes, require-plan, guard-release) - still correct: only additions, in_progress_outputs returns the same list; commit-task-work.py importers (test__invariants, test__scoped_commit, test_commit_task_work, test_guard_bash_writes, test_require_plan) - still correct: owned_rels' new parameter is optional and stage_targets only gains a key (test__scoped_commit, test_require_plan, test_commit_task_work green; test__invariants and test_guard_bash_writes not run); PLUGIN-BUILD-GUIDE.md - changed as above (also declared by in-progress sibling P155.21-gfj; my hunks are the _config section and the 'What a task commit stages' paragraph); tests/_harness.py, test__affected_tests.py, test__runner_collects.py, test_stamp_verification.py, tools/prove-gates.py, tools/sweep-selftests.py, stamp-verification.py - untouched, still green under the gate. NOT FIXED, outside this task's files: drive-phase.py's set-aside check (declared_git_rels at :9980/:9989 without `changed`) still counts `files` alone, and audit-task.py's close (_uncommitted_leftovers, its own _declared_rels) reads `files` alone, so a SIBLING's uncommitted output path is still refused there (the task's own outputs are committed by its commit, so its close no longer sees them); reference/orchestrator.md step 4c and audit-task.py:7393 / test_audit_task.py:16203 prose still say the commit stages declared files only. The verdict stamp's declared-work digest (_tree_stamp) still covers `files` only, not outputs.",
+        "descriptive": "A path a running task's graded outputs pattern opens through the plan gate is now counted as declared by the task commit (and carried by its own task's commit), so it is no longer refused one gate run late."
       },
       "startedAt": "2026-11-02T17:28:07Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-02T18:15:44Z",
+      "verifiedBy": [
+        "do1 (tests/test__config.py): in a real git repo, a path a running task's graded outputs pattern covers is opened by the real require-plan gate AND is `covered`, not a stray, in _scoped_commit.undeclared_changes over commit-task-work.owned_rels",
+        "do2 (tests/test__config.py): second direction - a refused `**` pattern and a pending task's pattern open nothing for either reader; both paths are strays and the gate refuses them",
+        "ctw-fi2 (tests/test_commit_task_work.py): end to end, the committing task's output path is counted, committed and not left dirty",
+        "ctw-fi3 (tests/test_commit_task_work.py): a stray beside the task's output is refused by name and the output is not named"
+      ],
       "notes": [
         {
           "at": "2026-11-02T16:59:08Z",
@@ -1906,6 +1914,18 @@
         "runId": "2026-11-02T18:15:39Z.4c4332",
         "status": "passed",
         "at": "2026-11-02T18:15:39Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "198cab9c48f3",
+        "at": "2026-11-02T18:15:44Z",
+        "return": "docs/audit/evidence/returns/P155.23-gfj/20261102T172807Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-11-02T17:48:00Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__config.py tests/test_commit_task_work.py tests/_harness.py tests/test__affected_tests.py tests/test__runner_collects.py tests/test_stamp_verification.py` in a throwaway tree at HEAD exited 1 with failing cases do1 (house FAIL), do2 (house FAIL), ctw-fi2 (house FAIL), ctw-fi3 (house FAIL), but HEAD's own tests on HEAD's code are not green (no tally or error reader matched its output, so no line of it is quoted as decisive) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 235/237 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {

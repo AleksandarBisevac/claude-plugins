@@ -4226,9 +4226,38 @@ def _tree_key_cases(check):
           len(keys) == 2 and keys[0] and keys[1] and keys[0] != keys[1])
 
 
+def _claimed_followers_cases(check):
+    """`claimed_followers` is the one reading of which undeclared paths a
+    follower owner claims, shared by the integration and the drive."""
+    tmp = _harness.fixture_root("audit-evidence-claims-")
+    try:
+        owner = [o for o in M.FOLLOWER_OWNERS if o.endswith(".py")][0]
+        os.makedirs(os.path.join(tmp, *owner.split("/")[:-1]))
+        # The owner answers for a path it was not asked about too, and twice
+        # for one it was: only the asked paths count, each record once.
+        with open(os.path.join(tmp, *owner.split("/")), "w", encoding="utf-8",
+                  newline="\n") as fh:
+            fh.write("import json\n"
+                     "for rel in ('gen/a.txt', 'gen/a.txt', 'gen/z.txt'):\n"
+                     "    print('FOLLOWER-OWED ' + json.dumps({'path': rel,\n"
+                     "          'recipe': 'make gen', 'owner': 'gen'}))\n")
+        got = M.claimed_followers(tmp, ["gen/a.txt", "notes.txt"])
+        check("fc1 an owner's claims are read for the asked paths alone, each "
+              "record once, the path it was not asked about left out: %r" % (got,),
+              [r.get("path") for r in got] == ["gen/a.txt"]
+              and got[0].get("recipe") == "make gen")
+        empty = os.path.join(tmp, "no-owner")
+        os.makedirs(empty)
+        none = M.claimed_followers(empty, ["gen/a.txt"])
+        check("fc2 a tree holding no owner claims nothing: %r" % (none,), none == [])
+    finally:
+        _harness.remove_tree(tmp)
+
+
 def _selftest():
     def body(check):
         _cases(check)
+        _claimed_followers_cases(check)
         _tree_key_cases(check)
         _banner_cases(check)
         _project_config_cases(check)

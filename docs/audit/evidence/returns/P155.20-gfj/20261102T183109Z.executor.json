@@ -1,0 +1,36 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py": "pass",
+    "python3 tools/prove-gates.py --selftest": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-02T18:36:22Z",
+    "basis": "`python3 tests/test_drive_phase.py --selftest --stage sd-block` in a throwaway tree at HEAD exited 1 with 3 of 17 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sd4b (house FAIL), sd4c (house FAIL), sd4d (house FAIL): SELFTEST FAILED: 14/17 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Attempt 3, in the redo tree at base 198cab9c, which carries P155.21 and P155.23; attempt 2's work arrived there intact. The prove-gates re-gate failure (c1, a4: ['follower_claims']) came from the NAME arm, not the walk arm. tools/prove-gates.py _GATE_SHAPES = (\"_violations\", \"_drift\", \"_claims\") derives every public function whose name ends in one of those shapes. `_derived_gates` applies `excused` (NOT_A_GATE) only to the walks_the_tree arm, and the file's own comment says NOT_A_GATE 'refuses by construction to excuse anything the name arm reaches'. Its recorded precedent is bench-hooks.render_violations, renamed to render_budget_findings. So a NOT_A_GATE row would not have cleared it, and the repair is the name: `follower_claims` is renamed `claimed_followers` in _evidence_io.py, integrate-task.py, drive-phase.py (claimed_strays), tests/test__evidence_io.py (fc1, fc2 and their block, now _claimed_followers_cases) and PLUGIN-BUILD-GUIDE.md. Its docstring now states the naming constraint. tools/prove-gates.py is NOT edited. `git grep follower_claims` outside docs/ finds 0 hits; the only remaining hit is attempt 1's committed return, which is history. Runs in the redo tree: `python3 tools/prove-gates.py --selftest` -> ALL PASS 66/66, exit 0, run twice, before and after the docstring edit. `python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__evidence_io.py tests/test_integrate_task.py` -> exit 0, '3/3 files ok, 1154 cases' (804, 315 and 35). `python3 tools/sweep-selftests.py tests/test__deps.py tests/test__output_lints.py` -> '2/2 files ok, 448 cases', which covers the guide enumeration and prose lints over the edited text. ruff check plugins/audit tools plus the three suites: pass. vermin -t=3.8- on the five edited .py files: exit 0. Everything from attempts 1 and 2 stands as filed: undeclaredPaths in the return; stray_step after the gate and before the reviewer, leaving out declared, gate-owed and owner-claimed paths, with owners asked once per start; early widen; the integration's subset check; tests sd4b-sd4e, su1-su7, fc1-fc2. The red-first command is narrowed to sd-block, for attempt 2's reason: under the full sweep, uy-block raises on HEAD's driver for STRAYS_ASKED, a symbol this task introduces. Dependants: tools/prove-gates.py dependants (sweep-costs.json, guard-bash-writes.py, _harness, test__deps, test__gate_feed, test_drive_phase, test_guard_bash_writes, affected.py) are unaffected, because the file is unchanged. The _evidence_io.py, integrate-task.py, drive-phase.py and test-file dependants are as in attempt 2, still correct; the only change since is the rename of a function this task introduced, which nothing outside this task's files calls. PLUGIN-BUILD-GUIDE.md basename dependants are still correct: two inline names changed.",
+    "descriptive": "The shared follower-claim reader is renamed claimed_followers so prove-gates no longer derives it as a lint; prove-gates selftest 66/66 and the drive-phase gate stay green on the redo tree."
+  },
+  "testsAdded": [
+    "sd4b: a wave member's submit files the strays it named in its return (undeclaredPaths)",
+    "sd4c: the undeclared-change decision for that path comes before that member's `dispatch reviewer`",
+    "sd4d/sd4e: widen and discard each answer it once; with widen the path is declared before the reviewer is dispatched",
+    "su1-su5: declared and gate-owed paths are left out, the over-fire twins are quiet, no re-ask once answered, an early discard does not reach a later-found path",
+    "su6/su7: a follower-claimed path is not asked early, with owners asked once per start; the twin, an unclaimed path, is still asked",
+    "fc1/fc2 (tests/test__evidence_io.py): claimed_followers reads only the asked paths, each record once; no owner, no claims"
+  ],
+  "casesAdded": [
+    [
+      "sd4b",
+      "sd4c",
+      "sd4d",
+      "sd4e"
+    ]
+  ],
+  "claims": "claims:\n1 tools/prove-gates.py _GATE_SHAPES holds `_claims`, and _derived_gates applies `excused` only to the walks_the_tree arm, which is why the new docstring sentence in _evidence_io.claimed_followers holds; the guide names claimed_followers where the code does\n2 red: the orchestrator's re-gate, prove-gates --selftest 64/64+2 FAIL (c1, a4: ['follower_claims']) with the old name -> green: 66/66 after the rename. Attempt 1-2 mutations stand as recorded\n3 git grep follower_claims outside docs/: 0 hits; the one hit left is attempt 1's committed return, which is history and stays\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:312650b8517b6d51f4c843d7e029d8a7d59532a287121befdb2cd7a297363f41\",\"dirtyDigest\":\"sha256:2b3498dda436c429d500ae7fd34b150c623b52135f390168dd730070339d7877\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"3f9038f82404ed35\",\"plugins/audit/scripts/git/integrate-task.py\":\"7149419b4c5f4911\",\"plugins/audit/scripts/governance/_evidence_io.py\":\"5bcb21902d52d244\",\"plugins/audit/scripts/governance/drive-phase.py\":\"63fac2a009da5f7a\",\"tests/test__evidence_io.py\":\"d0eefafb598a4b05\"},\"head\":\"198cab9c\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/scripts/git/integrate-task.py\",\"plugins/audit/scripts/governance/_evidence_io.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test__evidence_io.py\",\"tests/test_drive_phase.py\",\"tests/test_integrate_task.py\",\"tools/prove-gates.py\"],\"scopeDigest\":\"sha256:79a66ea7c97f721820c49699364ec6cb7966dff7e8c9c28308fd6f3843282b46\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

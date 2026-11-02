@@ -58,6 +58,7 @@ import json
 import math
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -880,6 +881,34 @@ FOLLOWER_OWNERS = ("tools/lints/_deps.py", "tools/check-rendered-artifacts.py",
                    "tools/capture-screenshots.mjs")
 # A recipe is a regeneration, not a suite: bounded so a hung one ends the run.
 RECIPE_TIMEOUT = 600
+
+
+def claimed_followers(root, paths):
+    """Every follower record an owner gives for one of `paths`, each
+    `FOLLOWER_OWNERS` script `root` holds asked by command - an owner that
+    cannot be asked claims nothing. The one reading of who owns a path: the
+    integration reproduces what is claimed (`integrate-task.py`), and the drive
+    leaves a claimed path to that integration rather than asking about it
+    before the review (`drive-phase.py` `stray_step`).
+
+    NAMED FOR WHAT IT RETURNS, never with a reporting suffix: `prove-gates.py`
+    derives every public function whose name ends in a reporting shape
+    (`_GATE_SHAPES`) as a lint owed a proving row, and its `NOT_A_GATE` table
+    cannot excuse a name that arm reaches."""
+    records = []
+    for rel in FOLLOWER_OWNERS:
+        script = os.path.join(root, rel)
+        runner = sys.executable if rel.endswith(".py") else shutil.which("node")
+        if not (runner and os.path.isfile(script)):
+            continue
+        try:
+            done = subprocess.run([runner, script, "--follower-for"] + list(paths),
+                                  cwd=root, capture_output=True, timeout=120)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        said = followers_in(done.stdout.decode("utf-8", "replace"))[0]
+        records += [r for r in said if r["path"] in paths and r not in records]
+    return records
 
 
 def run_recipe(recipe, cwd):

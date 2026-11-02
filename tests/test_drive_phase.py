@@ -8875,6 +8875,55 @@ def _high_risk_repo(prefix):
     return root, mpath
 
 
+def _stray_review_run(M, prefix, stray, word):
+    """A review.perTask-always wave whose member P1.2 also writes a stray its
+    submit names: every reviewer dispatched is filed, the first decision is
+    answered `word`, and the drive is stepped until P1.2 is done. `order` is
+    the `(kind, task)` sequence of reviewer dispatches and decisions, in the
+    order the drive printed them, and `atReview` P1.2's files when its
+    reviewer was dispatched."""
+    root, mpath = _wave_repo(prefix, 2, per_task="always")
+    _code, first = _next_wave(M, root, mpath)
+    code, filed = _file_wave_executor(root, mpath, "P1.2", then=stray)
+    path = _filed_path(mpath, "P1.2")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            filed_strays = json.load(fh).get("undeclaredPaths")
+    except (OSError, TypeError, ValueError) as exc:
+        filed_strays = "unread: %s" % (exc,)
+    _file_wave_executor(root, mpath, "P1.1")
+    order, asked, tail, answer, at_review = [], "", "", None, None
+    for _ in range(10):
+        if (tasks_of(mpath).get("P1.2") or {}).get("status") == "done":
+            break
+        said = []
+        argv = ["next", PHASE, mpath, "--project-dir", root]
+        if answer:
+            argv += ["--answer", answer]
+            answer = None
+        with _Env(root):
+            M.main(argv, out=said.append)
+        tail = "\n".join(said)
+        for t in _dispatched(tail, "reviewer"):
+            order.append(("reviewer", t))
+            if t == "P1.2":
+                at_review = list((tasks_of(mpath).get(t) or {}).get("files") or [])
+            _file_reviewer(root, mpath, t)
+        kind = instruction(tail)
+        if kind[0] == "decide":
+            line = [ln for ln in tail.splitlines() if ln.startswith("decide ")][0]
+            order.append(("decide", line.split()[2].rstrip(":")))
+            if kind[1] != "undeclared-change" or asked:
+                break
+            asked, answer = line, word
+    task = tasks_of(mpath).get("P1.2") or {}
+    return {"code": code, "filed": filed, "filedStrays": filed_strays,
+            "first": _dispatched(first), "order": order, "asked": asked,
+            "tail": tail, "status": task.get("status"),
+            "files": task.get("files") or [], "atReview": at_review,
+            "landed": os.path.isfile(os.path.join(root, "notes.txt"))}
+
+
 def _scope_declared_cases(check):
     """`submit` compares the attempt's changed paths with the task's files while
     the executor is there; a scope change re-measures the gate before `close`
@@ -8915,8 +8964,9 @@ def _scope_declared_cases(check):
           code == 0 and os.path.exists(_filed_path(mpath, "P1.1")))
 
     # A wave member's tree: everything in it past the records is the task's,
-    # and its integration settles each such path by name - a follower widened,
-    # the rest asked - so the member is told and filed, never refused.
+    # and the drive settles each such path by name before its review - a
+    # follower its gate owes widened, the rest asked - so the member is told
+    # and filed, never refused.
     root, mpath = _wave_repo("sd-wave", 2)
     _code, first = _next_wave(M, root, mpath)
 
@@ -8924,7 +8974,7 @@ def _scope_declared_cases(check):
         _write_lf(os.path.join(tree, "notes.txt"), "written by P1.2\n")
     code, text = _file_wave_executor(root, mpath, "P1.2", then=stray)
     check("sd4 a wave member's submit with an undeclared file in its tree is "
-          "filed and names the path and the integration's question about it, "
+          "filed and names the path and the drive's question about it, "
           "while the executor is there: %r" % ((code, text[-400:]),),
           _dispatched(first) == ["P1.1", "P1.2"] and code == 0
           and "notes.txt changed outside P1.2's files" in text
@@ -8935,6 +8985,45 @@ def _scope_declared_cases(check):
           "filed with no such line: %r" % ((code, text[-300:]),),
           code == 0 and os.path.exists(_filed_path(mpath, "P1.1"))
           and "outside" not in text)
+
+    # The stray a member's submit named is the drive's to ask about while the
+    # member's work is still unreviewed: recorded at the filing, and asked at
+    # the step after the member's gate, before any reviewer reads its diff -
+    # not first found by the integration after the review round.
+    for word in ("widen", "discard"):
+        run = _stray_review_run(M, "sd-stray-%s" % (word,), stray, word)
+        if word == "widen":
+            check("sd4b a wave member's submit files the strays it named in its "
+                  "return, beside the executor's own account: %r"
+                  % ((run["code"], run["filedStrays"], run["filed"][-300:]),),
+                  run["first"] == ["P1.1", "P1.2"] and run["code"] == 0
+                  and run["filedStrays"] == ["notes.txt"])
+            check("sd4c ...and the drive asks undeclared-change for that path, "
+                  "naming the member, before that member's reviewer is "
+                  "dispatched - not first at its integration after the review "
+                  "round: %r" % ((run["order"], run["asked"][-400:]),),
+                  run["asked"].startswith("decide undeclared-change P1.2: ")
+                  and "notes.txt" in run["asked"]
+                  and ("decide", "P1.2") in run["order"]
+                  and ("reviewer", "P1.2") in run["order"]
+                  and run["order"].index(("decide", "P1.2"))
+                  < run["order"].index(("reviewer", "P1.2")))
+        check("sd4%s `%s` answers that question once: P1.2's reviewer is "
+              "dispatched after it, the integration does not ask it again, and "
+              "the task closes with the stray %s - a widened one already "
+              "declared when its reviewer is dispatched: %r"
+              % ("d" if word == "widen" else "e", word,
+                 "declared and in the phase tree" if word == "widen"
+                 else "left out of the phase tree",
+                 (run["order"], run["status"], run["files"], run["atReview"],
+                  run["landed"], run["tail"][-400:]),),
+              run["asked"].startswith("decide undeclared-change P1.2: ")
+              and run["order"].count(("decide", "P1.2")) == 1
+              and ("reviewer", "P1.2") in run["order"]
+              and run["status"] == "done"
+              and ("notes.txt" in run["files"]) == (word == "widen")
+              and ("notes.txt" in (run["atReview"] or [])) == (word == "widen")
+              and run["landed"] == (word == "widen"))
 
     # A green gate recorded under the old scope, then the scope widened: the
     # drive measures again before it offers `close`, and `close` then lands.
@@ -14875,6 +14964,152 @@ def _undeclared_units(check):
                              "integration answer)", "integrated P1.2",
                              "re-gate P1.2 green"]
           and rows == ["task.integrated"] and "pending" not in state)
+    _early_stray_units(check)
+
+
+def _early_stray_units(check):
+    """The paths a member's submit filed outside its files are asked about
+    before its review, less what it declares since and what its gated row owes
+    as followers; an answer to that question reaches the integration only for
+    the paths it was given for."""
+    M, _w = _unit_driver("drive_phase_early_stray")
+    task_u = _step_task("P1.2")
+    phase = _step_phase([_step_task("P1.1", status="done"), task_u], key="phase")
+    calls = _step_rig(M, phase)
+    M.run_followers = lambda ctx, run_id: (
+        [{"path": "gen/out.txt", "recipe": "make gen"}] if run_id == "R1" else [])
+    named = _filed_executor(undeclaredPaths=["src/f2.txt", "gen/out.txt",
+                                             "notes.txt"])
+    base = os.path.realpath(tempfile.mkdtemp(prefix="drive-early-stray-"))
+    try:
+        _early_stray_body(check, M, task_u, phase, calls, named, base)
+    finally:
+        _harness.remove_tree(base)
+
+
+def _claiming_tree(base, name):
+    """A member tree under `base` holding a follower owner that claims
+    `gen/claimed.txt` and appends a line to `owner.log` each time it is asked,
+    so a case can count the asks. `(tree, log path)`."""
+    tree = os.path.join(base, name)
+    owner = [o for o in _evio.FOLLOWER_OWNERS if o.endswith(".py")][0]
+    os.makedirs(os.path.join(tree, *owner.split("/")[:-1]))
+    log = os.path.join(tree, "owner.log")
+    _write_lf(os.path.join(tree, *owner.split("/")), (
+        "import json, sys\n"
+        "with open(%r, 'a', encoding='utf-8') as fh:\n"
+        "    fh.write('asked\\n')\n"
+        "for rel in sys.argv[2:]:\n"
+        "    if rel == 'gen/claimed.txt':\n"
+        "        print('FOLLOWER-OWED ' + json.dumps({'path': rel,\n"
+        "              'recipe': 'make claimed', 'owner': 'gen'}))\n" % (log,)))
+    return tree, log
+
+
+def _asks(log):
+    try:
+        with open(log, encoding="utf-8") as fh:
+            return len(fh.read().splitlines())
+    except OSError:
+        return 0
+
+
+def _early_stray_body(check, M, task_u, phase, calls, named, base):
+    bare = os.path.join(base, "bare")
+    os.makedirs(bare)
+    state, ctx = {}, _step_ctx()
+    M._mark(state, "gated", task_u, {"runId": "R1"})
+    said = _caught(M.stray_step, ctx, state, task_u, named, bare)
+    pending = dict(state.get("pending") or {})
+    check("su1 the paths the submit filed are asked about as undeclared-change, "
+          "less a path the task declares and a follower the gated row owes: "
+          "%r" % ((_text_of(said), pending, _scripts(calls)),),
+          _first_line(said) == "decide undeclared-change P1.2: changed outside "
+                               "its files: notes.txt (named when its executor "
+                               "filed)"
+          and pending.get("paths") == ["notes.txt"]
+          and pending.get("asked") == M.STRAYS_ASKED and _scripts(calls) == [])
+    # OVER-FIRE TWINS: no filed list, or a list wholly declared or owed, asks
+    # nothing - a step that always asked would fail these.
+    quiet = []
+    for body in (_filed_executor(),
+                 _filed_executor(undeclaredPaths=["src/f2.txt", "gen/out.txt"])):
+        st = {}
+        M._mark(st, "gated", task_u, {"runId": "R1"})
+        quiet.append((_caught(M.stray_step, ctx, st, task_u, body, bare),
+                      st.get("pending")))
+    check("su2 a return filing no strays, or only declared or owed ones, asks "
+          "nothing: %r" % (quiet,), quiet == [(None, None), (None, None)])
+    st = {}
+    M._mark(st, "undeclared", task_u, {"answer": "discard", "paths": ["notes.txt"],
+                                       "asked": M.STRAYS_ASKED})
+    again = _caught(M.stray_step, ctx, st, task_u, named, bare)
+    check("su3 once answered, the question is not asked again for the start: "
+          "%r" % ((again, st.get("pending")),),
+          again is None and st.get("pending") is None)
+
+    # A path a follower owner claims is the integration's: it reproduces the
+    # owner's recipe there, or prints the browser follow. Asked early, the
+    # orchestrator would answer a question the integration settles itself.
+    tree, log = _claiming_tree(base, "claims")
+    st = {}
+    first = _caught(M.stray_step, ctx, st, task_u,
+                    _filed_executor(undeclaredPaths=["gen/claimed.txt"]), tree)
+    second = _caught(M.stray_step, ctx, st, task_u,
+                     _filed_executor(undeclaredPaths=["gen/claimed.txt"]), tree)
+    check("su6 a path a follower owner claims is not asked early - it is left to "
+          "the integration - and the owners are asked once for the start, not at "
+          "every step: %r" % ((first, second, st.get("pending"), _asks(log)),),
+          first is None and second is None and st.get("pending") is None
+          and _asks(log) == 1)
+    # THE TWIN: the same owner in the tree claims nothing else, so a path it
+    # does not claim is still asked - a step that left every path to the
+    # integration whenever an owner stands in the tree would fail here.
+    tree, log = _claiming_tree(base, "twin")
+    st = {}
+    said = _caught(M.stray_step, ctx, st, task_u, _filed_executor(
+        undeclaredPaths=["gen/claimed.txt", "notes.txt"]), tree)
+    check("su7 THE TWIN: beside a claimed path, a path no owner claims is still "
+          "asked before the review, naming it alone: %r"
+          % ((_text_of(said), st.get("pending"), _asks(log)),),
+          _first_line(said) == "decide undeclared-change P1.2: changed outside "
+                               "its files: notes.txt (named when its executor "
+                               "filed)"
+          and (st.get("pending") or {}).get("paths") == ["notes.txt"]
+          and _asks(log) == 1)
+
+    took = json.dumps({"paths": ["src/f2.txt"], "regate": False,
+                       "base": _WAVE_BASE, "headBefore": _HEAD_B})
+
+    def integrated(found):
+        """The integration with an early `discard` for notes.txt, its verb
+        finding `found` undeclared: `(said, sent arguments, pending)`."""
+        asked = json.dumps({"decision": {"paths": found}})
+
+        def integrate(args):
+            return (0, took, "") if "--undeclared" in args else (3, asked, "")
+        calls_i = _step_rig(M, phase, answers={"integrate-task.py": integrate})
+        M.wave_row = lambda ctx_, action, summary, details: None
+        st_i = {}
+        M._mark(st_i, "undeclared", task_u, {
+            "answer": "discard", "paths": ["notes.txt"], "asked": M.STRAYS_ASKED})
+        said_i = _caught(M.integrate_member, _step_ctx(), st_i, phase, task_u)
+        return (said_i, [a for s, a, _i in calls_i if s == "integrate-task.py"],
+                dict(st_i.get("pending") or {}))
+    said, sent, pending = integrated(["notes.txt", "late.txt"])
+    check("su4 an early `discard` does not reach a path the integration finds "
+          "beyond the ones it was given for: the integration's own question is "
+          "asked, naming both, and no word is passed: %r" % ((said, sent, pending),),
+          _first_line(said) == "decide undeclared-change P1.2: changed outside "
+                               "its files: notes.txt, late.txt"
+          and pending.get("paths") == ["notes.txt", "late.txt"]
+          and all("--undeclared" not in a for a in sent) and len(sent) == 1)
+    said, sent, pending = integrated(["notes.txt"])
+    check("su5 THE TWIN: when the integration finds only those paths the early "
+          "word is passed and nothing is asked again: %r" % ((said, sent, pending),),
+          said is None and pending == {}
+          and [a[-2:] for a in sent] == [["/nowhere", "--json"],
+                                         ["--undeclared", "discard"]])
 
 
 def _crash_units(check):

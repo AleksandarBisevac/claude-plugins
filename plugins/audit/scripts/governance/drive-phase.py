@@ -3220,13 +3220,19 @@ def owed_followers(ctx, text):
     found = _RUN_ID.search(text or "")
     if not found:
         return None, []
+    return found.group(1), run_followers(ctx, found.group(1))
+
+
+def run_followers(ctx, run_id):
+    """The `followersOwed` records of the ledger row `run_id` names, each with a
+    path; `[]` when there is no such row or the ledger cannot be read."""
     try:
         rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
     except Exception:                                          # noqa: BLE001
-        return found.group(1), []
-    row = _evio.row_by_run(rows, found.group(1)) or {}
-    return found.group(1), [f for f in row.get(_evio.FOLLOWERS_KEY) or []
-                            if isinstance(f, dict) and isinstance(f.get("path"), str)]
+        return []
+    row = _evio.row_by_run(rows, run_id) or {}
+    return [f for f in row.get(_evio.FOLLOWERS_KEY) or []
+            if isinstance(f, dict) and isinstance(f.get("path"), str)]
 
 
 def widen_task(ctx, state, task, paths, basis):
@@ -4422,6 +4428,10 @@ def advance(ctx, state, manifest, phase, task, tree=None):
             return stop
         ctx["did"].append(grade_stamp(ctx, executor.get("stamp"), tree)
                           if tree else grade_stamp(ctx, executor.get("stamp")))
+    if tree:
+        stop = stray_step(ctx, state, task, executor, tree)
+        if stop is not None:
+            return stop
     if review_turn == "dispatch":
         return dispatch(ctx, state, phase, task, "reviewer", tree)
     # `standing` writes the journal row of the approval's use, so it is read
@@ -4933,6 +4943,76 @@ def _after_shot_follow(ctx, state, task, followed):
     return word, None
 
 
+def claimed_strays(ctx, tree, paths):
+    """The plan-spelled `paths` a follower owner in `tree` claims, read by
+    `_evidence_io.claimed_followers` - the integration's own reading - over the
+    paths as git spells them in the member's checkout."""
+    hc = _loader.load_hooks_config(modname="audit__config")
+    spelled = dict((hc.plan_to_git(p, ctx["gitRoot"], ctx["project"]), p)
+                   for p in paths)
+    spelled.pop(None, None)
+    if not spelled:
+        return set()
+    return set(spelled[r["path"]] for r in _evio.claimed_followers(tree, sorted(spelled))
+               if r["path"] in spelled)
+
+
+def stray_step(ctx, state, task, executor, tree):
+    """The undeclared-change decision for the paths a wave member's submit
+    named outside its files, asked once per start at the step after its gate
+    and before its reviewer is dispatched; None when nothing is left to ask.
+
+    ASKED HERE, NOT AT THE INTEGRATION. The integration's own question came
+    after the review round and the risk confirmation, so a reviewer read a diff
+    whose scope was still open and the orchestrator answered with the executor
+    long gone. Left out: a path the task has since declared - a red gate's
+    follow widens what its row owes (`follow_red_gate`) - and a path the gated
+    run's own row names in `followersOwed` (`run_followers`), and a path a
+    follower owner in the member's tree claims (`claimed_strays`): the
+    integration reproduces that owner's recipe, or prints its browser follow,
+    and asking first would put a question to the orchestrator the integration
+    settles itself. The owners are asked once per start: a start with nothing
+    left to ask is marked `straysSettled`. A `widen` answer is applied here, so
+    the reviewer reads the scope as widened; `discard` is the integration's to
+    carry out, over these paths alone (`integrate_member`)."""
+    word = _marked(state, "undeclared", task)
+    if word:
+        if word.get("asked") != STRAYS_ASKED or word.get("answer") != "widen":
+            return None
+        return widen_task(ctx, state, task, word.get("paths") or [],
+                          "named outside its files at its executor's submit, "
+                          "widened by the answer")
+    named = [p for p in (executor or {}).get(STRAYS_FIELD) or []
+             if isinstance(p, str)]
+    if not named or _marked(state, "straysSettled", task):
+        return None
+    held = _marked(state, "gated", task)
+    run_id = held.get("runId") if isinstance(held, dict) else None
+    owed = set(f["path"] for f in run_followers(ctx, run_id)) if run_id else set()
+    files = set(task.get("files") or [])
+    left = [p for p in named if p not in files and p not in owed]
+    claimed = claimed_strays(ctx, tree, left) if left else set()
+    left = [p for p in left if p not in claimed]
+    if not left:
+        _mark(state, "straysSettled", task)
+        write_state(ctx, state)
+        return None
+    return decision(ctx, state, "undeclared-change", task, "%s (named when its "
+                    "executor filed)" % (_clip(", ".join(left), 120),),
+                    extra={"paths": left, "asked": STRAYS_ASKED})
+
+
+def _integrate_run(ctx, args):
+    """`(code, out, err, answer)` of one `integrate-task.py` run, `answer` its
+    parsed `--json` reading or None when stdout is not JSON."""
+    code, out, err = run_verb(ctx, "integrate-task.py", args)
+    try:
+        answer = json.loads(out)
+    except ValueError:
+        answer = None
+    return code, out, err, answer
+
+
 def integrate_member(ctx, state, phase, task):
     """Carry a wave member's tree into the phase tree once per start, and
     re-gate on the phase tree where the integration overlapped a sibling, cannot
@@ -4966,13 +5046,18 @@ def integrate_member(ctx, state, phase, task):
             if stop is not None:
                 return stop
         args = [ctx["manifest"], task["id"], "--project", ctx["project"], "--json"]
-        if word.get("answer"):
+        # The verb applies its word to every undeclared path it finds, and an
+        # answer given before the review was given for the paths the submit
+        # named: it is passed only when the verb's own question is within them.
+        early = word.get("asked") == STRAYS_ASKED
+        if word.get("answer") and not early:
             args += ["--undeclared", word["answer"]]
-        code, out, err = run_verb(ctx, "integrate-task.py", args)
-        try:
-            answer = json.loads(out)
-        except ValueError:
-            answer = None
+        code, out, err, answer = _integrate_run(ctx, args)
+        if early and code == INTEGRATE_DECIDE and isinstance(answer, dict) and set(
+                (answer.get("decision") or {}).get("paths") or []) <= set(
+                    word.get("paths") or []):
+            code, out, err, answer = _integrate_run(
+                ctx, args + ["--undeclared", word["answer"]])
         if not isinstance(answer, dict):
             return relay_refusal(ctx, "integrate-task.py", code, out + err)
         if code == INTEGRATE_DECIDE:
@@ -6994,9 +7079,13 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
         return stop
     if answer in ("widen", "discard"):
         # Integration asks again with the human's word; a widened scope is
-        # declared before it, and the gate is taken again over it after.
-        _mark(state, "undeclared", task, {"answer": answer,
-                                          "paths": list(pending.get("paths") or [])})
+        # declared before it, and the gate is taken again over it after. An
+        # answer to the question asked before the review keeps that mark, so
+        # its word reaches only the paths it was given for (`integrate_member`).
+        word = {"answer": answer, "paths": list(pending.get("paths") or [])}
+        if pending.get("asked"):
+            word["asked"] = pending["asked"]
+        _mark(state, "undeclared", task, word)
         write_state(ctx, state)
         return None
     if answer == "redispatch":
@@ -9951,6 +10040,16 @@ def submit_tree(ctx, phase, task):
     return tree, None
 
 
+# A wave member's changed paths its task does not declare, as `submit_strays`
+# named them, filed in its executor return: the return is the member's alone and
+# written once, where the drive's state is shared by every member submitting at
+# once, none of them under the drive's lock. `stray_step` reads it back.
+STRAYS_FIELD = "undeclaredPaths"
+# The mark of an undeclared-change answer to that early question, so the
+# integration applies the word only to the paths it was given for.
+STRAYS_ASKED = "submit"
+
+
 def submit_strays(ctx, manifest, phase, task, tree):
     """`(paths, basis, why)` - the changed paths of `task`'s attempt that it
     does not declare, spelled as the plan spells them, beside the basis that
@@ -9968,9 +10067,9 @@ def submit_strays(ctx, manifest, phase, task, tree):
     every changed path past the records is the task's, and only what the task
     itself declares counts - the plan gate's reading of a bound tree
     (`_config.task_binding`). The caller refuses the serial filing on an
-    answer; a member's is told and filed, since its integration settles each
-    such path by name, a follower included, which a refusal here would take
-    away."""
+    answer; a member's is told and filed with the paths in its return, and
+    the drive asks about them by name after its gate, before its review
+    (`stray_step`)."""
     hc = _loader.load_hooks_config(modname="audit__config")
     records = list(dict.fromkeys(_invariants.record_rels(
         ctx["manifest"], phase, ctx["project"], ctx["gitRoot"])
@@ -10111,14 +10210,14 @@ def submit(ctx, manifest, args, cmd, text):
         if strays and not tree:
             return _stopped(ctx, strays_refusal(task, strays, basis))
         if strays:
-            # A member's tree reaches the phase through its integration, which
-            # settles these by name - a follower its owner's recipe reproduces
-            # is widened, anything else is the undeclared-change decision - so
-            # the filing goes on and the executor is told while it is there.
-            ctx["did"].append("%s changed outside %s's files; its integration "
-                              "widens a follower its owner's recipe writes and "
-                              "asks widen, discard or block for the rest"
-                              % (", ".join(strays), task["id"]))
+            # A member's paths are settled by name before its review
+            # (`stray_step`), from the list filed here, so the filing goes on
+            # and the executor is told while it is there.
+            body[STRAYS_FIELD] = strays
+            ctx["did"].append("%s changed outside %s's files; the drive asks "
+                              "widen, discard or block for it after %s's gate, "
+                              "before its review" % (", ".join(strays),
+                                                     task["id"], task["id"]))
         if strays is None:
             # Not a pass: the commit asks the same question again, and says so
             # when it cannot either.

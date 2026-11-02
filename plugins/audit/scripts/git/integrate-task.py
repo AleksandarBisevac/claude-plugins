@@ -308,26 +308,6 @@ def merge_bytes(current, base, other):
 
 
 # --- followers: an undeclared path its owner's recipe writes byte for byte --------
-def owned(root, paths):
-    """Every follower record an owner gives for one of `paths`, each
-    `_evidence_io.FOLLOWER_OWNERS` script `root` holds asked by command - an
-    owner that cannot be asked claims nothing."""
-    records = []
-    for rel in _evidence_io.FOLLOWER_OWNERS:
-        script = os.path.join(root, rel)
-        runner = sys.executable if rel.endswith(".py") else shutil.which("node")
-        if not (runner and os.path.isfile(script)):
-            continue
-        try:
-            done = subprocess.run([runner, script, "--follower-for"] + list(paths),
-                                  cwd=root, capture_output=True, timeout=120)
-        except (OSError, subprocess.SubprocessError):
-            continue
-        said = _evidence_io.followers_in(done.stdout.decode("utf-8", "replace"))[0]
-        records += [r for r in said if r["path"] in paths and r not in records]
-    return records
-
-
 def reproduced(tree, base, records):
     """`(followers, refused)` - the records whose recipe, run in a scratch copy
     of the tree's work with every claimed path put back at the base, writes the
@@ -494,7 +474,7 @@ def _integrate(manifest, phase, task, manifest_path, project, git_root, undeclar
                        "; ".join("%s: %s" % (p, w) for p, w in sorted(conflicts.items())))
 
     extra = undeclared_paths(task.get("files") or [], paths, git_root, project)
-    claimed = owned(tree, extra) if extra else []
+    claimed = _evidence_io.claimed_followers(tree, extra) if extra else []
     followers, unreproduced = reproduced(tree, base, claimed)
     extra = [p for p in extra if p not in [f["path"] for f in followers]]
     if extra and undeclared is None:
