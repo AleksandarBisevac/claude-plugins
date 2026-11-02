@@ -1255,23 +1255,28 @@
         "P155.5"
       ],
       "dependsOn": [],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-11-02T13:45:33Z",
+      "startedAt": "2026-11-02T16:44:13Z",
       "completedAt": null,
       "verifiedBy": [],
       "bugId": "BUG-31-z9j",
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-02T16:57:21Z.00e7c4",
+        "status": "passed",
+        "at": "2026-11-02T16:57:21Z"
+      }
     },
     {
       "id": "P155.16-gfj",
       "title": "A kept task tree's refusal names the marker's own task id before the reason is cut, so a long temp or project path never hides which task the marker names",
-      "status": "in_progress",
+      "status": "done",
       "description": "remove_task_tree in drive-phase.py (near line 5186) cuts the marker's reason to 200 bytes, and that reason starts with the marker file's absolute path. Under a long TMPDIR or project path the cut falls before \"for task 'P1.9'\", so the kept-tree line loses the task name. This is why tests/test_drive_phase.py ta9 is red inside the red-first helper's throwaway tree, which forced could-not-prove on several P155 tasks. Fix: put the marker's own task id ahead of the cut reason (\"its marker names P1.9, not P1.1 (...)\"). A proposed patch, already proven on a scratch copy (ta9 FAIL to PASS under a long TMPDIR), is at <scratchpad>/p15514/product-fix.py in the orchestrator's session scratchpad. Acceptance: ta9 passes under a long TMPDIR, and the red-first helper's run over tests/test_drive_phase.py at the fixed head reports HEAD's own tests green; quote that verdict line.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1294,19 +1299,32 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9ceb35980ef9",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "CHANGES. plugins/audit/scripts/governance/drive-phase.py remove_task_tree: when read_provenance answers not-ours, the refusal now names the task the marker records ahead of the clipped basis - 'its marker names P1.9, not P1.1 (<basis clipped to 200 bytes>)' - and keeps the old 'its marker does not name P1.1 (...)' wording when the record names no task or names this one (no marker file, unreadable marker, foreign createdBy). The comment says why: the basis opens with the marker's absolute path, so its clip cuts off the name under a long temp or project path. This is the previous executor's proposed patch, judged sound and applied as-is apart from the comment wording. tests/test_drive_phase.py ta9: the predicate went from `\"P1.9\" in d` to `\"its marker names P1.9, not P1.1 (\" in d`, with a comment, so the case now fails on the wording at any TMPDIR length instead of only under a long one. A deeper fixture prefix was rejected because it pushes Windows fixture paths past MAX_PATH. PLUGIN-BUILD-GUIDE.md: one sentence in the 'One remover' paragraph names this and cites ta9.\n\nACCEPTANCE 1 (ta9 under a long TMPDIR, a scratch dir with two extra components of 52 and 51 characters): before the fix, `tests/test_drive_phase.py --selftest --stage ta-block` gave exit 1, 'SELFTEST FAILED: 27/28', and ta9 FAIL with the did-line cut inside the temp path. After the fix: exit 0, 'ALL PASS: 28/28', and the did-line reads 'its marker names P1.9, not P1.1 (...'.\n\nACCEPTANCE 2 (the helper's verdict at the fixed head): NOT SHOWN. The helper's baseline is HEAD's code, and this tree's HEAD is the unfixed base fbd3e2d7, so its run here reports HEAD's own tests NOT green. The verdict line is quoted in redFirst.basis ('...HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 792/793 cases passed)', only ta9 failing). Showing HEAD green needs a commit carrying the fix, and I may not commit. The orchestrator owes this after the commit: from the project, `python3 <driver>/stamp-verification.py red --project <project> --manifest docs/audit/audit-plan.json --task P155.16-gfj --json --derive-introduces -- python3 tests/test_drive_phase.py --selftest`, expecting the basis to say HEAD's own tests are green (that run itself then ends could-not-prove or 'no red', since a fixed HEAD has no red to show). The nearest evidence I could gather: the whole drive suite under the same long TMPDIR on scratch exports gave 709/763 with HEAD's drive-phase.py and 710/763 with the fixed one. Diffing the two sorted FAIL-id lists leaves exactly one line, 'FAIL ta9'.\n\nA FINDING OUTSIDE THIS TASK, same class, not fixed. Under that deep TMPDIR, ws-block, pv-block, pv4-block and rw-block raise while building their cases, and the rv/wf/xs/wl/wk/wi/wj cases fail. That happens identically on HEAD's code (ws-block alone: 0/2 RAISED 'ValueError: no path specified' on both copies; 18/18 on both under an ordinary TMPDIR). The cause visible at test_drive_phase.py ws10's line: `--record` cannot be read off the writer dispatch line, which looks like a byte-bounded print losing a field to a long path. The helper's real throwaway does not reach that depth (only ta9 failed there), so this does not block the helper today. It is worth a register entry: a long project or temp path drops a field from a bounded drive line.\n\nCHECKS RUN (development checks, not gates): ruff check on both .py files -> 'All checks passed!' (exit 0); vermin -t=3.8- on both -> exit 0; _output_lints.prose_number_claims, _deps.doc_prose_numbers and _output_lints.house_style_violations over the tree -> no findings. GATE: executor.runsGate is own-tests and the task adds no test, so per the brief there is nothing of my own to run; the orchestrator's run of `python3 tools/sweep-selftests.py tests/test_drive_phase.py tools/_suite.py` is the evidence.\n\nDEPENDANTS. drive-phase.py importers (test__filed_returns, test__invariants, test__worktrees, test_audit_status, test_commit_task_work, test_detect_plan_skip, test_stamp_verification, tools/stream-cost.py; names _advance_plan, _attempt_start_moment, _carries, _close_plan): still correct. No name was added, renamed or removed. remove_task_tree keeps its signature and its (bool, str) return, and only the text of one refusal changed. A grep of tests/, tools/ and plugins/ finds no other pin on 'its marker does not name'. tests/test_drive_phase.py dependants (.github/sweep-costs.json, ci.yml, test__runner_output, test_run_test_gate, test_stamp_verification, tools/affected.py, tools/reach-diff.py; names _actions, _bindings, _counting, _follower_cases): still correct. No stage, block label or case id changed, ta9 keeps its id and block, and the named helpers are untouched. PLUGIN-BUILD-GUIDE.md dependants (evals.json, case.yaml files, _doctor_hygiene.py, test__affected_tests, test__deps, test__doctor_trail, test__help; basename references): still correct. One sentence was added inside an existing paragraph, with no heading, tree line or section added or renamed, and the doc prose lint is clean. The other read_provenance callers (drive-phase.py around 5380, 6213 and 6647, run-test-gate, integrate-task, manage-worktrees, _worktrees) carry the basis whole rather than clipped. The one clipped site was remove_task_tree's, now fixed.",
+        "descriptive": "A kept task tree's refusal now names the task its marker records before the clipped basis, so ta9 passes under a long TMPDIR and is now red on the unfixed code at any TMPDIR."
       },
       "startedAt": "2026-11-02T13:45:48Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-02T14:05:48Z",
+      "verifiedBy": [
+        "No new case. ta9 was tightened to require 'its marker names P1.9, not P1.1 (' in the kept did-line, which locks the corrected wording regardless of TMPDIR length"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-11-02T14:04:16Z.e3d197",
         "status": "passed",
         "at": "2026-11-02T14:04:16Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "9ceb35980ef9",
+        "at": "2026-11-02T14:05:48Z",
+        "return": "docs/audit/evidence/returns/P155.16-gfj/20261102T134548Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "could-not-prove",
+        "basis": "The helper (stamp-verification.py red --derive-introduces -- python3 tests/test_drive_phase.py --selftest, run over this task's tree) printed: `python3 tests/test_drive_phase.py --selftest` in a throwaway tree at HEAD exited 1 with failing cases ta9 (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 792/793 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases. HEAD here is the unfixed base, and HEAD's red ta9 is the defect this task fixes, so no green baseline exists until the fix is committed. A red was watched outside the helper, in scratch git-archive exports of HEAD (never the shared tree): with the tightened ta9 and an ordinary TMPDIR, `--stage ta-block` gave exit 1, 27/28, ta9 FAIL ('its marker does not name P1.1 (...)') on HEAD's drive-phase.py, and exit 0, 28/28 with the fixed one.",
+        "at": "2026-11-02T13:53:16Z"
       }
     }
   ],

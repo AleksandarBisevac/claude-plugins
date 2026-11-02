@@ -178,7 +178,7 @@ claude-plugins/                           # this repo (personal, public)
           _journal_io.py                  # the audit trail: row shape, hash chain, read/append/verify
           _evidence_io.py                 # the test-evidence record: where it lives, what a row may say, and the chain over it
           _gate_derive.py                 # the gate helpers' one home (is_shared_key/path_scoped_sibling/repointed) and a pure derive() for a phase's sign-off gate
-          _affected_tests.py              # which suites a task's change can break, by arm (related listing, Python imports, e2e listing, e2e widening) - pure; run-test-gate adds them to a task's run
+          _affected_tests.py              # which suites a task's change can break, by arm (related listing, Python imports, tree walks, e2e listing, e2e widening) - pure; run-test-gate adds them to a task's run
           audit-journal.py                # the CLI over both records: append/verify/show/archive, plus merge and sessions
           _invariants.py                  # the orchestrator's rules, re-derived from git + shard + journal + ledger
           verify-invariants.py            # the CLI over it: one phase or --all, breach = exit 1
@@ -3867,15 +3867,33 @@ task (`--task`, not `--own`), now runs the task's own gate plus what this module
 selects. The phase's sign-off gate is unchanged, so the wide gate still runs
 once per phase.
 
-`select(changed, meta, facts, exclude)` walks five arms in order: the recorded
-related listing (`meta.phaseGate.derived.listing.related`, under the same two
-version checks `_gate_derive` applies to it); a stdlib `ast` import graph from
+`select(changed, meta, facts, exclude)` walks the arms `ARMS` names, in order: the
+recorded related listing (`meta.phaseGate.derived.listing.related`, under the same
+two version checks `_gate_derive` applies to it); a stdlib `ast` import graph from
 Python test files to the changed modules, reading packages, relative imports,
-bare-basename imports and a script handed to a call by its `.py` name; the e2e
-runner's changed listing (`listing.e2eChanged`); `meta.coupling` entries whose
-sources overlap the change; and, when the project has e2e specs and no recorded
-listing sees them, every spec. `changed_paths()` reads `git diff --name-status
--z -M`, so a rename counts as both its paths and a deletion as its old one.
+bare-basename imports and a script handed to a call by its `.py` name; the tree
+walks (`walk`), which for a changed suite select every runner whose cases walk a
+directory holding it; the e2e runner's changed listing (`listing.e2eChanged`);
+and, when the project has e2e specs and no recorded listing sees them, every spec.
+`meta.coupling` is not an arm: a selection with it equals one without it.
+`changed_paths()` reads `git diff --name-status -z -M`, so a rename counts as both
+its paths and a deletion as its old one.
+
+The walk arm exists because a lint reads every file under the directory it walks,
+so a suite edited there turns the lint red through no import, and a task gated on
+the suite alone went green over it. A runner is a Python test named as one, or a
+`.py` the recorded all-runners listing (`listing.all`) names; when that listing is
+recorded and cannot answer, the arm widens. What a runner walks is read off its
+code: a call that lists a directory (`os.walk`, `os.listdir`, `os.scandir`,
+`glob.glob`, a path's `rglob`/`iterdir`) or a project function that makes one,
+followed through modules and parameters, with the directory evaluated from
+literals, `__file__` and the path calls that build it. A directory computed any
+other way is left out rather than guessed - its comment above `_WALK_CALLS` lists
+what it cannot see - and the phase gate still runs every runner a task's gate
+leaves out. A suite the task's gate already runs is not added again, and what it
+runs (`gate_runs()`) is the paths its entries hand their program, never the
+program a path-scoped call names: `tools/sweep-selftests.py` handed `tests/x.py`
+does not run the sweep's own cases, so a sweep that walks `tests/` still joins.
 
 It is PURE: the caller gathers every observation once. And it widens rather than
 returning an empty selection: a listing that exits non-zero, a version mismatch,
@@ -3890,7 +3908,12 @@ own declared gate, because the affected steps are measured, not declared. A task
 whose gate already carries every phase-gate entry adds nothing, and a step whose
 command, with its suite paths taken out, is a declared entry's command is left
 out and said (`left_to_run()`): that entry is the same runner unscoped, so it
-already runs those suites.
+already runs those suites. The same comparison settles a test-support widening
+(`steps_for()`): when the support paths, spelled in the selection's spelling with
+those paths taken out, are a declared entry's command, that entry runs every suite
+the support file can reach, so no phase-gate step joins and the line names the
+entry. A path-scoped entry, the same runner with an option, or another key leaves
+the widening standing.
 
 ### `plugins/audit/scripts/governance/verify-invariants.py`
 The CLI over it: `verify-invariants.py <manifest> <phaseId>`, or `--all` for every phase that

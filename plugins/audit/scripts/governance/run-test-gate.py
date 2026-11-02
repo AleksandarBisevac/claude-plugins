@@ -2569,13 +2569,20 @@ def _affected_facts(tree, meta, changed):
     templates = _affected.listing_templates(meta)
     gate = meta.get("phaseGate") if isinstance(meta.get("phaseGate"), dict) else {}
     derived = gate.get("derived") if isinstance(gate.get("derived"), dict) else {}
-    if "related" in templates:
+    # The all-runners listing is asked only when a suite changed: it is what
+    # the walk arm reads its runners from, and nothing else here reads it.
+    edited = _affected.changed_suites(changed)
+    every = _affected.all_template(meta) if edited else None
+    if "related" in templates or every:
         facts.update(_gate_derive.version_facts(
             derived, lambda cmd: run(cmd, AFFECTED_GIT_TIMEOUT_SECONDS)))
     for key, template in sorted(templates.items()):
         command = _gate_derive.listing_command(template, changed)
         facts[key] = dict(_gate_derive.listing_fact(
             run(command, AFFECTED_LISTING_TIMEOUT_SECONDS)), command=command)
+    if every:
+        facts["all"] = dict(_gate_derive.listing_fact(
+            run(every, AFFECTED_LISTING_TIMEOUT_SECONDS)), command=every)
     listed = _git_text(tree, ["ls-files", "-z", "--cached", "--others",
                               "--exclude-standard"])
     # Printed from its cwd, `tree`, which stands where the project does - the
@@ -2584,7 +2591,10 @@ def _affected_facts(tree, meta, changed):
     files = [hc.git_to_plan(p, tree, tree, cwd=tree)
              for p in (listed or "").split("\0") if p]
     facts["suites"] = [p for p in files if _phases.is_suite_path(p)]
-    if any(p.endswith(".py") for p in changed) and listed is not None:
+    # A changed suite is read for the walk arm whatever its language: the
+    # lints that walk it are Python whether or not it is.
+    if (edited or any(p.endswith(".py") for p in changed)) \
+            and listed is not None:
         sources = {}
         for path in files:
             if not path.endswith(".py"):
@@ -2604,8 +2614,9 @@ def affected_steps(tree, own_tree, manifest, phase_id, task_id, commands,
     """`(steps, published, info)` - the steps that join a task's measured run,
     the manifest-published commands among them, and `{lines, suites, widen}`
     saying why. Nothing joins a gate that already carries the phase's wide one,
-    and no step joins whose suites a declared entry already runs unscoped
-    (`_affected_tests.left_to_run`). `records` is `member_records`' answer,
+    no step joins whose suites a declared entry already runs unscoped, and a
+    test-support change that entry covers does not widen to the phase gate
+    (`_affected_tests.steps_for`). `records` is `member_records`' answer,
     git-root-relative, left out of what a task's own tree changed."""
     meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
     build = meta.get("buildCommands")
@@ -2627,18 +2638,10 @@ def affected_steps(tree, own_tree, manifest, phase_id, task_id, commands,
         info = {"suites": [], "lines": [],
                 "widen": "%s - the task's gate widens to the phase gate" % (why,)}
     else:
-        own = [p for e in names for p in _phases.gate_entry_paths(e)]
+        own = _affected.gate_runs(names)
         facts = _affected_facts(tree, meta, changed) if changed else {}
         info = _affected.select(changed, meta, facts, exclude=own)
-    steps = []
-    if info["widen"] is None and info["suites"]:
-        steps, why = _affected.entries_for(info["suites"], phase, meta, tree)
-        if why:
-            info = dict(info, widen=why)
-        else:
-            steps, left, said = _affected.left_to_run(steps, info["suites"],
-                                                      names, build)
-            info = dict(info, suites=left, lines=list(info["lines"]) + said)
+    steps, info = _affected.steps_for(info, phase, meta, tree, names)
     if info["widen"] is None:
         return steps, [], info
     wide, _left = split_not_commands(

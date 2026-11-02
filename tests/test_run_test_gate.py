@@ -10084,6 +10084,12 @@ def _affected_scope_cases(check):
                   "tests": {"mode": "regression", "gate": [own]}},
                  {"id": "P1.3", "title": "odd path", "status": "in_progress",
                   "files": ["assets/logo.svg"],
+                  "tests": {"mode": "regression", "gate": [own]}},
+                 {"id": "P1.4", "title": "support, swept", "status": "in_progress",
+                  "files": ["tests/_harness.py"],
+                  "tests": {"mode": "regression", "gate": ["selftests"]}},
+                 {"id": "P1.5", "title": "support, narrow",
+                  "status": "in_progress", "files": ["tests/_harness.py"],
                   "tests": {"mode": "regression", "gate": [own]}}]}
     with open(os.path.join(root, "docs", "audit", "phases", "P1.json"),
               "w") as fh:
@@ -10101,7 +10107,7 @@ def _affected_scope_cases(check):
             ("pkg/__init__.py", ""), ("pkg/core.py", "X = 1\n"),
             ("tests/test_core.py", reach + "import pkg.core\n"),
             ("tests/test_other.py", "pass\n"), ("tests/test_own.py", "pass\n"),
-            ("assets/logo.svg", "<svg/>\n")):
+            ("assets/logo.svg", "<svg/>\n"), ("tests/_harness.py", "X = 1\n")):
         with open(os.path.join(root, rel), "w") as fh:
             fh.write(body)
     _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
@@ -10173,6 +10179,48 @@ def _affected_scope_cases(check):
           names == [own, "affected/phase-gate: selftests",
                     "affected/phase-gate: lint"]
           and any("assets/logo.svg" in ln and "phase gate" in ln
+                  for ln in lines))
+
+    # A test-support change no arm selects widens - unless the task's gate
+    # already holds the unscoped sweep, which runs every suite leaning on it.
+    with open(os.path.join(root, "tests", "_harness.py"), "w") as fh:
+        fh.write("X = 2\n")
+    code, lines, row, names = run("P1.4")
+    check("as6 a gate of [selftests] with only tests/_harness.py changed adds "
+          "NO phase-gate step, and the line says which declared key covers "
+          "it: exit=%r steps=%r lines=%r"
+          % (code, names, [ln for ln in lines if "_harness" in ln]),
+          code == M.E_OK and names == ["selftests"]
+          and any("tests/_harness.py" in ln and "selftests" in ln
+                  for ln in lines))
+    code, lines, row, names = run("P1.5")
+    check("as7 ...while a narrow path-scoped gate with the same change still "
+          "widens to the phase gate: exit=%r steps=%r" % (code, names),
+          names == [own, "affected/phase-gate: selftests",
+                    "affected/phase-gate: lint"]
+          and any("tests/_harness.py" in ln and "phase gate" in ln
+                  for ln in lines))
+
+    # The fake sweep globs tests/ for its suites, so it walks the directory a
+    # suite is edited in. With the plan's all-runners listing naming it, a task
+    # editing the suite its own gate runs measures the sweep's cases beside it -
+    # though that gate names the sweep, as the program it hands the suite to.
+    plan["meta"]["phaseGate"]["derived"]["listing"] = {
+        "all": "printf '%s\\n' tools/sweep.py tests/test_core.py "
+               "tests/test_other.py tests/test_own.py"}
+    with open(mpath, "w") as fh:
+        json.dump(plan, fh)
+    with open(os.path.join(root, "tests", "test_own.py"), "w") as fh:
+        fh.write("pass  # edited\n")
+    code, lines, row, names = run("P1.2")
+    check("as8 a task editing the suite its own gate runs gets the runner whose "
+          "walk covers that suite, read off the plan's all-runners listing and "
+          "the runner's own code, recorded under the walk arm: exit=%r steps=%r "
+          "lines=%r" % (code, names, [ln for ln in lines if "walk" in ln]),
+          code == M.E_OK
+          and names == [own, "affected/python: tests/test_core.py",
+                        "affected/walk: tools/sweep.py"]
+          and any("tools/sweep.py" in ln and "tests/test_own.py" in ln
                   for ln in lines))
 
 

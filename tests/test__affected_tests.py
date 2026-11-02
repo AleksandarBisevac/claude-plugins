@@ -2,11 +2,11 @@
 """
 The cases for `_affected_tests.py` -- which suites a task's change can break.
 
-Every case but two builds its `facts` BY HAND: the module is pure, so a related
-listing's answer, the Python sources and the tree's suite files are dicts and
-strings here, never a subprocess or a checkout. The two are `_dogfood_cases`,
-whose claim is about this repository's own listing and plan, so they read
-both. `af`-prefixed cases.
+Every case outside `_dogfood_cases` builds its `facts` BY HAND: the module is
+pure, so a related listing's answer, the Python sources and the tree's suite
+files are dicts and strings here, never a subprocess or a checkout. The cases in
+`_dogfood_cases` make claims about this repository's own listings, sources and
+plan, so they read them. `af`-prefixed cases.
 
 The four headline cases are the four ways the selection has to be right: a
 recorded listing naming the test a move broke (the testbed's own regression),
@@ -339,13 +339,16 @@ def _cases(check):
           % ([answered["widen"]] + [r["widen"] for r in read],),
           answered["widen"] is None and all(r["widen"] is None for r in read))
 
+    _walk_cases(check)
+    _support_cases(check)
     _dogfood_cases(check)
 
     # ARMS carries machine ids, not human labels, so the guide's wording for
     # each id is mapped here; an arm with no entry fails by name rather than
     # being skipped, and a guide phrase with no arm behind it fails too.
     labels = {"related": "related listing", "python": "Python imports",
-              "e2e-changed": "e2e listing", "e2e-widening": "e2e widening"}
+              "walk": "tree walks", "e2e-changed": "e2e listing",
+              "e2e-widening": "e2e widening"}
     unmapped = [a for a in M.ARMS if a not in labels]
     guide_path = os.path.join(_output.REPO_ROOT, "PLUGIN-BUILD-GUIDE.md")
     with open(guide_path, encoding="utf-8") as fh:
@@ -359,6 +362,199 @@ def _cases(check):
           "(tree lines %d, documented %r, ARMS %r, unmapped %r)"
           % (len(lines), documented, wanted, unmapped),
           not unmapped and documented == wanted)
+
+
+# A lint is a runner whose cases walk a directory and read every file under it,
+# so a suite edited under that directory can turn it red without being named by
+# any import. The fixture's walks reach their directory every way the real
+# lints do: through a shared walk in another module, handed a constant anchored
+# on that module's own file; through a local function whose parameter is the
+# walked directory; and through a lint module whose function walks a fixed root.
+_WALK_SOURCES = {
+    "scripts/_out.py": (
+        "import os\n"
+        "HERE = os.path.dirname(os.path.abspath(__file__))\n"
+        "ROOT = os.path.dirname(HERE)\n"
+        "TESTS = os.path.join(ROOT, 'tests')\n"
+        "SRC = os.path.join(ROOT, 'scripts')\n"
+        "def files(directory):\n"
+        "    found = []\n"
+        "    for top, _dirs, names in os.walk(directory):\n"
+        "        found.extend(names)\n"
+        "    return found\n"),
+    "tools/lints/_lint.py": (  # refs: fixture
+        "import _out\n"
+        "def everything():\n"
+        "    return _out.files(_out.ROOT)\n"),
+    # tools/_suite.py's own shape: a removal lint over TESTS_DIR, reached
+    # through a parameter, with a fallback spelled as a conditional. The
+    # fallback walks scripts/, so only the parameter route reaches tests/.
+    "tools/_suite.py": (
+        "import os\n"
+        "import _out\n"
+        "_HERE = os.path.dirname(os.path.abspath(__file__))\n"
+        "TESTS_DIR = os.path.join(os.path.dirname(_HERE), 'tests')\n"
+        "def removals(root=None):\n"
+        "    top = root if root is not None else _out.SRC\n"
+        "    return [n for n in _out.files(top)]\n"
+        "def _cases(check):\n"
+        "    check('s1', removals(TESTS_DIR) == [])\n"),
+    # tools/lints/_refs.py's shape: a table of surfaces, each joined onto a
+    # root handed in, the separator swapped for the platform's, and walked.
+    "tools/lints/_surf.py": (  # refs: fixture
+        "import os\n"
+        "import _out\n"
+        "SURFACES = (('docs', 1), ('tests', 2))\n"
+        "def _surface_files(root, surface):\n"
+        "    path = os.path.join(root, surface.replace('/', os.sep))\n"
+        "    return [n for _t, _d, n in os.walk(path)]\n"
+        "def scanned(root=None):\n"
+        "    top = root if root is not None else _out.ROOT\n"
+        "    found = []\n"
+        "    for surface, _mode in SURFACES:\n"
+        "        found.extend(_surface_files(top, surface))\n"
+        "    return found\n"),
+    "tests/test_surf.py": (
+        "import _surf\n"
+        "def _cases(check):\n"
+        "    check('r1', _surf.scanned() == [])\n"),
+    "tools/_other.py": (
+        "import _out\n"
+        "def _cases(check):\n"
+        "    check('o1', _out.files(_out.SRC) == [])\n"),
+    # Walks a scratch directory and a directory read off a bare file name, and
+    # holds the word `tests` in a literal: none of the three is the tree.
+    "tests/test_tmp.py": (
+        "import os, tempfile\n"
+        "WHERE = 'tests'\n"
+        "def _cases(check):\n"
+        "    check('t1', os.listdir(tempfile.mkdtemp()) == [])\n"
+        "    check('t2', os.listdir(os.path.dirname('plan.json')) != [])\n"),
+    "tests/test_lint.py": (
+        "import _lint\n"
+        "def _cases(check):\n"
+        "    check('l1', _lint.everything() == [])\n"),
+    "tests/test_x.py": "pass\n",
+    "e2e/a.spec.ts": "",
+}
+_WALK_RUNNERS = ["e2e/a.spec.ts", "tests/test_lint.py", "tests/test_surf.py",
+                 "tests/test_tmp.py", "tests/test_x.py", "tools/_other.py",
+                 "tools/_suite.py"]
+
+
+def _walk_facts(**extra):
+    facts = {"versionAnswer": "vitest/3.2.4",
+             "pySources": dict((k, v) for k, v in _WALK_SOURCES.items()
+                               if k.endswith(".py")),
+             "all": {"command": "list-all", "exit": 0,
+                     "paths": list(_WALK_RUNNERS)}}
+    facts.update(extra)
+    return facts
+
+
+def _walk_cases(check):
+    """A task editing a suite gets every runner whose walk covers it."""
+    meta = _meta(listing={"all": "list-all"})
+    res = M.select(["tests/test_x.py"], meta, _walk_facts(),
+                   exclude=["tests/test_x.py"])
+    walked = [(s["path"], s["basis"]) for s in res["suites"]
+              if s["arm"] == "walk"]
+    check("af30 A TASK EDITING A SUITE GETS EVERY LINT WHOSE WALK COVERS IT: a "
+          "change to tests/test_x.py, which the task's own gate already runs, "
+          "selects tools/_suite.py (a removal lint over tests/, reached through "
+          "a parameter), tests/test_lint.py (a lint module walking the whole "
+          "tree) and tests/test_surf.py (a table of surfaces joined onto a root "
+          "handed in) under the walk arm, each basis naming the directory "
+          "walked and the edited suite - and neither the runner walking only "
+          "scripts/ nor the one walking a scratch directory: %r / widen %r"
+          % (walked, res["widen"]),
+          res["widen"] is None
+          and [p for p, _b in walked] == ["tests/test_lint.py",
+                                          "tests/test_surf.py",
+                                          "tools/_suite.py"]
+          and all("tests/test_x.py" in b for _p, b in walked)
+          and "walk tests, which holds" in dict(walked)["tools/_suite.py"]
+          and "the project root" in dict(walked)["tests/test_lint.py"])
+    # The other direction: a version that walked every runner would pass af30
+    # on the whole-tree lint alone. A suite outside tests/ is walked by the
+    # whole-tree lint and NOT by the removal lint over tests/.
+    spec = M.select(["e2e/a.spec.ts"], meta, _walk_facts(),
+                    exclude=["e2e/a.spec.ts"])
+    check("af31 ...and the walk read is the directory, not the runner: a spec "
+          "outside tests/ selects the whole-tree lint and not the lint over "
+          "tests/; a change to app source selects no walker at all: %r / %r"
+          % (_suites(spec),
+             _suites(M.select(["scripts/_out.py"], meta, _walk_facts()))),
+          [p for p, arm in _suites(spec) if arm == "walk"]
+          == ["tests/test_lint.py"]
+          and not [p for p, arm in _suites(M.select(["scripts/_out.py"], meta,
+                                                     _walk_facts()))
+                   if arm == "walk"])
+    runs = M.gate_runs(["python3 tools/_suite.py tests/test_x.py",
+                        "python3 tests/test_lint.py --selftest", "lint",
+                        "python3 a.py && python3 tools/_other.py tests/test_tmp.py"])
+    check("af37 what a task's gate runs is the suites its entries hand their "
+          "program, and a path an entry runs alone - never the program a "
+          "path-scoped call names, whose own cases that call does not run: %r"
+          % (runs,),
+          runs == ["tests/test_x.py", "tests/test_lint.py", "a.py",
+                   "tests/test_tmp.py"])
+    failed = M.select(["tests/test_x.py"], meta,
+                      _walk_facts(all={"command": "list-all", "exit": 3,
+                                       "paths": []}),
+                      exclude=["tests/test_x.py"])
+    check("af32 a recorded all-runners listing that could not answer widens, "
+          "naming it - a walker it would have named is not silently dropped: "
+          "%r" % (failed["widen"],),
+          failed["suites"] == [] and "exited 3" in (failed["widen"] or "")
+          and "walk" in (failed["widen"] or ""))
+
+
+def _support_cases(check):
+    """A test-support change is covered by a declared unscoped sweep."""
+    sweep = "python3 tools/sweep.py"
+    meta = {"buildCommands": {"selftests": sweep, "lint": "ruff check .",
+                              "fast": sweep + " --fast"},
+            "phaseGate": {"derived": {"spelling": sweep + " {paths}"}}}
+    phase = {"id": "P1", "tasks": []}
+    facts = {"pySources": {"tests/_harness.py": "X = 1\n",
+                           "tests/test_a.py": "import os\n"}}
+    info = M.select(["tests/_harness.py"], meta, facts)
+    steps, settled = M.steps_for(info, phase, meta, ".", ["selftests"])
+    check("af33 GATE [selftests] WITH ONLY tests/_harness.py CHANGED ADDS NO "
+          "PHASE-GATE STEP and names the covering key: the support widening "
+          "is satisfied by the declared entry whose command is the spelling "
+          "with its paths taken out - the same word comparison left_to_run "
+          "makes: widen before %r, steps %r, widen after %r, lines %r"
+          % (info["widen"], steps, settled["widen"], settled["lines"]),
+          info["widen"] is not None and steps == []
+          and settled["widen"] is None
+          and any("selftests" in ln and "tests/_harness.py" in ln
+                  and sweep in ln for ln in settled["lines"]))
+    # The other direction: a version that read any declared key, or any call
+    # of the same runner, as covering would pass af33.
+    for gate in (["python3 tools/sweep.py tests/test_own.py"], ["fast"],
+                 ["lint"]):
+        steps, kept = M.steps_for(info, phase, meta, ".", gate)
+        check("af34 a narrow path-scoped gate, the same runner with an "
+              "option, and an unrelated key (%r) with the same change STILL "
+              "WIDEN to the phase gate: steps %r widen %r"
+              % (gate, steps, kept["widen"]),
+              steps == [] and kept["widen"] == info["widen"])
+    # A support change beside a selected suite: the covering sweep runs that
+    # suite too, so nothing joins, and each step left out is said.
+    both = M.select(["tests/_harness.py", "pkg/core.py"], meta,
+                    {"pySources": dict(facts["pySources"], **{
+                        "pkg/core.py": "X = 1\n",
+                        "tests/test_core.py": "import pkg.core\n"})})
+    steps, settled = M.steps_for(both, phase, meta, ".", ["selftests"])
+    check("af35 ...and a suite an arm selected beside the support change is "
+          "run by the same covering entry, so no step joins and its line is "
+          "said: steps %r widen %r lines %r"
+          % (steps, settled["widen"], settled["lines"]),
+          steps == [] and settled["widen"] is None
+          and any("tests/test_core.py" in ln and "selftests" in ln
+                  for ln in settled["lines"]))
 
 
 def _tool_module(name, filename):
@@ -415,7 +611,8 @@ def _dogfood_cases(check):
     by_edge = set(selector.reached_by(graph, leaf)) | set(
         s["path"] for s in res["suites"] if s["arm"] == "python")
     blanket = sorted(set(scanner_suites) - by_edge)
-    check("af27 THE PER-TASK SELECTION EXCLUDES THE TREE SCANNERS: this plan's "
+    check("af27 FOR A CHANGED MODULE THE PER-TASK SELECTION EXCLUDES THE TREE "
+          "SCANNERS (a changed SUITE is af36's): this plan's "
           "related listing for one changed module, read through select(), "
           "names the module's own suite and no suite that walks the whole tree "
           "unless it reaches the module by an edge. Blanket scanners selected %r "
@@ -488,6 +685,49 @@ def _dogfood_cases(check):
           % (leaf, len(leaf_blanket), blanket_tools,
              sorted(set(listed) & leaf_blanket)),
           blanket_tools and not set(listed) & leaf_blanket)
+
+    # The class that turned main red: a task gated on the one suite it edited,
+    # and tools/_suite.py's removal lint over tests/ convicted that suite. The
+    # runners come from this plan's own all-runners listing and the walks from
+    # this tree's sources - nothing here names the lint but the assertion.
+    edited = "tests/test_stamp_verification.py"
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        all_exit = selector.main(["--list-all"])
+    runners = [ln.strip() for ln in out.getvalue().splitlines() if ln.strip()]
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        edited_exit = selector.main(["--list-related", edited])
+    walk_res = M.select([edited], meta, dict(facts, related={
+        "command": template.replace("{paths}", edited), "exit": edited_exit,
+        "paths": [ln.strip() for ln in out.getvalue().splitlines()
+                  if ln.strip()]}, all={
+        "command": M.all_template(meta), "exit": all_exit, "paths": runners}),
+        exclude=[edited])
+    walkers = sorted(s["path"] for s in walk_res["suites"]
+                     if s["arm"] == "walk")
+    # A runner another arm selected first keeps that arm; it is selected all
+    # the same, and its walk is asked of the reading directly. The reference
+    # lint also lists the suites directory by a plain join, so `tests` alone
+    # would stay green with its surfaces table unread; `tools` is a surface
+    # reached only through that table, its separator swap and the join of two
+    # parameters filled at the call - the reading this case is about.
+    walk_index = M._walk_index(M._parsed(sources))
+    refs_walk = sorted(M.runner_walks("tests/test__refs.py", walk_index))
+    check("af36 THIS PLAN'S TASK EDITING A SUITE GETS tools/_suite.py: a change "
+          "to %s, gated on that suite alone, selects the removal lint over "
+          "tests/ and the reference lint's surfaces walk under the walk arm, and "
+          "not tests/test__worktrees.py, whose walk is the scripts directory; "
+          "all-runners listing exit %r over %d runners, walkers %r, selected "
+          "%r, the reference lint walks %r, widen %r"
+          % (edited, all_exit, len(runners), walkers,
+             [(s["path"], s["arm"]) for s in walk_res["suites"]], refs_walk,
+             walk_res["widen"]),
+          all_exit == 0 and walk_res["widen"] is None
+          and "tools/_suite.py" in walkers
+          and "tests" in refs_walk and "tools" in refs_walk
+          and "tests/test__refs.py" in [s["path"] for s in walk_res["suites"]]
+          and "tests/test__worktrees.py" not in walkers)
 
     # The phase gate's half: every phase still to sign off carries an entry whose
     # command is the plan's own path-scoped spelling with the paths taken out - the
