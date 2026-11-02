@@ -52,6 +52,14 @@ prepare-then-publish sequence publishes on its second run instead of finding
 every remote step already "done" and printing a success over nothing. A run
 that skipped any remote step ends saying it published nothing, not COMPLETE.
 
+ONE DEFAULT STATE FILE, AND A FINISHED RUN IN IT IS HISTORY. With no
+`--state`, every version shares `.claude/state/release-run.json`, because a
+resume typed with no `--version` reads the version back out of it. A run of
+another version found there with every step `done` is moved aside to
+`release-run-<its version>.json` and the new version starts fresh, saying so
+in one line (`set_aside_finished`). One not finished - a release prepared
+without `--push` included - still refuses, naming the version it tracks.
+
 EVERY REMOTE STEP IS NAMED BEFORE IT RUNS: the step's own name is printed as
 it starts, so a run watched live names what is about to touch a remote before
 it does.
@@ -244,6 +252,54 @@ def save_state(path, state):
 
 def step_done(state, name):
     return (state.get("steps", {}).get(name) or {}).get("status") == "done"
+
+
+def run_finished(state):
+    """Every step `done`. A run without `--push` records its remote steps
+    `skipped`, so a release prepared and never published is not finished:
+    it is a run still in flight, and the refusal over another version keeps
+    holding it."""
+    return all(step_done(state, name) for name in STEPS)
+
+
+_VERSION_TOKEN = re.compile(r"^[0-9A-Za-z][0-9A-Za-z.+-]*$")
+
+
+def set_aside_finished(state_path, state, version):
+    """`(state, line)` for a run asked of the DEFAULT state file.
+
+    The default path is one name shared by every version, because a resume
+    typed with no `--version` reads the version back out of it. So a finished
+    run of another version sitting there is history, not a release to
+    resume: it is moved beside itself as `release-run-<its version>.json` and
+    the run starts from an empty state, with `line` saying so. Anything else
+    - the same version, no recorded version, a run not finished - comes back
+    unchanged with `line` None, and `run_pipeline`'s version check decides.
+    A record that cannot be moved without overwriting another, or that names
+    a version unfit for a file name, is left where it is and `line` says
+    why, so the refusal that follows is not the only thing printed."""
+    old = state.get("version")
+    if not version or not old or old == version or not run_finished(state):
+        return state, None
+    if not _VERSION_TOKEN.match(str(old)):
+        return state, ("the finished run at %s records version %r, which is "
+                       "not usable in a file name, so it was not set aside"
+                       % (state_path, old))
+    folder, name = os.path.split(state_path)
+    stem, ext = os.path.splitext(name)
+    archive = os.path.join(folder, "%s-%s%s" % (stem, old, ext))
+    if os.path.exists(archive):
+        return state, ("the finished %s run at %s was not set aside: %s "
+                       "already exists" % (old, state_path, archive))
+    try:
+        os.replace(state_path, archive)
+    except OSError as exc:
+        return state, ("the finished %s run at %s could not be set aside: %s"
+                       % (old, state_path, exc))
+    return {"steps": {}}, ("the state file at %s held release %s, finished "
+                           "(every step done) - kept as history at %s; this "
+                           "run starts fresh for %s"
+                           % (state_path, old, archive, version))
 
 
 def mark(state, name, status, detail):
@@ -725,6 +781,10 @@ def cmd_run(argv, repo=None, runner=None, out=None):
         return 2
     state_path = parsed["state"] or default_state_path(repo)
     state = load_state(state_path)
+    if not parsed["state"]:
+        state, line = set_aside_finished(state_path, state, parsed["version"])
+        if line:
+            (out if out is not None else sys.stdout).write(line + "\n")
     version = parsed["version"] or state.get("version")
     if not version:
         sys.stderr.write("release.py: --version is required for a first "
@@ -983,6 +1043,21 @@ def _fixture_repo(bugs=None, meta=None, phases=None):
     with io.open(os.path.join(root, README_REL), "w", encoding="utf-8") as fh:
         fh.write("curl -fsSL https://.../claude-plugins/v1.0.0/x.sh\n")
     return root
+
+
+def _seed_state(path, version, skipped):
+    """Write a state file for `version` with every step `done` except those
+    in `skipped`, recorded `skipped` as a run without --push leaves them;
+    returns the text written, for a byte-for-byte comparison later."""
+    state = {"steps": {}, "version": version, "oldVersion": "3.4.0"}
+    for name in STEPS:
+        mark(state, name, "skipped" if name in skipped else "done",
+             "fixture: %s" % (version,))
+    folder = os.path.dirname(path)
+    if not os.path.isdir(folder):
+        os.makedirs(folder)
+    _write_text(path, json.dumps(state, indent=2))
+    return _read_text(path)
 
 
 def _cases(check):
@@ -1848,6 +1923,84 @@ def _cases(check):
                          else (0, "cafef00d\n")),
                      poll_interval=0, ci_timeout=2),
               "audit/some-branch")[1]))
+
+    # --- a finished run of another version is history, not a run to resume -----
+    tmp = _fixture_repo()
+    try:
+        old_path = os.path.join(tmp, DEFAULT_STATE_REL)
+        old_text = _seed_state(old_path, "3.5.0", ())
+        kept = os.path.join(os.path.dirname(old_path), "release-run-3.5.0.json")
+        runner = FakeRunner(_faithful_responses(_new_world(), "3.7.0"))
+        printed = io.StringIO()
+        code = cmd_run(["--version", "3.7.0"], repo=tmp, runner=runner,
+                       out=printed)
+        with io.open(os.path.join(tmp, PLUGIN_JSON_REL), encoding="utf-8") as fh:
+            version_after = json.load(fh).get("version")
+        history = [line for line in printed.getvalue().splitlines()
+                   if "3.5.0" in line]
+        check("rl26 a completed 3.5.0 run at the default state path and "
+              "`run --version 3.7.0` with no --state start a fresh 3.7.0 run "
+              "- bump-version reaches plugin.json - and say so in exactly one "
+              "line naming the finished 3.5.0 run: %r / %r / %s"
+              % (code, history, excerpt(printed.getvalue())),
+              code == 0 and version_after == "3.7.0" and len(history) == 1
+              and "finished" in history[0])
+        check("rl26b ...and the finished 3.5.0 record is kept byte for byte "
+              "beside it as release-run-3.5.0.json, while the default path "
+              "now tracks 3.7.0 - so a resume typed with no --version still "
+              "finds this run: %r" % (load_state(old_path).get("version"),),
+              os.path.isfile(kept) and _read_text(kept) == old_text
+              and load_state(old_path).get("version") == "3.7.0")
+    finally:
+        remove_tree(tmp)
+
+    # The second direction: a guard that set aside EVERY other-version file
+    # would pass rl26. A 3.5.0 prepared without --push (remote steps
+    # `skipped`) is a release still in flight and must keep the refusal.
+    tmp = _fixture_repo()
+    try:
+        old_path = os.path.join(tmp, DEFAULT_STATE_REL)
+        old_text = _seed_state(old_path, "3.5.0", REMOTE_STEPS)
+        runner = FakeRunner(_faithful_responses(_new_world(), "3.7.0"))
+        printed = io.StringIO()
+        code = cmd_run(["--version", "3.7.0"], repo=tmp, runner=runner,
+                       out=printed)
+        with io.open(os.path.join(tmp, PLUGIN_JSON_REL), encoding="utf-8") as fh:
+            version_after = json.load(fh).get("version")
+        check("rl26c a 3.5.0 run prepared but never published (remote steps "
+              "skipped) at the default path still refuses `run --version "
+              "3.7.0`: nothing bumped, nothing run, the file untouched and "
+              "nothing set aside: %r / %s"
+              % (code, excerpt(printed.getvalue())),
+              code == 1 and version_after == "1.0.0" and runner.calls == []
+              and _read_text(old_path) == old_text
+              and os.listdir(os.path.dirname(old_path)) == ["release-run.json"]
+              and "already tracks a release for 3.5.0" in printed.getvalue())
+    finally:
+        remove_tree(tmp)
+
+    # A history file already holding the name is never overwritten: the
+    # finished record stays at the default path, a line says why, and the
+    # version refusal stands.
+    tmp = _fixture_repo()
+    try:
+        old_path = os.path.join(tmp, DEFAULT_STATE_REL)
+        old_text = _seed_state(old_path, "3.5.0", ())
+        kept = os.path.join(os.path.dirname(old_path), "release-run-3.5.0.json")
+        _write_text(kept, "an older history file\n")
+        printed = io.StringIO()
+        code = cmd_run(["--version", "3.7.0"], repo=tmp,
+                       runner=FakeRunner(default=(0, "")), out=printed)
+        check("rl26d with release-run-3.5.0.json already present, the "
+              "finished 3.5.0 run is not moved over it: both files unchanged, "
+              "a line names the file in the way, and the run refuses: %r / %s"
+              % (code, excerpt(printed.getvalue())),
+              code == 1 and _read_text(old_path) == old_text
+              and _read_text(kept) == "an older history file\n"
+              and "was not set aside: %s already exists" % (kept,)
+              in printed.getvalue())
+    finally:
+        remove_tree(tmp)
 
     # --- parsing --------------------------------------------------------------
     check("rl6 `run` needs --version on a first invocation",

@@ -431,7 +431,7 @@
     {
       "id": "P155.6",
       "title": "scope says which gate a task now holds and never drops entries unasked; lo-po4 reads its own fixture, not the caller's checkout; task.md carries the --gate-clear caveat",
-      "status": "in_progress",
+      "status": "done",
       "description": "Closes F827, F826, P153-R6. Evidence at fa1b0c81: audit-task.py:2753 (success line prints field names), :10294-10300 (started task: --gate replaces, --gate-set/--gate-drop refused); python3 tests/test_audit_task.py --selftest --stage lo-block from the checkout -> 57/58, FAIL lo-po4 with the \"you are standing in\" warning; commands/task.md:39 and measure-context 7989/8000 - free bytes by moving a passage to verbs-in-full.md, then add \"(refused on tdd/regression; see verbs-in-full)\". vf6 derives VERB_FLAGS against the call graph: declare any new flag where it reads.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -472,29 +472,56 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "79549e8ec156",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Worked in the task worktree <home>/dev/audit-plugin/claude-plugins-P155.6 (base 2f8214c1), nothing committed. (1) audit-task.py scope: new _scope_gate_flags, _held_gate, _gate_added, _scope_gate_refusal. A `--gate` list that leaves out an entry the task holds is refused (exit 2, nothing written), naming the held list and what it would drop, unless `--replace`; new `--gate-add CMD` (repeatable, dest gate_add) appends on started and pending tasks, skipping held entries (an add of only held entries writes nothing, 'already reads that way'). `--gate-add` with any other gate flag, and `--replace` with no `--gate`, are refused. Whenever a gate flag is passed, the human success line ends `; tests.gate now holds [..]` and --json carries `gateNowHolds`. Declared where vf6 reads: VERB_FLAGS['scope'] gains gate_add and replace; parser gains --gate-add; --replace help names scope; _VERBATIM_LIST_FLAGS/_GATE_DESTS gain gate_add, so machine-path and gate-entry refusals cover it; usage block updated. The started-task --gate-set/--gate-drop refusal and both _OWED_CASE remedies now name --gate-add / --replace. (2) tests/test_audit_task.py: new gk-block (_gate_keep_cases, gk1-gk11, added to STAGES and to the header letter list). lo-block: every verb runs through one run_in that chdirs into the fixture project and restores the cwd (the hw group's verb too), the block itself stands in a git checkout it builds (caller-checkout), so a sweep run and a direct run agree, and new lo-po6 counts the other-tree warning across every verb output. Cause of F826: _panel_write.standing_elsewhere reads os.getcwd(), the warning names the fixture dir `plugin-owned-config`, and lo-po4 asserts 'plugin-owned' not in the whole text. Existing callers that meant to replace now pass --replace: sn4, gc3 (title updated), jf, fg1, fg3's call, dg4b's setup, gx1's scope --gate argvs. Removed an unused local `import io` (ruff). (3) commands/task.md: the unblock arms paragraph moved to a new `### Subcommand: unblock` section in plugins/audit/reference/verbs-in-full.md (task.md keeps when to run it plus a pointer); line 40 now reads '`--gate-clear` for none (refused on tdd/regression; see verbs-in-full);'; the scope section says --gate needs --replace to drop, --gate-add appends, and the success line prints the held gate; argument-hint gains [--replace] [--gate-add CMD]. measure-context /audit:task add went from 7989 to 7578 of 8000. verbs-in-full: scope flag list, a new paragraph on --gate keeping entries, a --replace note on the wide-gate answer and the owed-case remedy. plugins/audit/README.md: the scope cell gains the two flags and one sentence. Runs: gate command exit 0 twice (test_audit_task 1212 cases, test__refs 292, test_run_test_gate 578, tools/_suite.py 35); measure-context --gate exit 0 twice (7578/8000 both times). Dependant suites swept exit 0: test__areas, test__deps, test__filed_returns, test__journal_io, test__manifest_phases, test__manifest_vocab, test__output_lints, test_commit_task_work, tools/measure-context.py. ruff check plugins/audit tools tests: all passed; vermin 3.8 clean on the two .py files. lo-block run directly: exit 0, 59/59, from the worktree and from the main checkout. Mutation probe <scratchpad>/p1556/mutations.py <tree> (works on a copy, asserts each anchor matched once, purges pycache): both baselines green, 7 rows killed by exactly the named ids, exit 0. OUT OF DECLARED SCOPE: plugins/audit/reference/verbs-in-full.md (the declared plugins/audit/commands/verbs-in-full.md does not exist; first Edit allowed by the plan gate, later edits to it by a python replace) and plugins/audit/README.md (Edit allowed). REFUSED, NOT DONE: _manifest_phases.py:1989's wide-gate warning still tells the operator `/audit:task scope <id> --gate \"<command>\"` to narrow, and narrowing now needs --replace (the refusal it meets names --replace, so it costs one round trip). The plan gate refused the Edit verbatim: `[require-plan] plugins/audit/scripts/manifest/_manifest_phases.py is outside task P155.6, the task this worktree is bound to ... Only that task's files are open here.` Not edited. Root README.md (declared) holds no scope text and was not touched. No CHANGELOG line (not declared). Dependants: tests/test__output.py, tools/affected.py, PLUGIN-BUILD-GUIDE.md, docs/research/*, hooks/_config.py reach audit-task.py by path or basename and no symbol they name changed. Still correct. test_commit_task_work.py imports _attempt_cases/_close_evidence_cases/_remedies_pass from the suite; their signatures did not change (only _held_work_cases gained run_in, with no external caller); swept green. test__filed_returns imports _held_cases, unchanged. task.md readers (_refs.py, prove-gates vb1 pointer, run-test-gate/_journal_io/audit-status basenames, test__journal_io): the VERBATIM pointer and the 'tests.gate may be replaced outright' sentence (fg8) are kept; test__refs (tk2 hint==usage) and test__journal_io are green. verbs-in-full readers (_areas, _manifest_vocab, guide.md, execute-task.md, test__areas, test__manifest_vocab): sections were added, none renamed; suites green. prove-gates.py, _harness.py, test__affected_tests, test__doctor_trail, test_drive_phase, _deps.py, test__deps, sweep-selftests.py, stamp-verification.py, test__runner_collects, test_stamp_verification: the start-time widening declared them and they were not edited. None reads a changed symbol; test__deps is green.",
+        "descriptive": "scope --gate no longer drops held gate entries unless --replace says so, --gate-add appends, and the success line prints the gate the task now holds. lo-po4 passes from any checkout. task.md says why --gate-clear is refused on tdd/regression tasks and still fits its context ceiling."
       },
       "startedAt": "2026-11-02T09:12:07Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-02T10:08:56Z",
+      "verifiedBy": [
+        "tests/test_audit_task.py gk-block (gk1-gk11): a lone --gate refused over held entries on a pending and a started task; --gate-add appends on both; --gate --replace replaces on both; a --gate list naming every held entry lands (second direction); the F827 drop-then-gate sequence refuses and drop-then-gate-add leaves the swap; --gate-add of a held entry writes nothing; --gate-add beside another gate flag and --replace without --gate are refused; every gate flag prints `tests.gate now holds` and a call with no gate flag does not",
+        "tests/test_audit_task.py lo-block: the block stands in a checkout it builds, every verb runs from its fixture, and lo-po6 counts the other-tree warning across every verb output; lo-po4 is unchanged in its assertions and now passes when the suite is run directly from a checkout"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-11-02T10:08:52Z.5993b5",
         "status": "passed",
         "at": "2026-11-02T10:08:52Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "79549e8ec156",
+        "at": "2026-11-02T10:08:56Z",
+        "return": "docs/audit/evidence/returns/P155.6/20261102T091207Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-11-02T09:40:31Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__refs.py tests/test_run_test_gate.py tools/_suite.py` in a throwaway tree at HEAD exited 1 with failing cases sn4 (house FAIL), gc3 (house FAIL), jf1 (house FAIL), jf2 (house FAIL), jf3 (house FAIL), jf4 (house FAIL), fg1 (house FAIL), fg2 (house FAIL), fg3 (house FAIL) and 11 more, but with the working tree's implementation the task's tests do not all pass (SELFTEST FAILED: 291/292 cases passed; the sweep failed tests/test__refs.py (exited 1)), so the red is not one the fix turns green - SELFTEST FAILED: 1192/1212 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P155.7",
       "title": "release.py run --version X starts a fresh run when the default state file holds a finished run of another version",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Closes F817. Evidence at fa1b0c81: tools/release.py:103 DEFAULT_STATE_REL = .claude/state/release-run.json. Key the default by version or read a finished other-version file as absent, saying so in one line. Check whether .claude/hooks/guard-release.py reads the state file before renaming it.",
       "files": [
         "tools/release.py",
-        "CONTRIBUTING.md"
+        "CONTRIBUTING.md",
+        "tools/lints/_deps.py",
+        "tools/sweep-selftests.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "tests/test__deps.py",
+        "tests/test__runner_collects.py",
+        "tests/test_stamp_verification.py",
+        "tools/prove-gates.py",
+        "tests/_harness.py",
+        "tests/test__affected_tests.py",
+        "tests/test__doctor_trail.py",
+        "tests/test_drive_phase.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -512,21 +539,27 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-02T10:09:23Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-02T10:16:27Z.01d962",
+        "status": "passed",
+        "at": "2026-11-02T10:16:27Z"
+      }
     },
     {
       "id": "P155.8",
       "title": "submit refuses an undeclared edit while the executor is there, scope-changed reruns the gate before offering close, the redo pin is dropped on every terminal path, and the plan gate and commit-task-work read one predicate for declared",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Closes F818, F808. Evidence at fa1b0c81: drive-phase.py:9617-9780 submit compares nothing with the task's files (\"changed outside its files\" only at :541/:4437, the close-time decision); drop_redo_work (:6114) has one caller (:6278); drop_carry (:5956-5970) drops only the carry ref; accept_scope (:3105-3113) marks scopeAccepted and reruns nothing. The executor brief names the PLUGIN-BUILD-GUIDE.md section per declared module. Hooks may not import scripts/: the shared predicate lives in hooks/_config.py.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -537,7 +570,17 @@
         "tests/test_commit_task_work.py",
         "tests/test__config.py",
         "tests/test_require_plan.py",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "tests/test__affected_tests.py",
+        "tests/test__doctor_trail.py",
+        "tools/lints/_deps.py",
+        "tools/prove-gates.py",
+        "tests/_harness.py",
+        "tests/test__deps.py",
+        "tools/sweep-selftests.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "tests/test__runner_collects.py",
+        "tests/test_stamp_verification.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -561,16 +604,17 @@
         "P155.2"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-02T10:09:42Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P155.9",
