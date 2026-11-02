@@ -4549,6 +4549,20 @@ its options; an option it does not offer, or one that records a reason given non
 commit with nothing in it, a reviewer answer only a human settles, a phase with no ready task,
 and the decisions sign-off adds, below.
 
+**A task the drive can run comes before any decision that stands on the phase's tasks.**
+`runnable_tasks` - the phase's tasks `_status_facts.ready_tasks` names, or already in progress -
+is asked in two places. A decision with no task is one of sign-off's, raised only once every task
+is terminal, so `pending_still_applies` says it no longer applies while a task is runnable: the
+next `next` sets it aside with a did-line naming the task, runs that task, and asks sign-off again
+after it; an `--answer` sent to the set-aside decision is refused as answering nothing, and a task
+that cannot run - blocked, or waiting on a ref - leaves the decision printed as it was (`rf1`,
+`rf2`). A recorded wave's member that has not started is started only while it is ready
+(`step_member`, `not_ready_why`): one that gained a blocker after the wave opened is dropped from
+the wave with what it waits on, and the walk goes on with the rest (`rf8`, `rf9`). And `brief
+--role executor` writes the brief for a task in progress that no dispatch briefed - one started
+by the verb - through the call the dispatch makes, then reads it back as it reads any other
+(`run_brief`; `rf10`, `rf11`).
+
 **Sign-off is the same loop.** When every task is terminal, `sign_off` takes over from `finish`.
 The phase reviewer is dispatched (`dispatch_phase_review`, with the brief `audit-lookup.py brief
 --role phase` wrote and the head that brief names kept in the state) when a review skill
@@ -4570,7 +4584,14 @@ recorded fix task closed at a commit the head does not hold (`fixes_after`) is l
 unreviewed, with `--answer re-review` beside a `sign-off` whose summary then names it. `--answer fix --fix <id>` adds a task per finding
 through `audit-task.py add --fixes` (`add_fix_tasks`), which the drive runs like any other - under
 `review.perTask: phase` closed `not-asked` with a basis saying its own diff is unreviewed, the
-answer the landing takes from a recorded fix task - and the triage is printed again. `--answer sign-off --reason
+answer the landing takes from a recorded fix task - and the triage is printed again. `fix` is
+offered for a finding, and taken for it, only where `fix_takes` says it names no fix task yet: the
+verb refuses a second task for one that does, landed or not, so the offer and the refusal ask the
+same predicate and such a finding is offered `leave` (`rf6`, `rf7`). `--answer leave --fix <id>
+--reason <why>` keeps the findings it names open in the human's words (`LEFT_FIELD`,
+`left_now`): the triage offers them no word again and wants no round for them, and sign-off
+records each as `--accept-open` with that reason - no fix task is made only to be cancelled
+(`rf3`-`rf5`). `--answer sign-off --reason
 <summary>` runs the rest as one step (`signoff_step`): the phase gate (`derive-phase-gate.py`
 first when `meta.phaseGate.mode` is set, then `run-test-gate.py --record`), `verify-invariants.py`,
 `audit-task.py signoff --verdict passed`, the commit (`commit-task-work.py --state`, which

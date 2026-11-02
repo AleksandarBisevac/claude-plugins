@@ -777,9 +777,12 @@ DECISIONS = {
     # on (`answer_refusal`). Every decision a human can say no to takes
     # `decline`, which hands back to the work (`decline_answer`). `carry` hands
     # the open low findings to the task or bug `--to` names, recorded at
-    # sign-off: the answer the triage recommends for a low.
-    "triage": (("sign-off", "fix", "carry", "accept", "decline", "re-review"),
-               ("sign-off", "accept", "decline")),
+    # sign-off: the answer the triage recommends for a low. `leave` keeps the
+    # findings `--fix` names open with the human's reason, which sign-off
+    # records as each one's disposition - no fix task made to be cancelled.
+    "triage": (("sign-off", "fix", "carry", "leave", "accept", "decline",
+                "re-review"),
+               ("sign-off", "leave", "accept", "decline")),
     # At `review.maxRounds` with a round still wanted: `carry` hands every open
     # finding to `--to` and signs off with `--reason` as the summary;
     # `one-more-round` raises this phase's cap by one; `sign-off` accepts the
@@ -873,9 +876,11 @@ FIX_TASK_PRICE_BASIS = ("a benchmark prediction for a small task, not this "
 # is not a low one.
 CARRY_SEVERITY = "low"
 # The driver's state: which open findings a `carry` answer handed to which task
-# or bug (recorded at sign-off as `--carried`), how many phase reviews this
+# or bug (recorded at sign-off as `--carried`), which a `leave` answer kept open
+# and in whose words (recorded as `--accept-open`), how many phase reviews this
 # phase has filed, and the cap a `one-more-round` answer raised.
 CARRIED_FIELD = "carried"
+LEFT_FIELD = "leftOpen"
 ROUNDS_FIELD = "reviewRounds"
 CAP_FIELD = "roundCap"
 EXTRA_ROUNDS_FIELD = "extraRounds"
@@ -6362,8 +6367,13 @@ def close_wave(ctx, state, manifest):
 
 def step_member(ctx, state, task_id):
     """One member's due steps until it prints something or stops moving:
-    `("dispatch", instruction)`, `("parked", None)`, `("idle", None)` or
-    `("stop", stop)`."""
+    `("dispatch", instruction)`, `("parked", None)`, `("idle", None)`,
+    `("stop", stop)` or `("dropped", why)`.
+
+    A MEMBER IS STARTED ONLY WHILE IT IS READY. The wave was picked from the
+    ready tasks when it opened, and a blocker added before a member started
+    makes `start` refuse it - a stop that would hold every sibling. Such a
+    member is `dropped` with what it waits on, and runs once it is ready."""
     for _ in range(8):
         manifest, phase = load_phase(ctx)
         task = _mio.tasks_by_id(manifest).get(task_id) or {}
@@ -6381,6 +6391,9 @@ def step_member(ctx, state, task_id):
             state["wave"]["parked"].pop(task_id, None)
             write_state(ctx, state)
         if status != "in_progress":
+            waits = not_ready_why(manifest, task)
+            if waits is not None:
+                return "dropped", waits
             stop = start_task(ctx, task)
             if stop is not None:
                 return "stop", stop
@@ -6415,6 +6428,12 @@ def walk_wave(ctx, state):
             return said
         if kind == "dispatch":
             sent.append(said)
+        if kind == "dropped":
+            state["wave"]["tasks"] = [t for t in state["wave"]["tasks"]
+                                      if t != task_id]
+            write_state(ctx, state)
+            ctx["did"].append("%s dropped from wave %s, not started: %s" % (
+                task_id, state["wave"].get("id"), said))
     if sent:
         return wave_said(ctx, sent)
     manifest, _phase = load_phase(ctx)
@@ -6567,15 +6586,20 @@ def answer_refusal(ctx, pending, answer, reason, fixes=()):
             and not pending.get("config"):
         return ("no runner config file exists to widen, so --answer widen has "
                 "nothing to declare; answer block")
+    # `leave` at the triage names its findings with --fix, as `fix` does; at
+    # the not-fast-forward decision it leaves the branch unmerged and takes none.
+    triage_leave = pending["decision"] == "triage" and answer == "leave"
     if answer == "fix":
         return fix_refusal(pending, fixes)
-    elif fixes:
-        return "--fix belongs to --answer fix"
+    elif fixes and not triage_leave:
+        return "--fix belongs to --answer fix, or to a triage's --answer leave"
     if answer == "carry" and not (ctx.get("carryTo") or "").strip():
         return ("--answer carry needs --to <task or bug id>: the carried "
                 "finding is recorded as now held there")
     if answer != "carry" and ctx.get("carryTo"):
         return "--to belongs to --answer carry"
+    if triage_leave:
+        return leave_refusal(pending, fixes)
     if pending["decision"] == "triage":
         return triage_refusal(pending, answer)
     return None
@@ -6611,15 +6635,23 @@ def carry_ids(pending):
     return [f.get("id") for f in found if f.get("severity") == CARRY_SEVERITY]
 
 
+def fix_takes(finding):
+    """Whether `--answer fix` takes `finding`: it names no fix task yet. The
+    verb refuses a second task for a finding that names one - landed never, or
+    still to run - so the triage's offer (`finding_lines`, `render_triage`) and
+    its refusal (`fix_refusal`) both ask this, and one never offers what the
+    other refuses."""
+    return not finding.get("fixTask")
+
+
 def fix_refusal(pending, fixes):
     """`--answer fix` refused for the findings it names, or None. A finding
     that already names a fix task - landed never, or still to run - is open,
     but the verb refuses it a second task: it is said to name one, and to be
     dispositioned at sign-off, never to be "not open" when it is."""
     found = list(pending.get("findings") or []) + list(pending.get("handed") or [])
-    named = dict((f.get("id"), f.get("fixTask")) for f in found if f.get("fixTask"))
-    open_ids = [f.get("id") for f in pending.get("findings") or []
-                if not f.get("fixTask")]
+    named = dict((f.get("id"), f.get("fixTask")) for f in found if not fix_takes(f))
+    open_ids = [f.get("id") for f in pending.get("findings") or [] if fix_takes(f)]
     taken = [f for f in fixes if f in named]
     unknown = [f for f in fixes if f not in open_ids and f not in named]
     if fixes and not taken and not unknown:
@@ -6630,6 +6662,21 @@ def fix_refusal(pending, fixes):
              "sign-off rather than given a second" % (f, named[f]) for f in taken]
     if unknown:
         said.append("not open: %s" % (", ".join(unknown),))
+    return "; ".join(said)
+
+
+def leave_refusal(pending, fixes):
+    """A triage's `--answer leave` refused for the findings `--fix` names, or
+    None: it leaves only findings the triage offers a word on, and names at
+    least one."""
+    offered = [f.get("id") for f in pending.get("findings") or []]
+    unknown = [f for f in fixes if f not in offered]
+    if fixes and not unknown:
+        return None
+    said = ["--answer leave names the findings to leave open with --fix, from "
+            "the ones this triage offers: %s" % (", ".join(offered) or "none",)]
+    if unknown:
+        said.append("not offered here: %s" % (", ".join(unknown),))
     return "; ".join(said)
 
 
@@ -6821,6 +6868,32 @@ def parked_return_role(decision_name):
     return hit.group(1) if hit and hit.group(1) in _fr.RETURN_ROLES else None
 
 
+def runnable_tasks(manifest, phase_id):
+    """The ids of `phase_id`'s tasks the drive can run now, in plan order: ready
+    by `_status_facts.ready_tasks`, the one readiness rule, or already in
+    progress. The question every step asks before it decides anything that
+    stands on the phase's tasks - a sign-off decision, a wave member's start."""
+    ready = set(_status_facts.ready_tasks(manifest))
+    phase = next((p for p in manifest.get("phases") or []
+                  if isinstance(p, dict) and p.get("id") == phase_id), {})
+    return [t["id"] for t in _tasks(phase)
+            if t["id"] in ready or t.get("status") == "in_progress"]
+
+
+def not_ready_why(manifest, task):
+    """None when `task` is ready to start, else why not: it is not pending, or
+    the refs `_status_facts.unmet_refs` names for it or for its phase."""
+    if task.get("id") in _status_facts.ready_tasks(manifest):
+        return None
+    if task.get("status") != "pending":
+        return "it is %s, not pending" % (task.get("status") or "without a status",)
+    unmet = _status_facts.unmet_refs(manifest)
+    phase_id = next((ph.get("id") for ph, t in _mio.iter_tasks(manifest)
+                     if t.get("id") == task.get("id")), None)
+    waits = list(unmet.get(task.get("id")) or []) + list(unmet.get(phase_id) or [])
+    return "waits on %s" % (", ".join(waits) or "nothing the plan names",)
+
+
 def pending_still_applies(ctx, manifest, pending):
     """A decision about a task that was since closed, cancelled or re-started by
     hand is about a state that no longer exists - and so is a no-<role>-return
@@ -6833,8 +6906,16 @@ def pending_still_applies(ctx, manifest, pending):
     stands on the HEAD they were sorted at, and no longer applies once HEAD
     moved: the next triage sorts - and validates - them over the code as it
     is. Every path that shows a waiting decision - printed again, a member's
-    parked one, `explain` - asks here."""
+    parked one, `explain` - asks here.
+
+    A DECISION WITH NO TASK IS ONE OF SIGN-OFF'S, and sign-off is reached only
+    when every task of the phase is terminal: a task added or started since -
+    one `runnable_tasks` names - is a phase sign-off no longer stands over, so
+    the drive runs it and asks sign-off again after it. A task that cannot run
+    leaves the decision standing."""
     if not pending.get("task"):
+        if runnable_tasks(manifest, ctx["phase"]):
+            return False
         return not pending.get("noted") or pending.get("notedHead") == git_head(ctx)
     task = _mio.tasks_by_id(manifest).get(pending["task"]) or {}
     if pending["decision"] == "review-answer":
@@ -7333,9 +7414,14 @@ def render_triage(ctx, pending):
         lines.append(_clip("answer: next %s --answer carry --to <task or bug id> "
                            "(recommended for the low finding(s): %s)" % (
                                ctx["phase"], ", ".join(lows)), TRIAGE_LINE_BYTES))
+    fixable = [f.get("id") for f in found if fix_takes(f)]
+    if fixable:
+        lines.append(_clip("answer: next %s --answer fix --fix <id>[,<id>] (of: "
+                           "%s)" % (ctx["phase"], ", ".join(fixable)),
+                           TRIAGE_LINE_BYTES))
     if found:
-        lines.append("answer: next %s --answer fix --fix <id>[,<id>]" % (
-            ctx["phase"],))
+        lines.append("answer: next %s --answer leave --fix <id>[,<id>] --reason "
+                     "<why it stays open>" % (ctx["phase"],))
     if after:
         lines.append("answer: next %s --answer re-review" % (ctx["phase"],))
     if answers:
@@ -7361,13 +7447,16 @@ def finding_lines(found, pending, offer=True):
     """One line per open finding with the answers it takes - a low offers
     `carry` first, the answer the triage recommends for it; none with `offer`
     False, where the decision's own answer line is the only one - then one per
-    finding handed to a fix task still to run and one per finding a `carry`
-    answer already handed on. The options are appended after the bound, so a
-    long issue is cut and its options never are."""
+    finding handed to a fix task still to run, one per finding a `carry`
+    answer already handed on and one per finding a `leave` answer kept open.
+    `fix` is offered only where `fix_takes` says the answer takes it. The
+    options are appended after the bound, so a long issue is cut and its
+    options never are."""
     lines = []
     for f in found:
-        options = ("" if not offer else " [carry|fix|leave]"
-                   if f.get("severity") == CARRY_SEVERITY else " [fix|leave]")
+        words = ((["carry"] if f.get("severity") == CARRY_SEVERITY else [])
+                 + (["fix"] if fix_takes(f) else []) + ["leave"])
+        options = " [%s]" % ("|".join(words),) if offer else ""
         lines.append(_clip("  %s %s %s - %s" % (
             f.get("id"), f.get("severity"), f.get("file"), f.get("issue")),
             TRIAGE_LINE_BYTES - len(options)) + options)
@@ -7381,6 +7470,9 @@ def finding_lines(found, pending, offer=True):
     for f in pending.get("noted") or []:
         lines.append(_clip("  %s - a note, not a block: %s" % (f.get("id"), f.get("why")),
                            TRIAGE_LINE_BYTES))
+    for f in pending.get("left") or []:
+        lines.append(_clip("  %s - left open, recorded so at sign-off: %s"
+                           % (f.get("id"), f.get("why")), TRIAGE_LINE_BYTES))
     return lines
 
 
@@ -7486,13 +7578,26 @@ def round_wanted(still, after):
     return bool(after) or any(f.get("severity") != CARRY_SEVERITY for f in still)
 
 
-def carried_now(state, phase):
-    """`{finding id: target}` of the `carry` answers whose finding is still
-    open - a finding fixed or dispositioned since is no longer carried."""
-    held = state.get(CARRIED_FIELD) if isinstance(state.get(CARRIED_FIELD),
-                                                  dict) else {}
+def _answered_open(state, field, phase):
+    """`{finding id: value}` of the answers the state holds under `field`
+    whose finding is still open - one fixed or dispositioned since is no
+    longer answered there."""
+    held = state.get(field) if isinstance(state.get(field), dict) else {}
     open_ids = set(f.get("id") for f in open_findings(phase))
     return dict((fid, to) for fid, to in held.items() if fid in open_ids)
+
+
+def carried_now(state, phase):
+    """`{finding id: target}` of the `carry` answers whose finding is still
+    open."""
+    return _answered_open(state, CARRIED_FIELD, phase)
+
+
+def left_now(state, phase):
+    """`{finding id: the human's reason}` of the triage's `leave` answers whose
+    finding is still open: what the triage offers no word on again and
+    sign-off records as accepted open in those words."""
+    return _answered_open(state, LEFT_FIELD, phase)
 
 
 def triage(ctx, state, manifest, phase):
@@ -7544,7 +7649,9 @@ def triage(ctx, state, manifest, phase):
     still, handed = triage_findings(phase)
     carried = carried_now(state, phase)
     noted = noted_now(ctx, state, phase)
-    still = [f for f in still if f.get("id") not in carried and f.get("id") not in noted]
+    left = left_now(state, phase)
+    still = [f for f in still if f.get("id") not in carried
+             and f.get("id") not in noted and f.get("id") not in left]
     # A settlement counts for the content it was given for: an answer settled
     # by name alone is put to the human again, so its accept records the
     # signature the sign-off verb honours.
@@ -7560,6 +7667,8 @@ def triage(ctx, state, manifest, phase):
              "carried": [{"id": fid, "to": to}
                          for fid, to in sorted(carried.items())],
              "noted": [{"id": fid, "why": why} for fid, why in sorted(noted.items())]}
+    if left:
+        extra["left"] = [{"id": fid, "why": why} for fid, why in sorted(left.items())]
     if noted:
         # The notes stand on the code they were sorted over: the triage
         # showing them holds only while HEAD is that commit
@@ -8851,15 +8960,19 @@ def run_signoff(ctx, state, phase):
     # task still to run is not offered one: that task is its answer. One a
     # `carry` answer handed on is recorded as carried to the id it named. One
     # the sort left a note at this HEAD (`noted_now`) never blocked, and is
-    # recorded with its note as the reason rather than the summary's words.
+    # recorded with its note as the reason rather than the summary's words, and
+    # one a `leave` answer kept open with the reason that answer carried.
     carried = carried_now(state, phase)
     noted = noted_now(ctx, state, phase, head)
+    left = left_now(state, phase)
     for finding in triage_findings(phase)[0]:
         args += (["--carried", "%s=%s" % (finding["id"], carried[finding["id"]])]
                  if finding["id"] in carried else
                  ["--accept-open", "%s=a note, not a block - %s" % (
                      finding["id"], noted[finding["id"]])]
                  if finding["id"] in noted else
+                 ["--accept-open", "%s=%s" % (finding["id"], left[finding["id"]])]
+                 if finding["id"] in left else
                  ["--accept-open", "%s=%s" % (finding["id"], summary)])
     mark = state.get("phaseReview") or {}
     if mark.get("head"):
@@ -8960,6 +9073,14 @@ def apply_phase_answer(ctx, state, manifest, phase, pending, answer, reason,
                                                 ctx["carryTo"].strip()))
         if name == "triage":
             return None
+    if name == "triage" and answer == "leave":
+        held = dict(state.get(LEFT_FIELD) or {})
+        held.update((fid, reason.strip()) for fid in fixes)
+        state[LEFT_FIELD] = held
+        write_state(ctx, state)
+        ctx["did"].append(_clip("left %s open: %s" % (", ".join(fixes),
+                                                      reason.strip()), 160))
+        return None
     if answer == "one-more-round":
         state[EXTRA_ROUNDS_FIELD] = (state.get(EXTRA_ROUNDS_FIELD) or 0) + 1
         write_state(ctx, state)
@@ -9248,8 +9369,9 @@ def refresh_triage(ctx, state, phase, pending):
     offered, handed = triage_findings(phase)
     carried = carried_now(state, phase)
     noted = noted_now(ctx, state, phase)
+    left = left_now(state, phase)
     offered = [f for f in offered if f.get("id") not in carried
-               and f.get("id") not in noted]
+               and f.get("id") not in noted and f.get("id") not in left]
     if offered != pending.get("findings") or handed != (pending.get("handed") or []):
         pending = dict(pending, findings=offered, handed=handed)
         state["pending"] = pending
@@ -9278,6 +9400,16 @@ def drive_locked(ctx, state, answer, reason, fixes):
                              "answers nothing; next measures it again"
                              % (PREFIX, ctx["phase"], pending["decision"],
                                 pending["task"], held, answer))
+        first = [] if pending.get("task") else runnable_tasks(manifest, ctx["phase"])
+        if first:
+            aside = ("the %s decision is set aside: %s can run first, and "
+                     "sign-off is asked again after" % (pending["decision"],
+                                                       ", ".join(first[:3])))
+            if held is not None:
+                return E_USAGE, "%s %s: %s, so --answer %s answers nothing; " \
+                                "next %s runs it" % (PREFIX, ctx["phase"], aside,
+                                                     held, ctx["phase"])
+            ctx["did"].append(aside)
         answer = held
         pending = None
     if pending and pending["decision"] == "triage":
@@ -10111,22 +10243,42 @@ def explain(ctx, subject):
 def run_brief(args, out):
     """`brief <id> --role <role>`: print the brief the drive wrote for that dispatch,
     as `audit-lookup.py brief --read` reads it for the id's current start - a
-    record, so read back with its bytes as they are (`run_verb`)."""
+    record, so read back with its bytes as they are (`run_verb`).
+
+    A TASK STARTED BY THE VERB HAS NO DISPATCH TO HAVE WRITTEN ITS BRIEF. An
+    executor brief missing for a task in progress is written here through the
+    call the drive's dispatch makes, then read back the same way; a task that
+    has not started has no current start, and still gets none."""
     if args.manifest and args.manifest_named and args.manifest != args.manifest_named:
         out("drive-phase.py: two manifests named, %s and --manifest %s"
             % (args.manifest, args.manifest_named))
         return E_USAGE
     args.manifest = args.manifest or args.manifest_named
     try:
-        _manifest, ctx = project_context(args)
+        manifest, ctx = project_context(args)
     except Exception as exc:                                   # noqa: BLE001
         out("drive-phase.py: %s" % (exc,))
         return E_USAGE
-    code, said, err = run_verb(ctx, "audit-lookup.py", [
-        ctx["manifest"], "brief", args.id, "--role", args.role, "--read",
-        "--project", ctx["project"]] + (
-            [] if args.slice is None else ["--slice", str(args.slice)]),
-        record=True)
+
+    def read():
+        return run_verb(ctx, "audit-lookup.py", [
+            ctx["manifest"], "brief", args.id, "--role", args.role, "--read",
+            "--project", ctx["project"]] + (
+                [] if args.slice is None else ["--slice", str(args.slice)]),
+            record=True)
+    code, said, err = read()
+    started = (_mio.tasks_by_id(manifest).get(args.id) or {}).get("status") \
+        == "in_progress"
+    if code != 0 and args.role == "executor" and started:
+        wcode, wsaid, werr = run_verb(ctx, "audit-lookup.py", [
+            ctx["manifest"], "brief", args.id, "--role", "executor",
+            "--project", ctx["project"]])
+        if wcode != 0:
+            out("drive-phase.py: no brief to print - none was written for %s's "
+                "current start, and writing it was refused: %s"
+                % (args.id, (werr or wsaid).strip()))
+            return E_USAGE
+        code, said, err = read()
     if code != 0:
         out("drive-phase.py: no brief to print - %s" % ((err or said).strip(),))
         return E_USAGE

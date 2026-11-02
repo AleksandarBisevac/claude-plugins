@@ -23,14 +23,37 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P155-R1",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:9403-9412",
+        "issue": "No case covers the new refusal of an --answer sent to a set-aside sign-off decision. rf1/rf2 cover only the no-answer path: dispatch, and the blocked twin. If lines 9408-9411 are deleted, most answers are still refused, but by answer_refusal's different 'no decision is pending' text. `--answer sign-off --reason` would instead take _pending_route's advance route (pending is None) and drive on. The PLUGIN-BUILD-GUIDE sentence claiming the refusal cites rf1/rf2, and neither case reaches it.",
+        "resolution": "Add a case (rf12): with the drive at the triage, add a task with the verb, then run `next --answer sign-off --reason S`. Assert exit 2, the added task's id in the text, no pending left in state, and the phase not signed off. Cite it beside the guide sentence."
+      },
+      {
+        "id": "P155-R2",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:9131-9141 (decline_answer), tests/test_drive_phase.py:11451-11462 (db2)",
+        "issue": "decline_answer's docstring says 'The drive goes on to any task still open - the remedy a human added', and db2 pins that by calling decline_answer directly. Through `next`, a human who adds the remedy task first and then answers `--answer decline --reason <words>` is now refused at drive_locked:9408, because the decision is set aside while the remedy is ready. Their words never reach state['declined'], so the summary loses the no. That branch of decline_answer is now reachable only for an open task that cannot run. DECLINE_REMEDY's order (decline first, then add) still works.",
+        "resolution": "Either let `decline` through on a set-aside decision (record the words in `declined`, pop phaseGate, then drive the runnable task), or reword the docstring and db2 so they describe an open task that cannot run. Add a drive-level case for whichever is chosen."
+      },
+      {
+        "id": "P155-R3",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:6868-6872 (not_ready_why)",
+        "issue": "_status_facts.unmet_refs already folds a blocked phase's refs into each task's entry as '<ref> (phase)' (_status_facts.py:1424). not_ready_why then appends unmet[phase_id] a second time. A wave member dropped because its phase gained a blocker therefore prints that ref twice in the dropped-from-wave line: 'waits on P9 (phase), P9'.",
+        "resolution": "Read unmet.get(task_id) alone, since it already carries the phase's refs, and fall back to 'nothing the plan names' only when it is empty."
+      }
+    ],
+    "outcome": "[findings: 3 - 0 high, 0 med, 3 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
     {
       "id": "P155.1",
       "title": "One reader of HEAD and of a ref file: an empty loose ref is asked of git, an unreproducible pathspec is asked alone, doctor and lookup read HEAD through head_sha, a two-writer start head reads as cannot-tell",
-      "status": "in_progress",
+      "status": "done",
       "description": "Closes P143-R14, P143-R15, F819, F820 (A). See plan section T2 for the acceptance clauses (1)-(4) and the evidence lines at fa1b0c81: _scoped_commit.py:163-172 (_ref_file), :1401/:1433-1441 (_tracking, _plain_pathspec), :1572-1583 (start_head_of); audit-lookup.py:1445 and _doctor_setup.py:599 (plain rev-parse HEAD). Same-second ties go through _journal_io.last_words (:973). Check _deps.LAYERS before importing _scoped_commit from status/.",
       "files": [
         "plugins/audit/scripts/governance/_scoped_commit.py",
@@ -72,19 +95,35 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e04678e13477",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_scoped_commit.py: _ref_file returns None for an existing zero-length ref file (b'' only for a missing one), so _files_head returns None and head_sha asks git instead of serving a kept packed-refs answer. _plain_pathspec no longer accepts a trailing slash (an empty last segment), so `sm/` is asked alone; _tracking stops batching when GIT_ICASE_PATHSPECS is set; _spec_holds was simplified to the one shape it now gets; _tracking's docstring states the one shape the matcher reproduces and lists the shapes asked alone. start_head_of reads the newest second per writer through _journal_io.last_words, over task.start rows of the current attempt only (so oc12's per-attempt picks are unchanged), and returns None when that second holds more than one head. audit-lookup.py: _head goes through _scoped_commit.head_sha (allowed by the layer table: audit-lookup is an entry point above _scoped_commit), and the why now names `rev-parse --verify -q HEAD` and the root; git's stderr is no longer quoted, because -q leaves none. _doctor_setup.py: _deps.LAYERS puts _doctor_setup below _scoped_commit, so it cannot import head_sha. As the plan allows, plugin_integrity asks `rev-parse --verify -q HEAD` itself and keeps the answer only when a local _OBJECT_NAME matches it; test ds-hd3 holds that regex to _scoped_commit._OBJECT_NAME over ten inputs, including a trailing newline that tells \\Z apart from $. PLUGIN-BUILD-GUIDE.md: module-map fence regenerated with `python3 tools/lints/_deps.py --write-map` (exit 0) for the new audit-lookup -> _scoped_commit edge. Test g1 in test__deps had gone red on the stale fence before that. sc-tb1 was changed to expect `docs/` asked alone (3 listings instead of 2). The new fixtures in test_audit_lookup/test__doctor_setup call git through _harness.git: the git-bypass scan in test_drive_phase.py (the P125-R156 case) first went red on checked subprocess.run calls there, and is green after the change. Runs: the gate command above exits 0 with 5/5 files ok. The gate plus tests/test_drive_phase.py exits 0 with 6/6 files ok. A sweep of the dependant suites (test_drive_phase, test_commit_task_work, test_audit_task, test__live_copy, test__output_lints, test_audit_doctor, test__doctor_report, test_close_phase) gave 7/8 ok. The one red was the bypass scan named above, which I have fixed, and test_drive_phase passed when re-run. ruff check and vermin -t=3.8- on the six changed .py files: exit 0. Mutation probe, delivered at .claude/state/probe/mutations.py in the task tree (gitignored path, takes --root). It was run against a throwaway copy (a git archive of HEAD with the changed files laid over it) under the session scratchpad, and its last line was '11 row(s), 0 not red', exit 0. Over-fire rows: sc-tb5, sc-sh2, hd2 and ds-hd2 each go red when the fix fires every time. DEPENDANTS: _scoped_commit importers (close-phase, commit-task-work, drive-phase, audit-task, _live_copy, test__scoped_commit, test_commit_task_work, tools/affected.py) are still correct because no signature changed. head_sha/start_head_of/_tracking callers now get None for an empty loose ref or a two-writer tie, which is the cannot-tell answer they already handle, and the extra listings only cost time. The names used elsewhere (_ask_head, _tracking, drop_attempt, index_bytes) are unchanged. audit-lookup.py readers (guide, docs, schema, _clause_coverage, drive-phase, _areas, _filed_returns, audit-task by basename) are still correct: the CLI and output shape are unchanged, and only the head-not-read reason was reworded. The test_drive_phase `_head` named in the brief is that suite's own helper, not audit-lookup's. _doctor_setup readers (drive-phase, audit-doctor, test__doctor_report, test__doctor_setup, guide, _deps by basename, token-efficiency doc) are still correct: plugin_integrity's return shape is unchanged and `commit` is None only where git names no commit. Its layer is unchanged and it gained only a stdlib `re` import. Declared test and tool files I did not edit (test__affected_tests, test__doctor_trail, test_drive_phase, tools/lints/_deps.py, tools/prove-gates.py, tests/_harness.py, test__deps, tools/sweep-selftests.py, stamp-verification.py, test__runner_collects, test_stamp_verification) are still correct: none reads the changed functions' text, as a git grep for _spec_holds/_plain_pathspec/_ref_file/start_head_of under tools/ found none, and their suites in the runs above are green.",
+        "descriptive": "HEAD now has one reading in lookup and the same check in doctor. An empty loose ref is asked of git. Pathspec shapes the batch matcher cannot reproduce are asked alone. A start head tied across two writers in one second now reads as cannot-tell."
       },
       "startedAt": "2026-11-02T08:16:45Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-02T08:57:42Z",
+      "verifiedBy": [
+        "test__scoped_commit: sc-hd14 an empty loose ref beside a packed line: _files_head is None, git is asked once, head_sha is None as git says; sc-tb3 `sm/` naming a gitlink is asked alone and tracked; sc-tb4 under GIT_ICASE_PATHSPECS every path is asked alone and matches git; sc-tb5 (over-fire twin) without the variable plain paths still share one listing; sc-sh1 a start, reopen and restart by two writers in one second give None; sc-sh2 (twin) one writer's order, a later second, or two writers naming one head all give that head",
+        "test_audit_lookup: hd1 an unborn branch with a `HEAD` directory or a `head` file gives the brief no head and a reason, the fixture shown to echo HEAD under plain rev-parse; hd2 (twin) after a commit the head is the commit",
+        "test__doctor_setup: ds-hd1 the same fixture makes plugin_integrity carry no commit; ds-hd2 (twin) after a commit it carries the commit; ds-hd3 the doctor's object-name regex answers as _scoped_commit's over ten inputs"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-11-02T08:57:38Z.af3b88",
         "status": "passed",
         "at": "2026-11-02T08:57:38Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "e04678e13477",
+        "at": "2026-11-02T08:57:42Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-02T08:50:58Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__scoped_commit.py tests/test_audit_lookup.py tests/test__doctor_setup.py tests/test__deps.py tools/_suite.py` in a throwaway tree at HEAD exited 1 with 7 of 146 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ds-hd1 (house FAIL), sc-hd14 (house FAIL), sc-tb1 (house FAIL), sc-tb3 (house FAIL), sc-tb4 (house FAIL), sc-sh1 (house FAIL), hd1 (house FAIL): SELFTEST FAILED: 145/146 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -205,7 +244,12 @@
       "startedAt": "2026-11-02T08:17:37Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-02T09:02:12Z.41a85f",
+        "status": "passed",
+        "at": "2026-11-02T09:02:12Z"
+      }
     },
     {
       "id": "P155.4",

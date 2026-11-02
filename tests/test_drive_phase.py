@@ -2673,10 +2673,12 @@ def _phase_validation_cases(check):
     shown = {"decision": "triage", "task": None, "findings": [],
              "noted": [{"id": "P1-R1", "why": "withdrawn"}]}
     plan = _mio.load_manifest(mpath)
-    holds = [M.pending_still_applies({"gitRoot": root}, plan,
+    # The phase is named as the drive's own context names it: a decision with
+    # no task is also read against the tasks that phase can still run.
+    holds = [M.pending_still_applies({"gitRoot": root, "phase": PHASE}, plan,
                                      dict(shown, notedHead=head))
              for head in (here, "0" * 40)]
-    bare = M.pending_still_applies({"gitRoot": root}, plan, dict(
+    bare = M.pending_still_applies({"gitRoot": root, "phase": PHASE}, plan, dict(
         shown, noted=[], notedHead="0" * 40))
     check("pv6 a triage showing notes still applies while HEAD is the commit "
           "they were sorted at and no longer once HEAD moved, and a triage "
@@ -9086,8 +9088,12 @@ def _explain_cases(check):
             plan = json.load(fh)
         plan["phases"][0]["tasks"][0].update(status="in_progress",
                                              startedAt="2026-01-01T00:00:00Z")
-        with open(mpath, "w", encoding="utf-8") as fh:
-            json.dump(plan, fh)
+        # A decision of sign-off is raised only once every task is terminal,
+        # and stops applying while one can run (`pending_still_applies`), so
+        # the phase-level cases read a plan whose tasks are all done.
+        closed = json.loads(json.dumps(plan))
+        for task_c in closed["phases"][0]["tasks"]:
+            task_c["status"] = "done"
         spath = _fr.drive_state_path(os.path.join(root, ".claude", "state"), PHASE)
         os.makedirs(os.path.dirname(spath), exist_ok=True)
         lows = [dict(f, id="P1-L%d" % (n,), severity="low")
@@ -9115,9 +9121,11 @@ def _explain_cases(check):
             "findings": _corpus_findings(30) + lows, "fixesAfter": ["P1.2"],
             "head": "abc1234", "answers": [{"who": "P1.1", "what": "diverges",
                                             "note": "n " * 40}]},
-            {"carry", "fix", "re-review", "accept", "decline"}))
+            {"carry", "fix", "leave", "re-review", "accept", "decline"}))
         results = []
         for name, subject, pending, offered in cases:
+            with open(mpath, "w", encoding="utf-8") as fh:
+                json.dump(closed if subject == PHASE else plan, fh)
             with open(spath, "w", encoding="utf-8") as fh:
                 json.dump({"pending": pending}, fh)
             with open(spath, "rb") as fh:
@@ -14989,6 +14997,240 @@ def _skill_units(check):
           _flag(bare, "--role") == "writer" and "--skill" not in bare)
 
 
+# --- a ready task runs before a triage, a sign-off or a wave step decides ------
+# One question asked by all three: is there a task of the phase the drive can
+# run now. A decision of sign-off stands on every task being terminal, and a
+# wave member stands on being ready, so each is read again against the plan as
+# it is before it is printed or walked.
+def _ready_first_cases(check):
+    _rf_triage_dispatch(check)
+    _rf_leave(check)
+    _rf_offer_agrees(check)
+    _rf_wave_drop(check)
+    _rf_verb_brief(check)
+
+
+def _rf_signal_verb(line):
+    """`(verb, subject)` of one signal line, or `(None, its tail)` when it is
+    not one."""
+    hit = _SIGNAL.match(line.splitlines()[-1] if line else "")
+    return (hit.group(2), hit.group(3)) if hit else (None, line[-300:])
+
+
+def _rf_triage_dispatch(check):
+    """A task added to a phase whose drive stands at the triage is dispatched
+    by the next signal; one that cannot run leaves the triage where it was."""
+    M, why = _load("drive_phase_ready_first")
+    if M is None:
+        check("rf1 the driver loads", False, why)
+        return
+    root, mpath = _repo("rf-triage", task_ids=TASKS[:1], per_task="phase")
+    run = drive(M, root, mpath, answer=None)
+    _c, before = _signal_next(M, root, mpath)
+    added = _add_task(root, mpath)
+    code, after = _signal_next(M, root, mpath)
+    check("rf1 a task added while the drive stands at the triage is dispatched "
+          "by the next signal, where the signal before the add was the "
+          "triage: %r" % ((run["steps"][-1:], _rf_signal_verb(before), added,
+                           code, _rf_signal_verb(after)),),
+          run["steps"][-1:] == [TRIAGE]
+          and _rf_signal_verb(before) == ("review", PHASE)
+          and code == 0 and _rf_signal_verb(after) == ("dispatch", added))
+    # THE TWIN, for the mutation that drops a sign-off decision whenever any
+    # task is open: a task the drive cannot run - blocked here - leaves the
+    # triage standing, printed again.
+    root, mpath = _repo("rf-triage-blocked", task_ids=TASKS[:1], per_task="phase")
+    drive(M, root, mpath, answer=None)
+    held = _add_task(root, mpath)
+    with _Env(root):
+        bcode, bout = _verb(root, "audit-task.py", [
+            "block", held, mpath, "--project-dir", root, "--reason",
+            "waits on a vendor answer"])
+    code, again = _signal_next(M, root, mpath)
+    check("rf2 THE TWIN: a task added at the triage and blocked, so nothing is "
+          "ready, leaves the triage printed again rather than dispatched or "
+          "stalled: %r" % ((held, bcode, bout[-200:], code,
+                            _rf_signal_verb(again)),),
+          bcode == 0 and code == 0
+          and _rf_signal_verb(again) == ("review", PHASE))
+
+
+_RF_FINDINGS = [
+    {"severity": "med", "file": "src/f1.txt", "issue": "f1 names no bound",
+     "resolution": "name the bound"},
+    {"severity": "med", "file": "src/f1.txt", "issue": "f1 says too little",
+     "resolution": "say what changed"}]
+_RF_LEAVE_WHY = "the bound is the documented one; the human keeps it"
+
+
+def _rf_leave(check):
+    """`--answer leave --fix <id> --reason` leaves one med with the human's
+    reason, adds no task, and sign-off records that reason for it alone."""
+    M, why = _load("drive_phase_leave")
+    if M is None:
+        check("rf3 the driver loads", False, why)
+        return
+    root, mpath = _triage_with(M, "rf-leave", _RF_FINDINGS)
+    ids = [f.get("id") for f in (_phase_of(mpath).get("review") or {})
+           .get("findings") or []]
+    left = ids[0] if ids else "?"
+    other = ids[1] if len(ids) > 1 else "?"
+    count = len(tasks_of(mpath))
+    code, said = _next(M, root, mpath, "--answer", "leave", "--fix", left,
+                       "--reason", _RF_LEAVE_WHY)
+    offered = [ln for ln in said.splitlines()
+               if ln.startswith("  %s " % (left,)) and ln.rstrip().endswith("]")]
+    check("rf3 --answer leave --fix <a med> --reason is taken at the triage: no "
+          "task is added, and the triage printed again no longer offers that "
+          "finding a word while it still offers the other: %r"
+          % ((ids, code, said[-600:], len(tasks_of(mpath))),),
+          len(ids) == 2 and code == 0 and len(tasks_of(mpath)) == count
+          and instruction(said)[:2] == ("decide", "triage") and not offered
+          and any(ln.startswith("  %s " % (other,)) for ln in said.splitlines()))
+    code, done = _next(M, root, mpath, "--answer", "sign-off", "--reason", SUMMARY)
+    found = dict((f.get("id"), (f.get("status"), f.get("acceptedReason")))
+                 for f in (_phase_of(mpath).get("review") or {}).get("findings")
+                 or [])
+    check("rf4 sign-off records the left med as accepted open with the leave's "
+          "own reason, and the other open med with the summary - and still no "
+          "task was added: %r" % ((code, done[-300:], found,
+                                   len(tasks_of(mpath))),),
+          code == 0 and _signed(mpath) and len(tasks_of(mpath)) == count
+          and found.get(left) == ("accepted-open", _RF_LEAVE_WHY)
+          and found.get(other) == ("accepted-open", SUMMARY))
+    root, mpath = _triage_with(M, "rf-leave-bare", _RF_FINDINGS[:1])
+    bare = _next(M, root, mpath, "--answer", "leave", "--reason", _RF_LEAVE_WHY)
+    unknown = _next(M, root, mpath, "--answer", "leave", "--fix", "P1-R99",
+                    "--reason", _RF_LEAVE_WHY)
+    check("rf5 leave with no --fix, or naming a finding the triage does not "
+          "offer, is refused and adds nothing: %r"
+          % ((bare, unknown, len(tasks_of(mpath))),),
+          bare[0] == 2 and "--fix" in bare[1]
+          and unknown[0] == 2 and "P1-R99" in unknown[1]
+          and len(tasks_of(mpath)) == 1)
+
+
+def _rf_offer_agrees(check):
+    """The triage offers `fix` for a finding exactly when `--answer fix` takes
+    it: a finding naming a fix task that never landed is offered `leave`, and
+    the refusal of `fix` for it is the same answer."""
+    M, why = _unit_driver("drive_phase_offer_agrees")
+    if M is None:
+        check("rf6 the driver loads", False, why)
+        return
+    found = [{"id": "F-cancelled", "severity": "med", "file": "src/f1.txt",
+              "issue": "its fix task was cancelled", "fixTask": "P1.5"},
+             {"id": "F-free", "severity": "med", "file": "src/f1.txt",
+              "issue": "no task names it"}]
+    pending = {"decision": "triage", "task": None, "findings": found,
+               "handed": [], "why": "the phase review returned `findings`"}
+    ctx = _step_ctx()
+    lines = _text_of(_caught(M.render_triage, ctx, pending)).splitlines()
+
+    def options(fid):
+        own = [ln for ln in lines if ln.startswith("  %s " % (fid,))]
+        hit = re.search(r"\[([a-z|-]+)\]$", own[0].rstrip()) if len(own) == 1 else None
+        return hit.group(1).split("|") if hit else None
+    got = [(f["id"], "fix" in (options(f["id"]) or []),
+            _caught(M.answer_refusal, ctx, pending, "fix", None, [f["id"]])
+            is None) for f in found]
+    check("rf6 the triage's offer of fix and the refusal agree finding by "
+          "finding: the one naming a cancelled fix task is offered no fix and "
+          "fix is refused for it, the one no task names is offered fix and "
+          "fix is taken: %r" % ((got, [options(f["id"]) for f in found]),),
+          got == [("F-cancelled", False, False), ("F-free", True, True)])
+    leave = _caught(M.answer_refusal, ctx, pending, "leave", "kept as is",
+                    ["F-cancelled"])
+    fix_line = [ln for ln in lines if "--answer fix" in ln]
+    check("rf7 the finding naming a cancelled fix task is offered leave and "
+          "--answer leave takes it, and the answer line for fix names only the "
+          "finding fix takes: %r" % ((options("F-cancelled"), leave, fix_line),),
+          "leave" in (options("F-cancelled") or []) and leave is None
+          and len(fix_line) == 1 and "F-free" in fix_line[0]
+          and "F-cancelled" not in fix_line[0])
+
+
+def _rf_wave_walk(blocked_by):
+    """One walk of a recorded wave of P1.1 and P1.2, neither started, P1.1
+    blocked by `blocked_by` (P1.3 is pending): `(started, dispatched, the
+    wave's members after, the did-lines naming P1.1, statuses)`."""
+    M, _w = _unit_driver("drive_phase_wave_drop_%d" % (len(blocked_by),))
+    phase, calls, _rows, _r = _wave_plan_rig(M, [
+        _step_task("P1.1", status="pending", blockedBy=list(blocked_by)),
+        _step_task("P1.2", status="pending"),
+        _step_task("P1.3", status="pending")])
+    M.add_tree = lambda ctx, state, task_u: (
+        "/trees/drive-wave-%s" % (task_u["id"],), None)
+    M.advance = lambda ctx, state, manifest, phase_, task_u, tree=None: (
+        M.dispatch_said(ctx, "executor", task_u["id"], "audit-executor",
+                        "sonnet", ".claude/state/briefs/%s/e.md" % (task_u["id"],)))
+    state = _wave_state({})
+    ctx = _step_ctx()
+    said = _caught(M.walk_wave, ctx, state)
+    started = [a[1] for s, a, _i in calls
+               if s == "audit-task.py" and a[:1] == ["start"]]
+    sent = re.findall(r"^dispatch \S+ (P1\.\d) ", _text_of(said), re.M)
+    # The did-lines about P1.1 other than its own start: what the walk said
+    # about a member it did not start.
+    return (started, sent, list((state.get("wave") or {}).get("tasks") or []),
+            [d for d in ctx["did"] if "P1.1" in d and d != "started P1.1"],
+            [t["status"] for t in phase["tasks"]])
+
+
+def _rf_wave_drop(check):
+    """A recorded wave whose unstarted member gained a blocker walks on with the
+    other member, saying which member it dropped and on what it waits."""
+    got = _rf_wave_walk(["P1.3"])
+    check("rf8 a wave member that gained a blocker before it started is dropped "
+          "with a line naming it and its blocker, never started, and the walk "
+          "starts and dispatches the other member: %r" % (got,),
+          got[0] == ["P1.2"] and got[1] == ["P1.2"] and got[2] == ["P1.2"]
+          and len(got[3]) == 1 and "P1.3" in got[3][0]
+          and got[4] == ["pending", "in_progress", "pending"])
+    twin = _rf_wave_walk([])
+    check("rf9 THE TWIN: with no blocker both members start and are dispatched "
+          "and the wave keeps both: %r" % (twin,),
+          twin[0] == ["P1.1", "P1.2"] and twin[1] == ["P1.1", "P1.2"]
+          and twin[2] == ["P1.1", "P1.2"] and twin[3] == [])
+
+
+def _rf_verb_brief(check):
+    """`brief --role executor` prints a brief for a task started by the verb, as
+    it does for one the drive dispatched; a task never started still has none."""
+    M, why = _load("drive_phase_verb_brief")
+    if M is None:
+        check("rf10 the driver loads", False, why)
+        return
+    root, mpath = _repo("rf-brief", task_ids=TASKS[:2])
+    with _Env(root):
+        scode, sout = _verb(root, "audit-task.py", [
+            "start", "P1.1", mpath, "--project-dir", root])
+        said, never = [], []
+        code = M.main(["brief", "P1.1", "--role", "executor", mpath,
+                       "--project-dir", root], out=said.append)
+        ncode = M.main(["brief", "P1.2", "--role", "executor", mpath,
+                        "--project-dir", root], out=never.append)
+    text, ntext = "\n".join(said), "\n".join(never)
+    folder = os.path.join(root, ".claude", "state", "briefs", "P1.1")
+    written = sorted(n for n in os.listdir(folder)
+                     if n.endswith(".executor.md")) if os.path.isdir(folder) else []
+    check("rf10 a task started by the verb gets its executor brief from `brief "
+          "--role executor`, written where the drive's dispatch writes one: %r"
+          % ((scode, sout[-200:], code, text[:200], written),),
+          scode == 0 and code == 0 and text.startswith("# Executor brief")
+          and "P1.1" in text and len(written) == 1)
+    # A write for a task with no start is refused by the brief writer too, so
+    # the folder alone cannot tell an attempt from none: the refusal printed is
+    # the read's own, never the write's.
+    check("rf11 THE TWIN: a task never started still has no brief to print, "
+          "none is written for it, and no write is attempted: %r"
+          % ((ncode, ntext[-300:]),),
+          ncode != 0 and "no brief to print" in ntext
+          and "writing it was refused" not in ntext
+          and not os.path.isdir(os.path.join(root, ".claude", "state", "briefs",
+                                             "P1.2")))
+
+
 STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("ws-block", "_writer_session_cases"),
           ("rv-block", "_reviewer_session_cases"),
@@ -15054,6 +15296,7 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("uw-block", "_steps_verb_cases"),
           ("e2e-wave", "_e2e_wave_cases"),
           ("uy-block", "_wave_unit_cases"),
+          ("rf-block", "_ready_first_cases"),
           ("sb-block", "_stage_cases"))
 
 
