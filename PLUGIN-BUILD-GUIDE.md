@@ -5794,9 +5794,11 @@ revalidate-from-disk and rollback: `files`, `--tests-mode`, `--tests-add`, `--ga
 `--gate-clear`, `--description`, `--risk`, `--blocked-by`, `--depends-on`. It RE-DERIVES
 `fileIndex` rather than appending to it, so a path the task no longer claims is released
 rather than left pointing at it. It exists because `/audit:sync pull sprint` imports tasks
-with no `files` and told the reader to scope them while no verb could — and `fileIndex` is
-what the plan gate matches an edit against, so an unscoped phase ran with its central guard
-inert. On a task that has already STARTED what is graded is the SHAPE of the change and not
+with no `files` and told the reader to scope them while no verb could — and the plan gate
+matches an edit against a running task's `files` and its graded `outputs` patterns
+(`hooks/_config.in_progress_task_map` reads `files` alone, never a `fileIndex` row), so a task
+holding `files: []` covered no edit of its own; `fileIndex` is derived from those `files`, and
+a row of it alone opens no edit. On a task that has already STARTED what is graded is the SHAPE of the change and not
 the call: `files` and `tests.add` may gain entries and nothing may lose one, which is the one
 change that cannot re-judge what already happened — `_invariants.commit_scope` reads
 `task.files` live, so growing the list can only turn a breach into a pass, and the plan gate

@@ -596,9 +596,9 @@ def _add_cases(check):
               % (_tp_txt[-320:],),
               "name no file" in _tp_txt and _TP_PROSE in _tp_txt
               and "<path>: <what it asserts>" in _tp_txt)
-        check("tp3 ...and `fileIndex` gains the path and NOT the sentence, which "
-              "is what the plan gate matches an edit against - a key no path can "
-              "ever match is a row that will never fire: %r"
+        check("tp3 ...and `fileIndex` gains the path and NOT the sentence - the "
+              "index is a lookup by exact path, so a key no path can ever match "
+              "is a row that will never answer: %r"
               % (sorted(_mio.load_manifest(_tp_mp).get("fileIndex") or {}),),
               sorted((_mio.load_manifest(_tp_mp).get("fileIndex") or {}).keys())
               == ["src/a.ts", "test_audit_task.py"])
@@ -2021,9 +2021,10 @@ def _reshape_cases(check):
         # `pull sprint` writes `files: []` and tells the reader to scope before
         # running. Nothing could: `add` creates, `cancel` closes, `move`
         # relocates, and the panel reaches `skills`/`model` but not `files`. The
-        # cost was not tidiness - `files` builds `fileIndex`, and `fileIndex` is
-        # what the plan gate matches an edit against, so an unscoped phase ran
-        # with its central guard inert rather than failing.
+        # cost was not tidiness - the plan gate matches an edit against a running
+        # task's `files` (and its graded `outputs`), never a `fileIndex` row, so a
+        # task holding `files: []` covered no edit of its own. `fileIndex` is
+        # derived from those `files` and a row of it alone opens no edit.
         sc_proj, sc_mp = mk("p-scope", base_manifest())
         os.makedirs(os.path.join(sc_proj, "src"), exist_ok=True)
         for _f in ("b.ts", "c.ts"):
@@ -2033,9 +2034,10 @@ def _reshape_cases(check):
                          "--tests-mode", "tdd", "--project-dir", sc_proj])
         _sct = task_in(sc_mp, "P2.3")
         _idx = (_mio.load_manifest(sc_mp).get("fileIndex") or {})
-        check("sc1 scope writes the files AND puts them in fileIndex - the index "
-              "is the whole point, because the plan gate matches an edit against "
-              "it and an empty one makes the gate inert rather than loud: %r"
+        check("sc1 scope writes the files AND re-derives fileIndex from them - "
+              "the plan gate matches an edit against the task's `files`, and the "
+              "index derived from them must carry the same paths, or the "
+              "validator finds the shard and the index parted: %r"
               % (_idx,),
               code == 0 and _sct.get("files") == ["src/b.ts", "src/c.ts"]
               and _idx.get("src/b.ts") == ["P2.3"]

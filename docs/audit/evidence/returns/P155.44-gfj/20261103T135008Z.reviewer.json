@@ -1,0 +1,23 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "plugins/audit/commands/sync.md:719-720",
+   "issue": "A further copy of the same false claim survives and the filed outcome does not report it. The task asked for a grep for further copies and a report of any found. This one is spelled 'an imported phase ran with `fileIndex` empty and the plan gate therefore inert', which says an empty fileIndex made the gate inert. The corrected statement is that the gate reads a running task's `files` and graded `outputs`, never a fileIndex row. The executor's grep pattern ('what the plan gate matches') and its second pattern ('fileIndex.{0,80}match') both miss this spelling, and sync.md was not in its list of hits or of deliberately-left sites.",
+   "resolution": "Reword to say an imported phase ran with its tasks holding `files: []`, so the plan gate had no declared path to open an edit by. Or file it as a follow-up task, since sync.md is outside this task's declared files."}
+ ],
+ "preExisting": [
+  {"id": 2, "severity": "low", "file": "CHANGELOG.md:4080",
+   "issue": "A published changelog entry carries the original sentence. The executor reports it as left alone, and it is history.",
+   "resolution": "None needed; history is legal."}
+ ],
+ "intent": {
+  "answer": "matches",
+  "note": "Clause 'Reword each to the README's corrected statement in its own register, keeping what each paragraph argues (an unscoped task covers no edit of its own)': the diff rewrites the audit-task.py docstring at 10418, verbs-in-full.md at 1340 and PLUGIN-BUILD-GUIDE.md at 5797-5800 to say the gate matches a running task's `files` and graded `outputs`, `fileIndex` is derived from `files`, and a row alone opens no edit. Each keeps its argument. The statement is true against hooks/_config.py: declared_task_map (4005) documents 'files ALONE, NEVER A fileIndex ROW', in_progress_task_map (4184) reads it, and in_progress_outputs (4243) is the outputs half. Clause 'Do not touch commands/init.md:471': untouched, confirmed by the diff stat. Clause 'grep ... and report any further copy found': the executor reports three copies in tests/test_audit_task.py and fixes them, and reports CHANGELOG.md:4080. Claim 'case ids and assertions unchanged': true, only two title strings and a comment changed. The claim says the grep exits 1 with no hits; that held for its own pattern, but the same false claim in a different spelling remains at commands/sync.md:720 and was not reported, which is the finding above.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "tests.mode is gate-only with expectRedFirst false and tests.add is none. The executor filed not-attempted with a reason that holds: the diff rewords prose only and changes no behaviour.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "The gate is the literal command `python3 tools/sweep-selftests.py tests/test__refs.py tests/test__deps.py tests/test__output_lints.py tests/test_audit_task.py`. The behaviour named is prose wording, which no test pins. The only tests the diff touches are sc1 and tp3 in tests/test_audit_task.py, whose assertions I read in the diff: unchanged, and they test fileIndex derivation. I did not read the rest of those four suites end to end, so this is limited to the touched cases."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

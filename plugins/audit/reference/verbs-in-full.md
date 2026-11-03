@@ -1337,9 +1337,11 @@ closes, `move` relocates, and the panel's composition card reaches `skills` and 
 but not `files`. The only way to obey that instruction was the hand edit `commands/task.md`
 forbids for adds — for the reason that applies here too.
 
-**And the cost was not tidiness.** `files` is what `fileIndex` is built from, and
-`fileIndex` is what the plan gate matches an edit against. An unscoped phase ran with
-its central guard **inert** — not failing, because it had nothing to match.
+**And the cost was not tidiness.** The plan gate matches an edit against a running task's
+`files` and its graded `outputs` patterns (`hooks/_config.in_progress_task_map`, which reads
+`files` alone and never a `fileIndex` row, and `in_progress_outputs`), so a task holding
+`files: []` covered **no edit of its own** — an unscoped phase gave the gate nothing to
+match. `fileIndex` is derived from those `files`, and a row of it alone opens no edit.
 
 **Settled work is refused outright, and a started task takes a WIDENING or a new gate.**
 A `done` or `cancelled` task has a scope its commit was graded against and its sign-off

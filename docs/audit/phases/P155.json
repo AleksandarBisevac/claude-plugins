@@ -528,8 +528,10 @@
         "severity": "low",
         "file": "CHANGELOG.md:65-76,123-131,176-181",
         "issue": "Parts of the new entries use internal terms a user cannot look up: 'the tombstone of a recorded move', 'the tree's git directory' and 'the copy ... in it', 'loose ref' and 'packed ref', 'GIT_ICASE_PATHSPECS'. The restore and task-remove entries carry the user's decision (what the copy is, what 'tombstone' means), and the first of those terms is never explained.",
-        "resolution": "Say once what the tombstone is (the marker left after a move was recorded) or drop it from the user-facing sentences; keep the git-internals wording only in the Fixed entries, which are about implementation.",
-        "fixTask": "P155.43-gfj"
+        "resolution": "fixed in P155.43-gfj (a66a3003c27f): Say once what the tombstone is (the marker left after a move was recorded) or drop it from the user-facing sentences; keep the git-internals wording only in the Fixed entries, which are about implementation.",
+        "fixTask": "P155.43-gfj",
+        "commit": "a66a3003c27f",
+        "status": "fixed"
       },
       {
         "id": "P155-R57",
@@ -558,9 +560,16 @@
         "file": "tests/test__worktrees.py:2183-2190",
         "issue": "ut5's scanner takes `site = min(at for _w, at in what)` as the function's first site, but no planted function has two sites with an ask between them. A function that asks after its first removal and before its second would be flagged now; mutating `min` to `max` (or any later site) would leave every planted case unchanged, so the first-site rule has no case that fails. Read from the source, not run. Likewise, `all(asks(...) for c in up)` is only pinned with a single caller (`late_inner` has one: `late_outer`). Nothing separates 'every caller' from 'any caller'.",
         "resolution": "Add two planted twins. (a) A function with `run(['worktree','remove',a])`, then `tree_unsettled`, then a second removal, which must be named. (b) A remover with two callers, one asking before its call and one after, which must be named."
+      },
+      {
+        "id": "P155-R61",
+        "severity": "low",
+        "file": "plugins/audit/commands/sync.md:719-720",
+        "issue": "A further copy of the same false claim survives and the filed outcome does not report it. The task asked for a grep for further copies and a report of any found. This one is spelled 'an imported phase ran with `fileIndex` empty and the plan gate therefore inert', which says an empty fileIndex made the gate inert. The corrected statement is that the gate reads a running task's `files` and graded `outputs`, never a fileIndex row. The executor's grep pattern ('what the plan gate matches') and its second pattern ('fileIndex.{0,80}match') both miss this spelling, and sync.md was not in its list of hits or of deliberately-left sites.",
+        "resolution": "Reword to say an imported phase ran with its tasks holding `files: []`, so the plan gate had no declared path to open an edit by. Or file it as a follow-up task, since sync.md is outside this task's declared files."
       }
     ],
-    "outcome": "[findings: 60 - 1 high, 22 med, 37 low; 38 with a recorded fix commit]"
+    "outcome": "[findings: 61 - 1 high, 22 med, 38 low; 39 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -3950,7 +3959,7 @@
     {
       "id": "P155.43-gfj",
       "title": "fix P155-R56: Parts of the new entries use internal terms a user cannot look ...",
-      "status": "in_progress",
+      "status": "done",
       "description": "Parts of the new entries use internal terms a user cannot look up: 'the tombstone of a recorded move', 'the tree's git directory' and 'the copy ... in it', 'loose ref' and 'packed ref', 'GIT_ICASE_PATHSPECS'. The restore and task-remove entries carry the user's decision (what the copy is, what 'tombstone' means), and the first of those terms is never explained.\n\nResolution asked: Say once what the tombstone is (the marker left after a move was recorded) or drop it from the user-facing sentences; keep the git-internals wording only in the Fixed entries, which are about implementation.",
       "files": [
         "CHANGELOG.md",
@@ -3972,13 +3981,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a66a3003c27f",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "CHANGELOG.md [Unreleased] only (diff: 13 insertions, 10 deletions; tools/release.py declared but not edited - nothing in it carries these terms). Added entry for `drive-phase.py restore`: 'in the tree's git directory' -> 'beside the tree' (the word the verb's own output and the entry's title already use); the tombstone is now explained once, from _worktrees._drop_copy (a copy no longer needed is renamed to a tombstone then deleted, so a kill between the two leaves only the tombstone) and kept_where (its move was settled, it holds nothing to put back); 'the tombstone of a recorded move' is gone. Changed entry for task-remove/remove --path: title now says 'a move's copy of the work, or its tombstone, beside it' (refuse_unsettled/tree_unsettled refuse on either, _left_beside); 'The removal deletes the tree's git directory, where the copy ... lives' -> 'Removing the tree deletes the copy with it'; 'when git will not name the tree's git directory' -> 'when git will not say where the tree's copy would be kept' (tree_unsettled's None branch, admin_dir unanswered). Fixed entry 'HEAD is read one way' left as is: loose ref / packed ref / GIT_ICASE_PATHSPECS stay there, as the resolution asks (Fixed entries are about implementation). Class sweep over the file: grep -n -i 'tombstone|tree's git directory|loose ref|packed ref|GIT_ICASE' CHANGELOG.md -> remaining hits: lines 27-29 and 113 (the new definition and its one use), 165-168 (the Fixed entry, kept on purpose), 208 ('the tree's git directory' in the released 3.7.0 section, left: released history is not rewritten). 'the tree's marker' in the restore entry left: not among the terms the finding names. Gates: runsGate own-tests and the task adds no test, so nothing of my own was run; the orchestrator's recorded run of `python3 tools/sweep-selftests.py tests/test__refs.py tests/test__deps.py tests/test__output_lints.py` is the evidence. No number was written into the new prose. Dependants: tools/release.py (tests/test_audit_task.py, .claude/hooks/guard-release.py, .github/sweep-costs.json, ci.yml, tests/test__refs.py, tests/test_stamp_verification.py, tools/affected.py, tools/check-example-pins.py; names _read_text, release_verdict, save_state, Context) - still correct, the file is unchanged. CHANGELOG.md readers (tests/test__deps.py, test__output.py, test__panel_settings.py, test__refs.py, tools/check-release-published.py, tools/lints/_deps.py, _output_lints.py, _refs.py) - still correct: they read the file by basename (section headings, prose-number scan, refs); headings and section structure are unchanged, only prose inside two bullets of [Unreleased] moved; grep of tests/ tools/ .github/ for the removed phrases finds no pin on the [Unreleased] wording (two hits, tests/test_drive_phase.py:8392 a comment and tests/test_audit_status.py:4381 a string about a different message, neither reading CHANGELOG.md).",
+        "descriptive": "The restore and task-remove changelog entries no longer use the internal git-directory wording, and the tombstone is defined once where users first meet it."
       },
       "startedAt": "2026-11-03T13:39:37Z",
-      "completedAt": null,
+      "completedAt": "2026-11-03T13:48:57Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -4002,6 +4011,70 @@
         "runId": "2026-11-03T13:47:35Z.440d05",
         "status": "passed",
         "at": "2026-11-03T13:47:35Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "a66a3003c27f",
+        "at": "2026-11-03T13:48:57Z",
+        "return": "docs/audit/evidence/returns/P155.43-gfj/20261103T133937Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task with expectRedFirst false and no tests.add entry: no case is owed, so no red was owed",
+        "at": "n/a"
+      }
+    },
+    {
+      "id": "P155.44-gfj",
+      "title": "The fileIndex sentence the README dropped is dropped everywhere it was copied",
+      "status": "in_progress",
+      "description": "P155.42 corrected plugins/audit/README.md:461: the plan gate matches an edit against a running task's `files` and its graded `outputs` patterns (hooks/_config.in_progress_task_map reads `files` only; in_progress_outputs), and `fileIndex` is derived from `files` - a row of it alone opens no edit. The same false sentence, \"`fileIndex` is what the plan gate matches an edit against\", survives in three copies: the docstring at plugins/audit/scripts/manifest/audit-task.py around line 10419 (\"THE COST WAS NOT TIDINESS\"), plugins/audit/reference/verbs-in-full.md around line 1341, and PLUGIN-BUILD-GUIDE.md around line 5798. Reword each to the README's corrected statement in its own register, keeping what each paragraph argues (an unscoped task covers no edit of its own). Do not touch plugins/audit/commands/init.md:471, which says `files` is what the gate matches and is correct. Before finishing, grep plugins/audit, PLUGIN-BUILD-GUIDE.md, CONTRIBUTING.md and README.md for 'what the plan gate matches' and 'fileIndex' near 'matches an edit' and report any further copy found.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/reference/verbs-in-full.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tests/test__affected_tests.py",
+        "tests/test__doctor_trail.py",
+        "tests/test_audit_task.py",
+        "tests/test_drive_phase.py",
+        "tools/lints/_deps.py",
+        "tools/prove-gates.py",
+        "tests/_harness.py",
+        "tests/test__deps.py",
+        "tools/sweep-selftests.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "tests/test__runner_collects.py",
+        "tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__refs.py tests/test__deps.py tests/test__output_lints.py tests/test_audit_task.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-03T13:50:08Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-03T13:57:23Z.14da10",
+        "status": "passed",
+        "at": "2026-11-03T13:57:23Z"
       }
     }
   ],
