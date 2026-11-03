@@ -76,11 +76,13 @@ _FIELD = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 # its top level dropped the shapes below them - the object form of `outcome`, a
 # render branch of its own, and `tests.falsifiers` - while every check passed.
 #
-# NO FIXED COUNT OF RECENT DONE PHASES. One stood here, and measured over this
-# repository's plan it added no key, status or evidence word the arms above did not
-# already keep: its one effect was size, the cost this window exists to cut. A
-# surface a recently merged phase exercises is a key path or a status on it, which
-# the shape arm keeps whatever the phase's age.
+# NO FIXED COUNT OF RECENT DONE PHASES. One stood here, and by construction it can
+# add no key path, status or evidence word: the shape arm already keeps a phase
+# carrying each of those, so a phase kept for its age alone brings only volume -
+# more done phases and rows at each width rung. Volume is deliberately not what
+# the window keeps; it is the cost the window exists to cut. A surface a recently
+# merged phase exercises is a key path or a status on it, which the shape arm
+# keeps whatever the phase's age.
 def key_paths(obj, prefix=""):
     """Every key path under `obj`: `a.b` for a key inside a key, `a[].b` through a
     list's items, `a.{}` for the keys of a map keyed by data."""

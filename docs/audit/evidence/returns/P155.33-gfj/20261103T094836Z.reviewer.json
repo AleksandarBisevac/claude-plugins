@@ -1,0 +1,15 @@
+{
+ "findings": [],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Clause 1, 'a test that would see main() stop refusing (R39)': pw22 runs M.main over a fixture whose window ledger is deleted just before the window's evidence reading, via a wrapper over M.evidence, and asserts exit 1, one header on stderr, a stated count equal to the indented lines, and a dangling task line. pw23 is the agreeing twin: same wrapper with no cut, exit 0, neither line. Clause 2, 'correct gate-parity's comment on what the re-read rules out (R40)': the comment above _live_window_cases now says the re-read rules out a row landing between the first reading and the step's snapshot, and cannot rule out one landing between the snapshot and the re-read; this matches the code (full read before _run_live_window, re-read only when diff is non-empty). Clause 3, 'replace the measured-over-this-plan basis with the by-construction reason (R41)': the plan-window.py comment now argues from select(): any phase with a key path, status or evidence word not already in seen is kept by the shape arm and adds it to seen, so a phase kept for age alone adds only volume. That holds against select(). The executor's outcome describes this diff: comment-only changes in plan-window.py and gate-parity.py, two new cases, no behaviour change in main(). Its dependants note is consistent with the diff.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Regression mode, expectRedFirst false: the drift branch already refuses at HEAD, so pw22 passes at HEAD by design. The executor filed not-attempted with a mutation basis, and I accept that. I ran the mutation myself in a scratch copy of plugins/, tests/ and tools/, with bytecode off and each anchor asserted to match exactly once. (1) Drift branch 'return 1' changed to 'return 0': pw22 FAIL, 'SELFTEST FAILED: 22/23 cases passed'. (2) 'if got[\"drift\"]:' changed to 'if False:': pw22 FAIL, 22/23. Restored from the checkout: 'ALL PASS: 23/23 cases passed'. pw17 and the other cases stayed green under both mutations, which is the gap R39 named and pw22 now closes. I did not rerun the over-fire mutation, so the executor's pw23 over-fire claim is unverified by me.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "Read the gate command (sweep-selftests over tests/test_plan_window.py, tests/_harness.py, tests/test__affected_tests.py, tests/test__runner_collects.py, tests/test_stamp_verification.py). Only test_plan_window.py exercises the plan-window drift behaviour. With the drift branch mutated away, every case in that file except pw22 still passed, so before this task the behaviour had no test in the gate that could fail; pw22 is that test. The other four files select affected-tests, runner-collects, stamp-verification and harness behaviour, none of which reaches plan-window.py main(), so I found no test there that is vacuous with respect to the named behaviour."
+ },
+ "verdict": "clean",
+ "tasks": []
+}

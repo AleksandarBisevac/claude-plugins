@@ -2683,9 +2683,11 @@ def _verify_cleanup_cases(check):
 # verify.sh runs (its shell function cut out of the shipped file, against this
 # repo's real plan) and then ask the renderer's own evidence reader of both plans,
 # independently of the step's own comparison. Which phases the window keeps, and
-# the step refusing a window whose ledger is missing, are the tool's and are cased
-# over a fixture plan in tests/test_plan_window.py: this repo's plan moves with
-# every merged phase, so a case over it cannot pin a selection.
+# the step refusing a window whose evidence reads differently - its command exiting
+# 1 and naming the dangling pointers (pw22, with pw23 its agreeing twin) - are the
+# tool's and are cased over a fixture plan in tests/test_plan_window.py: this
+# repo's plan moves with every merged phase, so a case over it cannot pin a
+# selection, and lw2 sees a refusal only when the live plan happens to produce one.
 _LIVE_WINDOW_FUNC = "live_plan_window"
 # The tool the step runs, named whole so lw0 can count it in the function.
 _LIVE_WINDOW_TOOL = os.path.join("tools", "plan-window.py")
@@ -2780,10 +2782,15 @@ def _live_window_cases(check):
     full_path = os.path.join(REPO, "docs", "audit", "audit-plan.json")
     root = tempfile.mkdtemp(prefix="live-window-selftest-")
     try:
-        # The full plan is read BEFORE the step, and once more only when the two
-        # readings disagree: in a checkout where a drive appends ledger rows while
-        # this runs, a run landing between the readings is a moving ledger and not
-        # a defect, and a disagreement that survives the re-read is not that.
+        # The full plan is read BEFORE the step, and once more, AFTER it, only when
+        # the two readings disagree. The step reads its own snapshot partway
+        # through, so the re-read rules out a ledger row that landed between the
+        # first reading and that snapshot: the window and the re-read both hold
+        # that row. It cannot rule out a row landing between the snapshot and the
+        # re-read, which makes the re-read newer than the window, so in a checkout
+        # where a drive appends rows while this runs, a disagreement can survive
+        # the re-read with no defect behind it. The re-read narrows that race; it
+        # does not close it.
         full = _evidence_of(full_path)
         code, out = _run_live_window(shell, func, os.path.join(root, "ok"))
         window_root = os.path.join(root, "ok", "live-window")

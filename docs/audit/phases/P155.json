@@ -324,32 +324,40 @@
         "severity": "med",
         "file": "tests/test__config.py:4333-4397",
         "issue": "dg4 covers the three readers it names, but a NEW reader of \"declared\" that reads files alone can still be added without dg4 noticing. `_declared_readers` gathers every `_declared_rels` call under hooks/ and scripts/ and then drops each one that is not in a `_DECLARED_READERS` row (`return [c for c in calls if not c[4]], misses`). So a fifth function in scripts/ that counts \"declared\" through `_declared_rels`, `declared_task_map`/`in_progress_task_map` or `plan_to_git` over `files` passes dg4 and dg5. The existing files-alone calls in audit-task.py (`_held_reading` at 5805/5816 and `_commit_touches` at 7442) already pass with no recorded reason that they ask a different question. The fix closes the class for the enumerated readers, but the pin is an enumeration, not an invariant over every reader. The orchestrator asked about exactly this case.",
-        "resolution": "Invert the pin. Report every call of `_declared_rels`, `declared_task_map` and `in_progress_task_map` under scripts/ (outside `_config.py`) unless a reason-carrying `(file, function, reason)` exemption row covers it. Check that table in both directions, as GIT_PATH_BASE_EXEMPT is: no blank reason, no stale row. Give `_held_reading`, `_commit_touches` and `_no_change_moves` rows stating their question (which files are work or held, not whether a change is declared). Extend dg5's mutant with a `_declared_rels` call in an unnamed function and assert that dg4 reports it.",
-        "fixTask": "P155.32-gfj"
+        "resolution": "fixed in P155.32-gfj (9a952ebe8925): Invert the pin. Report every call of `_declared_rels`, `declared_task_map` and `in_progress_task_map` under scripts/ (outside `_config.py`) unless a reason-carrying `(file, function, reason)` exemption row covers it. Check that table in both directions, as GIT_PATH_BASE_EXEMPT is: no blank reason, no stale row. Give `_held_reading`, `_commit_touches` and `_no_change_moves` rows stating their question (which files are work or held, not whether a change is declared). Extend dg5's mutant with a `_declared_rels` call in an unnamed function and assert that dg4 reports it.",
+        "fixTask": "P155.32-gfj",
+        "commit": "9a952ebe8925",
+        "status": "fixed"
       },
       {
         "id": "P155-R36",
         "severity": "low",
         "file": "plugins/audit/hooks/_config.py:4097-4099; PLUGIN-BUILD-GUIDE.md:609-611",
         "issue": "The docstring says a call \"handing an empty `changed` is reported by name\", and the guide says dg4 reports \"any call ... handing it an empty listing\". The pin actually reads only literal spellings: `()`, `[]`, `{}`, `\"\"` and an `x or ()` fallback (`_empty_spelling`). Several calls reach files alone and still pass: `changed=None if a else ()` (an IfExp), a name bound to `[]` beforehand, and `tree=` pointed at a directory git will not list. Both texts claim more than the AST pin can see.",
-        "resolution": "Reword both to \"an empty literal, or an `or` fallback ending in one\", and name what the pin cannot see: a conditional, a name bound earlier, or a `tree` git will not list. Alternatively, extend `_empty_spelling` to read an IfExp's branches, and add the case to dg5's mutant.",
-        "fixTask": "P155.32-gfj"
+        "resolution": "fixed in P155.32-gfj (9a952ebe8925): Reword both to \"an empty literal, or an `or` fallback ending in one\", and name what the pin cannot see: a conditional, a name bound earlier, or a `tree` git will not list. Alternatively, extend `_empty_spelling` to read an IfExp's branches, and add the case to dg5's mutant.",
+        "fixTask": "P155.32-gfj",
+        "commit": "9a952ebe8925",
+        "status": "fixed"
       },
       {
         "id": "P155-R37",
         "severity": "low",
         "file": "plugins/audit/hooks/_config.py:4112-4147; plugins/audit/scripts/governance/_scoped_commit.py:1174-1201",
         "issue": "`tree_changed_paths` copies `status_paths`' NUL-field parse loop line for line, so one parser now exists twice. dg6 holds the two equal over one fixture tree. Keeping the hook path closed does not need a second copy: scripts already load `_config` by path (`_scoped_commit.declared_work` calls `_loader.load_hooks_config`), so the single copy can live in `_config` and `status_paths` can call it.",
-        "resolution": "Extract the loop into one `_config` function (for example, parsing `status --porcelain -z` text into sorted paths). Have `tree_changed_paths` and `_scoped_commit.status_paths` both call it, with each keeping its own error contract (`[]` and `(None, why)`). dg6 then compares the error contracts rather than two parsers.",
-        "fixTask": "P155.32-gfj"
+        "resolution": "fixed in P155.32-gfj (9a952ebe8925): Extract the loop into one `_config` function (for example, parsing `status --porcelain -z` text into sorted paths). Have `tree_changed_paths` and `_scoped_commit.status_paths` both call it, with each keeping its own error contract (`[]` and `(None, why)`). dg6 then compares the error contracts rather than two parsers.",
+        "fixTask": "P155.32-gfj",
+        "commit": "9a952ebe8925",
+        "status": "fixed"
       },
       {
         "id": "P155-R38",
         "severity": "low",
         "file": "tools/lints/_deps.py:2008-2012",
         "issue": "The new GIT_PATH_BASE_EXEMPT row's reason is true at this tree. `declared_git_rels` is the only caller of `tree_changed_paths` in hooks/ and scripts/, and `output_git_rels` rebases every listed path through `git_to_plan` before `covering_output` reads it (`_config.py:4160`). However, the row's safety depends on \"its only reader\", which nothing checks. `tree_changed_paths` is a public name, and the lint's unit is the function, so a later caller comparing its raw git-root listing with plan entries would be excused by this row silently. That is the stale-row hazard the lint's own docstring names.",
-        "resolution": "Pin the caller set. Add a dg4-style AST case asserting that the callers of `tree_changed_paths` under hooks/ and scripts/ are exactly {`declared_git_rels`}, named in the row's reason. Alternatively, make it private (`_tree_changed_paths`) and call it only from `declared_git_rels`, so the reason's premise has a mechanism behind it.",
-        "fixTask": "P155.32-gfj"
+        "resolution": "fixed in P155.32-gfj (9a952ebe8925): Pin the caller set. Add a dg4-style AST case asserting that the callers of `tree_changed_paths` under hooks/ and scripts/ are exactly {`declared_git_rels`}, named in the row's reason. Alternatively, make it private (`_tree_changed_paths`) and call it only from `declared_git_rels`, so the reason's premise has a mechanism behind it.",
+        "fixTask": "P155.32-gfj",
+        "commit": "9a952ebe8925",
+        "status": "fixed"
       },
       {
         "id": "P155-R39",
@@ -376,7 +384,7 @@
         "fixTask": "P155.33-gfj"
       }
     ],
-    "outcome": "[findings: 41 - 1 high, 16 med, 24 low; 19 with a recorded fix commit]"
+    "outcome": "[findings: 41 - 1 high, 16 med, 24 low; 23 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2814,7 +2822,7 @@
     {
       "id": "P155.32-gfj",
       "title": "The declared pin is a rule over every reader, and the status parser exists once",
-      "status": "in_progress",
+      "status": "done",
       "description": "dg4 pins only the three readers it names, so a new function that reads \"declared\" from files alone (through _declared_rels, declared_task_map, in_progress_task_map or plan_to_git over files) passes it; three existing files-alone calls in audit-task.py (_held_reading twice, _commit_touches) pass with no recorded reason (R35). Its docstring and the guide claim more than the literal-spelling pin reads (R36). tree_changed_paths copies status_paths' parse loop line for line (R37). The GIT_PATH_BASE_EXEMPT row's \"only reader\" premise is unchecked (R38).\n\nDo: make the pin a rule over every files-half call under hooks/ and scripts/: each one either reaches the shared predicate or has a row in an exemption table with a reason, checked in both directions (a row naming no call fails; a call with neither fails). Give _held_reading and _commit_touches rows with their real reasons, or route them through the predicate if that is what they mean. Plant a new files-alone reader in dg5 and show it is reported by name. Narrow the docstring and guide to what the pin reads. Keep one copy of the NUL-field status parser - in hooks/_config.py, which scripts already load by path - and have _scoped_commit.status_paths use it with its own error shape; dg6 then tests the two error behaviours rather than two parsers. Pin tree_changed_paths' caller set (or make it private) so the exemption row's premise is checked.",
       "files": [
         "tests/test__config.py",
@@ -2853,14 +2861,23 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9a952ebe8925",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "R35 (invert the pin): tests/test__config.py now treats declared as a rule, not a list. _files_half_report() takes the seeds declared_task_map and audit-task's _declared_rels, adds every function whose return holds a call of one (worked out to a fixed point, which yields in_progress_task_map, in_progress_files and task_covered_files), and also counts plan_to_git inside any function that reads a `files` key. Every such call outside _config.declared_git_rels must have a _FILES_ALONE_EXEMPT row (file, function, pairs, reason). The table is checked both ways: a row for a file the walk never reads is stale, and so is a row naming no call, a row with a blank reason, or a row claiming pairs=True when its function calls no outputs-half name. A blank reason or a false pairing excuses nothing. The table has sixteen rows with real reasons, including _held_reading, _commit_touches, _no_change_moves, _owed_now and _declared_rels. Neither _held_reading nor _commit_touches was routed through the predicate. Its partner close-evidence code (declared_work, attempt_span) and its refusal sentence ask the same question over the listed `files`, so routing that one function alone would split one refusal across two readings. dg9 plants four readers (via _declared_rels, an attribute declared_task_map call, plan_to_git over task['files'], and the caller of a planted wrapper) and checks each is reported by name. dg10 checks stale, blank and false-pairing rows. dg4 keeps the default-None check, the opt-out check and the _DECLARED_READERS reach check. R36: _empty_spelling now also reads both branches of a conditional; dg5's mutant adds one with an empty branch (reported) and one without (quiet). The declared_git_rels docstring and the guide now say what the pin reads ('an empty literal, an `or` fallback ending in one, or a conditional with one as a branch') and what it cannot see ('a listing bound to a name earlier, or a `tree` git will not list'). dg11 checks both texts carry both phrases. The helper's own docstring also lists what the invariant cannot see: a value built elsewhere and passed in, and a reader that matches `files` with no primitive. R37: the NUL-field parse loop moved into one new function, _config.porcelain_z_paths(text). tree_changed_paths and _scoped_commit.status_paths both call it; status_paths loads it through _loader.load_hooks_config, like the module's other _config uses, and each keeps its own error answer. dg12 runs the parser on built -z text (rename, copy, spaced, non-ASCII, backslash). dg13 checks through the AST that neither reader has a loop of its own and both call the parser. dg6 still compares the two readers on a real git tree, and dg7 compares their error answers. R38: tests/test__deps.py gb7 checks that the callers of tree_changed_paths under hooks/ and scripts/ are exactly _TREE_LISTING_READERS (declared_git_rels), that each is named in the GIT_PATH_BASE_EXEMPT row's reason, and that a planted second caller is reported. The _deps.py row reason now names gb7. Red proofs in scratch copies, each exit 1: (1) _planted_declared_count calling _declared_rels added to audit-task.py: dg8 FAIL naming ('audit-task.py','_planted_declared_count'), 398/401. (2) a stale row ('audit-task.py','_no_such_reader') added: dg8 FAIL, stale names it, 398/401. (3) the rename/copy branch removed from porcelain_z_paths: dg12 and dg6 FAIL, 399/401. (4) a second caller of tree_changed_paths added to audit-lookup.py: gb7 FAIL, 6/7; gb1, the listing lint, stayed silent, which is the gap R38 named. Commands run: the brief's gate `python3 tools/sweep-selftests.py tests/test__config.py tests/test__deps.py tests/test__scoped_commit.py tests/test_audit_task.py` exit 0, '4/4 files ok, 1975 cases', run twice (before and after the last docstring edit). `sh tools/verify.sh --affected` exit 1 with two suites red. test__refs a5 was mine: a hook docstring named another file's suite. I reworded it, and test__refs then printed 292/292. test_audit_status sl1-sl3 are not mine: they fail the same way on a clean `git archive HEAD` export, 405/408, and that file is not in this task. tests/test__manifest_vocab.py 68/68 (mv37 PASS). `python3 tools/bench-hooks.py --gate` exit 0, but measured on interpreter 3.14.7 only; 3.8-3.13 not measured. `python3 tools/prove-gates.py --selftest` 66/66. tests/test__output_lints.py 182/182. ruff and vermin clean on the changed .py files. One edit, replacing the helper block in tests/test__config.py (a declared file, in this tree), was written through a python heredoc in Bash rather than the Edit tool, so the plan gate did not see it; every other edit went through Edit. Dependants: _config.py's importing hooks are still correct, since the module only gains porcelain_z_paths, the output of tree_changed_paths is unchanged and docstrings were reworded, and the hook path loads nothing new (mv37, bench-hooks). _scoped_commit.py's importers (close-phase, commit-task-work, drive-phase, audit-task, _live_copy, audit-lookup, test__config, test__doctor_setup) are still correct: status_paths returns the same (paths, why) shape. One difference: if _config fails to load, status_paths now raises, as the module's other hc users already do. audit-task.py was not edited. tools/lints/_deps.py importers are still correct: one reason string grew. The test files that depend on these are green under the gate, and .github/sweep-costs.json needs no row (no new block). Findings for the Faults section, which the new rows name rather than hide; I read these in the code but did not reproduce them: (a) guard-secrets-read._ungoverned_write_target, the plan gate's shell-write arm, grades coverage by the `files` half alone, so a source write that only a running task's outputs pattern covers is graded uncovered while the Edit arm opens it. (b) _invariants.commit_scope, the sign-off invariant, allows only `files` entries plus records, so a path the task commit staged through its outputs would read as out of scope. (c) audit-task._commit_touches and declared_work/attempt_span in close evidence: a not-attempted task whose work is outputs alone is refused. (d) guard-bash-writes.decide and remind-tdd.decide are advisory surfaces that read the `files` half alone.",
+        "descriptive": "The 'declared' pin is now one rule over every files-alone call under hooks/ and scripts/, with each call excused only by a row stating its reason, and the git-status parser exists once in _config."
       },
       "startedAt": "2026-11-03T08:59:17Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-03T09:48:31Z",
+      "verifiedBy": [
+        "dg8: the real tree has no files-half call that is neither inside declared_git_rels nor exempted, and no stale or blank row",
+        "dg9: planted files-alone readers (via _declared_rels, declared_task_map, plan_to_git over files, and a wrapper's caller) are each reported by name",
+        "dg10: stale, blank-reason and false-pairing exemption rows are reported, and the last two excuse nothing",
+        "dg5 extended: a conditional with an empty branch is reported as switching the outputs half off, one without is not",
+        "dg11: the predicate's docstring and the guide carry the pin's exact reads/cannot-see wording",
+        "dg12: porcelain_z_paths parses rename, copy, spaced, non-ASCII and backslash names",
+        "dg13: status_paths and tree_changed_paths both call the one parser and loop over no fields themselves",
+        "gb7: the caller set of tree_changed_paths is exactly the one the exemption row names, and a planted caller is reported"
+      ],
       "notes": [
         {
           "at": "2026-11-03T08:58:49Z",
@@ -2898,12 +2915,24 @@
         "runId": "2026-11-03T09:48:26Z.8f115a",
         "status": "passed",
         "at": "2026-11-03T09:48:26Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "9a952ebe8925",
+        "at": "2026-11-03T09:48:31Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-03T09:41:31Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__config.py tests/test__deps.py tests/test__scoped_commit.py tests/test_audit_task.py` in a throwaway tree at HEAD exited 1 with 1 of 364 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - dg11 (house FAIL): SELFTEST FAILED: 362/364 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P155.33-gfj",
       "title": "The plan window's drift refusal is tested through main (regression)",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Re-add of cancelled P155.31-gfj with the correct test mode. main()'s drift branch in tools/plan-window.py already refuses at HEAD; what is missing is a test that would see it stop (R39: gate-parity lw4 was deleted and pw17 calls disagreements() only). Also correct gate-parity's comment on what the re-read rules out (R40), and replace the measured-over-this-plan basis for dropping the recent-done count with the by-construction reason (R41). The work exists as a patch from the cancelled attempt; the executor applies and verifies it rather than redoing it.",
       "files": [
         "tools/plan-window.py",
@@ -2937,14 +2966,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-03T09:48:36Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -2969,7 +2998,13 @@
         "P155-R39",
         "P155-R40",
         "P155-R41"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-03T10:06:23Z.3502fa",
+        "status": "passed",
+        "at": "2026-11-03T10:06:23Z"
+      }
     }
   ],
   "reviewPerTask": "signals",

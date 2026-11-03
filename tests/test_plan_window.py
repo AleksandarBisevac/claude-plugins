@@ -205,6 +205,46 @@ def _quiet(fn, *args):
     return got, buf.getvalue()
 
 
+def _split(fn, *args):
+    """(return value, stdout text, stderr text) of `fn(*args)`, the two streams
+    kept apart for a case that says which one a line must be on."""
+    out_buf, err_buf = io.StringIO(), io.StringIO()
+    out, err = sys.stdout, sys.stderr
+    sys.stdout, sys.stderr = out_buf, err_buf
+    try:
+        got = fn(*args)
+    finally:
+        sys.stdout, sys.stderr = out, err
+    return got, out_buf.getvalue(), err_buf.getvalue()
+
+
+def _main_with_window_ledger(src_plan, dst, cut):
+    """`M.main([src_plan, dst])` with the reading of the WINDOW's plan taken after
+    the window's ledger is deleted when `cut` is true - a real ledger gone, so
+    the window's pointers really dangle, rather than a reading made up here. The
+    full plan's reading is left alone either way, and with `cut` false the
+    wrapper only passes through, so the two runs differ in the cut alone.
+    Returns (code, stdout, stderr, the paths the wrapper was asked about)."""
+    window_plan = os.path.abspath(os.path.join(dst, "docs", "audit",
+                                               "audit-plan.json"))
+    asked = []
+    real = M.evidence
+
+    def wrapped(path):
+        asked.append(os.path.abspath(path))
+        if cut and os.path.abspath(path) == window_plan:
+            shutil.rmtree(os.path.join(dst, "docs", "audit", "evidence"),
+                          ignore_errors=True)
+        return real(path)
+
+    M.evidence = wrapped
+    try:
+        code, out, err = _split(M.main, [src_plan, dst])
+    finally:
+        M.evidence = real
+    return code, out, err, asked
+
+
 # --- cases --------------------------------------------------------------------
 def _cases(check):
     shards = _shards()
@@ -399,6 +439,49 @@ def _cases(check):
               % (code3, asked),
               code3 == 0 and len(asked) == 2 and window3 in asked
               and not [a for a in asked if a.startswith(source)])
+
+        # THE STEP'S OWN REFUSAL, through main(): pw17 shows the comparison names
+        # dangling pointers, which a drift branch returning 0 would still pass.
+        # Here the window's ledger is deleted just before the window's reading,
+        # so the command itself must exit non-zero and say why on stderr.
+        src4 = _write_project(os.path.join(tmp, "proj-4"))
+        dst4 = os.path.join(tmp, "window-4")
+        win4 = os.path.abspath(os.path.join(dst4, "docs", "audit",
+                                            "audit-plan.json"))
+        code4, out4, err4, asked4 = _main_with_window_ledger(src4, dst4, True)
+        # COUNTED, not found: the header states how many readings differ and
+        # each one is an indented line under it, so a branch that kept the
+        # header and dropped the lines - or named a line the comparison never
+        # made - shows here as a mismatch between the two.
+        head4 = [ln for ln in err4.splitlines()
+                 if "evidence reading(s) differ" in ln]
+        named4 = [ln.strip() for ln in err4.splitlines() if ln.startswith("  ")]
+        said4 = head4[0].split(": ", 1)[1].split(" ", 1)[0] if head4 else None
+        dangling4 = [ln for ln in named4
+                     if ln.startswith("task ") and "dangling" in ln]
+        check("pw22 a window whose evidence reads differently from the full "
+              "plan's (its ledger deleted before its reading) makes the command "
+              "exit 1 and say so on stderr: one header, as many indented lines "
+              "as it counts, among them a task whose pointer dangles: code=%r "
+              "asked-window=%r header=%r lines=%d dangling-tasks=%d err=%r"
+              % (code4, win4 in asked4, said4, len(named4), len(dangling4),
+                 err4[-800:]),
+              code4 == 1 and win4 in asked4 and len(head4) == 1
+              and said4 == str(len(named4)) and dangling4 != [])
+        # THE TWIN, for the other mutation: a drift branch taken unconditionally
+        # passes pw22. The same wrapper with no cut must leave the command at 0
+        # with neither line said.
+        src5 = _write_project(os.path.join(tmp, "proj-5"))
+        dst5 = os.path.join(tmp, "window-5")
+        win5 = os.path.abspath(os.path.join(dst5, "docs", "audit",
+                                            "audit-plan.json"))
+        code5, out5, err5, asked5 = _main_with_window_ledger(src5, dst5, False)
+        check("pw23 ...and the same run with the window's ledger left in place "
+              "exits 0 and says neither line: code=%r asked-window=%r err=%r"
+              % (code5, win5 in asked5, err5[-800:]),
+              code5 == 0 and win5 in asked5
+              and "dangling" not in out5 + err5
+              and "evidence reading(s) differ" not in out5 + err5)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
