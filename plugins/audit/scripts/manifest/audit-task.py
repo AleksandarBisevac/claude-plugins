@@ -4980,9 +4980,8 @@ def _journal_cancel(project, config, mpath, kind, tid, phase_id, reason,
 # --- start: the promotion the plan gate reads ------------------------------------
 # `add` writes `status: "pending"`, `startedAt: null`, `attempts: 0`, and
 # `hooks/_config.in_progress_task_map` -- the map `hooks/require-plan.py` resolves
-# an allowed path through -- skips every task whose status is not `in_progress`,
-# its `fileIndex` arm included (that arm only re-adds paths for ids already in the
-# filtered set). So a task added to a phase that is ALREADY RUNNING is born in a
+# an allowed path through -- skips every task whose status is not `in_progress`.
+# So a task added to a phase that is ALREADY RUNNING is born in a
 # state where its own declared files are refused on the first Edit, and the only
 # way out was the hand edit `commands/task.md` forbids: `/audit:run <taskId>`
 # promotes AND spawns, so there was no way to promote without running. Driven and

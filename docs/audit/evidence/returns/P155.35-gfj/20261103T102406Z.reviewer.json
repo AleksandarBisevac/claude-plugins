@@ -1,0 +1,25 @@
+{
+ "findings": [
+  {"id": 1, "severity": "med", "file": "plugins/audit/commands/worktree.md:79-81,170",
+   "issue": "The new Changed entry and COMPATIBILITY.md say task-remove and remove --path refuse a tree with a move's copy beside it, --force included, and exit 1. commands/worktree.md still says of task-remove that it refuses a dirty tree, an unreadable one and the current directory, and that '--force is the explicit escape', and its exit-code line lists only 'no tree marked for the task, or a dirty one'. A user reading the command page is told the opposite of the changelog. The executor flagged this and left it because the file is outside the task's files; the contradiction is the phase's.",
+   "resolution": "Add the unsettled-tree refusal (forced or not, naming the copy and `drive-phase.py restore <taskId>`) to the task-remove and remove --path paragraphs and to the exit-1 list, in a task that declares commands/worktree.md."},
+  {"id": 2, "severity": "low", "file": "plugins/audit/README.md:461",
+   "issue": "Still says 'fileIndex is what the plan gate matches an edit against'. The new Changed entry says the plan gate no longer opens an edit through a fileIndex row; in_progress_task_map reads a task's files alone (hooks/_config.py, the 'files ALONE, NEVER A fileIndex ROW' paragraph). The README sentence is now false.",
+   "resolution": "Reword to say the gate matches an edit against a running task's files and graded outputs, and that fileIndex is derived from files."},
+  {"id": 3, "severity": "low", "file": "CHANGELOG.md:65-76,123-131,176-181",
+   "issue": "Parts of the new entries use internal terms a user cannot look up: 'the tombstone of a recorded move', 'the tree's git directory' and 'the copy ... in it', 'loose ref' and 'packed ref', 'GIT_ICASE_PATHSPECS'. The restore and task-remove entries carry the user's decision (what the copy is, what 'tombstone' means), and the first of those terms is never explained.",
+   "resolution": "Say once what the tombstone is (the marker left after a move was recorded) or drop it from the user-facing sentences; keep the git-internals wording only in the Fixed entries, which are about implementation."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clause: 'Add a Changed entry for each, worded for a user'. Each of the five asked items is now a Changed entry: the Co-Authored-By trailer (CHANGELOG.md:111-122: names the model the ledger recorded, configured text never written, record commits carry none), task-remove and remove --path refusing a tree with a move's copy, --force included (:123-131), outputs staged by the task commit (:132-138), the plan gate no longer opening an edit through a fileIndex row alone (:139-145), and scope --gate (the existing --gate-add entry and the Changed entry that refuses a --gate list leaving out a held entry). I read the code behind each claim in the task tree and found it true: coauthor_note and task_coauthor in commit-task-work.py and _scoped_commit.py (a set key asks for the trailer, names come from models, the state commit passes None); refuse_unsettled in _worktrees.py (forced or not, and when git cannot name the admin dir); restore exit codes in drive-phase.py (0 restored, 1 stopped, 2 no tree or no copy); declared_git_rels and owned_rels (files plus changed paths an outputs pattern covers); in_progress_task_map (files only). The other added entries (leave, Where your files are documented, affected/walk, support-module red-first) have matching code. R44 (the schema's coauthor description now matches reference/config.md and the code) and R49 (the stale in_progress_task_map fileIndex-arm comment removed) are done. COMPATIBILITY.md: the forced-removal exit-0 to exit-1 change is added as a 'changed' bullet, the require-plan narrowing is added to the 'what a guard refuses' bullet, the coauthor entry at :170 already carries the rule, and the executor's reason for leaving outputs staging out is sound (no key stops being read, nothing that took effect stops). The executor's outcome describes the diff; its report of one red verify.sh --affected step (the stress leg, test_drive_phase sd12) is stated honestly and is outside this diff, which changes no code. One thing in the diff the CHANGELOG cannot be held to: declaring_tasks in hooks/_config.py still reads a fileIndex arm, but it is documented as for-a-message-only, so no entry overstates the gate.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "The task has no tests.add entry and expectRedFirst is not asked; the diff is a changelog, a compatibility note, a schema description and a comment, so none was owed. The executor filed not-attempted with that basis and it holds.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "tests.gate is a literal sweep of the nine files named in the brief, and the task names no behaviour whose deletion those tests could be asked about: the change is documentation, a schema description string and a comment. I did not read the suites, so I make no claim about them."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

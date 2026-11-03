@@ -1316,7 +1316,8 @@
       "P153.8-34e",
       "P153.19-34e",
       "P153.20-34e",
-      "P155.18-gfj"
+      "P155.18-gfj",
+      "P155.35-gfj"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1415,7 +1416,8 @@
       "P131.1",
       "P138.2",
       "P155.11",
-      "P155.18-gfj"
+      "P155.18-gfj",
+      "P155.35-gfj"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -1875,7 +1877,10 @@
       "P155.30-gfj",
       "P155.31-gfj",
       "P155.32-gfj",
-      "P155.33-gfj"
+      "P155.33-gfj",
+      "P155.34-gfj",
+      "P155.35-gfj",
+      "P155.36-gfj"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2943,7 +2948,8 @@
       "P155.19-gfj",
       "P155.23-gfj",
       "P155.29-gfj",
-      "P155.32-gfj"
+      "P155.32-gfj",
+      "P155.34-gfj"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -3488,7 +3494,8 @@
       "P142.12-6yq",
       "P142.51-6yq",
       "P148.5",
-      "P155.11"
+      "P155.11",
+      "P155.34-gfj"
     ],
     "plugins/audit/schema/audit-config.schema.json": [
       "P41.1",
@@ -3573,7 +3580,8 @@
       "P131.13",
       "P138.2",
       "P148.10-xpz",
-      "P148.21-xpz"
+      "P148.21-xpz",
+      "P155.35-gfj"
     ],
     "plugins/audit/scripts/_deps.py": [
       "P15.1",
@@ -3810,7 +3818,8 @@
       "P131.5",
       "P132.4",
       "P155.11",
-      "P155.18-gfj"
+      "P155.18-gfj",
+      "P155.35-gfj"
     ],
     "plugins/audit/scripts/config/_help.py": [
       "P10.2",
@@ -3933,7 +3942,9 @@
       "P155.12",
       "P155.26-gfj",
       "P155.27-gfj",
-      "P155.28-gfj"
+      "P155.28-gfj",
+      "P155.36-gfj",
+      "P155.38-gfj"
     ],
     "plugins/audit/scripts/git/close-phase.py": [
       "P18.3",
@@ -4138,7 +4149,8 @@
       "P130.40-ywo",
       "P131.1",
       "P131.2",
-      "P142.1"
+      "P142.1",
+      "P155.34-gfj"
     ],
     "plugins/audit/scripts/governance/_journal_io.py": [
       "P29.3",
@@ -4658,7 +4670,8 @@
       "P155.29-gfj",
       "P155.30-gfj",
       "P155.31-gfj",
-      "P155.33-gfj"
+      "P155.33-gfj",
+      "P155.35-gfj"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -4703,7 +4716,8 @@
       "P131.1",
       "P131.2",
       "P155.11",
-      "P155.18-gfj"
+      "P155.18-gfj",
+      "P155.35-gfj"
     ],
     "plugins/audit/scripts/manifest/_commit_trail.py": [
       "P69.4-j6r",
@@ -4916,7 +4930,8 @@
       "P148.10-xpz",
       "P148.23-xpz",
       "P155.11",
-      "P155.18-gfj"
+      "P155.18-gfj",
+      "P155.35-gfj"
     ],
     "plugins/audit/scripts/manifest/_merge_install.py": [
       "P60.5",
@@ -5172,7 +5187,8 @@
       "P155.10",
       "P155.13",
       "P155.29-gfj",
-      "P155.32-gfj"
+      "P155.32-gfj",
+      "P155.35-gfj"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -8467,7 +8483,8 @@
       "P155.25-gfj",
       "P155.30-gfj",
       "P155.31-gfj",
-      "P155.33-gfj"
+      "P155.33-gfj",
+      "P155.39-gfj"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -8607,7 +8624,8 @@
       "P155.29-gfj",
       "P155.30-gfj",
       "P155.31-gfj",
-      "P155.33-gfj"
+      "P155.33-gfj",
+      "P155.35-gfj"
     ],
     "tools/redfirst.sh": [
       "P55.13",
@@ -8686,7 +8704,8 @@
       "P155.29-gfj",
       "P155.30-gfj",
       "P155.31-gfj",
-      "P155.33-gfj"
+      "P155.33-gfj",
+      "P155.35-gfj"
     ],
     "tools/ui-tests/evidence-badge.test.mjs": [
       "P32.7",
@@ -8750,7 +8769,8 @@
       "P155.9",
       "P155.24-gfj",
       "P155.25-gfj",
-      "P155.30-gfj"
+      "P155.30-gfj",
+      "P155.39-gfj"
     ],
     "plugins/audit/scripts/governance/_gate_derive.py": [
       "P79.2",
@@ -10636,7 +10656,9 @@
       "P155.22-gfj",
       "P155.27-gfj",
       "P155.28-gfj",
-      "P155.29-gfj"
+      "P155.29-gfj",
+      "P155.37-gfj",
+      "P155.38-gfj"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -11113,7 +11135,8 @@
       "P131.1",
       "P131.2",
       "P143.7-z9j",
-      "P155.20-gfj"
+      "P155.20-gfj",
+      "P155.34-gfj"
     ],
     "plugins/audit/tests/test_integrate_task.py": [
       "P124.4",
@@ -11357,7 +11380,8 @@
       "P148.8",
       "P148.13-xpz",
       "P155.7",
-      "P155.18-gfj"
+      "P155.18-gfj",
+      "P155.35-gfj"
     ],
     "plugins/audit/hooks/hold-handback.py": [
       "P128.6-0h5"
@@ -11756,7 +11780,8 @@
       "P155.29-gfj",
       "P155.30-gfj",
       "P155.31-gfj",
-      "P155.33-gfj"
+      "P155.33-gfj",
+      "P155.35-gfj"
     ],
     "tests/fixtures/pricing-page-2026-10-10.md": [
       "P131.1"
@@ -11806,7 +11831,8 @@
       "P155.29-gfj",
       "P155.30-gfj",
       "P155.31-gfj",
-      "P155.33-gfj"
+      "P155.33-gfj",
+      "P155.35-gfj"
     ],
     "tests/test__areas.py": [
       "P131.1",
@@ -11815,7 +11841,8 @@
     "tests/test__branch.py": [
       "P131.1",
       "P155.11",
-      "P155.18-gfj"
+      "P155.18-gfj",
+      "P155.35-gfj"
     ],
     "tests/test__claude_home.py": [
       "P131.1",
@@ -11849,7 +11876,8 @@
       "P155.19-gfj",
       "P155.23-gfj",
       "P155.29-gfj",
-      "P155.32-gfj"
+      "P155.32-gfj",
+      "P155.34-gfj"
     ],
     "tests/test__config_rules.py": [
       "P131.1",
@@ -11857,7 +11885,8 @@
       "P131.5",
       "P132.4",
       "P155.11",
-      "P155.18-gfj"
+      "P155.18-gfj",
+      "P155.35-gfj"
     ],
     "tests/test__demo_cast.py": [
       "P131.1",
@@ -11978,7 +12007,8 @@
     ],
     "tests/test__invariants.py": [
       "P131.1",
-      "P142.1"
+      "P142.1",
+      "P155.34-gfj"
     ],
     "tests/test__journal_io.py": [
       "P131.1",
@@ -12031,7 +12061,8 @@
       "P148.21-xpz",
       "P148.23-xpz",
       "P155.11",
-      "P155.18-gfj"
+      "P155.18-gfj",
+      "P155.35-gfj"
     ],
     "tests/test__manifest_rules.py": [
       "P131.1"
@@ -12051,7 +12082,8 @@
       "P148.10-xpz",
       "P148.23-xpz",
       "P155.11",
-      "P155.18-gfj"
+      "P155.18-gfj",
+      "P155.35-gfj"
     ],
     "tests/test__merge_install.py": [
       "P131.1"
@@ -12170,7 +12202,8 @@
       "P155.29-gfj",
       "P155.30-gfj",
       "P155.31-gfj",
-      "P155.33-gfj"
+      "P155.33-gfj",
+      "P155.35-gfj"
     ],
     "tests/test__runner_output.py": [
       "P131.1",
@@ -12278,7 +12311,9 @@
       "P155.12",
       "P155.26-gfj",
       "P155.27-gfj",
-      "P155.28-gfj"
+      "P155.28-gfj",
+      "P155.36-gfj",
+      "P155.38-gfj"
     ],
     "tests/test_ado_connect.py": [
       "P131.1"
@@ -12369,7 +12404,8 @@
       "P155.13",
       "P155.19-gfj",
       "P155.29-gfj",
-      "P155.32-gfj"
+      "P155.32-gfj",
+      "P155.35-gfj"
     ],
     "tests/test_audit_usage.py": [
       "P131.1"
@@ -12509,7 +12545,9 @@
       "P155.21-gfj",
       "P155.28-gfj",
       "P155.29-gfj",
-      "P155.30-gfj"
+      "P155.30-gfj",
+      "P155.37-gfj",
+      "P155.38-gfj"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -12580,7 +12618,8 @@
       "P146.1",
       "P148.4",
       "P143.8-z9j",
-      "P155.20-gfj"
+      "P155.20-gfj",
+      "P155.34-gfj"
     ],
     "tests/test_journal_writes.py": [
       "P131.1",
@@ -12723,7 +12762,8 @@
       "P155.29-gfj",
       "P155.30-gfj",
       "P155.31-gfj",
-      "P155.33-gfj"
+      "P155.33-gfj",
+      "P155.35-gfj"
     ],
     "tests/test_usage_ledger.py": [
       "P131.1",

@@ -18,6 +18,28 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   started task as well as a pending one. A `scope` that passed one of those flags and wrote ends
   its success line with `; tests.gate now holds [...]`, and its `--json` result carries the same
   list as `gateNowHolds`; a call that changes nothing still answers `already reads that way`.
+- **`drive-phase.py restore <taskId>` puts a task tree's work back from the copy a move left
+  beside it.** When the wave drive moves a task's worktree onto a newer phase head it keeps a copy
+  of the uncommitted work in the tree's git directory until the move is recorded, so a drive
+  killed in between leaves that copy as the only record of the work. The new verb, run by a
+  human, checks the tree out at the base the copy was taken at, writes the work and the git index
+  back, and drops the copy once the tree reads as it did before the move; with no copy and only
+  the tombstone of a recorded move, it clears the tombstone. It refuses with nothing written and
+  the copy kept when the copy will not read, when the tree's marker does not name the task at
+  the copy's base, or when any path - one the copy holds included - carries bytes that are
+  neither the copy's nor a commit's, which is work made after the kill. Exit 0 is restored, 1
+  refused, 2 no tree recorded for the task or no copy beside it. Every stop and refusal over such
+  a tree names the command.
+- **A triage can leave a finding open: `--answer leave --fix <ids> --reason "<why>"`.** The
+  drive records the reason, stops offering those findings, shows them as `left open`, and
+  sign-off records each as accepted open with that reason. An id the triage does not offer, or
+  no `--fix` at all, is refused by name. A finding whose fix task was cancelled is offered
+  `leave` (or `carry`) and no longer `fix`, so the offer and the refusal of `fix` agree.
+- **The executor brief says where each declared file is documented.** A section `Where your
+  files are documented` lists every Markdown heading in the repository that names a file the
+  task declares, in full or by its basename, with its line and whether that document is among
+  the task's files - so an edit that would make a document out of the task's scope stale is
+  visible before it is made rather than at submit. A search git could not run says so.
 
 ### Changed
 - **`audit-task.py scope <id> --gate CMD` refuses a list that leaves out an entry the task's
@@ -33,7 +55,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   passage of it beside its path, a document heading naming its path - must be in the task's
   `files` or waived; the refusal names each reader and both answers, `scope <id> --files
   +<reader>` and `scope <id> --waive "<reader>: <why>"`. A scan git could not complete is passed
-  only by `--force --reason`, on the row.
+  only by `--force --reason`, on the row. It asks only for the readers the edit can reach: a
+  passage counts when it lies inside the part of the file the task edits - the `:<range>` a
+  `files` entry carries, or, for a Markdown document declared whole, the sections whose heading
+  names another declared path - and a file added with `scope --files +<reader>` before the start,
+  to answer a reader, is not asked for readers of its own unless the task's title, description
+  or `tests.add` names it as an edit. A task that removes a file says so with `--introduces
+  delete:<path>` or `rename:<path>` on `add` or `scope`, and the start then demands each code file
+  importing that file - a Python `import`, a `find_script`/`load_script`/`script_path` call
+  passing its basename, a relative JS/TS import.
 - **The guards read a house-form message as text.** A commit or tag message, a `gh pr`/`gh issue`
   body or title, or an audit-task description, outcome, reason, title or note written as
   `"$(cat <<'EOF'` ... `EOF` `)"` no longer has its prose refused for naming a command: the
@@ -64,6 +94,93 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   change.
   The README's `/audit:task` row and `reference/verbs-in-full.md` say so where they describe
   `--gate-clear`.
+- **A task commit's `Co-Authored-By` trailer names the model the usage ledger recorded, or
+  nothing.** On a plan whose `meta.commit.coauthor` is set, a task commit carries one
+  `Co-Authored-By: <model id> <noreply@anthropic.com>` line per model the ledger recorded as the
+  task's executor since its current start. With none recorded - metering off, a ledger that will
+  not read, work done outside the plugin's executor agent - it carries no trailer and says so on
+  a `degraded:` line. **The text of `meta.commit.coauthor` is no longer written:** it used to be
+  appended whichever model did the work, so a plan that names a human pair, a bot or another
+  model there will see that name leave its task commits after upgrading. The key now only asks
+  for the trailer; unset or blank still means none. The drive's record commits (`--state`, after
+  a block, at sign-off, at a landing) carry no trailer at all, whatever the plan says.
+  `reference/config.md` (`usage.ledgerDir`) states the rule and `COMPATIBILITY.md` records it
+  under the key's promise.
+- **`/audit:worktree task-remove` and `remove --path` refuse a task tree with a move's copy of
+  the work beside it, `--force` included.** The removal deletes the tree's git directory, where
+  the copy (or the tombstone of a recorded move) lives, and that copy may be the only record of
+  the work. Both verbs now exit 1 over such a tree, naming the copy's files and the
+  `drive-phase.py restore <taskId>` command that puts the work back; they refuse as well when git
+  will not name the tree's git directory, since the question cannot then be asked. The drive asks
+  the same before it dispatches, resumes or integrates in a task tree and before it takes one
+  down, and stops with the restore command; `/audit:status` offers that command, and no remover,
+  for a kept tree in that state. `COMPATIBILITY.md` records the forced removal that now stops.
+- **A task commit stages the changed paths its own `outputs` patterns cover.** A path a running
+  task's `outputs` pattern covers was opened by the plan gate and then refused by the task commit
+  as undeclared, one gate run late. The commit, the close's check for uncommitted leftovers and the
+  drive's `submit` now read one meaning of declared - a running task's `files` plus the changed
+  paths its `outputs` patterns cover, a pattern the validator refuses covering nothing - and the
+  commit stages the paths the task's own patterns cover beside its `files`. A path another running
+  task's pattern covers is counted as declared and left for that task's commit.
+- **The plan gate no longer opens an edit through a `fileIndex` row alone.** A `fileIndex` row
+  naming a running task for a path its `files` do not list used to open the edit, after which the
+  task commit refused the path as undeclared. The plan gate now treats it as undeclared like any
+  other path, the commit refuses it by name, and `/audit:task scope <id> --files +<path>` is the
+  repair. `fileIndex` is still written from `files`, and `/audit:task reindex` re-derives it, so a
+  plan whose index agrees with its tasks sees no difference. `COMPATIBILITY.md` names it under
+  what a guard refuses.
+- **`submit` refuses an executor's edit to a file the task does not declare.** On the serial path
+  the executor's `drive-phase.py submit` names each changed path outside the task's declared set
+  that changed since the start, with `/audit:task scope <id> --files +<paths>` as the answer, and
+  files nothing; dirt from before the start is not counted. A wave member's filing names such
+  paths on its line instead of refusing, because the integration settles each one by name. When a
+  task's scope changed during its run, the drive re-runs the gate under the new scope before it
+  offers `close`, and `--answer close` is taken only over such a run.
+- **The drive runs a ready task before it asks anything else.** `/audit:phase run` no longer
+  re-offers a triage or a sign-off decision while a task of the phase is ready or started: it sets
+  the decision aside, says which task it runs, and refuses an `--answer` to the set-aside decision
+  by naming that task; a blocked or waiting task leaves the decision standing. A wave member that
+  stopped being ready before it started is dropped from the wave with the reason, instead of
+  stopping the walk, and a task started by `/audit:task start` gets its executor brief written
+  when the drive first asks for it.
+- **A task's gate run adds every runner whose walk covers a suite the task edits.** Beside the
+  related, Python-import and e2e arms, `run-test-gate.py --task` reads which directories each
+  runner walks - the Python tests, and every Python file the recorded all-runners listing
+  names - and joins those that cover an edited suite as `affected/walk: <suites>`; a listing that cannot
+  answer widens the run to the phase gate and says so. A test-support change no longer widens to
+  the phase gate when the task's own gate already declares the selection's command with no paths,
+  since that call runs every suite the support file can reach.
+- **The red-first helper proves a fix that lives in a test-support module.** When a task changes
+  a helper or fixture module under a test directory that HEAD already has, the helper re-runs the
+  task's cases with HEAD's copy of that module only when the run with the task's copy laid over
+  HEAD was green, and names the held module in the basis; a support module new at HEAD is never
+  held. The case ids it binds come from the run that printed them. `add` defaults a task whose
+  only `tests.add` entries are support modules to `regression`, and an explicit `--tests-mode tdd`
+  over that shape is kept with a note saying why.
+
+### Fixed
+- **HEAD is read one way.** An empty loose ref file - left by a crash - is asked of git instead of
+  being answered from a packed ref it no longer agrees with, and `/audit:doctor` and the brief's
+  lookup read HEAD as the commit verbs do. A pathspec the batch matcher cannot reproduce - a
+  directory spelled with a trailing slash, or any path while `GIT_ICASE_PATHSPECS` is set - is
+  asked of git on its own. A task start whose recorded head two
+  writers tied within one second reads as cannot-tell rather than as either head.
+- **The hooks' remembered git location asks git again only when it must.** After a timeout or
+  a git that will not run it asks once, not twice; a second question goes only to git's
+  refusal of a top it cannot give, inside what is left of the timeout. A bare repository made
+  between a directory and its top, or a change to the checkout's `.git/config`, drops the
+  remembered answer. A standing high-risk approval armed and revoked within the same second, by
+  two sessions, reads as not armed.
+- **A task-tree move killed part way through its checkout on a `core.autocrlf=true` checkout (the
+  Git for Windows default) can be finished or restored.** Moved files are compared with what a
+  checkout writes for them under the tree's attributes, not with the raw blob, so a file the
+  killed checkout had already written no longer reads as differing and holds the tree.
+- **A redo whose recut tree's setup refuses the work is undone.** The recut tree is taken down,
+  the drive's state and the old tree's marker are put back, and the redo is refused by name with
+  the old tree, its work, its base and its carry ref as they were. A redo's pin and patch are
+  dropped on every drive call once the task is terminal, blocked or has no patch standing.
+- **A kept task tree's refusal names the task its marker records** before the clipped reason, so
+  a long temporary or project path no longer hides which task the marker names.
 
 ## [3.7.0]
 

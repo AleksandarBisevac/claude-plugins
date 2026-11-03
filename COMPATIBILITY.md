@@ -551,8 +551,11 @@ depending on an implementation:
   manifest for subagents (narrower — a subagent that edited the plan now cannot), and Rule #1
   stopped reading a secret filename in prose as a read (wider — a body that merely names one now
   passes). Neither is a config key or a schema version, and a plan that depended on either
-  behaviour was depending on an implementation. `SECURITY.md` is where the current posture is
-  described and it is the document to read after an upgrade,
+  behaviour was depending on an implementation. It narrowed again after 3.7.0: `require-plan`
+  no longer opens an edit through a `fileIndex` row alone, only through a running task's `files`
+  and `outputs` patterns. `fileIndex` is still a manifest key that is written and read; what
+  stopped is a guard taking a row of it as a declaration. `SECURITY.md` is where the current
+  posture is described and it is the document to read after an upgrade,
 - **which FLAGS a verb accepts, when the verb never read them — and it changed.** One
   `argparse` parser serves all five verbs of `scripts/manifest/audit-task.py`
   (`/audit:task add|scope|cancel`, `/audit:phase add|retarget`), so every flag parsed on
@@ -653,6 +656,15 @@ depending on an implementation:
   The part of this change that **is** under the contract is the validator rule beside it, and it is
   recorded as a deprecation under *Validation stays additive* above rather than here — it
   warns from 2.3.0 and refuses at 3.0.0,
+- **a forced removal of a task tree with a move's copy beside it — and it changed.**
+  `manage-worktrees.py task-remove <taskId> --force` and `remove --path <dir> --force`
+  (`/audit:worktree`) used to take such a tree down and exit 0. They now **exit 1**, forced or
+  not, while the copy of the work a killed move left in the tree's git directory, or its
+  tombstone, stands beside it - and when git cannot name that directory - because the removal
+  deletes the copy, which may be the only record of the work. Unlike the flags entry above,
+  something that used to take effect now does not: a pipeline that forced the removal is a
+  pipeline that now stops. The repair is `drive-phase.py restore <taskId>`, which puts the work
+  back and drops the copy, after which the removal runs as before; the verb is additive,
 - `plugins/audit/reference/orchestrator.md` and the prose the model reads,
 - every path under `plugins/audit/scripts/` — the plugin's own modules move, and
   `CHANGELOG.md` is where a move is recorded,

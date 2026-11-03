@@ -238,7 +238,7 @@
                 "string",
                 "null"
               ],
-              "description": "Trailer appended to commit messages, or null."
+              "description": "Set (non-blank) asks for a Co-Authored-By trailer on each task commit, naming the model the usage ledger recorded as the task's executor since its start, or none when nothing is recorded; this text itself is never written. Null or blank writes no trailer. The plugin's record commits carry none either way."
             }
           }
         },
