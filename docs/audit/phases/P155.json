@@ -518,8 +518,10 @@
         "severity": "low",
         "file": "plugins/audit/README.md:461",
         "issue": "Still says 'fileIndex is what the plan gate matches an edit against'. The new Changed entry says the plan gate no longer opens an edit through a fileIndex row; in_progress_task_map reads a task's files alone (hooks/_config.py, the 'files ALONE, NEVER A fileIndex ROW' paragraph). The README sentence is now false.",
-        "resolution": "Reword to say the gate matches an edit against a running task's files and graded outputs, and that fileIndex is derived from files.",
-        "fixTask": "P155.42-gfj"
+        "resolution": "fixed in P155.42-gfj (362e907da98e): Reword to say the gate matches an edit against a running task's files and graded outputs, and that fileIndex is derived from files.",
+        "fixTask": "P155.42-gfj",
+        "commit": "362e907da98e",
+        "status": "fixed"
       },
       {
         "id": "P155-R56",
@@ -558,7 +560,7 @@
         "resolution": "Add two planted twins. (a) A function with `run(['worktree','remove',a])`, then `tree_unsettled`, then a second removal, which must be named. (b) A remover with two callers, one asking before its call and one after, which must be named."
       }
     ],
-    "outcome": "[findings: 60 - 1 high, 22 med, 37 low; 37 with a recorded fix commit]"
+    "outcome": "[findings: 60 - 1 high, 22 med, 37 low; 38 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -3871,7 +3873,7 @@
     {
       "id": "P155.42-gfj",
       "title": "fix P155-R55: Still says 'fileIndex is what the plan gate matches an edit aga...",
-      "status": "in_progress",
+      "status": "done",
       "description": "Still says 'fileIndex is what the plan gate matches an edit against'. The new Changed entry says the plan gate no longer opens an edit through a fileIndex row; in_progress_task_map reads a task's files alone (hooks/_config.py, the 'files ALONE, NEVER A fileIndex ROW' paragraph). The README sentence is now false.\n\nResolution asked: Reword to say the gate matches an edit against a running task's files and graded outputs, and that fileIndex is derived from files.",
       "files": [
         "plugins/audit/README.md"
@@ -3892,13 +3894,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "362e907da98e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/README.md:461 (the /audit:task row, `scope` paragraph): replaced the false clause '`fileIndex` is what the plan gate matches an edit against - so an unscoped phase ran with its central guard inert' with: the plan gate matches an edit against a running task's `files` and its graded `outputs` patterns (`hooks/_config.in_progress_task_map`, which reads `files` alone and never a `fileIndex` row, and `in_progress_outputs`) - so a task holding `files: []` covered no edit of its own. `fileIndex` is derived from those `files` (`reindex` below), and a row of it alone opens no edit. BASIS: hooks/_config.py declared_task_map docstring ('`files` ALONE, NEVER A `fileIndex` ROW'; '`fileIndex` is derived from `files` (`audit-task.py reindex`)') and in_progress_task_map at :4184 returning declared_task_map; in_progress_outputs at :4243 honouring graded patterns; require-plan.py docstring steps 3/3b. The first draft said fileIndex was 'never read by the gate'; that was false, because require-plan.py:535 words a refusal through _config.declaring_tasks, which also reads a fileIndex row (_config.py ~:4310), so I narrowed it to 'a row of it alone opens no edit'. The old consequence ('central guard inert') was dropped because under the deny tier an uncovered edit is refused, not passed; the new one states only what declared_task_map does with empty files. RUN: from the task tree, `python3 tools/sweep-selftests.py tests/test__refs.py tests/test__deps.py tests/test__output_lints.py` exit 0, '3/3 files ok, 741 cases'. The brief said own-tests with nothing of its own to run, so this is one run more than the brief asked for. It is reported because I ran it; the orchestrator's recorded run is the evidence. git diff --stat: 1 file, 1 insertion, 1 deletion. SAME CLAIM OUTSIDE MY FILES, not edited: `grep -rn 'gate matches an edit' plugins/audit PLUGIN-BUILD-GUIDE.md` gives 4 more hits making the same false claim: plugins/audit/scripts/manifest/audit-task.py:10419, plugins/audit/commands/init.md:471, plugins/audit/reference/verbs-in-full.md:1341 and PLUGIN-BUILD-GUIDE.md:5798. Each needs the same rewording in a task that declares it. DEPENDANTS (README cited by path): _invariants.py, verify-invariants.py, _usage_economics.py, audit-usage.py, tools/affected.py, tests/test__deps.py, tests/test__output_lints.py and tests/test__refs.py are all still correct. They cite the file by path, and I renamed no heading and removed no section. The grep shows none of them quotes the replaced sentence. The three suites among them are green in the run above. PLUGIN-BUILD-GUIDE.md:6642's README section is not made untrue by this change, but its :5798 carries the same stale claim (above).",
+        "descriptive": "The README no longer says the plan gate matches edits against fileIndex; it names files and graded outputs, with fileIndex derived from files"
       },
       "startedAt": "2026-11-03T13:39:30Z",
-      "completedAt": null,
+      "completedAt": "2026-11-03T13:48:51Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -3932,6 +3934,17 @@
         "runId": "2026-11-03T13:46:42Z.c1bf87",
         "status": "passed",
         "at": "2026-11-03T13:46:42Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "362e907da98e",
+        "at": "2026-11-03T13:48:51Z",
+        "return": "docs/audit/evidence/returns/P155.42-gfj/20261103T133930Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task, tests.expectRedFirst false, tests.add empty: a one-sentence README rewording owes no red",
+        "at": "n/a"
       }
     },
     {

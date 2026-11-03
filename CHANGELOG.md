@@ -20,11 +20,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   list as `gateNowHolds`; a call that changes nothing still answers `already reads that way`.
 - **`drive-phase.py restore <taskId>` puts a task tree's work back from the copy a move left
   beside it.** When the wave drive moves a task's worktree onto a newer phase head it keeps a copy
-  of the uncommitted work in the tree's git directory until the move is recorded, so a drive
-  killed in between leaves that copy as the only record of the work. The new verb, run by a
-  human, checks the tree out at the base the copy was taken at, writes the work and the git index
-  back, and drops the copy once the tree reads as it did before the move; with no copy and only
-  the tombstone of a recorded move, it clears the tombstone. It refuses with nothing written and
+  of the uncommitted work beside the tree until the move is recorded, so a drive killed in
+  between leaves that copy as the only record of the work. The new verb, run by a human, checks
+  the tree out at the base the copy was taken at, writes the work and the git index back, and
+  drops the copy once the tree reads as it did before the move. A copy that is no longer needed
+  is renamed to a tombstone and then deleted, so a process killed between the two leaves only
+  the tombstone: what remains of a copy whose move was already settled, holding nothing to put
+  back. With no copy and only a tombstone, the verb clears the tombstone. It refuses with nothing
+  written and
   the copy kept when the copy will not read, when the tree's marker does not name the task at
   the copy's base, or when any path - one the copy holds included - carries bytes that are
   neither the copy's nor a commit's, which is work made after the kill. Exit 0 is restored, 1
@@ -107,11 +110,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `reference/config.md` (`usage.ledgerDir`) states the rule and `COMPATIBILITY.md` records it
   under the key's promise.
 - **`/audit:worktree task-remove` and `remove --path` refuse a task tree with a move's copy of
-  the work beside it, `--force` included.** The removal deletes the tree's git directory, where
-  the copy (or the tombstone of a recorded move) lives, and that copy may be the only record of
-  the work. Both verbs now exit 1 over such a tree, naming the copy's files and the
-  `drive-phase.py restore <taskId>` command that puts the work back; they refuse as well when git
-  will not name the tree's git directory, since the question cannot then be asked. The drive asks
+  the work, or its tombstone, beside it, `--force` included.** Removing the tree deletes the copy
+  with it, and that copy may be the only record of the work. Both verbs now exit 1 over such a
+  tree, naming the copy's files and the `drive-phase.py restore <taskId>` command that puts the
+  work back; they refuse as well when git will not say where the tree's copy would be kept, since
+  the question cannot then be asked. The drive asks
   the same before it dispatches, resumes or integrates in a task tree and before it takes one
   down, and stops with the restore command; `/audit:status` offers that command, and no remover,
   for a kept tree in that state. `COMPATIBILITY.md` records the forced removal that now stops.
