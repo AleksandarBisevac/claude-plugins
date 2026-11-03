@@ -440,7 +440,7 @@ L9:
   close-phase -> _branch, _claude_home, _config_rules, _evidence_io, _excerpt, _filed_returns, _invariants, _journal_io, _loader, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _scoped_commit, _tree_stamp, _utc_stamp, _verdict_binding, _worktrees
   commit-task-work -> _claude_home, _evidence_io, _filed_returns, _invariants, _journal_io, _loader, _manifest_io, _manifest_vocab, _output, _panel_write, _scoped_commit, _verdict_binding, usage_ledger
   derive-phase-gate -> _claude_home, _evidence_io, _gate_derive, _invariants, _loader, _machine_paths, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _utc_stamp
-  drive-phase -> _areas, _claude_home, _clause_coverage, _config_rules, _doctor_setup, _evidence_io, _excerpt, _filed_returns, _gate_derive, _invariants, _journal_io, _loader, _manifest_io, _manifest_phases, _output, _proc_group, _runner_collects, _scope_companions, _scoped_commit, _status_facts, _tree_stamp, _verdict_binding, _wave, _worktrees
+  drive-phase -> _areas, _claude_home, _clause_coverage, _config_rules, _doctor_setup, _evidence_io, _excerpt, _filed_returns, _gate_derive, _invariants, _journal_io, _loader, _manifest_io, _manifest_phases, _output, _proc_group, _runner_collects, _scope_companions, _scoped_commit, _status_facts, _task_outputs, _tree_stamp, _verdict_binding, _wave, _worktrees
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
   full-gate -> _claude_home, _evidence_io, _loader, _manifest_io, _output, _panel_write, _status_facts
@@ -618,17 +618,22 @@ branch, and any reader its `_DECLARED_READERS` names that stops reaching it; it 
 listing bound to a name earlier, or a `tree` git will not list. `dg8` holds the rest of the
 class as a rule whose reach is derived rather than listed (`_files_half_reach`): a function
 reading a task's `files` for a declared question — a matcher (`covers`, `covering_key`,
-`plan_to_git`) handed a raw entry first, `x in <raw entries>`, a raw value handed to a parameter
-some function puts to a matcher, or a call of a function whose return carries an answer read
-that way, `declared_task_map` and `declared_work` among them — sits inside `declared_git_rels` or
+`plan_to_git`) handed a raw entry first, `x in <raw entries>`, a matcher written by hand
+(`x == <raw entry>` with `x` neither raw nor a literal, `x.startswith(<raw entry>)`), a raw value
+handed to a parameter some function puts to a matcher, or a call of a function whose return
+carries an answer read that way, `declared_task_map` and `declared_work` among them — sits
+inside `declared_git_rels` or
 carries a `_FILES_ALONE_EXEMPT` row with its reason. A row excuses its own function and never
 its callers, so a reader through an excused owner needs a row of its own, and a row naming no
 such call, carrying no reason, or claiming an outputs pairing its function does not make is
 reported (`dg9`, `dg10`; `dg14` names planted readers of the direct, `declared_work`, invariant
-and integration shapes, and `dg15` holds their quiet twins). It cannot see a `files` value
+and integration shapes, and `dg15` holds their quiet twins; `dg16` names a planted hand-written
+matcher, the shape the drive's `head_move` had before it asked `declared_git_rels`, and `dg17`
+holds its quiet twins). It cannot see a `files` value
 carried through a call it does not know to carry one, a parameter reaching a matcher only
-through such a call or a membership test, an answer handed on as an argument rather than
-returned, or an attribute call it cannot place when more than one file defines the name. The
+through such a call, a membership test or a hand-written comparison, an answer handed on as an
+argument rather than returned, an inequality, or an attribute call it cannot place when more
+than one file defines the name. The
 free-file slot is outside both halves: it opens one small edit to
 a session, not a task's declaration, so the commit refuses that path when the attempt changed it.
 `covering_key` is the matcher over any of those file maps (exact, the path as a directory, a

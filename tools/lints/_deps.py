@@ -2019,6 +2019,12 @@ GIT_PATH_BASE_EXEMPT = (
      "journal files named inside their own directory, which git runs in"),
     ("commit-task-work.py", "_changed_shards", _RECORD_PATHS),
     ("drive-phase.py", "carry_commit", _SAME_CHECKOUT),
+    ("drive-phase.py", "head_move",
+     "the paths git log names from the checkout's top are compared with "
+     "_config.declared_git_rels, which spells the task's files entries from "
+     "that same top through plan_to_git and returns the listed paths its "
+     "outputs patterns cover in that listing's own spelling; no plan entry "
+     "is compared in another spelling"),
     ("drive-phase.py", "_seed_from_index",
      "copies one tree's index entries into a scratch index of that same tree; "
      "the paths pass from git to git unread"),

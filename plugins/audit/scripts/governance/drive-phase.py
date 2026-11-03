@@ -372,6 +372,7 @@ import _scope_companions  # noqa: E402  (derive: the runner config a widen decla
 import _worktrees  # noqa: E402  (read_provenance: whether a kept tree's marker names its task; advance_task_tree: a member's tree brought to the phase head)
 import _scoped_commit  # noqa: E402  (plugin_owned_rels: the one table of what the plugin owns under .claude/)
 import _proc_group  # noqa: E402  (shell_invocation, stop_and_drain: the lint probe run as one stoppable tree)
+import _task_outputs  # noqa: E402  (covers: the one rule for whether a declared path covers a changed one)
 
 E_OK, E_STOPPED, E_USAGE = 0, 1, 2
 PREFIX = "[drive-phase]"
@@ -2532,11 +2533,18 @@ def tree_head(ctx, tree=None):
     return done.stdout.strip() if done.returncode == 0 else None
 
 
-def head_move(ctx, task, since, now, tree=None):
+def head_move(ctx, manifest, task, since, now, tree=None):
     """`"writer"` when HEAD's move from `since` to `now` is commits descending
-    from `since` that touch one of the task's declared files - what the session
-    left; `"other"` for any other move (a sibling's commit in a shared checkout,
-    a branch switched); None when git cannot say."""
+    from `since` that touch a path the task declares - what the session left;
+    `"other"` for any other move (a sibling's commit in a shared checkout, a
+    branch switched); None when git cannot say.
+
+    DECLARED IS THE ONE READING, `_config.declared_git_rels` over `manifest`:
+    the task's `files` entries with their line range dropped, and the commits'
+    paths its own honoured `outputs` cover - each matched by
+    `_task_outputs.covers`. An equality and prefix test over the raw entries
+    read `a.py:10-20` as covering nothing and never asked the outputs half, so
+    the writer's own commit was offered as somebody else's move."""
     where = tree or ctx["gitRoot"]
     hc = _loader.load_hooks_config(modname="audit__config")
     top = hc.checkout_top(where) or where
@@ -2555,11 +2563,11 @@ def head_move(ctx, task, since, now, tree=None):
         return None
     if done.returncode != 0:
         return None
-    touched = set(hc.git_to_plan(p, top, project) for p in done.stdout.decode(
-        "utf-8", "replace").splitlines() if p.strip())
-    declared = [str(f).replace("\\", "/").rstrip("/") for f in task.get("files") or []
-                if isinstance(f, str) and f.strip()]
-    hit = any(p == f or p.startswith(f + "/") for p in touched for f in declared)
+    touched = sorted(set(p for p in done.stdout.decode(
+        "utf-8", "replace").splitlines() if p.strip()))
+    declared = hc.declared_git_rels(manifest, project, top, also=[task["id"]],
+                                    only=task["id"], changed=touched)
+    hit = any(_task_outputs.covers(d, p) for p in touched for d in declared)
     return "writer" if hit else "other"
 
 
@@ -2939,7 +2947,7 @@ def writer_settle(ctx, state, manifest, phase, task, tree=None):
                                       (last.get("head") or "unknown")[:12]),
                         extra={"head": now})
     if now != last["head"]:
-        whose = head_move(ctx, task, last["head"], now, tree)
+        whose = head_move(ctx, manifest, task, last["head"], now, tree)
         if whose == "writer":
             return decision(ctx, state, "writer-committed", task, "commit %s on "
                             "the dispatch's %s" % (now[:12], last["head"][:12]),

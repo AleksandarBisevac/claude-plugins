@@ -583,8 +583,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/status/audit-status.py:2138; plugins/audit/scripts/git/_worktrees.py:2230-2253,2292",
         "issue": "/audit:status is read-only (commands/status.md), but _kept_tree_remedy now calls _worktrees.refuse_unsettled -> tree_unsettled -> _clear_strays, which os.remove()s '.audit-' temp files older than 600s in each kept tree's admin directory, without the phase lock.",
-        "resolution": "Give tree_unsettled a non-clearing read and use it from status; keep clearing in the drive and remover paths. Add a status case asserting an old stray is still on disk afterwards.",
-        "fixTask": "P155.49-gfj"
+        "resolution": "fixed in P155.49-gfj (b25ccde2bd5c): Give tree_unsettled a non-clearing read and use it from status; keep clearing in the drive and remover paths. Add a status case asserting an old stray is still on disk afterwards.",
+        "fixTask": "P155.49-gfj",
+        "commit": "b25ccde2bd5c",
+        "status": "fixed"
       },
       {
         "id": "P155-R64",
@@ -678,7 +680,7 @@
         "fixTask": "P155.51-gfj"
       }
     ],
-    "outcome": "[findings: 74 - 1 high, 27 med, 46 low; 44 with a recorded fix commit]"
+    "outcome": "[findings: 74 - 1 high, 27 med, 46 low; 45 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -4473,7 +4475,7 @@
     {
       "id": "P155.49-gfj",
       "title": "/audit:status reads kept trees without deleting anything in them",
-      "status": "in_progress",
+      "status": "done",
       "description": "Finding P155-R63 (see docs/audit/phases/P155.json). /audit:status is documented read-only, no locks, no mutations (commands/status.md). Its kept-trees block (audit-status.py _kept_tree_remedy, reached from kept_trees_block) now calls _worktrees.refuse_unsettled -> tree_unsettled -> _clear_strays, which os.remove()s '.audit-' temp files older than 600s in each kept tree's admin directory, without the phase lock. Fix: give tree_unsettled (and refuse_unsettled) a non-clearing read - e.g. a clear keyword defaulting to the current behaviour for the drive and the removers - and have status use the non-clearing read. Red-first: a status case plants an old '.audit-' stray beside a kept tree, runs the kept-trees block, and asserts the stray is still on disk; a _worktrees case pins that the clearing read still clears and the non-clearing one does not.",
       "files": [
         "plugins/audit/scripts/git/_worktrees.py",
@@ -4503,14 +4505,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b25ccde2bd5c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/scripts/git/_worktrees.py: tree_unsettled(tree, run=None, now=None, clear=True) runs _clear_strays only when clear is true (cleared is [] otherwise); refuse_unsettled(..., run=None, clear=True) passes clear through. Both defaults keep the old clearing behaviour, so drive-phase.py (unsettled_stop, advance_member, remove_task_tree) and manage-worktrees.py (remove, task-remove) are unchanged. plugins/audit/scripts/status/audit-status.py _kept_tree_remedy now calls refuse_unsettled(..., clear=False), and its docstring says why. PLUGIN-BUILD-GUIDE.md _worktrees section: one sentence on the default clearing read vs clear=False and status taking the latter (un3b, kt11). Tests: tests/test__worktrees.py un3b (_read_only_unsettled_cases, with _asked_kw/_plant_old_stray helpers) and tests/test_audit_status.py kt11 (_kept_stray_cases, a real git worktree whose admin dir holds an hour-old .audit-killed). Gate: cd <tree> && python3 tools/sweep-selftests.py tests/test_audit_status.py tests/test__worktrees.py -> exit 0, '2/2 files ok, 585 cases' (176 + 409). ruff check on the four .py files -> exit 0. A direct run of tests/test_audit_status.py --selftest outside the sweep fails sl1-sl3 (406/409); those cases are outside this change and pass under the sweep, so I put it down to the session environment the sweep filters out. Dependants: audit-status.py importers (render-report.py, _status_facts.py, test__doctor_trail/_evidence_io/_evidence_view/_live_copy/_refs/_status_facts) still correct - no status name or signature changed, only one call's keyword. _worktrees.py importers (guard-release.py, close-phase.py, integrate-task.py, manage-worktrees.py, _evidence_io.py, drive-phase.py, run-test-gate.py, stamp-verification.py) still correct - the new keyword defaults to the old behaviour, and the kt10 stub (lambda *_a, **_kw) accepts it; ut5's touch reading still passes. PLUGIN-BUILD-GUIDE.md dependants reference it by basename only; unaffected.",
+        "descriptive": "/audit:status no longer deletes '.audit-' temp files in kept task trees' admin directories; the drive and the removers still clear them."
       },
       "startedAt": "2026-11-03T14:11:12Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-03T14:37:26Z",
+      "verifiedBy": [
+        "un3b: tree_unsettled and refuse_unsettled with clear=False leave an hour-old .audit- stray on disk and clear nothing while still answering settled; the default read then clears it",
+        "kt11: the kept-trees block reads a real kept worktree (row and remedy present) and an hour-old .audit- stray in its admin directory is still on disk afterwards"
+      ],
       "notes": [
         {
           "at": "2026-11-03T14:10:39Z",
@@ -4533,18 +4538,32 @@
         "runId": "2026-11-03T14:37:22Z.3f59a6",
         "status": "passed",
         "at": "2026-11-03T14:37:22Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "b25ccde2bd5c",
+        "at": "2026-11-03T14:37:26Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-03T14:18:22Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_audit_status.py tests/test__worktrees.py` in a throwaway tree at HEAD exited 1 with 2 of 409 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - un3b (house FAIL), kt11 (house FAIL): SELFTEST FAILED: 408/409 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P155.50-gfj",
       "title": "head_move reads the task's declared paths through the shared reading",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Finding P155-R65 (see docs/audit/phases/P155.json). drive-phase.py head_move decides whether the writer's commits touch one of the task's declared files with `p == f or p.startswith(f + '/')` over raw `files`: it never strips a ':line-range' suffix, so an entry 'a.py:10-20' never matches 'a.py', and it ignores the task's outputs. A writer commit is then labelled head-moved (offers file/block) instead of writer-committed (recheck/block). Fix: ask _config.declared_git_rels(manifest, project, top, also=[id], only=id, changed=touched) - the one reading every other reader uses - and match through the shared covers. Red-first: a drive case where the task declares 'a.py:10-20' (and one where the commit touches only a declared output) and the writer commits a.py must be labelled writer-committed. Also add a plant to the declared pin in tests/test__config.py: a ==/startswith matcher over raw files must be reached by the pin, so the next hand-rolled matcher goes red.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
         "plugins/audit/scripts/governance/drive-phase.py",
         "tests/test_drive_phase.py",
-        "tests/test__config.py"
+        "tests/test__config.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tools/lints/_deps.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -4563,14 +4582,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-03T14:37:39Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -4581,11 +4600,21 @@
         {
           "at": "2026-11-03T14:10:44Z",
           "text": "scope: tests/test_drive_phase.py, the suite that tests plugins/audit/scripts/governance/drive-phase.py (python: it hands drive-phase.py to a loader through a module constant)"
+        },
+        {
+          "at": "2026-11-03T14:50:26Z",
+          "text": "Scope widened by tools/lints/_deps.py: head_move now compares git-root paths with _config.declared_git_rels (which spells both halves through plan_to_git inside _config), so git_path_base_violations (gb1) names it as never passing paths through git_to_plan; the lint cannot read a cross-module door, so the edit is one GIT_PATH_BASE_EXEMPT row beside carry_commit's, with the reason."
         }
       ],
       "fixes": [
         "P155-R65"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-03T14:59:53Z.106552",
+        "status": "passed",
+        "at": "2026-11-03T14:59:53Z"
+      }
     },
     {
       "id": "P155.51-gfj",

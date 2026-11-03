@@ -4314,7 +4314,9 @@ def _files_half_cases(check, sources):
                "    return not ok\n")
     walk = sources + [("planted.py", planted),
                       ("planted_reach.py", _PLANTED_REACH),
-                      ("planted_quiet.py", _PLANTED_QUIET)]
+                      ("planted_quiet.py", _PLANTED_QUIET),
+                      ("planted_hand.py", _PLANTED_HAND),
+                      ("planted_hand_quiet.py", _PLANTED_HAND_QUIET)]
     got = _files_half_report(walk, _FILES_ALONE_EXEMPT,
                              _files_half_reach(walk))
 
@@ -4352,6 +4354,22 @@ def _files_half_cases(check, sources):
           "nothing - so a reach that flagged every `files` key, or every "
           "caller of a matcher, goes red here: %r" % (named("planted_quiet.py"),),
           named("planted_quiet.py") == [])
+    hand = named("planted_hand.py")
+    check("dg16 A HAND-ROLLED MATCHER IS A READING: an equality and a prefix "
+          "test of a path against raw `files` entries - which strip no line "
+          "range and ask no outputs half - are each named under the function "
+          "they sit in, so the next one written instead of the shared "
+          "predicate goes red: %r" % (hand,),
+          sorted(set(fn for fn, _callee in hand))
+          == ["equal_only", "moved_by", "prefixed"]
+          and sorted(set(callee for _fn, callee in hand))
+          == ["==", "startswith"])
+    check("dg17 SECOND DIRECTION: the same comparisons over values that are no "
+          "entry, an entry compared with a literal, and an entry's own prefix "
+          "test against a literal are named by nothing - so a reach naming "
+          "every `==` or `startswith` goes red here: %r"
+          % (named("planted_hand_quiet.py"),),
+          named("planted_hand_quiet.py") == [])
     def altered(row):
         # A blank reason on one real row, and a pairing claim on a real row
         # whose function asks no outputs half.
@@ -4541,6 +4559,28 @@ _PLANTED_QUIET = (
     "    return through_predicate(m, p, g, t, paths)\n\n\n"
     "def counted(task):\n"
     "    return len(task.get('files') or [])\n")
+# A matcher written by hand over the raw entries (dg16): an equality and a
+# prefix test of a path against each entry, which never strips a line range
+# and never asks the outputs half - the shape the drive's own commit check
+# once had.
+_PLANTED_HAND = (
+    "def moved_by(task, touched):\n"
+    "    return [p for p in touched for f in task.get('files') or []\n"
+    "            if p == f or p.startswith(f + '/')]\n\n\n"
+    "def equal_only(task, rel):\n"
+    "    return any(rel == f for f in task.get('files') or [])\n\n\n"
+    "def prefixed(task, rel):\n"
+    "    return [f for f in task['files'] if rel.startswith(f)]\n")
+# Their quiet twins (dg17): the same comparisons over values that are no
+# entry, and comparisons of an entry with a literal - the entry's own shape,
+# no path put to it.
+_PLANTED_HAND_QUIET = (
+    "def same_path(a, b):\n"
+    "    return a == b or a.startswith(b + '/')\n\n\n"
+    "def no_entries(task):\n"
+    "    return task.get('files') == []\n\n\n"
+    "def docs_entries(task):\n"
+    "    return [f for f in task.get('files') or [] if f.startswith('docs/')]\n")
 # The shared predicate: a files-half call inside its body IS the reading of
 # both halves, and needs no row.
 _PREDICATE = ("_config.py", "declared_git_rels")
@@ -4676,6 +4716,22 @@ _FILES_ALONE_EXEMPT = (
      "the executor's named strays minus the enumerated `files`: the names "
      "come from its submit, which counts a path the task's own outputs cover "
      "as declared through declared_git_rels, so none of them is one"),
+    ("drive-phase.py", "scope_gap", False,
+     "whether the enumerated `files` already hold one of the runner's config "
+     "files, so a scope gap with nothing to widen is not asked - a list edit, "
+     "never whether a change is declared"),
+    ("drive-phase.py", "runtime_boot_root", False,
+     "whether a phase's enumerated `files` lie under the runtime boot's "
+     "appRootPath, read from the `files` half alone, so a phase whose only "
+     "app change is a path a task's `outputs` pattern covers owes no boot "
+     "here; the gap is named here rather than excused"),
+    ("drive-phase.py", "run_signoff", False,
+     "the caller of runtime_boot_root, held by that row's gap"),
+    ("_config.py", "declaring_tasks", False,
+     "the refusal text's owner list: coverage is covering_key's, and the "
+     "equality only says whether the covering entry names the path itself, "
+     "which the message words differently - never whether a path is "
+     "declared"),
     ("require-plan.py", "_record_observed", False,
      "the `files` key read is the plan gate's own observed-writes record, no "
      "task's: which paths this session was told about"),
@@ -4957,14 +5013,46 @@ def _membership(node):
             and isinstance(node.ops[0], (ast.In, ast.NotIn)))
 
 
+def _equality(node):
+    """Whether `node` is one `x == y` comparison. An inequality is not one:
+    the `!=` the walk meets beside a `files` key compares a sweep summary's
+    counts, and a matcher written by hand tests a path with `==`."""
+    import ast
+    return (isinstance(node, ast.Compare) and len(node.ops) == 1
+            and isinstance(node.ops[0], ast.Eq))
+
+
+def _prefix_test(node):
+    """Whether `node` is a `x.startswith(prefix, ...)` call."""
+    import ast
+    return (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "startswith" and bool(node.args))
+
+
+def _literal(node):
+    """Whether `node` is a constant, or a container of nothing but constants -
+    a value no path was put into."""
+    import ast
+    if isinstance(node, ast.Constant):
+        return True
+    if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
+        return all(_literal(e) for e in node.elts)
+    if isinstance(node, ast.Dict):
+        return all(_literal(e) for e in list(node.keys) + list(node.values)
+                   if e is not None)
+    return False
+
+
 def _unit_reading(unit, env0, targets, readers, sinks, positions):
     """`(env, readings, sinks, returned)` for one function, given the raw
     names it inherits from the functions around it.
 
     A READING is a call of a function whose return carries an answer, a
     matcher handed a raw entry first, a call handing a raw value to a
-    parameter some function puts to a matcher, or `x in <raw entries>` with
-    `x` not itself raw. Its result is an answer. A parameter reaching a
+    parameter some function puts to a matcher, `x in <raw entries>` with
+    `x` not itself raw, or a matcher written by hand: `x == <raw entry>`
+    (either side) with `x` neither raw nor a literal, and
+    `x.startswith(<raw entry>)` with `x` not raw. Its result is an answer. A parameter reaching a
     matcher's first argument, or another function's sink, is a sink of this
     one - a membership test is not, since a helper deduplicating two lists
     asks no declared question - and `returned` is every label a `return`
@@ -4995,6 +5083,24 @@ def _unit_reading(unit, env0, targets, readers, sinks, positions):
         return (_RAW in label(node.comparators[0])
                 and _RAW not in label(node.left))
 
+    def raw_equality(node):
+        sides = (node.left, node.comparators[0])
+        return any(_RAW in label(a) and _RAW not in label(b) and not _literal(b)
+                   for a, b in (sides, sides[::-1]))
+
+    def raw_prefix(node):
+        return (_RAW in label(node.args[0])
+                and _RAW not in label(node.func.value))
+
+    def hand_rolled(node):
+        """The callee a hand-written matcher over raw entries is reported
+        under, or None."""
+        if _equality(node) and raw_equality(node):
+            return "=="
+        if _prefix_test(node) and raw_prefix(node):
+            return "startswith"
+        return None
+
     def reads(call):
         target = targets.get(id(call))
         if target == _PREDICATE:
@@ -5017,6 +5123,8 @@ def _unit_reading(unit, env0, targets, readers, sinks, positions):
             return empty
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mod):
             return empty
+        if hand_rolled(node):
+            return frozenset([_ANSWER])
         if isinstance(node, ast.Call):
             if targets.get(id(node)) == _PREDICATE:
                 return empty
@@ -5064,6 +5172,8 @@ def _unit_reading(unit, env0, targets, readers, sinks, positions):
         if isinstance(node, ast.Return) and node.value is not None:
             returned |= label(node.value)
         reached = []
+        if hand_rolled(node):
+            readings.append((name, fn.name, node.lineno, hand_rolled(node)))
         if isinstance(node, ast.Call):
             if reads(node):
                 readings.append((name, fn.name, node.lineno, _callee(node)))
@@ -5144,7 +5254,8 @@ def _files_half_report(sources, exempt, reach=None):
     owner is reached, the owner's row excusing the owner alone - a matcher
     (`covers`, `covering_key`, `plan_to_git`) handed a raw `files` entry
     first, a raw value handed to a parameter some function puts to a matcher,
-    or `x in <raw entries>`. One inside the predicate is the predicate. Any
+    `x in <raw entries>`, or a matcher written by hand (`x == <raw entry>`,
+    `x.startswith(<raw entry>)`). One inside the predicate is the predicate. Any
     other needs an `exempt` row with a reason, and a row claiming `pairs`
     needs its function to call an outputs-half name; a blank reason or a false
     pairing excuses nothing. A row matching no files-half call, or whose
@@ -5153,8 +5264,10 @@ def _files_half_report(sources, exempt, reach=None):
     WHAT THIS CANNOT SEE: a `files` value carried through a call it does not
     know to carry one (a helper of its own, a `dict` built around it), a
     parameter reaching a matcher only through such a call, an answer handed
-    on as an argument rather than returned, and an attribute call whose
-    receiver it cannot place when more than one file defines the name. The
+    on as an argument rather than returned, an attribute call whose
+    receiver it cannot place when more than one file defines the name, and a
+    hand-written matcher in a helper handed the entries as a parameter - the
+    comparison makes no parameter a sink - or spelled as an inequality. The
     `files` key it reads is any dict's, so a row may say the dict is no
     task's."""
     reach = _files_half_reach(sources) if reach is None else reach

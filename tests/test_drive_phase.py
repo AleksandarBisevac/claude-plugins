@@ -1612,6 +1612,56 @@ def _writer_commit_cases(check, M, bindir, log):
     check("wf9 the writer's test command is the one reader's: a gate naming "
           "only a longer path beginning with the file's name derives none: %r"
           % ((cmd, basis),), cmd is None and "no test command" in str(basis))
+    _writer_commit_declared_cases(check, M, bindir, log)
+
+
+def _ranged_source(plan):
+    """The task declares its source by a line range, the test file plainly."""
+    task = plan["phases"][0]["tasks"][0]
+    task["files"] = ["%s:1-5" % (_WF_SRC,), _WF_TEST]
+
+
+def _reports_output(plan):
+    """The task declares an output pattern beside its files."""
+    plan["phases"][0]["tasks"][0]["outputs"] = ["reports/**"]
+
+
+def _writer_commit_declared_cases(check, M, bindir, log):
+    """Whether HEAD moved by the writer's own commit is asked of what the task
+    DECLARES, read the way every other reader reads it: a `files` entry
+    carrying a line range names its path, and a path the task's own `outputs`
+    cover is declared too. Each commit touches only that one path, so a
+    matcher comparing raw entries to the commit's paths reads it as somebody
+    else's move; `wf7` is the twin, a commit touching nothing declared."""
+    seen = {}
+    for label, edit_plan, path, text in (
+            ("ranged", _ranged_source, _WF_SRC, "v = 2\n"),
+            ("output", _reports_output, "reports/out.txt", "the report\n")):
+        root, mpath = _tdd_writer_repo("wf-declared-%s" % (label,),
+                                       (_wf_gate(),))
+        _commit_plan(root, mpath, edit_plan, "P1.1 declares %s" % (label,))
+        os.makedirs(os.path.join(root, "reports"), exist_ok=True)
+        _signal_next(M, root, mpath)
+        start = _head_of(root)
+        code, line = _writer_round(M, root, mpath, bindir, log, "0.35",
+                                   edit={path: text}, commit=True)
+        _c, block = _explain_of(M, root, mpath, "P1.1")
+        seen[label] = (code, line, block, _head_of(root) != start,
+                       _filed_body(mpath, "P1.1") is None)
+
+    def writer_committed(got):
+        code, line, block, moved, unfiled = got
+        return (code == 0 and moved and unfiled
+                and "writer-committed" in line and "head-moved" not in line
+                and "--answer recheck|block" in block)
+    check("wf10 a writer commit touching only a path the task declares by a "
+          "line range (`src/mine.py:1-5`) is the writer's own commit - "
+          "writer-committed, recheck or block - not a HEAD moved by someone "
+          "else: %r" % (seen.get("ranged"),),
+          writer_committed(seen.get("ranged") or (None,) * 5))
+    check("wf11 a writer commit touching only a path the task's own `outputs` "
+          "cover is the writer's own commit too: %r" % (seen.get("output"),),
+          writer_committed(seen.get("output") or (None,) * 5))
 
 
 def _writer_lock_cases(check):
