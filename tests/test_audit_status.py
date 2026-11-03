@@ -4391,6 +4391,44 @@ def _kept_tree_cases(check):
     _kept_unreadable_plan_cases(check, root, mpath, drive, kept, aside)
     _kept_remedy_runs_cases(check)
     _kept_quoting_cases(check)
+    _kept_stray_cases(check)
+
+
+def _kept_stray_cases(check):
+    """Status reads a kept tree and deletes nothing in it: an old '.audit-'
+    temp file in the tree's admin directory - the kind a reading that clears
+    would remove - is on disk after the kept-trees block has read the tree."""
+    root = os.path.realpath(_harness.fixture_root("audit-status-ktstray-"))
+    repo = os.path.join(root, "repo")
+    tree = os.path.join(root, "repo-P2.1")
+    os.makedirs(repo)
+    _harness.git(repo, "init", "-q")
+    mpath = os.path.join(repo, "audit-plan.json")
+    with open(mpath, "w", encoding="utf-8") as fh:
+        json.dump(_fixture(), fh)
+    _harness.git(repo, "add", "-A")
+    _harness.git(repo, "commit", "-qm", "base")
+    _harness.git(repo, "worktree", "add", "-q", "--detach", tree)
+    admin = M._worktrees.admin_dir(tree)
+    stray = os.path.join(admin or os.path.join(root, "no-admin"), ".audit-killed")
+    if admin:
+        with open(stray, "wb") as fh:
+            fh.write(b"a marker half written\n")
+        hour_ago = os.path.getmtime(stray) - 3600
+        os.utime(stray, (hour_ago, hour_ago))
+    drive = os.path.join(repo, ".claude", "state", "drive")
+    os.makedirs(drive)
+    with open(os.path.join(drive, "P2.json"), "w", encoding="utf-8") as fh:
+        json.dump({"keptTrees": {"P2.1 set aside 1": tree}}, fh)
+    block = M.kept_trees_block(mpath, repo)
+    rows = [t for t in block.get("trees") or []
+            if t.get("taskId") == "P2.1 set aside 1"]
+    check("kt11 the kept-trees block reads a kept tree without deleting anything "
+          "in it: an hour-old '.audit-' stray in its admin directory is still on "
+          "disk after the block named the tree and its remover: %r"
+          % ((admin, block, os.listdir(admin) if admin else None),),
+          bool(admin) and len(rows) == 1 and bool(rows[0].get("remedy"))
+          and os.path.isfile(stray))
 
 
 def _kept_quoting_cases(check):

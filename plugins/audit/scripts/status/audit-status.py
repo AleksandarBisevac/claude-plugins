@@ -2121,7 +2121,9 @@ def _kept_tree_remedy(task_id, path, task_ids, manifest_path, project):
 
     Asked first, whatever the key: a move's copy of the work, or its
     tombstone, standing beside the tree (`_worktrees.refuse_unsettled`, the
-    refusal `task-remove` says too). Then no remover is offered - every one
+    refusal `task-remove` says too), read with `clear=False`: status is
+    read-only and holds no phase lock, so it removes none of the temp files
+    a hard kill left in the tree's admin directory. Then no remover is offered - every one
     deletes the admin directory the copy lives in - and the remedy is where
     the work is and the restore verb for `task_id`, spelled against
     `manifest_path` and `project`.
@@ -2136,7 +2138,7 @@ def _kept_tree_remedy(task_id, path, task_ids, manifest_path, project):
     Any other key gets git's remover unforced, which git refuses while the
     tree holds work or a submodule."""
     held = _worktrees.refuse_unsettled(path, manifest_path, project,
-                                       task_id=str(task_id))
+                                       task_id=str(task_id), clear=False)
     if held is not None:
         return {"remedy": "%s; %s" % (held["error"], held["remedy"]),
                 "warning": None, "saveFirst": []}

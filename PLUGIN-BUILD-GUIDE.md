@@ -1143,7 +1143,11 @@ takes still reads as first. `integrate-task.py` run by hand is
 outside that reading - it removes nothing, and the drive asks before it calls it. It answers could-not-ask
 when git will not name the admin directory, never settled (`un2`), and clears the `.audit-*` temp
 files a hard kill left there once they are older than `STRAY_AGE_SECONDS`, leaving a
-younger one as a write that may be in flight (`un3`). The stop over
+younger one as a write that may be in flight (`un3`). That clearing is the default reading, the
+one the drive and the removers take; `clear=False`, on `tree_unsettled` and on
+`refuse_unsettled`, asks the same question and removes nothing (`un3b`), and it is the reading
+`audit-status.py`'s kept-tree remedy takes, since status is read-only and holds no phase lock
+(`kt11`). The stop over
 an unsettled tree names where the work is and `drive-phase.py restore <taskId>`, which runs
 `restore_copy`: the tree checked out at the base the copy was taken at, every held path and the
 git index written back, and the copy dropped once the tree answers as it did before the move

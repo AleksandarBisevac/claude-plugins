@@ -1966,6 +1966,55 @@ def _asked(name, *args):
     return fn(*args) if fn is not None else {"missing": name}
 
 
+def _asked_kw(name, *args, **kw):
+    """`M.<name>(*args, **kw)`, or a dict naming why it could not be asked - no
+    such function, or a keyword it does not take - so the case fails and the
+    cases after it still run."""
+    fn = getattr(M, name, None)
+    if fn is None:
+        return {"missing": name}
+    try:
+        return fn(*args, **kw)
+    except TypeError as exc:
+        return {"refused": str(exc)}
+
+
+def _plant_old_stray(admin, name):
+    """A '.audit-' temp file in `admin` an hour old - past the age a read
+    clears - and its path."""
+    path = os.path.join(admin, name)
+    with open(path, "wb") as fh:
+        fh.write(b"a marker half written\n")
+    hour_ago = os.path.getmtime(path) - 3600
+    os.utime(path, (hour_ago, hour_ago))
+    return path
+
+
+def _read_only_unsettled_cases(check, tree, admin):
+    """A reader that promises to change nothing - `/audit:status` - asks the
+    same question with `clear=False`: the stray stays, and the default read
+    the drive and the removers take still clears it."""
+    old = _plant_old_stray(admin, ".audit-killed-ro")
+    looked = _asked_kw("tree_unsettled", tree, clear=False)
+    kept_after_look = os.path.exists(old)
+    refused = _asked_kw("refuse_unsettled", tree, "T1", "m", "p", clear=False)
+    kept_after_refuse = os.path.exists(old)
+    swept = _asked_kw("tree_unsettled", tree)
+    check("un3b a non-clearing read (clear=False) of a tree whose admin directory "
+          "holds an old '.audit-' stray leaves it on disk and clears nothing - "
+          "from tree_unsettled and from refuse_unsettled - and still answers "
+          "settled; the default read then clears it (the twin a keyword that "
+          "silenced the sweep everywhere fails)",
+          isinstance(looked, dict) and looked.get("unsettled") is False
+          and not looked.get("cleared") and kept_after_look
+          and refused is None and kept_after_refuse
+          and isinstance(swept, dict) and swept.get("cleared") == [old]
+          and not os.path.exists(old),
+          repr((looked, refused, kept_after_look, kept_after_refuse, swept)))
+    if os.path.exists(old):
+        os.remove(old)
+
+
 def _unsettled_cases(check):
     tree, _base, _head, copy = _settle_tree("unsettled-")
     clean = _asked("tree_unsettled", tree)
@@ -2005,6 +2054,7 @@ def _unsettled_cases(check):
           repr((swept, os.listdir(admin))))
     if os.path.exists(fresh):
         os.remove(fresh)
+    _read_only_unsettled_cases(check, tree, admin)
 
     dp = _loader.load_script("drive-phase.py", "dp_for_worktrees_retire", cache=False)
     repo, tree, copy = _removable_tree("unsettled-retire-")

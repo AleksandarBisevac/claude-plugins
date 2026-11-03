@@ -2270,7 +2270,7 @@ def kept_where(left, flavour=None):
                mod.join(left, COPY_GIT_INDEX)))
 
 
-def tree_unsettled(tree, run=None, now=None):
+def tree_unsettled(tree, run=None, now=None, clear=True):
     """{"unsettled", "kept", "why", "cleared"} - THE ONE QUESTION a verb that
     removes a task tree or runs a session in it asks before it does (the
     section comment above names how, and the case that reads it off the
@@ -2283,13 +2283,16 @@ def tree_unsettled(tree, run=None, now=None):
     tree, a question nobody could ask. Read off the disk each time, through
     the same `_left_beside` every move's `kept` is read through. `cleared`
     names the temp files a hard kill left there, which this reading removes
-    (`_clear_strays`)."""
+    (`_clear_strays`) - unless `clear` is False, the reading a caller that
+    promises to change nothing takes (`/audit:status`, which holds no phase
+    lock): then nothing is removed and `cleared` is empty. The answer about
+    the copy is the same either way, since a stray is no copy."""
     admin = admin_dir(tree, run=run)
     if not admin:
         return {"unsettled": None, "kept": None, "cleared": [], "why": (
             "git would not name the admin directory of %s, so whether a copy of "
             "its work stands beside it is not known" % (native_spelling(tree),))}
-    cleared = _clear_strays(admin, now)
+    cleared = _clear_strays(admin, now) if clear else []
     left = _left_beside(os.path.join(admin, ADVANCE_BACKUP))
     if not left:
         return {"unsettled": False, "kept": None, "why": "", "cleared": cleared}
@@ -2310,15 +2313,17 @@ def restore_command(task_id, manifest, project):
         shlex.quote(os.path.abspath(project)) if project else "<project>")
 
 
-def refuse_unsettled(tree, manifest, project, task_id=None, run=None):
+def refuse_unsettled(tree, manifest, project, task_id=None, run=None,
+                     clear=True):
     """None when `tree` is settled (`tree_unsettled` answers False), else
     {"error", "kept", "remedy"}: the refusal a verb that would remove the tree
     says, forced or not - the removal deletes the tree's admin directory, and
     the copy in it may be the only record of the work. `kept` names what
     stands (None when the question could not be asked), and `remedy` the
     restore verb for `task_id`, or for the task the tree's marker names when
-    `task_id` is None (`<taskId>` when it names none)."""
-    left = tree_unsettled(tree, run=run)
+    `task_id` is None (`<taskId>` when it names none). `clear` is
+    `tree_unsettled`'s: False for a reader that may remove nothing."""
+    left = tree_unsettled(tree, run=run, clear=clear)
     if left["unsettled"] is False:
         return None
     if left["unsettled"] is None:
