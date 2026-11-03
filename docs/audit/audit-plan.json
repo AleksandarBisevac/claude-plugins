@@ -1882,7 +1882,8 @@
       "P155.35-gfj",
       "P155.36-gfj",
       "P155.37-gfj",
-      "P155.39-gfj"
+      "P155.39-gfj",
+      "P155.40-gfj"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -3946,7 +3947,8 @@
       "P155.27-gfj",
       "P155.28-gfj",
       "P155.36-gfj",
-      "P155.38-gfj"
+      "P155.38-gfj",
+      "P155.40-gfj"
     ],
     "plugins/audit/scripts/git/close-phase.py": [
       "P18.3",
@@ -12321,7 +12323,8 @@
       "P155.27-gfj",
       "P155.28-gfj",
       "P155.36-gfj",
-      "P155.38-gfj"
+      "P155.38-gfj",
+      "P155.40-gfj"
     ],
     "tests/test_ado_connect.py": [
       "P131.1"

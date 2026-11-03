@@ -1,0 +1,18 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "plugins/audit/scripts/governance/drive-phase.py:6611-6629", "issue": "kept_beside appends the keeping sentence (the patch name, where the work lives) after a verb's relayed stop from keep_old_tree/add_tree, which can open on and be long with a path. The patch name can still sit past a head-keeping clip, the shape this task removes; the guide's carve-out covers only a stop relayed whole.", "resolution": "Put the keeping sentence first and pass the relayed text as a ('verb said', ...) clause through paths_last, so the named facts lead."},
+  {"id": 2, "severity": "low", "file": "tests/test_drive_phase.py:9285-9333", "issue": "Only the serial redo_left branch is held to the paths-last rule under a long spaced root (sd14). The other converted stops, and any new one, can regress to path-first with every case green. The executor's AST probe over _stopped calls was run once and not committed.", "resolution": "Add a case that walks the AST of drive-phase.py and requires every _stopped argument naming a path-like variable to go through paths_last, with a reasoned allow-list for relayed and repo-relative stops."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clause: 'Make every drive stop that carries paths lead with its named facts (task, patch, pin, verb) and put paths last, through one shared formatter, so a clip can only cut path text; add a case under a long spaced TMPDIR that asserts the named facts survive.' The diff adds paths_last (drive-phase.py:9914) and routes the redo_left, recut, keep_old_tree, unsettled_said, kept-tree, kept-marker, no-HEAD, writer-brief/resume-prompt, submit_tree and stamp stops through it; sd14 and sd15 are added. The executor's corrected diagnosis holds: sd12's predicate spelled the verb unquoted while the stop shell-quotes the patch, which is what a spaced TMPDIR exposed; the diff fixes the predicate and also does the wider reorder. The outcome describes the diff; the guide's 'recut's stops' slightly overstates (6541, 6552, 6571, 6588 name refs and relative paths and were left), but they still lead with the task. sd14 asserts the unclipped stop's ordering under a long spaced root, not a clip itself.",
+  "missing": [],
+  "redFirst": "proved",
+  "redFirstBasis": "The executor's command `python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD exited 1 with sd14 failing an assertion (HEAD's other cases green), each passing with the working tree's implementation. The basis text is padded with runner environment lines but names the command, the exit and the task's own failing case. sd15 has no red of its own recorded; it is a new function's formatter case.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "tests.gate is the single command `python3 tools/sweep-selftests.py tests/test_drive_phase.py`, which selects only tests/test_drive_phase.py. I read sd12, sd14, sd15 and their helpers (_next, _file_executor, _pin_redo), and grepped tests/ for every reworded stop phrase; no other case pins the old wording. sd12 would still pass if paths_last were deleted, but only because sd14 owns the ordering. I did not read the whole 9000+ line file, so nothing beyond those cases is claimed."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

@@ -452,7 +452,7 @@
         "file": "tests/test__worktrees.py:2170-2174 (_touch_scan.asks); PLUGIN-BUILD-GUIDE.md:1103; _worktrees.py section comment",
         "issue": "ut5 checks that a function asks tree_unsettled somewhere, not before the removal; a remove followed by the ask passes (probed) while the label, guide and comment say 'first'.",
         "resolution": "Require the ask to precede the remove or dispatch site within the function, with a planted after-the-fact twin.",
-        "fixTask": "P155.36-gfj"
+        "fixTask": "P155.40-gfj"
       },
       {
         "id": "P155-R49",
@@ -492,8 +492,10 @@
         "severity": "med",
         "file": "tools/gate-parity.py lw1 (and any case that runs the verify.sh window step under sh)",
         "issue": "Release-tier CI run 41616818469 at fdf3b270, windows legs: lw1 fails with code=1 project=None, out '/usr/bin/dash: 1: C:\\hostedtoolcache\\...\\python3.exe: not found' - the case hands dash a native Windows interpreter path it cannot execute.",
-        "resolution": "Pass the interpreter to the shell in a form it can run on Windows (sys.executable converted the way verify.sh's own runner does, or the `python3` stand-in resolved through PATH), or skip with the platform's own probe when no POSIX shell can run it - never reading any exception as the platform's refusal; keep the case running on posix.",
-        "fixTask": "P155.39-gfj"
+        "resolution": "fixed in P155.39-gfj (3c4aff5c58a8): Pass the interpreter to the shell in a form it can run on Windows (sys.executable converted the way verify.sh's own runner does, or the `python3` stand-in resolved through PATH), or skip with the platform's own probe when no POSIX shell can run it - never reading any exception as the platform's refusal; keep the case running on posix.",
+        "fixTask": "P155.39-gfj",
+        "commit": "3c4aff5c58a8",
+        "status": "fixed"
       },
       {
         "id": "P155-R54",
@@ -522,9 +524,23 @@
         "file": "tools/gate-parity.py:2858-2917",
         "issue": "The task's recorded gate (sweep over tests/_harness.py, tests/test__affected_tests.py, tests/test__runner_collects.py, tests/test_stamp_verification.py) selects no suite that imports or runs tools/gate-parity.py; none of the four names it. Shape: an assertion the changed behaviour never reaches. The new lw4/lw5/lw5w cases run only under `python3 tools/gate-parity.py --selftest`, which the executor ran by hand and filed, but which is not in tests.gate. Deleting shell_spelled's separator swap would leave every gate-selected test passing.",
         "resolution": "Add `python3 tools/gate-parity.py --selftest` to this task's tests.gate so the recorded gate run covers the cases the fix is proved by."
+      },
+      {
+        "id": "P155-R58",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:6611-6629",
+        "issue": "kept_beside appends the keeping sentence (the patch name, where the work lives) after a verb's relayed stop from keep_old_tree/add_tree, which can open on and be long with a path. The patch name can still sit past a head-keeping clip, the shape this task removes; the guide's carve-out covers only a stop relayed whole.",
+        "resolution": "Put the keeping sentence first and pass the relayed text as a ('verb said', ...) clause through paths_last, so the named facts lead."
+      },
+      {
+        "id": "P155-R59",
+        "severity": "low",
+        "file": "tests/test_drive_phase.py:9285-9333",
+        "issue": "Only the serial redo_left branch is held to the paths-last rule under a long spaced root (sd14). The other converted stops, and any new one, can regress to path-first with every case green. The executor's AST probe over _stopped calls was run once and not committed.",
+        "resolution": "Add a case that walks the AST of drive-phase.py and requires every _stopped argument naming a path-like variable to go through paths_last, with a reasoned allow-list for relayed and repo-relative stops."
       }
     ],
-    "outcome": "[findings: 57 - 1 high, 22 med, 34 low; 32 with a recorded fix commit]"
+    "outcome": "[findings: 59 - 1 high, 22 med, 36 low; 33 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -3369,7 +3385,7 @@
     {
       "id": "P155.36-gfj",
       "title": "The tree-touching pin reads order: the question comes before the removal",
-      "status": "in_progress",
+      "status": "cancelled",
       "description": "ut5 checks that a function that builds a worktree-remove argv or opens a dispatch reaches tree_unsettled somewhere, not that the question comes first; a remove followed by the ask passes while the label, the guide and the section comment say 'first' (R48). Make ut5 require the ask's line to precede the remove or dispatch site in the function (or every caller's call to it), with a planted after-the-fact twin that goes red; keep the texts saying only what the case checks.",
       "files": [
         "tests/test__worktrees.py",
@@ -3400,10 +3416,10 @@
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Cancelled: Wrong test mode: the check under test (_touch_scan) lives inside the test file the red-first helper lays over HEAD, so a tdd red against HEAD cannot exist; the red was shown by the executor's mutation probe. Re-added as a regression task carrying the same patch"
       },
       "startedAt": "2026-11-03T11:46:02Z",
-      "completedAt": null,
+      "completedAt": "2026-11-03T12:23:08Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -3483,7 +3499,12 @@
       "fixes": [
         "P155-R51"
       ],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-03T12:48:28Z.37fbd1",
+        "status": "passed",
+        "at": "2026-11-03T12:48:28Z"
+      }
     },
     {
       "id": "P155.38-gfj",
@@ -3551,7 +3572,7 @@
     {
       "id": "P155.39-gfj",
       "title": "The window step's case runs on Windows or says why it cannot",
-      "status": "in_progress",
+      "status": "done",
       "description": "CI run 41616818469 (release tier, fdf3b270), windows legs: gate-parity lw1 fails - code=1 project=None, out '/usr/bin/dash: 1: C:\\hostedtoolcache\\...\\python3.exe: not found'. The case hands dash a native Windows interpreter path. Pass the interpreter in a form the shell can execute (as verify.sh's own runner does on Windows), or skip only on the platform's own probe that no POSIX shell can run it - never reading any exception as the platform refusing. Keep the case running on posix; add a posix case that proves the conversion is applied.",
       "files": [
         "tools/gate-parity.py",
@@ -3582,14 +3603,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3c4aff5c58a8",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Cause: lw1 handed dash sys.executable as a native Windows path made only of backslashes. A POSIX shell looks up a command name containing no slash on PATH, so dash printed 'not found'. Fix in tools/gate-parity.py: (1) new shell_spelled(path, sep=None), which returns the path unchanged when the separator is '/' and otherwise swaps the separator for '/'. That forward-slash form is what verify.sh gets from cygpath -m for a native program, and the same sys.executable.replace('\\\\','/') spelling the suites in tests/ already give Git Bash (test_stamp_verification's git filter, test_drive_phase's gate commands). It is the existing mechanism with a name, not a second one. (2) _run_live_window now sets LW_PY = shell_spelled(interpreter, sep) and takes optional cwd/executable/sep arguments, all defaulting to the old behaviour. (3) new _live_window_spelling_cases, called right after _live_window_cases. lw4: the Windows-shaped hostedtoolcache interpreter path with sep backslash becomes the forward-slash form, and a posix path is unchanged. lw5: on posix, the window step is run through _run_live_window with that Windows-shaped interpreter and a stand-in placed at the relative path C:/hostedtoolcache/.../python3.exe under a scratch cwd; it exits 0 and prints the step's argument. lw5w (the twin): the same interpreter passed through unspelled gives a non-zero exit and 'not found'. Under dash on this machine that is the CI line byte for byte: '/bin/dash: 1: C:\\\\hostedtoolcache\\\\...\\\\python3.exe: not found', code 127. On a platform whose own path module reads 'C:' as a drive (os.path.splitdrive), lw5 is _harness.skip'ped because the fixture directory cannot exist there, and lw1 runs the real interpreter through the same spelling instead; simulating ntpath.splitdrive on posix gives 'lw5 SKIPPED HERE', which passes. The 'no POSIX shell' path stays red as it was, never a skip, and no exception is read as a platform refusal. Results: gate-parity --selftest ALL PASS 127/127, exit 0 (was 56/57 before the fix); brief gate exit 0, '4/4 files ok'; verify.sh --affected exit 0, all 47 selected checks ok, including gate-parity.py, gate-parity.py --selftest and prove-gates.py --selftest; ruff check exit 0; vermin -t=3.8- exit 0. Only tools/gate-parity.py changed (91 insertions, 8 deletions). For the owner, on Windows, from the repo root in Git Bash: python tools/gate-parity.py --selftest | grep -E '^(PASS|FAIL) lw|cases passed' ; echo $? -- expected: 'PASS lw1 the shipped window step, run under dash.EXE ... code=0 ...' (shell name as which() finds it), PASS lw0, lw2, lw3, 'PASS lw4 ... C:/hostedtoolcache/windows/Python/3.12.10/x64/python3.exe ...', 'PASS lw5 SKIPPED HERE - this platform's path module reads `C:` as a drive ...', no lw5w line, then 'ALL PASS: N/N cases passed' and exit 0 (in PowerShell: python tools/gate-parity.py --selftest | Select-String '^(PASS|FAIL) lw|cases passed'). Dependants: tools/verify.sh names _live_window_cases, which keeps its name and contract, so it is still correct. ci.yml, sweep-costs.json, _areas.py, test_audit_task.py, affected.py, bench-hooks.py, _output_lints.py and measure-affected-miss.py read gate-parity by path or by names this change did not touch (floating_runners, image_in_job_names, job_bound_evidence and the like), so all are still correct. No repo file references shell_spelled, _run_live_window or the new cases (grep over .py/.sh/.md/.json). The other declared files (verify.sh, prove-gates.py, _harness.py, test__affected_tests.py, sweep-selftests.py, stamp-verification.py, test__runner_collects.py, test_stamp_verification.py, PLUGIN-BUILD-GUIDE.md) were not edited, so their dependants are unchanged; the guide names no lw case or window-step interpreter. sweep-costs.json has no new block to weigh: the cases run inside gate-parity's existing body. Left as they are, outside this task's files: tests/test_py_launch.py:289 writes the raw sys.executable single-quoted into a /bin/sh shim, and test_drive_phase.py:826 and test_run_agent_session.py:157 do the same on their posix-only branches. None of them is in this CI failure.",
+        "descriptive": "gate-parity lw1 now hands dash the interpreter in forward-slash form, so the window step should run on Windows (owner to confirm there); a posix case proves the conversion and its twin reproduces the CI failure"
       },
       "startedAt": "2026-11-03T11:46:43Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-03T12:17:54Z",
+      "verifiedBy": [
+        "lw4: a Windows-shaped interpreter path comes out of shell_spelled in forward-slash (cygpath -m) form, and a posix path is unchanged",
+        "lw5: on posix, the window step handed a Windows-shaped interpreter runs it through the spelling and exits 0 (skipped only where the platform's path module reads C: as a drive)",
+        "lw5w: twin - the same interpreter unspelled is not found by the shell, the CI failure reproduced, so lw5 passing is the spelling's doing"
+      ],
       "notes": [
         {
           "at": "2026-11-03T10:41:27Z",
@@ -3616,7 +3641,79 @@
         "runId": "2026-11-03T12:16:10Z.14a979",
         "status": "passed",
         "at": "2026-11-03T12:16:10Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "3c4aff5c58a8",
+        "at": "2026-11-03T12:17:54Z",
+        "return": "docs/audit/evidence/returns/P155.39-gfj/20261103T114643Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "tests.expectRedFirst is false on this tdd task: it names no case to prove a red by, so no red-first proof is owed",
+        "at": "2026-11-03T12:11:28Z"
       }
+    },
+    {
+      "id": "P155.40-gfj",
+      "title": "The tree-touching pin reads order (regression)",
+      "status": "pending",
+      "description": "Re-add of cancelled P155.36-gfj with the correct test mode. ut5 checks that a function asks tree_unsettled somewhere, not before the removal (R48). The work exists as a patch from the cancelled attempt: _touches and _touch_scan read source positions, ut5 gains ask-afterwards twins, and the ut5 label, the suite and module section comments and PLUGIN-BUILD-GUIDE.md say \"earlier in the source\", stating it is source order, not control flow. The executor applies and verifies it, proves it by mutating the scanner, and does not redo it.",
+      "files": [
+        "tests/test__worktrees.py",
+        "plugins/audit/scripts/git/_worktrees.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tests/test__worktrees.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/git/_worktrees.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test__worktrees.py: ut5 requires the ask to come earlier in the source than the remove or dispatch site, with planted ask-afterwards twins (late, late_open, late_inner through late_outer); the check lives in the test file, so it is proved by mutating the scanner (ask anywhere, caller position ignored, no ask counts as first)"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__worktrees.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-03T12:23:13Z",
+          "text": "scope: tests/test__worktrees.py, PLUGIN-BUILD-GUIDE.md, plugins/audit/scripts/git/_worktrees.py, every path the finding(s) P155-R48 name"
+        },
+        {
+          "at": "2026-11-03T12:23:13Z",
+          "text": "scope: tests/test__worktrees.py, the suite that tests plugins/audit/scripts/git/_worktrees.py (python: its import closure reaches plugins/audit/scripts/git/_worktrees.py)"
+        },
+        {
+          "at": "2026-11-03T12:23:13Z",
+          "text": "no suite: PLUGIN-BUILD-GUIDE.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__affected_tests.py, tests/test__config.py, tests/test__deps.py, tests/test__doctor_trail.py, tests/test__output.py, tests/test__refs.py and 7 more"
+        },
+        {
+          "at": "2026-11-03T12:23:13Z",
+          "text": "no test runner in this task's gate for the test P155-R48 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test__worktrees.py'], derived as narrowed to this task's tests.add paths, in the spelling meta.phaseGate.derived.spelling records; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P155-R48"
+      ]
     }
   ],
   "reviewPerTask": "signals",

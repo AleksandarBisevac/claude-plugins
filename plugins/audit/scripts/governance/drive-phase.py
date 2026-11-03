@@ -2241,8 +2241,9 @@ def resume_writer(ctx, state, task, pending, tree=None):
         with open(prompt, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(resume_prompt(pending.get("failing") or [], pending.get("prompt")))
     except OSError as exc:
-        return _stopped(ctx, "the resume prompt could not be written to %s (%s)"
-                        % (prompt, exc))
+        return _stopped(ctx, paths_last(
+            "the resume prompt for %s could not be written" % (task["id"],),
+            [("why", exc), ("prompt", prompt)]))
     _record, argv = open_dispatch(ctx, state, task, round_n, lambda record: writer_argv(
         ctx, task, writer, prompt, record, tree, resume=pending["session"]), tree,
         kind=RESUME_KINDS.get(pending["decision"]))
@@ -4812,17 +4813,21 @@ def restore_command(ctx, task_id):
 def unsettled_said(ctx, task_id, tree, left, detail=None):
     """The words of a stop over `task_id`'s tree that `left`
     (`_worktrees.tree_unsettled`) or a move named not settled: where the work
-    is, what the move said, and the verb that puts the work back."""
+    is, what the move said, and the verb that puts the work back - the task and
+    the verb before any path (`paths_last`)."""
     if left.get("unsettled") is None:
-        return ("whether the tree of %s at %s is settled is not known (%s). "
-                "Nothing runs in that tree until it can be asked"
-                % (task_id, tree, _clip(left.get("why") or "", 300)))
-    where = left.get("why") or "a copy of its work stands beside it"
-    return ("the tree of %s at %s is not settled - %s%s. Nothing runs in that "
-            "tree while the copy stands: `%s` puts the work back from it and "
-            "takes it down" % (task_id, tree, where,
-                               "; %s" % (_clip(detail, 400),) if detail else "",
-                               restore_command(ctx, task_id)))
+        return paths_last("whether the tree of %s is settled is not known. Nothing "
+                          "runs in that tree until it can be asked" % (task_id,),
+                          [("why", _clip(left.get("why") or "", 300)),
+                           ("tree", tree)])
+    return paths_last("the tree of %s is not settled. Nothing runs in that tree "
+                      "while the copy of its work stands: restore puts the work "
+                      "back from it and takes it down" % (task_id,),
+                      [("why", left.get("why") or "a copy of its work stands "
+                        "beside it"),
+                       ("move", _clip(detail, 400) if detail else ""),
+                       ("tree", tree), ("restore", "`%s`" % (
+                           restore_command(ctx, task_id),))])
 
 
 def unsettled_stop(ctx, task, tree):
@@ -5474,27 +5479,30 @@ def keep_old_tree(ctx, state, task_id):
     that was lost never hands out a key a kept tree's marker still names."""
     tree = ((state.get("wave") or {}).get("trees") or {}).get(task_id)
     if not tree or not os.path.isdir(tree):
-        return None, _stopped(ctx, "the tree of %s is not at %s to keep; nothing "
-                              "was recut" % (task_id, tree or "a recorded path"))
+        return None, _stopped(ctx, paths_last(
+            "the tree of %s is not where it is recorded, so there is none to keep; "
+            "nothing was recut" % (task_id,),
+            [("recorded at", tree or "no path recorded")]))
     held = _worktrees.read_provenance(tree, expect_task=str(task_id))
     if held.get("ours") is not True:
-        return None, _stopped(ctx, "the tree of %s at %s could not be kept: %s; "
-                              "nothing was recut" % (
-                                  task_id, tree, held.get("basis")
-                                  or "its marker could not be read"))
+        return None, _stopped(ctx, paths_last(
+            "the tree of %s could not be kept; nothing was recut" % (task_id,),
+            [("why", held.get("basis") or "its marker could not be read"),
+             ("tree", tree)]))
     counts, why = _aside_counts(ctx, state, task_id)
     if counts is None:
-        return None, _stopped(ctx, "the tree of %s at %s could not be kept: %s, so "
-                              "no key could be chosen that no kept tree's marker "
-                              "carries; nothing was recut" % (task_id, tree, why))
+        return None, _stopped(ctx, paths_last(
+            "the tree of %s could not be kept, since no key could be chosen that "
+            "no kept tree's marker carries; nothing was recut" % (task_id,),
+            [("why", why), ("tree", tree)]))
     key = ASIDE_KEY % (task_id, max([0] + counts) + 1)
     _path, why = _worktrees.write_record(tree, dict(held["record"], taskId=key,
                                                     setAsideFrom=str(task_id)))
     if why:
-        return None, _stopped(ctx, "the tree of %s at %s could not be kept: its "
-                              "marker could not name %r (%s); the tree and its "
-                              "marker are as they were, and nothing was recut"
-                              % (task_id, tree, key, why))
+        return None, _stopped(ctx, paths_last(
+            "the tree of %s could not be kept: its marker could not name %r; the "
+            "tree and its marker are as they were, and nothing was recut"
+            % (task_id, key), [("why", why), ("tree", tree)]))
     record_kept(ctx, state, task_id, key, tree)
     return {"key": key, "path": tree}, None
 
@@ -6309,48 +6317,59 @@ def redo_left(ctx, state, task_id, tree):
     that take what the redo kept away. A serial step - no tree of the task's
     own stands - is stopped the same way, its work being nowhere the phase
     tree holds; there the apply is made in the phase tree, or the phase is
-    driven at a width that runs the task in a tree again."""
+    driven at a width that runs the task in a tree again.
+
+    The words name the task, the patch by its name, the pin and the verb, and
+    every path follows them (`paths_last`)."""
     kept, pin = redo_patch(ctx, task_id), redo_pin(task_id)
     pinned = carry_git(ctx["gitRoot"], ["rev-parse", "--verify", "--quiet",
                                         pin + "^{commit}"])[0] == 0
+    name = os.path.basename(kept)
     head = "a redo of %s stopped part way and its work is kept as %s%s" % (
-        task_id, kept, (" and in %s" % (pin,)) if pinned else
+        task_id, name, (" and in %s" % (pin,)) if pinned else
         (" alone (%s is gone)" % (pin,)))
+    away = "remove %s%s" % (name, (" and %s" % (pin,)) if pinned else "")
     take = "rm %s%s" % (shlex.quote(kept), (" && git -C %s update-ref -d %s" % (
         shlex.quote(ctx["gitRoot"]), pin)) if pinned else "")
 
     def apply_in(where):
         return "cd %s && git apply --3way %s" % (shlex.quote(where),
                                                  shlex.quote(kept))
+
+    def stop(named, where):
+        return _stopped(ctx, paths_last(named, where + [
+            ("patch", kept), ("take it away", take)]))
     if not tree:
-        return _stopped(ctx, "%s, which may be its only copy; no tree of %s's own "
-                        "stands, so this step would run it in the phase tree %s "
-                        "without that work. Finish from the patch there (%s) - or "
-                        "drive the phase at executor.waveWidth 2 or more, which "
-                        "runs it in a tree again - and take what the redo kept "
-                        "away (%s); then next"
-                        % (head, task_id, ctx["gitRoot"], apply_in(ctx["gitRoot"]),
-                           take))
+        return stop("%s: git apply --3way finishes from it in the phase tree - "
+                    "or drive the phase at executor.waveWidth 2 or more, which "
+                    "runs it in a tree again - then %s, and next. That may be "
+                    "its only copy, and no tree of %s's own stands, so this step "
+                    "would run it in the phase tree without that work"
+                    % (head, away, task_id),
+                    [("phase tree", ctx["gitRoot"]),
+                     ("finish", apply_in(ctx["gitRoot"]))])
     held, why = redo_held(ctx, state, task_id, tree)
     if held is True:
-        return _stopped(ctx, "%s; its tree %s already holds that work (no path of "
-                        "it unmerged, each path the tree's HEAD did not move "
-                        "reads as %s holds it, each it moved is changed there), "
-                        "so nothing is to be put back: take the patch away "
-                        "(%s), then next" % (head, tree, pin, take))
+        return stop("%s; its tree already holds that work, so nothing is to be "
+                    "put back: %s, then next. No path of it is unmerged there, "
+                    "each path the tree's HEAD did not move reads as %s holds "
+                    "it, and each it moved is changed there" % (head, away, pin),
+                    [("tree", tree)])
     if held is False:
-        return _stopped(ctx, "%s, which may be its only copy; its tree %s lacks it "
-                        "at %s, so nothing runs there until a human finishes from "
-                        "the patch (%s) and takes it away (%s), then next"
-                        % (head, tree, _clip(why, 200), apply_in(tree), take))
-    return _stopped(ctx, "%s, which may be its only copy; whether its tree holds "
-                    "it could not be read (%s). A path the tree's HEAD did not "
-                    "move since %s^ holds the work when it reads as %s holds it; "
-                    "one it moved holds the work merged with the phase's change, "
-                    "so it reads as neither side and only a reading of the file "
-                    "tells. Finish from the patch there (%s) only where the tree "
-                    "lacks the work, then take it away (%s); then next"
-                    % (head, _clip(why, 200), pin, pin, apply_in(tree), take))
+        return stop("%s: git apply --3way finishes from it in its tree, which "
+                    "lacks it, then %s, and next; nothing runs there until a "
+                    "human has, and that may be its only copy" % (head, away),
+                    [("lacking", _clip(why, 200)), ("tree", tree),
+                     ("finish", apply_in(tree))])
+    return stop("%s: git apply --3way finishes from it in its tree only where "
+                "the tree lacks the work, which could not be read, then %s, and "
+                "next; that may be its only copy. A path the tree's HEAD did not "
+                "move since %s^ holds the work when it reads as %s holds it; one "
+                "it moved holds the work "
+                "merged with the phase's change, so it reads as neither side "
+                "and only a reading of the file tells" % (head, away, pin, pin),
+                [("could not read", _clip(why, 200)), ("tree", tree),
+                 ("finish", apply_in(tree))])
 
 
 REDO_PIN_NS = "refs/audit/redo/"
@@ -6509,14 +6528,15 @@ def recut_tree(ctx, state, task):
         return redo_left(ctx, state, task["id"], tree)
     base, why = recut_standing(ctx, task, tree)
     if base is None:
-        return _stopped(ctx, "redo refused: %s; nothing was recut and no attempt "
-                        "is spent - block, and a human settles it" % (why,))
+        return _stopped(ctx, paths_last(
+            "redo refused for %s: nothing was recut and no attempt is spent - "
+            "block, and a human settles it" % (task["id"],), [("why", why)]))
     records = member_records(ctx, state)
     work, why = tree_work(tree, records, task["id"])
     if work is None:
-        return _stopped(ctx, "the work in the tree of %s could not be read (%s), "
-                        "so nothing was recut and no attempt is spent"
-                        % (task["id"], why))
+        return _stopped(ctx, paths_last(
+            "the work in the tree of %s could not be read, so nothing was recut "
+            "and no attempt is spent" % (task["id"],), [("why", why)]))
     if work["base"] != base:
         return _stopped(ctx, "redo refused: the work of %s was read over %s, not "
                         "its recorded base %s; nothing was recut, and its tree "
@@ -6524,9 +6544,10 @@ def recut_tree(ctx, state, task):
                             task["id"], work["base"][:12], base[:12], ref))
     untold, why = tree_undescribed(tree, records, work, strict=False)
     if untold is None:
-        return _stopped(ctx, "whether the work of %s describes its tree whole "
-                        "could not be read (%s), so nothing was recut and no "
-                        "attempt is spent" % (task["id"], why))
+        return _stopped(ctx, paths_last(
+            "whether the work of %s describes its tree whole could not be read, "
+            "so nothing was recut and no attempt is spent" % (task["id"],),
+            [("why", why)]))
     if untold:
         return _stopped(ctx, "redo refused: the tree of %s holds what a recut "
                         "cannot carry - %s; "
@@ -6535,15 +6556,17 @@ def recut_tree(ctx, state, task):
                         "block" % (task["id"], _clip("; ".join(untold), 400), ref))
     head = git_head(ctx)
     if not head:
-        return _stopped(ctx, "git named no HEAD in %s to recut the tree of %s at; "
-                        "nothing was recut" % (ctx["gitRoot"], task["id"]))
+        return _stopped(ctx, paths_last(
+            "git named no HEAD to recut the tree of %s at; nothing was recut"
+            % (task["id"],), [("checkout", ctx["gitRoot"])]))
     moved = []
     carry = carried_commit(ctx, task["id"])
     if carry:
         lost, newer, why = carry_beside_work(ctx, task["id"], records, work, carry)
         if lost is None:
-            return _stopped(ctx, "the work of %s could not be compared with %s "
-                            "(%s); nothing was recut" % (task["id"], ref, why))
+            return _stopped(ctx, paths_last(
+                "the work of %s could not be compared with %s; nothing was recut"
+                % (task["id"], ref), [("why", why)]))
         if lost:
             return _stopped(ctx, "redo refused: %s holds %s as the work of %s and "
                             "its tree no longer does, so a recut from the tree "
@@ -6557,10 +6580,10 @@ def recut_tree(ctx, state, task):
     if work["patch"]:
         conflicts, why = recut_conflicts(ctx, work["patch"], head)
         if conflicts is None:
-            return _stopped(ctx, "whether the work of %s applies at the phase head "
-                            "%s could not be checked (%s); nothing was recut, and "
-                            "its tree and %s are as they were"
-                            % (task["id"], head[:12], why, ref))
+            return _stopped(ctx, paths_last(
+                "whether the work of %s applies at the phase head %s could not be "
+                "checked; nothing was recut, and its tree and %s are as they were"
+                % (task["id"], head[:12], ref), [("why", why)]))
         if conflicts:
             return _stopped(ctx, "redo refused: the work of %s conflicts at the "
                             "phase head %s in %s; nothing was recut, and its tree, "
@@ -6569,58 +6592,64 @@ def recut_tree(ctx, state, task):
                             % (task["id"], head[:12], ", ".join(conflicts), ref))
         moved, why = _changed_between(ctx["gitRoot"], work["base"], head)
         if moved is None:
-            return _stopped(ctx, "what the phase moved since the base of %s could "
-                            "not be read (%s); nothing was recut" % (task["id"], why))
+            return _stopped(ctx, paths_last(
+                "what the phase moved since the base of %s could not be read; "
+                "nothing was recut" % (task["id"],), [("why", why)]))
         why = keep_redo_work(ctx, task["id"], work, kept)
         if why:
-            return _stopped(ctx, "the work of %s could not be saved before its "
-                            "old tree was kept (%s); nothing was recut, and its tree and "
-                            "%s are as they were" % (task["id"], why, ref))
+            return _stopped(ctx, paths_last(
+                "the work of %s could not be saved before its old tree was kept; "
+                "nothing was recut, and its tree and %s are as they were"
+                % (task["id"], ref), [("why", why)]))
 
-    def keeping(where):
-        return ("the redo of %s stopped %s: its work is kept as %s and %s is as "
-                "it was, and no attempt is spent" % (task["id"], where, kept, ref))
+    def keeping(where, placed):
+        return paths_last("the redo of %s stopped %s: its work is kept as %s and "
+                          "%s is as it was, and no attempt is spent"
+                          % (task["id"], where, os.path.basename(kept), ref),
+                          placed + [("patch", kept)])
 
-    def kept_beside(stop, where):
+    def kept_beside(stop, where, placed):
         # A verb's own stop keeps its kind and words; the keeping is added.
-        return stop if not work["patch"] else (stop[0], "%s\n%s" % (stop[1],
-                                                                    keeping(where)))
+        return stop if not work["patch"] else (stop[0], "%s\n%s" % (
+            stop[1], keeping(where, placed)))
     # What `undo_recut` puts back when the recut tree refuses the work: the
     # state and the old tree's marker as they stand before the keeping.
     before = json.loads(json.dumps(state))
     marked = _worktrees.read_provenance(tree, expect_task=str(task["id"]))
     old, stop = keep_old_tree(ctx, state, task["id"])
     if stop is not None:
-        return kept_beside(stop, "as its old tree was being kept")
-    past = "once its old tree was kept at %s" % (old["path"],)
+        return kept_beside(stop, "as its old tree was being kept", [])
+    past, at = "once its old tree was kept", [("old tree", old["path"])]
 
-    def after_kept(why):
-        return _stopped(ctx, "%s - %s" % (_clip(why, 300), keeping(past)))
+    def after_kept(why, placed=()):
+        return _stopped(ctx, keeping(past, [("why", _clip(why, 300))]
+                                     + list(placed) + at))
     new, stop = add_tree(ctx, state, task)
     if stop is not None:
-        return kept_beside(stop, past)
+        return kept_beside(stop, past, at)
     if work["patch"]:
         refused = apply_in_recut(ctx, new, work["patch"])
         if refused:
             said = ("the work of %s does not apply in the tree recut at %s once "
-                    "executor.worktreeSetup ran there (%s)"
-                    % (task["id"], head[:12], _clip(refused, 300)))
+                    "executor.worktreeSetup ran there" % (task["id"], head[:12]))
+            told = [("refused", _clip(refused, 300))]
             undone = undo_recut(ctx, state, task["id"], before, old,
                                 marked.get("record"), new, records)
             if undone:
-                return after_kept("%s, and the recut could not be undone: %s"
-                                  % (said, undone))
+                return after_kept("%s, and the recut could not be undone" % (said,),
+                                  told + [("undo", undone)])
             why = drop_redo_work(task["id"], kept, ctx["gitRoot"])
             if why:
-                return _stopped(ctx, "redo refused: %s; the recut tree is taken "
-                                "down and its old tree is the task's again, and "
-                                "what the redo kept could not be taken away (%s); "
-                                "remove it by hand, then next" % (said, why))
-            return _stopped(ctx, "redo refused: %s; the recut tree is taken down, "
-                            "nothing was recut, and its tree, its work and %s are "
-                            "as they were - block, or have the setup leave the "
-                            "files the work changes as it checked them out and "
-                            "answer again" % (said, ref))
+                return _stopped(ctx, paths_last(
+                    "redo refused: %s; the recut tree is taken down and its old "
+                    "tree is the task's again, and what the redo kept could not "
+                    "be taken away; remove it by hand, then next" % (said,),
+                    told + [("not taken away", why)]))
+            return _stopped(ctx, paths_last(
+                "redo refused: %s; the recut tree is taken down, nothing was "
+                "recut, and its tree, its work and %s are as they were - block, "
+                "or have the setup leave the files the work changes as it "
+                "checked them out and answer again" % (said, ref), told))
         wrong = recut_wrong(ctx, new, task["id"], records, work, moved)
         if wrong:
             return after_kept("the recut tree does not hold the work as it was: "
@@ -6634,10 +6663,11 @@ def recut_tree(ctx, state, task):
     if work["patch"]:
         why = drop_redo_work(task["id"], kept, ctx["gitRoot"])
         if why:
-            return _stopped(ctx, "the tree of %s is recut at %s and holds its work, "
-                            "its old tree is kept at %s, and what the redo "
-                            "kept could not be taken away (%s); remove it by hand, "
-                            "then next" % (task["id"], head[:12], old["path"], why))
+            return _stopped(ctx, paths_last(
+                "the tree of %s is recut at %s and holds its work, its old tree "
+                "is kept, and what the redo kept could not be taken away; remove "
+                "it by hand, then next" % (task["id"], head[:12]),
+                [("not taken away", why), ("old tree", old["path"])]))
     removed, why = remove_task_tree(ctx, old["path"], old["key"], records,
                                     carried=work["commit"])
     if removed:
@@ -6676,8 +6706,9 @@ def open_wave(ctx, state, picked, width, basis):
     """Record a wave of `picked` at the phase HEAD, and its `wave.start` row."""
     base = git_head(ctx)
     if not base:
-        return _stopped(ctx, "git named no HEAD in %s, so a wave has no commit to "
-                        "cut its trees from" % (ctx["gitRoot"],))
+        return _stopped(ctx, paths_last("git named no HEAD, so a wave has no "
+                                        "commit to cut its trees from",
+                                        [("checkout", ctx["gitRoot"])]))
     number = int(state.get("waves") or 0) + 1
     state["waves"] = number
     state["wave"] = {"id": "%s-w%d" % (ctx["phase"], number), "base": base,
@@ -6850,14 +6881,15 @@ def unmarked_kept_stop(ctx, state, kept):
             unmarked.append((tid, path, why))
     if not unmarked:
         return None
-    return _stopped(ctx, "%s: the kept tree holding the task's work from an "
-                    "earlier wave carries no marker naming the task, so a wave "
-                    "would cut a fresh tree beside it rather than adopt it, and "
-                    "the serial step would run the task in the phase tree "
-                    "without that work. Carry the tree's diff into the phase "
-                    "tree and remove the tree, then drive the phase again"
-                    % ("; ".join("%s's tree at %s (%s)" % (tid, path, why)
-                                 for tid, path, why in unmarked),))
+    return _stopped(ctx, paths_last(
+        "%s: the kept tree holding the task's work from an earlier wave carries "
+        "no marker naming the task, so a wave would cut a fresh tree beside it "
+        "rather than adopt it, and the serial step would run the task in the "
+        "phase tree without that work. Carry the tree's diff into the phase "
+        "tree and remove the tree, then drive the phase again"
+        % (", ".join(tid for tid, _path, _why in unmarked),),
+        [("%s's tree" % (tid,), "%s (%s)" % (path, why))
+         for tid, path, why in unmarked]))
 
 
 def kept_tree_stop(ctx, state, task):
@@ -6867,13 +6899,14 @@ def kept_tree_stop(ctx, state, task):
     path = kept_tree(state, task)
     if path is None:
         return None
-    return _stopped(ctx, "%s has a kept tree at %s holding its work from an "
-                    "earlier wave, and this step would run it in the phase tree "
-                    "instead - dispatched, gated and closed without that work. "
-                    "Drive the phase (next %s) at executor.waveWidth 2 or more, "
-                    "which runs it in that tree when its marker names the task, "
-                    "or carry the tree's diff into the phase tree and remove the "
-                    "tree" % (task["id"], path, ctx["phase"]))
+    return _stopped(ctx, paths_last(
+        "%s has a kept tree holding its work from an earlier wave, and this "
+        "step would run it in the phase tree instead - dispatched, gated and "
+        "closed without that work. Drive the phase (next %s) at "
+        "executor.waveWidth 2 or more, which runs it in that tree when its "
+        "marker names the task, or carry the tree's diff into the phase tree "
+        "and remove the tree" % (task["id"], ctx["phase"]),
+        [("kept tree", path)]))
 
 
 def wave_step(ctx, state, manifest, phase, width, basis):
@@ -8745,7 +8778,8 @@ def review_fix_dispatch(ctx, state, phase, task, writer, brief, fix, tree=None):
         with open(brief, "r", encoding="utf-8") as fh:
             text = fh.read()
     except OSError as exc:
-        return _stopped(ctx, "the writer brief %s could not be read (%s)" % (brief, exc))
+        return _stopped(ctx, paths_last("the writer brief could not be read",
+                                        [("why", exc), ("brief", brief)]))
     os.makedirs(os.path.dirname(prompt), exist_ok=True)
     with open(prompt, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(resume_prompt(lines, REVIEW_FIX_HEAD) if session else
@@ -9877,6 +9911,24 @@ _FILLED_LATER = {"stamp": "filled by submit",
                  "redFirst": {"status": "proved", "basis": "filled by submit"}}
 
 
+def paths_last(named, where):
+    """The words of a stop that carries paths: `named` - what the stop is about,
+    its task, patch, pin and verb, with no path in it - then each `(label,
+    text)` of `where` that holds anything, a path or a command spelled with
+    one, after it.
+
+    WHY THE ORDER IS THE RULE. Every reader that shortens a stop keeps its
+    head: the signal line's basis is `stop_basis` cut by `_fit`, `--explain`
+    keeps a long text's first line cut at a fixed width, and a suite's
+    diagnostic prints a slice. A temp or project path is as long as the
+    machine makes it - spaced and linked on a runner - so one in front of the
+    named words pushes them past any of those cuts, and the reader is left
+    with a path and no task. Nothing checks that a new stop routes its paths
+    through here; `sd14` holds the redo stop to it under a long spaced root."""
+    placed = ["%s: %s" % (label, text) for label, text in where if text]
+    return "%s - %s" % (named, "; ".join(placed)) if placed else named
+
+
 def _stopped(ctx, why):
     ctx["stop"] = "stopped"
     return E_STOPPED, "%s %s: stopped - %s" % (PREFIX, ctx["phase"], why)
@@ -10088,9 +10140,10 @@ def take_stamp(ctx, task, tree=None):
                               "take` exited %d with no %s line: %s Nothing filed."
                               % (code, STAMP_TOKEN, _excerpt.reason_of(err, out)))
     if not head:
-        return None, _stopped(ctx, "the stamp is missing - git named no HEAD for "
-                              "%s, so the stamp binds the claims to no tree. "
-                              "Nothing filed." % (tree or ctx["gitRoot"],))
+        return None, _stopped(ctx, paths_last(
+            "the stamp is missing - git named no HEAD, so the stamp binds the "
+            "claims to no tree. Nothing filed.",
+            [("tree", tree or ctx["gitRoot"])]))
     return line, None
 
 
@@ -10127,16 +10180,17 @@ def submit_tree(ctx, phase, task):
     if not tree:
         return None, None
     if not os.path.isdir(tree):
-        return None, _stopped(ctx, "the wave gave %s the tree %s, and it is gone. "
-                              "Nothing filed." % (task["id"], tree))
+        return None, _stopped(ctx, paths_last(
+            "the wave gave %s a tree, and it is gone. Nothing filed."
+            % (task["id"],), [("tree", tree)]))
     kept = marker_kept_key(tree, task["id"])
     if kept:
-        return None, _stopped(ctx, "the wave's tree for %s, %s, is marked kept as "
-                              "%r by a redo that stopped before recording it, so "
-                              "it is no longer the task's tree. Run next %s to "
-                              "settle it and cut the task's next tree, then submit "
-                              "from there. Nothing filed." % (
-                                  task["id"], tree, kept, ctx["phase"]))
+        return None, _stopped(ctx, paths_last(
+            "the wave's tree for %s is marked kept as %r by a redo that stopped "
+            "before recording it, so it is no longer the task's tree. Run next "
+            "%s to settle it and cut the task's next tree, then submit from "
+            "there. Nothing filed." % (task["id"], kept, ctx["phase"]),
+            [("tree", tree)]))
     return tree, None
 
 

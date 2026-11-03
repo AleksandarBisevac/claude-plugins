@@ -4922,6 +4922,17 @@ made in the phase tree (`sd12`). The pin itself is taken down at the end of ever
 left - whichever path got it there (`settle_redo_pins`; `sd9`-`sd11`, and `sd13` for a pin a
 stop left once its patch was gone).
 
+**A stop that carries paths names its facts first.** Every reader that shortens a stop keeps its
+head - the signal line's basis, the first line `--explain` cuts, a suite's diagnostic slice - and
+a temp or project path is as long as the machine makes it. So the redo stops, the recut's and the
+keeping's, the unsettled-tree, kept-tree and kept-marker stops, a wave's or a recut's missing
+HEAD, the writer's unreadable brief and unwritable resume prompt, and the submit-side tree and
+stamp stops word what they name - the task, the patch by its name, the pin, the verb - with no path in
+it, and hand every path, and every command spelled with one, to `paths_last`, which places them
+after (`sd14` under a long spaced root, `sd15` the formatter itself). Nothing checks that a new
+stop goes through it. A stop that relays a sentence another module wrote - a filed return's
+problem, a verb's own refusal - keeps that sentence's order.
+
 Before a wave opens, `hooks_width` asks `_doctor_setup.hooks_task_binding` whether the hooks
 Claude Code loads - the copy `installed_plugins.json` records and the live copies the hook run
 records name - define the task-tree binding the plan gate judges a wave's trees by: a copy that

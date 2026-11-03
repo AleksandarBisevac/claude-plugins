@@ -9268,9 +9268,9 @@ def _scope_declared_cases(check):
           "naming the patch, the pin and a verb that applies the patch, with no "
           "gate run and the pin kept: %r"
           % ((code, len(_rows_of(root, mpath, "P1.1")), _redo_pins(root),
-              held[-600:]),),
+              held[:600]),),
           code != 0 and patch in held and M.redo_pin("P1.1") in held
-          and ("git apply --3way %s" % (patch,)) in held
+          and ("git apply --3way %s" % (shlex.quote(patch),)) in held
           and len(_rows_of(root, mpath, "P1.1")) == 0
           and tasks_of(mpath)["P1.1"].get("status") == "in_progress"
           and _redo_pins(root) == [M.redo_pin("P1.1")])
@@ -9284,6 +9284,53 @@ def _scope_declared_cases(check):
           _redo_pins(root) == []
           and tasks_of(mpath)["P1.1"].get("status") == "in_progress"
           and instruction(went) == ("dispatch", "reviewer", "P1.1"))
+
+    # The same stop under a root whose path is long and spaced - the shape a
+    # spaced, linked TMPDIR gives on a runner. Every reader that shortens the
+    # text keeps its head, so what the stop names has to sit before the first
+    # path: the case reads the text in front of the root, not the whole stop,
+    # and a stop that opens on a path - the shape CI showed - reads empty there.
+    short, smpath = _repo("sd-long", task_ids=TASKS[:1], per_task="always")
+    deep = os.path.join(os.path.realpath(_harness.fixture_root("drive-sd-long-")),
+                        "a spaced directory that runs long " * 4,
+                        "and nests once more to pass a clip " * 4)
+    shutil.copytree(short, deep, symlinks=True)
+    dmpath = os.path.join(deep, os.path.relpath(smpath, short))
+    _next(M, deep, dmpath)
+    _file_executor(deep, dmpath, "P1.1")
+    patch = M.redo_patch(_drive_ctx(deep, dmpath), "P1.1")
+    if not os.path.isdir(os.path.dirname(patch)):
+        os.makedirs(os.path.dirname(patch))
+    with open(patch, "wb") as fh:
+        fh.write(b"")
+    _pin_redo(M, deep, "P1.1")
+    code, held = _next(M, deep, dmpath)
+    first_path = held.find(deep)
+    lead = held[:first_path] if first_path >= 0 else ""
+    named = ("P1.1", os.path.basename(patch), M.redo_pin("P1.1"),
+             "git apply --3way")
+    check("sd14 under a long spaced root the serial redo stop leads with what it "
+          "names - the task, the patch, the pin and the verb - before any path, "
+          "so a clip that keeps the head cuts only path text; the verb still "
+          "carries the patch shell-quoted: %r"
+          % ((code, first_path, [w for w in named if w not in lead],
+              lead[:400]),),
+          code != 0 and first_path > 0
+          and [w for w in named if w not in lead] == []
+          and ("git apply --3way %s" % (shlex.quote(patch),)) in held
+          and len(_rows_of(deep, dmpath, "P1.1")) == 0
+          and _redo_pins(deep) == [M.redo_pin("P1.1")])
+    # The formatter on its own: the named words first and whole, each placed
+    # clause after them in order, an empty one dropped - and with nothing to
+    # place, the named words alone, no dangling separator after them.
+    placed = M.paths_last("redo of P1.1 stopped", [
+        ("tree", deep), ("why", ""), ("patch", patch), ("pin", None)])
+    bare = M.paths_last("redo of P1.1 stopped", [("why", ""), ("tree", None)])
+    check("sd15 paths_last puts the named words before every path, keeps the "
+          "placed clauses in order and drops an empty one; with none to place "
+          "it is the named words alone: %r" % ((placed[:120], bare),),
+          placed == "redo of P1.1 stopped - tree: %s; patch: %s" % (deep, patch)
+          and bare == "redo of P1.1 stopped")
 
 
 # --- the signal: one line per step, the full text behind --explain ----------
