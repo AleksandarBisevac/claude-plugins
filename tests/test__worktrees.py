@@ -42,7 +42,9 @@ import ast
 import copy as copymod
 import io
 import json
+import ntpath
 import os
+import posixpath
 import shutil
 import sys
 import tempfile
@@ -2202,6 +2204,29 @@ def _called(fn, *args, **kw):
         return {"raised": repr(exc)}
 
 
+def _said(answer):
+    """Every string `answer` holds - a tuple, dict or list, nested - joined as
+    written. Read rather than serialised: a JSON dump escapes the backslash a
+    windows path is spelled with, so a path searched for in the dump is never
+    found there however the refusal spelled it."""
+    if isinstance(answer, str):
+        return answer
+    if isinstance(answer, dict):
+        answer = list(answer.values())
+    if isinstance(answer, (list, tuple)):
+        return " ".join(_said(a) for a in answer)
+    return ""
+
+
+def _names(text, path):
+    """Whether `text` names `path` in the platform's one spelling - every
+    separator its own - so a refusal that joins a git-spelled directory with
+    a native separator does not count as naming it. The normaliser is the
+    platform's own `normpath`, not the module's, so the case and the code it
+    checks do not share the spelling they are judged by."""
+    return os.path.normpath(path) in text
+
+
 def _copy_beside(copy):
     os.mkdir(copy)
     with open(os.path.join(copy, M.COPY_INDEX), "w", encoding="utf-8") as fh:
@@ -2224,7 +2249,7 @@ def _touch_cases(check):
     plain = _called(mw.do_task_remove, repo, plan, "T1")
     forced = _called(mw.do_task_remove, repo, plan, "T1", force=True)
     stood = os.path.isdir(tree) and os.path.isdir(copy)
-    words = [json.dumps(a, default=str) for a in (plain, forced)]
+    words = [_said(a) for a in (plain, forced)]
     if stood:
         _harness.remove_tree(copy)
     gone = _called(mw.do_task_remove, repo, plan, "T1")
@@ -2234,7 +2259,8 @@ def _touch_cases(check):
           "verb, the tree and the copy left standing; the same tree with the copy "
           "gone is removed (the twin a remover refusing every tree fails)",
           all(isinstance(a, tuple) and a[0] != mw.E_OK for a in (plain, forced))
-          and all(copy in w and "restore" in w for w in words) and stood
+          and all(_names(w, copy) and _names(w, tree) and "restore" in w
+                  for w in words) and stood
           and isinstance(gone, tuple) and gone[0] == mw.E_OK
           and not os.path.isdir(tree),
           repr((plain, forced, stood, gone)))
@@ -2247,8 +2273,8 @@ def _touch_cases(check):
           "even forced, naming the copy and the restore verb, the tree and the "
           "copy left standing",
           isinstance(forced, tuple) and forced[0] != mw.E_OK
-          and copy in json.dumps(forced, default=str)
-          and "restore" in json.dumps(forced, default=str) and stood,
+          and _names(_said(forced), copy) and _names(_said(forced), tree)
+          and "restore" in _said(forced) and stood,
           repr((forced, stood)))
     if os.path.isdir(copy):
         _harness.remove_tree(copy)
@@ -2288,7 +2314,7 @@ def _touch_cases(check):
     state = {"wave": {"trees": {"T1": tree}}}
     before = copymod.deepcopy(state)
     said = _called(dp.resume_writer, ctx, state, {"id": "T1"}, pending, tree)
-    text = json.dumps(said, default=str)
+    text = _said(said)
     _harness.remove_tree(copy)
     bare = dict(ctx, config={}, did=[])
     free = _called(dp.resume_writer, bare, {}, {"id": "T1"}, pending, tree)
@@ -2298,7 +2324,8 @@ def _touch_cases(check):
           "the same tree settled the stop is not that one (the twin a resume "
           "refusing every tree fails)",
           isinstance(said, tuple) and said[0] == dp.E_STOPPED
-          and copy in text and "restore" in text and state == before
+          and _names(text, copy) and _names(text, tree) and "restore" in text
+          and state == before
           and not os.path.exists(state_dir)
           and isinstance(free, tuple) and "not settled" not in free[1],
           repr((said, state, free)))
@@ -2331,6 +2358,69 @@ def _touch_cases(check):
           and sorted(fixture) == ["planted.py:go (worktree remove)",
                                   "planted.py:opened (open_dispatch)"],
           repr((unasked, stale, fixture)))
+    _spelling_cases(check)
+
+
+def _git_spelled(admin):
+    """A runner answering `rev-parse --git-dir` the way git does on windows -
+    `admin` with forward slashes - and refusing anything else."""
+    def run(_cwd, args):
+        if list(args) == ["rev-parse", "--git-dir"]:
+            return 0, admin + "\n", ""
+        return 128, "", "not asked of this runner: %r" % (args,)
+    return run
+
+
+def _one_spelling(text, drive="C:"):
+    """`(paths, mixed)` of `text`: every windows path it names - a run from
+    `drive` to the next space, `(`, `)` or `,`, the punctuation of the
+    sentence it closes taken off - and those holding a forward slash, which a
+    path spelled natively throughout never does."""
+    paths = []
+    at = text.find(drive)
+    while at >= 0:
+        end = at
+        while end < len(text) and text[end] not in " (),":
+            end += 1
+        paths.append(text[at:end].rstrip(":;."))
+        at = text.find(drive, end)
+    return paths, [p for p in paths if "/" in p]
+
+
+def _spelling_cases(check):
+    # Fed with the windows path module on any platform, so the class - git's
+    # forward-slash directory joined with a native backslash - is caught on
+    # posix too, where the two separators never meet.
+    mixed = "C:/r/.git/worktrees/t\\" + M.ADVANCE_BACKUP
+    native = "C:\\r\\.git\\worktrees\\t\\" + M.ADVANCE_BACKUP
+    spelled = _called(M.native_spelling, mixed, ntpath) \
+        if hasattr(M, "native_spelling") else {"missing": "native_spelling"}
+    kept = "/r/odd\\name/t"
+    left_alone = _called(M.native_spelling, kept, posixpath) \
+        if hasattr(M, "native_spelling") else {"missing": "native_spelling"}
+    admin = _called(M.admin_dir, "C:\\r\\t", _git_spelled("C:/r/.git/worktrees/t"),
+                    flavour=ntpath)
+    copy_words = _called(M.kept_where, mixed, flavour=ntpath)
+    tomb_words = _called(M.kept_where, mixed + M.DROPPED, flavour=ntpath)
+    named = [_one_spelling(w) if isinstance(w, str) else ([], [w])
+             for w in (copy_words, tomb_words)]
+    # The over-fire twin is `left_alone`: on posix a backslash is a character a
+    # directory name may hold, so a normaliser rewriting every backslash would
+    # name a directory that is not there.
+    check("sp1 every path a refusal over an unsettled tree names is spelled one "
+          "way: git's forward-slash admin directory joined with a native "
+          "backslash comes out native throughout under the windows path rules "
+          "- the admin directory itself, the copy, its numbered files, its "
+          "index, its git index and its tombstone - while under posix rules a "
+          "backslash in a name is left as written",
+          spelled == native and left_alone == kept
+          and admin == "C:\\r\\.git\\worktrees\\t"
+          and all(paths and not bad for paths, bad in named)
+          and native in named[0][0] and native + "\\N.bin" in named[0][0]
+          and native + "\\" + M.COPY_INDEX in named[0][0]
+          and native + "\\" + M.COPY_GIT_INDEX in named[0][0]
+          and native + M.DROPPED in named[1][0],
+          repr((spelled, left_alone, admin, copy_words, tomb_words, named)))
 
 
 def _autocrlf_repo(prefix, base_files, head_files):

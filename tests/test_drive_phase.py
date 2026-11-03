@@ -6293,9 +6293,19 @@ def _kept_restart_fixture(M, check, unmark):
         _harness.remove_tree(aux)
 
 
-def _worktree_paths(root):
-    """The real paths of every worktree git lists for `root`, sorted."""
-    return sorted(os.path.realpath(ln[len("worktree "):]) for ln in _harness.git(
+def _one_path(path):
+    """`path` as one spelling: real, and every separator the platform's own.
+    git lists a worktree with forward slashes on windows while the drive
+    records it natively, so the two only compare once both pass through here."""
+    return os.path.normpath(os.path.realpath(path))
+
+
+def _kept_listed(root):
+    """The real paths of every worktree git lists for `root`, sorted, each in
+    the one spelling `_one_path` gives. Named apart from the recut cases'
+    `_worktree_paths`, which lists git's raw spelling: one module-level name
+    defined twice is the later definition for every caller."""
+    return sorted(_one_path(ln[len("worktree "):]) for ln in _harness.git(
         root, "worktree", "list", "--porcelain").splitlines()
         if ln.startswith("worktree "))
 
@@ -6330,7 +6340,7 @@ def _kept_restart_run(M, check, root, mpath, log, unmark=False):
         if os.path.isfile(marker):
             os.remove(marker)
             unmarked = True
-    trees_before = _worktree_paths(root)
+    trees_before = _kept_listed(root)
     prints, briefs = [], []
     with _Env(root):
         for _ in range(8):
@@ -6359,14 +6369,14 @@ def _kept_restart_run(M, check, root, mpath, log, unmark=False):
               "naming the tree, before any dispatch, gate or fresh tree: %r" % ((
                   kept, unmarked, started[0], [p[-500:] for p in prints],
                   len(briefs), gated_in, task.get("status"), sha,
-                  trees_before, _worktree_paths(root)),),
+                  trees_before, _kept_listed(root)),),
               kept_stood and unmarked and started[0] == 0
-              and len(prints) == 1 and kept in prints[0]
+              and len(prints) == 1 and os.path.normpath(kept) in prints[0]
               and "stopped" in prints[0] and "marker" in prints[0]
               and briefs == [] and gated_in == []
               and task.get("status") == "in_progress" and sha is None
-              and _worktree_paths(root) == trees_before
-              and os.path.realpath(kept) in trees_before)
+              and _kept_listed(root) == trees_before
+              and _one_path(kept) in trees_before)
         return
     check("kr1 %s: %r" % (KEPT_RESTART_CLAUSE, (
               kept, started[0], [p[-400:] for p in prints], gated_in,

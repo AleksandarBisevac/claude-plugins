@@ -476,8 +476,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py (redo_left serial stop); tests/test_drive_phase.py sd12",
         "issue": "Release-tier CI run 41616818469 at fdf3b270: sd12 fails on linux stress (spaced, linked TMPDIR under cp1252) and on windows cp1252 3 / plain 3. The serial redo stop is clipped from its front under a long spaced path, so the text sd12 needs (the patch, the pin) is cut before the reader sees it: the captured message begins 'he phase tree /tmp/sw-.../real/s p/...'. A refusal whose key words fall to a path-length clip is the class the kept-tree refusal was fixed for in this phase.",
-        "resolution": "Lead the stop with what it names (task, patch, pin, verb) before any path, so a clip only ever cuts path text; reproduce with sweep-selftests --spaced locally; one shared rule for refusals that carry long paths, with a case under a long spaced TMPDIR.",
-        "fixTask": "P155.37-gfj"
+        "resolution": "fixed in P155.37-gfj (fa8ff0de3aef): Lead the stop with what it names (task, patch, pin, verb) before any path, so a clip only ever cuts path text; reproduce with sweep-selftests --spaced locally; one shared rule for refusals that carry long paths, with a case under a long spaced TMPDIR.",
+        "fixTask": "P155.37-gfj",
+        "commit": "fa8ff0de3aef",
+        "status": "fixed"
       },
       {
         "id": "P155-R52",
@@ -540,7 +542,7 @@
         "resolution": "Add a case that walks the AST of drive-phase.py and requires every _stopped argument naming a path-like variable to go through paths_last, with a reasoned allow-list for relayed and repo-relative stops."
       }
     ],
-    "outcome": "[findings: 59 - 1 high, 22 med, 36 low; 33 with a recorded fix commit]"
+    "outcome": "[findings: 59 - 1 high, 22 med, 36 low; 34 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -3447,7 +3449,7 @@
     {
       "id": "P155.37-gfj",
       "title": "A refusal carrying long paths leads with what it names, so a clip cuts only path text",
-      "status": "in_progress",
+      "status": "done",
       "description": "CI run 41616818469 (release tier, fdf3b270): sd12 is red on linux stress (spaced, linked TMPDIR) and windows. The serial redo stop is clipped from the front under a long spaced path; the reader gets 'he phase tree /tmp/sw-.../real/s p/...' with the patch and pin cut away. Reproduce locally with `python3 tools/sweep-selftests.py --spaced tests/test_drive_phase.py`. Make every drive stop that carries paths lead with its named facts (task, patch, pin, verb) and put paths last, through one shared formatter, so a clip can only cut path text; add a case under a long spaced TMPDIR that asserts the named facts survive.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -3474,14 +3476,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "fa8ff0de3aef",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "DIAGNOSIS, corrected. The CI line's leading cut ('he phase tree /tmp/sw-...') is sd12's own diagnostic slice (held[-600:]), not a cut by the drive. sd12 was red because its predicate spelled the verb with the patch path UNQUOTED ('git apply --3way %s' % patch) while the stop shell-quotes it, and a spaced TMPDIR makes shlex.quote add quotes. Evidence: in the first red run (tests only changed, drive untouched) sd12 PASSED once its predicate used shlex.quote(patch), under a spaced TMPDIR; only sd14 failed. Reproduced first with `python3 tools/sweep-selftests.py --spaced tests/test_drive_phase.py` alone (808/809, FAIL sd12); --encoding cp1252 was not needed.\n\nThe readers that do clip a stop all keep its head: the signal line's basis (stop_basis cut by _fit to the room left in SIGNAL_BYTES), explain_text's first line, a suite's diagnostic slice. So the shared rule: new drive-phase.py paths_last(named, where) returns `named` (what the stop names, no path) then ' - ' and each non-empty (label, path-or-command) of `where` joined by '; '. Routed through it: redo_left (all four branches, now naming the patch by its basename, the pin and `git apply --3way` before any path, with patch/tree/finish/take-it-away commands placed after); the recut's stops in redo_member (recut_standing refusal, unreadable work, undescribed tree, no HEAD, carry comparison, conflict check, moved-paths read, save failure); the keeping text (keeping/kept_beside/after_kept) and the refused-apply and not-taken-away stops after it; keep_old_tree's four stops; unsettled_said's two branches (restore named as the verb, its command placed); unmarked_kept_stop and kept_tree_stop; open_wave's no-HEAD; the writer brief and resume prompt stops; submit_tree's two stops and the stamp's no-HEAD stop. Probe over the AST (every _stopped call whose argument names a path-ish variable) left hits each accounted for: 3295 recipe follower path is repo-relative; 6551 untold is relative paths, the named facts themselves; 7630 'record' is a slice count; 8089 'told' is triage text; 4847/4893 go through unsettled_said, now paths_last. Left, and named in the guide: stops that relay a sentence another module wrote (filed-return problems, relay_refusal's verb words) keep that sentence's order. recut_said is a did-line, not a stop, and was left.\n\nMeasured on the signal line: before, '...its work is kept as /tmp/sw-x/real/s p/a spaced directory...' (task only); after, '...kept as redo-P1.1.patch and in refs/audit/redo/P1.1: git apply --3way fi...' at 200 bytes for a short id. For a long task id the verb may still fall past the signal's cut, which is named-word text, not path text; --explain carries it whole.\n\nTests (tests/test_drive_phase.py): sd12 predicate now expects shlex.quote(patch) and its diagnostic shows held[:600]; sd14 new, the serial redo stop under a root copied into a long spaced nested directory, asserting the text in front of the first occurrence of the root holds the task id, the patch basename, the pin and 'git apply --3way', the quoted verb, no gate row and the pin kept; sd15 new, paths_last alone: order, empty clause dropped, and with nothing placed the named words alone (the over-fire direction: no dangling separator). PLUGIN-BUILD-GUIDE.md: one paragraph in the drive-phase.py section stating the rule, which stops follow it, that nothing checks a new stop goes through it, and that relayed sentences keep their order.\n\nCommands: `python3 tools/sweep-selftests.py tests/test_drive_phase.py` exit 0, 1/1 files ok, 811 cases. `python3 tools/sweep-selftests.py --spaced tests/test_drive_phase.py` exit 0, 811 cases (twice, before and after the last wording change). `python3 tools/prove-gates.py --selftest` exit 0, 66/66. `ruff check` on both .py exit 0; `vermin -t=3.8-` exit 0. `python3 tools/sweep-selftests.py tests/test__output_lints.py tests/test__deps.py` exit 0, 449 cases. `sh tools/verify.sh --affected` exit 1: the one failure is tests/test_audit_status.py sl1-sl3 (405/408), NOT in my files and NOT mine: a pristine `git archive HEAD` export fails sl1-sl3 identically when run directly (exit 1, 405/408), and both HEAD's export and this tree pass it under the isolating sweep (exit 0, 408 cases each) - an environment-dependent red in direct runs, pre-existing.\n\nDependants. tests/test_drive_phase.py: .github/sweep-costs.json still correct as a weight (sd-block gains one fixture repo; figures not re-recorded); .github/workflows/ci.yml unchanged reference; drive-phase.py is the module under test, changed here; tests/test__runner_output.py, test_run_test_gate.py (_counting, _follower_cases), test_stamp_verification.py (_actions), tools/affected.py, tools/reach-diff.py (_bindings) - no name they use was renamed or removed, and each ran green in the affected run. drive-phase.py: _worktrees.py and the importing suites (test__filed_returns, test__invariants, test__worktrees, test_audit_status, test_commit_task_work, test_detect_plan_skip, test_stamp_verification) - no function removed or renamed, one added (paths_last); only stop wording moved, and every one of those suites passed in the affected run except test_audit_status's pre-existing sl1-sl3 above. PLUGIN-BUILD-GUIDE.md: one paragraph added, no heading or tree line moved, so its basename readers are unaffected; test__deps and test__output_lints green.\n\nclaims:\n1 drive-phase.py paths_last (beside _stopped) is the formatter the guide paragraph and the docstrings describe; redo_left's inner stop() routes every branch through it; the guide lists exactly the converted stops\n2 sd14 red before the fix (19/20, missing patch/pin/verb before the path) -> green after (20/20); sd15 holds the empty-where direction (a dangling ' - ' would fail it); submit's helper proves the red in a throwaway tree\n3 AST probe over every _stopped( call (83 in the file, from grep -c) with a path-ish argument: each hit converted or left for the reason given above; relayed sentences from other modules and did-lines left, named in the guide\n4 the guide and paths_last's docstring say about themselves that nothing checks a new stop routes its paths through paths_last\n5 the --spaced sweep run twice with a gap (exit 0, 811 both); the test_audit_status red reproduced twice (verify run, direct run) and on HEAD\n6 n/a - no guard\n7 numbers quoted here are each the output of the command named beside them; none written into code or docs",
+        "descriptive": "Drive stops that carry paths now lead with the task, patch, pin and verb and put every path last through one formatter, so the head-keeping clips (signal line, --explain, test diagnostics) cut only path text; sd12's real red, an unquoted-path predicate, is fixed."
       },
       "startedAt": "2026-11-03T11:46:19Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-03T12:51:45Z",
+      "verifiedBy": [
+        "sd14: the serial redo stop under a long spaced root names the task, the patch by name, the pin and git apply --3way before the first path, and still carries the quoted apply command",
+        "sd15: paths_last puts the named words first, keeps placed clauses in order, drops empty ones, and returns the named words alone when nothing is placed"
+      ],
       "notes": [
         {
           "at": "2026-11-03T10:41:01Z",
@@ -3504,12 +3509,24 @@
         "runId": "2026-11-03T12:48:28Z.37fbd1",
         "status": "passed",
         "at": "2026-11-03T12:48:28Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "fa8ff0de3aef",
+        "at": "2026-11-03T12:51:45Z",
+        "return": "docs/audit/evidence/returns/P155.37-gfj/20261103T114619Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-11-03T12:41:11Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD exited 1 with 1 of 811 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sd14 (house FAIL): SELFTEST FAILED: 809/811 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P155.38-gfj",
       "title": "Tree refusals spell each path one way on every platform",
-      "status": "pending",
+      "status": "in_progress",
       "description": "CI run 41616818469 (release tier, fdf3b270), windows legs only: ut1, ut2, ut4 (tests/test__worktrees.py) and kr2 (tests/test_drive_phase.py) fail. refuse_unsettled names the copy as C:/.../.git/worktrees/t\\audit-advance - a forward-slash admin dir joined with a backslash - and kr2's kept-tree stop names the tree in a spelling the case does not match. Build every path these refusals name through one spelling, compare paths in the cases through a normaliser, and add a posix case that feeds a backslash-joined admin path so the class is caught off Windows. The owner has a Windows machine: hand back the exact command and expected output for a Windows check.",
       "files": [
         "plugins/audit/scripts/git/_worktrees.py",
@@ -3519,7 +3536,8 @@
         "plugins/audit/scripts/git/_worktrees.py",
         "plugins/audit/scripts/governance/drive-phase.py",
         "tests/test__worktrees.py",
-        "tests/test_drive_phase.py"
+        "tests/test_drive_phase.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -3537,14 +3555,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-03T12:55:08Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -3567,7 +3585,13 @@
       ],
       "fixes": [
         "P155-R52"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-03T13:19:37Z.aed3e0",
+        "status": "passed",
+        "at": "2026-11-03T13:19:37Z"
+      }
     },
     {
       "id": "P155.39-gfj",

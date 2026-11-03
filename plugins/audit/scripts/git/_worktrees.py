@@ -124,20 +124,39 @@ PROVENANCE_FILE = "audit-worktree.json"
 PROVENANCE_MARK = "audit"
 
 
-def admin_dir(tree_path, run=None):
-    """The worktree's own git-dir, or "" when git will not say.
+def native_spelling(path, flavour=None):
+    """`path` with every separator the platform's own - `flavour`'s, the
+    running platform's path module when None. git prints a directory with
+    forward slashes on windows, and a native join onto that spelling names one
+    path two ways in one sentence (`C:/r/.git/worktrees/t\\audit-advance`),
+    which a reader matching the native spelling never finds. Only the
+    alternative separator is rewritten - nothing collapsed, nothing resolved -
+    and a platform with none (posix, where a backslash is a character a name
+    may hold) gets the path back as written."""
+    mod = os.path if flavour is None else flavour
+    if not path or not mod.altsep:
+        return path
+    return path.replace(mod.altsep, mod.sep)
+
+
+def admin_dir(tree_path, run=None, flavour=None):
+    """The worktree's own git-dir, or "" when git will not say - in the native
+    spelling (`native_spelling`), so every path joined onto it, and every
+    sentence naming one, spells it one way. `flavour` is the path module the
+    answer is spelled and joined by, the running platform's when None.
 
     Asked git rather than composed from the path: the admin directory's NAME is not
     always the basename of the worktree (git disambiguates a collision by appending),
     and composing it would silently point at another worktree's record.
     """
+    mod = os.path if flavour is None else flavour
     code, out, _ = _place(tree_path, "--git-dir", run)
     if code != 0:
         return ""
-    path = (out or "").strip()
+    path = native_spelling((out or "").strip(), mod)
     if not path:
         return ""
-    return path if os.path.isabs(path) else os.path.join(tree_path, path)
+    return path if mod.isabs(path) else mod.join(native_spelling(tree_path, mod), path)
 
 
 def write_record(tree_path, record, run=None):
@@ -185,7 +204,7 @@ def read_provenance(tree_path, run=None, expect_branch=None, expect_task=None):
     if not admin:
         return {"ours": None, "record": None,
                 "basis": "git would not name the admin directory of %s"
-                         % (tree_path,)}
+                         % (native_spelling(tree_path),)}
     path = os.path.join(admin, PROVENANCE_FILE)
     if not os.path.isfile(path):
         return {"ours": False, "record": None,
@@ -2231,17 +2250,21 @@ def _clear_strays(admin, now=None):
     return gone
 
 
-def kept_where(left):
+def kept_where(left, flavour=None):
     """Where the work is, for `left` - the copy or its tombstone `_left_beside`
-    found: the words every stop over an unsettled tree carries."""
+    found: the words every stop over an unsettled tree carries, each path in
+    them spelled one way (`native_spelling` under `flavour`, the running
+    platform's path module when None)."""
+    mod = os.path if flavour is None else flavour
+    left = native_spelling(left, mod)
     if left.endswith(DROPPED):
         return ("the tombstone of a copy being taken down stands at %s: the move "
                 "it was taken for was settled, and the next move or restore "
                 "clears it" % (left,))
     return ("a copy of its work stands at %s: each path it held is a numbered "
             "file there (%s) as %s lists them, and the git index as it was is %s"
-            % (left, os.path.join(left, "N.bin"), os.path.join(left, COPY_INDEX),
-               os.path.join(left, COPY_GIT_INDEX)))
+            % (left, mod.join(left, "N.bin"), mod.join(left, COPY_INDEX),
+               mod.join(left, COPY_GIT_INDEX)))
 
 
 def tree_unsettled(tree, run=None, now=None):
@@ -2262,7 +2285,7 @@ def tree_unsettled(tree, run=None, now=None):
     if not admin:
         return {"unsettled": None, "kept": None, "cleared": [], "why": (
             "git would not name the admin directory of %s, so whether a copy of "
-            "its work stands beside it is not known" % (tree,))}
+            "its work stands beside it is not known" % (native_spelling(tree),))}
     cleared = _clear_strays(admin, now)
     left = _left_beside(os.path.join(admin, ADVANCE_BACKUP))
     if not left:
@@ -2302,7 +2325,7 @@ def refuse_unsettled(tree, manifest, project, task_id=None, run=None):
     if task_id is None:
         task_id = (read_provenance(tree, run=run).get("record") or {}).get(
             "taskId") or "<taskId>"
-    return {"error": "%s is not settled - %s" % (tree, left["why"]),
+    return {"error": "%s is not settled - %s" % (native_spelling(tree), left["why"]),
             "kept": left["kept"],
             "remedy": "nothing takes the tree down, forced or not, while that "
                       "stands: the removal deletes it with the tree's admin "

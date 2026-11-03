@@ -1154,6 +1154,19 @@ and reset (`un5`), while a file a checkout wrote with CRLF under `core.autocrlf=
 so a move killed part way through such a checkout is put back by `restore` (`un12`) and finished
 by the next move (`un13`) instead of holding the tree for good.
 
+**A refusal spells each path one way.** git prints a directory with forward slashes on windows,
+so a native join onto `admin_dir`'s raw answer named the copy as
+`C:/r/.git/worktrees/t\audit-advance`, and a reader matching the native spelling never found
+it. `admin_dir` returns its answer through `native_spelling` - the platform's alternative
+separator rewritten as its own, nothing collapsed or resolved, and a path left as written on
+posix, where a backslash is a character a name may hold - and `kept_where`, `refuse_unsettled`,
+`tree_unsettled` and the drive's `unsettled_said` and `unmarked_kept_stop` spell the tree they
+name the same way. `admin_dir` and `kept_where` take the path module as `flavour`, so `sp1` feeds
+the windows rules a forward-slash admin directory joined with a backslash on any platform and
+holds every path in the words to one spelling, with the posix twin leaving a backslash alone.
+What catches a new refusal that names a git-spelled path without passing it through
+`native_spelling` is a windows leg only: nothing on posix reads which paths a refusal routes.
+
 ### `plugins/audit/scripts/git/close-phase.py`
 Sign-off steps 5c–5e as one command. It merges the phase branch into its resolved parent, writes
 `phase.mergedAt`, and performs whatever cleanup `meta.merge` asks for — each step planned in full

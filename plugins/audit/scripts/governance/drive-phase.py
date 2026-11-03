@@ -4814,7 +4814,9 @@ def unsettled_said(ctx, task_id, tree, left, detail=None):
     """The words of a stop over `task_id`'s tree that `left`
     (`_worktrees.tree_unsettled`) or a move named not settled: where the work
     is, what the move said, and the verb that puts the work back - the task and
-    the verb before any path (`paths_last`)."""
+    the verb before any path (`paths_last`), the tree spelled as the copy is
+    (`_worktrees.native_spelling`)."""
+    tree = _worktrees.native_spelling(tree)
     if left.get("unsettled") is None:
         return paths_last("whether the tree of %s is settled is not known. Nothing "
                           "runs in that tree until it can be asked" % (task_id,),
@@ -6888,7 +6890,7 @@ def unmarked_kept_stop(ctx, state, kept):
         "phase tree without that work. Carry the tree's diff into the phase "
         "tree and remove the tree, then drive the phase again"
         % (", ".join(tid for tid, _path, _why in unmarked),),
-        [("%s's tree" % (tid,), "%s (%s)" % (path, why))
+        [("%s's tree" % (tid,), "%s (%s)" % (_worktrees.native_spelling(path), why))
          for tid, path, why in unmarked]))
 
 
