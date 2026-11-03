@@ -4200,6 +4200,7 @@ def _declared_outputs_cases(check):
               changes is not None and opened == [_DO_OUTPUT]
               and covered == [_DO_OUTPUT]
               and all(rel in strays for rel in _DO_REFUSED))
+        _unskippable_outputs_cases(check, plan, root)
     finally:
         if held is None:
             os.environ.pop("CLAUDE_PROJECT_DIR", None)
@@ -4207,9 +4208,199 @@ def _declared_outputs_cases(check):
             os.environ["CLAUDE_PROJECT_DIR"] = held
 
 
+def _unskippable_outputs_cases(check, plan, root):
+    """`declared_git_rels` answers BOTH halves of "declared" for a caller that
+    hands it no changed paths, by listing the tree's changes itself.
+
+    The outputs half used to be opt-in: a caller passing no `changed` got
+    `files` alone, so the drive's submit refused a path the task's own honoured
+    `outputs` covered - one step before the commit that would have carried
+    it. The second half of each case is the over-fire direction: a listing that
+    counted every changed path would put the strays in too."""
+    got_ok, got = _harness.attempt(M.declared_git_rels, plan, str(root),
+                                   str(root), also=["P1.1"])
+    got = got if got_ok else []
+    check("dg1 a caller handing no `changed` gets the outputs half too: the "
+          "tree's changed path the running task's graded pattern covers is "
+          "counted beside its `files`, with no caller switching it on: %r"
+          % ((got_ok, got),),
+          got_ok and _DO_OUTPUT in got and "src/own.py" in got)
+    check("dg2 SECOND DIRECTION: the listing counts only what a counted, graded "
+          "pattern covers - the refused `**` and the pending task's pattern "
+          "leave their paths out: %r" % ((got_ok, got),),
+          got_ok and not [rel for rel in _DO_REFUSED if rel in got])
+
+    # A bound task tree is asked about ITS changes, not the checkout's: the
+    # drive's member arm passes the tree it is judging.
+    tree = os.path.realpath(_harness.fixture_root("cfg-declared-tree-"))
+    os.rmdir(tree)
+    _harness.git(str(root), "worktree", "add", "-q", "--detach", tree, "HEAD",
+                 prefix=("git",), timeout=20)
+    own_rel = "reports/q4.html"
+    os.makedirs(os.path.join(tree, "reports"), exist_ok=True)
+    with open(os.path.join(tree, *own_rel.split("/")), "w",
+              encoding="utf-8") as fh:
+        fh.write("x\n")
+    in_ok, in_tree = _harness.attempt(M.declared_git_rels, plan, str(root),
+                                      str(root), also=["P1.1"], only="P1.1",
+                                      tree=tree)
+    in_tree = in_tree if in_ok else []
+    check("dg3 asked about a bound task tree, the outputs half lists THAT "
+          "tree's changes: its own output is counted, and the checkout's "
+          "output - a change the tree does not hold - is not: %r"
+          % ((in_ok, in_tree),),
+          in_ok and own_rel in in_tree and _DO_OUTPUT not in in_tree
+          and "src/own.py" in in_tree)
+
+    import inspect
+    default = inspect.signature(M.declared_git_rels).parameters.get("changed")
+    calls, misses = _declared_readers()
+    opted_out = [c for c in calls if c[3]]
+    check("dg4 THE STRUCTURAL PIN: `changed` defaults to None (list the tree), "
+          "every reader the submit, the commit and the close ask reaches the "
+          "shared predicate, none of them reads `files` alone through "
+          "`_declared_rels`, and no call under hooks/ or scripts/ hands it an "
+          "empty `changed` - the spelling that switches the outputs half off: "
+          "default %r, opted out %r, missing %r"
+          % (default and default.default, opted_out, misses),
+          default is not None and default.default is None and calls
+          and not opted_out and not misses)
+    mutant = ("def submit_strays(hc):\n"
+              "    hc.declared_git_rels(m, p, g, also=[t])\n"
+              "    hc.declared_git_rels(m, p, g, changed=())\n"
+              "    hc.declared_git_rels(m, p, g, changed=listed or [])\n"
+              "    return _declared_rels(p, g, t)\n")
+    flagged = [c for c in _declared_calls(mutant, "mutant.py") if c[3]]
+    check("dg5 THE PIN CAN FIRE: over a planted reader, the empty literal and "
+          "the `or ()`-style fallback are both reported, and the plain call is "
+          "not: %r" % (flagged,),
+          [c[2] for c in flagged] == [3, 4])
+
+
+def _status_listing_cases(check):
+    """`tree_changed_paths` is the hook-side reading of the listing
+    `_scoped_commit.status_paths` makes - asked in `_config` so the hook path
+    loads nothing from `scripts/` - and the two must agree on every shape git
+    prints: a staged rename (both names), a name with a space, a non-ASCII
+    name, an untracked file deep in an untracked directory, a deletion."""
+    import _scoped_commit
+    root = os.path.realpath(_harness.fixture_root("cfg-status-listing-"))
+
+    def git(*argv):
+        return _harness.git(root, "-c", "user.email=t@t.t", "-c", "user.name=t",
+                            "-c", "commit.gpgsign=false", *argv,
+                            prefix=("git",), timeout=20)
+
+    def put(rel, text):
+        target = os.path.join(root, *rel.split("/"))
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        with open(target, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(text)
+
+    git("init", "-q")
+    spaced, accented = "docs/a b.txt", "docs/café.txt"
+    for rel in ("old.txt", spaced, accented, "gone.txt"):
+        put(rel, "v0 %s\n" % (rel,))
+    git("add", "-A")
+    git("commit", "-q", "-m", "base")
+    git("mv", "old.txt", "new.txt")
+    put(spaced, "v1\n")
+    put(accented, "v1\n")
+    put("u/nñ x/deep.txt", "untracked\n")
+    os.remove(os.path.join(root, "gone.txt"))
+    ours = M.tree_changed_paths(root)
+    theirs, why = _scoped_commit.status_paths(root)
+    wanted = {"old.txt", "new.txt", spaced, "gone.txt", "u/nñ x/deep.txt"}
+    check("dg6 the hook-side listing equals `_scoped_commit.status_paths` on "
+          "one tree - a rename's both names, a spaced name, a non-ASCII name "
+          "and a deep untracked file each read verbatim, none quoted: ours "
+          "%r, theirs %r (%s)" % (ours, theirs, why),
+          theirs is not None and ours == theirs
+          and wanted <= set(ours)
+          and [p for p in ours if p.startswith("docs/caf")]
+          and not [p for p in ours if p.startswith('"') or "\\" in p])
+    away = os.path.realpath(_harness.fixture_root("cfg-status-none-"))
+    none_ours = M.tree_changed_paths(away)
+    none_theirs, none_why = _scoped_commit.status_paths(away)
+    check("dg7 SECOND DIRECTION: a directory git will not list reads as no "
+          "changed paths here, where `status_paths` says why it could not: "
+          "%r %r %r" % (none_ours, none_theirs, none_why),
+          none_ours == [] and none_theirs is None and bool(none_why))
+
+
+# The readers of "declared" whose answers must agree with the plan gate's:
+# (file, function, how many calls of the shared predicate it makes at least).
+_DECLARED_READERS = (("commit-task-work.py", "owned_rels", 1),
+                     ("drive-phase.py", "submit_strays", 2),
+                     ("audit-task.py", "_uncommitted_leftovers", 1))
+
+
+def _empty_spelling(node):
+    """Whether `node` spells "no changed paths": an empty literal, or a
+    fallback `x or ()` that ends in one."""
+    import ast
+    if isinstance(node, (ast.Tuple, ast.List, ast.Set)) and not node.elts:
+        return True
+    if isinstance(node, ast.Dict) and not node.keys:
+        return True
+    if isinstance(node, ast.Constant) and node.value in ("", b""):
+        return True
+    if isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or):
+        return _empty_spelling(node.values[-1])
+    return False
+
+
+def _declared_calls(source, name):
+    """`[(file, function, line, opted_out, files_alone)]` - every call of
+    `declared_git_rels` in `source`, and every call of the files-alone
+    `_declared_rels`, with the function it sits in."""
+    import ast
+    out = []
+
+    def visit(node, fn):
+        for child in ast.iter_child_nodes(node):
+            inner = (child.name if isinstance(child, (ast.FunctionDef,
+                                                      ast.AsyncFunctionDef))
+                     else fn)
+            if isinstance(child, ast.Call):
+                callee = (child.func.attr if isinstance(child.func, ast.Attribute)
+                          else getattr(child.func, "id", None))
+                if callee == "declared_git_rels":
+                    given = [k.value for k in child.keywords if k.arg == "changed"]
+                    given += child.args[5:6]
+                    out.append((name, fn, child.lineno,
+                                any(_empty_spelling(g) for g in given), False))
+                elif callee == "_declared_rels":
+                    out.append((name, fn, child.lineno, False, True))
+            visit(child, inner)
+    visit(ast.parse(source), None)
+    return out
+
+
+def _declared_readers():
+    """`(calls, misses)` over every `.py` under hooks/ and scripts/: the calls
+    of the shared predicate, and each `_DECLARED_READERS` row that does not
+    reach it often enough or also reads `files` alone."""
+    calls = []
+    for top in (_harness.HOOKS_DIR, _harness.SCRIPTS_DIR):
+        for dirpath, dirnames, filenames in os.walk(top):
+            dirnames[:] = sorted(d for d in dirnames if d != "__pycache__")
+            for filename in sorted(f for f in filenames if f.endswith(".py")):
+                calls += _declared_calls(_text(os.path.join(dirpath, filename)),
+                                         filename)
+    misses = []
+    for filename, fn, least in _DECLARED_READERS:
+        mine = [c for c in calls if c[0] == filename and c[1] == fn]
+        shared = [c for c in mine if not c[4]]
+        if len(shared) < least or [c for c in mine if c[4]]:
+            misses.append((filename, fn, len(shared), len(mine) - len(shared)))
+    return [c for c in calls if not c[4]], misses
+
+
 def _all_cases(check):
     _cases(check)
     _declared_outputs_cases(check)
+    _status_listing_cases(check)
     _shared_payload_cases(check)
     _git_path_pair_cases(check)
     _git_standing_cases(check)

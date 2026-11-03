@@ -1,0 +1,49 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__config.py tests/test_commit_task_work.py tests/test_drive_phase.py tests/test_audit_task.py tests/_harness.py tests/test__affected_tests.py tests/test__runner_collects.py tests/test_stamp_verification.py": "pass",
+    "python3 tests/test__deps.py --selftest": "pass",
+    "python3 tests/test__refs.py --selftest": "pass",
+    "python3 tests/test__manifest_vocab.py --selftest": "pass",
+    "python3 tools/bench-hooks.py --gate": "pass",
+    "python3 tools/measure-context.py --gate": "pass",
+    "python3 tools/prove-gates.py --selftest": "pass",
+    "sh tools/verify.sh --affected": "fail"
+  },
+  "redFirst": {
+    "at": "2026-11-02T21:59:39Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__config.py tests/test_commit_task_work.py tests/test_drive_phase.py tests/test_audit_task.py tests/_harness.py tests/test__affected_tests.py tests/test__runner_collects.py tests/test_stamp_verification.py` in a throwaway tree at HEAD exited 1 with failing cases dg1 (house FAIL), dg3 (house FAIL), dg4 (house FAIL), ctw-so1 (house FAIL), ctw-so2 (house FAIL), sd3o (house FAIL), sd3p (house FAIL), but the fix run could not be made: the run timed out after 27 s and its process group was torn down - SELFTEST FAILED: 807/809 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "hooks/_config.py: declared_git_rels defaults changed=None and lists the tree itself through tree_changed_paths. An optional tree= judges a bound task tree. So the outputs half is no caller's to switch on. tree_changed_paths runs its own stdlib `git status --porcelain -z --untracked-files=all --` and parses it as _scoped_commit.status_paths does. The retry fix: the attempt-1 by-path load of _scoped_commit.py is gone, because it put that module on the hook path and turned mv37 red. Callers: commit-task-work owned_rels passes changed through. drive-phase submit_strays covers its serial arm by the default and its bound arm with tree=tree. audit-task _uncommitted_leftovers builds mine (only=task) and the full declared set from declared_git_rels over one status listing, instead of _declared_rels. Docstrings fixed: declared_git_rels, tree_changed_paths, owned_rels, submit_strays, _uncommitted_leftovers, plus the test_audit_task _leftover_cases prose. Docs: reference/execute-task.md step 4c now says the commit stages the task's own files and the changed paths its own honoured outputs patterns cover. That is where step 4c lives; orchestrator.md has no step 4c and is unchanged. PLUGIN-BUILD-GUIDE: the _config paragraph names both halves for all three readers, the dg4 pin and dg6's equality. The drive submit paragraph cites sd3o/sd3p. The 'step 4c allows' cross-reference was dropped. tools/lints/_deps.py (scope widened by the orchestrator): one GIT_PATH_BASE_EXEMPT row for _config.py/tree_changed_paths. Its reason: the listing's only reader hands it to output_git_rels, which rebases every path through git_to_plan. Tests: test__config dg1-dg7 (both halves with no changed passed; the over-fire twin; the bound-tree listing through a real worktree; the AST pin over every declared_git_rels call and the named readers; a planted mutant proving the pin fires; the listing equal to status_paths on a rename/space/non-ASCII/untracked/deleted tree; empty outside git). test_commit_task_work ctw-so1/ctw-so2 (commit, then done --commit with a sibling's output dirty, closes; a stray is still refused). test_drive_phase sd3o/sd3p (a serial submit with its own output files; a stray beside it is refused). Mutations, all in scratch copies: files-alone makes dg1/dg3/sd3o red; count-all makes dg2/sd3p/ctw-so2 red; close back to _declared_rels makes dg4/ctw-so1 red; tree ignored makes dg3 red; no rename source makes dg6 red; no -z makes dg6 red. Runs on the final tree: the brief's sweep exit 0, 8/8 files ok, 3300 cases. test__deps 266/266. test__refs 292/292. test__manifest_vocab 68/68. bench-hooks --gate exit 0. measure-context --gate exit 0. prove-gates --selftest 66/66. ruff and vermin clean. verify.sh --affected exit 1: its only failing suite is tests/test_audit_status.py sl1-sl3, which are red at HEAD in a git-archive export with none of these changes, and which the orchestrator handles separately. Left as instructed: _verdict_binding.py:55. Dependants: the _config importers (hooks) are still correct. No hook calls declared_git_rels or tree_changed_paths, subprocess is imported inside the function, and bench-hooks and mv37 are green. The drive-phase, commit-task-work and audit-task importers are still correct: the signatures and return shapes are unchanged, and the dependant suites passed in verify --affected. execute-task.md's change is one sentence, and the measure-context ceiling holds.",
+    "descriptive": "The submit, the commit and the close read 'declared' through one predicate whose outputs half cannot be skipped. Its tree listing is asked inside _config, and dg6 holds it equal to the commit machinery's. Step 4c now names the outputs the commit stages."
+  },
+  "testsAdded": [
+    "test__config dg1/dg2: declared_git_rels with no changed counts the running task's honoured output and not the refused or pending patterns' paths",
+    "test__config dg3: tree= lists the bound task tree's changes, not the checkout's",
+    "test__config dg4/dg5: AST pin over every declared_git_rels call and the named readers, plus a planted mutant proving it fires",
+    "test__config dg6/dg7: tree_changed_paths equals _scoped_commit.status_paths on a rename/space/non-ASCII/untracked/deleted tree; outside git it is empty",
+    "test_commit_task_work ctw-so1/ctw-so2: commit then done --commit with a sibling's output dirty closes; a stray beside it is still refused",
+    "test_drive_phase sd3o/sd3p: a serial submit with its own output files; a stray beside it is still refused"
+  ],
+  "casesAdded": [
+    [
+      "dg1",
+      "dg2",
+      "dg3",
+      "dg4",
+      "dg5",
+      "dg6",
+      "dg7"
+    ],
+    [
+      "ctw-so1",
+      "ctw-so2"
+    ]
+  ],
+  "claims": "claims:\n1 _config.py tree_changed_paths runs `git -C <root> status --porcelain -z --untracked-files=all --` and parses as status_paths does (dg6 compares them); 'no hook calls it' holds: only declared_git_rels calls it, and only scripts call that; execute-task.md step 4c matches commit-task-work stage_targets' produced-outputs arm\n2 dg6: no rename source makes it red, no -z makes it red; attempt-1 mutants (files-alone, count-all, close-files, tree-ignored) each red\n3 grep declared_git_rels( across plugins/tools/.claude/hooks: every call site routed; _declared_rels left in _held_reading/_commit_touches (different questions); verify --affected surfaced test__refs a5 (reworded) and test__deps gb1 (exempt row); test_audit_status sl1-sl3 left because they are red at HEAD; _verdict_binding.py:55 left on the orchestrator's instruction\n4 no caller reads files alone: enforced by dg4, named in declared_git_rels' docstring; listing equality: enforced by dg6, named in tree_changed_paths' docstring and the guide\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:4649a375d7e091bc8c760fc8735124f7ec508bbd60e189bec80a293c5ae17120\",\"dirtyDigest\":\"sha256:5d26dbd5993ca46a9e73c0e7a5db482fca7301aab54f3fd987a58554de0604ee\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"2f32dcc8307cc13c\",\"plugins/audit/hooks/_config.py\":\"28f8f9bc2f244435\",\"plugins/audit/reference/execute-task.md\":\"2a7a02af31029662\",\"plugins/audit/scripts/governance/commit-task-work.py\":\"0f78b430ff050cd7\",\"plugins/audit/scripts/governance/drive-phase.py\":\"98d6402f492c3fc8\",\"plugins/audit/scripts/manifest/audit-task.py\":\"0bde8efbbafee98e\",\"tests/test__config.py\":\"65c8f2842a55f24d\",\"tests/test_audit_task.py\":\"f0cd4026c7f2f905\",\"tests/test_commit_task_work.py\":\"d9ffa2ab3786402b\",\"tests/test_drive_phase.py\":\"37cb2f732b246eee\",\"tools/lints/_deps.py\":\"d211f792499d8271\"},\"head\":\"f4430d7b\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".claude/hooks/guard-uncommitted.py\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/hooks/_config.py\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/reference/orchestrator.md\",\"plugins/audit/scripts/governance/commit-task-work.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/governance/stamp-verification.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"tests/_harness.py\",\"tests/test__affected_tests.py\",\"tests/test__config.py\",\"tests/test__runner_collects.py\",\"tests/test_audit_task.py\",\"tests/test_commit_task_work.py\",\"tests/test_drive_phase.py\",\"tests/test_stamp_verification.py\",\"tools/lints/_deps.py\",\"tools/prove-gates.py\",\"tools/sweep-selftests.py\"],\"scopeDigest\":\"sha256:126e4a6e995b6306982044a6981cf6fee17dac5e8a983356b0c40032390fe158\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

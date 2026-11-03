@@ -601,12 +601,18 @@ commit stages a task's `files` and its own outputs and no row, so a path counted
 be neither staged nor refused and left dirty behind a closed task (`ctw-fi1` in
 `tests/test_commit_task_work.py`).
 `declared_outputs` is the other half of that reading: the honoured `outputs` patterns of the same
-tasks, which the gate reads as `in_progress_outputs`. `commit-task-work.py` counts a changed path
-as declared through both (`declared_git_rels`: the `files` entries spelled from the checkout's
-top, and the changed paths `git status` lists that a counted task's pattern covers,
-`output_git_rels`), so a path the plan gate opened by a task's `files` or `outputs` is never one
-the task commit refuses as undeclared (`dp1`, `dp2` in `tests/test_require_plan.py`; `do1`, `do2`
-in `tests/test__config.py`). The free-file slot is outside both halves: it opens one small edit to
+tasks, which the gate reads as `in_progress_outputs`. The task commit, the drive's `submit` and the
+close each count a changed path as declared through both (`declared_git_rels`: the `files` entries
+spelled from the checkout's top, and the changed paths `git status` lists that a counted task's
+pattern covers, `output_git_rels`), so a path the plan gate opened by a task's `files` or
+`outputs` is never one a later reader refuses as undeclared (`dp1`, `dp2` in
+`tests/test_require_plan.py`; `do1`, `do2` in `tests/test__config.py`). The outputs half is not a
+caller's to switch on: with no `changed` handed in, `declared_git_rels` lists the tree itself
+(`tree_changed_paths`, a stdlib `git status --porcelain -z` asked inside `_config.py` so the hook
+path loads nothing from `scripts/`, its parsing held equal to `_scoped_commit.status_paths` by
+`dg6`), and `dg4` in `tests/test__config.py` reports by name any call under
+`hooks/` or `scripts/` handing it an empty listing, and any reader its `_DECLARED_READERS` names
+that stops reaching it. The free-file slot is outside both halves: it opens one small edit to
 a session, not a task's declaration, so the commit refuses that path when the attempt changed it.
 `covering_key` is the matcher over any of those file maps (exact, the path as a directory, a
 directory the path sits under), shared so a verdict and the sentence explaining it cannot answer
@@ -4071,7 +4077,7 @@ position is generalisation. Four scope breaches on one program came from widenin
 a file "obviously" part of the change, a sibling the editor had also touched, the shared index
 because the phase file was allowed. Prose cannot refuse; this can.
 
-**What a task commit stages.** Exactly the four things step 4c allows, each named in the output:
+**What a task commit stages.** Exactly these, each named in the output (`stage_targets`):
 the task's own `files` (a `:line-range` suffix stripped, because git has never heard of one) with
 the changed paths its own honoured `outputs` patterns cover — the gate opened those to it, so
 counting them and leaving them out would close the task over them (`ctw-fi2`) — the
@@ -4916,8 +4922,9 @@ is already filed for this start, a refusal before anything runs (`already_filed`
 executor whose attempt changed a path its task does not declare, a refusal naming each path and
 the scope remedy (`submit_strays`), asked as the task commit asks it -
 `_scoped_commit.undeclared_changes` over `_config.declared_git_rels` and the start snapshot, so dirt from before
-the start is not the attempt's - while the executor is still there to say why, rather than at the
-commit after the gate and the review (`sd1`-`sd3`). A wave member is told rather than refused:
+the start is not the attempt's, and a path the task's own honoured `outputs` cover is declared
+here as it is to the gate and the commit - while the executor is still there to say why, rather
+than at the commit after the gate and the review (`sd1`-`sd3`, `sd3o`, `sd3p`). A wave member is told rather than refused:
 every change in its tree past the records is read against the task's own declarations, named on
 the filing's line and filed in the return (`undeclaredPaths`), and asked about by the drive as
 `undeclared-change` at the step after the member's gate, before its reviewer is dispatched

@@ -647,14 +647,14 @@ def owned_rels(manifest, project, git_root, task, changed=None):
     commit refuses as undeclared. The free-file slot's one edit is not a
     task's declaration and is refused when the attempt changed it.
 
-    `changed` is the tree's changed paths as `git status` prints them, listed
-    here when the caller holds none; a tree git will not list counts `files`
-    alone, and `undeclared_changes` then refuses on git's own reason."""
-    if changed is None:
-        changed, _why = _scoped_commit.status_paths(git_root)
+    `changed` is the tree's changed paths as `git status` prints them, when
+    the caller already holds that listing; None hands the listing to the
+    shared predicate, which reads the tree itself. A tree git will not list
+    counts `files` alone, and `undeclared_changes` then refuses on git's own
+    reason."""
     return _hooks_config().declared_git_rels(manifest, project, git_root,
                                              also=[task.get("id")],
-                                             changed=changed or ())
+                                             changed=changed)
 
 
 def _hooks_config():

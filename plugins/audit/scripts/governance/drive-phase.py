@@ -10161,12 +10161,15 @@ def submit_strays(ctx, manifest, phase, task, tree):
     review had both run: a round lost each time, and the orchestrator's to
     repair by hand. So the question is the commit's own, through the same
     function on the same basis - `_scoped_commit.undeclared_changes` over the
-    plan gate's reading of "declared" (`_config.declared_git_rels`) and the
-    attempt's start snapshot, a change dirty before the start being no change
-    of this attempt's. A member's tree holds its task's work alone, so there
-    every changed path past the records is the task's, and only what the task
+    plan gate's reading of "declared" (`_config.declared_git_rels`, both
+    halves: the `files` entries and the changed paths an honoured `outputs`
+    pattern covers, listed off the tree being judged) and the attempt's start
+    snapshot, a change dirty before the start being no change of this
+    attempt's. A member's tree holds its task's work alone, so there every
+    changed path past the records is the task's, and only what the task
     itself declares counts - the plan gate's reading of a bound tree
-    (`_config.task_binding`). The caller refuses the serial filing on an
+    (`_config.task_binding`), its outputs matched against the member tree's
+    own changes. The caller refuses the serial filing on an
     answer; a member's is told and filed with the paths in its return, and
     the drive asks about them by name after its gate, before its review
     (`stray_step`)."""
@@ -10177,7 +10180,8 @@ def submit_strays(ctx, manifest, phase, task, tree):
     if tree:
         where = member_project(ctx, tree) or tree
         owned = hc.declared_git_rels(manifest, ctx["project"], ctx["gitRoot"],
-                                     also=[task["id"]], only=task["id"])
+                                     also=[task["id"]], only=task["id"],
+                                     tree=tree)
         changes, why = _scoped_commit.undeclared_changes(
             tree, where, ctx["config"], None, None, owned, records)
         top, project = tree, where

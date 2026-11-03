@@ -634,8 +634,9 @@ verb writes and refuses, and what the run commands leave behind, is
         python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/commit-task-work.py" \
             <manifestPath> <taskId> --project <projectDir> --subject "<short subject>"
         ```
-        It stages the task's own `files`, the phase's manifest file, the journal and the evidence,
-        commits them with an explicit pathspec, and **names any staged path outside that list
+        It stages the task's own `files` and the changed paths its own honoured `outputs` patterns
+        cover, the phase's manifest file, the journal and the evidence, commits them with an
+        explicit pathspec, and **names any staged path outside that list
         instead of sweeping it in**. Read the exit code: **0** it committed (the SHA is printed) or
         there was nothing to commit and it said which; **1** git refused (a commit hook, or a
         partial commit git will not make during a merge), the index already held paths this commit

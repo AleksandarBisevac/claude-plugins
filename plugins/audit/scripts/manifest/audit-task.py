@@ -7389,9 +7389,17 @@ def _uncommitted_leftovers(project, config, mpath, raw_index, git_root, plan,
     carry, and `[(path, why)]` for the plugin-owned state left out of both.
 
     `left` is what the task owns and left in the tree. A task that declares
-    files owns the changes those files cover; a task that declares none owns
-    whatever no OTHER in_progress task covers - the commit step stages declared
-    files only, so its work is exactly what it left.
+    files owns the changes those files cover, and the changed paths its own
+    honoured `outputs` cover; a task that declares neither owns whatever no
+    OTHER in_progress task covers - the commit step stages the task's files and
+    those outputs and nothing else, so its work is exactly what it left.
+
+    WHAT "COVERS" MEANS IS THE COMMIT'S OWN READING, both halves of it:
+    `_config.declared_git_rels` over the tree's changed paths, every
+    in_progress task's `files` and the changed paths its honoured `outputs`
+    cover. Counted from `files` alone, a sibling's output the commit had
+    counted as declared and left out landed here as `during`, and the close
+    refused it after the commit had already been written.
 
     `during` is the rest of the attempt: a path no in_progress task covers that
     changed SINCE THE ATTEMPT BEGAN, by the snapshot `start` recorded or, with
@@ -7403,15 +7411,16 @@ def _uncommitted_leftovers(project, config, mpath, raw_index, git_root, plan,
     them out and names them, so the close that follows never refuses them.
     All empty when git cannot be asked: a project outside git has no tree to
     leave work in."""
-    mine = _declared_rels(project, git_root, task)
-    others = [rel for t in _mio.tasks_by_id(plan).values()
-              if isinstance(t, dict) and t.get("id") != task.get("id")
-              and t.get("status") == "in_progress"
-              for rel in _declared_rels(project, git_root, t)]
+    hc = _loader.load_hooks_config(modname="audit__config")
+    changed, _why = _scoped_commit.status_paths(git_root)
+    mine = hc.declared_git_rels(plan, project, git_root, also=[task.get("id")],
+                                only=task.get("id"), changed=changed)
+    declared = hc.declared_git_rels(plan, project, git_root,
+                                    also=[task.get("id")], changed=changed)
     record, _why = _scoped_commit.read_attempt(_run_state_dir(project, config),
                                                task.get("id"))
     changes, _why = _scoped_commit.undeclared_changes(
-        git_root, project, config, record, task.get("startedAt"), mine + others,
+        git_root, project, config, record, task.get("startedAt"), declared,
         _bookkeeping_rels(project, config, mpath, raw_index, git_root))
     if changes is None:
         return [], [], None, []

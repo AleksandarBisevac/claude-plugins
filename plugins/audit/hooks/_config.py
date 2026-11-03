@@ -4079,23 +4079,72 @@ def declared_outputs(manifest, also=()):
 
 
 def declared_git_rels(manifest, project, git_root, also=(), only=None,
-                      changed=()):
+                      changed=None, tree=None):
     """`declared_task_map`'s entries spelled from the top of `git_root`
-    (`plan_to_git`), plus each path of `changed` (git-root relative, as
-    `git status` prints them) a counted task's `declared_outputs` pattern
-    covers - sorted, once each. An entry outside the checkout is left out,
-    since git lists no change there. `only` keeps what one task id declares -
-    a bound task tree's reading (`task_binding`).
+    (`plan_to_git`), plus each changed path (git-root relative, as `git
+    status` prints them) a counted task's `declared_outputs` pattern covers -
+    sorted, once each. An entry outside the checkout is left out, since git
+    lists no change there. `only` keeps what one task id declares - a bound
+    task tree's reading (`task_binding`).
 
     A PATTERN NAMES NO PATH UNTIL THE RUN MAKES ONE, so the `outputs` half is
-    answered over the paths the caller hands in rather than spelled as an
-    entry: a caller passing no `changed` counts `files` alone."""
+    answered over the tree's changed paths rather than spelled as an entry.
+    `changed` is that listing when the caller already holds one; None, the
+    default, lists `tree` (a bound task tree laid out as `git_root` is) or
+    else `git_root` here (`_scoped_commit.status_paths`). The outputs half is
+    therefore not the caller's to switch on: the submit, the commit and the
+    close each read both halves through this one function, and a caller
+    leaving `changed` out gets the same answer as one passing the listing.
+    A tree git will not list counts `files` alone - the stricter direction,
+    every caller's own `undeclared_changes` asking git again and refusing on
+    git's reason. `tests/test__config.py` pins every call under hooks/ and
+    scripts/: one handing an empty `changed` is reported by name."""
     rels = (plan_to_git(entry, git_root, project)
             for entry, rows in declared_task_map(manifest, also).items()
             if only is None or any(str(r.get("taskId")) == str(only)
                                    for r in rows))
+    if changed is None:
+        changed = tree_changed_paths(tree or git_root)
     produced = output_git_rels(manifest, project, git_root, changed, also, only)
     return sorted(set([rel for rel in rels if rel] + produced))
+
+
+def tree_changed_paths(git_root):
+    """Every path `git status` lists for the checkout at `git_root`, git-root
+    relative, sorted, once each; empty when git will not say. Read only by the
+    scripts' readers of "declared" - no hook calls it on the per-tool-call path.
+
+    ASKED HERE, NOT LOADED FROM `scripts/`. `_scoped_commit.status_paths` asks
+    the same question, and loading it by path would put that module, and every
+    module it imports, on the hook path - which the vocabulary module's suite
+    walks and holds closed to it. So this is a second reading of one git listing, and
+    `tests/test__config.py` compares the two on one tree holding a rename, a
+    name with a space and a non-ASCII name: `-z` keeps each name verbatim (an
+    unquoted name), and a rename or copy lists its source after it, both
+    named. `subprocess` is imported inside, as `_ask_rev_parse` does."""
+    import subprocess
+    try:
+        done = subprocess.run(
+            ["git", "-C", str(git_root), "status", "--porcelain", "-z",
+             "--untracked-files=all", "--"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+    except Exception:
+        return []
+    if done.returncode != 0:
+        return []
+    fields = done.stdout.decode("utf-8", "replace").split("\0")
+    paths, i = [], 0
+    while i < len(fields):
+        entry = fields[i]
+        i += 1
+        if len(entry) < 4:
+            continue
+        paths.append(entry[3:].replace("\\", "/"))
+        if entry[0] in "RC" or entry[1] in "RC":
+            if i < len(fields) and fields[i]:
+                paths.append(fields[i].replace("\\", "/"))
+            i += 1
+    return sorted(set(paths))
 
 
 def output_git_rels(manifest, project, git_root, changed, also=(), only=None):

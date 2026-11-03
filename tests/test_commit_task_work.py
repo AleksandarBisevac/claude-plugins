@@ -2794,6 +2794,88 @@ def _index_only_cases(check, repos):
           and OUTPUT_FILE not in refusal[0])
 
 
+SIBLING_TASK = "P1.2"
+
+
+def _sibling_producing(fx):
+    """P1.1 restartable and P1.2 running beside it, P1.2's graded `outputs`
+    covering `reports/**`; committed, so the real `start` takes P1.1."""
+    shard = _mio.read_json(fx["shard"])
+    for task in shard["tasks"]:
+        if task.get("id") == TASK:
+            task.update({"status": "pending", "attempts": 0, "commit": None,
+                         "completedAt": None, "startedAt": None})
+        elif task.get("id") == SIBLING_TASK:
+            task.update({"status": "in_progress", "attempts": 1,
+                         "commit": None, "completedAt": None,
+                         "startedAt": "2026-01-01T00:00:00Z",
+                         "outputs": ["reports/**"]})
+    TI._write_json(fx["shard"], shard)
+    TI._git(fx["root"], "add", "--", SHARD_REL)
+    TI._git(fx["root"], "commit", "-q", "-m",
+            "fixture: P1.1 restartable, P1.2 running and producing reports",
+            "--", SHARD_REL)
+
+
+def _done_commit(fx, sha):
+    """`(code, text)` of `/audit:task done --commit <sha>` on the fixture task."""
+    lines = []
+    held = sys.stderr
+    sys.stderr = io.StringIO()
+    try:
+        code = AT.main(["done", TASK, "--commit", sha, "--project-dir",
+                        fx["root"]], out=lines.append)
+    finally:
+        sys.stderr = held
+    return code, "\n".join(str(x) for x in lines)
+
+
+@_own_repos
+def _sibling_output_close_cases(check, repos):
+    """The commit and the close that follows count a sibling's honoured
+    `outputs` as declared through one predicate. The commit leaves such a path
+    out without refusing it; a close reading `files` alone then refused the
+    same path as "changed during this attempt with no in_progress task
+    declaring it" - after the commit had landed."""
+    seen = []
+    for stray in (None, "stray.txt"):
+        fx = repos.make()
+        _sibling_producing(fx)
+        scode, _said = _start(fx)
+        _file_started_return(fx, "could-not-prove")
+        _write(os.path.join(fx["root"], OWNED), "a = 2  # this attempt's work\n")
+        os.makedirs(os.path.join(fx["root"], "reports"), exist_ok=True)
+        _write(os.path.join(fx["root"], OUTPUT_FILE), "<p>q3</p>\n")
+        _gate(fx)
+        before = _head(fx)
+        code, text = _run(fx)
+        sha = _head(fx)
+        carried = _carried(fx, sha) if sha != before else []
+        if stray:
+            _write(os.path.join(fx["root"], stray), "nobody's\n")
+        dcode, dtext = _done_commit(fx, sha)
+        status = _phase_and_task(fx)[2].get("status")
+        seen.append((scode, code, text[-200:], carried, dcode, dtext[-600:],
+                     status))
+    own = seen[0]
+    check("ctw-so1 a commit with a SIBLING's honoured output dirty beside the "
+          "task's work commits the work and leaves the output out, and `done "
+          "--commit` then closes - no 'no in_progress task declaring' refusal "
+          "for a path a running task declares through `outputs`: %r" % (own,),
+          own[0] == 0 and own[1] == 0 and OWNED in own[3]
+          and OUTPUT_FILE not in own[3]
+          and "no in_progress task declaring" not in own[5]
+          and own[4] == 0 and own[6] == "done")
+    twin = seen[1]
+    check("ctw-so2 SECOND DIRECTION: a stray no pattern covers, changed beside "
+          "that output, is still refused by the close by name, the output not "
+          "named, and the task stays open: %r" % (twin,),
+          twin[0] == 0 and twin[1] == 0 and twin[4] != 0
+          and "no in_progress task declaring" in twin[5]
+          and "stray.txt" in twin[5] and OUTPUT_FILE not in twin[5]
+          and twin[6] != "done")
+
+
 CE_TEST = "tests/test_a.py"
 
 
@@ -4712,6 +4794,7 @@ STAGES = (("nm-block", "_no_maintenance_cases"),
           ("dp-block", "_default_project_cases"),
           ("ae-block", "_attempt_cases"),
           ("fi-block", "_index_only_cases"),
+          ("so-block", "_sibling_output_close_cases"),
           ("cs-block", "_clean_at_start_cases"),
           ("bl-block", "_bug_link_cases"),
           ("ir-block", "_index_row_cases"),

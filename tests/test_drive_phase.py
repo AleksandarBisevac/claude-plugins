@@ -9056,6 +9056,37 @@ def _scope_declared_cases(check):
           % ((code, text),),
           code == 0 and os.path.exists(_filed_path(mpath, "P1.1")))
 
+    # The task's own honoured `outputs` are its declaration to submit as they
+    # are to the plan gate and the commit: a path one covers is filed, and a
+    # stray beside it is still refused - a submit counting every changed path
+    # once a task declares an output would file the second one too.
+    def reports_out(plan):
+        for task in plan["phases"][0]["tasks"]:
+            if task.get("id") == "P1.1":
+                task["outputs"] = ["reports/**"]
+    seen = []
+    for stray in (None, "notes.txt"):
+        root, mpath = _repo("sd-outputs-%s" % ("stray" if stray else "own",),
+                            task_ids=TASKS[:1])
+        _commit_plan(root, mpath, reports_out, "P1.1 produces reports")
+        _next(M, root, mpath)
+        _edit(root, "P1.1", "changed\n")
+        os.makedirs(os.path.join(root, "reports"), exist_ok=True)
+        _write_lf(os.path.join(root, "reports", "q3.html"), "<p>q3</p>\n")
+        if stray:
+            _write_lf(os.path.join(root, stray), "nobody's\n")
+        code, text = _submit(None, root, mpath, "P1.1", _executor_body("P1.1"))
+        seen.append((code, text, os.path.exists(_filed_path(mpath, "P1.1"))))
+    check("sd3o a serial task writing a path its own honoured `outputs` covers "
+          "is filed, not refused as a change outside its files: %r" % (seen[0],),
+          seen[0][0] == 0 and seen[0][2]
+          and "outside its files" not in seen[0][1])
+    check("sd3p SECOND DIRECTION: a stray no pattern covers, beside that "
+          "output, is still refused by name, the output not named, and "
+          "nothing is filed: %r" % (seen[1],),
+          seen[1][0] == 1 and not seen[1][2] and "notes.txt" in seen[1][1]
+          and "reports/q3.html" not in seen[1][1])
+
     # A wave member's tree: everything in it past the records is the task's,
     # and the drive settles each such path by name before its review - a
     # follower its gate owes widened, the rest asked - so the member is told

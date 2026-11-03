@@ -2005,6 +2005,11 @@ GIT_PATH_BASE_EXEMPT = (
     ("_scoped_commit.py", "stage_and_commit", _SCOPED_COMMIT),
     ("_scoped_commit.py", "stage_blobs", _SCOPED_COMMIT),
     ("_scoped_commit.py", "status_paths", _SCOPED_COMMIT),
+    ("_config.py", "tree_changed_paths",
+     "the hook-side reading of status_paths' listing, kept in _config so the "
+     "hook path loads nothing from scripts/; its only reader, "
+     "declared_git_rels, hands it to output_git_rels, which passes every path "
+     "through git_to_plan before an outputs pattern reads it"),
     ("audit-journal.py", "cmd_archive",
      "journal files named inside their own directory, which git runs in"),
     ("commit-task-work.py", "_changed_shards", _RECORD_PATHS),
