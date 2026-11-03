@@ -22,28 +22,34 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P155-R1",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:9403-9412",
         "issue": "No case covers the new refusal of an --answer sent to a set-aside sign-off decision. rf1/rf2 cover only the no-answer path: dispatch, and the blocked twin. If lines 9408-9411 are deleted, most answers are still refused, but by answer_refusal's different 'no decision is pending' text. `--answer sign-off --reason` would instead take _pending_route's advance route (pending is None) and drive on. The PLUGIN-BUILD-GUIDE sentence claiming the refusal cites rf1/rf2, and neither case reaches it.",
-        "resolution": "Add a case (rf12): with the drive at the triage, add a task with the verb, then run `next --answer sign-off --reason S`. Assert exit 2, the added task's id in the text, no pending left in state, and the phase not signed off. Cite it beside the guide sentence."
+        "resolution": "Add a case (rf12): with the drive at the triage, add a task with the verb, then run `next --answer sign-off --reason S`. Assert exit 2, the added task's id in the text, no pending left in state, and the phase not signed off. Cite it beside the guide sentence.",
+        "status": "carried",
+        "carriedTo": "BUG-33-gfj"
       },
       {
         "id": "P155-R2",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:9131-9141 (decline_answer), tests/test_drive_phase.py:11451-11462 (db2)",
         "issue": "decline_answer's docstring says 'The drive goes on to any task still open - the remedy a human added', and db2 pins that by calling decline_answer directly. Through `next`, a human who adds the remedy task first and then answers `--answer decline --reason <words>` is now refused at drive_locked:9408, because the decision is set aside while the remedy is ready. Their words never reach state['declined'], so the summary loses the no. That branch of decline_answer is now reachable only for an open task that cannot run. DECLINE_REMEDY's order (decline first, then add) still works.",
-        "resolution": "Either let `decline` through on a set-aside decision (record the words in `declined`, pop phaseGate, then drive the runnable task), or reword the docstring and db2 so they describe an open task that cannot run. Add a drive-level case for whichever is chosen."
+        "resolution": "Either let `decline` through on a set-aside decision (record the words in `declined`, pop phaseGate, then drive the runnable task), or reword the docstring and db2 so they describe an open task that cannot run. Add a drive-level case for whichever is chosen.",
+        "status": "carried",
+        "carriedTo": "BUG-33-gfj"
       },
       {
         "id": "P155-R3",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:6868-6872 (not_ready_why)",
         "issue": "_status_facts.unmet_refs already folds a blocked phase's refs into each task's entry as '<ref> (phase)' (_status_facts.py:1424). not_ready_why then appends unmet[phase_id] a second time. A wave member dropped because its phase gained a blocker therefore prints that ref twice in the dropped-from-wave line: 'waits on P9 (phase), P9'.",
-        "resolution": "Read unmet.get(task_id) alone, since it already carries the phase's refs, and fall back to 'nothing the plan names' only when it is empty."
+        "resolution": "Read unmet.get(task_id) alone, since it already carries the phase's refs, and fall back to 'nothing the plan names' only when it is empty.",
+        "status": "carried",
+        "carriedTo": "BUG-33-gfj"
       },
       {
         "id": "P155-R4",
@@ -60,7 +66,9 @@
         "severity": "med",
         "file": "docs/audit/phases/P155.json (P155.6 files) vs plugins/audit/README.md:452 and plugins/audit/reference/verbs-in-full.md:482-483,1047-1060,1242-1300,1318",
         "issue": "The diff edits two files the task does not declare, plugins/audit/reference/verbs-in-full.md and plugins/audit/README.md. It also declares plugins/audit/commands/verbs-in-full.md, which does not exist: the recorded gate run's scopeBasis reads '17 declared file(s); 16 read, 1 missing'. This has two consequences. (a) This is the 1-of-292 test__refs failure in the red-first fix run. That run takes only the declared implementation files from the working tree. So task.md's argument-hint, which now has --gate-add (it is declared and was copied), met HEAD's plugins/audit/README.md, which lacks it: `git show c2c057fd:plugins/audit/README.md | grep -c -- --gate-add` gives 0. That pair is exactly what test__refs cf1 (`command_flag_drift`, tests/test__refs.py:2164-2168) compares. This is an inference from reading, not from re-running test__refs. The recorded gate run 2026-11-02T09:48:08Z.c4ebb4, on the full task tree (head c2c057fd, the same dirtyDigest), passed test__refs with exit 0. So the failure comes from the scope mismatch and not from a defect in the code. (b) commit-task-work's `_scoped_commit.undeclared_changes` (commit-task-work.py:692-713) will refuse the task commit over the two undeclared paths.",
-        "resolution": "Run `/audit:task scope P155.6 --files +plugins/audit/reference/verbs-in-full.md,plugins/audit/README.md`, then record the gate again. If the stale `plugins/audit/commands/verbs-in-full.md` entry is dropped, the red-first helper's fix run copies the README too, and can then prove or refuse on the merits."
+        "resolution": "Run `/audit:task scope P155.6 --files +plugins/audit/reference/verbs-in-full.md,plugins/audit/README.md`, then record the gate again. If the stale `plugins/audit/commands/verbs-in-full.md` entry is dropped, the red-first helper's fix run copies the README too, and can then prove or refuse on the merits.",
+        "status": "accepted-open",
+        "acceptedReason": "Already fixed during P155.6: the orchestrator corrected the task's scope to declare plugins/audit/reference/verbs-in-full.md and plugins/audit/README.md and drop the non-existent commands/verbs-in-full.md, and the gate was re-recorded on the corrected scope before the commit"
       },
       {
         "id": "P155-R6",
@@ -77,14 +85,18 @@
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/_manifest_phases.py:1984-1991",
         "issue": "The validator's wide-gate warning fires when a task's tests.gate is its phase's testGate verbatim. It tells the operator to 'Narrow it to the paths this task names ... go through `/audit:task scope <id> --gate \"<command>\"`'. A narrowed list leaves out held entries by definition, so after this diff that exact call is refused without --replace. This file is outside the diff, but the diff changed the verb on the other side of that instruction. The executor disclosed this, and the plan gate refused the edit. The refusal names --replace, so the cost is one round trip.",
-        "resolution": "Scope _manifest_phases.py, and tests/test__manifest_phases.py if a case pins the text, into this task or a follow-up. Say that narrowing takes `--gate \"<command>\" --replace`, while declaring the wide gate as the answer (the same list, which drops nothing) still takes a bare `--gate`."
+        "resolution": "Scope _manifest_phases.py, and tests/test__manifest_phases.py if a case pins the text, into this task or a follow-up. Say that narrowing takes `--gate \"<command>\" --replace`, while declaring the wide gate as the answer (the same list, which drops nothing) still takes a bare `--gate`.",
+        "status": "carried",
+        "carriedTo": "BUG-33-gfj"
       },
       {
         "id": "P155-R8",
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/audit-task.py:10196-10204,10502,10593-10594",
         "issue": "`--gate-add Y` on a task that declares no gate of its own writes `[Y]` with gateBasis `declared`. Such a task has tests.gate absent, `[]` or all-blank, gateBasis not `cleared`, and `_mio.gate_entries` (_manifest_io.py:663-692) measures it by the phase's testGate. So the gate that grades the task silently shrinks from the phase's entries to `[Y]`. Yet the help text, task.md and verbs-in-full describe --gate-add as appending 'keeping every entry the task holds'. `_held_gate` and `_gate_added` read only the stored list, never the resolved one. This is the class this task closes: a call spelled as 'keep' loses entries the gate ran. The success line prints `[Y]` but not what it replaced.",
-        "resolution": "In `_locked_scope`, when `_held_gate(node)` is empty and `_mio.gate_entries(phase, node)` returns source 'phase' with entries, do one of two things. Either refuse `--gate-add`, naming the phase gate it would replace and the spelling that keeps it (`--gate <each phase entry> --gate Y`), or seed the append with those resolved entries. Add a gk case on such a task that tells the two outcomes apart."
+        "resolution": "In `_locked_scope`, when `_held_gate(node)` is empty and `_mio.gate_entries(phase, node)` returns source 'phase' with entries, do one of two things. Either refuse `--gate-add`, naming the phase gate it would replace and the spelling that keeps it (`--gate <each phase entry> --gate Y`), or seed the append with those resolved entries. Add a gk case on such a task that tells the two outcomes apart.",
+        "status": "carried",
+        "carriedTo": "BUG-33-gfj"
       },
       {
         "id": "P155-R9",
@@ -141,14 +153,18 @@
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:6190-6195, :6032-6039, :6110-6126",
         "issue": "redo_pin_spent counts a blocked task as spent even when its patch still stands. Blocked is not terminal: `unblock` returns the task to pending. When the task is next stepped, redo_left calls redo_held, which can no longer resolve the pin ('names no commit'), so it answers 'could not be read'. The stop then tells the human to compare against `<pin>^` and `<pin>`, refs this diff has deleted. The redo_left docstring describes the pin as the second copy of work 'which may be its only copy'.",
-        "resolution": "Make it `status in _mio.TERMINAL or not patch_stands`, so a blocked task keeps its pin while its patch stands. sd11 has no patch, so it stays green. Or, in the arm where the pin is gone, word the 'could not be read' remedy without the pin."
+        "resolution": "Make it `status in _mio.TERMINAL or not patch_stands`, so a blocked task keeps its pin while its patch stands. sd11 has no patch, so it stays green. Or, in the arm where the pin is gone, word the 'could not be read' remedy without the pin.",
+        "status": "carried",
+        "carriedTo": "BUG-33-gfj"
       },
       {
         "id": "P155-R15",
         "severity": "low",
         "file": "tests/test_drive_phase.py:8747-8784 (sd9-sd11)",
         "issue": "In sd9, sd10 and sd11 no patch is written, so in each case `not patch_stands` alone makes redo_pin_spent true. The status arm (TERMINAL, blocked) never decides a case. From reading, the mutation `return not patch_stands` would leave sd9-sd13 green; the probe's m6/m7 do not try it. The clause 'gone after done, cancel, block' is proved only for tasks that have no patch.",
-        "resolution": "Add a case where a patch still stands on a done or cancelled task, and assert the pin is gone. Probe it with the mutation `return not patch_stands`."
+        "resolution": "Add a case where a patch still stands on a done or cancelled task, and assert the pin is gone. Probe it with the mutation `return not patch_stands`.",
+        "status": "carried",
+        "carriedTo": "BUG-33-gfj"
       },
       {
         "id": "P155-R16",
@@ -225,35 +241,45 @@
         "severity": "low",
         "file": "plugins/audit/scripts/git/_worktrees.py:2291-2295, 2304-2310 (restore_copy refusals)",
         "issue": "Two refusals tell the user that 'the next move drops it': a copy with no index.json, and a copy of a move the marker already recorded (base == end). Both still stand beside the tree, so `unsettled_stop` stops dispatch and integration over them before any move runs. If the drive's next step is integration over a reusable stored green (gate_step skipped, so no advance_member), the stop names `restore`, restore refuses and points at a move, and the next `next` stops again, with no verb that gets out. `_resume` already settles both shapes by dropping the copy.",
-        "resolution": "In restore_copy, settle both shapes the way `_resume` does: drop the copy (`_drop_copy`) when it has no index.json, or when base == end and `_newer_work` names nothing. Return restored=None with what was dropped instead of a refusal. Add a case for the recorded-move copy, which the executor lists as untested."
+        "resolution": "In restore_copy, settle both shapes the way `_resume` does: drop the copy (`_drop_copy`) when it has no index.json, or when base == end and `_newer_work` names nothing. Return restored=None with what was dropped instead of a refusal. Add a case for the recorded-move copy, which the executor lists as untested.",
+        "status": "carried",
+        "carriedTo": "BUG-33-gfj"
       },
       {
         "id": "P155-R24",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:5185-5192",
         "issue": "The fallback wording ('does not name P') and the case where read_provenance returns a record with a foreign createdBy but a taskId (_worktrees.py:198-201 returns the record) are driven by no case: ta9 only exercises the 'names X, not P' arm, and the executor says so in claim 2. In the foreign-createdBy case the new line reads 'its marker names X, not P' for a marker this plugin did not write, which is true of the taskId field but suggests a plugin marker for another task.",
-        "resolution": "Add one small over-fire twin of ta9 for a marker with no record (no marker file) asserting the old 'does not name' wording, and optionally gate `named` on rec createdBy so a foreign marker keeps the old wording."
+        "resolution": "Add one small over-fire twin of ta9 for a marker with no record (no marker file) asserting the old 'does not name' wording, and optionally gate `named` on rec createdBy so a foreign marker keeps the old wording.",
+        "status": "carried",
+        "carriedTo": "BUG-33-gfj"
       },
       {
         "id": "P155-R25",
         "severity": "med",
         "file": "docs/audit/audit-plan.json:24 (meta.buildCommands.lint)",
         "issue": "contradicts task clause: the task asked to 'set meta.buildCommands.lint through /audit:task build-command (or drop the hand copy and point at verify.sh --list)', and the diff changes only CLAUDE.md:210. The plan still reads `ruff check plugins/audit tools tests && vermin ...` (read at docs/audit/audit-plan.json:24), while tools/verify.sh:589 runs `ruff check plugins/audit tools tests .claude/hooks`. A build-command-driven gate therefore still runs the narrower ruff and misses an unused import under .claude/hooks, which is the class this task closes. The executor reported this as NOT DONE and left it for the orchestrator.",
-        "resolution": "Run the build-command verb from the project to set lint to `ruff check plugins/audit tools tests .claude/hooks && vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints`, matching tools/verify.sh's ruff path list."
+        "resolution": "Run the build-command verb from the project to set lint to `ruff check plugins/audit tools tests .claude/hooks && vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints`, matching tools/verify.sh's ruff path list.",
+        "status": "accepted-open",
+        "acceptedReason": "Done by the orchestrator through the verb: audit-task build-command lint --replace set meta.buildCommands.lint to the same ruff path list verify.sh runs, .claude/hooks included"
       },
       {
         "id": "P155-R26",
         "severity": "low",
         "file": "tests.gate (P155.18-gfj): tests/test__manifest_phases.py, tests/test__branch.py, tests/test__config_rules.py, tests/test__manifest_vocab.py",
         "issue": "The task's own gate selects four suites, and none of them opens CHANGELOG.md or COMPATIBILITY.md. The only matches are message strings that name the document (tests/test__manifest_phases.py:368,379,518 and tests/test__manifest_vocab.py:595); none of them reads the file. So the gate stays green whatever the two edited documents say, including when both new bullets are deleted (an assertion the behaviour never reaches). The suites that do read these documents are outside tests.gate: COMPATIBILITY.md is a BARE path-reference surface at tools/lints/_refs.py:162 (tests/test__refs.py), and _deps.doc_prose_numbers reads both documents (tests/test__deps.py). This is a judgement from reading, not a run. The recorded green says nothing about the edit.",
-        "resolution": "For a documentation-only task, derive or declare tests.gate from the suites that read the edited documents (tests/test__refs.py and tests/test__deps.py) rather than from the code files scoped in as readers. Alternatively, record in the task that the gate is a regression guard only and that the documents were checked by a direct _deps.doc_prose_numbers(['CHANGELOG.md','COMPATIBILITY.md']) run (it returns 15 on the edited tree, none in the new lines)."
+        "resolution": "For a documentation-only task, derive or declare tests.gate from the suites that read the edited documents (tests/test__refs.py and tests/test__deps.py) rather than from the code files scoped in as readers. Alternatively, record in the task that the gate is a regression guard only and that the documents were checked by a direct _deps.doc_prose_numbers(['CHANGELOG.md','COMPATIBILITY.md']) run (it returns 15 on the edited tree, none in the new lines).",
+        "status": "carried",
+        "carriedTo": "BUG-33-gfj"
       },
       {
         "id": "P155-R27",
         "severity": "low",
         "file": "plugins/audit/scripts/status/audit-lookup.py:844-156",
         "issue": "documented_rows is unbounded and the basename-alone arm matches any heading naming the bare basename (or, for a declared directory entry, the directory's last component, e.g. 'tests' in '### Adding tests'). The guide paragraph justifies no budget with 'a module rarely has more than one heading', which holds for module files but not for a declared README.md, a directory entry or a generic basename, where the executor brief would grow by one row per heading in every tracked document. Every other brief section is bounded.",
-        "resolution": "Cap the rows (as _impact.section does for dependants) with an 'N of M shown' tail naming a command that lists all, or skip the basename-alone arm for entries that are directories or have no file extension; add a case with a declared README.md or directory entry."
+        "resolution": "Cap the rows (as _impact.section does for dependants) with an 'N of M shown' tail naming a command that lists all, or skip the basename-alone arm for entries that are directories or have no file extension; add a case with a declared README.md or directory entry.",
+        "status": "carried",
+        "carriedTo": "BUG-33-gfj"
       },
       {
         "id": "P155-R28",
@@ -280,7 +306,9 @@
         "severity": "low",
         "file": "PLUGIN-BUILD-GUIDE.md:4044-4047 vs reference/orchestrator.md step 4c; tests/test_audit_task.py:16203",
         "issue": "PLUGIN-BUILD-GUIDE now says a task commit stages 'Exactly the four things step 4c allows', and lists the task's own honoured outputs among them. Step 4c in reference/orchestrator.md (untouched) still allows declared files only. So the guide claims a correspondence with step 4c that the diff broke. The prose in test_audit_task.py:16203 still says the commit stages declared files only (executor-reported).",
-        "resolution": "Update orchestrator.md step 4c to name the task's own honoured outputs, update the test_audit_task.py prose in the same follow-up as finding 2, or drop the 'step 4c allows' cross-reference."
+        "resolution": "Update orchestrator.md step 4c to name the task's own honoured outputs, update the test_audit_task.py prose in the same follow-up as finding 2, or drop the 'step 4c allows' cross-reference.",
+        "status": "carried",
+        "carriedTo": "BUG-33-gfj"
       },
       {
         "id": "P155-R31",
@@ -297,7 +325,9 @@
         "severity": "low",
         "file": "docs/audit/phases/P155.json (P155.24-gfj tests.gate)",
         "issue": "The task's recorded gate, `python3 tools/sweep-selftests.py tests/_harness.py tests/test__affected_tests.py tests/test__runner_collects.py tests/test_stamp_verification.py`, selects no suite that reaches this diff. A grep for verify.sh|gate-parity|live.window|rendered_plan_legs over those four files gives zero hits. So the passed gate run 2026-11-02T19:13:29Z.a52926 is no evidence for the change, and every suite it selects would still pass with live_plan_window or _live_window_cases deleted. The executor's own gate-parity run (125/125) carries a stamp that `stamp-verification.py compare` grades stale: head 578cfd35 -> 32b4ca49, and scopeDigest moved because P155.26 edited PLUGIN-BUILD-GUIDE.md. The dirty bytes of verify.sh and gate-parity.py did not move.",
-        "resolution": "Add `python3 tools/sweep-selftests.py tools/gate-parity.py` to the task's tests.gate, or make sure the phase gate selects tools/gate-parity.py, so a recorded run exercises lw0-lw4."
+        "resolution": "Add `python3 tools/sweep-selftests.py tools/gate-parity.py` to the task's tests.gate, or make sure the phase gate selects tools/gate-parity.py, so a recorded run exercises lw0-lw4.",
+        "status": "carried",
+        "carriedTo": "BUG-33-gfj"
       },
       {
         "id": "P155-R33",
@@ -424,7 +454,9 @@
         "severity": "low",
         "file": "docs/audit/audit-plan.json (BUG-31-z9j); docs/audit/phases/P143.json review.findings",
         "issue": "BUG-31-z9j reads fixed but its repro still lists all 13 P143 lows: no P143 finding names the task and commit that closed it, P143-R4's closing reason is recorded nowhere, and measure-affected-miss stopped at 17 commits rather than the 20 asked.",
-        "resolution": "Record fixTask and commit on each P143 finding, record R4's reason, re-measure over at least 20 commits, rerun the repro and confirm it prints none."
+        "resolution": "Record fixTask and commit on each P143 finding, record R4's reason, re-measure over at least 20 commits, rerun the repro and confirm it prints none.",
+        "status": "carried",
+        "carriedTo": "BUG-33-gfj"
       },
       {
         "id": "P155-R46",
@@ -471,7 +503,9 @@
         "severity": "low",
         "file": "tools/plan-window.py:275-280 (evidence) vs plugins/audit/scripts/report/render-report.py:470-473",
         "issue": "The docstring says the window reads evidence with the same reader and boundary as the renderer, but render-report also passes full_run, which needs git; a window outside any checkout would render every merged phase's third-place verdict unknown while plan-window reports agreement. Not reached by this plan (no meta.fullGate).",
-        "resolution": "Compare fullRun too, or narrow the docstring to what is compared."
+        "resolution": "Compare fullRun too, or narrow the docstring to what is compared.",
+        "status": "carried",
+        "carriedTo": "BUG-33-gfj"
       },
       {
         "id": "P155-R51",
@@ -538,35 +572,45 @@
         "severity": "low",
         "file": "tools/gate-parity.py:2858-2917",
         "issue": "The task's recorded gate (sweep over tests/_harness.py, tests/test__affected_tests.py, tests/test__runner_collects.py, tests/test_stamp_verification.py) selects no suite that imports or runs tools/gate-parity.py; none of the four names it. Shape: an assertion the changed behaviour never reaches. The new lw4/lw5/lw5w cases run only under `python3 tools/gate-parity.py --selftest`, which the executor ran by hand and filed, but which is not in tests.gate. Deleting shell_spelled's separator swap would leave every gate-selected test passing.",
-        "resolution": "Add `python3 tools/gate-parity.py --selftest` to this task's tests.gate so the recorded gate run covers the cases the fix is proved by."
+        "resolution": "Add `python3 tools/gate-parity.py --selftest` to this task's tests.gate so the recorded gate run covers the cases the fix is proved by.",
+        "status": "carried",
+        "carriedTo": "BUG-33-gfj"
       },
       {
         "id": "P155-R58",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:6611-6629",
         "issue": "kept_beside appends the keeping sentence (the patch name, where the work lives) after a verb's relayed stop from keep_old_tree/add_tree, which can open on and be long with a path. The patch name can still sit past a head-keeping clip, the shape this task removes; the guide's carve-out covers only a stop relayed whole.",
-        "resolution": "Put the keeping sentence first and pass the relayed text as a ('verb said', ...) clause through paths_last, so the named facts lead."
+        "resolution": "Put the keeping sentence first and pass the relayed text as a ('verb said', ...) clause through paths_last, so the named facts lead.",
+        "status": "carried",
+        "carriedTo": "BUG-33-gfj"
       },
       {
         "id": "P155-R59",
         "severity": "low",
         "file": "tests/test_drive_phase.py:9285-9333",
         "issue": "Only the serial redo_left branch is held to the paths-last rule under a long spaced root (sd14). The other converted stops, and any new one, can regress to path-first with every case green. The executor's AST probe over _stopped calls was run once and not committed.",
-        "resolution": "Add a case that walks the AST of drive-phase.py and requires every _stopped argument naming a path-like variable to go through paths_last, with a reasoned allow-list for relayed and repo-relative stops."
+        "resolution": "Add a case that walks the AST of drive-phase.py and requires every _stopped argument naming a path-like variable to go through paths_last, with a reasoned allow-list for relayed and repo-relative stops.",
+        "status": "carried",
+        "carriedTo": "BUG-33-gfj"
       },
       {
         "id": "P155-R60",
         "severity": "low",
         "file": "tests/test__worktrees.py:2183-2190",
         "issue": "ut5's scanner takes `site = min(at for _w, at in what)` as the function's first site, but no planted function has two sites with an ask between them. A function that asks after its first removal and before its second would be flagged now; mutating `min` to `max` (or any later site) would leave every planted case unchanged, so the first-site rule has no case that fails. Read from the source, not run. Likewise, `all(asks(...) for c in up)` is only pinned with a single caller (`late_inner` has one: `late_outer`). Nothing separates 'every caller' from 'any caller'.",
-        "resolution": "Add two planted twins. (a) A function with `run(['worktree','remove',a])`, then `tree_unsettled`, then a second removal, which must be named. (b) A remover with two callers, one asking before its call and one after, which must be named."
+        "resolution": "Add two planted twins. (a) A function with `run(['worktree','remove',a])`, then `tree_unsettled`, then a second removal, which must be named. (b) A remover with two callers, one asking before its call and one after, which must be named.",
+        "status": "carried",
+        "carriedTo": "BUG-33-gfj"
       },
       {
         "id": "P155-R61",
         "severity": "low",
         "file": "plugins/audit/commands/sync.md:719-720",
         "issue": "A further copy of the same false claim survives and the filed outcome does not report it. The task asked for a grep for further copies and a report of any found. This one is spelled 'an imported phase ran with `fileIndex` empty and the plan gate therefore inert', which says an empty fileIndex made the gate inert. The corrected statement is that the gate reads a running task's `files` and graded `outputs`, never a fileIndex row. The executor's grep pattern ('what the plan gate matches') and its second pattern ('fileIndex.{0,80}match') both miss this spelling, and sync.md was not in its list of hits or of deliberately-left sites.",
-        "resolution": "Reword to say an imported phase ran with its tasks holding `files: []`, so the plan gate had no declared path to open an edit by. Or file it as a follow-up task, since sync.md is outside this task's declared files."
+        "resolution": "Reword to say an imported phase ran with its tasks holding `files: []`, so the plan gate had no declared path to open an edit by. Or file it as a follow-up task, since sync.md is outside this task's declared files.",
+        "status": "carried",
+        "carriedTo": "BUG-33-gfj"
       },
       {
         "id": "P155-R62",
@@ -613,21 +657,27 @@
         "severity": "low",
         "file": "tests/test__config.py:4495-4498,4772-4800; plugins/audit/hooks/_config.py:4104-4110",
         "issue": "The declared pin's reach is derived through fixed matcher/carrier/spelling name lists, so 'derived rather than listed' overstates it: _wave._declared/overlap read files alone and are not reached; _DECLARED_READERS lacks integrate-task undeclared_paths and _invariants commit_scope.",
-        "resolution": "Either treat any compare/startswith flow over a raw files value as a reading, or narrow the docstring; add the two readers to _DECLARED_READERS."
+        "resolution": "Either treat any compare/startswith flow over a raw files value as a reading, or narrow the docstring; add the two readers to _DECLARED_READERS.",
+        "status": "carried",
+        "carriedTo": "BUG-33-gfj"
       },
       {
         "id": "P155-R67",
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/audit-task.py:7434-7443,7481; plugins/audit/scripts/governance/_scoped_commit.py:1740-1755",
         "issue": "The close's evidence check reads files alone: a files-[] task whose work is its own outputs, closing with redFirst not-attempted, is refused as carrying no change. The exemption row names the gap.",
-        "resolution": "Route _commit_touches through declared_git_rels(only=task, changed=<commit paths>)."
+        "resolution": "Route _commit_touches through declared_git_rels(only=task, changed=<commit paths>).",
+        "status": "carried",
+        "carriedTo": "BUG-33-gfj"
       },
       {
         "id": "P155-R68",
         "severity": "low",
         "file": "plugins/audit/scripts/git/manage-worktrees.py:391-397,747-753; plugins/audit/scripts/governance/drive-phase.py:5481-5507,6911-6918,10182-10193,10999",
         "issue": "native_spelling covers only the unsettled family: manage-worktrees' dirty/undescribable refusals and several drive stops name the tree in git's forward-slash spelling on Windows.",
-        "resolution": "Spell paths once at the source (list_worktrees record, add_tree's stored path), with an ntpath case."
+        "resolution": "Spell paths once at the source (list_worktrees record, add_tree's stored path), with an ntpath case.",
+        "status": "carried",
+        "carriedTo": "BUG-33-gfj"
       },
       {
         "id": "P155-R69",
@@ -654,7 +704,9 @@
         "severity": "low",
         "file": "tools/gate-parity.py:906-910",
         "issue": "On Windows the function returns after skipping lw5 alone, so lw5w disappears with no line.",
-        "resolution": "skip lw5w beside lw5 with the same reason."
+        "resolution": "skip lw5w beside lw5 with the same reason.",
+        "status": "carried",
+        "carriedTo": "BUG-33-gfj"
       },
       {
         "id": "P155-R72",
@@ -671,27 +723,34 @@
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/audit-task.py (add --tests-add)",
         "issue": "`add --tests-add a.py,b.py` stores one tests.add entry 'a.py,b.py' (a path that does not exist) and derives a gate passing it to the sweep, with no refusal; --files and the id lists split on commas, so the same spelling means two different things across flags of one verb. Seen creating P155.46/.47.",
-        "resolution": "Split --tests-add on commas like the other list flags, or refuse an entry containing a comma or naming no file."
+        "resolution": "Split --tests-add on commas like the other list flags, or refuse an entry containing a comma or naming no file.",
+        "status": "carried",
+        "carriedTo": "BUG-33-gfj"
       },
       {
         "id": "P155-R74",
         "severity": "med",
         "file": "tests/test_drive_phase.py:6882-6891 (ab9); tests/test_drive_phase.py sd14 fixture",
         "issue": "Release CI run 41649249972 at 873b6142 is red on all four windows selftest cells, only in tests/test_drive_phase.py. (a) ab9 asserts os.path.join(copy_d, 'git-index') in the stop, where copy_d comes from git's forward-slash answer; since tree refusals spell paths natively the stop says ...\\audit-advance\\git-index, so the mixed-separator join is never a substring on Windows. (b) sd14's long spaced root exceeds Windows MAX_PATH: building the block raises FileNotFoundError [WinError 3] on the nested directory, so every sd case in that block does not run.",
-        "resolution": "ab9 compares in the platform's spelling (normpath both sides, or the module's native_spelling). sd14 keeps a root with spaces and long enough to put paths behind the named facts while staying under MAX_PATH with the runner's temp prefix (the case asserts ordering, not a clip), and the fixture's length budget is stated beside it.",
-        "fixTask": "P155.51-gfj"
+        "resolution": "fixed in P155.51-gfj (a07011f1c6fe): ab9 compares in the platform's spelling (normpath both sides, or the module's native_spelling). sd14 keeps a root with spaces and long enough to put paths behind the named facts while staying under MAX_PATH with the runner's temp prefix (the case asserts ordering, not a clip), and the fixture's length budget is stated beside it.",
+        "fixTask": "P155.51-gfj",
+        "commit": "a07011f1c6fe",
+        "status": "fixed"
       },
       {
         "id": "P155-R75",
         "severity": "low",
         "file": "tests/test_drive_phase.py:9084-9088",
         "issue": "The SD_LONG_ROOT comment says the root is 'long enough that every path in the redo stop runs past the head a clip keeps'. No clip width is named or asserted anywhere. sd14 asserts the ORDER of the stop (named facts before the first occurrence of the root), and sd16 asserts only an upper bound on length. The shortened root (about 100 characters, against about 350 before) was never shown to run past any particular clip.",
-        "resolution": "Reword to what the cases hold: spaced, and long enough that a path sits behind the named facts. Drop 'runs past the head a clip keeps', or name the clip width and assert a lower bound beside sd16's upper bound."
+        "resolution": "Reword to what the cases hold: spaced, and long enough that a path sits behind the named facts. Drop 'runs past the head a clip keeps', or name the clip width and assert a lower bound beside sd16's upper bound.",
+        "status": "carried",
+        "carriedTo": "BUG-33-gfj"
       }
     ],
-    "outcome": "[findings: 75 - 1 high, 27 med, 47 low; 46 with a recorded fix commit]"
+    "outcome": "[findings: 75 - 1 high, 27 med, 47 low; 47 with a recorded fix commit]",
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "3.8.0 low batch: P155 closes F802/F811/F813/F816/F830 and the P143 lows (BUG-31-z9j); two phase-wide reviews, every med/high fixed in phase (R42/R43/R51-R54/R62-R65/R74), lows carried to BUG-33-gfj; release-tier CI run 41661612765 success at a07011f1 (linux, macos, windows, cp1252) Per-task reviewer answers continued over: P155.8 intent diverges: Owner's standing words for this run: \"Bez pitanja, uzimaj preporučenu opciju.\" The recommended option: keep the committed work, and fix the five med findings before sign-off through the triage's fix tasks.; P155.17-gfj intent diverges: The missing half is done: the orchestrator set meta.buildCommands.lint through audit-task build-command to the same ruff path list verify.sh runs, .claude/hooks included; P155.25-gfj intent diverges: The landed half is correct: a verify.sh change now selects the lw cases. The remaining clause, moving the window selection into a tools/ script tested against a fixture plan, is the reviewer's med finding and goes to triage as its own fix task; P155.30-gfj intent diverges: The selection, filters, nested shape and one-snapshot reading are proved by the reviewer's own mutations; the untested drift refusal in main() is the reviewer's med finding and goes to triage as a fix task",
   "tasks": [
     {
       "id": "P155.1",
@@ -4645,7 +4704,7 @@
     {
       "id": "P155.51-gfj",
       "title": "ab9 and sd14 run on Windows: ab9 compares the native spelling, sd14's long root fits MAX_PATH",
-      "status": "in_progress",
+      "status": "done",
       "description": "Finding P155-R74 (see docs/audit/phases/P155.json). Release CI run 41649249972 at 873b6142 is red on all four windows selftest cells, only in tests/test_drive_phase.py; the failing job logs are saved at <scratchpad>/ci41649249972/*.log (the orchestrator gives the full path). (a) ab9 (around line 6882) asserts `os.path.join(copy_d, \"git-index\") in text_d`, where copy_d is git's forward-slash spelling; the stop now spells the tree natively (_worktrees.native_spelling), so on Windows the stop reads ...\\audit-advance\\git-index and the mixed join never matches. Compare in the platform's spelling on both sides (os.path.normpath, or the module's native_spelling), and check the case's other path comparisons the same way. (b) sd14's root (\"a spaced directory that runs long ...\" nested twice) exceeds Windows MAX_PATH under the runner's temp prefix: building the sd block raises FileNotFoundError [WinError 3], so no sd case runs on Windows. sd14 asserts the ORDER of the unclipped stop (named facts before the first occurrence of the root), not a clip, so the root needs spaces and enough length that paths sit behind the named facts, but must fit MAX_PATH (260) with the runner's temp prefix (about 50 characters, e.g. <TEMP>\\sw-xxxxxxxx\\) plus the deepest fixture path below it. State the budget in a comment beside the fixture. Prove on posix that ab9 still fails if the stop drops the git-index name and sd14 still fails if paths_last is bypassed for the serial redo stop (mutate, see red, restore, purge __pycache__). Give the owner the Windows command and its expected output.",
       "files": [
         "tests/test_drive_phase.py",
@@ -4669,14 +4728,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a07011f1c6fe",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tests/test_drive_phase.py only. (a) ab7/ab8/ab9: copy_d is now built from wt.native_spelling(git rev-parse --absolute-git-dir) before the audit-advance join, so ab9's `os.path.join(copy_d, \"git-index\") in text_d` compares the platform spelling on both sides, matching the stop's _worktrees.kept_where spelling. The case's other path uses were checked: isdir/exists accept either spelling, `named` comes from restore_command over the suite's own native mpath_d/root_d, and the other `audit-advance` checks are substrings. Other git-printed paths in the suite (copy_k in ab6, the two --git-common-dir reads in _force_added/_exclude) are used only for filesystem calls, never compared against text, so they were left as they are. (b) sd14's root moved into a module constant SD_LONG_ROOT, two spaced components with no trailing space. The old components ended in a space, and win32 trims a trailing space only from a path's last component, so makedirs created the parent without it and then could not find the child (WinError 3); the old root was also far past MAX_PATH. A comment beside the constant states the budget: _WIN_RUNNER_TEMP (the runner's temp prefix as the windows cells print it) + fixture dir name + root + deepest path the drive writes, all within _WIN_MAX_PATH less its NUL. New case sd16 (via _win_path_budget) adds up that sum from the tree sd14 leaves, on every platform: here 214 against 259, the deepest path being docs/audit/evidence/returns/P1.1/<stamp>.executor.json. sd16 also asserts that no root component ends in a space or a dot, and that the root is spaced. sd14 still passes on posix (first_path 500). For sd14 on windows, ctx gitRoot is os.path.abspath (drive-phase.py near line 10927), so it is native and held.find(deep) compares like with like. Commands: `python3 tests/test_drive_phase.py --selftest --stage sd-block` -> 22/22, exit 0; `--stage ab-block` -> 12/12, exit 0 (scratch export); `python3 tools/sweep-selftests.py tests/test_drive_phase.py` -> exit 0, '1/1 files ok, 814 cases'; `ruff check tests/test_drive_phase.py` exit 0; `vermin -t=3.8- --no-tips --violations tests/test_drive_phase.py` exit 0; prose_number_claims()/house_style_violations() report nothing for the file. Dependants: .github/sweep-costs.json still correct (no block added or renamed; sd-block gains one os.walk); .github/workflows/ci.yml unchanged and still correct (it runs the suite as before); drive-phase.py untouched, and paths_last's docstring naming sd14 is still true; tests/test__runner_output.py, tests/test_run_test_gate.py, tests/test_stamp_verification.py, tools/affected.py, tools/reach-diff.py still correct, because the names they use (_actions, _bindings, _counting, _follower_cases and the rest) are untouched and the only additions are new names (SD_LONG_ROOT, _WIN_RUNNER_TEMP, _WIN_MAX_PATH, _win_path_budget). Owner's Windows check, from the checkout: `py -3 tests\\test_drive_phase.py --selftest --stage ab-block` expecting 'ALL PASS: 12/12 cases passed', and `py -3 tests\\test_drive_phase.py --selftest --stage sd-block` expecting 'ALL PASS: 22/22 cases passed' (or `py -3 tools\\sweep-selftests.py tests\\test_drive_phase.py` expecting '1/1 files ok'). A local TEMP longer than the runner's (a longer user name) eats into the 45-character margin sd16 printed.",
+        "descriptive": "ab9 now compares the copy's git-index in the native spelling, and sd14's long spaced root fits Windows MAX_PATH with no trailing-space component; sd16 checks that budget on every platform."
       },
       "startedAt": "2026-11-03T14:59:58Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-03T15:13:07Z",
+      "verifiedBy": [
+        "sd16: the longest path sd14's fixture leaves, spelled under the windows runner's temp prefix, fits MAX_PATH, and no root component ends in a space or a dot",
+        "ab9 (amended): the copy path is spelled natively before the git-index join",
+        "sd14 (amended): its root is the budgeted SD_LONG_ROOT"
+      ],
       "notes": [
         {
           "at": "2026-11-03T14:17:13Z",
@@ -4695,14 +4758,25 @@
         "runId": "2026-11-03T15:11:35Z.8a0a90",
         "status": "passed",
         "at": "2026-11-03T15:11:35Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "a07011f1c6fe",
+        "at": "2026-11-03T15:13:07Z",
+        "return": "docs/audit/evidence/returns/P155.51-gfj/20261103T145958Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task with tests.expectRedFirst false, and the defect is in the test file itself (the comparison and the fixture), so HEAD's code under the new test file has no red to show. The reds were instead proved by mutation in a scratch export of HEAD with the new test file copied over it, __pycache__ purged between cycles: (A) _worktrees.kept_where with the git-index clause dropped -> ab-block exit 1, 'FAIL ab9', 11/12; (B) the serial redo stop in drive-phase.py joining where-clauses before the named words instead of calling paths_last -> sd-block exit 1, 'FAIL sd14' (first_path 72, named words missing from the lead), 21/22; (C) SD_LONG_ROOT set back to the old root -> 'FAIL sd16' (416 > 259, trailing-space components listed), 21/22; (C2) a short root with a trailing space -> 'FAIL sd16' (178, ['a spaced directory ']); (C3) an over-long root with no trailing space -> 'FAIL sd16' (310 > 259). Restored scratch tree: sd-block 22/22, ab-block 12/12 at baseline.",
+        "at": "n/a - no helper run; manual mutation runs at 2026-11-03T15:04:22Z (A), 15:04:50Z (B), 15:05:12Z (C), C2/C3 just after"
       }
     }
   ],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "4331b4e9-59c2-4a61-9004-3102aba69ea2",
-    "branch": "audit/p155-3-8-0-low-batch",
-    "at": "2026-11-02T08:16:45Z"
-  },
-  "startedAt": "2026-11-02T08:16:45Z"
+  "startedAt": "2026-11-02T08:16:45Z",
+  "testEvidence": {
+    "runId": "2026-11-03T15:38:19Z.22f9ef",
+    "status": "passed",
+    "at": "2026-11-03T15:38:19Z"
+  }
 }
