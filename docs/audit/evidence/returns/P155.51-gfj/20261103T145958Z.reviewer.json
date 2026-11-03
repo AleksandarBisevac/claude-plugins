@@ -1,0 +1,19 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "tests/test_drive_phase.py:9084-9088",
+   "issue": "The SD_LONG_ROOT comment says the root is 'long enough that every path in the redo stop runs past the head a clip keeps'. No clip width is named or asserted anywhere. sd14 asserts the ORDER of the stop (named facts before the first occurrence of the root), and sd16 asserts only an upper bound on length. The shortened root (about 100 characters, against about 350 before) was never shown to run past any particular clip.",
+   "resolution": "Reword to what the cases hold: spaced, and long enough that a path sits behind the named facts. Drop 'runs past the head a clip keeps', or name the clip width and assert a lower bound beside sd16's upper bound."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Clause (a): 'Compare in the platform's spelling on both sides ... and check the case's other path comparisons the same way'. The diff builds copy_d from wt.native_spelling(git rev-parse --absolute-git-dir) before the audit-advance join (tests/test_drive_phase.py:6886-6892). That is the spelling _worktrees.kept_where prints (_worktrees.py:2262-2270, native_spelling then mod.join), so ab9's os.path.join(copy_d, 'git-index') in text_d now compares like with like. The other git-printed paths are only used for filesystem calls; the ab7/ab8 checks on the text are substrings. Clause (b): 'the root needs spaces and enough length ... but must fit MAX_PATH (260) with the runner's temp prefix ... State the budget in a comment beside the fixture'. SD_LONG_ROOT is two spaced components with no trailing space, and the comment states the budget (lines 9084-9097). _WIN_RUNNER_TEMP is 52 characters. I checked it against the saved CI traceback, whose fixture path has the shape <windows temp>\\sw-<8 chars>\\drive-sd-long-<8 chars>, so the prefix model matches the real shape. The old root's trailing-space components explain the WinError 3, as the executor claimed. sd16 sums the budget on every platform. I ran sd-block once: sd14 and sd16 pass, 22/22, sd16 prints 214 against 259. The filed outcome describes the diff accurately: only tests/test_drive_phase.py changed, drive-phase.py is untouched, and the listed dependants name only symbols the diff did not alter. The mutation proofs (ab9, sd14, sd16) and the Windows commands are in the filed return, but I did not re-run the mutations. Caveat: sd14 to sd16 had never run on Windows because the block raised while being built, so any further Windows-only failure behind them is unknown until the owner runs the stated command.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Executor filed not-attempted: a regression task with expectRedFirst false, where the defect is in the test file itself, so HEAD's code under the new tests has no red. Instead it ran mutations in a scratch export (kept_where without git-index -> FAIL ab9 11/12; paths_last bypassed -> FAIL sd14 21/22; old root -> FAIL sd16; trailing-space-only and length-only variants -> FAIL sd16), each with a command and a non-zero exit. I echo the word because the task owes no red-first run. The mutation reds are the executor's report, not something I re-saw.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "The gate is `python3 tools/sweep-selftests.py tests/test_drive_phase.py`, which selects the whole suite file (814 cases per the executor, sharded by block). I read only the blocks the diff touches (ab7-ab9, sd14-sd16). I did not read the rest of the file for tests that would still pass with the behaviour deleted, so I make no claim either way."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

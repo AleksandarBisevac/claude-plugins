@@ -6883,9 +6883,13 @@ def _wave_advance_cases(check):
                                 ("ab8", "waveadvanceu", True)):
         root_d, mpath_d, head_d, tree_d = _ab_red_at_base(M, prefix)
         rows_d = len(_rows_of(root_d, mpath_d, "P1.1"))
-        # Read before the run: a drive that goes on removes the tree.
-        copy_d = os.path.join(_git_out(tree_d, "rev-parse", "--absolute-git-dir")
-                              .strip(), "audit-advance") if tree_d else ""
+        # Read before the run: a drive that goes on removes the tree. git
+        # prints the git-dir with forward slashes on windows and the stop
+        # spells it natively, so the case spells it natively too before any
+        # join - a native join onto git's spelling is a path no stop prints.
+        copy_d = os.path.join(wt.native_spelling(
+            _git_out(tree_d, "rev-parse", "--absolute-git-dir").strip()),
+            "audit-advance") if tree_d else ""
         f1_d = os.path.join(tree_d, "src", "f1.txt") if tree_d else ""
         real_rename, real_runner = wt.os.rename, wt._runner
 
@@ -9077,6 +9081,36 @@ def _stray_review_run(M, prefix, stray, word):
             "landed": os.path.isfile(os.path.join(root, "notes.txt"))}
 
 
+# sd14's root: spaced, and long enough that every path in the redo stop runs
+# past the head a clip keeps - yet it has to be MADE on a windows runner.
+# Every path the case creates must fit MAX_PATH there: the runner's temp
+# prefix (`_WIN_RUNNER_TEMP`, spelled as the windows cells print it), the
+# fixture directory, this root and the deepest path the drive writes below
+# it, under `_WIN_MAX_PATH` less its terminating NUL. sd16 sums those from the
+# tree the case leaves, on every platform, so a longer root or a deeper write
+# is red here and not only on windows. No component ends in a space: win32
+# trims one off the last component of a path and from no other, so makedirs
+# would create the parent without it and then fail to find the child under it.
+SD_LONG_ROOT = ("a spaced directory that runs long past a clip",
+                "and nests once more inside it")
+_WIN_RUNNER_TEMP = "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sw-xxxxxxxx\\"
+_WIN_MAX_PATH = 260
+
+
+def _win_path_budget(long_at, deep):
+    """`(longest, deepest)`: how long the longest path under `deep` would be
+    on a windows runner - `_WIN_RUNNER_TEMP`, `long_at`'s name, the root and
+    the deepest path below it - and that deepest path, relative to `deep`.
+    `(0, "")` when `deep` holds nothing, so an empty walk is not a fit."""
+    below = [os.path.relpath(os.path.join(at, name), deep)
+             for at, dirs, files in os.walk(deep) for name in dirs + files]
+    if not below:
+        return 0, ""
+    deepest = max(below, key=len)
+    return (len(_WIN_RUNNER_TEMP) + len(os.path.basename(long_at)) + 1
+            + len(os.path.relpath(deep, long_at)) + 1 + len(deepest)), deepest
+
+
 def _scope_declared_cases(check):
     """`submit` compares the attempt's changed paths with the task's files while
     the executor is there; a scope change re-measures the gate before `close`
@@ -9351,9 +9385,8 @@ def _scope_declared_cases(check):
     # path: the case reads the text in front of the root, not the whole stop,
     # and a stop that opens on a path - the shape CI showed - reads empty there.
     short, smpath = _repo("sd-long", task_ids=TASKS[:1], per_task="always")
-    deep = os.path.join(os.path.realpath(_harness.fixture_root("drive-sd-long-")),
-                        "a spaced directory that runs long " * 4,
-                        "and nests once more to pass a clip " * 4)
+    long_at = os.path.realpath(_harness.fixture_root("drive-sd-long-"))
+    deep = os.path.join(long_at, *SD_LONG_ROOT)
     shutil.copytree(short, deep, symlinks=True)
     dmpath = os.path.join(deep, os.path.relpath(smpath, short))
     _next(M, deep, dmpath)
@@ -9391,6 +9424,15 @@ def _scope_declared_cases(check):
           "it is the named words alone: %r" % ((placed[:120], bare),),
           placed == "redo of P1.1 stopped - tree: %s; patch: %s" % (deep, patch)
           and bare == "redo of P1.1 stopped")
+    longest, deepest = _win_path_budget(long_at, deep)
+    trailing = [c for c in SD_LONG_ROOT if c != c.rstrip(" .")]
+    check("sd16 sd14's long spaced root can be made on a windows runner: the "
+          "longest path the case left, spelled under that runner's temp "
+          "prefix, fits MAX_PATH, and no component of the root ends in a "
+          "space or a dot: %r" % ((longest, _WIN_MAX_PATH - 1, deepest,
+                                    trailing),),
+          deepest and " " in SD_LONG_ROOT[0]
+          and longest <= _WIN_MAX_PATH - 1 and trailing == [])
 
 
 # --- the signal: one line per step, the full text behind --explain ----------

@@ -603,8 +603,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py:2535-2563 (head_move)",
         "issue": "head_move decides whether the writer's commits touch a declared file with p == f or p.startswith(f + '/') over raw files: it never strips a ':line-range' suffix (so 'a.py:10-20' never matches 'a.py') and ignores the outputs half, so a writer commit is labelled head-moved (file/block) instead of writer-committed (recheck/block). The declared pin cannot see a hand-rolled matcher.",
-        "resolution": "Ask _config.declared_git_rels(..., only=<task>, changed=<touched>) and match through the shared covers; add a pin plant of a ==/startswith matcher over raw files so the pin's reach covers that shape.",
-        "fixTask": "P155.50-gfj"
+        "resolution": "fixed in P155.50-gfj (093c4795961e): Ask _config.declared_git_rels(..., only=<task>, changed=<touched>) and match through the shared covers; add a pin plant of a ==/startswith matcher over raw files so the pin's reach covers that shape.",
+        "fixTask": "P155.50-gfj",
+        "commit": "093c4795961e",
+        "status": "fixed"
       },
       {
         "id": "P155-R66",
@@ -678,9 +680,16 @@
         "issue": "Release CI run 41649249972 at 873b6142 is red on all four windows selftest cells, only in tests/test_drive_phase.py. (a) ab9 asserts os.path.join(copy_d, 'git-index') in the stop, where copy_d comes from git's forward-slash answer; since tree refusals spell paths natively the stop says ...\\audit-advance\\git-index, so the mixed-separator join is never a substring on Windows. (b) sd14's long spaced root exceeds Windows MAX_PATH: building the block raises FileNotFoundError [WinError 3] on the nested directory, so every sd case in that block does not run.",
         "resolution": "ab9 compares in the platform's spelling (normpath both sides, or the module's native_spelling). sd14 keeps a root with spaces and long enough to put paths behind the named facts while staying under MAX_PATH with the runner's temp prefix (the case asserts ordering, not a clip), and the fixture's length budget is stated beside it.",
         "fixTask": "P155.51-gfj"
+      },
+      {
+        "id": "P155-R75",
+        "severity": "low",
+        "file": "tests/test_drive_phase.py:9084-9088",
+        "issue": "The SD_LONG_ROOT comment says the root is 'long enough that every path in the redo stop runs past the head a clip keeps'. No clip width is named or asserted anywhere. sd14 asserts the ORDER of the stop (named facts before the first occurrence of the root), and sd16 asserts only an upper bound on length. The shortened root (about 100 characters, against about 350 before) was never shown to run past any particular clip.",
+        "resolution": "Reword to what the cases hold: spaced, and long enough that a path sits behind the named facts. Drop 'runs past the head a clip keeps', or name the clip width and assert a lower bound beside sd16's upper bound."
       }
     ],
-    "outcome": "[findings: 74 - 1 high, 27 med, 46 low; 45 with a recorded fix commit]"
+    "outcome": "[findings: 75 - 1 high, 27 med, 47 low; 46 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -4555,7 +4564,7 @@
     {
       "id": "P155.50-gfj",
       "title": "head_move reads the task's declared paths through the shared reading",
-      "status": "in_progress",
+      "status": "done",
       "description": "Finding P155-R65 (see docs/audit/phases/P155.json). drive-phase.py head_move decides whether the writer's commits touch one of the task's declared files with `p == f or p.startswith(f + '/')` over raw `files`: it never strips a ':line-range' suffix, so an entry 'a.py:10-20' never matches 'a.py', and it ignores the task's outputs. A writer commit is then labelled head-moved (offers file/block) instead of writer-committed (recheck/block). Fix: ask _config.declared_git_rels(manifest, project, top, also=[id], only=id, changed=touched) - the one reading every other reader uses - and match through the shared covers. Red-first: a drive case where the task declares 'a.py:10-20' (and one where the commit touches only a declared output) and the writer commits a.py must be labelled writer-committed. Also add a plant to the declared pin in tests/test__config.py: a ==/startswith matcher over raw files must be reached by the pin, so the next hand-rolled matcher goes red.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -4584,14 +4593,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "093c4795961e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/scripts/governance/drive-phase.py: head_move(ctx, manifest, task, since, now, tree) now takes git log's top-relative paths, asks hc.declared_git_rels(manifest, project, top, also=[id], only=id, changed=touched) and matches with _task_outputs.covers (new import). The line range is dropped by declared_task_map and the outputs half is answered over the commits' paths. The one caller (writer_settle) passes its manifest; grep -rn head_move over tests/tools/plugins/.claude/hooks finds no other caller (exit 1). tests/test_drive_phase.py: _writer_commit_declared_cases, called from _writer_commit_cases in the wf-block stage: wf10 (files ['src/mine.py:1-5', tests file], writer commits src/mine.py only) and wf11 (outputs ['reports/**'], writer commits reports/out.txt only) must be writer-committed (recheck|block), with wf7 as the existing twin. tests/test__config.py: _files_half_reach's _unit_reading now counts a matcher written by hand as a reading (`x == <raw entry>`, either side, x neither raw nor a literal; `x.startswith(<raw entry>)`, x not raw). New helpers _equality/_prefix_test/_literal. The plants _PLANTED_HAND (dg16 names moved_by/equal_only/prefixed under == and startswith) and _PLANTED_HAND_QUIET (dg17 names nothing). The docstrings say what the reach cannot see: an inequality, or a hand comparison inside a helper handed the entries as a parameter. The widened reach found real sites, and each one got a _FILES_ALONE_EXEMPT row with its reason: drive-phase scope_gap (a list question), runtime_boot_root (gap named: files half only) and its caller run_signoff, and _config declaring_tasks (refusal-text wording after covering_key). `!=` was left out after measurement, because the only `!=` hits were _runner_output sweep summary counts (no task's). Checked in-process with HEAD's drive-phase.py substituted, no tree write: the reach names ('drive-phase.py','head_move',2562,'startswith') and (...,'=='), and the working tree has unexcused [] and stale []. With the _literal check dropped, dg17's plant is named (no_entries ==). tools/lints/_deps.py (scope widened by the orchestrator after the first submit refused it): a GIT_PATH_BASE_EXEMPT row for drive-phase.py:head_move, because gb1 named it. Its paths are no longer passed through git_to_plan: both sides are git-root spelled, and declared_git_rels does the plan_to_git in _config.py, a cross-module door the lint states it cannot read. PLUGIN-BUILD-GUIDE.md: dg8's shape list, dg16/dg17 and the blind spots updated, and the module-map fence regenerated by `python3 tools/lints/_deps.py --write-map` (exit 0; the only map change is the drive-phase -> _task_outputs edge). NOT EDITED, not in files: plugins/audit/hooks/_config.py declared_git_rels docstring (line ~4104) lists the reach's shapes without the hand-written matcher; it is now incomplete, not false. Commands: gate `python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__config.py` exit 0 twice (2/2 files ok, 1218 cases); `python3 tools/sweep-selftests.py tests/test__deps.py tests/test__output_lints.py` exit 1 first (g1 map stale, gb1 head_move) then exit 0 (2/2 files ok, 449 cases); `ruff check` on the four .py exit 0. Dependants: drive-phase.py importers (_worktrees, test__filed_returns, test__invariants, test__worktrees, test_audit_status, test_commit_task_work, test_detect_plan_skip, test_stamp_verification and the rest) are still correct: the only signature change is head_move, which has no caller outside the module, and no other name changed. tests/test__config.py dependants (_text, _cases, _selftest used elsewhere) are unchanged. tests/test_drive_phase.py dependants (_actions, _bindings, _counting, _follower_cases) are unchanged; only functions were added. PLUGIN-BUILD-GUIDE.md basename dependants: the map fence is re-rendered and test__deps g1 is green.",
+        "descriptive": "A writer commit touching a ranged files entry or a declared output is now labelled writer-committed, and the declared pin goes red on the next hand-rolled ==/startswith matcher over raw files"
       },
       "startedAt": "2026-11-03T14:37:39Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-03T14:59:56Z",
+      "verifiedBy": [
+        "wf10: writer commit of a path declared only by a line-range entry is writer-committed",
+        "wf11: writer commit of a path only the task's outputs cover is writer-committed",
+        "dg16: the declared pin names a planted hand-rolled ==/startswith matcher over raw files",
+        "dg17: the over-fire twin - comparisons over non-entries or against literals are named by nothing"
+      ],
       "notes": [
         {
           "at": "2026-11-03T14:10:44Z",
@@ -4614,12 +4628,24 @@
         "runId": "2026-11-03T14:59:53Z.106552",
         "status": "passed",
         "at": "2026-11-03T14:59:53Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "093c4795961e",
+        "at": "2026-11-03T14:59:56Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-03T14:55:03Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__config.py` in a throwaway tree at HEAD exited 1 with 5 of 813 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - dg8 (house FAIL), dg9 (house FAIL), dg10 (house FAIL), wf10 (house FAIL), wf11 (house FAIL): SELFTEST FAILED: 811/813 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P155.51-gfj",
       "title": "ab9 and sd14 run on Windows: ab9 compares the native spelling, sd14's long root fits MAX_PATH",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Finding P155-R74 (see docs/audit/phases/P155.json). Release CI run 41649249972 at 873b6142 is red on all four windows selftest cells, only in tests/test_drive_phase.py; the failing job logs are saved at <scratchpad>/ci41649249972/*.log (the orchestrator gives the full path). (a) ab9 (around line 6882) asserts `os.path.join(copy_d, \"git-index\") in text_d`, where copy_d is git's forward-slash spelling; the stop now spells the tree natively (_worktrees.native_spelling), so on Windows the stop reads ...\\audit-advance\\git-index and the mixed join never matches. Compare in the platform's spelling on both sides (os.path.normpath, or the module's native_spelling), and check the case's other path comparisons the same way. (b) sd14's root (\"a spaced directory that runs long ...\" nested twice) exceeds Windows MAX_PATH under the runner's temp prefix: building the sd block raises FileNotFoundError [WinError 3], so no sd case runs on Windows. sd14 asserts the ORDER of the unclipped stop (named facts before the first occurrence of the root), not a clip, so the root needs spaces and enough length that paths sit behind the named facts, but must fit MAX_PATH (260) with the runner's temp prefix (about 50 characters, e.g. <TEMP>\\sw-xxxxxxxx\\) plus the deepest fixture path below it. State the budget in a comment beside the fixture. Prove on posix that ab9 still fails if the stop drops the git-index name and sd14 still fails if paths_last is bypassed for the serial redo stop (mutate, see red, restore, purge __pycache__). Give the owner the Windows command and its expected output.",
       "files": [
         "tests/test_drive_phase.py",
@@ -4641,14 +4667,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-03T14:59:58Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -4663,7 +4689,13 @@
       ],
       "fixes": [
         "P155-R74"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-03T15:11:35Z.8a0a90",
+        "status": "passed",
+        "at": "2026-11-03T15:11:35Z"
+      }
     }
   ],
   "reviewPerTask": "signals",
