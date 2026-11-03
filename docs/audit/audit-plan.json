@@ -1880,7 +1880,9 @@
       "P155.33-gfj",
       "P155.34-gfj",
       "P155.35-gfj",
-      "P155.36-gfj"
+      "P155.36-gfj",
+      "P155.37-gfj",
+      "P155.39-gfj"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -4671,7 +4673,8 @@
       "P155.30-gfj",
       "P155.31-gfj",
       "P155.33-gfj",
-      "P155.35-gfj"
+      "P155.35-gfj",
+      "P155.39-gfj"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -8625,7 +8628,8 @@
       "P155.30-gfj",
       "P155.31-gfj",
       "P155.33-gfj",
-      "P155.35-gfj"
+      "P155.35-gfj",
+      "P155.39-gfj"
     ],
     "tools/redfirst.sh": [
       "P55.13",
@@ -8705,7 +8709,8 @@
       "P155.30-gfj",
       "P155.31-gfj",
       "P155.33-gfj",
-      "P155.35-gfj"
+      "P155.35-gfj",
+      "P155.39-gfj"
     ],
     "tools/ui-tests/evidence-badge.test.mjs": [
       "P32.7",
@@ -11781,7 +11786,8 @@
       "P155.30-gfj",
       "P155.31-gfj",
       "P155.33-gfj",
-      "P155.35-gfj"
+      "P155.35-gfj",
+      "P155.39-gfj"
     ],
     "tests/fixtures/pricing-page-2026-10-10.md": [
       "P131.1"
@@ -11832,7 +11838,8 @@
       "P155.30-gfj",
       "P155.31-gfj",
       "P155.33-gfj",
-      "P155.35-gfj"
+      "P155.35-gfj",
+      "P155.39-gfj"
     ],
     "tests/test__areas.py": [
       "P131.1",
@@ -12203,7 +12210,8 @@
       "P155.30-gfj",
       "P155.31-gfj",
       "P155.33-gfj",
-      "P155.35-gfj"
+      "P155.35-gfj",
+      "P155.39-gfj"
     ],
     "tests/test__runner_output.py": [
       "P131.1",
@@ -12763,7 +12771,8 @@
       "P155.30-gfj",
       "P155.31-gfj",
       "P155.33-gfj",
-      "P155.35-gfj"
+      "P155.35-gfj",
+      "P155.39-gfj"
     ],
     "tests/test_usage_ledger.py": [
       "P131.1",

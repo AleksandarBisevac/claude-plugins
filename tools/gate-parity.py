@@ -2698,18 +2698,36 @@ def _live_window_shell():
     return shutil.which("dash") or shutil.which("sh")
 
 
-def _run_live_window(shell, func_text, workdir):
-    """(exit code, output) of the window step run into `workdir`, from REPO.
+def shell_spelled(path, sep=None):
+    """`path` as a POSIX shell will execute it, for a platform whose separator
+    is `sep` (this one's by default).
 
-    `python3` is a function calling this interpreter, which is what verify.sh
-    does itself when the name on PATH does not run - so the step meets the
-    interpreter the suite is running under, on every runner."""
+    A shell looks a command name holding no `/` up on PATH, so a native Windows
+    path - backslashes only - is never run as a path: dash answers `not found`.
+    The forward-slash form is the one `cygpath -m` prints, which verify.sh hands
+    a native program, and the one the suites in tests/ give Git Bash for an
+    interpreter; the MSYS runtime executes it."""
+    sep = os.sep if sep is None else sep
+    return path if sep == "/" else path.replace(sep, "/")
+
+
+def _run_live_window(shell, func_text, workdir, cwd=None, executable=None,
+                     sep=None):
+    """(exit code, output) of the window step run into `workdir`, from `cwd`
+    (REPO by default).
+
+    `python3` is a function calling this interpreter, or `executable`, either
+    one passed through `shell_spelled` for a separator `sep` - which is what
+    verify.sh does itself when the name on PATH does not run - so the step meets
+    the interpreter the suite is running under, on every runner."""
     script = ("python3() { \"$LW_PY\" \"$@\"; }\n" + func_text
               + "%s \"$LW_DIR\"\n" % (_LIVE_WINDOW_FUNC,))
     env = dict(os.environ)
-    env["LW_PY"] = sys.executable
+    env["LW_PY"] = shell_spelled(
+        sys.executable if executable is None else executable, sep)
     env["LW_DIR"] = os.path.join(workdir, "live-window")
-    done = subprocess.run([shell, "-c", script], cwd=REPO, env=env,
+    done = subprocess.run([shell, "-c", script], cwd=REPO if cwd is None else cwd,
+                          env=env,
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     return done.returncode, done.stdout.decode("utf-8", "replace")
 
@@ -2831,6 +2849,70 @@ def _live_window_cases(check):
               window is not None and (window.get("files") or 0) > 0
               and any(k not in ("no-evidence", "dangling") for k in found)
               and ("dangling" not in found or "dangling" in full_keys))
+    finally:
+        remove_tree(root)
+
+
+# The interpreter as a Windows runner hands it over: a native path, backslashes
+# only. These cases feed it to the step on any OS, because the defect is visible
+# on posix too: a shell looks a command name with no `/` in it up on PATH.
+_WINDOWS_INTERPRETER = "C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\python3.exe"
+
+
+def _live_window_spelling_cases(check):
+    from _harness import skip
+    from _suite import remove_tree
+    mixed = _WINDOWS_INTERPRETER.replace("\\", "/")
+    check("lw4 a Windows-shaped interpreter is spelled for the shell in the "
+          "forward-slash form `cygpath -m` prints, and a posix path is left as "
+          "it is: %r / %r"
+          % (shell_spelled(_WINDOWS_INTERPRETER, "\\"),
+             shell_spelled("/usr/bin/python3", "/")),
+          shell_spelled(_WINDOWS_INTERPRETER, "\\") == mixed
+          and shell_spelled("/usr/bin/python3", "/") == "/usr/bin/python3")
+    # The run half needs a directory named like a drive, relative to the cwd, so
+    # the forward-slash spelling resolves to a stand-in there. Only a path module
+    # that reads `C:` as a drive cannot hold one - and there lw1 runs the real
+    # interpreter in this very spelling.
+    drive_named = os.path.splitdrive(mixed)[0] != ""
+    if drive_named:
+        skip(check, "lw5", "this platform's path module reads `C:` as a drive, so "
+             "no directory under a scratch root can carry that name; lw1 runs the "
+             "real interpreter through the same spelling here", drive_named)
+        return
+    shell = _live_window_shell()
+    if shell is None:
+        check("lw5 a POSIX shell to run the window step's interpreter under: "
+              "none on PATH", False)
+        return
+    ran = os.path.basename(shell)
+    root = tempfile.mkdtemp(prefix="live-window-spelling-")
+    try:
+        stand_in = os.path.join(root, *mixed.split("/"))
+        os.makedirs(os.path.dirname(stand_in))
+        with io.open(stand_in, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write('#!/bin/sh\nexec "%s" "$@"\n' % (sys.executable,))
+        os.chmod(stand_in, 0o755)
+        step = ("%s() { python3 -c 'import sys; print(\"ran \" + sys.argv[1])' "
+                "\"$1\"; }\n" % (_LIVE_WINDOW_FUNC,))
+        code, out = _run_live_window(shell, step, root, cwd=root,
+                                     executable=_WINDOWS_INTERPRETER, sep="\\")
+        check("lw5 the window step, handed a Windows-shaped interpreter, runs it "
+              "under %s - the step's `python3` reaches the interpreter through "
+              "the spelling lw4 pins: code=%r out=%r" % (ran, code, out[-600:]),
+              code == 0
+              and out.strip() == "ran %s" % (os.path.join(root, "live-window"),))
+        # The twin that tells the fix from the defect: the same interpreter handed
+        # over as it is - what the step did before the spelling - is the CI
+        # failure, reproduced here, so lw5 passing is the spelling's doing.
+        code_raw, out_raw = _run_live_window(shell, step, root, cwd=root,
+                                             executable=_WINDOWS_INTERPRETER,
+                                             sep="/")
+        check("lw5w ...and the same interpreter handed over unspelled is looked "
+              "up on PATH and not found under %s, the failure the spelling "
+              "removes: code=%r out=%r" % (ran, code_raw, out_raw[-600:]),
+              code_raw != 0 and "not found" in out_raw
+              and "ran " not in out_raw)
     finally:
         remove_tree(root)
 
@@ -4559,6 +4641,7 @@ def _cases(check):
 
     _verify_cleanup_cases(check)
     _live_window_cases(check)
+    _live_window_spelling_cases(check)
     _slice_cases(check)
     _ci_shape_cases(check)
     _encoding_leg_cases(check)
