@@ -471,6 +471,43 @@ def _covers_clause(covers):
         for d in covers) + ", which opens nothing " + why
 
 
+def _index_drift_note(manifest_rel, rel, drift):
+    """`_declaration_note`'s shape for a path non-terminal tasks reach ONLY
+    through `fileIndex` rows: the row is index drift, and the two repairs are
+    the orchestrator's - scope the path into the task's `files`, which is what
+    opens an edit, or re-derive the index so the stale row goes. A task that is
+    not running needs starting after the scope, and only then is that said:
+    told of a running task, "start it" is a no-op presented as the route."""
+    first = drift[0].get("taskId") or "?"
+    first_status = drift[0].get("status")
+    named = ", ".join(
+        "%s (status \"%s\")" % (d.get("taskId") or "?", d.get("status") or "?")
+        for d in drift)
+    scope = "/audit:task scope %s --files +%s" % (first, rel)
+    then_start = ("" if first_status == "in_progress" else
+                  ", then start it (`/audit:task start %s`), since a task's "
+                  "`files` open only while it is \"in_progress\"" % first)
+    return {
+        "stated": ("%s is named for %s only by a `fileIndex` row in %s - index "
+                   "drift: an edit opens through a task's `files`, never "
+                   "through the index, and no task's `files` list this path."
+                   % (rel, named, manifest_rel)),
+        "subagent": ("report to the orchestrator that %s reaches %s only "
+                     "through a stale `fileIndex` row (index drift), and why "
+                     "you need it. It will either scope the file into the task "
+                     "(`%s`)%s and tell you to carry on, or re-derive the "
+                     "index (`/audit:task reindex`) and give the work a task "
+                     "of its own - its commands, not yours"
+                     % (rel, first, scope, then_start)),
+        "orchestrator": ("the `fileIndex` row naming %s for %s is index drift, "
+                         "not a declaration - scope the file into the task "
+                         "(`%s`)%s if the work belongs there, or re-derive the "
+                         "index (`/audit:task reindex`) to drop the stale row "
+                         "and add a task for the work if none should own it"
+                         % (rel, first, scope, then_start)),
+    }
+
+
 def _declaration_note(root, manifest_rel, rel, manifest_exists):
     """The refusal's second sentence and the remedy each audience gets, keyed on
     WHICH cause actually holds - no task declares the file; only an unstarted
@@ -521,10 +558,25 @@ def _declaration_note(root, manifest_rel, rel, manifest_exists):
     would be true of an empty file, a missing one and a plan that never mentions
     the path, and only one of those is worth a reader's line. That branch is
     reachable only through planGate:"deny"/enforce:true, whose own cause sentence
-    already says the refusal holds regardless of what the plan contains."""
+    already says the refusal holds regardless of what the plan contains.
+
+    A ROW ONLY `fileIndex` CARRIES IS NEITHER CAUSE. The gate opens an edit
+    through a task's `files` alone, so a task reaching the file only through an
+    index row - `indexOnly` on its `declaring_tasks` row - opens nothing at any
+    status, and read as a declaration it produced a running task called "not
+    started", sent to a start that changes nothing, with the second declaration
+    that IS the repair forbidden. `_index_drift_note` words that cause. A task
+    whose own `files` carry the path still decides the branch when there is
+    one, and a terminal task keeps its terminal wording either way."""
     declared, covers = _split_declared(
         _config.declaring_tasks(root, manifest_rel, rel)
         if manifest_exists else [])
+    listed = [d for d in declared if not d.get("indexOnly")]
+    drift = [d for d in declared + covers if d.get("indexOnly")
+             and d.get("status") not in _TERMINAL_DECLARING_STATUSES]
+    if drift and not listed:
+        return _index_drift_note(manifest_rel, rel, drift)
+    declared = listed or declared
     if not declared:
         return {
             "stated": (("No task in %s names %s - it is %s." % (

@@ -567,9 +567,108 @@
         "file": "plugins/audit/commands/sync.md:719-720",
         "issue": "A further copy of the same false claim survives and the filed outcome does not report it. The task asked for a grep for further copies and a report of any found. This one is spelled 'an imported phase ran with `fileIndex` empty and the plan gate therefore inert', which says an empty fileIndex made the gate inert. The corrected statement is that the gate reads a running task's `files` and graded `outputs`, never a fileIndex row. The executor's grep pattern ('what the plan gate matches') and its second pattern ('fileIndex.{0,80}match') both miss this spelling, and sync.md was not in its list of hits or of deliberately-left sites.",
         "resolution": "Reword to say an imported phase ran with its tasks holding `files: []`, so the plan gate had no declared path to open an edit by. Or file it as a follow-up task, since sync.md is outside this task's declared files."
+      },
+      {
+        "id": "P155-R62",
+        "severity": "med",
+        "file": "plugins/audit/hooks/require-plan.py:573-585; plugins/audit/hooks/_config.py:4308-4360",
+        "issue": "Since the plan gate stopped opening an edit through a fileIndex row, a path named only by an in_progress task's fileIndex row is refused, but declaring_tasks still returns that task as a direct owner, so _declaration_note's last branch says the task has not been started, tells the orchestrator to run /audit:task start and not to add a second task - false for a running task, and it forbids the actual repair (scope --files +path). Confirmed by a probe fixture: P1.1 in_progress, files [src/a.py], fileIndex row src/indexed.py.",
+        "resolution": "Give a fileIndex-only row its own branch in the refusal: name the index row as drift and the remedy /audit:task scope <id> --files +<path> (or reindex); never call a running task not started. Add a require-plan case asserting that message.",
+        "fixTask": "P155.45-gfj"
+      },
+      {
+        "id": "P155-R63",
+        "severity": "med",
+        "file": "plugins/audit/scripts/status/audit-status.py:2138; plugins/audit/scripts/git/_worktrees.py:2230-2253,2292",
+        "issue": "/audit:status is read-only (commands/status.md), but _kept_tree_remedy now calls _worktrees.refuse_unsettled -> tree_unsettled -> _clear_strays, which os.remove()s '.audit-' temp files older than 600s in each kept tree's admin directory, without the phase lock.",
+        "resolution": "Give tree_unsettled a non-clearing read and use it from status; keep clearing in the drive and remover paths. Add a status case asserting an old stray is still on disk afterwards.",
+        "fixTask": "P155.49-gfj"
+      },
+      {
+        "id": "P155-R64",
+        "severity": "med",
+        "file": "CHANGELOG.md:138-139",
+        "issue": "The changelog says a wave member's undeclared paths are filed on its line because the integration settles each one by name; since the stray step moved, the drive asks widen/discard/block for them after the member's gate and before its reviewer (drive-phase.py stray_step, wired before the reviewer dispatch).",
+        "resolution": "Reword the entry: the drive asks about those paths after the member's gate and before its review; a path a follower owner claims is still left to the integration.",
+        "fixTask": "P155.48-gfj"
+      },
+      {
+        "id": "P155-R65",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:2535-2563 (head_move)",
+        "issue": "head_move decides whether the writer's commits touch a declared file with p == f or p.startswith(f + '/') over raw files: it never strips a ':line-range' suffix (so 'a.py:10-20' never matches 'a.py') and ignores the outputs half, so a writer commit is labelled head-moved (file/block) instead of writer-committed (recheck/block). The declared pin cannot see a hand-rolled matcher.",
+        "resolution": "Ask _config.declared_git_rels(..., only=<task>, changed=<touched>) and match through the shared covers; add a pin plant of a ==/startswith matcher over raw files so the pin's reach covers that shape.",
+        "fixTask": "P155.50-gfj"
+      },
+      {
+        "id": "P155-R66",
+        "severity": "low",
+        "file": "tests/test__config.py:4495-4498,4772-4800; plugins/audit/hooks/_config.py:4104-4110",
+        "issue": "The declared pin's reach is derived through fixed matcher/carrier/spelling name lists, so 'derived rather than listed' overstates it: _wave._declared/overlap read files alone and are not reached; _DECLARED_READERS lacks integrate-task undeclared_paths and _invariants commit_scope.",
+        "resolution": "Either treat any compare/startswith flow over a raw files value as a reading, or narrow the docstring; add the two readers to _DECLARED_READERS."
+      },
+      {
+        "id": "P155-R67",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:7434-7443,7481; plugins/audit/scripts/governance/_scoped_commit.py:1740-1755",
+        "issue": "The close's evidence check reads files alone: a files-[] task whose work is its own outputs, closing with redFirst not-attempted, is refused as carrying no change. The exemption row names the gap.",
+        "resolution": "Route _commit_touches through declared_git_rels(only=task, changed=<commit paths>)."
+      },
+      {
+        "id": "P155-R68",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/manage-worktrees.py:391-397,747-753; plugins/audit/scripts/governance/drive-phase.py:5481-5507,6911-6918,10182-10193,10999",
+        "issue": "native_spelling covers only the unsettled family: manage-worktrees' dirty/undescribable refusals and several drive stops name the tree in git's forward-slash spelling on Windows.",
+        "resolution": "Spell paths once at the source (list_worktrees record, add_tree's stored path), with an ntpath case."
+      },
+      {
+        "id": "P155-R69",
+        "severity": "low",
+        "file": "plugins/audit/commands/worktree.md:244; CHANGELOG.md:22-23",
+        "issue": "Both say the refusal carries drive-phase.py restore <taskId> in every case, but the could-not-ask refusal and unsettled_said's not-known branch name no command.",
+        "resolution": "Say the restore command is named when a copy or tombstone stands.",
+        "fixTask": "P155.48-gfj"
+      },
+      {
+        "id": "P155-R70",
+        "severity": "low",
+        "file": "tools/lints/_deps.py:1955-1958",
+        "issue": "_SAME_CHECKOUT's reason says undeclared_paths rebases through git_to_plan; it now asks _config.declared_git_rels and calls no git_to_plan.",
+        "resolution": "Reword the reason.",
+        "fixTask": "P155.48-gfj"
+      },
+      {
+        "id": "P155-R71",
+        "severity": "low",
+        "file": "tools/gate-parity.py:906-910",
+        "issue": "On Windows the function returns after skipping lw5 alone, so lw5w disappears with no line.",
+        "resolution": "skip lw5w beside lw5 with the same reason."
+      },
+      {
+        "id": "P155-R72",
+        "severity": "low",
+        "file": "CHANGELOG.md:79-85",
+        "issue": "The one-meaning-of-declared entry omits that the integration no longer asks widen/discard for a member's own output and that sign-off's commit-scope invariant accepts it.",
+        "resolution": "Name the integration and the sign-off invariant in that entry.",
+        "fixTask": "P155.48-gfj"
+      },
+      {
+        "id": "P155-R73",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py (add --tests-add)",
+        "issue": "`add --tests-add a.py,b.py` stores one tests.add entry 'a.py,b.py' (a path that does not exist) and derives a gate passing it to the sweep, with no refusal; --files and the id lists split on commas, so the same spelling means two different things across flags of one verb. Seen creating P155.46/.47.",
+        "resolution": "Split --tests-add on commas like the other list flags, or refuse an entry containing a comma or naming no file."
+      },
+      {
+        "id": "P155-R74",
+        "severity": "med",
+        "file": "tests/test_drive_phase.py:6882-6891 (ab9); tests/test_drive_phase.py sd14 fixture",
+        "issue": "Release CI run 41649249972 at 873b6142 is red on all four windows selftest cells, only in tests/test_drive_phase.py. (a) ab9 asserts os.path.join(copy_d, 'git-index') in the stop, where copy_d comes from git's forward-slash answer; since tree refusals spell paths natively the stop says ...\\audit-advance\\git-index, so the mixed-separator join is never a substring on Windows. (b) sd14's long spaced root exceeds Windows MAX_PATH: building the block raises FileNotFoundError [WinError 3] on the nested directory, so every sd case in that block does not run.",
+        "resolution": "ab9 compares in the platform's spelling (normpath both sides, or the module's native_spelling). sd14 keeps a root with spaces and long enough to put paths behind the named facts while staying under MAX_PATH with the runner's temp prefix (the case asserts ordering, not a clip), and the fixture's length budget is stated beside it.",
+        "fixTask": "P155.51-gfj"
       }
     ],
-    "outcome": "[findings: 61 - 1 high, 22 med, 38 low; 39 with a recorded fix commit]"
+    "outcome": "[findings: 74 - 1 high, 27 med, 46 low; 39 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -4027,7 +4126,7 @@
     {
       "id": "P155.44-gfj",
       "title": "The fileIndex sentence the README dropped is dropped everywhere it was copied",
-      "status": "in_progress",
+      "status": "done",
       "description": "P155.42 corrected plugins/audit/README.md:461: the plan gate matches an edit against a running task's `files` and its graded `outputs` patterns (hooks/_config.in_progress_task_map reads `files` only; in_progress_outputs), and `fileIndex` is derived from `files` - a row of it alone opens no edit. The same false sentence, \"`fileIndex` is what the plan gate matches an edit against\", survives in three copies: the docstring at plugins/audit/scripts/manifest/audit-task.py around line 10419 (\"THE COST WAS NOT TIDINESS\"), plugins/audit/reference/verbs-in-full.md around line 1341, and PLUGIN-BUILD-GUIDE.md around line 5798. Reword each to the README's corrected statement in its own register, keeping what each paragraph argues (an unscoped task covers no edit of its own). Do not touch plugins/audit/commands/init.md:471, which says `files` is what the gate matches and is correct. Before finishing, grep plugins/audit, PLUGIN-BUILD-GUIDE.md, CONTRIBUTING.md and README.md for 'what the plan gate matches' and 'fileIndex' near 'matches an edit' and report any further copy found.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -4062,20 +4161,431 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "873b614258e0",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Replaced the false sentence 'fileIndex is what the plan gate matches an edit against' with plugins/audit/README.md:461's corrected statement, worded for each file and keeping each paragraph's argument (an unscoped task covers no edit of its own). The corrected statement: the gate matches a running task's `files` and graded `outputs` patterns (hooks/_config.in_progress_task_map reads `files` alone, never a fileIndex row; in_progress_outputs), and fileIndex is derived from `files`, so a row of it alone opens no edit. The dropped 'central guard inert' wording went too. Sites: (1) plugins/audit/scripts/manifest/audit-task.py _locked_scope docstring, 'THE COST WAS NOT TIDINESS' paragraph (~line 10418); (2) plugins/audit/reference/verbs-in-full.md 'And the cost was not tidiness' (~line 1340); (3) PLUGIN-BUILD-GUIDE.md scope paragraph (~line 5797). Before finishing, `grep -rn -i 'what the plan gate matches' plugins/audit PLUGIN-BUILD-GUIDE.md CONTRIBUTING.md README.md tests tools .claude/hooks` found three FURTHER copies, all in tests/test_audit_task.py (a declared file), and I fixed them: the (sc) block comment (~line 2024), the sc1 title (now: scope re-derives fileIndex from files, and the derived index must carry the same paths or the validator finds shard and index parted; checked against _manifest_crossrefs.py:594-600, the backward fileIndex finding) and the tp3 title (now: the index is a lookup by exact path, per audit-lookup.py:286 'EXACT PATH MATCH ONLY'). Case ids and assertions are unchanged. After the edits the same grep exits 1 (no hits). Left alone on purpose: CHANGELOG.md:4080 carries the same sentence in an already-published changelog entry. That is history, and the file is outside this task's files; I am reporting it here and did not edit it. Also left: the `fileIndex.{0,80}match` grep hits audit-task.py:811, _manifest_phases.py:963, tests/test__manifest_phases.py:209/262 ('a key no path can ever match') and audit-lookup.py:176/286, PLUGIN-BUILD-GUIDE.md:3437, README.md:1964, PLUGIN-BUILD-GUIDE.md:6073, commands/layout.md:162, CHANGELOG.md:1593. Each of those describes fileIndex as a lookup or a merge, not as what the gate matches, so they are correct. plugins/audit/commands/init.md:471 was not touched, as the brief ordered. Commands run: `python3 -c 'import ast...' audit-task.py tests/test_audit_task.py` exit 0 (both parse). That is a syntax check, not a gate. No gate was run: executor.runsGate is own-tests and the brief says this task has nothing of its own to run, so the orchestrator's recorded run of tests.gate is the evidence. Dependants: audit-task.py importers (full-gate.py, run-test-gate.py, the test suites) are still correct, because only a docstring changed. verbs-in-full.md path/basename readers (PLUGIN-BUILD-GUIDE.md, _areas.py, test__areas.py, test__manifest_vocab.py, test_audit_task.py, CHANGELOG.md, agents/guide.md, reference/execute-task.md) are still correct: the file keeps its path, and only body prose inside one section changed. No heading changed. PLUGIN-BUILD-GUIDE.md basename readers are still correct: no heading or tree line changed. tests/test_audit_task.py dependants (test_commit_task_work.py imports helpers, sweep-costs.json keyed by file/block, tools/affected.py) are still correct: no helper, block or case id changed, only two title strings and a comment. The remaining declared files (test__affected_tests.py, test__doctor_trail.py, test_drive_phase.py, tools/lints/_deps.py, tools/prove-gates.py, tests/_harness.py, tests/test__deps.py, tools/sweep-selftests.py, stamp-verification.py, test__runner_collects.py, test_stamp_verification.py) were not edited.\n\nclaims:\n1 the new sentence matches hooks/_config.py:4184 in_progress_task_map -> declared_task_map (files only) and :4243 in_progress_outputs (graded outputs); sc1's validator clause matches _manifest_crossrefs.py:594-600; tp3's lookup clause matches audit-lookup.py:286\n2 n/a - no check's logic touched; the case titles of sc1 and tp3 were reworded, with ids and assertions unchanged\n3 grep -rn -i 'what the plan gate matches' (plugins/audit PLUGIN-BUILD-GUIDE.md CONTRIBUTING.md README.md tests tools .claude/hooks): 5 hits before the fix (the 3 named + test_audit_task.py:600, :2025) plus CHANGELOG.md:4080 in a wider grep, and test_audit_task.py:2037 found by searching 'plan gate matches'; all fixed except CHANGELOG.md:4080, left because it is a published history entry outside this task's files; after the fix that grep exits 1\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written",
+        "descriptive": "The false claim that the plan gate matches edits against fileIndex is removed from the audit-task.py docstring, verbs-in-full.md, PLUGIN-BUILD-GUIDE.md and three further copies in tests/test_audit_task.py."
       },
       "startedAt": "2026-11-03T13:50:08Z",
-      "completedAt": null,
+      "completedAt": "2026-11-03T13:58:31Z",
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-11-03T13:57:23Z.14da10",
         "status": "passed",
         "at": "2026-11-03T13:57:23Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "873b614258e0",
+        "at": "2026-11-03T13:58:31Z",
+        "return": "docs/audit/evidence/returns/P155.44-gfj/20261103T135008Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "tests.mode gate-only with expectRedFirst false and tests.add none: the change rewords prose (a docstring, two documents, one test comment and two case titles) and changes no behaviour, so no red was owed",
+        "at": "n/a - no red run made"
       }
+    },
+    {
+      "id": "P155.45-gfj",
+      "title": "A path named only by a running task's fileIndex row is refused as index drift, not as an unstarted task",
+      "status": "in_progress",
+      "description": "Finding P155-R62 (see docs/audit/phases/P155.json). Since the plan gate stopped opening an edit through a fileIndex row, an edit to a path that only an in_progress task's fileIndex row names is refused - correctly - but declaring_tasks (hooks/_config.py) still returns that task as a direct owner, so require-plan.py's _declaration_note falls into the not-started branch: it says the running task has not been started, names /audit:task start as the route and says not to add a second task, which forbids the real repair. Reproduce: a plan with P1.1 in_progress, files [src/a.py], and a fileIndex row src/indexed.py -> P1.1; the refusal for src/indexed.py reads \"has not been started\". Fix: give a fileIndex-only row its own branch - name the index row as drift and the remedies /audit:task scope <id> --files +<path> or /audit:task reindex - and never call a running task not started. A red-first case in tests/test_require_plan.py asserts the new wording for the fileIndex-only path and that the not-started wording is absent; keep the existing not-started case green for a genuinely pending task.",
+      "files": [
+        "plugins/audit/hooks/require-plan.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/hooks/require-plan.py",
+        "plugins/audit/hooks/_config.py",
+        "tests/test__config.py",
+        "tests/test_require_plan.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_require_plan.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_require_plan.py tests/test__config.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-03T14:10:59Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-03T14:09:53Z",
+          "text": "scope: plugins/audit/hooks/require-plan.py, plugins/audit/hooks/_config.py, every path the finding(s) P155-R62 name"
+        },
+        {
+          "at": "2026-11-03T14:09:53Z",
+          "text": "scope: tests/test__config.py, the suite that tests plugins/audit/hooks/_config.py (python: its import closure reaches plugins/audit/hooks/_config.py)"
+        },
+        {
+          "at": "2026-11-03T14:09:53Z",
+          "text": "no suite: plugins/audit/hooks/require-plan.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        }
+      ],
+      "fixes": [
+        "P155-R62"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-03T14:26:04Z.b01e7a",
+        "status": "passed",
+        "at": "2026-11-03T14:26:04Z"
+      }
+    },
+    {
+      "id": "P155.46-gfj",
+      "title": "/audit:status reads kept trees without deleting anything in them",
+      "status": "cancelled",
+      "description": "Finding P155-R63 (see docs/audit/phases/P155.json). /audit:status is documented read-only, no locks, no mutations (commands/status.md). Its kept-trees block (audit-status.py _kept_tree_remedy, reached from kept_trees_block) now calls _worktrees.refuse_unsettled -> tree_unsettled -> _clear_strays, which os.remove()s '.audit-' temp files older than 600s in each kept tree's admin directory, without the phase lock. Fix: give tree_unsettled (and refuse_unsettled) a non-clearing read - e.g. a clear keyword defaulting to the current behaviour for the drive and the removers - and have status use the non-clearing read. Red-first: a status case plants an old '.audit-' stray beside a kept tree, runs the kept-trees block, and asserts the stray is still on disk; a _worktrees case pins that the clearing read still clears and the non-clearing one does not.",
+      "files": [
+        "plugins/audit/scripts/git/_worktrees.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/scripts/git/_worktrees.py",
+        "tests/test_audit_status.py",
+        "tests/test__worktrees.py",
+        "tests/test_audit_status.py,tests/test__worktrees.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_audit_status.py,tests/test__worktrees.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_status.py,tests/test__worktrees.py tests/test_audit_status.py tests/test__worktrees.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: Re-added: --tests-add was passed as one comma-joined value, which the verb stored as a single nonexistent path and wrote into the derived gate"
+      },
+      "startedAt": null,
+      "completedAt": "2026-11-03T14:10:30Z",
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-03T14:10:01Z",
+          "text": "scope: plugins/audit/scripts/status/audit-status.py, plugins/audit/scripts/git/_worktrees.py, every path the finding(s) P155-R63 name"
+        },
+        {
+          "at": "2026-11-03T14:10:01Z",
+          "text": "scope: tests/test_audit_status.py, the suite that tests plugins/audit/scripts/status/audit-status.py (python: its import closure reaches plugins/audit/scripts/status/audit-status.py)"
+        },
+        {
+          "at": "2026-11-03T14:10:01Z",
+          "text": "scope: tests/test__worktrees.py, the suite that tests plugins/audit/scripts/git/_worktrees.py (python: its import closure reaches plugins/audit/scripts/git/_worktrees.py)"
+        }
+      ],
+      "fixes": [
+        "P155-R63"
+      ]
+    },
+    {
+      "id": "P155.47-gfj",
+      "title": "head_move reads the task's declared paths through the shared reading",
+      "status": "cancelled",
+      "description": "Finding P155-R65 (see docs/audit/phases/P155.json). drive-phase.py head_move decides whether the writer's commits touch one of the task's declared files with `p == f or p.startswith(f + '/')` over raw `files`: it never strips a ':line-range' suffix, so an entry 'a.py:10-20' never matches 'a.py', and it ignores the task's outputs. A writer commit is then labelled head-moved (offers file/block) instead of writer-committed (recheck/block). Fix: ask _config.declared_git_rels(manifest, project, top, also=[id], only=id, changed=touched) - the one reading every other reader uses - and match through the shared covers. Red-first: a drive case where the task declares 'a.py:10-20' (and one where the commit touches only a declared output) and the writer commits a.py must be labelled writer-committed. Also add a plant to the declared pin in tests/test__config.py: a ==/startswith matcher over raw files must be reached by the pin, so the next hand-rolled matcher goes red.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "tests/test_drive_phase.py,tests/test__config.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py,tests/test__config.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py,tests/test__config.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: Re-added: --tests-add was passed as one comma-joined value, which the verb stored as a single nonexistent path and wrote into the derived gate"
+      },
+      "startedAt": null,
+      "completedAt": "2026-11-03T14:10:31Z",
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-03T14:10:06Z",
+          "text": "scope: plugins/audit/scripts/governance/drive-phase.py, every path the finding(s) P155-R65 name"
+        },
+        {
+          "at": "2026-11-03T14:10:06Z",
+          "text": "scope: tests/test_drive_phase.py, the suite that tests plugins/audit/scripts/governance/drive-phase.py (python: it hands drive-phase.py to a loader through a module constant)"
+        }
+      ],
+      "fixes": [
+        "P155-R65"
+      ]
+    },
+    {
+      "id": "P155.48-gfj",
+      "title": "The changelog and the worktree page say what the drive and the refusals now do",
+      "status": "in_progress",
+      "description": "Findings P155-R64, R72, R69, R70 (see docs/audit/phases/P155.json). (R64, med) CHANGELOG.md [Unreleased] ~138-139 says a wave member's undeclared paths are filed on its line because the integration settles each one by name; the drive now asks widen/discard/block for them in stray_step, after the member's gate and before its reviewer - reword, keeping that a path a follower owner claims is still left to the integration. (R72) The one-meaning-of-declared entry (~79-85) should also name that the integration no longer asks widen/discard for a member's own output and that sign-off's commit-scope invariant accepts it. (R69) commands/worktree.md ~244 and CHANGELOG ~22-23 say the refusal always carries `drive-phase.py restore <taskId>`; say it is named when a copy or tombstone stands, and that the could-not-ask refusal names none. (R70) tools/lints/_deps.py _SAME_CHECKOUT's reason says undeclared_paths rebases through git_to_plan; it now asks _config.declared_git_rels, which spells both halves from the checkout's top - reword the reason only. Verify each claim against the code you cite.",
+      "files": [
+        "CHANGELOG.md",
+        "plugins/audit/commands/worktree.md",
+        "tools/lints/_deps.py",
+        "CHANGELOG.md",
+        "plugins/audit/commands/worktree.md",
+        "tools/lints/_deps.py",
+        "tests/test__deps.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tools/release.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__refs.py tests/test__deps.py tests/test__output_lints.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-03T14:11:05Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-03T14:10:11Z",
+          "text": "scope: CHANGELOG.md, plugins/audit/commands/worktree.md, tools/lints/_deps.py, every path the finding(s) P155-R64, P155-R72, P155-R69, P155-R70 name"
+        },
+        {
+          "at": "2026-11-03T14:10:11Z",
+          "text": "scope: tests/test__deps.py, the suite that tests tools/lints/_deps.py (python: its import closure reaches tools/lints/_deps.py)"
+        },
+        {
+          "at": "2026-11-03T14:10:11Z",
+          "text": "no suite: CHANGELOG.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__deps.py, tests/test__output.py, tests/test__panel_settings.py, tests/test__refs.py, tools/lints/_deps.py, tools/lints/_output_lints.py and 2 more"
+        },
+        {
+          "at": "2026-11-03T14:10:11Z",
+          "text": "no suite: plugins/audit/commands/worktree.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__refs.py"
+        }
+      ],
+      "fixes": [
+        "P155-R64",
+        "P155-R72",
+        "P155-R69",
+        "P155-R70"
+      ],
+      "reviewPerTask": "signals"
+    },
+    {
+      "id": "P155.49-gfj",
+      "title": "/audit:status reads kept trees without deleting anything in them",
+      "status": "in_progress",
+      "description": "Finding P155-R63 (see docs/audit/phases/P155.json). /audit:status is documented read-only, no locks, no mutations (commands/status.md). Its kept-trees block (audit-status.py _kept_tree_remedy, reached from kept_trees_block) now calls _worktrees.refuse_unsettled -> tree_unsettled -> _clear_strays, which os.remove()s '.audit-' temp files older than 600s in each kept tree's admin directory, without the phase lock. Fix: give tree_unsettled (and refuse_unsettled) a non-clearing read - e.g. a clear keyword defaulting to the current behaviour for the drive and the removers - and have status use the non-clearing read. Red-first: a status case plants an old '.audit-' stray beside a kept tree, runs the kept-trees block, and asserts the stray is still on disk; a _worktrees case pins that the clearing read still clears and the non-clearing one does not.",
+      "files": [
+        "plugins/audit/scripts/git/_worktrees.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/scripts/git/_worktrees.py",
+        "tests/test_audit_status.py",
+        "tests/test__worktrees.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_audit_status.py",
+          "tests/test__worktrees.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_status.py tests/test__worktrees.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-03T14:11:12Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-03T14:10:39Z",
+          "text": "scope: plugins/audit/scripts/status/audit-status.py, plugins/audit/scripts/git/_worktrees.py, every path the finding(s) P155-R63 name"
+        },
+        {
+          "at": "2026-11-03T14:10:39Z",
+          "text": "scope: tests/test_audit_status.py, the suite that tests plugins/audit/scripts/status/audit-status.py (python: its import closure reaches plugins/audit/scripts/status/audit-status.py)"
+        },
+        {
+          "at": "2026-11-03T14:10:39Z",
+          "text": "scope: tests/test__worktrees.py, the suite that tests plugins/audit/scripts/git/_worktrees.py (python: its import closure reaches plugins/audit/scripts/git/_worktrees.py)"
+        }
+      ],
+      "fixes": [
+        "P155-R63"
+      ],
+      "reviewPerTask": "signals"
+    },
+    {
+      "id": "P155.50-gfj",
+      "title": "head_move reads the task's declared paths through the shared reading",
+      "status": "pending",
+      "description": "Finding P155-R65 (see docs/audit/phases/P155.json). drive-phase.py head_move decides whether the writer's commits touch one of the task's declared files with `p == f or p.startswith(f + '/')` over raw `files`: it never strips a ':line-range' suffix, so an entry 'a.py:10-20' never matches 'a.py', and it ignores the task's outputs. A writer commit is then labelled head-moved (offers file/block) instead of writer-committed (recheck/block). Fix: ask _config.declared_git_rels(manifest, project, top, also=[id], only=id, changed=touched) - the one reading every other reader uses - and match through the shared covers. Red-first: a drive case where the task declares 'a.py:10-20' (and one where the commit touches only a declared output) and the writer commits a.py must be labelled writer-committed. Also add a plant to the declared pin in tests/test__config.py: a ==/startswith matcher over raw files must be reached by the pin, so the next hand-rolled matcher goes red.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "tests/test__config.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py",
+          "tests/test__config.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__config.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-03T14:10:44Z",
+          "text": "scope: plugins/audit/scripts/governance/drive-phase.py, every path the finding(s) P155-R65 name"
+        },
+        {
+          "at": "2026-11-03T14:10:44Z",
+          "text": "scope: tests/test_drive_phase.py, the suite that tests plugins/audit/scripts/governance/drive-phase.py (python: it hands drive-phase.py to a loader through a module constant)"
+        }
+      ],
+      "fixes": [
+        "P155-R65"
+      ]
+    },
+    {
+      "id": "P155.51-gfj",
+      "title": "ab9 and sd14 run on Windows: ab9 compares the native spelling, sd14's long root fits MAX_PATH",
+      "status": "pending",
+      "description": "Finding P155-R74 (see docs/audit/phases/P155.json). Release CI run 41649249972 at 873b6142 is red on all four windows selftest cells, only in tests/test_drive_phase.py; the failing job logs are saved at <scratchpad>/ci41649249972/*.log (the orchestrator gives the full path). (a) ab9 (around line 6882) asserts `os.path.join(copy_d, \"git-index\") in text_d`, where copy_d is git's forward-slash spelling; the stop now spells the tree natively (_worktrees.native_spelling), so on Windows the stop reads ...\\audit-advance\\git-index and the mixed join never matches. Compare in the platform's spelling on both sides (os.path.normpath, or the module's native_spelling), and check the case's other path comparisons the same way. (b) sd14's root (\"a spaced directory that runs long ...\" nested twice) exceeds Windows MAX_PATH under the runner's temp prefix: building the sd block raises FileNotFoundError [WinError 3], so no sd case runs on Windows. sd14 asserts the ORDER of the unclipped stop (named facts before the first occurrence of the root), not a clip, so the root needs spaces and enough length that paths sit behind the named facts, but must fit MAX_PATH (260) with the runner's temp prefix (about 50 characters, e.g. <TEMP>\\sw-xxxxxxxx\\) plus the deepest fixture path below it. State the budget in a comment beside the fixture. Prove on posix that ab9 still fails if the stop drops the git-index name and sd14 still fails if paths_last is bypassed for the serial redo stop (mutate, see red, restore, purge __pycache__). Give the owner the Windows command and its expected output.",
+      "files": [
+        "tests/test_drive_phase.py",
+        "tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test_drive_phase.py"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-03T14:17:13Z",
+          "text": "scope: tests/test_drive_phase.py, every path the finding(s) P155-R74 name"
+        },
+        {
+          "at": "2026-11-03T14:17:13Z",
+          "text": "no test runner in this task's gate for the test P155-R74 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test_drive_phase.py'], derived as narrowed to this task's tests.add paths, in the spelling meta.phaseGate.derived.spelling records; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P155-R74"
+      ]
     }
   ],
   "reviewPerTask": "signals",

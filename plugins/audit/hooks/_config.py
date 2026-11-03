@@ -4306,15 +4306,21 @@ def covering_output(outputs, rel):
 
 
 def declaring_tasks(root, manifest_rel, rel):
-    """[{"taskId", "status", "entry", "direct"}] for every task declaring `rel`
-    WHATEVER its status — its own `files` or a `fileIndex` row keyed to it.
-    Empty list when none does, and on any error.
+    """[{"taskId", "status", "entry", "direct", "indexOnly"}] for every task
+    declaring `rel` WHATEVER its status — its own `files` or a `fileIndex` row
+    keyed to it. Empty list when none does, and on any error.
 
     `entry` is the declared path that covers `rel` and `direct` is True when
     that entry IS `rel` rather than a directory above it. A directory entry
     covers every file under it, so a message that names its task as the file's
     owner says more than the entry does; the two fields let the message say
     what the entry is.
+
+    `indexOnly` is True when the task reaches `rel` through `fileIndex` rows
+    alone - no entry of its own `files` covers it. The gate opens an edit
+    through `files` and never through the index, so such a row opens nothing
+    whatever the task's status: starting the task does not help, and a message
+    that reads the row as a declaration calls a running task unstarted.
 
     FOR A MESSAGE, NEVER FOR A VERDICT. `in_progress_task_map` above drops
     every task that is not `in_progress`, and that filter is the gate: an
@@ -4333,6 +4339,7 @@ def declaring_tasks(root, manifest_rel, rel):
 
     statuses = {}   # task id -> status, for every task in the plan
     fmap = {}       # rel file -> [task id], in declaration order
+    listed = set()  # (rel file, task id) pairs a task's own `files` carries
     try:
         for phase in manifest.get("phases", []) or []:
             for task in phase.get("tasks", []) or []:
@@ -4342,6 +4349,7 @@ def declaring_tasks(root, manifest_rel, rel):
                 statuses[tid] = task.get("status")
                 for f in task.get("files", []) or []:
                     fmap.setdefault(strip_line_suffix(f), []).append(tid)
+                    listed.add((strip_line_suffix(f), tid))
     except Exception:
         pass
 
@@ -4369,12 +4377,17 @@ def declaring_tasks(root, manifest_rel, rel):
             continue
         direct = key.rstrip("/") == rel.rstrip("/")
         for tid in tids:
+            from_files = (key, tid) in listed
             if tid not in seen:
                 seen[tid] = {"taskId": tid, "status": statuses.get(tid),
-                             "entry": key, "direct": direct}
+                             "entry": key, "direct": direct,
+                             "indexOnly": not from_files}
                 out.append(seen[tid])
-            elif direct and not seen[tid]["direct"]:
+                continue
+            if direct and not seen[tid]["direct"]:
                 seen[tid].update(entry=key, direct=True)
+            if from_files:
+                seen[tid]["indexOnly"] = False
     return out
 
 

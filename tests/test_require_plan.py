@@ -1216,6 +1216,67 @@ def _cases(check):
           "in_progress_task_map skips for every id outside its filtered set",
           v_fi == "block" and "P2.5 (status \"pending\")" in m_fi, repr(m_fi))
 
+    # A RUNNING task that names a path ONLY through its fileIndex row. The gate
+    # opens an edit through `files` alone, so the refusal is right; what was
+    # wrong is the sentence: the declaring task came back as a direct owner and
+    # the refusal called a task that IS in_progress "not started", sent the
+    # reader to start it (a no-op) and forbade the actual repair. The fixture
+    # gives P2.5 a `files` entry of its own so the task is genuinely running
+    # with work declared, and SAN reaches it only through the index.
+    _fi_plan = {"meta": {"version": 2},
+                "phases": [{"id": "P2", "title": "search",
+                            "status": "in_progress",
+                            "tasks": [{"id": "P2.5", "title": "sanitize",
+                                       "status": "in_progress",
+                                       "files": ["src/search/other.ts"]}]}],
+                "fileIndex": {SAN: ["P2.5"],
+                              "src/search/other.ts": ["P2.5"]}}
+    write_manifest(_fi_plan)
+    v_fa, m_fa = refuse("selftest-fi1", agent=True)
+    v_fo, m_fo = refuse("selftest-fi2")
+    _fi_remedies = ("/audit:task scope P2.5 --files +" + SAN,
+                    "/audit:task reindex")
+    _not_started = ("has not been started", "/audit:task start",
+                    "Do not add a second task", "move P2.5 to status")
+    check("fi1 a path only a RUNNING task's fileIndex row names is refused "
+          "and the row is named as index drift, with both repairs - scope the "
+          "path into the task's `files`, or re-derive the index - spelled out, "
+          "for the subagent and the orchestrator alike",
+          v_fa == "block" and v_fo == "block"
+          and all("fileIndex" in m and "drift" in m
+                  and all(r in m for r in _fi_remedies) for m in (m_fa, m_fo)),
+          repr((m_fa, m_fo)))
+    check("fi2 ...and neither reader is told the running task has not been "
+          "started, sent to start it, or forbidden the second declaration "
+          "that is the actual repair",
+          not [(w, m) for w in _not_started for m in (m_fa, m_fo) if w in m],
+          repr((m_fa, m_fo)))
+    check("fi3 ...and the task is named with the status the plan holds, so "
+          "the reader sees it is running rather than inferring otherwise",
+          all("P2.5 (status \"in_progress\")" in m for m in (m_fa, m_fo)),
+          repr((m_fa, m_fo)))
+    # The other direction: the drift branch must not swallow the genuinely
+    # unstarted task. P2.5 pending and declaring SAN in `files` still gets the
+    # start route, and is NOT told its declaration is index drift.
+    write_manifest(plan_with("pending"))
+    v_fp, m_fp = refuse("selftest-fi4")
+    check("fi4 a PENDING task declaring the file in `files` keeps the "
+          "not-started route and is not called index drift - the branch is "
+          "for a fileIndex-only row, not for every declaration the index "
+          "also carries",
+          v_fp == "block" and "move P2.5 to status \"in_progress\"" in m_fp
+          and "drift" not in m_fp and "/audit:task reindex" not in m_fp,
+          repr(m_fp))
+    check("fi5 a PENDING task reaching the file only through fileIndex (s9's "
+          "plan) is drift as well - starting it alone would open nothing - so "
+          "the scope comes first and the start after it, never the start "
+          "alone as the route",
+          "drift" in m_fi and ("/audit:task scope P2.5 --files +" + SAN) in m_fi
+          and "/audit:task start P2.5" in m_fi
+          and m_fi.index("/audit:task scope P2.5")
+          < m_fi.index("/audit:task start P2.5")
+          and "has not been started" not in m_fi, repr(m_fi))
+
     write_manifest({"meta": {"version": 2},
                     "phases": [{"id": "P2", "title": "search",
                                 "status": "in_progress",

@@ -635,8 +635,10 @@ a session, not a task's declaration, so the commit refuses that path when the at
 directory the path sits under), shared so a verdict and the sentence explaining it cannot answer
 it differently; `declaring_tasks` is the read-only companion that keeps every status instead of
 filtering to `in_progress`, and it exists for the refusal TEXT alone — require-plan names which
-of two causes it found (no task declares this file, or one does and nobody started it) while
-still deciding on `in_progress` coverage and nothing else.
+cause it found (no task declares this file; one does and nobody started it; or only a
+`fileIndex` row names it, which the row's `indexOnly` marks and which opens nothing at any
+status, so the refusal calls it index drift rather than an unstarted task) while still deciding
+on `in_progress` coverage and nothing else.
 `within_root` is the containment question `rel_path` cannot answer: relpath hands a path
 in another tree back as a run of `..` segments, an ordinary string that read as repo
 source and got a scratch file in the system temp directory refused by the plan gate. It

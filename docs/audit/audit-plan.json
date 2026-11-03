@@ -1318,7 +1318,8 @@
       "P153.20-34e",
       "P155.18-gfj",
       "P155.35-gfj",
-      "P155.43-gfj"
+      "P155.43-gfj",
+      "P155.48-gfj"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1886,7 +1887,10 @@
       "P155.39-gfj",
       "P155.40-gfj",
       "P155.38-gfj",
-      "P155.44-gfj"
+      "P155.44-gfj",
+      "P155.45-gfj",
+      "P155.48-gfj",
+      "P155.49-gfj"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2841,7 +2845,8 @@
       "P124.2",
       "P123.38",
       "P131.2",
-      "P155.41-gfj"
+      "P155.41-gfj",
+      "P155.48-gfj"
     ],
     "plugins/audit/hooks/_config.py": [
       "P1.1",
@@ -2957,7 +2962,8 @@
       "P155.23-gfj",
       "P155.29-gfj",
       "P155.32-gfj",
-      "P155.34-gfj"
+      "P155.34-gfj",
+      "P155.45-gfj"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -3249,7 +3255,8 @@
       "P130.39-ywo",
       "P131.1",
       "P131.2",
-      "P155.8"
+      "P155.8",
+      "P155.45-gfj"
     ],
     "plugins/audit/reference/execute-task.md": [
       "P55.21",
@@ -3953,7 +3960,9 @@
       "P155.28-gfj",
       "P155.36-gfj",
       "P155.38-gfj",
-      "P155.40-gfj"
+      "P155.40-gfj",
+      "P155.46-gfj",
+      "P155.49-gfj"
     ],
     "plugins/audit/scripts/git/close-phase.py": [
       "P18.3",
@@ -6010,7 +6019,9 @@
       "P144.2-6yq",
       "P148.7",
       "P148.15-xpz",
-      "P155.28-gfj"
+      "P155.28-gfj",
+      "P155.46-gfj",
+      "P155.49-gfj"
     ],
     "plugins/audit/scripts/status/audit-version.py": [
       "P67.1",
@@ -10677,7 +10688,9 @@
       "P155.28-gfj",
       "P155.29-gfj",
       "P155.37-gfj",
-      "P155.38-gfj"
+      "P155.38-gfj",
+      "P155.47-gfj",
+      "P155.50-gfj"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -11402,7 +11415,8 @@
       "P155.7",
       "P155.18-gfj",
       "P155.35-gfj",
-      "P155.43-gfj"
+      "P155.43-gfj",
+      "P155.48-gfj"
     ],
     "plugins/audit/hooks/hold-handback.py": [
       "P128.6-0h5"
@@ -11621,7 +11635,8 @@
       "P155.30-gfj",
       "P155.32-gfj",
       "P155.40-gfj",
-      "P155.44-gfj"
+      "P155.44-gfj",
+      "P155.48-gfj"
     ],
     "tools/lints/_refs.py": [
       "P130.8",
@@ -11906,7 +11921,9 @@
       "P155.23-gfj",
       "P155.29-gfj",
       "P155.32-gfj",
-      "P155.34-gfj"
+      "P155.34-gfj",
+      "P155.45-gfj",
+      "P155.50-gfj"
     ],
     "tests/test__config_rules.py": [
       "P131.1",
@@ -11943,7 +11960,8 @@
       "P155.30-gfj",
       "P155.32-gfj",
       "P155.40-gfj",
-      "P155.44-gfj"
+      "P155.44-gfj",
+      "P155.48-gfj"
     ],
     "tests/test__doctor_ado.py": [
       "P131.1"
@@ -12350,7 +12368,9 @@
       "P155.28-gfj",
       "P155.36-gfj",
       "P155.38-gfj",
-      "P155.40-gfj"
+      "P155.40-gfj",
+      "P155.46-gfj",
+      "P155.49-gfj"
     ],
     "tests/test_ado_connect.py": [
       "P131.1"
@@ -12396,7 +12416,9 @@
       "P144.2-6yq",
       "P148.7",
       "P148.15-xpz",
-      "P155.28-gfj"
+      "P155.28-gfj",
+      "P155.46-gfj",
+      "P155.49-gfj"
     ],
     "tests/test_audit_task.py": [
       "P131.1",
@@ -12587,7 +12609,10 @@
       "P155.37-gfj",
       "P155.38-gfj",
       "P155.40-gfj",
-      "P155.44-gfj"
+      "P155.44-gfj",
+      "P155.47-gfj",
+      "P155.50-gfj",
+      "P155.51-gfj"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -12724,7 +12749,8 @@
     "tests/test_require_plan.py": [
       "P131.1",
       "P155.8",
-      "P155.19-gfj"
+      "P155.19-gfj",
+      "P155.45-gfj"
     ],
     "tests/test_resolve_ado_parent.py": [
       "P131.1"
@@ -13017,6 +13043,12 @@
       "P155.30-gfj",
       "P155.31-gfj",
       "P155.33-gfj"
+    ],
+    "tests/test_audit_status.py,tests/test__worktrees.py": [
+      "P155.46-gfj"
+    ],
+    "tests/test_drive_phase.py,tests/test__config.py": [
+      "P155.47-gfj"
     ]
   },
   "bugs": [
