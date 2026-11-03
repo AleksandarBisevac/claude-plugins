@@ -508,8 +508,10 @@
         "severity": "med",
         "file": "plugins/audit/commands/worktree.md:79-81,170",
         "issue": "The new Changed entry and COMPATIBILITY.md say task-remove and remove --path refuse a tree with a move's copy beside it, --force included, and exit 1. commands/worktree.md still says of task-remove that it refuses a dirty tree, an unreadable one and the current directory, and that '--force is the explicit escape', and its exit-code line lists only 'no tree marked for the task, or a dirty one'. A user reading the command page is told the opposite of the changelog. The executor flagged this and left it because the file is outside the task's files; the contradiction is the phase's.",
-        "resolution": "Add the unsettled-tree refusal (forced or not, naming the copy and `drive-phase.py restore <taskId>`) to the task-remove and remove --path paragraphs and to the exit-1 list, in a task that declares commands/worktree.md.",
-        "fixTask": "P155.41-gfj"
+        "resolution": "fixed in P155.41-gfj (10dee65921e0): Add the unsettled-tree refusal (forced or not, naming the copy and `drive-phase.py restore <taskId>`) to the task-remove and remove --path paragraphs and to the exit-1 list, in a task that declares commands/worktree.md.",
+        "fixTask": "P155.41-gfj",
+        "commit": "10dee65921e0",
+        "status": "fixed"
       },
       {
         "id": "P155-R55",
@@ -556,7 +558,7 @@
         "resolution": "Add two planted twins. (a) A function with `run(['worktree','remove',a])`, then `tree_unsettled`, then a second removal, which must be named. (b) A remover with two callers, one asking before its call and one after, which must be named."
       }
     ],
-    "outcome": "[findings: 60 - 1 high, 22 med, 37 low; 36 with a recorded fix commit]"
+    "outcome": "[findings: 60 - 1 high, 22 med, 37 low; 37 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -3802,7 +3804,7 @@
     {
       "id": "P155.41-gfj",
       "title": "fix P155-R54: The new Changed entry and COMPATIBILITY.md say task-remove and ...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The new Changed entry and COMPATIBILITY.md say task-remove and remove --path refuse a tree with a move's copy beside it, --force included, and exit 1. commands/worktree.md still says of task-remove that it refuses a dirty tree, an unreadable one and the current directory, and that '--force is the explicit escape', and its exit-code line lists only 'no tree marked for the task, or a dirty one'. A user reading the command page is told the opposite of the changelog. The executor flagged this and left it because the file is outside the task's files; the contradiction is the phase's.\n\nResolution asked: Add the unsettled-tree refusal (forced or not, naming the copy and `drive-phase.py restore <taskId>`) to the task-remove and remove --path paragraphs and to the exit-1 list, in a task that declares commands/worktree.md.",
       "files": [
         "plugins/audit/commands/worktree.md"
@@ -3823,13 +3825,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "10dee65921e0",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/commands/worktree.md (the only declared file): (1) the remove <phaseId> paragraph now limits --force to the dirty and undescribable refusals; (2) a new paragraph after it states that a tree with a move's copy of the work (or its tombstone) beside it is refused, --force included: exit 1, the refusal names where the copy stands and prints drive-phase.py restore <taskId>, it also refuses when git will not name the tree's git directory, and _worktrees.refuse_unsettled makes the refusal for remove and task-remove alike; (3) remove --path now reads 'the same, refusals included' (the line was rewrapped); (4) task-remove limits --force to its first two refusals and states the forced-or-not refusal naming the copy and the restore command; (5) the exit-1 list adds, for remove and task-remove forced or not, a move's copy beside the tree or a git directory git will not name, with the restore command in the reason. I checked the page against the code: manage-worktrees.py do_remove (the code path for both remove <phaseId> and remove --path) calls _wt.refuse_unsettled at :386, and do_task_remove calls it at :741. Both calls come before the force-gated dirtiness checks and return E_FAIL; E_FAIL is 1 at :112. _worktrees.py refuse_unsettled (:2313) refuses when tree_unsettled answers None (no admin dir) or True, and its remedy is restore_command, i.e. drive-phase.py restore. kept_where (:2256) names the copy's path, its numbered files and its index, which is why the page says 'names where the copy stands' and not 'names the files'. Commands run: none. executor.runsGate is own-tests and the brief says the task adds no test, so it has nothing of its own to run; the orchestrator's recorded run of `python3 tools/sweep-selftests.py tests/test__refs.py tests/test__deps.py tests/test__output_lints.py` is the evidence. Class sweep: `grep -rn 'explicit escape' --include='*.md' .` returned the two hits this change wrote, at worktree.md:56 and :89. `grep -rn task-remove` over the plugin docs, PLUGIN-BUILD-GUIDE.md and docs/research, filtered by force/refuse/dirty, returned README.md:451 (it says remove/task-remove take a tree down and makes no claim that a forced removal succeeds, so I left it) and PLUGIN-BUILD-GUIDE.md:4886 (about status offering task-remove rather than --force for a set-aside key; still correct). Dependants: _worktrees.py:5, manage-worktrees.py:4 and :194 cite worktree.md as the prose that the modules replaced, and the default-path convention; both untouched, still correct. _locks.py:587 and tests/test__refs.py:3606-3682 read the lock section's fenced bash block; untouched, still correct. CHANGELOG.md:2683 is history about branch naming; still correct, and CHANGELOG.md:109-117 now agrees with the page. PLUGIN-BUILD-GUIDE.md:1089 is history; still correct. docs/research/token-efficiency-audit.md:467 lists the page as a component; still correct. Left for the Faults list, outside this resolution: the exit-code line does not list exit 6, which manage-worktrees.py returns as E_SETUP (:116, :682) when task-add's worktreeSetup fails.",
+        "descriptive": "/audit:worktree's command page now says, like CHANGELOG and COMPATIBILITY, that remove, remove --path and task-remove refuse a tree with a move's copy beside it, --force included, with exit 1 and the drive-phase.py restore command"
       },
       "startedAt": "2026-11-03T13:38:50Z",
-      "completedAt": null,
+      "completedAt": "2026-11-03T13:48:45Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -3853,6 +3855,17 @@
         "runId": "2026-11-03T13:45:48Z.14678e",
         "status": "passed",
         "at": "2026-11-03T13:45:48Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "10dee65921e0",
+        "at": "2026-11-03T13:48:45Z",
+        "return": "docs/audit/evidence/returns/P155.41-gfj/20261103T133850Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task with tests.expectRedFirst false and tests.add none: a documentation correction to commands/worktree.md, so no red was owed",
+        "at": "n/a - no red run made"
       }
     },
     {
