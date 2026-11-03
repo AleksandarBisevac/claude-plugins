@@ -31,8 +31,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   the copy kept when the copy will not read, when the tree's marker does not name the task at
   the copy's base, or when any path - one the copy holds included - carries bytes that are
   neither the copy's nor a commit's, which is work made after the kill. Exit 0 is restored, 1
-  refused, 2 no tree recorded for the task or no copy beside it. Every stop and refusal over such
-  a tree names the command.
+  refused, 2 no tree recorded for the task or no copy beside it. Every stop and refusal over a
+  tree with a copy or a tombstone beside it names the command; one made because git would not
+  name the tree's git directory names none, since whether a copy stands there is not known.
 - **A triage can leave a finding open: `--answer leave --fix <ids> --reason "<why>"`.** The
   drive records the reason, stops offering those findings, shows them as `left open`, and
   sign-off records each as accepted open with that reason. An id the triage does not offer, or
@@ -114,17 +115,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   with it, and that copy may be the only record of the work. Both verbs now exit 1 over such a
   tree, naming the copy's files and the `drive-phase.py restore <taskId>` command that puts the
   work back; they refuse as well when git will not say where the tree's copy would be kept, since
-  the question cannot then be asked. The drive asks
+  the question cannot then be asked, and that refusal names no command. The drive asks
   the same before it dispatches, resumes or integrates in a task tree and before it takes one
-  down, and stops with the restore command; `/audit:status` offers that command, and no remover,
-  for a kept tree in that state. `COMPATIBILITY.md` records the forced removal that now stops.
+  down, and stops - with the restore command when a copy or a tombstone stands, and with none
+  when the question could not be asked; `/audit:status` offers that command, and no remover,
+  for a kept tree with a copy or a tombstone beside it. `COMPATIBILITY.md` records the forced removal that now stops.
 - **A task commit stages the changed paths its own `outputs` patterns cover.** A path a running
   task's `outputs` pattern covers was opened by the plan gate and then refused by the task commit
-  as undeclared, one gate run late. The commit, the close's check for uncommitted leftovers and the
-  drive's `submit` now read one meaning of declared - a running task's `files` plus the changed
-  paths its `outputs` patterns cover, a pattern the validator refuses covering nothing - and the
-  commit stages the paths the task's own patterns cover beside its `files`. A path another running
-  task's pattern covers is counted as declared and left for that task's commit.
+  as undeclared, one gate run late. The commit, the close's check for uncommitted leftovers, the
+  drive's `submit`, a wave member's integration and sign-off's commit-scope invariant now read one
+  meaning of declared - a running task's `files` plus the changed paths its `outputs` patterns
+  cover, a pattern the validator refuses covering nothing - and the commit stages the paths the
+  task's own patterns cover beside its `files`. So the integration no longer asks widen, discard
+  or block for a member's own output, where a discard would have dropped it, and the commit-scope
+  invariant accepts that output in a task commit instead of refusing it on history already
+  landed. A path another running task's pattern covers is counted as declared and left for that
+  task's commit.
 - **The plan gate no longer opens an edit through a `fileIndex` row alone.** A `fileIndex` row
   naming a running task for a path its `files` do not list used to open the edit, after which the
   task commit refused the path as undeclared. The plan gate now treats it as undeclared like any
@@ -136,7 +142,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   the executor's `drive-phase.py submit` names each changed path outside the task's declared set
   that changed since the start, with `/audit:task scope <id> --files +<paths>` as the answer, and
   files nothing; dirt from before the start is not counted. A wave member's filing names such
-  paths on its line instead of refusing, because the integration settles each one by name. When a
+  paths on its line instead of refusing, and the drive asks widen, discard or block for them once
+  per start, after the member's gate and before its reviewer is dispatched, so the reviewer reads
+  a settled scope; a `widen` answer is applied there, a `discard` is carried out by the
+  integration over those paths alone, and a path a follower owner in the member's tree claims is
+  still left to the integration, which reproduces that owner's recipe or prints its browser
+  follow. When a
   task's scope changed during its run, the drive re-runs the gate under the new scope before it
   offers `close`, and `--answer close` is taken only over such a run.
 - **The drive runs a ready task before it asks anything else.** `/audit:phase run` no longer

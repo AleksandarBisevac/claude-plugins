@@ -1,0 +1,15 @@
+{
+ "findings": [],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Each clause holds against the code it cites. R64: CHANGELOG now says the drive asks widen/discard/block once per start after the member's gate and before its reviewer, widen applied there, discard carried out by the integration over those paths, and a follower-owner-claimed path left to the integration; matches drive-phase.py stray_step (docstring 'ASKED HERE, NOT AT THE INTEGRATION', claimed_strays exclusion, widen_task) called after gate_step and before dispatch(...'reviewer'), and integrate_member's STRAYS_ASKED handling. R72: the one-meaning-of-declared entry names the member's integration and sign-off's commit-scope invariant and says the integration no longer asks and the invariant accepts the output; matches integrate-task.py undeclared_paths docstring ('never asked widen, discard or block after the review') and _invariants.commit_scope / COMMIT_SCOPE_BASIS (declared_git_rels, 'refused, on history already landed'). R69: CHANGELOG restore and task-remove entries plus worktree.md (remove paragraph, task-remove paragraph, exit-code line) now say the command is named when a copy or tombstone stands and the could-not-ask refusal names none; matches _worktrees.refuse_unsettled (unsettled None branch remedy has no restore_command; tombstone branch says 'or clears a tombstone'), drive-phase.py unsettled_said (not-known branch has no restore row) and audit-status._kept_tree_remedy. R70: only the _SAME_CHECKOUT reason string changed, to say undeclared_paths asks _config.declared_git_rels spelling both halves from the checkout's top; matches _config.declared_git_rels. The executor's outcome describes the diff (three files, wording only; its 'worktree.md has no line ~244' note is true, the claim sat at the three sites it edited). Dependants: no heading, anchor or tuple shape changed, so CHANGELOG/worktree.md/_deps.py readers are unaffected; the executor's answers hold.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Executor filed not-attempted: gate-only wording task, expectRedFirst false, tests.add none; nothing owed.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "Gate command read: python3 tools/sweep-selftests.py tests/test__refs.py tests/test__deps.py tests/test__output_lints.py. For the one code-side edit, the only tests touching GIT_PATH_BASE_EXEMPT in tests/test__deps.py are gb6 (non-blank reason, tests/test__deps.py:3868-3873) and gb7 (callers of tree_changed_paths, :3886), neither reads the _SAME_CHECKOUT text, so no selected test is weakened or pretends to cover the prose. I did not read test__refs.py or test__output_lints.py beyond a grep for _SAME_CHECKOUT/GIT_PATH_BASE_EXEMPT/rebases through (no hits)."
+ },
+ "verdict": "clean",
+ "tasks": []
+}

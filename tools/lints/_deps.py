@@ -1956,7 +1956,10 @@ _SCOPED_COMMIT = ("the commit machinery stages, snapshots and restores by "
 _SAME_CHECKOUT = ("paths a tree lists are read back as bytes from that same "
                   "checkout's top or compared with integration records written "
                   "in its spelling; the one comparison with a plan entry, "
-                  "undeclared_paths, rebases through git_to_plan")
+                  "undeclared_paths, asks _config.declared_git_rels, which "
+                  "spells both halves of declared - the files entries and the "
+                  "changed paths an outputs pattern covers - from the "
+                  "checkout's top")
 _DOCTOR = ("a doctor check names repository files in its finding; nothing it "
            "lists is compared with a plan entry")
 GIT_PATH_BASE_EXEMPT = (

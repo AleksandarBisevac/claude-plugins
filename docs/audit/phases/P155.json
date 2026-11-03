@@ -573,8 +573,10 @@
         "severity": "med",
         "file": "plugins/audit/hooks/require-plan.py:573-585; plugins/audit/hooks/_config.py:4308-4360",
         "issue": "Since the plan gate stopped opening an edit through a fileIndex row, a path named only by an in_progress task's fileIndex row is refused, but declaring_tasks still returns that task as a direct owner, so _declaration_note's last branch says the task has not been started, tells the orchestrator to run /audit:task start and not to add a second task - false for a running task, and it forbids the actual repair (scope --files +path). Confirmed by a probe fixture: P1.1 in_progress, files [src/a.py], fileIndex row src/indexed.py.",
-        "resolution": "Give a fileIndex-only row its own branch in the refusal: name the index row as drift and the remedy /audit:task scope <id> --files +<path> (or reindex); never call a running task not started. Add a require-plan case asserting that message.",
-        "fixTask": "P155.45-gfj"
+        "resolution": "fixed in P155.45-gfj (0bf679f1994d): Give a fileIndex-only row its own branch in the refusal: name the index row as drift and the remedy /audit:task scope <id> --files +<path> (or reindex); never call a running task not started. Add a require-plan case asserting that message.",
+        "fixTask": "P155.45-gfj",
+        "commit": "0bf679f1994d",
+        "status": "fixed"
       },
       {
         "id": "P155-R63",
@@ -668,7 +670,7 @@
         "fixTask": "P155.51-gfj"
       }
     ],
-    "outcome": "[findings: 74 - 1 high, 27 med, 46 low; 39 with a recorded fix commit]"
+    "outcome": "[findings: 74 - 1 high, 27 med, 46 low; 40 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -4190,7 +4192,7 @@
     {
       "id": "P155.45-gfj",
       "title": "A path named only by a running task's fileIndex row is refused as index drift, not as an unstarted task",
-      "status": "in_progress",
+      "status": "done",
       "description": "Finding P155-R62 (see docs/audit/phases/P155.json). Since the plan gate stopped opening an edit through a fileIndex row, an edit to a path that only an in_progress task's fileIndex row names is refused - correctly - but declaring_tasks (hooks/_config.py) still returns that task as a direct owner, so require-plan.py's _declaration_note falls into the not-started branch: it says the running task has not been started, names /audit:task start as the route and says not to add a second task, which forbids the real repair. Reproduce: a plan with P1.1 in_progress, files [src/a.py], and a fileIndex row src/indexed.py -> P1.1; the refusal for src/indexed.py reads \"has not been started\". Fix: give a fileIndex-only row its own branch - name the index row as drift and the remedies /audit:task scope <id> --files +<path> or /audit:task reindex - and never call a running task not started. A red-first case in tests/test_require_plan.py asserts the new wording for the fileIndex-only path and that the not-started wording is absent; keep the existing not-started case green for a genuinely pending task.",
       "files": [
         "plugins/audit/hooks/require-plan.py",
@@ -4219,14 +4221,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "0bf679f1994d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Worktree <home>/dev/audit-plugin/claude-plugins-P155.45-gfj. plugins/audit/hooks/_config.py declaring_tasks: each row now carries indexOnly, True when the task reaches rel only through fileIndex rows (a (key, tid) set records which pairs come from the task's own files; any files entry covering rel clears it). plugins/audit/hooks/require-plan.py: new _index_drift_note(manifest_rel, rel, drift), and _declaration_note sends the case with non-terminal index-only rows and no files-declaring task to it. The new wording calls the row index drift, names the task with its status, and gives both repairs: /audit:task scope <id> --files +<path> or /audit:task reindex. It adds a start step after the scope only when the task is not in_progress. A task whose files carry the path still decides the branch, and terminal index-only rows keep the terminal wording. PLUGIN-BUILD-GUIDE.md:636-640 now lists the index-only cause next to the other causes, with no count. tests/test_require_plan.py adds fi1-fi5. fi1-fi3 cover an in_progress task with its own files entry and a fileIndex-only row for SAN, checking both subagent and orchestrator text. fi4 checks that a pending files-declared task keeps the start route and is not called drift (the over-fire direction). fi5 checks that a pending index-only task (s9's plan) is drift, with scope ordered before start. Commands: python3 tests/test_require_plan.py --selftest on unchanged code, exit 1, 242/244. After the fix it exits 0 with 245/245. The gate python3 tools/sweep-selftests.py tests/test_require_plan.py tests/test__config.py exits 0: 2/2 files ok, 648 cases (403 + 245). Over-fire mutation in a scratch rsync copy (indexOnly forced True): 239/245, FAIL s1 s2 s3 s7b s7d fi4; copy removed. Probe fixture <scratchpad>/fi: _declaration_note for src/indexed.py on the project tree says 'has not been started' (True); on this tree it gives the drift wording, and 'has not been started' is absent (False). Extra checks outside the gate: ruff (exit 0), vermin -t=3.8- (exit 0), prose_number_claims/doc_prose_numbers/house_style_violations filtered to the touched files (empty), sweep of tests/test__deps.py tests/test__output_lints.py tests/test_run_test_gate.py (exit 0, 3/3 ok, 1030 cases). Dependants: tests/test__config.py dt1 compares (taskId, entry, direct) tuples, so the new key leaves it correct (403 pass, unedited). tests/test_run_test_gate.py names require-plan.py by path only and is still correct (581 pass). The PLUGIN-BUILD-GUIDE.md section changed as described. The hooks that import _config only call other functions, and declaring_tasks has exactly two callers (grep: require-plan.py _declaration_note and the bound-worktree branch), so the hooks are unaffected. tools/lints/_deps.py:1737 lists the name only and is unchanged. Left alone: the bound-worktree branch (require-plan.py, the `_split_declared` call under binding['bound']) still says 'declared by X, a different task' for an index-only row. That message makes no false claim that a task has not started, has no test, and is outside this task's finding.",
+        "descriptive": "A refusal for a path that only a running task's fileIndex row names now calls the row index drift and names the scope/reindex repairs, instead of calling the running task unstarted."
       },
       "startedAt": "2026-11-03T14:10:59Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-03T14:26:08Z",
+      "verifiedBy": [
+        "fi1: in_progress task, fileIndex-only row - both audiences told 'drift' with the scope and reindex commands",
+        "fi2: neither audience is told 'has not been started', sent to /audit:task start, or told not to add a second task",
+        "fi3: the task is named with status in_progress",
+        "fi4: over-fire direction - a pending files-declared task keeps the start route and is not called drift",
+        "fi5: pending index-only task is drift, with scope ordered before start"
+      ],
       "notes": [
         {
           "at": "2026-11-03T14:09:53Z",
@@ -4249,6 +4257,18 @@
         "runId": "2026-11-03T14:26:04Z.b01e7a",
         "status": "passed",
         "at": "2026-11-03T14:26:04Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "0bf679f1994d",
+        "at": "2026-11-03T14:26:08Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-03T14:21:09Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_require_plan.py tests/test__config.py` in a throwaway tree at HEAD exited 1 with 3 of 245 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - fi1 (house FAIL), fi2 (house FAIL), fi5 (house FAIL): SELFTEST FAILED: 242/245 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -4424,7 +4444,12 @@
         "P155-R69",
         "P155-R70"
       ],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-03T14:31:10Z.d462f5",
+        "status": "passed",
+        "at": "2026-11-03T14:31:10Z"
+      }
     },
     {
       "id": "P155.49-gfj",
