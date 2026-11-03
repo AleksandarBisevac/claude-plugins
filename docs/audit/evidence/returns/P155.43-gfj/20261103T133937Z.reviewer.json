@@ -1,0 +1,15 @@
+{
+ "findings": [],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clause: 'Say once what the tombstone is (the marker left after a move was recorded) or drop it from the user-facing sentences; keep the git-internals wording only in the Fixed entries'. The diff defines the tombstone once, CHANGELOG.md:26-29 ('renamed to a tombstone and then deleted, so a process killed between the two leaves only the tombstone: what remains of a copy whose move was already settled, holding nothing to put back'), matching _worktrees._drop_copy (rename copy to copy+DROPPED then rmtree) and kept_where ('the move it was taken for was settled'). The restore entry's 'in the tree's git directory' became 'beside the tree', and the task-remove entry's 'tree's git directory ... where the copy lives' and 'will not name the tree's git directory' became plain wording, matching tree_unsettled/refuse_unsettled. Remaining hits of loose ref, packed ref and GIT_ICASE_PATHSPECS are in the Fixed entry (lines 165-168), kept as the resolution asks; the 'tree's git directory' at line 208 is released 3.7.0 history. The executor's outcome describes this diff accurately: CHANGELOG.md only (13 insertions, 10 deletions), tools/release.py untouched, so the listed dependants of release.py are unaffected, and the CHANGELOG readers (test__deps/_refs/_output_lints etc.) read headings and prose-number shapes that did not change; no test pins the [Unreleased] wording (grep of the three gate suites for tombstone and Unreleased found nothing). Cosmetic only: two lines wrap short ('written and', 'The drive asks'), which does not affect rendering. The task-remove entry uses 'tombstone' ~85 lines after its one definition in the restore entry; that satisfies 'say once' but a reader of that entry alone meets the word undefined.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Executor filed not-attempted: gate-only task, expectRedFirst false, tests.add is none, so no red was owed. Basis holds.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "Read the gate command `python3 tools/sweep-selftests.py tests/test__refs.py tests/test__deps.py tests/test__output_lints.py` (a literal command selecting those three files). The change is documentation wording with no behaviour to delete; these suites lint CHANGELOG.md structure, refs and prose-number shapes, and a grep of them for tombstone and Unreleased finds no pin on the changed wording, so none claims to assert it. I did not run the gate; its recorded run (runId 2026-11-03T13:47:35Z.440d05, passed) is the evidence."
+ },
+ "verdict": "clean",
+ "tasks": []
+}

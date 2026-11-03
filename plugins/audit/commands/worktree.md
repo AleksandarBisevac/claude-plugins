@@ -52,13 +52,21 @@ and a dev server that confines file access to the project root — Vite's `serve
 one — refuses to serve through it.
 
 **`remove <phaseId>`** — removes it, after asking the questions git does not. It refuses a dirty
-tree, a tree git will not describe, and the tree the process is standing in. `--force` is the
-explicit escape; state what it destroys before offering it.
+tree, a tree git will not describe, and the tree the process is standing in; `--force` is the
+explicit escape from the first two, and you state what it destroys before offering it.
 
-**`remove --path <dir>`** — the same, for a worktree this plan does not name. It is the **only**
-way to take down a worktree the plugin did not create, and that is not a loophole: a human named
-one exact directory in an argument, which is what consent looks like. The sweep may never make
-that decision on its own.
+**A tree with a move's copy of the work beside it is refused, `--force` included.** A move that
+was killed leaves a copy of the work (or its tombstone) in the tree's git directory, and removing
+the tree deletes that directory, so the copy may be the only record of the work. The refusal exits
+1, names where the copy stands and prints the `drive-phase.py restore <taskId>` command that puts the
+work back and drops the copy; run that, and the removal goes through as before. It refuses as well
+when git will not name the tree's git directory, because then the question cannot be asked.
+`_worktrees.refuse_unsettled` makes this refusal for `remove` and `task-remove` alike.
+
+**`remove --path <dir>`** — the same, refusals included, for a worktree this plan does not name.
+It is the **only** way to take down a worktree the plugin did not create, and that is not a
+loophole: a human named one exact directory in an argument, which is what consent looks like. The
+sweep may never make that decision on its own.
 
 **`sweep`** — what may be reaped, and what stays and why. **Read-only unless `--apply`**, and
 `--apply` needs at least one of `--remove-worktrees`, `--delete-branches`, `--prune`. Show the
@@ -78,7 +86,9 @@ branch.
 
 **`task-remove <taskId>`** — removes the tree whose marker names **that** task; a marker for
 another task is not ours and is named in the refusal. It refuses a dirty tree, an unreadable one
-and the tree the process is standing in; `--force` is the explicit escape.
+and the tree the process is standing in; `--force` is the explicit escape from the first two. A
+tree with a move's copy of the work beside it is refused whether forced or not, exactly as under
+`remove` above: the refusal names the copy and `drive-phase.py restore <taskId>`.
 
 **The sweep never removes a task tree.** It lists each one as kept, names the task, and names any
 dirty path — the wave driver takes the tree down with `task-remove` once its work is integrated.
@@ -167,7 +177,7 @@ is the `--takeover` above, since no `/audit` command takes a user lock over.
 
 ## Exit codes of `/audit:worktree`
 
-`0` it ran · `1` it could not (for `task-add`: a root inside the project, a base that is no commit, a non-empty target; for `task-remove`: no tree marked for the task, or a dirty one), and the reason names a path · `2` usage (an unknown task included) · `4` git could not be
+`0` it ran · `1` it could not (for `task-add`: a root inside the project, a base that is no commit, a non-empty target; for `task-remove`: no tree marked for the task, or a dirty one; for `remove` and `task-remove`, forced or not: a move's copy of the work beside the tree, or a tree whose git directory git will not name, with `drive-phase.py restore <taskId>` in the reason), and the reason names a path · `2` usage (an unknown task included) · `4` git could not be
 **asked** · `5` there was nothing to examine — which is **not** the same as "everything is clean",
 and must not be reported as if it were.
 

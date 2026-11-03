@@ -451,8 +451,10 @@
         "severity": "low",
         "file": "tests/test__worktrees.py:2170-2174 (_touch_scan.asks); PLUGIN-BUILD-GUIDE.md:1103; _worktrees.py section comment",
         "issue": "ut5 checks that a function asks tree_unsettled somewhere, not before the removal; a remove followed by the ask passes (probed) while the label, guide and comment say 'first'.",
-        "resolution": "Require the ask to precede the remove or dispatch site within the function, with a planted after-the-fact twin.",
-        "fixTask": "P155.40-gfj"
+        "resolution": "fixed in P155.40-gfj (77f297b6e76a): Require the ask to precede the remove or dispatch site within the function, with a planted after-the-fact twin.",
+        "fixTask": "P155.40-gfj",
+        "commit": "77f297b6e76a",
+        "status": "fixed"
       },
       {
         "id": "P155-R49",
@@ -506,21 +508,24 @@
         "severity": "med",
         "file": "plugins/audit/commands/worktree.md:79-81,170",
         "issue": "The new Changed entry and COMPATIBILITY.md say task-remove and remove --path refuse a tree with a move's copy beside it, --force included, and exit 1. commands/worktree.md still says of task-remove that it refuses a dirty tree, an unreadable one and the current directory, and that '--force is the explicit escape', and its exit-code line lists only 'no tree marked for the task, or a dirty one'. A user reading the command page is told the opposite of the changelog. The executor flagged this and left it because the file is outside the task's files; the contradiction is the phase's.",
-        "resolution": "Add the unsettled-tree refusal (forced or not, naming the copy and `drive-phase.py restore <taskId>`) to the task-remove and remove --path paragraphs and to the exit-1 list, in a task that declares commands/worktree.md."
+        "resolution": "Add the unsettled-tree refusal (forced or not, naming the copy and `drive-phase.py restore <taskId>`) to the task-remove and remove --path paragraphs and to the exit-1 list, in a task that declares commands/worktree.md.",
+        "fixTask": "P155.41-gfj"
       },
       {
         "id": "P155-R55",
         "severity": "low",
         "file": "plugins/audit/README.md:461",
         "issue": "Still says 'fileIndex is what the plan gate matches an edit against'. The new Changed entry says the plan gate no longer opens an edit through a fileIndex row; in_progress_task_map reads a task's files alone (hooks/_config.py, the 'files ALONE, NEVER A fileIndex ROW' paragraph). The README sentence is now false.",
-        "resolution": "Reword to say the gate matches an edit against a running task's files and graded outputs, and that fileIndex is derived from files."
+        "resolution": "Reword to say the gate matches an edit against a running task's files and graded outputs, and that fileIndex is derived from files.",
+        "fixTask": "P155.42-gfj"
       },
       {
         "id": "P155-R56",
         "severity": "low",
         "file": "CHANGELOG.md:65-76,123-131,176-181",
         "issue": "Parts of the new entries use internal terms a user cannot look up: 'the tombstone of a recorded move', 'the tree's git directory' and 'the copy ... in it', 'loose ref' and 'packed ref', 'GIT_ICASE_PATHSPECS'. The restore and task-remove entries carry the user's decision (what the copy is, what 'tombstone' means), and the first of those terms is never explained.",
-        "resolution": "Say once what the tombstone is (the marker left after a move was recorded) or drop it from the user-facing sentences; keep the git-internals wording only in the Fixed entries, which are about implementation."
+        "resolution": "Say once what the tombstone is (the marker left after a move was recorded) or drop it from the user-facing sentences; keep the git-internals wording only in the Fixed entries, which are about implementation.",
+        "fixTask": "P155.43-gfj"
       },
       {
         "id": "P155-R57",
@@ -551,7 +556,7 @@
         "resolution": "Add two planted twins. (a) A function with `run(['worktree','remove',a])`, then `tree_unsettled`, then a second removal, which must be named. (b) A remover with two callers, one asking before its call and one after, which must be named."
       }
     ],
-    "outcome": "[findings: 60 - 1 high, 22 med, 37 low; 35 with a recorded fix commit]"
+    "outcome": "[findings: 60 - 1 high, 22 med, 37 low; 36 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -3706,7 +3711,7 @@
     {
       "id": "P155.40-gfj",
       "title": "The tree-touching pin reads order (regression)",
-      "status": "in_progress",
+      "status": "done",
       "description": "Re-add of cancelled P155.36-gfj with the correct test mode. ut5 checks that a function asks tree_unsettled somewhere, not before the removal (R48). The work exists as a patch from the cancelled attempt: _touches and _touch_scan read source positions, ut5 gains ask-afterwards twins, and the ut5 label, the suite and module section comments and PLUGIN-BUILD-GUIDE.md say \"earlier in the source\", stating it is source order, not control flow. The executor applies and verifies it, proves it by mutating the scanner, and does not redo it.",
       "files": [
         "tests/test__worktrees.py",
@@ -3745,14 +3750,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "77f297b6e76a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Applied the cancelled P155.36 patch: PLUGIN-BUILD-GUIDE.md and plugins/audit/scripts/git/_worktrees.py hunks with plain `git apply` (clean, offset 19; -3 avoided so the shared index stays untouched). tests/test__worktrees.py hunk 3 conflicted only on `_spelling_cases(check)` now following ut5, so all three test hunks were applied by a python text-replace asserting each anchor matched once (a Bash write, not a refused Edit; files in scope). Scanner: _at(node) = (lineno, col_offset); _touches returns (word, position); _touch_scan's asks(name, site, seen) needs an ask call at a source position before the function's first site, or every in-module caller asking before its first call to it, transitively. ut5's planted module gains late, late_open, late_inner/late_outer, each asking only after the site. ut5 label, suite section comment, _touch_scan docstring, the module section comment and the guide now say earlier in the source, source order, not control flow. The label was reworded from the patch's 'source position' to 'earlier in the source'. Runs: `python3 tests/test__worktrees.py --selftest` exit 0, 175/175, so no real function asks only after its site. Gate sweep exit 0, 8/8 files ok. ruff exit 0, vermin -t=3.8- exit 0. Dependants: the helpers changed (_at, _touches, _touch_scan) are read nowhere outside tests/test__worktrees.py (`git grep`); _call_name/_cases/_selftest are unchanged; _worktrees.py changed only in a comment, so its importers are unaffected; the PLUGIN-BUILD-GUIDE.md paragraph passes the prose lints in test__deps (gate green); the other declared files are untouched and green in the gate. Left, not mine: plugins/audit/scripts/governance/drive-phase.py:4840 (unsettled_stop docstring) still says ut5 names a site 'that reaches neither this nor that'. That is still true but now incomplete: ut5 also names an ask that comes after the site. The file is outside this task's files.",
+        "descriptive": "ut5 now names a worktree remover or tree dispatch whose unsettled-tree check comes after it in the source, not merely one with no check anywhere"
       },
       "startedAt": "2026-11-03T13:20:06Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-03T13:38:11Z",
+      "verifiedBy": [
+        "ut5 extended: planted ask-afterwards twins (late, late_open, late_inner via late_outer) must be named, beside the existing unasked go/opened and the asking-first asked/outer/phase that must not be"
+      ],
       "notes": [
         {
           "at": "2026-11-03T12:23:13Z",
@@ -3779,6 +3786,196 @@
         "runId": "2026-11-03T13:36:16Z.a5ea65",
         "status": "passed",
         "at": "2026-11-03T13:36:17Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "77f297b6e76a",
+        "at": "2026-11-03T13:38:11Z",
+        "return": "docs/audit/evidence/returns/P155.40-gfj/20261103T132006Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression mode with tests.expectRedFirst false: the guarded scanner (_touches/_touch_scan) lives in the test file itself, so HEAD's code with this test file copied over it is green by construction and the helper has no red to watch. The case was instead proved by mutating the scanner in scratch COPIES of tests/test__worktrees.py (shared tree untouched, tests/__pycache__ purged before each run, PYTHONDONTWRITEBYTECODE=1), probe <scratchpad>/p15540/mutations.py, exit 0: baseline copy ALL PASS 175/175; M1 ask anywhere (drop `at < site`) FAIL ut5 174/175, fixture lost late/late_open/late_inner; M2 caller position ignored (caller site -> (10**9,0)) FAIL ut5 174/175, fixture lost late_inner; M3 no ask counts as first FAIL ut5 174/175, fixture lost go/opened/late_inner; M4 no caller counts as asked (drop `bool(up) and`) FAIL ut5 174/175, fixture empty; M5 over-fire (`at > site`) FAIL ut5 174/175, asked/inner planted and real drive-phase.py dispatch/resume_writer/remove_task_tree named.",
+        "at": "2026-11-03, scratch-copy mutation probe run twice; no helper run"
+      }
+    },
+    {
+      "id": "P155.41-gfj",
+      "title": "fix P155-R54: The new Changed entry and COMPATIBILITY.md say task-remove and ...",
+      "status": "in_progress",
+      "description": "The new Changed entry and COMPATIBILITY.md say task-remove and remove --path refuse a tree with a move's copy beside it, --force included, and exit 1. commands/worktree.md still says of task-remove that it refuses a dirty tree, an unreadable one and the current directory, and that '--force is the explicit escape', and its exit-code line lists only 'no tree marked for the task, or a dirty one'. A user reading the command page is told the opposite of the changelog. The executor flagged this and left it because the file is outside the task's files; the contradiction is the phase's.\n\nResolution asked: Add the unsettled-tree refusal (forced or not, naming the copy and `drive-phase.py restore <taskId>`) to the task-remove and remove --path paragraphs and to the exit-1 list, in a task that declares commands/worktree.md.",
+      "files": [
+        "plugins/audit/commands/worktree.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__refs.py tests/test__deps.py tests/test__output_lints.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-03T13:38:50Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-03T13:38:48Z",
+          "text": "scope: plugins/audit/commands/worktree.md, every path the finding(s) P155-R54 name"
+        },
+        {
+          "at": "2026-11-03T13:38:48Z",
+          "text": "no suite: plugins/audit/commands/worktree.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__refs.py"
+        },
+        {
+          "at": "2026-11-03T13:38:48Z",
+          "text": "gate-only, not tdd: every file P155-R54 names is a document (plugins/audit/commands/worktree.md) with no test of its own, so there is no case to write first and no red to show; the gate the task carries is its check"
+        }
+      ],
+      "fixes": [
+        "P155-R54"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-03T13:45:48Z.14678e",
+        "status": "passed",
+        "at": "2026-11-03T13:45:48Z"
+      }
+    },
+    {
+      "id": "P155.42-gfj",
+      "title": "fix P155-R55: Still says 'fileIndex is what the plan gate matches an edit aga...",
+      "status": "in_progress",
+      "description": "Still says 'fileIndex is what the plan gate matches an edit against'. The new Changed entry says the plan gate no longer opens an edit through a fileIndex row; in_progress_task_map reads a task's files alone (hooks/_config.py, the 'files ALONE, NEVER A fileIndex ROW' paragraph). The README sentence is now false.\n\nResolution asked: Reword to say the gate matches an edit against a running task's files and graded outputs, and that fileIndex is derived from files.",
+      "files": [
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__refs.py tests/test__deps.py tests/test__output_lints.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-03T13:39:30Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-03T13:38:48Z",
+          "text": "scope: plugins/audit/README.md, every path the finding(s) P155-R55 name"
+        },
+        {
+          "at": "2026-11-03T13:38:48Z",
+          "text": "no suite: plugins/audit/README.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are .claude/hooks/require-claim-block.py, tests/test__affected_tests.py, tests/test__config.py, tests/test__deps.py, tests/test__doctor_report.py and 26 more"
+        },
+        {
+          "at": "2026-11-03T13:38:48Z",
+          "text": "gate-only, not tdd: every file P155-R55 names is a document (plugins/audit/README.md) with no test of its own, so there is no case to write first and no red to show; the gate the task carries is its check"
+        },
+        {
+          "at": "2026-11-03T13:39:06Z",
+          "text": "it quotes only the decide-high-risk table row, and this task rewords the fileIndex sentence at README.md:461, which is not that row",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-03T13:39:06Z",
+          "text": "its README section names the file by path; this task changes one sentence's wording, not the file's path, role or sections",
+          "waives": "PLUGIN-BUILD-GUIDE.md"
+        }
+      ],
+      "fixes": [
+        "P155-R55"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-03T13:46:42Z.c1bf87",
+        "status": "passed",
+        "at": "2026-11-03T13:46:42Z"
+      }
+    },
+    {
+      "id": "P155.43-gfj",
+      "title": "fix P155-R56: Parts of the new entries use internal terms a user cannot look ...",
+      "status": "in_progress",
+      "description": "Parts of the new entries use internal terms a user cannot look up: 'the tombstone of a recorded move', 'the tree's git directory' and 'the copy ... in it', 'loose ref' and 'packed ref', 'GIT_ICASE_PATHSPECS'. The restore and task-remove entries carry the user's decision (what the copy is, what 'tombstone' means), and the first of those terms is never explained.\n\nResolution asked: Say once what the tombstone is (the marker left after a move was recorded) or drop it from the user-facing sentences; keep the git-internals wording only in the Fixed entries, which are about implementation.",
+      "files": [
+        "CHANGELOG.md",
+        "tools/release.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__refs.py tests/test__deps.py tests/test__output_lints.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-03T13:39:37Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-03T13:38:48Z",
+          "text": "scope: CHANGELOG.md, every path the finding(s) P155-R56 name"
+        },
+        {
+          "at": "2026-11-03T13:38:48Z",
+          "text": "no suite: CHANGELOG.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__deps.py, tests/test__output.py, tests/test__panel_settings.py, tests/test__refs.py, tools/lints/_deps.py, tools/lints/_output_lints.py and 2 more"
+        },
+        {
+          "at": "2026-11-03T13:38:48Z",
+          "text": "gate-only, not tdd: every file P155-R56 names is a document (CHANGELOG.md) with no test of its own, so there is no case to write first and no red to show; the gate the task carries is its check"
+        }
+      ],
+      "fixes": [
+        "P155-R56"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-03T13:47:35Z.440d05",
+        "status": "passed",
+        "at": "2026-11-03T13:47:35Z"
       }
     }
   ],

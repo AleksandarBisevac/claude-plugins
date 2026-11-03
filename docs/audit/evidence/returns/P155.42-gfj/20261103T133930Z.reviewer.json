@@ -1,0 +1,17 @@
+{
+ "findings": [],
+ "preExisting": [
+  {"id": 1, "severity": "low", "file": "plugins/audit/scripts/manifest/audit-task.py:10419; plugins/audit/commands/init.md:471; plugins/audit/reference/verbs-in-full.md:1341; PLUGIN-BUILD-GUIDE.md:5798", "issue": "The same now-false claim that fileIndex is what the plan gate matches an edit against survives in four places outside this task's file (confirmed by grep at the task tree; the executor reported them too).", "resolution": "Reword each as README.md:461 now is: running task's files and graded outputs, fileIndex derived from files. Needs a task that declares those files."}
+ ],
+ "intent": {
+  "answer": "matches",
+  "note": "Clause: 'Reword to say the gate matches an edit against a running task's files and graded outputs, and that fileIndex is derived from files.' The diff (one line in plugins/audit/README.md:461, 1 insertion and 1 deletion) replaces 'fileIndex is what the plan gate matches an edit against - so an unscoped phase ran with its central guard inert' with 'the plan gate matches an edit against a running task's files and its graded outputs patterns (hooks/_config.in_progress_task_map, which reads files alone and never a fileIndex row, and in_progress_outputs) ... fileIndex is derived from those files (reindex below), and a row of it alone opens no edit.' I read hooks/_config.py in the task tree: declared_task_map's docstring ('files ALONE, NEVER A fileIndex ROW'; 'fileIndex is derived from files (audit-task.py reindex)'), in_progress_task_map at 4184 returning declared_task_map, and in_progress_outputs at 4243 all say what the new sentence says. The executor's claim describes the diff accurately, including the narrowing of the first draft and the four outside-file hits. The 'reindex below' pointer resolves to the reindex entry later in the same paragraph. Dependants (_invariants.py, verify-invariants.py, _usage_economics.py, audit-usage.py, tools/affected.py, the three tests) cite the README by path; no heading or section changed, so the executor's answer that they are unchanged holds.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Executor filed not-attempted: gate-only task, tests.expectRedFirst false, tests.add empty; a README rewording owes no red. The basis holds.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "Gate command read: python3 tools/sweep-selftests.py tests/test__refs.py tests/test__deps.py tests/test__output_lints.py. These are doc/reference lints. The diff touches only prose in a README, and none of the three suites quotes the replaced sentence (executor grep; I confirmed the old sentence is gone from README.md and nothing in the diff changes a heading or an enumerated name). I found no case among them whose pass depends on the behaviour this task names, because that behaviour is a prose claim and none of the suites asserts it. Recorded gate run 2026-11-03T13:46:42Z.c1bf87 is passed."
+ },
+ "verdict": "clean",
+ "tasks": []
+}
