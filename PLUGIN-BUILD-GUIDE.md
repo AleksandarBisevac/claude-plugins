@@ -610,10 +610,18 @@ pattern covers, `output_git_rels`), so a path the plan gate opened by a task's `
 `tests/test_require_plan.py`; `do1`, `do2` in `tests/test__config.py`). The outputs half is not a
 caller's to switch on: with no `changed` handed in, `declared_git_rels` lists the tree itself
 (`tree_changed_paths`, a stdlib `git status --porcelain -z` asked inside `_config.py` so the hook
-path loads nothing from `scripts/`, its parsing held equal to `_scoped_commit.status_paths` by
-`dg6`), and `dg4` in `tests/test__config.py` reports by name any call under
-`hooks/` or `scripts/` handing it an empty listing, and any reader its `_DECLARED_READERS` names
-that stops reaching it. The free-file slot is outside both halves: it opens one small edit to
+path loads nothing from `scripts/`; its text is read by `porcelain_z_paths`, the one parser
+`_scoped_commit.status_paths` loads from there too, `dg12`, `dg13`). `dg4` in
+`tests/test__config.py` reports by name a call under `hooks/` or `scripts/` handing it, as
+`changed`, an empty literal, an `or` fallback ending in one, or a conditional with one as a
+branch, and any reader its `_DECLARED_READERS` names that stops reaching it; it cannot see a
+listing bound to a name earlier, or a `tree` git will not list. `dg8` holds the rest of the
+class as a rule rather than a list: every call reading the `files` half alone — `declared_task_map`,
+audit-task's `_declared_rels`, a function whose return holds a call of either, or `plan_to_git`
+in a function reading a `files` key — sits inside `declared_git_rels` or carries a
+`_FILES_ALONE_EXEMPT` row with its reason, and a row naming no such call, carrying no reason, or
+claiming an outputs pairing its function does not make is reported (`dg9`, `dg10` show both
+directions fire). The free-file slot is outside both halves: it opens one small edit to
 a session, not a task's declaration, so the commit refuses that path when the attempt changed it.
 `covering_key` is the matcher over any of those file maps (exact, the path as a directory, a
 directory the path sits under), shared so a verdict and the sentence explaining it cannot answer

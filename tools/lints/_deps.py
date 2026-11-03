@@ -2009,7 +2009,9 @@ GIT_PATH_BASE_EXEMPT = (
      "the hook-side reading of status_paths' listing, kept in _config so the "
      "hook path loads nothing from scripts/; its only reader, "
      "declared_git_rels, hands it to output_git_rels, which passes every path "
-     "through git_to_plan before an outputs pattern reads it"),
+     "through git_to_plan before an outputs pattern reads it - and gb7 in "
+     "tests/test__deps.py holds that caller set, so a second reader is "
+     "reported rather than excused here"),
     ("audit-journal.py", "cmd_archive",
      "journal files named inside their own directory, which git runs in"),
     ("commit-task-work.py", "_changed_shards", _RECORD_PATHS),

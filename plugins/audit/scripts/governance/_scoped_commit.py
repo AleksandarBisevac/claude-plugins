@@ -1180,6 +1180,10 @@ def status_paths(git_root, pathspec=()):
     and matches no `files` entry - so a leftover under that name was never
     found. A rename or copy carries two names, the new one first and its
     source after it, and both are listed: the source's removal is a change too.
+
+    THE TEXT IS READ BY `_config.porcelain_z_paths`, the one parser of it,
+    which the hook-side `tree_changed_paths` reads through too; the error
+    answer is this function's own.
     """
     code, out, err = run_git(git_root, ["status", "--porcelain", "-z",
                                         "--untracked-files=all", "--"]
@@ -1189,19 +1193,8 @@ def status_paths(git_root, pathspec=()):
     if code != 0:
         return None, ("git would not describe the working tree (%s)"
                       % (_excerpt.reason_of(err, out),))
-    fields = out.split("\0")
-    paths, i = [], 0
-    while i < len(fields):
-        entry = fields[i]
-        i += 1
-        if len(entry) < 4:
-            continue
-        paths.append(entry[3:].replace("\\", "/"))
-        if entry[0] in "RC" or entry[1] in "RC":
-            if i < len(fields) and fields[i]:
-                paths.append(fields[i].replace("\\", "/"))
-            i += 1
-    return sorted(set(paths)), ""
+    hc = _loader.load_hooks_config(modname="audit__config")
+    return hc.porcelain_z_paths(out), ""
 
 
 def path_marks(git_root, paths):

@@ -4254,14 +4254,16 @@ def _unskippable_outputs_cases(check, plan, root):
 
     import inspect
     default = inspect.signature(M.declared_git_rels).parameters.get("changed")
-    calls, misses = _declared_readers()
+    sources = _plugin_sources()
+    calls = [c for name, source in sources
+             for c in _predicate_calls(source, name)]
     opted_out = [c for c in calls if c[3]]
+    misses = _readers_missing(calls)
     check("dg4 THE STRUCTURAL PIN: `changed` defaults to None (list the tree), "
-          "every reader the submit, the commit and the close ask reaches the "
-          "shared predicate, none of them reads `files` alone through "
-          "`_declared_rels`, and no call under hooks/ or scripts/ hands it an "
-          "empty `changed` - the spelling that switches the outputs half off: "
-          "default %r, opted out %r, missing %r"
+          "the readers the submit, the commit and the close ask each reach "
+          "the shared predicate, and no call under hooks/ or scripts/ hands it "
+          "an empty `changed` - the spelling that switches the outputs half "
+          "off: default %r, opted out %r, missing %r"
           % (default and default.default, opted_out, misses),
           default is not None and default.default is None and calls
           and not opted_out and not misses)
@@ -4269,21 +4271,140 @@ def _unskippable_outputs_cases(check, plan, root):
               "    hc.declared_git_rels(m, p, g, also=[t])\n"
               "    hc.declared_git_rels(m, p, g, changed=())\n"
               "    hc.declared_git_rels(m, p, g, changed=listed or [])\n"
+              "    hc.declared_git_rels(m, p, g, changed=None if a else ())\n"
+              "    hc.declared_git_rels(m, p, g, changed=a if a else None)\n"
               "    return _declared_rels(p, g, t)\n")
-    flagged = [c for c in _declared_calls(mutant, "mutant.py") if c[3]]
-    check("dg5 THE PIN CAN FIRE: over a planted reader, the empty literal and "
-          "the `or ()`-style fallback are both reported, and the plain call is "
-          "not: %r" % (flagged,),
-          [c[2] for c in flagged] == [3, 4])
+    flagged = [c for c in _predicate_calls(mutant, "mutant.py") if c[3]]
+    check("dg5 THE PIN CAN FIRE: over a planted reader, the empty literal, "
+          "the `or ()`-style fallback and a conditional with an empty branch "
+          "are each reported, and the plain call and a conditional with no "
+          "empty branch are not: %r" % (flagged,),
+          [c[2] for c in flagged] == [3, 4, 5])
+    _files_half_cases(check, sources)
+    _pin_wording_cases(check)
+
+
+def _files_half_cases(check, sources):
+    """Every call that reads the `files` half of "declared" on its own, under
+    hooks/ and scripts/, either sits inside the shared predicate or carries a
+    `_FILES_ALONE_EXEMPT` row with its reason - and the table is held the other
+    way too, so a row naming no such call is reported rather than believed."""
+    real = _files_half_report(sources, _FILES_ALONE_EXEMPT)
+    check("dg8 THE PIN IS AN INVARIANT: every files-half call outside "
+          "`declared_git_rels` - a primitive, a wrapper whose return holds one, "
+          "or `plan_to_git` over a task's `files` - carries an exemption row, "
+          "and no row is stale or blank: wrappers %r, unexcused %r, stale %r"
+          % (sorted(real["names"]), real["unexcused"], real["stale"]),
+          real["unexcused"] == [] and real["stale"] == []
+          and set(_FILES_HALF_SEEDS) < real["names"])
+    planted = ("def counted_rows(p, g, t):\n"
+               "    mine = _declared_rels(p, g, t)\n"
+               "    return len(mine)\n\n\n"
+               "def opened(hc, m, rel):\n"
+               "    return rel in hc.declared_task_map(m)\n\n\n"
+               "def spelled(hc, task, g, p):\n"
+               "    return [hc.plan_to_git(f, g, p) for f in task['files']]\n\n\n"
+               "def asks_opened(hc, m, rel):\n"
+               "    ok = opened(hc, m, rel)\n"
+               "    return not ok\n")
+    got = _files_half_report(sources + [("planted.py", planted)],
+                             _FILES_ALONE_EXEMPT)
+    check("dg9 THE INVARIANT CAN FIRE: a planted files-alone reader is named "
+          "whatever function it sits in - through `_declared_rels`, through "
+          "`declared_task_map` as an attribute, through `plan_to_git` over "
+          "`files` - and so is the caller of a planted wrapper, while the "
+          "real tree's calls stay excused: %r" % (got["unexcused"],),
+          [(f, fn, callee) for f, fn, _line, callee in got["unexcused"]]
+          == [("planted.py", "counted_rows", "_declared_rels"),
+              ("planted.py", "opened", "declared_task_map"),
+              ("planted.py", "spelled", "plan_to_git"),
+              ("planted.py", "asks_opened", "opened")]
+          and got["stale"] == [])
+    def altered(row):
+        # A blank reason on one real row, and a pairing claim on a real row
+        # whose function asks no outputs half.
+        if (row[0], row[1]) == ("audit-task.py", "_declared_rels"):
+            return row[:3] + ("   ",)
+        if (row[0], row[1]) == ("remind-tdd.py", "decide"):
+            return row[:2] + (True,) + row[3:]
+        return row
+    rows = tuple(altered(r) for r in _FILES_ALONE_EXEMPT) + (
+        ("audit-task.py", "_gone_reader", False, "a function that is not there"),
+        ("nowhere.py", "reader", False, "a file the walk never reads"))
+    held = _files_half_report(sources, rows)
+    check("dg10 THE TABLE IS HELD BOTH WAYS: a row naming no files-half call, "
+          "a row for a file the walk never reads, a blank reason, and a row "
+          "claiming its function pairs the outputs half when it calls none "
+          "are each reported by name, and the last two excuse nothing: "
+          "stale %r, unexcused %r" % (held["stale"], held["unexcused"]),
+          sorted((f, fn) for f, fn, _why in held["stale"])
+          == [("audit-task.py", "_declared_rels"),
+              ("audit-task.py", "_gone_reader"),
+              ("nowhere.py", "reader"), ("remind-tdd.py", "decide")]
+          and sorted(set((f, fn) for f, fn, _l, _c in held["unexcused"]))
+          == [("audit-task.py", "_declared_rels"), ("remind-tdd.py", "decide")])
+
+
+def _pin_wording_cases(check):
+    """The predicate's docstring and the guide say what the empty-`changed`
+    pin reads and what it cannot see, in one wording held here - the texts
+    once claimed the pin reported any empty listing, which a name bound to
+    `[]` beforehand passes."""
+    def flat(text):
+        return " ".join(text.split())
+    doc = flat(M.declared_git_rels.__doc__ or "")
+    guide = flat(_text(os.path.join(_output.REPO_ROOT, "PLUGIN-BUILD-GUIDE.md")))
+    carried = [(where, phrase) for where, text in (("docstring", doc),
+                                                   ("guide", guide))
+               for phrase in (_PIN_READS, _PIN_BLIND) if phrase not in text]
+    check("dg11 the predicate's docstring and the guide each name what the "
+          "empty-`changed` pin reads (%r) and what it cannot see (%r), and "
+          "neither claims it reports any empty listing: missing %r"
+          % (_PIN_READS, _PIN_BLIND, carried),
+          not carried and "handing it an empty listing" not in guide
+          and "handing an empty `changed` is reported" not in doc)
 
 
 def _status_listing_cases(check):
     """`tree_changed_paths` is the hook-side reading of the listing
     `_scoped_commit.status_paths` makes - asked in `_config` so the hook path
-    loads nothing from `scripts/` - and the two must agree on every shape git
-    prints: a staged rename (both names), a name with a space, a non-ASCII
-    name, an untracked file deep in an untracked directory, a deletion."""
+    loads nothing from `scripts/` - and both read git's text through the one
+    parser `_config.porcelain_z_paths`, each keeping its own answer for a git
+    that will not say: `[]` here, `(None, why)` there."""
+    import ast
     import _scoped_commit
+    # Built rather than written: a rename (new name, then its source), a copy,
+    # a name with a space, a non-ASCII name, a Windows separator, and the
+    # empty trailing field git ends the listing with.
+    raw = "\0".join(["R  new.txt", "old.txt", " M docs/a b.txt",
+                     "C  copy.txt", "orig.txt", "?? u/café.txt",
+                     " M win\\sep.txt", "D  gone.txt", ""])
+    parsed = M.porcelain_z_paths(raw)
+    check("dg12 THE ONE PARSER: a rename and a copy each list both names, a "
+          "spaced and a non-ASCII name read verbatim, a backslash becomes a "
+          "slash, and the listing comes back sorted once each: %r" % (parsed,),
+          parsed == sorted(["new.txt", "old.txt", "docs/a b.txt", "copy.txt",
+                            "orig.txt", "u/café.txt", "win/sep.txt",
+                            "gone.txt"]))
+    parsers = {}
+    for name, source in _plugin_sources():
+        for fn in ast.walk(ast.parse(source)):
+            if isinstance(fn, ast.FunctionDef) and fn.name in (
+                    "status_paths", "tree_changed_paths", "porcelain_z_paths"):
+                parsers[(name, fn.name)] = (
+                    any(isinstance(n, ast.While) for n in ast.walk(fn)),
+                    sorted(set(_callee(n) for n in ast.walk(fn)
+                               if isinstance(n, ast.Call)
+                               and _callee(n) == "porcelain_z_paths")))
+    check("dg13 THE PARSER EXISTS ONCE: `status_paths` and "
+          "`tree_changed_paths` each hand git's text to `porcelain_z_paths` "
+          "and loop over no fields of their own, and the loop lives in the "
+          "parser alone: %r" % (sorted(parsers.items()),),
+          parsers.get(("_scoped_commit.py", "status_paths"))
+          == (False, ["porcelain_z_paths"])
+          and parsers.get(("_config.py", "tree_changed_paths"))
+          == (False, ["porcelain_z_paths"])
+          and parsers.get(("_config.py", "porcelain_z_paths"), (False,))[0])
     root = os.path.realpath(_harness.fixture_root("cfg-status-listing-"))
 
     def git(*argv):
@@ -4311,10 +4432,10 @@ def _status_listing_cases(check):
     ours = M.tree_changed_paths(root)
     theirs, why = _scoped_commit.status_paths(root)
     wanted = {"old.txt", "new.txt", spaced, "gone.txt", "u/nñ x/deep.txt"}
-    check("dg6 the hook-side listing equals `_scoped_commit.status_paths` on "
-          "one tree - a rename's both names, a spaced name, a non-ASCII name "
-          "and a deep untracked file each read verbatim, none quoted: ours "
-          "%r, theirs %r (%s)" % (ours, theirs, why),
+    check("dg6 over a real git listing the two answers of the one parser "
+          "agree - a rename's both names, a spaced name, a non-ASCII name and "
+          "a deep untracked file each read verbatim, none quoted: ours %r, "
+          "theirs %r (%s)" % (ours, theirs, why),
           theirs is not None and ours == theirs
           and wanted <= set(ours)
           and [p for p in ours if p.startswith("docs/caf")]
@@ -4334,10 +4455,110 @@ _DECLARED_READERS = (("commit-task-work.py", "owned_rels", 1),
                      ("drive-phase.py", "submit_strays", 2),
                      ("audit-task.py", "_uncommitted_leftovers", 1))
 
+# What the empty-`changed` pin reads, and what it cannot see - the wording the
+# predicate's docstring and the guide each carry (dg11).
+_PIN_READS = ("an empty literal, an `or` fallback ending in one, or a "
+              "conditional with one as a branch")
+_PIN_BLIND = "a listing bound to a name earlier, or a `tree` git will not list"
+
+# The `files` half of "declared", answered on its own. A function whose
+# `return` holds a call of one of these is one too, derived rather than listed
+# (`_files_half_names`), so a wrapper is followed out to its callers.
+_FILES_HALF_SEEDS = ("declared_task_map", "_declared_rels")
+# The shared predicate: a files-half call inside its body IS the reading of
+# both halves, and needs no row.
+_PREDICATE = ("_config.py", "declared_git_rels")
+# The `outputs` half. A row claiming its function pairs the two must call one.
+_OUTPUTS_HALF = frozenset(("declared_outputs", "in_progress_outputs",
+                           "task_covered_outputs", "output_git_rels"))
+_NUDGE = ("advisory output, never a verdict, read from the `files` half alone: "
+          "a path only a running task's `outputs` pattern covers is ")
+# Every function under hooks/ and scripts/ that reads the `files` half outside
+# the predicate: (basename, function, pairs, reason). `pairs` claims the
+# function also asks the outputs half, and is checked; a row with `pairs`
+# False says why the outputs half is not its question, or names the gap.
+_FILES_ALONE_EXEMPT = (
+    ("_config.py", "in_progress_task_map", False,
+     "the plan gate's `files` map over the plan on disk, a wrapper of "
+     "declared_task_map; each caller of it is held by its own row"),
+    ("_config.py", "in_progress_files", False,
+     "the key set of in_progress_task_map, a wrapper; its caller is held by "
+     "its own row"),
+    ("_config.py", "task_covered_files", False,
+     "the `files` half a tree's running work covers, a wrapper whose other "
+     "half is task_covered_outputs; each caller is held by its own row"),
+    ("_config.py", "task_binding", True,
+     "a bound tree's coverage: the bound task's files and its honoured "
+     "outputs, both read here"),
+    ("require-plan.py", "decide", True,
+     "the plan gate's verdict: the files map first, then a running task's "
+     "outputs pattern, both halves asked in this function"),
+    ("remind-tdd.py", "decide", False,
+     _NUDGE + "nudged as uncovered, worded by no task's tests.mode"),
+    ("guard-bash-writes.py", "decide", False,
+     _NUDGE + "reported here as an uncovered shell write"),
+    ("guard-secrets-read.py", "_ungoverned_write_target", False,
+     "the shell-write arm of the plan gate reads the `files` half alone, so a "
+     "source-file write only a running task's `outputs` pattern covers is "
+     "graded uncovered here though the Edit arm opens it; the gap is named "
+     "here rather than excused"),
+    ("audit-task.py", "_declared_rels", False,
+     "one task's `files` spelled as git-root paths, the seed audit-task's "
+     "readers call; each caller is held by its own row"),
+    ("audit-task.py", "_held_reading", False,
+     "the start's hand-over check: which of this task's enumerated `files` "
+     "hold dirt another attempted task also enumerates - whose unfinished "
+     "work a file holds, asked before any run makes the path a pattern "
+     "would cover, never whether a change is declared"),
+    ("audit-task.py", "_commit_touches", False,
+     "the close-evidence refusal asks whether the closing commit changes one "
+     "of the task's enumerated `files`, beside declared_work and attempt_span "
+     "over the same list, and its sentence names those files; a task whose "
+     "work is outputs alone is refused there, the gap this row names"),
+    ("audit-task.py", "_no_change_moves", False,
+     "a no-change close's evidence: whether any enumerated `files` entry "
+     "moved since the start; a pattern names no path until a run makes one, "
+     "and a no-change close made none"),
+    ("audit-task.py", "_owed_now", False,
+     "the impact check's bound: the files a task edits by its enumerated "
+     "entries and their line ranges, which a pattern does not carry"),
+    ("_scoped_commit.py", "declared_work", False,
+     "which `files` entries are work, by name, for the task commit, the close "
+     "and their refusals; the commit stages the changed paths a task's "
+     "outputs cover through output_git_rels beside it"),
+    ("_invariants.py", "commit_scope", False,
+     "sign-off's commit-scope invariant reads what a landed task commit was "
+     "allowed to stage from the `files` half alone, so a changed path the "
+     "commit staged through its task's `outputs` reads as out of scope; the "
+     "gap is named here rather than excused"),
+    ("audit-lookup.py", "_dependant_scope", False,
+     "the brief's dependant search: which files depend on the ones a task "
+     "enumerates; a pattern names no file to search for before a run"),
+)
+
+
+def _callee(call):
+    """The bare name a call reaches: `f` of `f(...)` and of `x.f(...)`."""
+    import ast
+    if isinstance(call.func, ast.Attribute):
+        return call.func.attr
+    return getattr(call.func, "id", None)
+
+
+def _plugin_sources():
+    """`[(basename, source)]` for every `.py` under hooks/ and scripts/."""
+    out = []
+    for top in (_harness.HOOKS_DIR, _harness.SCRIPTS_DIR):
+        for dirpath, dirnames, filenames in os.walk(top):
+            dirnames[:] = sorted(d for d in dirnames if d != "__pycache__")
+            for filename in sorted(f for f in filenames if f.endswith(".py")):
+                out.append((filename, _text(os.path.join(dirpath, filename))))
+    return out
+
 
 def _empty_spelling(node):
-    """Whether `node` spells "no changed paths": an empty literal, or a
-    fallback `x or ()` that ends in one."""
+    """Whether `node` spells "no changed paths": an empty literal, an `or`
+    fallback ending in one, or a conditional with one as a branch."""
     import ast
     if isinstance(node, (ast.Tuple, ast.List, ast.Set)) and not node.elts:
         return True
@@ -4347,13 +4568,14 @@ def _empty_spelling(node):
         return True
     if isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or):
         return _empty_spelling(node.values[-1])
+    if isinstance(node, ast.IfExp):
+        return _empty_spelling(node.body) or _empty_spelling(node.orelse)
     return False
 
 
-def _declared_calls(source, name):
-    """`[(file, function, line, opted_out, files_alone)]` - every call of
-    `declared_git_rels` in `source`, and every call of the files-alone
-    `_declared_rels`, with the function it sits in."""
+def _predicate_calls(source, name):
+    """`[(file, function, line, opted_out)]` - every call of
+    `declared_git_rels` in `source`, with the function it sits in."""
     import ast
     out = []
 
@@ -4362,39 +4584,150 @@ def _declared_calls(source, name):
             inner = (child.name if isinstance(child, (ast.FunctionDef,
                                                       ast.AsyncFunctionDef))
                      else fn)
-            if isinstance(child, ast.Call):
-                callee = (child.func.attr if isinstance(child.func, ast.Attribute)
-                          else getattr(child.func, "id", None))
-                if callee == "declared_git_rels":
-                    given = [k.value for k in child.keywords if k.arg == "changed"]
-                    given += child.args[5:6]
-                    out.append((name, fn, child.lineno,
-                                any(_empty_spelling(g) for g in given), False))
-                elif callee == "_declared_rels":
-                    out.append((name, fn, child.lineno, False, True))
+            if isinstance(child, ast.Call) and _callee(child) == "declared_git_rels":
+                given = [k.value for k in child.keywords if k.arg == "changed"]
+                given += child.args[5:6]
+                out.append((name, fn, child.lineno,
+                            any(_empty_spelling(g) for g in given)))
             visit(child, inner)
     visit(ast.parse(source), None)
     return out
 
 
-def _declared_readers():
-    """`(calls, misses)` over every `.py` under hooks/ and scripts/: the calls
-    of the shared predicate, and each `_DECLARED_READERS` row that does not
-    reach it often enough or also reads `files` alone."""
-    calls = []
-    for top in (_harness.HOOKS_DIR, _harness.SCRIPTS_DIR):
-        for dirpath, dirnames, filenames in os.walk(top):
-            dirnames[:] = sorted(d for d in dirnames if d != "__pycache__")
-            for filename in sorted(f for f in filenames if f.endswith(".py")):
-                calls += _declared_calls(_text(os.path.join(dirpath, filename)),
-                                         filename)
+def _readers_missing(calls):
+    """Each `_DECLARED_READERS` row reaching the predicate fewer times than it
+    should: `(file, function, calls seen)`."""
     misses = []
     for filename, fn, least in _DECLARED_READERS:
-        mine = [c for c in calls if c[0] == filename and c[1] == fn]
-        shared = [c for c in mine if not c[4]]
-        if len(shared) < least or [c for c in mine if c[4]]:
-            misses.append((filename, fn, len(shared), len(mine) - len(shared)))
-    return [c for c in calls if not c[4]], misses
+        seen = len([c for c in calls if c[0] == filename and c[1] == fn])
+        if seen < least:
+            misses.append((filename, fn, seen))
+    return misses
+
+
+def _defs_of(tree):
+    """`[(function node, enclosing function nodes, outermost first)]`."""
+    import ast
+    out = []
+
+    def visit(node, chain):
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                out.append((child, chain))
+                visit(child, chain + [child])
+            else:
+                visit(child, chain)
+    visit(tree, [])
+    return out
+
+
+def _reads_files_key(fn):
+    """Whether `fn`'s body, nested functions included, reads a `files` key:
+    `x.get("files")` or `x["files"]`."""
+    import ast
+    for node in ast.walk(fn):
+        if (isinstance(node, ast.Call) and _callee(node) == "get" and node.args
+                and isinstance(node.args[0], ast.Constant)
+                and node.args[0].value == "files"):
+            return True
+        if isinstance(node, ast.Subscript):
+            key = node.slice
+            key = key if isinstance(key, ast.Constant) else getattr(key, "value",
+                                                                    key)
+            if isinstance(key, ast.Constant) and key.value == "files":
+                return True
+    return False
+
+
+def _files_half_names(trees):
+    """The seeds, and every function whose `return` holds a call of a name
+    already in the set, to a fixed point."""
+    import ast
+    names = set(_FILES_HALF_SEEDS)
+    grew = True
+    while grew:
+        grew = False
+        for _name, tree in trees:
+            for fn, _chain in _defs_of(tree):
+                if fn.name in names:
+                    continue
+                if any(isinstance(r, ast.Return) and r.value is not None
+                       and any(isinstance(c, ast.Call) and _callee(c) in names
+                               for c in ast.walk(r.value))
+                       for r in ast.walk(fn)):
+                    names.add(fn.name)
+                    grew = True
+    return names
+
+
+def _files_half_report(sources, exempt):
+    """`{"names", "unexcused", "stale"}` over `[(basename, source)]`.
+
+    A FILES-HALF CALL is a call of a `_files_half_names` name, or a
+    `plan_to_git` call inside a function that reads a `files` key - reported
+    under the innermost function for the first, and for the second under the
+    nearest enclosing function that reads the key. One inside the predicate is
+    the predicate. Any other needs an `exempt` row with a reason, and a row
+    claiming `pairs` needs its function to call an outputs-half name; a blank
+    reason or a false pairing excuses nothing. A row matching no files-half
+    call, or whose reason is blank, or whose pairing is false, is stale.
+
+    WHAT THIS CANNOT SEE: a function handed the `files` half as a value built
+    elsewhere - a list returned by a name, or an argument - past the function
+    that built it, unless that function wraps the call in its return; and a
+    reader matching `files` entries with no `plan_to_git` and no primitive."""
+    import ast
+    trees = [(name, ast.parse(source)) for name, source in sources]
+    names = _files_half_names(trees)
+    calls, outputs = [], set()
+    for name, tree in trees:
+        for fn, chain in _defs_of(tree):
+            if any(isinstance(n, ast.Call) and _callee(n) in _OUTPUTS_HALF
+                   for n in ast.walk(fn)):
+                outputs.add((name, fn.name))
+            for node in ast.iter_child_nodes(fn):
+                for call in _own_calls(node):
+                    callee = _callee(call)
+                    if callee in names:
+                        calls.append((name, fn.name, call.lineno, callee))
+                    elif callee == "plan_to_git":
+                        owner = next((f for f in reversed(chain + [fn])
+                                      if _reads_files_key(f)), None)
+                        if owner is not None:
+                            calls.append((name, owner.name, call.lineno,
+                                          callee))
+    calls = sorted(set(c for c in calls if (c[0], c[1]) != _PREDICATE),
+                   key=lambda c: (c[0], c[2]))
+    seen = set(name for name, _tree in trees)
+    valid, stale = set(), []
+    for filename, fn, pairs, reason in exempt:
+        mine = [c for c in calls if (c[0], c[1]) == (filename, fn)]
+        if filename not in seen:
+            stale.append((filename, fn, "names a file the walk never reads"))
+        elif not mine:
+            stale.append((filename, fn, "names a function making no "
+                                        "files-half call"))
+        elif not str(reason).strip():
+            stale.append((filename, fn, "carries no reason"))
+        elif pairs and (filename, fn) not in outputs:
+            stale.append((filename, fn, "claims to pair the outputs half and "
+                                        "calls none of it"))
+        else:
+            valid.add((filename, fn))
+    unexcused = [c for c in calls if (c[0], c[1]) not in valid]
+    return {"names": names, "unexcused": unexcused, "stale": stale}
+
+
+def _own_calls(node):
+    """The calls under `node` that are not inside a nested function - those
+    belong to the nested function's own unit."""
+    import ast
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return []
+    out = [node] if isinstance(node, ast.Call) else []
+    for child in ast.iter_child_nodes(node):
+        out += _own_calls(child)
+    return out
 
 
 def _all_cases(check):

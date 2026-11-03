@@ -4097,8 +4097,14 @@ def declared_git_rels(manifest, project, git_root, also=(), only=None,
     leaving `changed` out gets the same answer as one passing the listing.
     A tree git will not list counts `files` alone - the stricter direction,
     every caller's own `undeclared_changes` asking git again and refusing on
-    git's reason. `tests/test__config.py` pins every call under hooks/ and
-    scripts/: one handing an empty `changed` is reported by name."""
+    git's reason. `tests/test__config.py` reads every call under hooks/ and
+    scripts/ and reports by name one handing `changed` as an empty literal,
+    an `or` fallback ending in one, or a conditional with one as a branch. It
+    cannot see a listing bound to a name earlier, or a `tree` git will not
+    list. A call there reading the `files` half alone - `declared_task_map`,
+    audit-task's `_declared_rels`, a function whose return holds a call of
+    either, or `plan_to_git` in a function reading a `files` key - carries a
+    row with its reason, and a row naming no such call is reported too."""
     rels = (plan_to_git(entry, git_root, project)
             for entry, rows in declared_task_map(manifest, also).items()
             if only is None or any(str(r.get("taskId")) == str(only)
@@ -4111,17 +4117,18 @@ def declared_git_rels(manifest, project, git_root, also=(), only=None,
 
 def tree_changed_paths(git_root):
     """Every path `git status` lists for the checkout at `git_root`, git-root
-    relative, sorted, once each; empty when git will not say. Read only by the
-    scripts' readers of "declared" - no hook calls it on the per-tool-call path.
+    relative, sorted, once each; empty when git will not say. Its one caller
+    is `declared_git_rels`, which its `GIT_PATH_BASE_EXEMPT` row names and the
+    import-graph lint's suite holds as the whole caller set - no hook calls it
+    on the per-tool-call path.
 
     ASKED HERE, NOT LOADED FROM `scripts/`. `_scoped_commit.status_paths` asks
     the same question, and loading it by path would put that module, and every
     module it imports, on the hook path - which the vocabulary module's suite
-    walks and holds closed to it. So this is a second reading of one git listing, and
-    `tests/test__config.py` compares the two on one tree holding a rename, a
-    name with a space and a non-ASCII name: `-z` keeps each name verbatim (an
-    unquoted name), and a rename or copy lists its source after it, both
-    named. `subprocess` is imported inside, as `_ask_rev_parse` does."""
+    walks and holds closed to it. So git is asked twice, and its text is read
+    once, by `porcelain_z_paths`, which `status_paths` loads from here; each
+    keeps its own answer for a git that will not say. `subprocess` is
+    imported inside, as `_ask_rev_parse` does."""
     import subprocess
     try:
         done = subprocess.run(
@@ -4132,7 +4139,18 @@ def tree_changed_paths(git_root):
         return []
     if done.returncode != 0:
         return []
-    fields = done.stdout.decode("utf-8", "replace").split("\0")
+    return porcelain_z_paths(done.stdout.decode("utf-8", "replace"))
+
+
+def porcelain_z_paths(text):
+    """The paths in `git status --porcelain -z` output `text`, sorted, once
+    each, a backslash read as a slash.
+
+    `-z` keeps each name verbatim, never quoted or octal-escaped, so a name
+    with a space or a non-ASCII byte matches its declared entry. A rename or
+    copy carries two names, the new one first and its source in the next
+    field, and both are listed: the source's removal is a change too."""
+    fields = text.split("\0")
     paths, i = [], 0
     while i < len(fields):
         entry = fields[i]

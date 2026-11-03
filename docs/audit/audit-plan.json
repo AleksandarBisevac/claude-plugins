@@ -1872,7 +1872,10 @@
       "P155.25-gfj",
       "P155.27-gfj",
       "P155.29-gfj",
-      "P155.30-gfj"
+      "P155.30-gfj",
+      "P155.31-gfj",
+      "P155.32-gfj",
+      "P155.33-gfj"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2939,7 +2942,8 @@
       "P155.8",
       "P155.19-gfj",
       "P155.23-gfj",
-      "P155.29-gfj"
+      "P155.29-gfj",
+      "P155.32-gfj"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -4277,7 +4281,8 @@
       "P143.10-z9j",
       "P143.11-z9j",
       "P155.1",
-      "P155.11"
+      "P155.11",
+      "P155.32-gfj"
     ],
     "plugins/audit/scripts/governance/_tree_stamp.py": [
       "P43.4",
@@ -4651,7 +4656,9 @@
       "P155.24-gfj",
       "P155.25-gfj",
       "P155.29-gfj",
-      "P155.30-gfj"
+      "P155.30-gfj",
+      "P155.31-gfj",
+      "P155.33-gfj"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -5164,7 +5171,8 @@
       "P155.6",
       "P155.10",
       "P155.13",
-      "P155.29-gfj"
+      "P155.29-gfj",
+      "P155.32-gfj"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -8457,7 +8465,9 @@
       "P155.9",
       "P155.24-gfj",
       "P155.25-gfj",
-      "P155.30-gfj"
+      "P155.30-gfj",
+      "P155.31-gfj",
+      "P155.33-gfj"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -8595,7 +8605,9 @@
       "P155.24-gfj",
       "P155.25-gfj",
       "P155.29-gfj",
-      "P155.30-gfj"
+      "P155.30-gfj",
+      "P155.31-gfj",
+      "P155.33-gfj"
     ],
     "tools/redfirst.sh": [
       "P55.13",
@@ -8672,7 +8684,9 @@
       "P155.24-gfj",
       "P155.25-gfj",
       "P155.29-gfj",
-      "P155.30-gfj"
+      "P155.30-gfj",
+      "P155.31-gfj",
+      "P155.33-gfj"
     ],
     "tools/ui-tests/evidence-badge.test.mjs": [
       "P32.7",
@@ -11559,7 +11573,8 @@
       "P155.11",
       "P155.21-gfj",
       "P155.29-gfj",
-      "P155.30-gfj"
+      "P155.30-gfj",
+      "P155.32-gfj"
     ],
     "tools/lints/_refs.py": [
       "P130.8",
@@ -11739,7 +11754,9 @@
       "P155.24-gfj",
       "P155.25-gfj",
       "P155.29-gfj",
-      "P155.30-gfj"
+      "P155.30-gfj",
+      "P155.31-gfj",
+      "P155.33-gfj"
     ],
     "tests/fixtures/pricing-page-2026-10-10.md": [
       "P131.1"
@@ -11787,7 +11804,9 @@
       "P155.24-gfj",
       "P155.25-gfj",
       "P155.29-gfj",
-      "P155.30-gfj"
+      "P155.30-gfj",
+      "P155.31-gfj",
+      "P155.33-gfj"
     ],
     "tests/test__areas.py": [
       "P131.1",
@@ -11829,7 +11848,8 @@
       "P155.8",
       "P155.19-gfj",
       "P155.23-gfj",
-      "P155.29-gfj"
+      "P155.29-gfj",
+      "P155.32-gfj"
     ],
     "tests/test__config_rules.py": [
       "P131.1",
@@ -11862,7 +11882,8 @@
       "P155.10",
       "P155.11",
       "P155.21-gfj",
-      "P155.30-gfj"
+      "P155.30-gfj",
+      "P155.32-gfj"
     ],
     "tests/test__doctor_ado.py": [
       "P131.1"
@@ -12147,7 +12168,9 @@
       "P155.24-gfj",
       "P155.25-gfj",
       "P155.29-gfj",
-      "P155.30-gfj"
+      "P155.30-gfj",
+      "P155.31-gfj",
+      "P155.33-gfj"
     ],
     "tests/test__runner_output.py": [
       "P131.1",
@@ -12174,7 +12197,8 @@
       "P143.10-z9j",
       "P143.11-z9j",
       "P155.1",
-      "P155.11"
+      "P155.11",
+      "P155.32-gfj"
     ],
     "tests/test__status_facts.py": [
       "P131.1",
@@ -12344,7 +12368,8 @@
       "P155.10",
       "P155.13",
       "P155.19-gfj",
-      "P155.29-gfj"
+      "P155.29-gfj",
+      "P155.32-gfj"
     ],
     "tests/test_audit_usage.py": [
       "P131.1"
@@ -12696,7 +12721,9 @@
       "P155.24-gfj",
       "P155.25-gfj",
       "P155.29-gfj",
-      "P155.30-gfj"
+      "P155.30-gfj",
+      "P155.31-gfj",
+      "P155.33-gfj"
     ],
     "tests/test_usage_ledger.py": [
       "P131.1",
@@ -12899,10 +12926,14 @@
       "P155.10"
     ],
     "tools/plan-window.py": [
-      "P155.30-gfj"
+      "P155.30-gfj",
+      "P155.31-gfj",
+      "P155.33-gfj"
     ],
     "tests/test_plan_window.py": [
-      "P155.30-gfj"
+      "P155.30-gfj",
+      "P155.31-gfj",
+      "P155.33-gfj"
     ]
   },
   "bugs": [

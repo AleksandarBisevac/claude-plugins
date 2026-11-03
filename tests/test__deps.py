@@ -3872,6 +3872,59 @@ def _git_path_base_cases(check):
           rows and all(len(r) == 3 and all(isinstance(x, str) for x in r)
                        and r[2].strip() for r in rows))
 
+    # The `tree_changed_paths` row is safe only while every reader rebases the
+    # listing through `git_to_plan` before a plan entry meets it, which is a
+    # fact about its callers - so the caller set is held here, and a new
+    # caller turns this red until it is read and named in the row's reason.
+    row = [r for r in rows if r[:2] == ("_config.py", "tree_changed_paths")]
+    real = _callers_of("tree_changed_paths", _plugin_sources())
+    planted = _callers_of("tree_changed_paths", _plugin_sources() + [(
+        "planted.py", "def compare(hc, g, entries):\n"
+                      "    return set(hc.tree_changed_paths(g)) & set(entries)\n")])
+    check("gb7 the callers of `tree_changed_paths` under hooks/ and scripts/ "
+          "are exactly the ones its GIT_PATH_BASE_EXEMPT row names, each by "
+          "name in its reason, and a planted second caller is reported: real "
+          "%r, planted %r" % (real, planted),
+          real == list(_TREE_LISTING_READERS) and row
+          and all(fn in row[0][2] for _f, fn in real)
+          and planted == sorted(real + [("planted.py", "compare")]))
+
+
+# The readers of `tree_changed_paths`' raw git-root listing whose rebasing the
+# GIT_PATH_BASE_EXEMPT row's reason vouches for.
+_TREE_LISTING_READERS = (("_config.py", "declared_git_rels"),)
+
+
+def _plugin_sources():
+    """`[(basename, source)]` for every `.py` under hooks/ and scripts/."""
+    out = []
+    for top in (M._output.HOOKS_DIR, M._output.SCRIPTS_DIR):
+        for dirpath, dirnames, filenames in os.walk(top):
+            dirnames[:] = sorted(d for d in dirnames if d != "__pycache__")
+            for filename in sorted(f for f in filenames if f.endswith(".py")):
+                with open(os.path.join(dirpath, filename), "r",
+                          encoding="utf-8") as fh:
+                    out.append((filename, fh.read()))
+    return out
+
+
+def _callers_of(name, sources):
+    """Sorted `(basename, function)` of every function calling `name`, bare or
+    as an attribute, over `[(basename, source)]`."""
+    found = set()
+    for filename, source in sources:
+        for fn in ast.walk(ast.parse(source)):
+            if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            for call in ast.walk(fn):
+                if not isinstance(call, ast.Call):
+                    continue
+                callee = (call.func.attr if isinstance(call.func, ast.Attribute)
+                          else getattr(call.func, "id", None))
+                if callee == name:
+                    found.add((filename, fn.name))
+    return sorted(found)
+
 
 # Every block, in replay order. Most cases here scan the real tree, so the
 # file's time is spent in scans rather than in process starts, and one process
