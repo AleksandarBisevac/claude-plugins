@@ -247,8 +247,8 @@ IT DOES NOT RUN THE SHIPPED PLUGIN, and says what it asks of it instead. A shipp
 answers no `--selftest`, so there is nothing to run under `hooks/` or `scripts/`; the
 runner's coverage verdict asks `_output_lints.selftest_coverage()` whether every one of them
 has a `tests/test_<name>.py` or a named exemption, and the same goes for the development
-modules whose cases live in `tests/` (`tools/lints/`, `tools/demo/` and the two benchmarks),
-which it leaves out of the walk.
+modules whose cases live in `tests/` (`tools/lints/`, `tools/demo/` and the top-level tools
+`_output_lints.DEV_FILES` names), which it leaves out of the walk.
 
 AND EVERY CHILD RUNS IN EMPTY DIRECTORIES IT IS EXPECTED TO LEAVE EMPTY. A suite runs with
 its cwd AND `TMPDIR` pointed at one scratch directory, its HOME at a second,
@@ -501,10 +501,13 @@ report slice drives the committed reports - docs/index.html is not among them, s
 manifests slice proves it a byte copy of one - and the rendered-plan legs no commit holds:
 a window of this repo's own live plan, a plan whose phases all share one status, an
 all-parked plan with and without `--no-proposals`, and a report older than the checks. The
-window keeps every phase and task key and status the plan uses, and drops most of its
-finished phases, so the leg stops costing more with each phase merged; `rendered_plan_legs`
-in `tools/verify.sh` says which phases it keeps, and the leg prints how many it kept of how
-many.
+window keeps every key path its phases and tasks use - a key nested inside another one
+included - every phase and task status, and every evidence status and flag, and drops the
+finished phases that add none of them and that no kept phase points into, so the leg stops
+costing more with each phase merged.
+`tools/plan-window.py` writes it and says which phases it keeps,
+`tests/test_plan_window.py` holds that selection to a fixture plan, and the leg prints how
+many it kept of how many.
 
 The report gate carries TWO arms over the phone layout and they fail apart. The absolute
 one bounds the share of the screen an open filter panel may pin over the table; the

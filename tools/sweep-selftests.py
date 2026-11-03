@@ -299,8 +299,9 @@ def sweep_files(repo=None):
     subdirectory stopped being swept and nothing went red.
 
     The development modules whose cases live in `tests/` (`tools/lints/`, the demo
-    generators and the two benchmarks) are left out: they answer no `--selftest`, and
-    `coverage_findings` is what accounts for them.
+    generators and the top-level tools `_output_lints.DEV_FILES` names) are left
+    out: they answer no `--selftest`, and `coverage_findings` is what accounts for
+    them.
     """
     repo = repo or REPO
     out = []

@@ -2679,15 +2679,16 @@ def _verify_cleanup_cases(check):
 # that is not record-shaped, the renderer resolved the window's own directory as
 # its project, read no ledger there, and the page showed every pointer as
 # dangling - a status the real plan never shows - while validation and the
-# browser check both passed. These cases RUN the window step verify.sh runs (its
-# shell function cut out of the shipped file, against this repo's real plan) and
-# then ask the renderer's own evidence reader of both plans, independently of the
-# step's own comparison: every subject the window keeps reads as it reads in the
-# full plan, and the step itself refuses a window whose ledger is missing.
+# browser check both passed. These cases are the WIRING: they RUN the window step
+# verify.sh runs (its shell function cut out of the shipped file, against this
+# repo's real plan) and then ask the renderer's own evidence reader of both plans,
+# independently of the step's own comparison. Which phases the window keeps, and
+# the step refusing a window whose ledger is missing, are the tool's and are cased
+# over a fixture plan in tests/test_plan_window.py: this repo's plan moves with
+# every merged phase, so a case over it cannot pin a selection.
 _LIVE_WINDOW_FUNC = "live_plan_window"
-# The one statement in the step that puts the ledger beside the window; the
-# mutation case cuts it, so it is matched whole and counted.
-_LIVE_WINDOW_LEDGER = 'shutil.copytree(os.path.join(src, "evidence"),'
+# The tool the step runs, named whole so lw0 can count it in the function.
+_LIVE_WINDOW_TOOL = os.path.join("tools", "plan-window.py")
 
 
 def _live_window_shell():
@@ -2762,11 +2763,14 @@ def _live_window_cases(check):
     legs = shell_function_text(source, "rendered_plan_legs") or ""
     calls = legs.count("%s \"$WORKDIR/live-window\"" % (_LIVE_WINDOW_FUNC,))
     renders = legs.count("\"$WORKDIR/live-window/docs/audit/audit-plan.json\"")
-    check("lw0 the window step is a function of the shipped script, the report "
-          "leg calls it once, and the leg renders the plan it writes under a "
-          "record-shaped path: function %r, calls %d, record-shaped renders %d"
-          % (func is not None, calls, renders),
-          func is not None and calls == 1 and renders >= 1)
+    tool = (func or "").count("python3 %s docs/audit/audit-plan.json \"$1\""
+                              % (_LIVE_WINDOW_TOOL.replace(os.sep, "/"),))
+    check("lw0 the window step is a function of the shipped script that runs the "
+          "window tool once over the plan's record path, the report leg calls it "
+          "once, and the leg renders the plan it writes under a record-shaped "
+          "path: function %r, tool runs %d, calls %d, record-shaped renders %d"
+          % (func is not None, tool, calls, renders),
+          func is not None and tool == 1 and calls == 1 and renders >= 1)
     shell = _live_window_shell()
     if func is None or shell is None:
         check("lw1 a POSIX shell and the window step to run under it: shell %r, "
@@ -2776,6 +2780,11 @@ def _live_window_cases(check):
     full_path = os.path.join(REPO, "docs", "audit", "audit-plan.json")
     root = tempfile.mkdtemp(prefix="live-window-selftest-")
     try:
+        # The full plan is read BEFORE the step, and once more only when the two
+        # readings disagree: in a checkout where a drive appends ledger rows while
+        # this runs, a run landing between the readings is a moving ledger and not
+        # a defect, and a disagreement that survives the re-read is not that.
+        full = _evidence_of(full_path)
         code, out = _run_live_window(shell, func, os.path.join(root, "ok"))
         window_root = os.path.join(root, "ok", "live-window")
         window_path = os.path.join(window_root, "docs", "audit", "audit-plan.json")
@@ -2789,14 +2798,18 @@ def _live_window_cases(check):
               and os.path.realpath(project or "") == os.path.realpath(window_root))
         if code != 0 or not written:
             return
-        full = _evidence_of(full_path)
         window = _evidence_of(window_path)
         diff = _window_disagreements(full, window)
+        reread = bool(diff)
+        if reread:
+            full = _evidence_of(full_path)
+            diff = _window_disagreements(full, window)
         check("lw2 every subject the window keeps reads as the full plan reads "
               "it, and the chip sets are the full plan's - asked of the "
               "report's own evidence reader, not of the step: %d disagreement(s) "
-              "over %d task(s), first %r"
-              % (len(diff), len((window or {}).get("tasks") or {}), diff[:6]),
+              "over %d task(s)%s, first %r"
+              % (len(diff), len((window or {}).get("tasks") or {}),
+                 " after a re-read of the full plan" if reread else "", diff[:6]),
               window is not None and diff == [])
         # THE FIXTURE-VALUE CASE: lw2 compares two readings, and two readings
         # that both found no ledger agree perfectly. The window must hold runs
@@ -2811,19 +2824,6 @@ def _live_window_cases(check):
               window is not None and (window.get("files") or 0) > 0
               and any(k not in ("no-evidence", "dangling") for k in found)
               and ("dangling" not in found or "dangling" in full_keys))
-        # THE STEP'S OWN REFUSAL. The cases above read the window independently;
-        # this one is the step failing the leg when the window's ledger is not
-        # there, which is the shape every pointer turned dangling under.
-        cut = func.count(_LIVE_WINDOW_LEDGER)
-        broken = func.replace(_LIVE_WINDOW_LEDGER,
-                              "(lambda *a: None)(os.path.join(src, \"evidence\"),")
-        code_b, out_b = (_run_live_window(shell, broken, os.path.join(root, "cut"))
-                         if cut == 1 else (None, ""))
-        check("lw4 the step itself refuses a window whose ledger was not copied: "
-              "the copy cut (%d site), it exits non-zero and names the dangling "
-              "pointers, under %s: code=%r out=%r"
-              % (cut, ran, code_b, out_b[-1500:]),
-              cut == 1 and code_b not in (None, 0) and "dangling" in out_b)
     finally:
         remove_tree(root)
 

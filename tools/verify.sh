@@ -775,171 +775,21 @@ slice_plugin() {
 # instances, sharing no port and no server. docs/index.html is not among them: it is a
 # byte copy of the acme report, which the manifests slice proves.
 #
-# THE LIVE-PLAN WINDOW, written as a project of its own: a window of this repo's
-# plan under "$1" at the plan's own record-shaped path (docs/audit/audit-plan.json),
-# with the committed evidence ledger and the project config beside it, so the
-# renderer resolves "$1" as the window's project the way it resolves the checkout
-# and reads the same ledger and the same `.claude/audit.config.json`. A project
-# theme FILE is not copied, so one added beside that config would be missing
-# from the window. A window outside any checkout at a path that was not
-# record-shaped resolved its own directory as the project,
-# read no ledger there, and rendered every pointer as dangling while every gate
-# passed - so the step now ASKS the report's evidence reader of the full plan and
-# of the window, and fails when any subject the window keeps reads differently
-# (status or flags), or when the window's chip sets are not the full plan's.
-# `_live_window_cases` in tools/gate-parity.py runs this function and reads both
-# plans independently of it.
-#
-# A WINDOW of the live plan, not the whole of it: the leg drives every phase the
-# page holds at every rung of the width ladder, so rendering the whole plan made
-# its cost grow with each merged phase. The window keeps every phase that is not
-# done, the most recent done ones (the third argument), every phase carrying a
-# top-level phase or task key, a status, or an evidence status or flag no kept
-# phase carries, and every phase that a kept phase's blockedBy, or a kept task's
-# dependsOn or blockedBy, points into. Validation fails when that closure misses
-# a reference, and the evidence comparison fails when it misses an evidence
-# status or flag; nothing fails when it misses a manifest key or status, so that
-# arm is the reading of this code. Shards are copied untouched; the index lists
-# are narrowed to what was kept, and a proposal stays when the phase it became
-# was kept or it became none.
+# THE LIVE-PLAN WINDOW: a window of this repo's plan under "$1", written by
+# tools/plan-window.py as a project of its own at the plan's record-shaped path
+# (docs/audit/audit-plan.json), with the evidence ledger and the project config
+# beside it, so the renderer resolves "$1" as the window's project the way it
+# resolves the checkout. A window outside any checkout at a path that was not
+# record-shaped resolved its own directory as the project, read no ledger there,
+# and rendered every pointer as dangling while every gate passed - so the tool
+# ASKS the report's evidence reader of the plan and of the window, both read from
+# one snapshot it takes, and exits non-zero when any subject the window keeps
+# reads differently. Which phases it keeps, and why, is that tool's selection
+# section; its cases run over a fixture plan in tests/test_plan_window.py. What stays here
+# is the wiring, and `_live_window_cases` in tools/gate-parity.py runs this
+# function and reads the live plan and the window independently of it.
 live_plan_window() {
-  python3 - docs/audit/audit-plan.json "$1" 20 <<'PYEOF' || return 1
-import io, json, os, shutil, sys
-sys.path.insert(0, os.path.join(os.getcwd(), "plugins", "audit", "scripts"))
-import _output
-_output.install_path()
-import _evidence_io, _evidence_view, _manifest_io
-
-src_plan, dst, recent = sys.argv[1], sys.argv[2], int(sys.argv[3])
-src = os.path.dirname(os.path.abspath(src_plan))
-project = _output.project_of_manifest(src_plan)
-out_dir = os.path.join(dst, os.path.relpath(src, project))
-out_plan = os.path.join(out_dir, os.path.basename(src_plan))
-
-
-def evidence(path):
-    # The reading render-report.py makes: the same reader, the same boundary.
-    return _evidence_view.load_evidence(
-        _manifest_io.load_manifest(path), path,
-        boundary=_evidence_io.boundary_for(path))
-
-
-def words(view):
-    return (view["key"], [k for k, _w in view["flags"]])
-
-
-full = evidence(src_plan)
-plan = json.load(io.open(src_plan, encoding="utf-8"))
-order = [p["id"] for p in plan["phases"]]
-shards = dict((p["id"], json.load(io.open(os.path.join(src, p["shard"]),
-                                          encoding="utf-8")))
-              for p in plan["phases"])
-owner = dict((t["id"], pid) for pid in order for t in shards[pid]["tasks"])
-seen_views = dict((full or {}).get("tasks") or {})
-phase_views = dict((pid, v["own"])
-                   for pid, v in ((full or {}).get("phases") or {}).items())
-
-
-def shape(pid):
-    s = shards[pid]
-    got = set(("phase", k) for k in s) | set([("phase-status", s["status"])])
-    views = [phase_views[pid]] if pid in phase_views else []
-    for t in s["tasks"]:
-        got |= set(("task", k) for k in t) | set([("task-status", t.get("status"))])
-        if t["id"] in seen_views:
-            views.append(seen_views[t["id"]])
-    for key, flags in (words(v) for v in views):
-        got |= set([("evidence", key)]) | set(("evidence-flag", f) for f in flags)
-    return got
-
-
-def named(pid):
-    s = shards[pid]
-    out = set(s.get("blockedBy") or [])
-    for t in s["tasks"]:
-        for key in ("dependsOn", "blockedBy"):
-            out |= set(owner.get(r, r) for r in t.get(key) or [])
-    return out
-
-
-done = [pid for pid in order if shards[pid]["status"] == "done"]
-keep = set(pid for pid in order if shards[pid]["status"] != "done")
-keep |= set(done[-recent:])
-seen = set()
-for pid in keep:
-    seen |= shape(pid)
-for pid in order:
-    if pid not in keep and shape(pid) - seen:
-        keep.add(pid)
-        seen |= shape(pid)
-todo = sorted(keep)
-while todo:
-    for ref in named(todo.pop()):
-        if ref in shards and ref not in keep:
-            keep.add(ref)
-            todo.append(ref)
-ids = set(t["id"] for pid in keep for t in shards[pid]["tasks"])
-for p in plan["phases"]:
-    if p["id"] in keep:
-        out = os.path.join(out_dir, p["shard"])
-        if not os.path.isdir(os.path.dirname(out)):
-            os.makedirs(os.path.dirname(out))
-        shutil.copyfile(os.path.join(src, p["shard"]), out)
-plan["phases"] = [p for p in plan["phases"] if p["id"] in keep]
-plan["fileIndex"] = dict((f, [t for t in ts if t in ids])
-                         for f, ts in plan["fileIndex"].items()
-                         if any(t in ids for t in ts))
-plan["bugs"] = [b for b in plan["bugs"]
-                if b.get("taskId") is None or b.get("taskId") in ids]
-plan["proposals"] = [x for x in plan.get("proposals") or []
-                     if x.get("materializedAs") is None
-                     or x.get("materializedAs") in keep]
-io.open(out_plan, "w", encoding="utf-8").write(json.dumps(plan, indent=2))
-# The ledger at the record path the window's config resolves it to. A config
-# that moves the ledger elsewhere leaves the window reading none, which the
-# comparison below refuses rather than renders.
-shutil.copytree(os.path.join(src, "evidence"),
-                os.path.join(out_dir, "evidence"))
-config = os.path.join(project, ".claude", "audit.config.json")
-if os.path.isfile(config):
-    if not os.path.isdir(os.path.join(dst, ".claude")):
-        os.makedirs(os.path.join(dst, ".claude"))
-    shutil.copyfile(config, os.path.join(dst, ".claude", "audit.config.json"))
-print("live plan window: %d of %d phases, %d of %d tasks"
-      % (len(keep), len(order), len(ids), len(owner)))
-
-window = evidence(out_plan)
-drift = []
-if (full is None) != (window is None):
-    drift.append("evidence: the full plan's reading is %s, the window's is %s"
-                 % ("present" if full else "absent",
-                    "present" if window else "absent"))
-elif full is not None:
-    for field in ("keys", "flags"):
-        if window[field] != full[field]:
-            drift.append("%s: full plan %s, window %s"
-                         % (field, full[field], window[field]))
-    pairs = [("task", sid, v, full["tasks"].get(sid))
-             for sid, v in sorted(window["tasks"].items())]
-    pairs += [("phase", sid, v["own"], phase_views.get(sid))
-              for sid, v in sorted(window["phases"].items())]
-    for kind, sid, mine, theirs in pairs:
-        if theirs is None or words(mine) != words(theirs):
-            drift.append("%s %s: full plan %s, window %s"
-                         % (kind, sid, theirs and words(theirs), words(mine)))
-if drift:
-    sys.stderr.write("live plan window: %d evidence reading(s) differ from the "
-                     "full plan's, so the page would not show the plan's "
-                     "evidence:\n" % (len(drift),))
-    for line in drift[:12]:
-        sys.stderr.write("  %s\n" % (line,))
-    sys.exit(1)
-print("live plan window: evidence of %d task(s) and %d phase(s) reads as the "
-      "full plan's, over %s ledger file(s)"
-      % (len(window["tasks"]), len(window["phases"]), window["files"])
-      if window is not None else
-      "live plan window: neither plan points at a recorded run")
-PYEOF
+  python3 tools/plan-window.py docs/audit/audit-plan.json "$1" || return 1
   python3 plugins/audit/scripts/manifest/validate-manifest.py \
     "$1/docs/audit/audit-plan.json" || return 1
 }

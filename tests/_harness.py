@@ -109,7 +109,8 @@ HOOKS_DIR = os.path.join(_PLUGIN_DIR, "hooks")
 # `_deps` and `_refs` live outside the plugin and `install_path()` never adds this
 # directory, so a suite that imports either gets it from here.
 LINTS_DIR = os.path.join(_REPO_DIR, "tools", "lints")
-# The demo generators and the two benchmarks live under `tools/`, not in the plugin.
+# The demo generators and the tools `_output_lints.DEV_FILES` names live under
+# `tools/`, not in the plugin.
 # They are on the path for the same reason `LINTS_DIR` is: nothing else adds them.
 TOOLS_DIR = os.path.join(_REPO_DIR, "tools")
 DEMO_DIR = os.path.join(TOOLS_DIR, "demo")

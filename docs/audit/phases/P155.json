@@ -256,16 +256,20 @@
         "severity": "med",
         "file": "plugins/audit/hooks/_config.py:4081-4098 (declared_git_rels `changed=()`), consumer plugins/audit/scripts/governance/drive-phase.py:9954-9993 (submit_strays)",
         "issue": "The diff makes the outputs half of the shared predicate opt-in: declared_git_rels counts outputs only when a caller hands `changed`, and the default `changed=()` silently means files only. drive-phase.py submit_strays calls declared_git_rels in both arms (:9980 bound tree, :9989 serial) without `changed`. That function's docstring says it asks 'the commit's own [question], through the same function on the same basis'. After this diff that is false, and the two readers now disagree on the input this task fixed. In a serial drive, a task that writes a path its own honoured `outputs` covers (ctw-fi2's shape: reports/q3.html under ['reports/**']) gets the plan gate's allow and would get commit-task-work's count and staging. But submit_strays refuses the executor's filing first ('changed reports/q3.html outside its files'), at drive-phase.py:10110-10112. So the end-to-end path the task's tests prove is still unreachable through the driven pipeline, one step before the commit instead of one step after the gate. A bound task tree's member gets told and filed, then left to integration. This is the recurring class again, and it comes from a shared predicate whose second half each caller must remember to switch on. The executor reports it as NOT FIXED, and it is outside the task's files. But it is a caller of the function whose contract this diff changed, so it is charged to the diff.",
-        "resolution": "Make the outputs half unskippable, not per-caller. Default declared_git_rels to `changed=None` and have it list `_scoped_commit.status_paths(git_root)` itself (the tree it was asked about) when None, the way owned_rels now does, so no caller gets files alone by omission. Then pass the tree in drive-phase submit_strays for the bound arm. Add a drive-phase case: a serial task writing a path its honoured `outputs` covers is filed, not refused by strays_refusal. Add a second-direction case: a stray beside it is still refused.",
-        "fixTask": "P155.29-gfj"
+        "resolution": "fixed in P155.29-gfj (297a0f6aa128): Make the outputs half unskippable, not per-caller. Default declared_git_rels to `changed=None` and have it list `_scoped_commit.status_paths(git_root)` itself (the tree it was asked about) when None, the way owned_rels now does, so no caller gets files alone by omission. Then pass the tree in drive-phase submit_strays for the bound arm. Add a drive-phase case: a serial task writing a path its honoured `outputs` covers is filed, not refused by strays_refusal. Add a second-direction case: a stray beside it is still refused.",
+        "fixTask": "P155.29-gfj",
+        "commit": "297a0f6aa128",
+        "status": "fixed"
       },
       {
         "id": "P155-R29",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/commit-task-work.py:641-657 (owned_rels now counts every in_progress task's outputs), consumer plugins/audit/scripts/manifest/audit-task.py:7368-7424 (_declared_rels / _uncommitted_leftovers) and :8036-8062 (close refusal)",
         "issue": "The commit now counts a changed path that a SIBLING in_progress task's honoured `outputs` covers as declared (owned_rels has no `only`). It does not refuse that path, and it does not stage it (stage_targets stages only=own task). The close that follows still reads files alone: `others` is built from _declared_rels, which reads `files` only. So that same dirty path, changed since the attempt's start, lands in `during`, and `audit-task done` refuses with '... changed during this attempt with no in_progress task declaring it'. That sentence is false, because a running task does declare it through `outputs`. The commit has already been written by then. Before the diff, commit and close agreed and refused before anything was committed. After it, the disagreement F808(a) names has moved from gate-vs-commit to commit-vs-close, and it now fires after a commit has landed. The _uncommitted_leftovers docstring (audit-task.py:7393-7394, 'the commit step stages declared files only, so its work is exactly what it left') is also made false by stage_targets' new output arm.",
-        "resolution": "Route the close's count through the same predicate. In _uncommitted_leftovers, build `others` (and `mine`'s outputs arm) from _config.declared_git_rels / output_git_rels over the tree's changed paths, not _declared_rels, so a sibling's honoured output is `covered`, not `during`. Fix the docstring. Add an audit-task case: a commit-task-work commit with a sibling's output path dirty, then `done --commit`, closes without the 'no in_progress task declaring' refusal. Add a second-direction case for a stray no pattern covers. Until that lands, F808 should not be recorded as closed for the class.",
-        "fixTask": "P155.29-gfj"
+        "resolution": "fixed in P155.29-gfj (297a0f6aa128): Route the close's count through the same predicate. In _uncommitted_leftovers, build `others` (and `mine`'s outputs arm) from _config.declared_git_rels / output_git_rels over the tree's changed paths, not _declared_rels, so a sibling's honoured output is `covered`, not `during`. Fix the docstring. Add an audit-task case: a commit-task-work commit with a sibling's output path dirty, then `done --commit`, closes without the 'no in_progress task declaring' refusal. Add a second-direction case for a stray no pattern covers. Until that lands, F808 should not be recorded as closed for the class.",
+        "fixTask": "P155.29-gfj",
+        "commit": "297a0f6aa128",
+        "status": "fixed"
       },
       {
         "id": "P155-R30",
@@ -332,9 +336,30 @@
         "file": "tools/lints/_deps.py:2008-2012",
         "issue": "The new GIT_PATH_BASE_EXEMPT row's reason is true at this tree. `declared_git_rels` is the only caller of `tree_changed_paths` in hooks/ and scripts/, and `output_git_rels` rebases every listed path through `git_to_plan` before `covering_output` reads it (`_config.py:4160`). However, the row's safety depends on \"its only reader\", which nothing checks. `tree_changed_paths` is a public name, and the lint's unit is the function, so a later caller comparing its raw git-root listing with plan entries would be excused by this row silently. That is the stale-row hazard the lint's own docstring names.",
         "resolution": "Pin the caller set. Add a dg4-style AST case asserting that the callers of `tree_changed_paths` under hooks/ and scripts/ are exactly {`declared_git_rels`}, named in the row's reason. Alternatively, make it private (`_tree_changed_paths`) and call it only from `declared_git_rels`, so the reason's premise has a mechanism behind it."
+      },
+      {
+        "id": "P155-R39",
+        "severity": "med",
+        "file": "tests/test_plan_window.py:353-360, tools/plan-window.py:351-357, tools/gate-parity.py:2682-2688",
+        "issue": "The step's own refusal is no longer tested by anything. The diff deletes gate-parity lw4, which ran the shipped step with the ledger copy cut and asserted it 'exits non-zero and names the dangling pointers'. The executor's claim says 'lw4 moved to pw17', and the new gate-parity comment says 'the step refusing a window whose ledger is missing [is] the tool's and [is] cased over a fixture plan in tests/test_plan_window.py'. But pw17 only calls M.disagreements(full, cut) and checks that the returned list names 'dangling'. It never runs main(), so it never checks the exit code. I loaded tools/plan-window.py into a scratch module, mutated it, and ran the suite's own _selftest against each mutation. Changing main's drift branch from `return 1` to `return 0` gave exit 0, 21/21. Replacing `if got[\"drift\"]:` with `if False:` also gave exit 0, 21/21. lw0-lw3 cannot catch this either, because they only see drift when the live plan happens to produce some. So the exact failure the step exists to stop (a window rendered with every pointer dangling while every gate passes) can come back with the suite green.",
+        "resolution": "Add a pw case that runs M.main over the fixture project with the window's reading made to differ, for example by wrapping M._carry so it skips the ledger when the destination is the window's. Assert exit code 1, 'dangling' on stderr, and the 'evidence reading(s) differ' line. Prove it red with the two mutations above. Correct the gate-parity comment and the 'lw4 moved to pw17' claim to name the new case."
+      },
+      {
+        "id": "P155-R40",
+        "severity": "low",
+        "file": "tools/gate-parity.py:2783-2786, 2802-2806",
+        "issue": "The comment says a disagreement that survives the re-read 'is not' a moving ledger, and that is false. The tool takes its snapshot partway through the step, and the re-read happens after the step ends. A ledger row appended between those two moments makes the re-read newer than the window, so the disagreement survives the re-read and lw2 goes red with no defect behind it. The re-read narrows the race in a checkout with a drive running but does not close it.",
+        "resolution": "Keep the before-reading and the re-read. Pass when the window agrees with either one, and fail only when it agrees with neither and the two full readings are equal (the ledger did not move across the step). Or reword the comment to state that the race remains while the step runs."
+      },
+      {
+        "id": "P155-R41",
+        "severity": "low",
+        "file": "tools/plan-window.py:79-83",
+        "issue": "The basis written for dropping the recent-done count is 'measured over this repository's plan it added no key, status or evidence word the arms above did not already keep'. It names no command and no result, so the claim cannot be checked. It also holds by construction rather than by measurement: the shape arm keeps some phase for every key path, status and evidence word, so a fixed count can never add one of those. What the count did buy was volume (more done phases and rows at each width rung), and the basis does not address that.",
+        "resolution": "Replace 'measured over this repository's plan' with the by-construction argument (the shape arm keeps one carrier of every key path, status and evidence word, so a fixed count can only add volume). Then say in one clause that volume is deliberately not something the window keeps. Or name the command that re-derives the measurement."
       }
     ],
-    "outcome": "[findings: 38 - 1 high, 15 med, 22 low; 12 with a recorded fix commit]"
+    "outcome": "[findings: 41 - 1 high, 16 med, 24 low; 14 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2450,7 +2475,7 @@
     {
       "id": "P155.29-gfj",
       "title": "One reading of declared for every reader: submit, commit and close",
-      "status": "in_progress",
+      "status": "done",
       "description": "The recurring class: the plan gate, the commit, the drive's submit and the close each read \"declared\" and they disagree on a task's honoured outputs. P155.19 and P155.23 fixed two of the four readers; review found the other two still read files alone (R28: drive-phase submit_strays calls declared_git_rels without changed, so outputs are opt-in by omission; R29: audit-task done's _uncommitted_leftovers builds others from _declared_rels, files only, and refuses after the commit has landed).\n\nDo: make the outputs half unskippable rather than per-caller. declared_git_rels takes changed=None and lists the tree's changed paths itself when None, so no caller can get files alone by omission. Route submit_strays (both arms) and _uncommitted_leftovers (others and mine's outputs arm) through it. Fix the docstrings it makes false (submit_strays, _uncommitted_leftovers), and bring reference/orchestrator.md step 4c in line with what the commit stages (R30).\n\nProve it: a drive-phase case where a serial task writing a path its honoured outputs cover is filed, not refused, with a second-direction twin where a stray beside it still is; an audit-task case where commit-task-work commits with a sibling's output path dirty and done --commit closes without the \"no in_progress task declaring it\" refusal, with a twin for a stray no pattern covers. Add one case that fails if a caller of the predicate is added that reads files alone (a structural pin over the readers), where feasible.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -2501,14 +2526,21 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "297a0f6aa128",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "hooks/_config.py: declared_git_rels defaults changed=None and lists the tree itself through tree_changed_paths. An optional tree= judges a bound task tree. So the outputs half is no caller's to switch on. tree_changed_paths runs its own stdlib `git status --porcelain -z --untracked-files=all --` and parses it as _scoped_commit.status_paths does. The retry fix: the attempt-1 by-path load of _scoped_commit.py is gone, because it put that module on the hook path and turned mv37 red. Callers: commit-task-work owned_rels passes changed through. drive-phase submit_strays covers its serial arm by the default and its bound arm with tree=tree. audit-task _uncommitted_leftovers builds mine (only=task) and the full declared set from declared_git_rels over one status listing, instead of _declared_rels. Docstrings fixed: declared_git_rels, tree_changed_paths, owned_rels, submit_strays, _uncommitted_leftovers, plus the test_audit_task _leftover_cases prose. Docs: reference/execute-task.md step 4c now says the commit stages the task's own files and the changed paths its own honoured outputs patterns cover. That is where step 4c lives; orchestrator.md has no step 4c and is unchanged. PLUGIN-BUILD-GUIDE: the _config paragraph names both halves for all three readers, the dg4 pin and dg6's equality. The drive submit paragraph cites sd3o/sd3p. The 'step 4c allows' cross-reference was dropped. tools/lints/_deps.py (scope widened by the orchestrator): one GIT_PATH_BASE_EXEMPT row for _config.py/tree_changed_paths. Its reason: the listing's only reader hands it to output_git_rels, which rebases every path through git_to_plan. Tests: test__config dg1-dg7 (both halves with no changed passed; the over-fire twin; the bound-tree listing through a real worktree; the AST pin over every declared_git_rels call and the named readers; a planted mutant proving the pin fires; the listing equal to status_paths on a rename/space/non-ASCII/untracked/deleted tree; empty outside git). test_commit_task_work ctw-so1/ctw-so2 (commit, then done --commit with a sibling's output dirty, closes; a stray is still refused). test_drive_phase sd3o/sd3p (a serial submit with its own output files; a stray beside it is refused). Mutations, all in scratch copies: files-alone makes dg1/dg3/sd3o red; count-all makes dg2/sd3p/ctw-so2 red; close back to _declared_rels makes dg4/ctw-so1 red; tree ignored makes dg3 red; no rename source makes dg6 red; no -z makes dg6 red. Runs on the final tree: the brief's sweep exit 0, 8/8 files ok, 3300 cases. test__deps 266/266. test__refs 292/292. test__manifest_vocab 68/68. bench-hooks --gate exit 0. measure-context --gate exit 0. prove-gates --selftest 66/66. ruff and vermin clean. verify.sh --affected exit 1: its only failing suite is tests/test_audit_status.py sl1-sl3, which are red at HEAD in a git-archive export with none of these changes, and which the orchestrator handles separately. Left as instructed: _verdict_binding.py:55. Dependants: the _config importers (hooks) are still correct. No hook calls declared_git_rels or tree_changed_paths, subprocess is imported inside the function, and bench-hooks and mv37 are green. The drive-phase, commit-task-work and audit-task importers are still correct: the signatures and return shapes are unchanged, and the dependant suites passed in verify --affected. execute-task.md's change is one sentence, and the measure-context ceiling holds.",
+        "descriptive": "The submit, the commit and the close read 'declared' through one predicate whose outputs half cannot be skipped. Its tree listing is asked inside _config, and dg6 holds it equal to the commit machinery's. Step 4c now names the outputs the commit stages."
       },
       "startedAt": "2026-11-02T21:02:18Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-03T08:03:26Z",
+      "verifiedBy": [
+        "test__config dg1/dg2: declared_git_rels with no changed counts the running task's honoured output and not the refused or pending patterns' paths",
+        "test__config dg3: tree= lists the bound task tree's changes, not the checkout's",
+        "test__config dg4/dg5: AST pin over every declared_git_rels call and the named readers, plus a planted mutant proving it fires",
+        "test__config dg6/dg7: tree_changed_paths equals _scoped_commit.status_paths on a rename/space/non-ASCII/untracked/deleted tree; outside git it is empty",
+        "test_commit_task_work ctw-so1/ctw-so2: commit then done --commit with a sibling's output dirty closes; a stray beside it is still refused",
+        "test_drive_phase sd3o/sd3p: a serial submit with its own output files; a stray beside it is still refused"
+      ],
       "notes": [
         {
           "at": "2026-11-02T20:29:34Z",
@@ -2544,12 +2576,24 @@
         "runId": "2026-11-02T22:06:21Z.888c34",
         "status": "passed",
         "at": "2026-11-02T22:06:21Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "297a0f6aa128",
+        "at": "2026-11-03T08:03:26Z",
+        "return": "docs/audit/evidence/returns/P155.29-gfj/20261102T210218Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-11-02T21:59:39Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__config.py tests/test_commit_task_work.py tests/test_drive_phase.py tests/test_audit_task.py tests/_harness.py tests/test__affected_tests.py tests/test__runner_collects.py tests/test_stamp_verification.py` in a throwaway tree at HEAD exited 1 with failing cases dg1 (house FAIL), dg3 (house FAIL), dg4 (house FAIL), ctw-so1 (house FAIL), ctw-so2 (house FAIL), sd3o (house FAIL), sd3p (house FAIL), but the fix run could not be made: the run timed out after 27 s and its process group was torn down - SELFTEST FAILED: 807/809 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P155.30-gfj",
       "title": "Window selection as a tools/ script tested on a fixture plan",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The live-plan window's selection lives in a heredoc inside tools/verify.sh and its only tests (gate-parity lw0-lw4) read this repo's live plan, whose shape moves with every merged phase (R33, R34). Also open on the same code: the fixed count of recent done phases carries no basis (R17); shape() reads only top-level keys, so nested shapes like task.outcome.filesTouched and task.tests.falsifiers are dropped (R18); the full plan and the window are read at two different moments from a live ledger (R31).\n\nDo: extract the selection into a stdlib tools/plan-window.py that verify.sh calls. Add tests/test_plan_window.py building a fixture plan with a cross-phase dependsOn, a materialized proposal, a bug on a dropped task, a phase with a unique key and a nested-only shape; assert closure, proposal and bug filtering, and shape-set equality including nested keys. Either derive the recent-done count from something stated or drop it, with the basis written beside it. Take both evidence readings from one snapshot. Keep gate-parity's lw cases only where they test the verify.sh wiring, not the selection. Prove each assertion red by mutating the closure, the proposal filter, the bug filter, the shape arm and the nested-key arm.",
       "files": [
         "tools/verify.sh",
@@ -2562,14 +2606,27 @@
         "tools/affected.py",
         "tools/verify.sh",
         "CONTRIBUTING.md",
-        "tools/gate-parity.py"
+        "tools/gate-parity.py",
+        "tests/test__affected_tests.py",
+        "tests/test__doctor_trail.py",
+        "tests/test_drive_phase.py",
+        "tools/lints/_deps.py",
+        "tools/prove-gates.py",
+        "tools/sweep-selftests.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "tests/_harness.py",
+        "tests/test__deps.py",
+        "tests/test__runner_collects.py",
+        "tests/test_stamp_verification.py",
+        "tools/lints/_output_lints.py",
+        "tests/test__output_lints.py"
       ],
       "tests": {
         "mode": "tdd",
         "add": [],
         "expectRedFirst": false,
         "gate": [
-          "python3 tools/sweep-selftests.py tests/test_plan_window.py"
+          "python3 tools/sweep-selftests.py tests/test_plan_window.py tests/test__affected_tests.py tests/test__doctor_trail.py tests/test_drive_phase.py tests/_harness.py tests/test__deps.py tests/test__runner_collects.py tests/test_stamp_verification.py"
         ],
         "gateBasis": "files"
       },
@@ -2578,14 +2635,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-03T08:29:09Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -2620,6 +2677,10 @@
         {
           "at": "2026-11-02T20:29:44Z",
           "text": "no test runner in this task's gate for the test P155-R33 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test_plan_window.py'], derived as narrowed to this task's files, in the spelling meta.phaseGate.derived.spelling records; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        },
+        {
+          "at": "2026-11-03T08:24:01Z",
+          "text": "Scope widened by the orchestrator: tools/lints/_output_lints.py DEV_FILES needs the row for tools/plan-window.py, or its new suite reads as an orphan and the sweep runs the tool as its own test"
         }
       ],
       "fixes": [
@@ -2628,7 +2689,13 @@
         "P155-R18",
         "P155-R31",
         "P155-R34"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-03T08:54:09Z.badd75",
+        "status": "passed",
+        "at": "2026-11-03T08:54:09Z"
+      }
     }
   ],
   "reviewPerTask": "signals",

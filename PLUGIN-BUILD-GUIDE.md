@@ -76,6 +76,7 @@ claude-plugins/                           # this repo (personal, public)
     gen-demo-manifest.py                  # synthetic LARGE manifest fixture for demos/screenshots/CI
     gen-demo-usage.py                     # synthetic usage ledger fixture, consistent with a real manifest
   tools/bench-report.py                   # the report benchmark that left `render-report.py --bench`
+  tools/plan-window.py                    # the window of a plan the report leg renders: which phases it keeps, both evidence readings from one snapshot
   tools/_usage_bench.py                   # the timer over the analytics passes, and the fixture it times them on
 .claude-plugin/
     marketplace.json                      # marketplace listing (one plugin: "audit")

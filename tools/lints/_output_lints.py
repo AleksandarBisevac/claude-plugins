@@ -2483,12 +2483,15 @@ COVERAGE_EXEMPT = {}
 
 # The development modules, outside `scripts/` and `hooks/`, whose cases live in
 # `tests/`. A DIRECTORY is named for `tools/lints/` and `tools/demo/`; a single FILE
-# is named for the two benchmarks, because the rest of `tools/` carries its own
-# suites and the sweep runs those.
+# is named for each top-level tool whose cases live in `tests/` rather than in the
+# tool, because the rest of `tools/` carries its own suites and the sweep runs those.
+# A tool left off this table is run by the sweep as `--selftest`, and its suite in
+# `tests/` reads as an orphan.
 DEV_DIRS = (("lints", LINTS_DIR),
             ("demo", os.path.join(REPO_ROOT, "tools", "demo")))
 DEV_FILES = (("tools", os.path.join(REPO_ROOT, "tools", "_usage_bench.py")),
-             ("tools", os.path.join(REPO_ROOT, "tools", "bench-report.py")))
+             ("tools", os.path.join(REPO_ROOT, "tools", "bench-report.py")),
+             ("tools", os.path.join(REPO_ROOT, "tools", "plan-window.py")))
 
 # The classes a build must be empty of. Named once, here, rather than re-spelled as a
 # tuple of keys at each call site.
