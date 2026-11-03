@@ -421,7 +421,9 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    commit - a task, audit-state or manifest-index commit that staged it would breach its own scope.
    It re-derives, from git
    and the shard and the journal and the usage ledger, the rules **this file states** and nothing
-   enforces: a task commit staged only its own `files`, its phase's manifest file and the journal;
+   enforces: a task commit staged only what its task declares - its `files` and the staged paths
+   its own honoured `outputs` cover, the reading the task commit stages by - its phase's manifest
+   file and the journal;
    no push, no forced update and no `git stash` touched the phase branch; every manifest state the
    phase committed still validates; a `risk: "high"` task ran on neither a declared nor a metered
    `haiku`; and `phase.baseRef` is on the resolved parent branch.

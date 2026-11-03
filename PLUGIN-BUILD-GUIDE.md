@@ -616,12 +616,20 @@ path loads nothing from `scripts/`; its text is read by `porcelain_z_paths`, the
 `changed`, an empty literal, an `or` fallback ending in one, or a conditional with one as a
 branch, and any reader its `_DECLARED_READERS` names that stops reaching it; it cannot see a
 listing bound to a name earlier, or a `tree` git will not list. `dg8` holds the rest of the
-class as a rule rather than a list: every call reading the `files` half alone — `declared_task_map`,
-audit-task's `_declared_rels`, a function whose return holds a call of either, or `plan_to_git`
-in a function reading a `files` key — sits inside `declared_git_rels` or carries a
-`_FILES_ALONE_EXEMPT` row with its reason, and a row naming no such call, carrying no reason, or
-claiming an outputs pairing its function does not make is reported (`dg9`, `dg10` show both
-directions fire). The free-file slot is outside both halves: it opens one small edit to
+class as a rule whose reach is derived rather than listed (`_files_half_reach`): a function
+reading a task's `files` for a declared question — a matcher (`covers`, `covering_key`,
+`plan_to_git`) handed a raw entry first, `x in <raw entries>`, a raw value handed to a parameter
+some function puts to a matcher, or a call of a function whose return carries an answer read
+that way, `declared_task_map` and `declared_work` among them — sits inside `declared_git_rels` or
+carries a `_FILES_ALONE_EXEMPT` row with its reason. A row excuses its own function and never
+its callers, so a reader through an excused owner needs a row of its own, and a row naming no
+such call, carrying no reason, or claiming an outputs pairing its function does not make is
+reported (`dg9`, `dg10`; `dg14` names planted readers of the direct, `declared_work`, invariant
+and integration shapes, and `dg15` holds their quiet twins). It cannot see a `files` value
+carried through a call it does not know to carry one, a parameter reaching a matcher only
+through such a call or a membership test, an answer handed on as an argument rather than
+returned, or an attribute call it cannot place when more than one file defines the name. The
+free-file slot is outside both halves: it opens one small edit to
 a session, not a task's declaration, so the commit refuses that path when the attempt changed it.
 `covering_key` is the matcher over any of those file maps (exact, the path as a directory, a
 directory the path sits under), shared so a verdict and the sentence explaining it cannot answer
@@ -1265,7 +1273,11 @@ phase tree dirty beyond record paths and earlier integrations is refused (`dirty
 task changed since the base is refused when it is a lockfile (`non-mergeable`, judged on the real
 file path, so a lockfile inside a declared directory is caught) and otherwise merged per path with
 `git merge-file`, a conflict being refused (`conflict`) with every task named; only then are
-undeclared paths a **decision** (exit 3: widen, discard or block) — except a **follower**. Each
+undeclared paths a **decision** (exit 3: widen, discard or block). Declared is the one reading
+(`undeclared_paths` asks `_config.declared_git_rels` over this task alone, about the changed
+paths themselves): its `files` entries and each changed path its own honoured `outputs` cover,
+which the member's submit already counted, so its own output is never asked after the review
+(`iw1`, `iw2` in `tests/test_integrate_task.py`) — except a **follower**. Each
 script `_evidence_io.FOLLOWER_OWNERS` names that the task tree holds is asked as
 `<script> --follower-for <path>...` and answers with a `FOLLOWER-OWED` line for each path it
 owns (`_evidence_io.claimed_followers`, the one reading the drive's `stray_step` shares). `reproduced` copies the task tree's work into a scratch directory, puts every
@@ -3570,8 +3582,12 @@ plugin's rules into what a hook ENFORCES and what the model FOLLOWS, and the sec
 last column names, per row, what evidence would catch a breach — `post-hoc` where git, the
 shard, the journal or the ledger already holds it. This module reads that evidence, check by
 check — `CHECK_NAMES` is the list and `verify-invariants.py --all` prints it: a task commit
-staged only its own `files`, its phase's manifest file and the two records beside it
-(`git show --name-only`); an **audit-state** commit staged those records and *not* the task's
+staged only what its task declares — its `files` and the staged paths its own honoured `outputs`
+cover, the one reading `_config.declared_git_rels` gives the commit that staged them (`os1`-`os3`
+in `tests/test__invariants.py`) — its phase's manifest file and the two records beside it
+(`git show --name-only`), a breach naming the staged path in git's spelling and in the plan's
+through `_config.git_to_plan`, or as outside the project (`os4`, `os5`: the plan below its git
+root and the git root below the plan); an **audit-state** commit staged those records and *not* the task's
 `files`, found through the journal's `audit.state.committed` rows because nothing in the
 manifest names such a commit; a **manifest-index** commit staged the shared index and the
 journal holding its own row and nothing else, found the same way through `audit.index.committed`

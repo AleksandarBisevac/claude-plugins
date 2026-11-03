@@ -1,0 +1,48 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__invariants.py tests/test_integrate_task.py tests/test__config.py": "pass",
+    "python3 tools/sweep-selftests.py <tools/affected.py --list-related over the changed files, 194 files>": "pass",
+    "python3 tests/test__deps.py --selftest (inside the related sweep)": "pass",
+    "python3 tests/test__manifest_vocab.py --selftest (inside the related sweep)": "pass",
+    "python3 tools/bench-hooks.py --gate": "pass",
+    "python3 tools/prove-gates.py --selftest": "pass",
+    "ruff check (changed .py files)": "pass",
+    "vermin -t=3.8- --no-tips --violations (changed .py files)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-03T11:37:32Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__invariants.py tests/test_integrate_task.py tests/test__config.py` in a throwaway tree at HEAD exited 1 with 10 of 37 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - dg8 (house FAIL), dg9 (house FAIL), dg10 (house FAIL), os1 (house FAIL), os4 (house FAIL), os5 (house FAIL), n3 (house FAIL), n4 (house FAIL), iw1 (house FAIL) and 1 more: SELFTEST FAILED: 33/37 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Attempt 2, answering the re-gate's gb1 red (tests/test__deps.py git_path_base_violations naming _invariants.py:commit_scope). As directed, the paths go through the pair and no exemption row is added. A new helper _invariants._plan_spelling(hc, path, git_root, project) spells each git-listed staged path the plan's way with hc.git_to_plan, or, when that spelling climbs out with `..`, says the path lies outside the project and no entry can name it. commit_scope's generic breach sentence now carries that clause beside git's spelling: 'staged member/gen/r.txt (`gen/r.txt` in the plan's spelling), which the task declares neither ...'. The breach key (tid + git path) is unchanged, so baseline fingerprints still match. The allow decision is unchanged: hc.declared_git_rels over the task alone with changed=staged, which already rebases both halves (plan_to_git for files, git_to_plan inside output_git_rels for outputs). os1 had already proved the plan-below-git-root allow case, and os5's allow half passed before this fix. New cases in tests/test__invariants.py: os4 (plan below its git root, member/: the breach carries both spellings, and a checkout-root stray top.txt is named outside the project) and os5 (new ob-block, git root below the project, gitRoot 'test': the declared file and the own output gen/r.md pass, and the stray twin's breach names gen/r.txt and `test/gen/r.txt`). The commit_scope docstring and the PLUGIN-BUILD-GUIDE.md _invariants section say this. Everything else is attempt 1's work and stands: commit_scope and undeclared_paths read declared through declared_git_rels, the derived reach in tests/test__config.py (_files_half_reach, dg14/dg15, the reasoned table), and the docs. Results: brief gate exit 0, 3/3 files, 581 cases (test__config 403, test__invariants 141, test_integrate_task 37). Related sweep (tools/affected.py --list-related over the changed files) exit 0, 194/194 files, 18200 cases, test__deps 267 and test__manifest_vocab 68 among them. bench-hooks --gate exit 0, measured on 3.14.7 only; it prints 3.8-3.13 as NOT MEASURED. prove-gates --selftest exit 0, 66/66. ruff and vermin are clean on the changed .py files. Still open, outside this task's files (the plan gate refused the edit in attempt 1): the _SAME_CHECKOUT reason in tools/lints/_deps.py says undeclared_paths 'rebases through git_to_plan', but it now asks declared_git_rels, which spells entries through plan_to_git; the sentence wants rewording. Dependants: as in attempt 1. Additionally, commit_scope's breach wording changed again, and no case outside tests/test__invariants.py asserts on that sentence: test_verify_invariants (73 cases) passes, and its fixture breach string is a fingerprint input, not a commit_scope output.",
+    "descriptive": "Sign-off's commit-scope check now names each stray in both git's and the plan's spelling, through the git/plan path pair, and is proved in both nested topologies. Every gate is green."
+  },
+  "testsAdded": [
+    "os1-os5: commit-scope allows a landed commit's own outputs (nested project), reports its stray twin, honours no refused pattern, and names a breach in both spellings or as outside the project, in the plan-below-git-root and git-root-below-plan topologies",
+    "iw1-iw2: a wave member's own output is not asked at integration while its stray is, and discard keeps the output; n3/n4 moved to the task-shaped signature",
+    "dg14-dg15: the derived reach names planted readers (direct, through declared_work and its caller, a sign-off invariant, an integration helper), and their quiet twins stay unnamed"
+  ],
+  "casesAdded": [
+    [
+      "os1",
+      "os2",
+      "os3",
+      "os4",
+      "os5"
+    ],
+    [
+      "iw1",
+      "iw2"
+    ],
+    [
+      "dg14",
+      "dg15"
+    ]
+  ],
+  "claims": "claims:\n1 _invariants.py _plan_spelling calls hc.git_to_plan and the commit_scope breach sentence formats its clause; the docstring and guide sentence describe exactly that; the allow-list is the declared_git_rels call above `for path in staged`\n2 os4/os5 red on attempt 1's code, green after; the outside-the-project branch disabled in a scratch export -> os4 FAIL 140/141; gb1 (tests/test__deps.py) red in the re-gate, green now (267/267)\n3 the lint unit is the function: commit_scope is the one site gb1 named, now through the pair; the remaining stale prose is _deps.py _SAME_CHECKOUT, left because it is outside this task's files (plan gate refusal)\n4 the base rule is enforced by tools/lints/_deps.py git_path_base_violations (gb1); the declared rule by dg8/dg10, named in the guide\n5 n/a - no new timing recorded this attempt\n6 n/a - no guard\n7 no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:b5d6287bc874c4ccfed7c1dca7e780b6a92d8f7ad9514107f86ca3fe7d455ddf\",\"dirtyDigest\":\"sha256:5a68e3d0a6cce3a177f0f13f81d90ad36de16bbe53358d3ffacab64e6205cd45\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"f70c202daa90e44d\",\"plugins/audit/hooks/_config.py\":\"ff5f94f4f10fb1bf\",\"plugins/audit/reference/phase-signoff.md\":\"a11139eb8277debf\",\"plugins/audit/scripts/git/integrate-task.py\":\"83ba372255f4983a\",\"plugins/audit/scripts/governance/_invariants.py\":\"d12f9987435a633d\",\"tests/test__config.py\":\"835eb9b36be6f4a2\",\"tests/test__invariants.py\":\"b77a6da953f23165\",\"tests/test_integrate_task.py\":\"9935044738a5bf50\"},\"head\":\"fdf3b270\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/hooks/_config.py\",\"plugins/audit/reference/phase-signoff.md\",\"plugins/audit/scripts/git/integrate-task.py\",\"plugins/audit/scripts/governance/_invariants.py\",\"tests/test__config.py\",\"tests/test__invariants.py\",\"tests/test_integrate_task.py\"],\"scopeDigest\":\"sha256:ebde2b54bb61e5af9a6cfdcc1625a62c5cb78282860de028a5d5516ce278735a\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

@@ -4288,12 +4288,17 @@ def _files_half_cases(check, sources):
     """Every call that reads the `files` half of "declared" on its own, under
     hooks/ and scripts/, either sits inside the shared predicate or carries a
     `_FILES_ALONE_EXEMPT` row with its reason - and the table is held the other
-    way too, so a row naming no such call is reported rather than believed."""
-    real = _files_half_report(sources, _FILES_ALONE_EXEMPT)
+    way too, so a row naming no such call is reported rather than believed.
+    The reach is derived once per walk - the real tree's for dg8 and dg10,
+    the real tree with every planted file beside it for the cases that plant."""
+    reach = _files_half_reach(sources)
+    real = _files_half_report(sources, _FILES_ALONE_EXEMPT, reach)
     check("dg8 THE PIN IS AN INVARIANT: every files-half call outside "
-          "`declared_git_rels` - a primitive, a wrapper whose return holds one, "
-          "or `plan_to_git` over a task's `files` - carries an exemption row, "
-          "and no row is stale or blank: wrappers %r, unexcused %r, stale %r"
+          "`declared_git_rels` - a call of a function whose return carries "
+          "the files half, a matcher handed a raw entry, a raw value handed "
+          "to a parameter that reaches one, a membership test over raw "
+          "entries - carries an exemption row, and no row is stale or blank: "
+          "readers %r, unexcused %r, stale %r"
           % (sorted(real["names"]), real["unexcused"], real["stale"]),
           real["unexcused"] == [] and real["stale"] == []
           and set(_FILES_HALF_SEEDS) < real["names"])
@@ -4307,19 +4312,46 @@ def _files_half_cases(check, sources):
                "def asks_opened(hc, m, rel):\n"
                "    ok = opened(hc, m, rel)\n"
                "    return not ok\n")
-    got = _files_half_report(sources + [("planted.py", planted)],
-                             _FILES_ALONE_EXEMPT)
+    walk = sources + [("planted.py", planted),
+                      ("planted_reach.py", _PLANTED_REACH),
+                      ("planted_quiet.py", _PLANTED_QUIET)]
+    got = _files_half_report(walk, _FILES_ALONE_EXEMPT,
+                             _files_half_reach(walk))
+
+    def named(filename):
+        return [(fn, callee) for f, fn, _line, callee in got["unexcused"]
+                if f == filename]
     check("dg9 THE INVARIANT CAN FIRE: a planted files-alone reader is named "
           "whatever function it sits in - through `_declared_rels`, through "
           "`declared_task_map` as an attribute, through `plan_to_git` over "
           "`files` - and so is the caller of a planted wrapper, while the "
           "real tree's calls stay excused: %r" % (got["unexcused"],),
-          [(f, fn, callee) for f, fn, _line, callee in got["unexcused"]]
-          == [("planted.py", "counted_rows", "_declared_rels"),
-              ("planted.py", "opened", "declared_task_map"),
-              ("planted.py", "spelled", "plan_to_git"),
-              ("planted.py", "asks_opened", "opened")]
-          and got["stale"] == [])
+          named("planted.py")
+          == [("counted_rows", "_declared_rels"),
+              ("opened", "declared_task_map"),
+              ("spelled", "plan_to_git"),
+              ("asks_opened", "opened")]
+          and got["stale"] == []
+          and not [c for c in got["unexcused"] if not c[0].startswith("planted")])
+    check("dg14 THE REACH IS DERIVED, NOT LISTED: planted readers of the "
+          "shapes the listed pins missed are each named - a direct match of "
+          "raw entries, a reader through the excused owner `declared_work` "
+          "and the caller of that reader, a sign-off invariant spelling the "
+          "entries through `plan_to_git`, and an integration handing the "
+          "entries to a parameter its helper matches: %r"
+          % (named("planted_reach.py"),),
+          named("planted_reach.py")
+          == [("stray_of", "covers"),
+              ("carried", "declared_work"),
+              ("asks_carried", "carried"),
+              ("scope_invariant", "plan_to_git"),
+              ("integrated", "judged")])
+    check("dg15 SECOND DIRECTION: a planted reader asking through the shared "
+          "predicate, its caller, the helper matching whatever it is handed, "
+          "and a function that only counts a task's entries are named by "
+          "nothing - so a reach that flagged every `files` key, or every "
+          "caller of a matcher, goes red here: %r" % (named("planted_quiet.py"),),
+          named("planted_quiet.py") == [])
     def altered(row):
         # A blank reason on one real row, and a pairing claim on a real row
         # whose function asks no outputs half.
@@ -4331,7 +4363,7 @@ def _files_half_cases(check, sources):
     rows = tuple(altered(r) for r in _FILES_ALONE_EXEMPT) + (
         ("audit-task.py", "_gone_reader", False, "a function that is not there"),
         ("nowhere.py", "reader", False, "a file the walk never reads"))
-    held = _files_half_report(sources, rows)
+    held = _files_half_report(sources, rows, reach)
     check("dg10 THE TABLE IS HELD BOTH WAYS: a row naming no files-half call, "
           "a row for a file the walk never reads, a blank reason, and a row "
           "claiming its function pairs the outputs half when it calls none "
@@ -4462,9 +4494,53 @@ _PIN_READS = ("an empty literal, an `or` fallback ending in one, or a "
 _PIN_BLIND = "a listing bound to a name earlier, or a `tree` git will not list"
 
 # The `files` half of "declared", answered on its own. A function whose
-# `return` holds a call of one of these is one too, derived rather than listed
-# (`_files_half_names`), so a wrapper is followed out to its callers.
+# return carries one of these answers is one too, derived rather than listed
+# (`_files_half_reach`), so a reader is followed out to its callers.
 _FILES_HALF_SEEDS = ("declared_task_map", "_declared_rels")
+# Planted readers of the shapes a listed pin missed (dg14), each of which a
+# derived reach must name: a direct match, a reader through the excused
+# owner `declared_work` and its own caller, a sign-off invariant, and an
+# integration handing the entries to its helper.
+_PLANTED_REACH = (
+    "import _loader\n"
+    "import _scoped_commit\n\n\n"
+    "def stray_of(task, rel):\n"
+    "    return not any(covers(e, rel) for e in task.get('files') or [])\n\n\n"
+    "def carried(task, p, g):\n"
+    "    return [rel for _n, rel in _scoped_commit.declared_work(task, p, g)]\n\n\n"
+    "def asks_carried(task, p, g, rel):\n"
+    "    return rel in carried(task, p, g)\n\n\n"
+    "def scope_invariant(phase, g, p):\n"
+    "    hc = _loader.load_hooks_config(modname='audit__config')\n"
+    "    breaches = []\n"
+    "    for task in phase.get('tasks') or []:\n"
+    "        allowed = [hc.plan_to_git(f, g, p) for f in task.get('files') or []]\n"
+    "        for path in task.get('staged') or []:\n"
+    "            if not any(covers(a, path) for a in allowed):\n"
+    "                breaches.append(path)\n"
+    "    return result('commit-scope', breaches)\n\n\n"
+    "def judged(declared, paths):\n"
+    "    return sorted(p for p in paths\n"
+    "                  if not any(covers(d, p) for d in declared))\n\n\n"
+    "def integrated(task, paths):\n"
+    "    extra = judged(task.get('files') or [], paths)\n"
+    "    return len(extra)\n")
+# Their quiet twins (dg15): the same questions asked through the shared
+# predicate, the caller of such a reader, a helper matching whatever it is
+# handed, and a count of a task's entries that asks no declared question.
+_PLANTED_QUIET = (
+    "import _loader\n\n\n"
+    "def matched(declared, paths):\n"
+    "    return [p for p in paths if not any(covers(d, p) for d in declared)]\n\n\n"
+    "def through_predicate(m, p, g, t, paths):\n"
+    "    hc = _loader.load_hooks_config(modname='audit__config')\n"
+    "    declared = hc.declared_git_rels(m, p, g, also=[t], only=t,\n"
+    "                                    changed=paths)\n"
+    "    return matched(declared, paths)\n\n\n"
+    "def asks_predicate(m, p, g, t, paths):\n"
+    "    return through_predicate(m, p, g, t, paths)\n\n\n"
+    "def counted(task):\n"
+    "    return len(task.get('files') or [])\n")
 # The shared predicate: a files-half call inside its body IS the reading of
 # both halves, and needs no row.
 _PREDICATE = ("_config.py", "declared_git_rels")
@@ -4473,11 +4549,30 @@ _OUTPUTS_HALF = frozenset(("declared_outputs", "in_progress_outputs",
                            "task_covered_outputs", "output_git_rels"))
 _NUDGE = ("advisory output, never a verdict, read from the `files` half alone: "
           "a path only a running task's `outputs` pattern covers is ")
+_WORK_NAMES = ("a caller of declared_work, reading which enumerated `files` "
+               "entries are the task's work by name - a pattern names no "
+               "entry - where ")
+_DEPENDANTS = ("the brief's dependant section over _dependant_scope: which "
+               "files depend on the ones a task enumerates")
+_REVIEW_DIFF = ("the reviewer's diff is restricted to the enumerated `files` "
+                "as pathspecs, so a changed path only the task's `outputs` "
+                "pattern covers is not in it; the gap is named here rather "
+                "than excused, for ")
+_IMPACT = ("the impact check's chain over _owed_now: the readers owed by "
+           "the files a task enumerates, bounded by their line ranges, which "
+           "a pattern does not carry")
+_WIDENING = ("a widening of the enumerated `files` list skips an entry it "
+             "already holds - a list edit, never whether a change is "
+             "declared")
 # Every function under hooks/ and scripts/ that reads the `files` half outside
 # the predicate: (basename, function, pairs, reason). `pairs` claims the
 # function also asks the outputs half, and is checked; a row with `pairs`
 # False says why the outputs half is not its question, or names the gap.
 _FILES_ALONE_EXEMPT = (
+    ("_config.py", "declared_task_map", False,
+     "the `files` half itself, the seed: the predicate reads it beside the "
+     "outputs half, and the membership test here only keeps one task's row "
+     "from repeating under an entry"),
     ("_config.py", "in_progress_task_map", False,
      "the plan gate's `files` map over the plan on disk, a wrapper of "
      "declared_task_map; each caller of it is held by its own row"),
@@ -4526,14 +4621,64 @@ _FILES_ALONE_EXEMPT = (
      "which `files` entries are work, by name, for the task commit, the close "
      "and their refusals; the commit stages the changed paths a task's "
      "outputs cover through output_git_rels beside it"),
-    ("_invariants.py", "commit_scope", False,
-     "sign-off's commit-scope invariant reads what a landed task commit was "
-     "allowed to stage from the `files` half alone, so a changed path the "
-     "commit staged through its task's `outputs` reads as out of scope; the "
-     "gap is named here rather than excused"),
+    ("_scoped_commit.py", "close_evidence_refusal", False,
+     _WORK_NAMES + "the refusal names the entries it found no change to"),
     ("audit-lookup.py", "_dependant_scope", False,
      "the brief's dependant search: which files depend on the ones a task "
      "enumerates; a pattern names no file to search for before a run"),
+    ("audit-lookup.py", "dependant_lines", False, _DEPENDANTS),
+    ("audit-lookup.py", "dependants_listing", False, _DEPENDANTS),
+    ("audit-lookup.py", "documented_lines", False,
+     "the brief's documentation pointers: where the files a task enumerates "
+     "are documented; a pattern names no file to look up"),
+    ("audit-lookup.py", "_phase_scope_lines", False,
+     "the phase brief lists the phase diff's paths no task's `files` "
+     "enumerate, read from the `files` half alone, so a path only a task's "
+     "`outputs` pattern covers is listed there too; the gap is named here "
+     "rather than excused"),
+    ("audit-lookup.py", "compose_reviewer_brief", False,
+     _REVIEW_DIFF + "a member's brief"),
+    ("audit-lookup.py", "phase_brief_parts", False,
+     _REVIEW_DIFF + "each owed task's own diff in the phase brief"),
+    ("audit-task.py", "_unanswered_readers", False, _IMPACT),
+    ("audit-task.py", "_answered_readers", False, _IMPACT),
+    ("audit-task.py", "_locked_start", False, _IMPACT),
+    ("audit-task.py", "_close_evidence_refusal", False,
+     _WORK_NAMES + "the close refuses a commit changing none of them, the "
+     "`_commit_touches` row's gap"),
+    ("audit-task.py", "_locked_scope", False,
+     "the scope verb edits the enumerated `files` list itself: the impact "
+     "check over the widened entries, and the `fileIndex` rows the released "
+     "entries give back - a list edit, never whether a change is declared"),
+    ("_scope_companions.py", "derive", False,
+     "which derived companions the enumerated `files` already carry, so a "
+     "widening does not repeat an entry - a list edit, never whether a change "
+     "is declared"),
+    ("commit-task-work.py", "stage_targets", True,
+     "the task commit's allow-list: the enumerated entries, each tested "
+     "against the records and classified, and the changed paths the task's "
+     "own honoured outputs cover through output_git_rels"),
+    ("commit-task-work.py", "_declarers", False,
+     "the hand-over check: which other attempted task's enumerated `files` "
+     "hold a path - whose unfinished work it is, never whether a change is "
+     "declared"),
+    ("commit-task-work.py", "work_names", False,
+     _WORK_NAMES + "narrowed to the git-root paths the commit holds as work"),
+    ("commit-task-work.py", "earlier_attempt", False,
+     _WORK_NAMES + "the attempt's span asks which earlier commit changed one"),
+    ("commit-task-work.py", "_commit_work", False,
+     _WORK_NAMES + "handed to the close-evidence refusal and the span"),
+    ("drive-phase.py", "own_commit", False,
+     _WORK_NAMES + "the attempt's own commit is the one changing one of them"),
+    ("drive-phase.py", "widen_task", False, _WIDENING),
+    ("drive-phase.py", "apply_answer", False, _WIDENING),
+    ("drive-phase.py", "stray_step", False,
+     "the executor's named strays minus the enumerated `files`: the names "
+     "come from its submit, which counts a path the task's own outputs cover "
+     "as declared through declared_git_rels, so none of them is one"),
+    ("require-plan.py", "_record_observed", False,
+     "the `files` key read is the plan gate's own observed-writes record, no "
+     "task's: which paths this session was told about"),
 )
 
 
@@ -4621,84 +4766,404 @@ def _defs_of(tree):
     return out
 
 
-def _reads_files_key(fn):
-    """Whether `fn`'s body, nested functions included, reads a `files` key:
-    `x.get("files")` or `x["files"]`."""
+# --- the reach of the declared pin -------------------------------------------
+# Who answers a "declared" question from a task's `files` is DERIVED, never
+# listed: a list of readers was pinned three times and each time the next
+# review found a reader outside it - an invariant, an integration, a caller of
+# an excused owner. Three labels flow through a function's own statements: the
+# raw entries (`_RAW`, a `files` key read), an answer built from them
+# (`_ANSWER`), and a parameter's own value (`_PARAM` + its name), which is how
+# a function whose parameter reaches a matcher is found to be one.
+_RAW = "raw"
+_ANSWER = "answer"
+_PARAM = "param:"
+# What puts a `files` entry to a declared question: each takes the entry, or
+# the map of entries, as its FIRST argument - the place a raw entry is read.
+_ENTRY_MATCHERS = frozenset(("covers", "covering_key", "plan_to_git"))
+# The keyword spellings of that first argument.
+_ENTRY_KEYWORDS = frozenset(("entry", "file_map"))
+# Calls a value passes through still saying what it said about the plan: the
+# builtins that only reshape it, the methods that read or reshape it, and the
+# spellings that turn an entry into a path.
+_CARRIERS = frozenset(("sorted", "set", "list", "tuple", "frozenset",
+                       "reversed", "iter", "next", "enumerate", "zip",
+                       "filter", "map", "any", "all", "bool", "min", "max"))
+_CARRYING_METHODS = frozenset(("keys", "values", "items", "get", "copy",
+                               "union", "intersection", "difference", "strip",
+                               "rstrip", "lstrip", "replace", "lower"))
+_SPELLINGS = frozenset(("str", "_strip_line_suffix", "strip_line_suffix",
+                        "normpath", "join", "_rel", "relpath"))
+# The carrying methods whose first argument is a key, not a value.
+_LOOKUPS = frozenset(("get", "pop"))
+# The calls that grow a container from their arguments.
+_MUTATORS = frozenset(("append", "extend", "add", "update", "insert",
+                       "setdefault"))
+
+
+def _is_files_read(node):
+    """Whether `node` reads a `files` key: `x.get("files")` or `x["files"]`."""
     import ast
-    for node in ast.walk(fn):
-        if (isinstance(node, ast.Call) and _callee(node) == "get" and node.args
-                and isinstance(node.args[0], ast.Constant)
-                and node.args[0].value == "files"):
-            return True
-        if isinstance(node, ast.Subscript):
-            key = node.slice
-            key = key if isinstance(key, ast.Constant) else getattr(key, "value",
-                                                                    key)
-            if isinstance(key, ast.Constant) and key.value == "files":
-                return True
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "get" and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and node.args[0].value == "files"):
+        return True
+    if isinstance(node, ast.Subscript):
+        key = node.slice
+        key = key if isinstance(key, ast.Constant) else getattr(key, "value",
+                                                                key)
+        return isinstance(key, ast.Constant) and key.value == "files"
     return False
 
 
-def _files_half_names(trees):
-    """The seeds, and every function whose `return` holds a call of a name
-    already in the set, to a fixed point."""
+def _file_units(name, tree):
+    """`(units, modules, names)` for one parsed file, in ONE walk of it.
+
+    `units` holds each function as `(basename, node, chain, own nodes)` - its
+    own nodes being those outside a nested function or lambda, which are units
+    of their own. `modules` and `names` are what the file's calls resolve
+    through: a name bound by `import`, or by an assignment from a loader
+    handed a `.py` basename (`load_hooks_config` loads `_config.py`), maps to
+    that basename; a name a `from X import` binds maps to `(basename,
+    name)`."""
     import ast
-    names = set(_FILES_HALF_SEEDS)
+    units, modules, names = [], {}, {}
+
+    def note(node):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                modules[alias.asname or alias.name] = alias.name + ".py"
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            for alias in node.names:
+                names[alias.asname or alias.name] = (node.module + ".py",
+                                                     alias.name)
+        elif (isinstance(node, ast.Assign) and isinstance(node.value, ast.Call)
+              and len(node.targets) == 1
+              and isinstance(node.targets[0], ast.Name)):
+            bound = node.targets[0].id
+            if _callee(node.value) == "load_hooks_config":
+                modules[bound] = "_config.py"
+                return
+            for arg in list(node.value.args) + [k.value for k in
+                                                node.value.keywords]:
+                if (isinstance(arg, ast.Constant) and isinstance(arg.value, str)
+                        and arg.value.endswith(".py")):
+                    modules[bound] = os.path.basename(arg.value)
+
+    def visit(node, chain, own):
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                mine = []
+                units.append((name, child, chain, mine))
+                visit(child, chain + [child], mine)
+                continue
+            note(child)
+            if isinstance(child, ast.Lambda):
+                visit(child, chain, None)
+                continue
+            if own is not None:
+                own.append(child)
+            visit(child, chain, own)
+    visit(tree, [], None)
+    return units, modules, names
+
+
+def _builtin_method_names():
+    """The method names of the builtin containers, strings and files - an
+    attribute call by one of these is never resolved by name alone."""
+    import io
+    out = set()
+    for kind in (list, dict, set, frozenset, tuple, str, bytes, object,
+                 io.TextIOWrapper, io.BufferedReader):
+        out.update(dir(kind))
+    return frozenset(out)
+
+
+def _call_targets(trees):
+    """`(units, targets)`: each function as `(basename, node, chain, own
+    nodes)`, and `{id(call): (basename, function)}` for every call it makes
+    that resolves - a bare name to the file's own function of that name or to
+    what a `from` import bound, an attribute to the module its receiver
+    names, and failing both to the one function of that name in the walk
+    when exactly one file defines it and it is no builtin's method."""
+    import ast
+    units, defined, owners, aliases = [], {}, {}, {}
+    for name, tree in trees:
+        found, modules, imported = _file_units(name, tree)
+        aliases[name] = (modules, imported)
+        units += found
+        for _name, fn, _chain, _nodes in found:
+            defined.setdefault(name, set()).add(fn.name)
+            owners.setdefault(fn.name, set()).add(name)
+    builtin = _builtin_method_names()
+    targets = {}
+    for name, _fn, _chain, nodes in units:
+        modules, imported = aliases[name]
+        for call in (n for n in nodes if isinstance(n, ast.Call)):
+            fname = _callee(call)
+            if fname is None:
+                continue
+            hit = None
+            if isinstance(call.func, ast.Name):
+                if fname in defined.get(name, ()):
+                    hit = (name, fname)
+                elif fname in imported:
+                    hit = imported[fname]
+            elif isinstance(call.func.value, ast.Name):
+                module = modules.get(call.func.value.id)
+                if module is not None:
+                    hit = (module, fname)
+            if hit is None and len(owners.get(fname, ())) == 1 and not (
+                    isinstance(call.func, ast.Attribute) and fname in builtin):
+                hit = (next(iter(owners[fname])), fname)
+            if hit is not None and hit[1] in defined.get(hit[0], ()):
+                targets[id(call)] = hit
+    return units, targets
+
+
+def _unit_bindings(nodes):
+    """`[(name, value node)]` - every name a unit's statements bind or grow,
+    and the node its value comes from: an assignment, an augmented one, a
+    loop or comprehension target, a subscript store into the name, and a
+    mutator call (`x.append(v)`) growing it."""
+    import ast
+    out = []
+    for node in nodes:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                base = target
+                while isinstance(base, (ast.Subscript, ast.Attribute)):
+                    base = base.value
+                out += [(n.id, node.value) for n in ast.walk(base)
+                        if isinstance(n, ast.Name)
+                        and not isinstance(target, ast.Attribute)]
+        elif isinstance(node, ast.AugAssign) and isinstance(node.target,
+                                                            ast.Name):
+            out.append((node.target.id, node.value))
+        elif isinstance(node, (ast.For, ast.AsyncFor, ast.comprehension)):
+            out += [(n.id, node.iter) for n in ast.walk(node.target)
+                    if isinstance(n, ast.Name)]
+        elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+              and node.func.attr in _MUTATORS
+              and isinstance(node.func.value, ast.Name)):
+            out += [(node.func.value.id, arg) for arg in node.args]
+    return out
+
+
+def _membership(node):
+    """Whether `node` is one `x in y` / `x not in y` comparison."""
+    import ast
+    return (isinstance(node, ast.Compare) and len(node.ops) == 1
+            and isinstance(node.ops[0], (ast.In, ast.NotIn)))
+
+
+def _unit_reading(unit, env0, targets, readers, sinks, positions):
+    """`(env, readings, sinks, returned)` for one function, given the raw
+    names it inherits from the functions around it.
+
+    A READING is a call of a function whose return carries an answer, a
+    matcher handed a raw entry first, a call handing a raw value to a
+    parameter some function puts to a matcher, or `x in <raw entries>` with
+    `x` not itself raw. Its result is an answer. A parameter reaching a
+    matcher's first argument, or another function's sink, is a sink of this
+    one - a membership test is not, since a helper deduplicating two lists
+    asks no declared question - and `returned` is every label a `return`
+    carries."""
+    import ast
+    name, fn, _chain, nodes = unit
+    env = dict(env0)
+    args = fn.args
+    for param in ([a.arg for a in getattr(args, "posonlyargs", [])]
+                  + [a.arg for a in args.args + args.kwonlyargs]):
+        env[param] = frozenset([_PARAM + param])
+    memo = {}
+    empty = frozenset()
+
+    def watched(call):
+        if _callee(call) in _ENTRY_MATCHERS:
+            return call.args[:1] + [k.value for k in call.keywords
+                                    if k.arg in _ENTRY_KEYWORDS]
+        target = targets.get(id(call))
+        if target not in sinks:
+            return []
+        order = positions[target]
+        return ([a for i, a in enumerate(call.args)
+                 if i < len(order) and order[i] in sinks[target]]
+                + [k.value for k in call.keywords if k.arg in sinks[target]])
+
+    def raw_membership(node):
+        return (_RAW in label(node.comparators[0])
+                and _RAW not in label(node.left))
+
+    def reads(call):
+        target = targets.get(id(call))
+        if target == _PREDICATE:
+            return False
+        return target in readers or any(_RAW in label(a) for a in watched(call))
+
+    def label(node):
+        key = id(node)
+        if key not in memo:
+            memo[key] = empty
+            memo[key] = flow(node)
+        return memo[key]
+
+    def flow(node):
+        if isinstance(node, ast.Name):
+            return env.get(node.id, empty)
+        if _is_files_read(node):
+            return frozenset([_RAW])
+        if isinstance(node, (ast.Lambda, ast.Dict, ast.Attribute)):
+            return empty
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mod):
+            return empty
+        if isinstance(node, ast.Call):
+            if targets.get(id(node)) == _PREDICATE:
+                return empty
+            if reads(node):
+                return frozenset([_ANSWER])
+            fname = _callee(node)
+            bare = isinstance(node.func, ast.Name)
+            if not (fname in _ENTRY_MATCHERS or fname in _SPELLINGS
+                    or (bare and fname in _CARRIERS)
+                    or (not bare and fname in _CARRYING_METHODS)):
+                return empty
+            parts = list(node.args) + [k.value for k in node.keywords]
+            if fname in _LOOKUPS and not bare:
+                # `d.get(key, default)`: the value is the receiver's or the
+                # default's, never the key's.
+                parts = list(node.args[1:])
+            parts += [] if bare else [node.func.value]
+        elif _membership(node) and raw_membership(node):
+            return frozenset([_ANSWER])
+        elif isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp)):
+            parts = [node.elt]
+        elif isinstance(node, ast.DictComp):
+            parts = [node.key, node.value]
+        elif isinstance(node, ast.IfExp):
+            parts = [node.body, node.orelse]
+        else:
+            parts = list(ast.iter_child_nodes(node))
+        out = empty
+        for part in parts:
+            out |= label(part)
+        return out
+
+    bindings = _unit_bindings(nodes)
     grew = True
     while grew:
         grew = False
-        for _name, tree in trees:
-            for fn, _chain in _defs_of(tree):
-                if fn.name in names:
-                    continue
-                if any(isinstance(r, ast.Return) and r.value is not None
-                       and any(isinstance(c, ast.Call) and _callee(c) in names
-                               for c in ast.walk(r.value))
-                       for r in ast.walk(fn)):
-                    names.add(fn.name)
-                    grew = True
-    return names
+        for bound, value in bindings:
+            got = label(value)
+            if not got <= env.get(bound, empty):
+                env[bound] = env.get(bound, empty) | got
+                memo.clear()
+                grew = True
+    readings, found, returned = [], set(), empty
+    for node in nodes:
+        if isinstance(node, ast.Return) and node.value is not None:
+            returned |= label(node.value)
+        reached = []
+        if isinstance(node, ast.Call):
+            if reads(node):
+                readings.append((name, fn.name, node.lineno, _callee(node)))
+            reached = watched(node)
+        elif _membership(node) and raw_membership(node):
+            readings.append((name, fn.name, node.lineno, "in"))
+        for arg in reached:
+            found |= set(l[len(_PARAM):] for l in label(arg)
+                         if l.startswith(_PARAM))
+    return env, readings, found, returned
 
 
-def _files_half_report(sources, exempt):
-    """`{"names", "unexcused", "stale"}` over `[(basename, source)]`.
+def _files_half_reach(sources):
+    """`{"readers", "readings", "outputs"}` over `[(basename, source)]`, to
+    a fixed point: `readers` the functions whose return carries an answer
+    read from the `files` half - the seeds and every function found to be one
+    - `readings` each `(basename, function, line, callee)` that reads it, and
+    `outputs` the functions that call an outputs-half name.
 
-    A FILES-HALF CALL is a call of a `_files_half_names` name, or a
-    `plan_to_git` call inside a function that reads a `files` key - reported
-    under the innermost function for the first, and for the second under the
-    nearest enclosing function that reads the key. One inside the predicate is
-    the predicate. Any other needs an `exempt` row with a reason, and a row
-    claiming `pairs` needs its function to call an outputs-half name; a blank
-    reason or a false pairing excuses nothing. A row matching no files-half
-    call, or whose reason is blank, or whose pairing is false, is stale.
-
-    WHAT THIS CANNOT SEE: a function handed the `files` half as a value built
-    elsewhere - a list returned by a name, or an argument - past the function
-    that built it, unless that function wraps the call in its return; and a
-    reader matching `files` entries with no `plan_to_git` and no primitive."""
+    The predicate is no unit and its call carries nothing: what it answers is
+    both halves. A matcher's own body is the matcher, not a reader."""
     import ast
     trees = [(name, ast.parse(source)) for name, source in sources]
-    names = _files_half_names(trees)
-    calls, outputs = [], set()
-    for name, tree in trees:
-        for fn, chain in _defs_of(tree):
-            if any(isinstance(n, ast.Call) and _callee(n) in _OUTPUTS_HALF
-                   for n in ast.walk(fn)):
-                outputs.add((name, fn.name))
-            for node in ast.iter_child_nodes(fn):
-                for call in _own_calls(node):
-                    callee = _callee(call)
-                    if callee in names:
-                        calls.append((name, fn.name, call.lineno, callee))
-                    elif callee == "plan_to_git":
-                        owner = next((f for f in reversed(chain + [fn])
-                                      if _reads_files_key(f)), None)
-                        if owner is not None:
-                            calls.append((name, owner.name, call.lineno,
-                                          callee))
-    calls = sorted(set(c for c in calls if (c[0], c[1]) != _PREDICATE),
+    units, targets = _call_targets(trees)
+    positions = dict(((name, fn.name), [a.arg for a in fn.args.args])
+                     for name, fn, _chain, _nodes in units)
+    readers = set((name, fn.name) for name, fn, _c, _n in units
+                  if fn.name in _FILES_HALF_SEEDS)
+    sinks = {}
+    outputs = set((name, fn.name) for name, fn, _chain, nodes in units
+                  if any(isinstance(n, ast.Call) and _callee(n) in _OUTPUTS_HALF
+                         for n in nodes))
+    # What can make a unit read, fixed before the walk: a `files` read or a
+    # matcher among its own nodes, and the functions it calls. A unit with
+    # neither, inheriting no raw name and calling no reader or sink, is
+    # skipped - it can produce no label the walk reads.
+    local = dict((id(fn), any(_is_files_read(n) or (
+        isinstance(n, ast.Call) and _callee(n) in _ENTRY_MATCHERS)
+        for n in nodes)) for _name, fn, _chain, nodes in units)
+    called = dict((id(fn), set(targets[id(n)] for n in nodes
+                               if isinstance(n, ast.Call) and id(n) in targets))
+                  for _name, fn, _chain, nodes in units)
+    while True:
+        grew, envs, readings = False, {}, []
+        for unit in units:
+            name, fn, chain, _nodes = unit
+            key = (name, fn.name)
+            if key == _PREDICATE or fn.name in _ENTRY_MATCHERS:
+                continue
+            env0 = {}
+            for outer in chain:
+                env0.update(envs.get(id(outer), {}))
+            if not (env0 or local[id(fn)]
+                    or called[id(fn)] & (readers | set(sinks))):
+                continue
+            env, found, reached, returned = _unit_reading(
+                unit, env0, targets, readers, sinks, positions)
+            envs[id(fn)] = dict((k, v & frozenset([_RAW]))
+                                for k, v in env.items() if _RAW in v)
+            readings += found
+            if _ANSWER in returned and key not in readers:
+                readers.add(key)
+                grew = True
+            if reached - sinks.get(key, set()):
+                sinks[key] = sinks.get(key, set()) | reached
+                grew = True
+        if not grew:
+            return {"readers": readers, "readings": sorted(set(readings)),
+                    "outputs": outputs}
+
+
+def _files_half_report(sources, exempt, reach=None):
+    """`{"names", "unexcused", "stale"}` over `[(basename, source)]`.
+
+    A FILES-HALF CALL is a reading `_files_half_reach` derives, reported under
+    the function it sits in: a call of a function whose return carries an
+    answer read from the `files` half - which is how a caller of an excused
+    owner is reached, the owner's row excusing the owner alone - a matcher
+    (`covers`, `covering_key`, `plan_to_git`) handed a raw `files` entry
+    first, a raw value handed to a parameter some function puts to a matcher,
+    or `x in <raw entries>`. One inside the predicate is the predicate. Any
+    other needs an `exempt` row with a reason, and a row claiming `pairs`
+    needs its function to call an outputs-half name; a blank reason or a false
+    pairing excuses nothing. A row matching no files-half call, or whose
+    reason is blank, or whose pairing is false, is stale.
+
+    WHAT THIS CANNOT SEE: a `files` value carried through a call it does not
+    know to carry one (a helper of its own, a `dict` built around it), a
+    parameter reaching a matcher only through such a call, an answer handed
+    on as an argument rather than returned, and an attribute call whose
+    receiver it cannot place when more than one file defines the name. The
+    `files` key it reads is any dict's, so a row may say the dict is no
+    task's."""
+    reach = _files_half_reach(sources) if reach is None else reach
+    names = set(fn for _name, fn in reach["readers"])
+    outputs = reach["outputs"]
+    calls = sorted(set(c for c in reach["readings"]
+                       if (c[0], c[1]) != _PREDICATE),
                    key=lambda c: (c[0], c[2]))
-    seen = set(name for name, _tree in trees)
+    seen = set(name for name, _source in sources)
     valid, stale = set(), []
     for filename, fn, pairs, reason in exempt:
         mine = [c for c in calls if (c[0], c[1]) == (filename, fn)]
@@ -4716,18 +5181,6 @@ def _files_half_report(sources, exempt):
             valid.add((filename, fn))
     unexcused = [c for c in calls if (c[0], c[1]) not in valid]
     return {"names": names, "unexcused": unexcused, "stale": stale}
-
-
-def _own_calls(node):
-    """The calls under `node` that are not inside a nested function - those
-    belong to the nested function's own unit."""
-    import ast
-    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-        return []
-    out = [node] if isinstance(node, ast.Call) else []
-    for child in ast.iter_child_nodes(node):
-        out += _own_calls(child)
-    return out
 
 
 def _all_cases(check):

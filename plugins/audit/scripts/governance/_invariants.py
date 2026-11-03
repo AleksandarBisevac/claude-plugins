@@ -386,10 +386,12 @@ def ledger_dir_for(manifest, manifest_path):
 
 
 # --- commit scope -------------------------------------------------------------
-COMMIT_SCOPE_BASIS = ("git show --name-only <task.commit>, against that task's "
-                      "`files`, its phase's manifest file, the journal directory "
-                      "and the evidence directory - the four things "
-                      "orchestrator.md step 4c allows a task commit to stage - "
+COMMIT_SCOPE_BASIS = ("git show --name-only <task.commit>, against what that "
+                      "task declares - its `files` and the staged paths its own "
+                      "honoured `outputs` cover (`_config.declared_git_rels`) - "
+                      "its phase's manifest file, the journal directory and the "
+                      "evidence directory - what orchestrator.md step 4c allows "
+                      "a task commit to stage - "
                       "plus the index when it is exactly its parent's with this "
                       "phase's owned part derived from the committed shard "
                       "(`owned_index`)")
@@ -619,16 +621,36 @@ def _project_of(git_root, git_root_rel):
         if parts else git_root
 
 
+def _plan_spelling(hc, path, git_root, project):
+    """The clause naming git-listed `path` the way the plan spells it
+    (`_config.git_to_plan`), or saying it lies outside the project - the
+    spelling then climbs out with `..`, which no entry can carry. A breach
+    reader holds the path against the task's `files`, written in the plan's
+    spelling, and in a project that is not the checkout's top the two differ."""
+    rel = hc.git_to_plan(path, git_root, project)
+    if rel == ".." or str(rel).startswith("../"):
+        return "outside the project, so no entry of the task can name it"
+    return "`%s` in the plan's spelling" % (rel,)
+
+
 def commit_scope(phase, git_root, git_root_rel, phase_file_rel, index_rel,
                  journal_rel, evidence_rel=None, project=None):
-    """A task commit staged that task's files, its phase's manifest file, the two
-    records beside it.
+    """A task commit staged what that task declares, its phase's manifest file,
+    the two records beside it.
 
-    `files` are the project's spelling and `git show --name-only` prints the
-    checkout's, so each declared entry becomes a pathspec through
-    `_config.plan_to_git` from `project`; a caller that does not pass the
-    project has it walked back from `git_root_rel`, which a climbing relative
-    path (a member project's `..`) cannot be - that caller is told so as a gap.
+    WHAT A TASK DECLARES IS THE ONE READING: `_config.declared_git_rels` over
+    this task alone, asked about the commit's own staged paths - its `files`
+    entries spelled from the checkout's top (`plan_to_git`), and each staged
+    path its own honoured `outputs` cover. The task commit stages exactly
+    those (`commit-task-work.py` `stage_targets`), so a reading of `files`
+    alone here refused, on history already landed, the output the commit had
+    been built to carry. `files` are the project's spelling and `git show
+    --name-only` prints the checkout's, which is why the project matters; a
+    caller that does not pass it has it walked back from `git_root_rel`, which
+    a climbing relative path (a member project's `..`) cannot be - that caller
+    is told so as a gap. A breach names the staged path in both spellings, git's
+    and the plan's through `_config.git_to_plan` (`_plan_spelling`), or says it
+    lies outside the project, so its reader can hold it against `files`.
 
     THE EVIDENCE DIRECTORY IS ALLOWED FOR THE JOURNAL'S REASON, one noun over. A
     task commit stages it so that the record of what ran reaches git with the
@@ -693,16 +715,11 @@ def commit_scope(phase, git_root, git_root_rel, phase_file_rel, index_rel,
                         % (tid, sha[:12]))
             continue
         examined += 1
-        allowed = []
-        for name in (task.get("files") or []):
-            if not isinstance(name, str) or not _vocab._strip_line_suffix(name):
-                continue
-            rel = hc.plan_to_git(_vocab._strip_line_suffix(name), git_root,
-                                 project)
-            if rel:
-                allowed.append(rel)
         staged = [ln.strip().replace("\\", "/")
                   for ln in out.splitlines() if ln.strip()]
+        allowed = hc.declared_git_rels({"phases": [phase]}, project, git_root,
+                                       also=[task.get("id")], only=tid,
+                                       changed=staged)
         for path in staged:
             if any(_task_outputs.covers(entry, path) for entry in allowed):
                 continue
@@ -725,9 +742,12 @@ def commit_scope(phase, git_root, git_root_rel, phase_file_rel, index_rel,
                     % (tid, sha[:12], index_rel), "%s %s" % (tid, index_rel), sha))
                 continue
             breaches.append(found(
-                "%s: commit %s staged %s, which is not in the task's `files`, is "
-                "not this phase's manifest file and is in neither the journal nor "
-                "the evidence directory" % (tid, sha[:12], path),
+                "%s: commit %s staged %s (%s), which the task declares neither "
+                "in its `files` nor through its own honoured `outputs`, is not "
+                "this phase's manifest file and is in neither the journal nor "
+                "the evidence directory"
+                % (tid, sha[:12], path, _plan_spelling(hc, path, git_root,
+                                                       project)),
                 "%s %s" % (tid, path), sha))
     return result("commit-scope", COMMIT_SCOPE_BASIS, breaches, gaps, examined)
 

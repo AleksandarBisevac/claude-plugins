@@ -285,10 +285,11 @@ def _undeclared_cases(check):
           and _read(world["proj"], "a.txt") == "a\n")
 
 
-def _nested_world(prefix, files, declared):
+def _nested_world(prefix, files, declared, outputs=None):
     """A committed repository whose PROJECT is its subdirectory `proj/`, holding
     `files` (checkout-relative path -> text) and a manifest declaring `declared`
-    (project-relative) for task P1.1, with that task's real worktree. -> dict."""
+    (project-relative) for task P1.1 - and `outputs` patterns when given - with
+    that task's real worktree. -> dict."""
     root = os.path.realpath(_harness.fixture_root(prefix))
     repo = os.path.join(root, "repo")
     proj = os.path.join(repo, "proj")
@@ -299,6 +300,8 @@ def _nested_world(prefix, files, declared):
                 "phases": [{"id": "P1", "title": "p", "status": "in_progress",
                             "tasks": [{"id": "P1.1", "title": "P1.1",
                                        "status": "in_progress", "files": declared}]}]}
+    if outputs is not None:
+        manifest["phases"][0]["tasks"][0]["outputs"] = outputs
     manifest_path = os.path.join(proj, "audit-plan.json")
     with open(manifest_path, "w", encoding="utf-8") as fh:
         json.dump(manifest, fh, indent=2)
@@ -346,6 +349,44 @@ def _nested_cases(check):
           code == 0 and not ans.get("decision")
           and _read(world["repo"], "proj/a.txt") == "proj a1\n"
           and _read(world["repo"], "a.txt") == "root a\n")
+
+
+def _wave_output_cases(check):
+    """A wave member's own output is declared at integration as it was at its
+    submit: a changed path its task's honoured `outputs` pattern covers is
+    carried with its work, never asked widen / discard / block after the
+    review - where a discard would drop the task's own output. The project is
+    nested, so the pattern (`gen/*.md`) and git's spelling (`proj/gen/r.md`)
+    differ and a match against the wrong spelling asks for the output too."""
+    def member(prefix):
+        world = _nested_world(prefix, {"proj/a.txt": "proj a\n"}, ["a.txt"],
+                              outputs=["gen/*.md"])
+        _write(world["tree"], "proj/a.txt", "proj a1\n")
+        _write(world["tree"], "proj/gen/r.md", "report\n")
+        _write(world["tree"], "proj/gen/r.txt", "stray\n")
+        return world
+
+    def run(world, undeclared=None):
+        phase = world["manifest"]["phases"][0]
+        return M.integrate(world["manifest"], phase, phase["tasks"][0],
+                           world["manifest_path"], world["proj"], world["repo"],
+                           undeclared=undeclared)
+    code, ans = run(member("itw"))
+    decision = ans.get("decision") or {}
+    check("iw1 a wave member's own output is not asked at integration, and the "
+          "path beside it no pattern of its task covers is: the decision names "
+          "the stray alone (%r %r)" % (code, decision),
+          code == 3 and decision.get("kind") == "undeclared-change"
+          and decision.get("paths") == ["proj/gen/r.txt"])
+    world = member("itw2")
+    code, ans = run(world, undeclared="discard")
+    check("iw2 a discard drops the stray and carries the member's own output "
+          "with its work (%r %r %r)" % (code, ans.get("discarded"), ans.get("paths")),
+          code == 0 and ans.get("discarded") == ["proj/gen/r.txt"]
+          and _read(world["repo"], "proj/gen/r.md") == "report\n"
+          and _read(world["repo"], "proj/a.txt") == "proj a1\n"
+          and not os.path.exists(os.path.join(world["repo"], "proj", "gen",
+                                              "r.txt")))
 
 
 GUIDE = "PLUGIN-BUILD-GUIDE.md"
@@ -591,14 +632,14 @@ def _topology_cases(check):
     for d in (member, below):
         os.makedirs(d)
     got_member = M.undeclared_paths(
-        ["src/a.py", "other.py"],
+        {"id": "P1.1", "files": ["src/a.py", "other.py"]},
         ["member/src/a.py", "member/other.py", "other.py"], repo, member)
     check("n3 %s (a member project: the declared changes are covered and the "
           "checkout-root file sharing a declared name is not: %r)"
           % (TOPOLOGY_CLAUSE, got_member),
           got_member == ["other.py"])
-    got_below = M.undeclared_paths(["test/src/a.py"], ["src/a.py", "src/b.py"],
-                                   below, proj)
+    got_below = M.undeclared_paths({"id": "P1.1", "files": ["test/src/a.py"]},
+                                   ["src/a.py", "src/b.py"], below, proj)
     check("n4 %s (gitRoot below the project: the declared change, which git "
           "names without the test/ prefix, is covered and its sibling is not: "
           "%r)" % (TOPOLOGY_CLAUSE, got_below),
@@ -616,6 +657,7 @@ def _cases(check):
     _harness.stage(check, "itl", _lockfile_cases)
     _harness.stage(check, "itu", _undeclared_cases)
     _harness.stage(check, "itn", _nested_cases)
+    _harness.stage(check, "itw", _wave_output_cases)
     _harness.stage(check, "itf", _follower_cases)
     _harness.stage(check, "itx", _noop_owner_cases)
     _harness.stage(check, "itm", _cli_cases)

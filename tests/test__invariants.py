@@ -2427,6 +2427,140 @@ def _nested_scope_cases(check):
           len(stray["breaches"]) == 1 and "member/other.py" in stray["breaches"][0])
 
 
+def _outputs_scope_cases(check):
+    """A landed task commit carries the changed paths its own honoured
+    `outputs` cover - the task commit stages them (`stage_targets`) - so the
+    sign-off invariant reading the same commit allows them, through the one
+    reading of "declared". A project nested at `member/` makes the spelling
+    matter: git prints `member/gen/r.md` and the pattern says `gen/*.md`, so
+    an allow-list matching the pattern against git's spelling refuses the
+    very path the commit was built to carry."""
+    root = os.path.realpath(_harness.fixture_root("invariants-outputs-"))
+    proj = os.path.join(root, "member")
+    os.makedirs(os.path.join(proj, "src"))
+    os.makedirs(os.path.join(proj, "docs", "audit"))
+    ident = ("git", "-c", "user.email=fixture@example.com", "-c",
+             "user.name=Fixture", "-c", "commit.gpgsign=false")
+
+    def git(*argv):
+        return _harness.git(root, *argv, prefix=ident).strip()
+
+    def commit(rels, message, base=None):
+        for rel in rels:
+            path = os.path.join(base or proj, *rel.split("/"))
+            if not os.path.isdir(os.path.dirname(path)):
+                os.makedirs(os.path.dirname(path))
+            _write(path, "%s %s\n" % (rel, message))
+        git("add", "-A")
+        git("commit", "-qm", message)
+        return git("rev-parse", "HEAD")
+
+    git("init", "-q")
+    _write(os.path.join(proj, "src", "a.py"), "a = 1\n")
+    git("add", "-A")
+    git("commit", "-qm", "base")
+    produced = commit(["src/a.py", "gen/r.md"], "the task and its output")
+    stray = commit(["src/a.py", "gen/r.txt"], "the task and a stray twin")
+    commit(["gen/r.txt"], "a stray inside the project, again")
+    outside = commit(["top.txt"], "a stray outside the project", base=root)
+    manifest_path = os.path.join(proj, "docs", "audit", "audit-plan.json")
+
+    def scope(sha, outputs):
+        task = dict(_task("P1.1", "src/a.py"), status="done", commit=sha,
+                    outputs=outputs)
+        manifest = {"meta": {"version": 2, "gitRoot": ".."},
+                    "phases": [_phase("P1", [task])]}
+        answer = M.check_phase(manifest, "P1", manifest_path, root, proj)
+        return _check(answer, "commit-scope")
+
+    own = scope(produced, ["gen/*.md"])
+    check("os1 a landed commit staging a changed path its task's own honoured "
+          "`outputs` pattern covers is inside commit scope - the path the task "
+          "commit carried is the path sign-off allows: %r %r"
+          % (own["breaches"], own["gaps"]),
+          own["breaches"] == [] and not own["gaps"] and own["examined"] == 1)
+    twin = scope(stray, ["gen/*.md"])
+    check("os2 SECOND DIRECTION: its twin staging a path the pattern does not "
+          "cover is one breach naming it, so an allow-list admitting every "
+          "path goes red here: %r" % (twin["breaches"],),
+          len(twin["breaches"]) == 1 and "member/gen/r.txt" in twin["breaches"][0])
+    refused = scope(produced, ["**"])
+    check("os3 a pattern the outputs rule refuses covers nothing at sign-off "
+          "either - the same commit's output path is a breach when the only "
+          "pattern naming it is one the writer would not have honoured: %r"
+          % (refused["breaches"],),
+          len(refused["breaches"]) == 1
+          and "member/gen/r.md" in refused["breaches"][0])
+    # The plan sits below its git root, so git's name for a path and the
+    # plan's differ by `member/`: the breach names both, so its reader can
+    # hold it against the task's `files`, and a path the project does not
+    # hold is said to be outside it rather than handed a spelling no entry
+    # can carry.
+    spelled = twin["breaches"][0] if len(twin["breaches"]) == 1 else ""
+    away = scope(outside, ["gen/*.md"])
+    check("os4 the plan below its git root: a breach spells the staged path the "
+          "plan's way as well as git's (`gen/r.txt` beside `member/gen/r.txt`), "
+          "and a staged path at the checkout's top is named outside the "
+          "project: %r %r" % (spelled, away["breaches"]),
+          "member/gen/r.txt" in spelled
+          and "`gen/r.txt` in the plan's spelling" in spelled
+          and len(away["breaches"]) == 1 and "top.txt" in away["breaches"][0]
+          and "outside the project" in away["breaches"][0]
+          and "outside the project" not in spelled)
+
+
+def _root_below_scope_cases(check):
+    """The other topology: the git root is a directory BELOW the project
+    (`meta.gitRoot` `test`), so git names `gen/r.md` what the plan spells
+    `test/gen/r.md`. The task's own output passes commit scope and its stray
+    twin is one breach carrying both spellings."""
+    proj = os.path.realpath(_harness.fixture_root("invariants-below-"))
+    root = os.path.join(proj, "test")
+    os.makedirs(os.path.join(root, "src"))
+    ident = ("git", "-c", "user.email=fixture@example.com", "-c",
+             "user.name=Fixture", "-c", "commit.gpgsign=false")
+
+    def git(*argv):
+        return _harness.git(root, *argv, prefix=ident).strip()
+
+    def commit(rels, message):
+        for rel in rels:
+            path = os.path.join(root, *rel.split("/"))
+            if not os.path.isdir(os.path.dirname(path)):
+                os.makedirs(os.path.dirname(path))
+            _write(path, "%s %s\n" % (rel, message))
+        git("add", "-A")
+        git("commit", "-qm", message)
+        return git("rev-parse", "HEAD")
+
+    git("init", "-q")
+    _write(os.path.join(root, "src", "a.py"), "a = 1\n")
+    git("add", "-A")
+    git("commit", "-qm", "base")
+    produced = commit(["src/a.py", "gen/r.md"], "the task and its output")
+    stray = commit(["src/a.py", "gen/r.txt"], "the task and a stray twin")
+    manifest_path = os.path.join(proj, "docs", "audit", "audit-plan.json")
+
+    def scope(sha):
+        task = dict(_task("P1.1", "test/src/a.py"), status="done", commit=sha,
+                    outputs=["test/gen/*.md"])
+        manifest = {"meta": {"version": 2, "gitRoot": "test"},
+                    "phases": [_phase("P1", [task])]}
+        answer = M.check_phase(manifest, "P1", manifest_path, root, proj)
+        return _check(answer, "commit-scope")
+
+    own, twin = scope(produced), scope(stray)
+    check("os5 the git root below the project: the task's declared file and "
+          "its own output, which git names without the `test/` prefix, pass "
+          "commit scope, and the stray twin is one breach naming git's "
+          "`gen/r.txt` and the plan's `test/gen/r.txt`: %r %r %r"
+          % (own["breaches"], own["gaps"], twin["breaches"]),
+          own["breaches"] == [] and not own["gaps"] and own["examined"] == 1
+          and len(twin["breaches"]) == 1
+          and "staged gen/r.txt" in twin["breaches"][0]
+          and "`test/gen/r.txt` in the plan's spelling" in twin["breaches"][0])
+
+
 def _selftest():
     def body(check):
         _scrubbed_baseline_cases(check)
@@ -2434,6 +2568,8 @@ def _selftest():
         _harness.stage(check, "ln-block", _landing_cases)
         _harness.stage(check, "rp-block", _record_rel_cases)
         _harness.stage(check, "ns-block", _nested_scope_cases)
+        _harness.stage(check, "os-block", _outputs_scope_cases)
+        _harness.stage(check, "ob-block", _root_below_scope_cases)
     return _harness.run(body)
 
 

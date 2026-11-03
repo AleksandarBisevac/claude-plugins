@@ -4101,10 +4101,13 @@ def declared_git_rels(manifest, project, git_root, also=(), only=None,
     scripts/ and reports by name one handing `changed` as an empty literal,
     an `or` fallback ending in one, or a conditional with one as a branch. It
     cannot see a listing bound to a name earlier, or a `tree` git will not
-    list. A call there reading the `files` half alone - `declared_task_map`,
-    audit-task's `_declared_rels`, a function whose return holds a call of
-    either, or `plan_to_git` in a function reading a `files` key - carries a
-    row with its reason, and a row naming no such call is reported too."""
+    list. A function there reading a task's `files` alone for a declared
+    question - a matcher handed a raw entry, a membership test over raw
+    entries, a raw value handed to a parameter that reaches a matcher, or a
+    call of a function whose return carries such an answer, so a caller of
+    an excused owner is reached too - carries a row with its reason, the
+    reach derived rather than listed; a row naming no such call is reported
+    as well."""
     rels = (plan_to_git(entry, git_root, project)
             for entry, rows in declared_task_map(manifest, also).items()
             if only is None or any(str(r.get("taskId")) == str(only)
