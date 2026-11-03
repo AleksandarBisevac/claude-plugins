@@ -1,7 +1,7 @@
 {
   "id": "P155",
   "title": "3.8.0 low batch",
-  "status": "in_progress",
+  "status": "done",
   "description": "D9: every open register low scheduled for 3.8.0 and every carried P143 review finding (BUG-31-z9j), grouped one task per file cluster with one shared fix per recurring class. Plan: quality-gates-internal/plans/2026-11-02-low-batch-3-8-0.md.",
   "desiredOutcome": "Every open low scheduled for 3.8.0 is fixed or closed with a reason, and BUG-31-z9j is closed",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "531fe6ec7213c84315db54bceb3092d5618bee00",
   "branch": "audit/p155-3-8-0-low-batch",
-  "mergedAt": null,
+  "mergedAt": "2026-11-03T15:52:34Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -4778,5 +4778,6 @@
     "runId": "2026-11-03T15:38:19Z.22f9ef",
     "status": "passed",
     "at": "2026-11-03T15:38:19Z"
-  }
+  },
+  "mergedHead": "1909cd589658cca7f06100155caa75f39c147266"
 }
