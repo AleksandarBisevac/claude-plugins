@@ -2221,8 +2221,11 @@ def _settle(answer, wrong, copy, why):
 # through every caller it has - and a stop over a tree it names unsettled names
 # the restore verb (`restore_command`) beside where the work is. `ut5` in
 # `tests/test__worktrees.py` reads every such function in `scripts/` and `hooks/`
-# and names each one that reaches none of the three; a removal or dispatch
-# spelled some other way is outside what it reads.
+# and names each one in which no call to one of the three stands before its
+# first removal or dispatch - nor, in every caller it has, before the call to
+# it. Before means earlier in the source, not on the path that runs: an ask in
+# a branch the removal never takes still reads as first; and a removal or
+# dispatch spelled some other way is outside what it reads.
 
 def _clear_strays(admin, now=None):
     """The temp files `_write_aside` left in `admin` older than

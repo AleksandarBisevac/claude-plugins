@@ -2114,8 +2114,10 @@ def _unsettled_cases(check):
 # What lands in a worktree, read off the code: a `git worktree remove` argv, which
 # deletes the admin directory a move's copy lives in, and a writer session opened
 # in a tree (`open_dispatch` given a tree that is not the literal None). A function
-# doing either reaches the one question - directly, or through every caller it has
-# in its module - or is a row below with the reason it never meets a task tree.
+# doing either calls the one question earlier in its source than its first site -
+# or every caller it has in its module does, before its call to it - or is a row
+# below with the reason it never meets a task tree. Earlier in the source is
+# source order, not control flow: an ask in a branch the site never takes counts.
 _TOUCH_ASKS = ("tree_unsettled", "refuse_unsettled", "unsettled_stop")
 _TOUCH_EXEMPT = {
     ("stamp-verification.py", "_remove_throwaway"):
@@ -2138,49 +2140,67 @@ def _is_none(node):
     return isinstance(node, ast.Constant) and node.value is None
 
 
+def _at(node):
+    return (node.lineno, node.col_offset)
+
+
 def _touches(fn):
-    """What in function `fn` lands in a worktree, one word per site."""
+    """What in function `fn` lands in a worktree, one `(word, position)` per
+    site."""
     found = []
     for node in ast.walk(fn):
         if isinstance(node, (ast.List, ast.Tuple)) and len(node.elts) >= 2 \
                 and all(isinstance(e, ast.Constant) for e in node.elts[:2]) \
                 and [e.value for e in node.elts[:2]] == ["worktree", "remove"]:
-            found.append("worktree remove")
+            found.append(("worktree remove", _at(node)))
         if isinstance(node, ast.Call) and _call_name(node) == "open_dispatch":
             tree = node.args[5] if len(node.args) > 5 else None
             for kw in node.keywords:
                 if kw.arg == "tree":
                     tree = kw.value
             if tree is not None and not _is_none(tree):
-                found.append("open_dispatch")
+                found.append(("open_dispatch", _at(node)))
     return found
 
 
 def _touch_scan(sources):
     """`(unasked, touching)` over `sources`, `[(label, text)]`: each touching
-    top-level function that reaches none of `_TOUCH_ASKS` - itself, or every
-    caller it has in its module, transitively, with one caller at least - as
-    `label:name (what)`, exemptions aside; and every touching function seen."""
+    top-level function that does not call one of `_TOUCH_ASKS` earlier in its
+    source than its first site - nor has every caller in its module,
+    transitively and one at least, call one earlier than its first call to it -
+    as `label:name (what)`, exemptions aside; and every touching function seen.
+    Earlier is (line, column) in the source, not control flow: an ask in a
+    branch the site's path never takes still counts as first."""
     unasked, touching = [], []
     for label, text in sources:
         fns = dict((n.name, n) for n in ast.parse(text).body
                    if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)))
-        calls = dict((name, set(_call_name(c) for c in ast.walk(fn)
-                                if isinstance(c, ast.Call)))
+        calls = dict((name, [(_call_name(c), _at(c)) for c in ast.walk(fn)
+                             if isinstance(c, ast.Call)])
                      for name, fn in fns.items())
 
-        def asks(name, seen):
-            if calls[name] & set(_TOUCH_ASKS):
+        def first(name, callee):
+            ats = [at for called, at in calls[name] if called == callee]
+            return min(ats) if ats else None
+
+        def asks(name, site, seen):
+            if any(called in _TOUCH_ASKS and at < site
+                   for called, at in calls[name]):
                 return True
-            up = [c for c in fns if name in calls[c] and c not in seen and c != name]
-            return bool(up) and all(asks(c, seen | {name}) for c in up)
+            up = [c for c in fns if first(c, name) is not None
+                  and c not in seen and c != name]
+            return bool(up) and all(asks(c, first(c, name), seen | {name})
+                                    for c in up)
         for name, fn in fns.items():
             what = _touches(fn)
             if not what:
                 continue
             touching.append((label, name))
-            if (label, name) not in _TOUCH_EXEMPT and not asks(name, frozenset()):
-                unasked.append("%s:%s (%s)" % (label, name, ", ".join(what)))
+            site = min(at for _w, at in what)
+            if (label, name) not in _TOUCH_EXEMPT \
+                    and not asks(name, site, frozenset()):
+                unasked.append("%s:%s (%s)" % (label, name,
+                                               ", ".join(w for w, _a in what)))
     return unasked, touching
 
 
@@ -2341,14 +2361,25 @@ def _touch_cases(check):
                "        return\n    run(['worktree', 'remove', '--force', t])\n\n"
                "def inner(t):\n    run(('worktree', 'remove', t))\n\n"
                "def outer(t):\n    stop = refuse_unsettled(t, 'T1', 'm', 'p')\n"
-               "    return stop or inner(t)\n")
+               "    return stop or inner(t)\n\n"
+               "def late(t):\n    run(['worktree', 'remove', t])\n"
+               "    return tree_unsettled(t)\n\n"
+               "def late_open(c, s, t, tree):\n"
+               "    open_dispatch(c, s, t, 0, None, tree)\n"
+               "    return unsettled_stop(tree)\n\n"
+               "def late_inner(t):\n    run(['worktree', 'remove', t])\n\n"
+               "def late_outer(t):\n    late_inner(t)\n"
+               "    return refuse_unsettled(t, 'T1', 'm', 'p')\n")
     fixture, _t = _touch_scan([("planted.py", planted)])
     check("ut5 every function that removes a worktree or opens a writer session "
-          "in a tree reaches the one question first - itself, or every caller "
-          "it has - or is an exemption with its reason; a new verb doing either "
-          "without asking is named here. Pinned both ways on a planted module: "
-          "the unasked remover and dispatch are named, the asking one, the one "
-          "only reached through an asking caller and the dispatch into the "
+          "in a tree calls the one question earlier in the source than that "
+          "site - itself, or every caller it has earlier than its call - or is "
+          "an exemption with its reason; source order, not control flow. A new "
+          "verb doing either without asking first is named here. Pinned both "
+          "ways on a planted module: the unasked remover and dispatch are "
+          "named, and so are their twins that ask only after the removal, the "
+          "dispatch or the call into the remover; the one asking first, the one "
+          "only reached through a caller asking first and the dispatch into the "
           "phase tree are not",
           not unasked and not stale
           and {("drive-phase.py", "remove_task_tree"),
@@ -2356,6 +2387,9 @@ def _touch_cases(check):
                ("manage-worktrees.py", "do_task_remove"),
                ("manage-worktrees.py", "do_remove")} <= seen
           and sorted(fixture) == ["planted.py:go (worktree remove)",
+                                  "planted.py:late (worktree remove)",
+                                  "planted.py:late_inner (worktree remove)",
+                                  "planted.py:late_open (open_dispatch)",
                                   "planted.py:opened (open_dispatch)"],
           repr((unasked, stale, fixture)))
     _spelling_cases(check)

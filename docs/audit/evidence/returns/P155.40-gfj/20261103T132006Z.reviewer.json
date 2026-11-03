@@ -1,0 +1,23 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "tests/test__worktrees.py:2183-2190",
+   "issue": "ut5's scanner takes `site = min(at for _w, at in what)` as the function's first site, but no planted function has two sites with an ask between them. A function that asks after its first removal and before its second would be flagged now; mutating `min` to `max` (or any later site) would leave every planted case unchanged, so the first-site rule has no case that fails. Read from the source, not run. Likewise, `all(asks(...) for c in up)` is only pinned with a single caller (`late_inner` has one: `late_outer`). Nothing separates 'every caller' from 'any caller'.",
+   "resolution": "Add two planted twins. (a) A function with `run(['worktree','remove',a])`, then `tree_unsettled`, then a second removal, which must be named. (b) A remover with two callers, one asking before its call and one after, which must be named."}
+ ],
+ "preExisting": [
+  {"id": 2, "severity": "low", "file": "plugins/audit/scripts/governance/drive-phase.py:4840",
+   "issue": "The `unsettled_stop` docstring says ut5 names a site 'that reaches neither this nor that'. ut5 now also names an ask that comes after the site, so the sentence is incomplete. The executor already noted this and left it, as the file is outside the task's files.",
+   "resolution": "Reword it in a later task that owns `drive-phase.py`."}
+ ],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clause: 'ut5 checks that a function asks tree_unsettled somewhere, not before the removal ... _touches and _touch_scan read source positions, ut5 gains ask-afterwards twins, and the ut5 label, the suite and module section comments and PLUGIN-BUILD-GUIDE.md say \"earlier in the source\", stating it is source order, not control flow.' The diff does this. `_at` gives (lineno, col_offset). `_touches` returns (word, position). `asks(name, site, seen)` requires an ask call at a position before the site (`at < site`), or every in-module caller (one at least, transitive) asking before its first call to the function (`first(c, name)`). The planted module gains `late`, `late_open` and `late_inner` via `late_outer`, and the expected fixture list names them. The ut5 label, the section comment above `_TOUCH_ASKS`, the `_touch_scan` docstring, the `_worktrees.py` section comment and the guide paragraph all say earlier in the source, source order not control flow. The claim describes the diff accurately. Dependants: the changed helpers `_at`, `_touches` and `_touch_scan` are only used inside `tests/test__worktrees.py`; `_worktrees.py` changed only in a comment, so its importers are unaffected. The gate is recorded passed (runId 2026-11-03T13:36:16Z.a5ea65), and the reviewer's one selftest run agrees (175/175). The orchestrator re-ran the executor's probe p15540/mutations.py: exit 0, M1-M5 each FAIL ut5 174/175.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Regression mode with expectRedFirst false: the scanner lives in the test file itself, so HEAD's code with this test file copied over it is green by construction. The case is proved by mutating the scanner instead (M1 ask anywhere, M2 caller position ignored, M3 no ask counts as first, M4 no caller counts as asked, M5 over-fire; each FAIL ut5 174/175), re-run by the orchestrator with exit 0.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "tests.gate is one literal sweep command over eight suites. This task changed only tests/test__worktrees.py, plus a comment in _worktrees.py and the guide. The behaviour it names is the ut5 scanner, and the added planted cases are covered above. No further cases in the other suites were read for ones that would still pass with that behaviour deleted."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

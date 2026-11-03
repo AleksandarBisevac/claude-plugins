@@ -4677,7 +4677,8 @@
       "P155.31-gfj",
       "P155.33-gfj",
       "P155.35-gfj",
-      "P155.39-gfj"
+      "P155.39-gfj",
+      "P155.40-gfj"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -8632,7 +8633,8 @@
       "P155.31-gfj",
       "P155.33-gfj",
       "P155.35-gfj",
-      "P155.39-gfj"
+      "P155.39-gfj",
+      "P155.40-gfj"
     ],
     "tools/redfirst.sh": [
       "P55.13",
@@ -8713,7 +8715,8 @@
       "P155.31-gfj",
       "P155.33-gfj",
       "P155.35-gfj",
-      "P155.39-gfj"
+      "P155.39-gfj",
+      "P155.40-gfj"
     ],
     "tools/ui-tests/evidence-badge.test.mjs": [
       "P32.7",
@@ -11606,7 +11609,8 @@
       "P155.21-gfj",
       "P155.29-gfj",
       "P155.30-gfj",
-      "P155.32-gfj"
+      "P155.32-gfj",
+      "P155.40-gfj"
     ],
     "tools/lints/_refs.py": [
       "P130.8",
@@ -11790,7 +11794,8 @@
       "P155.31-gfj",
       "P155.33-gfj",
       "P155.35-gfj",
-      "P155.39-gfj"
+      "P155.39-gfj",
+      "P155.40-gfj"
     ],
     "tests/fixtures/pricing-page-2026-10-10.md": [
       "P131.1"
@@ -11842,7 +11847,8 @@
       "P155.31-gfj",
       "P155.33-gfj",
       "P155.35-gfj",
-      "P155.39-gfj"
+      "P155.39-gfj",
+      "P155.40-gfj"
     ],
     "tests/test__areas.py": [
       "P131.1",
@@ -11922,7 +11928,8 @@
       "P155.11",
       "P155.21-gfj",
       "P155.30-gfj",
-      "P155.32-gfj"
+      "P155.32-gfj",
+      "P155.40-gfj"
     ],
     "tests/test__doctor_ado.py": [
       "P131.1"
@@ -11966,7 +11973,8 @@
       "P155.10",
       "P155.11",
       "P155.21-gfj",
-      "P155.30-gfj"
+      "P155.30-gfj",
+      "P155.40-gfj"
     ],
     "tests/test__evidence_io.py": [
       "P131.1",
@@ -12214,7 +12222,8 @@
       "P155.31-gfj",
       "P155.33-gfj",
       "P155.35-gfj",
-      "P155.39-gfj"
+      "P155.39-gfj",
+      "P155.40-gfj"
     ],
     "tests/test__runner_output.py": [
       "P131.1",
@@ -12559,7 +12568,8 @@
       "P155.29-gfj",
       "P155.30-gfj",
       "P155.37-gfj",
-      "P155.38-gfj"
+      "P155.38-gfj",
+      "P155.40-gfj"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -12776,7 +12786,8 @@
       "P155.31-gfj",
       "P155.33-gfj",
       "P155.35-gfj",
-      "P155.39-gfj"
+      "P155.39-gfj",
+      "P155.40-gfj"
     ],
     "tests/test_usage_ledger.py": [
       "P131.1",

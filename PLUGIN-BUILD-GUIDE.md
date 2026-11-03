@@ -1135,7 +1135,9 @@ reading every verb that removes a task tree or runs a session in it takes first:
 copy and names the restore verb instead (`ut3`), a verb that finds a tree kept outside any wave
 (`uv2`). Which functions ask is read off the code rather than listed: `ut5` names every function
 under `scripts/` and `hooks/` that removes a worktree or opens a writer session in a tree without
-reaching the question, itself or through every caller it has. `integrate-task.py` run by hand is
+calling the question earlier in its source than that site, itself or in every caller it has before
+the call to it - source order, not the path that runs, so an ask in a branch the removal never
+takes still reads as first. `integrate-task.py` run by hand is
 outside that reading - it removes nothing, and the drive asks before it calls it. It answers could-not-ask
 when git will not name the admin directory, never settled (`un2`), and clears the `.audit-*` temp
 files a hard kill left there once they are older than `STRAY_AGE_SECONDS`, leaving a

@@ -486,8 +486,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/git/_worktrees.py (refuse_unsettled / kept copy path); plugins/audit/scripts/governance/drive-phase.py (kept-tree stop); tests/test__worktrees.py ut1 ut2 ut4; tests/test_drive_phase.py kr2",
         "issue": "Release-tier CI run 41616818469 at fdf3b270, windows legs only: ut1, ut2, ut4 and kr2 fail. The refusal spells one path in two separator styles - the admin dir with forward slashes joined to 'audit-advance' with a backslash (C:/.../.git/worktrees/t\\audit-advance) - and kr2's kept-tree message names the tree in a spelling the case does not match. Posix legs pass, so the cases never saw the Windows spelling.",
-        "resolution": "Build every path these refusals name through one spelling (the forward-slash form the rest of the message uses, or the native one throughout), and compare paths in the cases through a normaliser rather than string equality; prove with a case that feeds a backslash-joined path on posix.",
-        "fixTask": "P155.38-gfj"
+        "resolution": "fixed in P155.38-gfj (ffc5d619b9cb): Build every path these refusals name through one spelling (the forward-slash form the rest of the message uses, or the native one throughout), and compare paths in the cases through a normaliser rather than string equality; prove with a case that feeds a backslash-joined path on posix.",
+        "fixTask": "P155.38-gfj",
+        "commit": "ffc5d619b9cb",
+        "status": "fixed"
       },
       {
         "id": "P155-R53",
@@ -540,9 +542,16 @@
         "file": "tests/test_drive_phase.py:9285-9333",
         "issue": "Only the serial redo_left branch is held to the paths-last rule under a long spaced root (sd14). The other converted stops, and any new one, can regress to path-first with every case green. The executor's AST probe over _stopped calls was run once and not committed.",
         "resolution": "Add a case that walks the AST of drive-phase.py and requires every _stopped argument naming a path-like variable to go through paths_last, with a reasoned allow-list for relayed and repo-relative stops."
+      },
+      {
+        "id": "P155-R60",
+        "severity": "low",
+        "file": "tests/test__worktrees.py:2183-2190",
+        "issue": "ut5's scanner takes `site = min(at for _w, at in what)` as the function's first site, but no planted function has two sites with an ask between them. A function that asks after its first removal and before its second would be flagged now; mutating `min` to `max` (or any later site) would leave every planted case unchanged, so the first-site rule has no case that fails. Read from the source, not run. Likewise, `all(asks(...) for c in up)` is only pinned with a single caller (`late_inner` has one: `late_outer`). Nothing separates 'every caller' from 'any caller'.",
+        "resolution": "Add two planted twins. (a) A function with `run(['worktree','remove',a])`, then `tree_unsettled`, then a second removal, which must be named. (b) A remover with two callers, one asking before its call and one after, which must be named."
       }
     ],
-    "outcome": "[findings: 59 - 1 high, 22 med, 36 low; 34 with a recorded fix commit]"
+    "outcome": "[findings: 60 - 1 high, 22 med, 37 low; 35 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -3526,7 +3535,7 @@
     {
       "id": "P155.38-gfj",
       "title": "Tree refusals spell each path one way on every platform",
-      "status": "in_progress",
+      "status": "done",
       "description": "CI run 41616818469 (release tier, fdf3b270), windows legs only: ut1, ut2, ut4 (tests/test__worktrees.py) and kr2 (tests/test_drive_phase.py) fail. refuse_unsettled names the copy as C:/.../.git/worktrees/t\\audit-advance - a forward-slash admin dir joined with a backslash - and kr2's kept-tree stop names the tree in a spelling the case does not match. Build every path these refusals name through one spelling, compare paths in the cases through a normaliser, and add a posix case that feeds a backslash-joined admin path so the class is caught off Windows. The owner has a Windows machine: hand back the exact command and expected output for a Windows check.",
       "files": [
         "plugins/audit/scripts/git/_worktrees.py",
@@ -3557,14 +3566,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ffc5d619b9cb",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Cause, read from the saved CI lines and the code: _worktrees.admin_dir returned git's forward-slash --git-dir answer on windows and every caller joined onto it natively, so refuse_unsettled/kept_where named the copy as C:/.../.git/worktrees/t\\audit-advance; the tree named by manage-worktrees came from git's listing (forward) while the drive's came from state (native). ut1/ut2/ut4 additionally searched for the copy inside json.dumps(...), which escapes every backslash, so they could not pass on windows however the refusal spelled it. kr2: the brief's diagnosis is corrected here - the stop did name the tree as recorded; the failing clause was the case's own `os.path.realpath(kept) in trees_before`, because tests/test_drive_phase.py defined `_worktree_paths` twice at module level and the later definition (line ~7142, raw git spelling, no realpath) shadowed the kr2 one, so trees_before held git's forward-slash spelling (visible in the CI line). FIX: _worktrees.py gains native_spelling(path, flavour=None) - rewrites only the path module's altsep to its sep, nothing collapsed or resolved, posix (no altsep) returned as written; admin_dir(tree, run=None, flavour=None) returns its answer through it and joins with the flavour's isabs/join; kept_where(left, flavour=None) spells left and joins its numbered-file/index/git-index paths with the flavour; refuse_unsettled, tree_unsettled's could-not-ask why and read_provenance's could-not-ask basis spell the tree. drive-phase.py: unsettled_said and unmarked_kept_stop spell the tree they name through _worktrees.native_spelling. On posix every output is byte-identical (altsep None). Left unspelled, deliberately: restore_copy's own messages name the caller's tree as passed (the drive passes native paths); a new refusal naming a git-spelled path without native_spelling is caught only on a windows leg - the guide paragraph says so. TESTS: tests/test__worktrees.py - new helpers _said (joins string leaves, no JSON escaping) and _names (independent os.path.normpath normaliser); ut1/ut2 now also require the tree named in one spelling, ut4 the tree too; new case sp1 (_spelling_cases) feeds ntpath rules on any platform: native_spelling of a forward-slash admin dir joined with a backslash, admin_dir with an injected runner answering git's windows spelling, kept_where for the copy and the tombstone - every C: path in the words free of '/' and the four copy paths named natively - plus the over-fire twin, posixpath leaving a backslash in a name alone. tests/test_drive_phase.py - kr2's helper renamed _kept_listed (unique), with _one_path = normpath(realpath(p)) on both sides, and `os.path.normpath(kept) in prints[0]`. Duplicate top-level names re-scanned by AST over all four touched .py files: none left. PLUGIN-BUILD-GUIDE.md: a paragraph in the _worktrees.py section. COMMANDS: `python3 tests/test__worktrees.py --selftest` before the fix exit 1, only sp1 FAIL (missing native_spelling; TypeError for flavour= on admin_dir/kept_where caught inside the case); after, exit 0, 'ALL PASS' over the suite's own tally. Mutation probe (in-process monkeypatch, tree untouched; scratchpad/sp1_probe.py): baseline PASS; admin_dir unspelled RED; kept_where unspelled RED; over-fire (every backslash rewritten) RED; identity normaliser RED; restored PASS; exit 0. Gate `python3 tools/sweep-selftests.py tests/test__worktrees.py tests/test_drive_phase.py` exit 0, '2/2 files ok'. Extra observations, not gates: ruff check on the four .py exit 0; vermin -t=3.8- exit 0. Not mine and not touched: sd12 (fails on the linux stress leg too) and lw1 (tools/gate-parity.py, dash on windows - P155.39's). DEPENDANTS: .github/sweep-costs.json - still correct, no suite renamed and no block renamed; tests/test__affected_tests.py and tools/affected.py - still correct, they use _call_name/_cases/_selftest of test__worktrees.py, unchanged; test_drive_phase.py's dependants (ci.yml, test__runner_output.py, test_run_test_gate.py, test_stamp_verification.py, reach-diff.py, affected.py) - still correct, the names they use (_actions, _bindings, _counting, _follower_cases...) are unchanged, and a repo-wide grep finds no reference to _worktree_paths/_kept_listed outside the suite (grep exit 1); importers of _worktrees.py (guard-release.py, close-phase.py, integrate-task.py, manage-worktrees.py, _evidence_io.py, drive-phase.py, run-test-gate.py, stamp-verification.py, ...) - still correct: admin_dir and kept_where gain only an optional trailing keyword, every admin_dir call passes run= by keyword, and on posix the answer is byte-identical; on windows they now get backslash paths, used only for file operations and messages; importers of drive-phase.py - still correct, only two messages' tree spelling changed, posix-identical; PLUGIN-BUILD-GUIDE.md basename dependants - still correct, a paragraph added, no heading or name changed. WINDOWS CHECK for the owner, from the repo root in PowerShell: `python tools/sweep-selftests.py tests/test__worktrees.py tests/test_drive_phase.py` - expected exit 0 and the line '2/2 files ok, <N> cases'; for the cases by name: `python tests/test__worktrees.py --selftest` - expected 'PASS ut1', 'PASS ut2', 'PASS ut4', 'PASS sp1' and the 'ALL PASS' tally line, exit 0 (sd12 in test_drive_phase.py may still fail there - it is a separate fault that reddens the linux stress leg too).",
+        "descriptive": "Tree refusals name every path in one native spelling on windows (git's forward-slash admin dir no longer joined with a backslash), the cases compare paths through a normaliser instead of a JSON dump, and kr2's shadowed helper is fixed."
       },
       "startedAt": "2026-11-03T12:55:08Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-03T13:19:42Z",
+      "verifiedBy": [
+        "sp1: under the windows path rules on any platform, a forward-slash admin directory joined with a backslash comes out native throughout - admin_dir, the copy, its numbered files, index, git index and tombstone - and under posix rules a backslash in a name is left as written",
+        "ut1/ut2/ut4 now judge the copy and the tree through an independent normpath normaliser over the refusal's unescaped words, not inside a JSON dump",
+        "kr2 compares the kept tree with git's listing through normpath(realpath()) on both sides, via a uniquely named helper"
+      ],
       "notes": [
         {
           "at": "2026-11-03T10:41:17Z",
@@ -3591,6 +3604,18 @@
         "runId": "2026-11-03T13:19:37Z.aed3e0",
         "status": "passed",
         "at": "2026-11-03T13:19:37Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "ffc5d619b9cb",
+        "at": "2026-11-03T13:19:42Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-03T13:12:30Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__worktrees.py tests/test_drive_phase.py` in a throwaway tree at HEAD exited 1 with 1 of 175 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sp1 (house FAIL): SELFTEST FAILED: 174/175 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -3681,7 +3706,7 @@
     {
       "id": "P155.40-gfj",
       "title": "The tree-touching pin reads order (regression)",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Re-add of cancelled P155.36-gfj with the correct test mode. ut5 checks that a function asks tree_unsettled somewhere, not before the removal (R48). The work exists as a patch from the cancelled attempt: _touches and _touch_scan read source positions, ut5 gains ask-afterwards twins, and the ut5 label, the suite and module section comments and PLUGIN-BUILD-GUIDE.md say \"earlier in the source\", stating it is source order, not control flow. The executor applies and verifies it, proves it by mutating the scanner, and does not redo it.",
       "files": [
         "tests/test__worktrees.py",
@@ -3689,7 +3714,18 @@
         "PLUGIN-BUILD-GUIDE.md",
         "tests/test__worktrees.py",
         "PLUGIN-BUILD-GUIDE.md",
-        "plugins/audit/scripts/git/_worktrees.py"
+        "plugins/audit/scripts/git/_worktrees.py",
+        "tests/test__affected_tests.py",
+        "tests/test__doctor_trail.py",
+        "tests/test_drive_phase.py",
+        "tools/lints/_deps.py",
+        "tools/prove-gates.py",
+        "tests/_harness.py",
+        "tests/test__deps.py",
+        "tools/sweep-selftests.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "tests/test__runner_collects.py",
+        "tests/test_stamp_verification.py"
       ],
       "tests": {
         "mode": "regression",
@@ -3698,7 +3734,7 @@
         ],
         "expectRedFirst": false,
         "gate": [
-          "python3 tools/sweep-selftests.py tests/test__worktrees.py"
+          "python3 tools/sweep-selftests.py tests/test__worktrees.py tests/test__affected_tests.py tests/test__doctor_trail.py tests/test_drive_phase.py tests/_harness.py tests/test__deps.py tests/test__runner_collects.py tests/test_stamp_verification.py"
         ],
         "gateBasis": "tests.add"
       },
@@ -3707,14 +3743,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-03T13:20:06Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -3737,7 +3773,13 @@
       ],
       "fixes": [
         "P155-R48"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-03T13:36:16Z.a5ea65",
+        "status": "passed",
+        "at": "2026-11-03T13:36:17Z"
+      }
     }
   ],
   "reviewPerTask": "signals",
