@@ -10923,13 +10923,11 @@ def _gate_reach_cases(check):
         finally:
             M.gate_reach = real_reach
         repeated = any("GATE VERDICT REUSED" in ln for ln in lines_r)
-        check("grh10 a repeated verdict starts no reach reading and records "
-              "none, while the measured run before it read it once - a "
-              "reading that ran whatever the verdict would be counted twice "
-              "here: %r" % ((measured_calls, len(calls), repeated,
-                             "gateReach" in row_r),),
-              measured_calls == 1 and len(calls) == 1 and repeated
-              and "gateReach" not in row_r)
+        check("grh10 a repeated verdict starts no reach reading of its own, "
+              "while the measured run before it read it once - a reading that "
+              "ran whatever the verdict would be counted twice here: %r"
+              % ((measured_calls, len(calls), repeated),),
+              measured_calls == 1 and len(calls) == 1 and repeated)
 
         # A STOP DURING EITHER ARMED WINDOW BEFORE THE MEASUREMENT: the
         # affected gathering, then the reach reading. The armed handler raises
@@ -10968,6 +10966,121 @@ def _gate_reach_cases(check):
                   and "nothing was recorded" in told[0]
                   and added == 0 and restored
                   for _n, code_s, told, added, restored in outcomes))
+
+        # A REPEAT CARRIES THE REACH ITS MEASURED RUN READ. The verdict a
+        # committer most often sees is a repeat; its reach is still the prior
+        # row's answer, because the reuse identity holds the tree and the gate
+        # it was read over. The listing that reached the document is dropped
+        # so the measured run has a gap to carry.
+        del plan["meta"]["phaseGate"]
+        write_plan()
+        _code_m, _lines_m, row_m = run("P1.1", ("--no-reuse",))
+        calls[:] = []
+        M.gate_reach = counted
+        try:
+            code_c, lines_c, row_c = run("P1.1")
+            jlines_c = []
+            M.main([mpath, "P1", "--task", "P1.1", "--project-dir", root,
+                    "--json"], out=jlines_c.append)
+        finally:
+            M.gate_reach = real_reach
+        try:
+            body_c = json.loads("\n".join(jlines_c))
+        except ValueError:
+            body_c = {}
+        said_c = reach_lines(lines_c)
+        origin = row_m.get("runId") or "<no runId on the measured row>"
+        check("grh12 a REPEATED verdict prints the gap its measured run read, "
+              "once, naming that run, and its row and `--json` carry the same "
+              "gap - with no reading of its own: %r"
+              % ((gap_paths(row_m.get("gateReach")), origin, said_c,
+                  row_c.get("gateReach"),
+                  body_c.get("gateReach") if isinstance(body_c, dict)
+                  else body_c, len(calls)),),
+              gap_paths(row_m.get("gateReach")) == ["CHANGELOG.md"]
+              and any("GATE VERDICT REUSED" in ln for ln in lines_c)
+              and len(said_c) == 1 and "CHANGELOG.md" in said_c[0]
+              and origin in said_c[0]
+              and gap_paths(row_c.get("gateReach")) == ["CHANGELOG.md"]
+              and isinstance(body_c, dict)
+              and gap_paths(body_c.get("gateReach")) == ["CHANGELOG.md"]
+              and calls == [])
+
+        # A WIDEN REASON AS THE DERIVATION WORDS IT, through its own producer:
+        # a failed listing's command and exit, then the consequence. The
+        # bound is for the part that varies; the fixed lead in front of it
+        # must not spend it. The second path's cause is far past any bound,
+        # so a reading that stopped bounding would keep all of it.
+        real_answers = M._affected.reach_answers
+        widen = M._affected._widened(
+            "`npx vitest list --json --filesOnly` exited 1", [])["widen"]
+        endless = M._affected._widened("`%s` exited 2" % ("y" * 600,),
+                                       [])["widen"]
+
+        def widened(_project, _meta, _phase, _entries, _runs, paths, _seen):
+            return dict((p, {"suites": [], "settled": False,
+                             "widen": widen if p == "CHANGELOG.md"
+                             else endless}) for p in paths)
+        M._affected.reach_answers = widened
+        try:
+            _code_w, lines_w, row_w = run("P1.1", ("--no-reuse",))
+        finally:
+            M._affected.reach_answers = real_answers
+        said_w = [ln for ln in reach_lines(lines_w) if "CHANGELOG.md" in ln]
+        kept_w = dict((g.get("path"), " ".join(
+            str(v) for k, v in sorted(g.items())
+            if k != "path" and isinstance(v, str)))
+            for g in (row_w.get("gateReach") or {}).get("gaps") or []
+            if isinstance(g, dict))
+        long_w = kept_w.get("src/m.py") or ""
+        check("grh13 a widen reason keeps its EXIT CODE AND CONSEQUENCE on the "
+              "row and the printed line - the fixed lead does not spend the "
+              "bound - while a cause past the bound is still cut on both: %r"
+              % ((widen, said_w, kept_w.get("CHANGELOG.md"), len(long_w),
+                  [len(ln) for ln in reach_lines(lines_w)
+                   if "src/m.py" in ln]),),
+              len(said_w) == 1
+              and all(part in said_w[0] and part in (kept_w.get("CHANGELOG.md")
+                                                     or "")
+                      for part in ("npx vitest list", "exited 1",
+                                   "the task's gate widens to the phase gate"))
+              and 0 < len(long_w) < 2 * limit + 40
+              and "y" * limit not in long_w
+              and [ln for ln in reach_lines(lines_w) if "src/m.py" in ln]
+              and all("y" * limit not in ln for ln in reach_lines(lines_w)))
+
+        # WHAT A REPEAT SAYS FOR EACH SHAPE ITS SOURCE ROW CAN HOLD. A row
+        # with no reading is said as unrecorded, never as every file reached;
+        # an empty gap list IS every file reached, and says nothing - the
+        # second direction, for a repeat that always printed a line. A row's
+        # gaps are capped with the cut counted, and the count is printed.
+        def repeated(extra):
+            src = dict({"runId": "R-SRC", "ts": "t", "status": "passed",
+                        "failed": []}, **extra)
+            return M.repeated_reach_lines(
+                root, M.reused_result({"key": "k", "basis": "b"}, src, 0))
+        bare = repeated({})
+        empty = repeated({"gateReach": {"gaps": []}})
+        failed_r = repeated({"gateReachNotAsked": "RuntimeError: it broke"})
+        capped = repeated({"gateReach": {
+            "gaps": [{"path": "docs/a.md", "why": "no suite", "suites": []},
+                     {"path": "docs/b.md", "why": "no suite", "suites": []}],
+            "gapsDropped": 3}})
+        check("grh14 a repeat whose source row holds no reading says, in one "
+              "not-asked line naming that run, that the reach was not read; an "
+              "empty gap list prints nothing; a recorded failure is repeated "
+              "with its run; a capped gap list counts the cut the row kept: %r"
+              % ((bare, empty, failed_r, capped),),
+              len(bare) == 1
+              and bare[0].startswith(M.GATE_REACH_NOT_ASKED_LEAD)
+              and "R-SRC" in bare[0] and "--no-reuse" in bare[0]
+              and empty == []
+              and len(failed_r) == 1 and "it broke" in failed_r[0]
+              and "R-SRC" in failed_r[0]
+              and len(capped) == 3
+              and all("R-SRC" in ln for ln in capped[:2])
+              and capped[2].startswith(M.GATE_REACH_CUT_LEAD)
+              and " 3 more " in capped[2])
     finally:
         _harness.remove_tree(root)
 

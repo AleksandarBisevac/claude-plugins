@@ -1333,7 +1333,8 @@
       "P156.17-3st",
       "P156.18-3st",
       "P156.20-3st",
-      "P156.21-3st"
+      "P156.21-3st",
+      "P156.22-3st"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1928,7 +1929,8 @@
       "P156.18-3st",
       "P156.19-3st",
       "P156.20-3st",
-      "P156.21-3st"
+      "P156.21-3st",
+      "P156.22-3st"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -4188,7 +4190,8 @@
       "P148.6",
       "P155.20-gfj",
       "P156.20-3st",
-      "P156.21-3st"
+      "P156.21-3st",
+      "P156.22-3st"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -4652,7 +4655,8 @@
       "P156.8-3st",
       "P156.12-3st",
       "P156.20-3st",
-      "P156.21-3st"
+      "P156.21-3st",
+      "P156.22-3st"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -4952,7 +4956,8 @@
       "P156.4",
       "P156.5",
       "P156.14-3st",
-      "P156.21-3st"
+      "P156.21-3st",
+      "P156.22-3st"
     ],
     "plugins/audit/scripts/manifest/_manifest_rules.py": [
       "P18.2",
@@ -8452,7 +8457,8 @@
       "P156.8-3st",
       "P156.12-3st",
       "P156.20-3st",
-      "P156.21-3st"
+      "P156.21-3st",
+      "P156.22-3st"
     ],
     "tools/check-example-ledgers.py: a committed row whose status is not a schema enum member is a finding, and so is a passed verdict carrying a mutated tree": [
       "P32.10"
@@ -11550,7 +11556,8 @@
       "P156.17-3st",
       "P156.18-3st",
       "P156.20-3st",
-      "P156.21-3st"
+      "P156.21-3st",
+      "P156.22-3st"
     ],
     "plugins/audit/hooks/hold-handback.py": [
       "P128.6-0h5"
@@ -12182,7 +12189,8 @@
       "P148.24-xpz",
       "P155.20-gfj",
       "P156.20-3st",
-      "P156.21-3st"
+      "P156.21-3st",
+      "P156.22-3st"
     ],
     "tests/test__evidence_view.py": [
       "P131.1"
@@ -12287,7 +12295,8 @@
       "P156.14-3st",
       "P156.18-3st",
       "P156.20-3st",
-      "P156.21-3st"
+      "P156.21-3st",
+      "P156.22-3st"
     ],
     "tests/test__manifest_rules.py": [
       "P131.1",
@@ -12991,7 +13000,8 @@
       "P156.8-3st",
       "P156.12-3st",
       "P156.20-3st",
-      "P156.21-3st"
+      "P156.21-3st",
+      "P156.22-3st"
     ],
     "tests/test_set_priority.py": [
       "P131.1"

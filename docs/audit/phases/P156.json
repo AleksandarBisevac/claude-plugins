@@ -269,35 +269,59 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/_evidence_io.py:778-788 (_gate_reach); plugins/audit/scripts/manifest/_manifest_phases.py:1667-1670 (gate_reach_gaps); plugins/audit/scripts/governance/run-test-gate.py:2682-2685, 2700-2707",
         "issue": "The gateReach row keys cap the number of gaps but not each gap's length: the why joins every selected suite (measured 5,533 characters for one gap) and redacted_paths does not bound, so a committed hash-chained row can reach hundreds of KB, which _evidence_io's own rule against unbounded fields forbids; gateReach.gate repeats every step name already on steps[].name (5,321 of a 9,177-character row on P156.20-3st's own row); the printed line is unbounded too.",
-        "resolution": "Store the selected suites as a list capped like every path list, pass the sentence through the bounded text redactor, drop gate from the row (or keep only the declared entry names), clip the printed line the same way; a case with a long suite list that fails while the field is unbounded.",
-        "fixTask": "P156.21-3st"
+        "resolution": "fixed in P156.21-3st (29b20207d865): Store the selected suites as a list capped like every path list, pass the sentence through the bounded text redactor, drop gate from the row (or keep only the declared entry names), clip the printed line the same way; a case with a long suite list that fails while the field is unbounded.",
+        "fixTask": "P156.21-3st",
+        "commit": "29b20207d865",
+        "status": "fixed"
       },
       {
         "id": "P156-R26",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/run-test-gate.py:5492-5513 (reach read before the reuse lookup)",
         "issue": "The reach is read before the reuse lookup, so a repeated verdict, which runs nothing, still pays the per-file listings (measured 24.0 s, 18 listings on P156.20-3st); CHANGELOG and comments say a measured run.",
-        "resolution": "Read the reach only on a measured run, or carry the prior row's reading onto a repeat, so a repeat starts no listing.",
-        "fixTask": "P156.21-3st"
+        "resolution": "fixed in P156.21-3st (29b20207d865): Read the reach only on a measured run, or carry the prior row's reading onto a repeat, so a repeat starts no listing.",
+        "fixTask": "P156.21-3st",
+        "commit": "29b20207d865",
+        "status": "fixed"
       },
       {
         "id": "P156-R27",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/run-test-gate.py:5496-5513",
         "issue": "A stop during the armed gathering or reach reading ends in a Python traceback and exit 130 even for SIGTERM, with no line naming the stop, where the run_gate window turns the same interrupt into a named cancelled outcome.",
-        "resolution": "Catch the interrupt around the armed block in main, print one line naming the signal and saying nothing was run or recorded, and exit as the run does for a stop; a case pinning line and exit.",
-        "fixTask": "P156.21-3st"
+        "resolution": "fixed in P156.21-3st (29b20207d865): Catch the interrupt around the armed block in main, print one line naming the signal and saying nothing was run or recorded, and exit as the run does for a stop; a case pinning line and exit.",
+        "fixTask": "P156.21-3st",
+        "commit": "29b20207d865",
+        "status": "fixed"
       },
       {
         "id": "P156-R28",
         "severity": "low",
         "file": "plugins/audit/reference/verbs-in-full.md:624-628; CHANGELOG.md:42-51",
         "issue": "The documents say run-test-gate --task reads the reach unconditionally; the code reads it only for a task with a gate of its own and never under --own, the run an executor iterates with.",
-        "resolution": "State both conditions in verbs-in-full and CHANGELOG.",
-        "fixTask": "P156.21-3st"
+        "resolution": "fixed in P156.21-3st (29b20207d865): State both conditions in verbs-in-full and CHANGELOG.",
+        "fixTask": "P156.21-3st",
+        "commit": "29b20207d865",
+        "status": "fixed"
+      },
+      {
+        "id": "P156-R29",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py:2952-2998 (reused_result), 5640-5652, 5819-5820",
+        "issue": "A repeated verdict carries no gateReach from the prior row and prints neither a reach line nor a sentence that the reach was not read on this run, so the green a committer most often sees silently loses its advisory although the prior row's answer is still valid under the reuse identity.",
+        "resolution": "Carry the prior row's gateReach onto the repeat as banners are carried and print it naming the run it came from; a case where the prior measured run has a gap and the repeat names it.",
+        "fixTask": "P156.22-3st"
+      },
+      {
+        "id": "P156-R30",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py:2716-2746 (reach_lines); plugins/audit/scripts/manifest/_manifest_phases.py:1671-1674 (widen gap)",
+        "issue": "The bound applies to the fixed lead plus the reason, so the commonest widen reason loses its exit code and consequence ('... exited  [truncated]') on the row and the printed line.",
+        "resolution": "Bound only the variable part (or store the reason as its own bounded field and add the lead when rendering); a case with a realistic '<command> exited N - ...' reason asserting the exit code survives on row and line.",
+        "fixTask": "P156.22-3st"
       }
     ],
-    "outcome": "[findings: 28 - 0 high, 7 med, 21 low; 24 with a recorded fix commit]"
+    "outcome": "[findings: 30 - 0 high, 7 med, 23 low; 28 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2016,7 +2040,7 @@
     {
       "id": "P156.21-3st",
       "title": "The gate-reach record is bounded, read only on a measured run, stops by name, and its conditions are documented",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix P156-R25,P156-R26,P156-R27,P156-R28 (docs/audit/phases/P156.json review.findings): bound every gateReach field in the row and in the printed line (suites as a capped list, the sentence through the bounded text redactor, no repeated step names); read the reach only on a measured run so a repeated verdict starts no listing; a stop during the armed gathering prints one line naming the signal and exits as a stop does; verbs-in-full and CHANGELOG state that the reach is read for a task with a gate of its own and not under --own.",
       "files": [
         "plugins/audit/scripts/governance/_evidence_io.py",
@@ -2058,14 +2082,22 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "29b20207d865",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "R25: _manifest_phases.gate_reach_gaps now returns [{path, why, suites}]; the reason no longer joins the selected suites, which travel as a list. _evidence_io.gate_reach_record (new, public; replaces _gate_reach) keeps {gaps:[{path, why, suites[, suitesDropped]}][, gapsDropped]}: gaps and each gap's suites cut at MAX_PATHS with the cut counted, path and suites via repo_relative_or_token, why via redacted_text (bounded to MAX_VALUE_CHARS), no gate step names; gateReachNotAsked now via redacted_text too. run-test-gate.gate_reach drops the gate key; main stores gate_reach_record's shape on the result (--json and row share one shape; row_for re-applies it idempotently, pinned by grr7). reach_lines(project, reach, why) prints at most MAX_PATHS gap lines and one new 'gate reach cut:' line (GATE_REACH_CUT_LEAD, added to _STATEMENT_OPENINGS) counting the rest, path/why through redacted_text, a gap's suites named via _output.some_of(SAMPLE_BUDGET) counted over the whole selection. R26: the reach reading moved out of the gathering window into the measured branch (prior is None), inside the run_gate armed window before run_gate, so a repeat starts no reading. R27: new stopped_before_run(exc, say) prints one '[run-test-gate] GATE CANCELLED: <signal> stopped this run before its first step - nothing was run and nothing was recorded' line (stderr under --json) and returns E_FAIL, the exit render gives a cancelled run; caught around the gathering and around the reach reading. R28: verbs-in-full.md and CHANGELOG state the reach is read only for a task with its own tests.gate, never under --own, only on a measured run; CHANGELOG also states the bounds and the stop line; PLUGIN-BUILD-GUIDE sections for _manifest_phases and run-test-gate updated to the new shape. Tests: grr1/grr3 updated (no gate key), grr6-grr8 added; grh9-grh11 added; gr1-gr3 updated to dict gaps, gr4 added. Counts: test__evidence_io 323/323, test__manifest_phases 147/147, test_run_test_gate 594/594; brief gate exit 0 (1064 cases); full sweep exit 0, 195/195 files, 18466 cases (the first full sweep was red only in tests/test__output_lints.py te11/ln1, flagging my own grh9 label at test_run_test_gate.py for printing len(said_h) beside said_h[:1]; reworded, lint 182/182, sweep re-run green); gate-parity exit 0; measure-context --gate exit 0; check-example-ledgers exit 0; ruff and vermin over the six touched .py files exit 0. Dependants: _evidence_io's listed importers (guard-release, close-phase, integrate-task, _affected_tests, _gate_derive, _invariants, _verdict_binding, audit-journal) still correct - none reads gateReach or _gate_reach (grep over plugins tools tests .claude/hooks: gateReach appears only in my files, verbs-in-full, CHANGELOG, PLUGIN-BUILD-GUIDE and test_audit_task's grt block, which asserts the key's absence on verb output); _manifest_phases' importers still correct - run-test-gate is the only caller of gate_reach_gaps, _affected_tests.path_reach only names it in a docstring about its input shape, which is unchanged; run-test-gate's importers (full-gate, the test suites) - reach_lines, gate_reach and stopped_before_run have no caller outside run-test-gate and its suite; the tests' dependants (sweep-costs.json, affected.py, the basename users) unaffected - no shared helper changed. tools/check-example-ledgers.py and tools/release.py were in files and needed no change. One stray full sweep I started by mistake (a bad --list flag) was killed at once; the sibling sessions' sweep processes were left alone.",
+        "descriptive": "The gate-reach record and line are bounded in every field, read only on a measured run, a stop before the first step ends in one named line and exit 1, and the docs state when the reach is read."
       },
       "startedAt": "2026-11-04T19:26:44Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-04T19:59:20Z",
+      "verifiedBy": [
+        "grr6: a gap's suites kept as a list capped at MAX_PATHS with suitesDropped counted, repo-relative, reason held to MAX_VALUE_CHARS",
+        "grr7: gaps past MAX_PATHS counted as gapsDropped, no gate step names on the reach, a second bounding pass changes nothing",
+        "grr8: gateReachNotAsked held to the same bound",
+        "grh9: through main with a huge faked reading, printed gap lines stop at MAX_PATHS plus one cut line, the first line names a budgeted sample of suites with a truthful 'and N more', the row keeps capped suites and a bounded reason and no gate key",
+        "grh10: a repeated verdict calls gate_reach zero times and records no gateReach, while the measured run before it calls it once",
+        "grh11: a stop raised in the affected gathering and in the reach reading each ends main with exit 1, one line naming SIGTERM saying nothing was run or recorded, no new row, handler restored",
+        "gr4 (test__manifest_phases, not a tests.add entry): a gap's reason does not grow with the selected suites"
+      ],
       "notes": [
         {
           "at": "2026-11-04T19:26:27Z",
@@ -2103,6 +2135,90 @@
         "runId": "2026-11-04T19:59:17Z.e124e9",
         "status": "passed",
         "at": "2026-11-04T19:59:17Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "29b20207d865",
+        "at": "2026-11-04T19:59:20Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-04T19:53:57Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_run_test_gate.py` in a throwaway tree at HEAD exited 1 with 7 of 594 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - grr3 (house FAIL), grr6 (house FAIL), grr7 (house FAIL), grr8 (house FAIL), grh9 (house FAIL), grh10 (house FAIL), grh11 (house FAIL): SELFTEST FAILED: 591/594 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P156.22-3st",
+      "title": "A repeated gate verdict carries the reach its measured run read, and a widen reason keeps its cause inside the bound",
+      "status": "in_progress",
+      "description": "Fix P156-R29,P156-R30 (docs/audit/phases/P156.json review.findings): a reused verdict carries and prints the prior measured row's gateReach naming that run; the bound applies to the variable part of a reach reason so a widen reason keeps its exit code and consequence on the row and the line.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "tests/test_run_test_gate.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "tests/test__manifest_phases.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "tests/test__evidence_io.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "tests/test_run_test_gate.py",
+        "tests/test__manifest_phases.py",
+        "tools/check-example-ledgers.py",
+        "tools/release.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_run_test_gate.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test__manifest_phases.py tests/test__evidence_io.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-04T20:03:06Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-04T20:03:01Z",
+          "text": "scope: plugins/audit/scripts/governance/run-test-gate.py, plugins/audit/scripts/manifest/_manifest_phases.py, every path the finding(s) P156-R29, P156-R30 name"
+        },
+        {
+          "at": "2026-11-04T20:03:01Z",
+          "text": "scope: tests/test_run_test_gate.py, the suite that tests plugins/audit/scripts/governance/run-test-gate.py (python: its import closure reaches plugins/audit/scripts/governance/run-test-gate.py)"
+        },
+        {
+          "at": "2026-11-04T20:03:01Z",
+          "text": "scope: tests/test__manifest_phases.py, the suite that tests plugins/audit/scripts/manifest/_manifest_phases.py (python: its import closure reaches plugins/audit/scripts/manifest/_manifest_phases.py)"
+        }
+      ],
+      "fixes": [
+        "P156-R29",
+        "P156-R30"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-04T20:27:03Z.9fb0f2",
+        "status": "passed",
+        "at": "2026-11-04T20:27:03Z"
       }
     }
   ],

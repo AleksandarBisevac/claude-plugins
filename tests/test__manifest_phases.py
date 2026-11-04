@@ -1561,15 +1561,21 @@ def _cases(check):
     check("gr2 each gap says why in the derivation's own terms: the suites it "
           "selects that the gate does not run - as a list beside the reason, "
           "never joined into it - no suite at all, the widening reason "
-          "verbatim, and a path it was never asked about named as unasked "
-          "rather than counted as reached: %r" % ((_gr_why, _gr_suites),),
+          "verbatim as its own `cause` beside the fixed clause, on that gap "
+          "alone, and a path it was never asked about named as unasked "
+          "rather than counted as reached: %r" % ((_gr_gaps, _gr_suites),),
           _gr_suites.get("src/b.py") == ["tests/test_b.py", "tests/test_c.py"]
           and "tests/test_b.py" not in _gr_why.get("src/b.py", "")
           and "selects" in _gr_why.get("src/b.py", "")
           and _gr_suites.get("COMPATIBILITY.md") == []
           and "no suite" in _gr_why.get("COMPATIBILITY.md", "")
-          and "unrecognised: no arm reads tools/verify.sh"
-          in _gr_why.get("tools/verify.sh", "")
+          and [g.get("cause") for g in _gr_gaps
+               if g.get("path") == "tools/verify.sh"]
+          == ["unrecognised: no arm reads tools/verify.sh"]
+          and "unrecognised" not in _gr_why.get("tools/verify.sh", "")
+          and "cannot say" in _gr_why.get("tools/verify.sh", "")
+          and [g.get("path") for g in _gr_gaps if "cause" in g]
+          == ["tools/verify.sh"]
           and "not asked" in _gr_why.get("src/unasked.py", ""))
     # SECOND DIRECTION: a comparator that named every path, or every path but
     # the ones the gate runs itself, fails here - every path below is reached.

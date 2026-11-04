@@ -2621,8 +2621,11 @@ def affected_steps(tree, own_tree, manifest, phase_id, task_id, commands,
 # signals it arms, so the reading costs it only the listings a declared file
 # needs asked alone (`_affected_tests.reach_answers`). It is read for a task
 # with a gate of its own, never under `--own`, and only on a measured run - a
-# repeated verdict observes nothing. It is advisory, so it fails open: an
-# exception in it is one line and leaves the verdict alone.
+# repeated verdict observes nothing, so it carries the reading of the run it
+# copies and names that run (`repeated_reach_lines`); the reuse identity holds
+# the tree, the gate and the declared files that reading was made over. It is
+# advisory, so it fails open: an exception in it is one line and leaves the
+# verdict alone.
 GATE_REACH_LEAD = "gate reach: "
 # The line saying the reach was not read at all, and why: its own lead, so a
 # reader counting gaps never counts the advisory's own failure as one.
@@ -2713,37 +2716,61 @@ def stopped_before_run(exc, say):
     return E_FAIL
 
 
-def reach_lines(project, reach, why):
+def reach_lines(project, reach, why, origin=None):
     """The lines a task's run prints about its reach, beside the verdict: one
     per gap, or the one line saying it was not asked and why.
 
     BOUNDED AS THE ROW IS (`_evidence_io.gate_reach_record`): at most
     `MAX_PATHS` gap lines and one counting the rest, each path and reason
-    through `redacted_text`, and a gap's suites named until `SAMPLE_BUDGET` is
-    spent, with how many were not - counted over the whole selection, which
-    this reads rather than the row's capped list."""
+    through `redacted_text` - a widening's `cause` on its own, after the fixed
+    clause - and a gap's suites named until `SAMPLE_BUDGET` is spent, with how
+    many were not - counted over the whole selection, which this reads rather
+    than the row's capped list.
+
+    `origin` is the run a repeated verdict copies: its reading is that run's,
+    so every line names it, and the gaps are what its row kept."""
+    read_by = ("" if origin is None else
+               " - read by run %s, whose verdict this repeats" % (origin,))
     if why is not None:
-        return ["%s%s" % (GATE_REACH_NOT_ASKED_LEAD,
-                          _ev.redacted_text(project, str(why)))]
+        return ["%s%s%s" % (GATE_REACH_NOT_ASKED_LEAD,
+                            _ev.redacted_text(project, str(why)), read_by)]
     gaps = [g for g in (reach or {}).get("gaps") or [] if isinstance(g, dict)]
     lines = []
     for gap in gaps[:_ev.MAX_PATHS]:
         suites = [str(s) for s in gap.get("suites") or []]
         named = (": %s" % (_output.some_of(suites, SAMPLE_BUDGET),)
                  if suites else "")
+        reason = _ev.redacted_text(project, str(gap.get("why") or ""))
+        if gap.get("cause") is not None:
+            reason = "%s: %s" % (reason,
+                                 _ev.redacted_text(project, str(gap["cause"])))
         lines.append("%s%s -- %s%s; a passed run of this gate is no evidence "
-                     "for it" % (GATE_REACH_LEAD,
-                                 _ev.redacted_text(project,
-                                                   str(gap.get("path") or "")),
-                                 _ev.redacted_text(project,
-                                                   str(gap.get("why") or "")),
-                                 named))
-    if len(gaps) > _ev.MAX_PATHS:
+                     "for it%s" % (GATE_REACH_LEAD,
+                                   _ev.redacted_text(project,
+                                                     str(gap.get("path") or "")),
+                                   reason, named, read_by))
+    dropped = (max(0, len(gaps) - _ev.MAX_PATHS)
+               + _ev._dropped((reach or {}).get("gapsDropped")))
+    if dropped:
         lines.append("%s%d more declared files no suite of this run reaches "
                      "are not printed; `--json` and the row keep the first %d"
-                     % (GATE_REACH_CUT_LEAD, len(gaps) - _ev.MAX_PATHS,
-                        _ev.MAX_PATHS))
+                     % (GATE_REACH_CUT_LEAD, dropped, _ev.MAX_PATHS))
     return lines
+
+
+def repeated_reach_lines(project, res):
+    """The reach lines of a repeated verdict: the reading of the run it copies,
+    naming that run (`reach_lines`), or - when that row holds no reading -
+    one line saying the reach was not read on this run nor recorded by that
+    one, rather than silence a reader would take for every file reached."""
+    origin = (res.get("reusedFrom") or {}).get("runId")
+    reach = res.get(_ev.GATE_REACH_KEY)
+    why = res.get(_ev.GATE_REACH_NOT_ASKED_KEY)
+    if reach is None and why is None:
+        return ["%snothing ran here, and run %s, whose verdict this repeats, "
+                "recorded no reach reading - re-run with --no-reuse to read it"
+                % (GATE_REACH_NOT_ASKED_LEAD, origin)]
+    return reach_lines(project, reach, why, origin=origin)
 
 def affected_lines(info):
     """The lines a task-scope run prints about what joined its gate."""
@@ -2991,6 +3018,14 @@ def reused_result(identity, row, elapsed_ms, newer=None):
         # THE REPEATED RUN'S BANNERS, copied like `status`: None when its row
         # predates the key, which `render_reuse` says rather than omits.
         "banners": _ev.banners_of(row),
+        # THE REPEATED RUN'S REACH, copied like its banners: the reading it
+        # made over the tree, the gate and the declared files this identity
+        # holds, or the sentence saying it could not. Absent when its row holds
+        # neither, which `repeated_reach_lines` says rather than omits.
+        _ev.GATE_REACH_KEY: (row.get(_ev.GATE_REACH_KEY)
+                             if isinstance(row.get(_ev.GATE_REACH_KEY), dict)
+                             else None),
+        _ev.GATE_REACH_NOT_ASKED_KEY: row.get(_ev.GATE_REACH_NOT_ASKED_KEY),
         "coverageBasis": ("no command ran, so no runner named a path here; the "
                           "run named above is where that question was asked"),
     }
@@ -5642,7 +5677,8 @@ def main(argv, out=print):
         try:
             # THE REACH IS READ HERE, ON A MEASURED RUN ALONE: a repeat runs
             # nothing, so it observes nothing and starts none of the listings
-            # the reading may need. Read before the first step, inside the same
+            # the reading may need - it carries its source run's reading
+            # (`reused_result`). Read before the first step, inside the same
             # armed window, so a stop during it is a stop before anything ran.
             if reach_args is not None:
                 try:
@@ -5816,7 +5852,13 @@ def main(argv, out=print):
     # THE DECLARED FILES NO SUITE OF THIS RUN REACHES, with the verdict: a green
     # beside one of these lines is no evidence for that file. Each opens a
     # statement (`_STATEMENT_OPENINGS`), so the short form never clips it away.
-    for line in reach_lines(project, reach, reach_why):
+    # A repeat of a run that would read it prints the reading it copies, named.
+    if res.get(_ev.VERDICT_SOURCE) == _ev.REUSED:
+        said_reach = (repeated_reach_lines(project, res)
+                      if reach_args is not None else [])
+    else:
+        said_reach = reach_lines(project, reach, reach_why)
+    for line in said_reach:
         out("  %s" % (line,))
     # BEFORE THE VERDICT, so the reader who wants every line never has to
     # scroll past a red banner to find where they are - and printed only

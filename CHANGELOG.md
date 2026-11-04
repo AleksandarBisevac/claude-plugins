@@ -48,7 +48,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 - **A task's measured gate run says which declared files no suite of that run reaches.** A
   passed gate run is evidence only for the files its suites read, so `run-test-gate.py --task`,
   on a task with a `tests.gate` of its own and not under `--own` (the run an executor iterates
-  with), on a measured run only - a repeated verdict reads none - asks each declared file of the
+  with), on a measured run only, asks each declared file of the
   affected-test derivation -
   the recorded listings, the tree's suites, the Python imports - over the facts it already
   gathers for its affected steps, and compares the answer with what the run carries: the task's
@@ -56,8 +56,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   <path> -- <why>` line per file no suite of the run reaches, and a run with such a line is never
   clipped to its one-line short form; the evidence row and the `--json` result carry the same
   answer as `gateReach`, every field of it bounded: each gap's selected suites a capped path
-  list with the cut counted, each reason held to a value's length, and the step names left to
-  `steps`. It is advisory: a reading that fails leaves the verdict alone and says
+  list with the cut counted, each reason held to a value's length - a widening's own cause (a
+  failed listing's command, its exit and the consequence) kept as `cause` beside the fixed
+  clause and bounded alone, so the clause never cuts it - and the step names left to
+  `steps`. A repeated verdict reads no reach of its own: it prints the reading of the run it
+  repeats, each line naming that run, carries it on its row and `--json`, and says
+  `gate reach not asked:` when that run's row holds no reading. It is advisory: a reading that
+  fails leaves the verdict alone and says
   `gate reach not asked:` with the reason, recorded as `gateReachNotAsked`. A stop signal during
   the gathering or the reading prints one `GATE CANCELLED:` line naming the signal, records
   nothing and exits 1, as a stopped run does. The manifest verbs

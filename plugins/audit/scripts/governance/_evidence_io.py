@@ -768,16 +768,20 @@ _FOLLOWER_LINE = re.compile(r"^\s*%s (.*?)\s*$" % (FOLLOWER_MARK,), re.M)
 
 # --- which declared files a task's run reached --------------------------------
 # The keys a row carries `run-test-gate.gate_reach`'s observation under:
-# `{gaps: [{path, why, suites}]}` for each declared file no suite of the run
-# reaches, or the sentence saying the reading failed. The reading is the gate's;
-# this is what a committed row keeps of it.
+# `{gaps: [{path, why, cause?, suites}]}` for each declared file no suite of the
+# run reaches, or the sentence saying the reading failed. The reading is the
+# gate's; this is what a committed row keeps of it. A repeated verdict carries
+# the row it repeats' reading (`run-test-gate.reused_result`), through this
+# same shape again.
 #
 # EVERY FIELD OF IT IS BOUNDED, for the reason `MAX_FAILING` states: a row is
 # hash-chained, so an unbounded field is a row of unbounded size. The gaps and
 # each gap's suites are path lists, cut at `MAX_PATHS` with the cut counted
 # beside the list (`gapsDropped`, `suitesDropped`); each path is redacted as
 # `_paths` redacts one; each reason goes through `redacted_text`, which bounds
-# it. The run's step names are not copied onto it: `steps[].name` holds them.
+# it - `why`, the fixed clause, and `cause`, the varying part of a widening's
+# reason, each on its own, so the clause never spends the cause's bound. The
+# run's step names are not copied onto it: `steps[].name` holds them.
 GATE_REACH_KEY = "gateReach"
 GATE_REACH_NOT_ASKED_KEY = "gateReachNotAsked"
 
@@ -796,6 +800,10 @@ def _reach_gap(project, gap):
            "why": redacted_text(project, str(gap.get("why") or "")),
            "suites": [repo_relative_or_token(project, s)
                       for s in suites[:MAX_PATHS]]}
+    # The varying part of a reason, bounded on its own so the fixed clause in
+    # `why` never spends its bound.
+    if gap.get("cause") is not None:
+        out["cause"] = redacted_text(project, str(gap["cause"]))
     dropped = (_dropped(gap.get("suitesDropped"))
                + max(0, len(suites) - MAX_PATHS))
     if dropped:

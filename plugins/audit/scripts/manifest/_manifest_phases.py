@@ -1636,6 +1636,12 @@ def gate_reach_gaps(asked, runs, answers):
     phase; as a list, the writer that keeps it caps it the way it caps every
     path list, and the reason stays one sentence whatever the selection.
 
+    A WIDENING'S OWN REASON IS `cause`, BESIDE THE FIXED `why`. It is the part
+    that varies - a failed listing's command, its exit and the consequence - and
+    a writer bounding one joined sentence spent the bound on the fixed clause in
+    front and cut the exit and the consequence. Kept apart, each writer bounds
+    the cause alone and prints it after the clause.
+
     A PASSED GATE RUN IS EVIDENCE ONLY FOR WHAT ITS SUITES READ. A gate that
     selects no suite opening a document, or none importing a tool, stays green
     whatever the change to that file says, so a task closed on it records a
@@ -1670,8 +1676,8 @@ def gate_reach_gaps(asked, runs, answers):
             continue
         if answer.get("widen"):
             gaps.append(_reach_gap(path, "the affected-test derivation cannot "
-                                         "say which suite reaches it: %s"
-                                   % (answer["widen"],), suites))
+                                         "say which suite reaches it", suites,
+                                   cause=str(answer["widen"])))
         elif suites:
             gaps.append(_reach_gap(path, "the affected-test derivation selects "
                                          "suites for it, and the gate runs none "
@@ -1684,9 +1690,14 @@ def gate_reach_gaps(asked, runs, answers):
     return gaps
 
 
-def _reach_gap(path, why, suites):
-    """One gap of `gate_reach_gaps`, in the shape every reader of it takes."""
-    return {"path": path, "why": why, "suites": list(suites)}
+def _reach_gap(path, why, suites, cause=None):
+    """One gap of `gate_reach_gaps`, in the shape every reader of it takes:
+    `why` the fixed clause, and `cause` - only when there is one - the part
+    that varies, which the writers bound on its own and print after `why`."""
+    gap = {"path": path, "why": why, "suites": list(suites)}
+    if cause is not None:
+        gap["cause"] = cause
+    return gap
 
 
 # One shell word as written: runs of unquoted non-space characters and whole
