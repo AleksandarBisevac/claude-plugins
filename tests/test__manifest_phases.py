@@ -662,6 +662,31 @@ def _cases(check):
           "carrying a comma, an empty part and an empty value all return "
           "None; rows that disagree: %r" % (_jp_bad,), _jp_bad == [])
 
+    # A tests.add entry is `<path>` or `<path>: <what it asserts>`, and the
+    # prose half may carry a comma and a file name of its own. Once a part
+    # carries prose, a later part is a second entry only when it opens with
+    # `<path>:` too; a bare file name after it is the sentence going on.
+    _jt_rows = [
+        ("tests/a.py,tests/b.py", ["tests/a.py", "tests/b.py"]),
+        ("tests/a.py: sums x,tests/b.py: rounds y",
+         ["tests/a.py: sums x", "tests/b.py: rounds y"]),
+        ("tests/a.py, tests/b.py: rounds y",
+         ["tests/a.py", "tests/b.py: rounds y"]),
+        ("tests/test_x.py: reads _config.py, _deps.py", None),
+        ("tests/a.py: sums x, tests/b.py", None),
+        ("tests/a.py: asserts x, y and z", None),
+        ("tests/a.py", None),
+        ("tests/a.py,,tests/b.py", None),
+    ]
+    _jt_bad = [(v, want, M.joined_tests_add_parts(v)) for v, want in _jt_rows
+               if M.joined_tests_add_parts(v) != want]
+    check("jp2 `joined_tests_add_parts` reads a value as several tests.add "
+          "entries only when each part is a whole entry: bare paths, or "
+          "`<path>: <text>` parts, or bare paths then described ones - a bare "
+          "file name AFTER a described part is that part's prose, so the "
+          "value is one entry; rows that disagree: %r" % (_jt_bad,),
+          _jt_bad == [])
+
     # --- tr: what a ONE-SHOT REPAIR may do to an entry written before the rule --
     # The finding above refuses, and a refusal with no migration behind it
     # strands every plan written before the rule. `repair-tests-add.py` is that

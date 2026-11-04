@@ -315,15 +315,19 @@ per add is the class of error the script exists to delete.
      (`LIST_FLAG_READINGS` in `audit-task.py`). The id and path lists above, `--fixes`,
      `--introduces`, `--sources`, `--phases` and `signoff --accept` split on commas. The
      flags whose entries may carry a comma of their own — `--tests-add`, `--gate`,
-     `--gate-add`, `--gate-drop`, `--gate-set`, `--waive`, `--accept-open`, `--carried` —
-     take one entry per flag, and a value whose every comma part reads as an entry of
-     that flag (a file for `--tests-add`, a `meta.buildCommands` key for a gate flag) is
+     `--gate-add`, `--gate-set`, `--waive`, `--accept-open`, `--carried` — take one entry
+     per flag, and a value whose every comma part reads as a whole entry of that flag (a
+     file or a `<path>: <text>` entry for `--tests-add`, a `meta.buildCommands` key for a
+     gate flag, a `<path>: <why>` waiver naming a file, a pair keyed by a finding id) is
      refused before any write, naming the repeated spelling: `--tests-add a.py,b.py` used
      to store the one entry `a.py,b.py`, and `add-phase --gate a,b,c` one shell command
-     no shell can find. A comma inside an entry (`"tests/a.py: x, y"`, `"eslint
-     a.ts,b.ts"`) leaves a part that names nothing, so the value is kept whole. The suite
-     walks the parser's options, so a repeating flag added without a row is reported by
-     name.
+     no shell can find. A comma inside an entry (`"tests/a.py: x, y"`, `"tests/x.py:
+     reads _config.py, _deps.py"`, `"P1-R1=n=3, m=4 is fine"`, `"eslint a.ts,b.ts"`)
+     leaves a part that is no whole entry, so the value is kept whole. `--gate-drop`
+     stores nothing, so its value is taken as given: a gate holding a joined entry from
+     before this rule can drop it, and a value naming entries the gate holds apart is
+     refused by the drop, with the repeated spelling. The suite walks the parser's
+     options, so a repeating flag added without a row is reported by name.
 3. **Run it** (Bash) — the brief on **stdin**, which is the only form a shell
    cannot rewrite:
    ```bash
@@ -1901,7 +1905,10 @@ choices it saved, and the validator's warnings.
 stdin; a batch that is not JSON or carries a key the batch does not read; a missing request, open-choices
 list, title, outcome or task list; a dependency neither the plan nor the batch holds,
 named; a task `key` that is already an id; a phase `id` that is live, reserved by a
-parked proposal, a task id, or stored in a shard file another phase occupies; and any
+parked proposal, a task id, or stored in a shard file another phase occupies; a list
+item that reads as several entries joined by commas, in any list key a repeating flag
+writes (`tasks[0].tests.add`, `phase.testGate`) — each read the way its flag is and named
+by its field path, since the list itself is the separator; and any
 other `audit-task.py add` flag beside `--from-file`.
 
 **Which branch are you on? Phases are minted on the development branch.** A phase id is
@@ -1957,7 +1964,9 @@ caller naming several entries at once rather than for one flag repeated.
 **`--gate-drop <entry>` narrows the CURRENT gate by name, the other operation.** Every
 named entry must already be in the phase's `testGate` — an entry it does not name is
 refused, naming the missing entry and the gate as it stands, so a typo is never a silent
-no-op. A drop that would leave nothing is refused with **the same empty-gate sentence**:
+no-op. The entry is matched whole, so a joined entry the gate holds (`"lint,test"`) is
+dropped by that spelling, and a value joining entries the gate holds apart is refused
+with the one-flag-per-entry spelling. A drop that would leave nothing is refused with **the same empty-gate sentence**:
 `an empty gate is --gate-clear, which says so` — that state is reached by SAYING so, not
 as a side effect of what got dropped.
 

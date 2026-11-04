@@ -22780,6 +22780,7 @@ _LR_SAMPLES = {
     "waiver": ("src/a.py: it cannot reach it,src/b.py: nor this",
                ["src/a.py: it cannot reach it", "src/b.py: nor this"]),
     "pair": ("P1-R1=BUG-1,P1-R2=BUG-2", ["P1-R1=BUG-1", "P1-R2=BUG-2"]),
+    "held": ("lint,test", ["lint", "test"]),
 }
 
 
@@ -22838,12 +22839,18 @@ def _list_flag_cases(check):
             if reading == "split":
                 if refusal is not None or values.get(dest) != parts:
                     bad.append((dest, reading, values.get(dest), refusal))
+            elif reading == "held":
+                # Names an entry the field already holds and stores nothing:
+                # the door that holds the field answers held or not held.
+                if refusal is not None or values.get(dest) != [joined]:
+                    bad.append((dest, reading, values.get(dest), refusal))
             elif refusal is None or flags[dest] not in refusal \
                     or not all(p in refusal for p in parts) \
                     or joined in (values.get(dest) or []):
                 bad.append((dest, reading, values.get(dest), refusal))
         check("lr3 every row, driven through the reader with a comma-joined "
-              "value: a `split` row returns the parts, every other row refuses "
+              "value: a `split` row returns the parts, a `held` row the value "
+              "as given, every other row refuses "
               "the value naming its flag and each part, and none returns the "
               "joined string; rows that did not: %r" % (bad,),
               bad == [] and len(M.LIST_FLAG_READINGS) > 0)
@@ -22908,6 +22915,165 @@ def _list_flag_cases(check):
               and values.get("files") == ["+src/a.ts", "+src/b.ts"]
               and values.get("blocked_by") == [""]
               and values.get("verified_by") == ["t_a", "t_b"])
+
+        # ALLOW CASES: prose whose comma is followed by something that reads
+        # as an entry on its own. A per-part predicate refuses all three; a
+        # whole-entry reading keeps each as the one entry it is.
+        tail = "tests/test_x.py: reads _config.py, _deps.py"
+        proj, mp = mk("lr-prose-tail", base_manifest())
+        code, txt = run(["add", "Tail", "--phase", "P2", "--tests-add", tail,
+                         "--project-dir", proj])
+        added = [t for t in _mio.tasks_by_id(_mio.load_manifest(mp)).values()
+                 if t.get("title") == "Tail"]
+        ns = _lr_args(("signoff",))
+        ns.accept_open = ["R1=threshold n=3, m=4 is fine",
+                          "P1-R1=threshold n=3, m=4 is fine"]
+        ns.carried = ["P1-R1=BUG-1 with n=3, m=4"]
+        ns.waive = ["src/a.py: it covers x, y: and z"]
+        values, refusal = M.read_list_flags(ns)
+        check("lr8 ALLOW CASE: a tests.add description naming a second file "
+              "after a comma, an accept-open or carried reason holding `=` "
+              "after a comma, and a waiver whose reason holds a `word:` after "
+              "a comma are each ONE entry - the tests.add lands whole, the "
+              "others come back as given: %r"
+              % ((code, txt[-300:], [(t.get("tests") or {}).get("add")
+                                     for t in added], values, refusal),),
+              code == 0 and len(added) == 1
+              and (added[0].get("tests") or {}).get("add") == [tail]
+              and refusal is None
+              and values.get("accept_open") == ns.accept_open
+              and values.get("carried") == ns.carried
+              and values.get("waive") == ns.waive)
+
+        # SECOND DIRECTION for lr8: whole entries joined are still refused, so
+        # the tightening cannot have turned the refusal off.
+        still = []
+        for dest, value in (("tests_add", "tests/a.py: sums x,tests/b.py: y"),
+                            ("accept_open", "P1-R1=why,P1-S2=because"),
+                            ("waive", "src/a.py: nope,src/b.py: nor this")):
+            ns = _lr_args(("signoff",))
+            setattr(ns, dest, [value])
+            _values, refusal = M.read_list_flags(ns)
+            if refusal is None:
+                still.append((dest, value))
+        check("lr9 SECOND-DIRECTION CASE: described tests.add entries, pairs "
+              "keyed by finding ids of any letter, and waivers naming files, "
+              "joined by commas, are still refused; values let through: %r"
+              % (still,), still == [])
+
+        legacy = base_manifest()
+        legacy["meta"]["buildCommands"]["lint"] = "true"
+        legacy["phases"][2]["testGate"] = ["lint,test", "test"]
+        legacy["phases"][1]["tasks"][1]["tests"] = {
+            "mode": "regression", "gate": ["lint,test", "test"]}
+        proj, mp = mk("lr-gate-drop", legacy)
+
+        def gates():
+            m = _mio.load_manifest(mp)
+            return (m["phases"][2].get("testGate"),
+                    (_mio.tasks_by_id(m)["P2.3"].get("tests") or {}).get("gate"))
+        code_r, txt_r = run(["retarget", "P3", "--gate-drop", "lint,test",
+                             "--project-dir", proj])
+        code_s, txt_s = run(["scope", "P2.3", "--gate-drop", "lint,test",
+                             "--project-dir", proj])
+        check("lr10 a legacy joined gate entry is droppable: `retarget "
+              "--gate-drop lint,test` and `scope --gate-drop lint,test` each "
+              "drop the one entry their gate holds under that spelling: %r"
+              % ((code_r, txt_r[-200:], code_s, txt_s[-200:], gates()),),
+              code_r == 0 and code_s == 0 and gates() == (["test"], ["test"]))
+
+        split = base_manifest()
+        split["meta"]["buildCommands"]["lint"] = "true"
+        split["phases"][2]["testGate"] = ["lint", "test", "true"]
+        proj, mp = mk("lr-gate-drop-split", split)
+        before = bytes_of(mp)
+        code, txt = run(["retarget", "P3", "--gate-drop", "lint,test",
+                         "--project-dir", proj])
+        check("lr11 SECOND-DIRECTION CASE: `--gate-drop lint,test` on a gate "
+              "holding `lint` and `test` apart is refused before any write, "
+              "naming the per-entry spelling the gate does hold: %r"
+              % ((code, txt[-300:]),),
+              code == M.E_USAGE and bytes_of(mp) == before
+              and "--gate-drop lint --gate-drop test" in txt)
+
+        # --- the batch: every list key of `add --from-file`, one reader -----
+        fields = dict(M.batch_list_fields())
+        want = {"tasks[].files": "split", "tasks[].tests.add": "tests-add",
+                "tasks[].tests.gate": "gate", "phase.testGate": "gate",
+                "tasks[].dependsOn": "split", "tasks[].blockedBy": "split",
+                "phase.blockedBy": "split"}
+        planted = dict(M.batch_list_fields(
+            flag_keys=dict(M.BATCH_FLAG_KEYS, extra_list="tasks[].extra"),
+            readings=dict(M.LIST_FLAG_READINGS, extra_list="split")))
+
+        def plant(path, value):
+            doc = _batch_doc()
+            head, _sep, rest = path.partition(".")
+            node = doc["phase"] if head == "phase" else doc["tasks"][0]
+            keys = rest.split(".")
+            for key in keys[:-1]:
+                node = node.setdefault(key, {})
+            node[keys[-1]] = [value]
+            return doc
+
+        unread = []
+        for path, reading in sorted(fields.items()):
+            if reading not in _LR_SAMPLES:
+                unread.append((path, reading, "no sample for this reading"))
+                continue
+            joined, parts = _LR_SAMPLES[reading]
+            shown = path.replace("tasks[]", "tasks[0]")
+            problems = M.batch_problems(plant(path, joined), ("lint", "test"))
+            if not [p for p in problems
+                    if shown in p and all(part in p for part in parts)]:
+                unread.append((path, reading, problems))
+        check("lb1 every list key of an `add --from-file` batch whose flag "
+              "takes several values carries its flag's reading, and a joined "
+              "value planted at each is refused naming its field path and "
+              "each part; a planted flag row reaches the walk too: %r"
+              % ((sorted(fields), unread, planted.get("tasks[].extra")),),
+              all(fields.get(p) == r for p, r in want.items())
+              and unread == []
+              and planted.get("tasks[].extra") == "split")
+
+        keyed = base_manifest()
+        keyed["meta"]["buildCommands"]["lint"] = "true"
+        proj, mp = mk("lb-joined", keyed)
+        doc = _batch_doc()
+        doc["phase"]["testGate"] = ["lint,test"]
+        doc["tasks"][0]["tests"]["add"] = ["tests/a.py,tests/b.py"]
+        doc["tasks"][1]["dependsOn"] = ["sum,P1.1"]
+        path = os.path.join(proj, "batch.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(doc, fh)
+        before = bytes_of(mp)
+        code, txt = run(["add", "--from-file", path, "--project-dir", proj])
+        check("lb2 `add --from-file` refuses a joined tests.add, phase "
+              "testGate and dependsOn item, naming each field path, before "
+              "any write: %r" % ((code, txt[-700:]),),
+              code == M.E_USAGE and bytes_of(mp) == before
+              and "tasks[0].tests.add" in txt and "phase.testGate" in txt
+              and "tasks[1].dependsOn" in txt)
+
+        proj, mp = mk("lb-prose", keyed)
+        doc = _batch_doc()
+        doc["phase"]["testGate"] = ["test", "eslint a.ts,b.ts"]
+        doc["tasks"][0]["tests"]["add"] = [
+            "tests/b.test.ts: sums exactly, to the cent, as b.ts does"]
+        path = os.path.join(proj, "batch.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(doc, fh)
+        code, txt = run(["add", "--from-file", path, "--project-dir", proj])
+        written = _mio.load_manifest(mp)
+        new = [p for p in written["phases"] if p.get("title") == "Exact refunds"]
+        check("lb3 SECOND-DIRECTION CASE: a batch tests.add whose prose holds "
+              "commas and a gate command whose argument holds one are written "
+              "as given: %r" % ((code, txt[-300:]),),
+              code == 0 and len(new) == 1
+              and new[0].get("testGate") == ["test", "eslint a.ts,b.ts"]
+              and [(t.get("tests") or {}).get("add")
+                   for t in new[0]["tasks"]][0]
+              == ["tests/b.test.ts: sums exactly, to the cent, as b.ts does"])
     finally:
         _harness.remove_tree(tmp)
 

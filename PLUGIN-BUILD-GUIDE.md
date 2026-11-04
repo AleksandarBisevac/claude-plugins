@@ -2442,7 +2442,9 @@ It stays one pass on purpose: splitting it per-question would visit every task f
 and would let two of them disagree about which objects were skipped as malformed.
 `joined_entry_parts(value, names_entry)` is the one reading of "several entries joined by
 commas" - two or more parts, each naming an entry on its own - shared by the joined-keys gate
-warning here and `audit-task.py`'s list-flag reader. `gate_reach_gaps(asked, runs, answers)`
+warning here and `audit-task.py`'s list-flag reader; `joined_tests_add_parts(value)` is its
+`tests.add` reading, where each part has to be a whole entry, so a bare file name after a
+described `<path>: <text>` part is that part's prose rather than a second entry. `gate_reach_gaps(asked, runs, answers)`
 is the comparison `audit-task.py`'s gate-reach check makes: each declared path no suite the
 gate runs reaches, with the reason in the affected-test derivation's terms, and a path with
 no answer named as not asked rather than counted as reached. Also the
@@ -5798,11 +5800,16 @@ suite, its cases in the file they test — makes the task `regression` and says 
 
 **Every option that repeats is read once, by `read_list_flags`, before any verb's door.**
 `LIST_FLAG_READINGS` gives each such option a reading: `split` for the id and path lists, where
-a comma separates entries, and a one-entry-per-flag reading for `--tests-add`, the gate flags,
-`--waive`, `--accept-open` and `--carried`, whose entries may carry a comma of their own. A value
-of the second kind whose every comma part reads as an entry - `_manifest_phases.joined_entry_parts`,
-the predicate the validator's joined-keys warning reads too - is refused, naming the repeated
-spelling, never split on a guess and never stored whole. `list_flag_gaps` holds the table to the
+a comma separates entries, a one-entry-per-flag reading for `--tests-add`, the gate flags,
+`--waive`, `--accept-open` and `--carried`, whose entries may carry a comma of their own, and
+`held` for `--gate-drop`, which names an entry the gate already holds and stores nothing, so a
+legacy joined entry stays droppable and `_retarget_gate_now` answers held or not held. A value
+of the second kind whose every comma part reads as a WHOLE entry (`joined_parts`, over
+`_manifest_phases.joined_entry_parts`, the predicate the validator's joined-keys warning reads
+too) is refused, naming the repeated spelling, never split on a guess and never stored whole.
+`add --from-file` asks the same `joined_parts` of every batch list key a list flag writes
+(`batch_list_fields`, derived from `BATCH_FLAG_KEYS` and `PHASE_KEY_DESTS`) and refuses a joined
+item by its field path. `list_flag_gaps` holds the table to the
 parser in both directions, which the suite's `lr1` asserts, so a repeating option added later
 cannot reach a door unread; a single-value option holding a comma list (`--skills`, `--outputs`,
 `--area`) is outside that walk and its readers split it themselves. `scope --gate-add` and

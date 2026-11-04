@@ -1004,6 +1004,34 @@ def tests_add_path(entry):
     return None
 
 
+# A part opening with `<path>:`, the described half of the `tests.add` shape.
+_TESTS_ADD_DESCRIBED = re.compile(r"\A\s*[^\s:]+\s*:")
+
+
+def joined_tests_add_parts(value):
+    """The parts of `value` when it is several `tests.add` entries joined by
+    commas, else None.
+
+    EACH PART HAS TO BE A WHOLE ENTRY, not merely name a file. The described
+    half of `<path>: <what it asserts>` is prose, and prose may carry a comma
+    followed by a file name (`tests/x.py: reads _config.py, _deps.py`), whose
+    tail names a file on its own. So once a part is described, a later part
+    is a second entry only when it opens with `<path>:` too; a bare path after
+    a described part is that part's sentence going on, and the value is one
+    entry. Bare paths before the first described part are entries each.
+    """
+    parts = joined_entry_parts(value, lambda p: tests_add_path(p) is not None)
+    if not parts:
+        return None
+    described = False
+    for part in parts:
+        opens = bool(_TESTS_ADD_DESCRIBED.match(part))
+        if described and not opens:
+            return None
+        described = described or opens
+    return parts
+
+
 def tests_add_graded(task):
     """Whether the `"<path>: <what it asserts>"` rule reaches this task's entries.
 

@@ -39,16 +39,20 @@
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:11142-11144 (restore_tree); plugins/audit/scripts/git/_worktrees.py:2345-2356 (_dropped)",
         "issue": "restore_copy now settles a copy with nothing to put back and answers restored=None, which restore_tree maps to E_USAGE (exit 2) 'nothing restored', the same exit as a state naming no tree, so an orchestrator reading the exit cannot tell 'dropped, settled, run next' from 'nothing to act on'; un14/un15 never assert the verb's exit.",
-        "resolution": "Report the drop as its own outcome (a dropped field) and have restore_tree exit E_OK with a line saying the copy was dropped and next goes on, keeping E_USAGE for no copy standing; a drive-level case asserting the exit and text.",
-        "fixTask": "P156.13-3st"
+        "resolution": "fixed in P156.13-3st (db8bf3580c85): Report the drop as its own outcome (a dropped field) and have restore_tree exit E_OK with a line saying the copy was dropped and next goes on, keeping E_USAGE for no copy standing; a drive-level case asserting the exit and text.",
+        "fixTask": "P156.13-3st",
+        "commit": "db8bf3580c85",
+        "status": "fixed"
       },
       {
         "id": "P156-R3",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py (no-phase-review-return stop)",
         "issue": "The no-reviewer-return stop now prints the reviewer brief's submit block, but the no-phase-review-return stop still does not print the phase reviewer brief's, though the same helper would cover it.",
-        "resolution": "Route the phase-review stop through the same brief_submit helper, with a case.",
-        "fixTask": "P156.13-3st"
+        "resolution": "fixed in P156.13-3st (db8bf3580c85): Route the phase-review stop through the same brief_submit helper, with a case.",
+        "fixTask": "P156.13-3st",
+        "commit": "db8bf3580c85",
+        "status": "fixed"
       },
       {
         "id": "P156-R4",
@@ -127,7 +131,7 @@
         "fixTask": "P156.17-3st"
       }
     ],
-    "outcome": "[findings: 12 - 0 high, 4 med, 8 low; 3 with a recorded fix commit]"
+    "outcome": "[findings: 12 - 0 high, 4 med, 8 low; 5 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -256,7 +260,13 @@
         "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD exited 1 with 4 of 827 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ta13 (house FAIL), nw1 (house FAIL), kb1 (house FAIL), ps1 (house FAIL): SELFTEST FAILED: 823/827 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
         "status": "proved",
         "source": "red-first-helper"
-      }
+      },
+      "notes": [
+        {
+          "at": "2026-11-04T16:34:23Z",
+          "text": "Correction to the filed return, from the executor after filing: claim 3 (a grep for the two-line join found no other relayed stop) was written before the grep ran and is wrong. The grep finds three more sites - drive() appends the lock-kept or lock-refused line after any stop (two sites), and the restore path appends the lock refusal after the restore text. In each the stop's own text, facts first, is still the first line, so they were left alone. The new ps1 case checks only _stopped(...) calls; stops built through relay_refusal, the drive's ValueError stop and the restore's stopped branch are outside it."
+        }
+      ]
     },
     {
       "id": "P156.3",
@@ -412,7 +422,13 @@
         "basis": "`python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__manifest_phases.py tests/test__scoped_commit.py tests/test__manifest_rules.py tests/_harness.py tests/test__affected_tests.py tests/test__runner_collects.py tests/test_stamp_verification.py` in a throwaway tree at HEAD exited 1 with 5 of 1228 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - tg13 (house FAIL), lo-ce7 (house FAIL), bx14 (house FAIL), gk12 (house FAIL), gk13 (house FAIL): SELFTEST FAILED: 1223/1228 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
         "status": "proved",
         "source": "red-first-helper"
-      }
+      },
+      "notes": [
+        {
+          "at": "2026-11-04T16:34:24Z",
+          "text": "Widened on attempt 2 to tests/test__config.py, tools/lints/_deps.py and tests/test__deps.py: the close-evidence change made the audit-task.py _commit_touches row in _FILES_ALONE_EXEMPT stale and needed a GIT_PATH_BASE_EXEMPT row; this task owns both, so the change landed green."
+        }
+      ]
     },
     {
       "id": "P156.5",
@@ -718,7 +734,13 @@
         "basis": "`python3 tools/sweep-selftests.py tests/test__deps.py tests/test__invariants.py tests/test_audit_task.py tests/test_run_test_gate.py tests/test_close_phase.py tests/test_commit_task_work.py tests/test_record_risk_confirmation.py tests/_harness.py tests/test__affected_tests.py tests/test__runner_collects.py tests/test_stamp_verification.py` in a throwaway tree at HEAD exited 1 on \"AttributeError: module '_deps' has no attribute '_md_steps'\" (read as python), and the task introduces '_md_steps': absent from HEAD's module-level bindings of tools/lints/_deps.py and bound in the working tree's; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
         "status": "proved",
         "source": "red-first-helper"
-      }
+      },
+      "notes": [
+        {
+          "at": "2026-11-04T16:34:25Z",
+          "text": "After the return was filed: the AUDITED_EXEMPTIONS row for STEP_POINTER_SCAN_EXEMPT was added to tools/gate-parity.py (declared then); gate-parity exits 0 and its selftest passes. The filed return predates this and still calls gate-parity red."
+        }
+      ]
     },
     {
       "id": "P156.9-3st",
@@ -1018,6 +1040,10 @@
         {
           "at": "2026-11-04T15:16:59Z",
           "text": "scope: tests/test_run_test_gate.py, the suite that tests plugins/audit/scripts/governance/run-test-gate.py (python: its import closure reaches plugins/audit/scripts/governance/run-test-gate.py)"
+        },
+        {
+          "at": "2026-11-04T16:34:26Z",
+          "text": "Widened after the brief to _wave.py, _task_outputs.py and their suites for the recurring class (files entries read as patterns, second instance after the wave fix): one shared entry_is_pattern in _task_outputs answers it for the wave and the gate-reach check; and to verbs-in-full.md, whose gate-reach passages described the old behaviour."
         }
       ],
       "fixes": [
@@ -1046,7 +1072,7 @@
     {
       "id": "P156.13-3st",
       "title": "restore reports a dropped copy as its own settled outcome, and the phase-review stop prints its submit block",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix P156-R2 and P156-R3 (docs/audit/phases/P156.json review.findings). R2: restore_tree exits E_USAGE for a copy restore_copy just dropped; report the drop as its own outcome (exit 0, a line saying the copy was dropped and next goes on), keeping E_USAGE for no copy standing; a drive-level case asserting exit and text. R3: the no-phase-review-return stop goes through the same brief_submit helper the reviewer stop uses; a case.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1078,14 +1104,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "db8bf3580c85",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "R2: _worktrees.restore_copy's answer gains a `dropped` field (False by default; `_dropped` sets it True when the drop left nothing beside the tree, read off the disk through _with_kept), so a drop is its own outcome apart from the `restored` None a missing copy answers. drive-phase.restore_tree answers a drop with E_OK and '<prefix> <phase>: the copy beside <tree> was dropped - <why>; `next` goes on from here', keeping E_USAGE 'nothing restored' for a state with no tree and a tree with no copy. R3: triage's no-phase-review-return decision now carries brief_submit(ctx, phase['id'], 'phase') (the phase brief read through audit-lookup.py brief --read --role phase), and render_decision prints the block for every stop in a new UNFILED_SUBMIT_ROLE table ({no-reviewer-return: reviewer, no-phase-review-return: phase reviewer}) through the existing unfiled_submit_lines; brief_submit's parameter renamed task_id->node_id with its docstring naming the phase case. PLUGIN-BUILD-GUIDE.md's _worktrees and drive-phase sections name the new outcome (un17, uv3, uv4) and the phase stop (ur5, ur6). Order: tests drafted first after reading only the test fixtures and the interfaces they call (brief_submit, restore_tree, restore_copy signatures, the decision line wording); the first red run (sweep of the two suites, exit 1) showed un17 [None,None,None,None], ur5 (no brief asked: []), ur6, and uv3 red for a fixture reason (tree unmarked), fixed in the test by marking the tree as the tree verb does. Gate after the fix: `python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__worktrees.py` exit 0, 182 + 837 cases. Over-fire mutations in a throwaway copy (scratch dir, removed after): `dropped` defaulting True -> un17 red [True,True,True,True], 181/182; restore_tree answering E_OK for restored None plus render back to the reviewer-only test -> uv4, ur5, ur6 red (127/130 for --stage ux-block --stage ab-block), uv3 still green. Also ran: full `python3 tools/sweep-selftests.py` exit 0 (195/195 files ok, coverage line printed), `python3 tools/gate-parity.py` exit 0, ruff check on the four .py files exit 0, vermin -t=3.8- on them exit 0. Dependants: drive-phase.py importers (test__filed_returns, test__invariants, test__worktrees, test_audit_status, test_commit_task_work, test_detect_plan_skip, test_drive_phase and the rest) still correct - the only signature change is brief_submit's parameter name, called positionally at both sites; restore_tree's sole new branch is reached only when restore_copy says dropped; all green in the full sweep. _worktrees.py importers (guard-release.py, close-phase.py, integrate-task.py, manage-worktrees.py, _evidence_io.py, drive-phase.py, run-test-gate.py, stamp-verification.py) still correct - restore_copy's only caller is drive-phase.restore_tree (grep of plugins/, tools/, .claude/hooks), and the new key is additive; the brief's `_dropped in drive-phase.py` hit is a local variable of recorded_paths, not this function. test_drive_phase.py/test__worktrees.py path readers (sweep-costs.json, ci.yml, affected.py, reach-diff.py, test__runner_output, test_run_test_gate, test_stamp_verification, test__affected_tests) green in the full sweep; no new block or STAGES row added. PLUGIN-BUILD-GUIDE.md readers (test__config, test__deps, test__doctor_trail, test__affected_tests, _doctor_hygiene, evals) green in the full sweep - no tree line or section added, no count written. The sliced phase brief case: phase.md is then an index holding no sh block, so the stop says 'its brief holds no submit block' - the gap said, not a slice's block guessed; noted, not changed.",
+        "descriptive": "restore exits 0 naming a dropped copy instead of the usage exit, and the phase-review stop prints the phase brief's submit block through the same helper the reviewer stop uses"
       },
       "startedAt": "2026-11-04T16:06:50Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-04T16:33:38Z",
+      "verifiedBy": [
+        "uv3: drive-level restore over a marked tree whose copy has no index.json exits 0, says the copy was dropped and that `next` goes on, and the copy is gone",
+        "uv4: the twin - no copy standing and no tree recorded both still exit 2 'nothing restored'",
+        "ur5: triage over a phase review marked at a head with no filed return asks the phase brief (--role phase --read) and prints its submit block exactly once",
+        "ur6: the twin - an unreadable phase brief is said as why the phase reviewer's command is not shown, no command composed",
+        "un17: restore_copy answers dropped True for the two drops (no index.json, recorded move) and False for a kept copy and for no copy at all"
+      ],
       "notes": [
         {
           "at": "2026-11-04T15:17:26Z",
@@ -1098,6 +1130,10 @@
         {
           "at": "2026-11-04T15:17:26Z",
           "text": "scope: tests/test__worktrees.py, the suite that tests plugins/audit/scripts/git/_worktrees.py (python: its import closure reaches plugins/audit/scripts/git/_worktrees.py)"
+        },
+        {
+          "at": "2026-11-04T16:33:38Z",
+          "text": "gate reach at close: a passed run of this task's gate (python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__worktrees.py) is no evidence for PLUGIN-BUILD-GUIDE.md (the affected-test derivation selects tests/test__deps.py, tests/test__refs.py for it, and the gate runs none of them)"
         }
       ],
       "fixes": [
@@ -1109,6 +1145,18 @@
         "runId": "2026-11-04T16:33:28Z.e9ed3f",
         "status": "passed",
         "at": "2026-11-04T16:33:28Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "db8bf3580c85",
+        "at": "2026-11-04T16:33:38Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-04T16:27:13Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__worktrees.py` in a throwaway tree at HEAD exited 1 with 4 of 837 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - un17 (house FAIL), uv3 (house FAIL), ur5 (house FAIL), ur6 (house FAIL): SELFTEST FAILED: 834/837 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1178,7 +1226,12 @@
         "P156-R6",
         "P156-R7"
       ],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-04T16:39:12Z.39a8ab",
+        "status": "passed",
+        "at": "2026-11-04T16:39:12Z"
+      }
     },
     {
       "id": "P156.15-3st",
@@ -1302,6 +1355,10 @@
         {
           "at": "2026-11-04T15:24:16Z",
           "text": "no test runner in this task's gate for the test P156-R10, P156-R11 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__config.py tests/test__worktrees.py'], derived as narrowed to this task's tests.add paths and the suite(s) its files declare (tests/test__worktrees.py), in the spelling meta.phaseGate.derived.spelling records; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        },
+        {
+          "at": "2026-11-04T16:34:27Z",
+          "text": "Also owed: when a phase reviewer brief is cut into slices, the no-phase-review-return stop reads the index file and says its brief holds no submit block; read the submit block from the slice that carries it, with a case."
         }
       ],
       "fixes": [
@@ -1317,8 +1374,7 @@
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
         "tests/test_audit_task.py",
-        "plugins/audit/scripts/manifest/audit-task.py",
-        "tests/test_audit_task.py"
+        "CHANGELOG.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -1356,6 +1412,10 @@
         {
           "at": "2026-11-04T15:56:07Z",
           "text": "scope: tests/test_audit_task.py, the suite that tests plugins/audit/scripts/manifest/audit-task.py (python: its import closure reaches plugins/audit/scripts/manifest/audit-task.py)"
+        },
+        {
+          "at": "2026-11-04T16:34:28Z",
+          "text": "Also owed (CHANGELOG.md now declared): the Unreleased entry for the shared list reader still lists --gate-drop among the flags that refuse a joined value when read; a gate-drop value now passes the reader unchanged so a legacy joined entry can be dropped, and a value joining entries held separately is refused by the drop itself - say that."
         }
       ],
       "fixes": [

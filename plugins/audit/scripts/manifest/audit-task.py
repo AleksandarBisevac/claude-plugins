@@ -9822,6 +9822,70 @@ BATCH_FLAG_KEYS = {
     "fixes": "tasks[].fixes", "title": "tasks[].title",
     "bug": None, "introduces": None, "failing_from": None}
 _RISKS = ("low", "med", "high")
+
+
+def batch_list_fields(flag_keys=None, phase_keys=None, readings=None):
+    """`[(path, reading)]` - each list key of a batch that a flag taking
+    several values writes, beside that flag's `LIST_FLAG_READINGS` row: a
+    task key through `BATCH_FLAG_KEYS`, a `phase` key through
+    `PHASE_KEY_DESTS`. Derived from those tables rather than listed, so a
+    list flag gaining a batch key is read here with no second row to add;
+    the arguments stand in for the three tables."""
+    flag_keys = BATCH_FLAG_KEYS if flag_keys is None else flag_keys
+    phase_keys = PHASE_KEY_DESTS if phase_keys is None else phase_keys
+    readings = LIST_FLAG_READINGS if readings is None else readings
+    rows = dict(("phase.%s" % (key,), readings[dest])
+                for key, dest in phase_keys if dest in readings)
+    rows.update((path, readings[dest]) for dest, path in flag_keys.items()
+                if path and dest in readings)
+    return sorted(rows.items())
+
+
+def _batch_list_items(doc, path):
+    """`[(field, item)]` - each string item the batch holds at `path`
+    (`phase.testGate`, `tasks[].tests.add`), its field spelled with the
+    task's index. A shape the type checks refuse yields nothing here."""
+    head, _sep, rest = path.partition(".")
+    if head == "phase":
+        nodes = [("phase", doc.get("phase"))]
+    elif head == "tasks[]" and isinstance(doc.get("tasks"), list):
+        nodes = [("tasks[%d]" % (i,), t) for i, t in enumerate(doc["tasks"])]
+    else:
+        return []
+    out = []
+    for where, node in nodes:
+        for key in rest.split("."):
+            node = node.get(key) if isinstance(node, dict) else None
+        if isinstance(node, list):
+            out.extend(("%s.%s" % (where, rest), item) for item in node
+                       if isinstance(item, str))
+    return out
+
+
+def batch_gate_items(doc):
+    """Every gate item of the batch, for the one plan read that answers
+    whether a comma in one joins `meta.buildCommands` keys."""
+    if not isinstance(doc, dict):
+        return []
+    return [item for path, reading in batch_list_fields() if reading == "gate"
+            for _field, item in _batch_list_items(doc, path)]
+
+
+def _batch_joined_problems(doc, build_keys):
+    """A refusal per batch list item that reads as several entries of its
+    field (`joined_parts`, the list flags' own reading). The file's list is
+    the separator, so an item is one entry under every reading, a `split`
+    one included: the item is refused rather than split or stored whole."""
+    out = []
+    for path, reading in batch_list_fields():
+        for field, item in _batch_list_items(doc, path):
+            parts = joined_parts(reading, item, build_keys)
+            if parts:
+                out.append("%s holds %r, which reads as %d entries joined by "
+                           "commas - an item of the list is one entry; write "
+                           "each as its own item: %s"
+                           % (field, item, len(parts), json.dumps(parts)))
+    return out
 _TEST_MODES = ("tdd", "regression", "gate-only")
 
 
@@ -9928,8 +9992,10 @@ def _batch_task_problems(task, where):
     return out
 
 
-def batch_problems(doc):
+def batch_problems(doc, build_keys=()):
     """Every reason `doc` is not a planning batch this verb can write, or [].
+    `build_keys` are the plan's `meta.buildCommands` keys, the entries a
+    joined gate item may name.
 
     ALL OF THEM AT ONCE, because the file is the caller's to fix and one round
     trip per fault is the cost the batch exists to remove."""
@@ -9952,6 +10018,7 @@ def batch_problems(doc):
             out.append("`openChoices` must be a list of the choices the request "
                        "left open, each a non-empty string - [] when it left none")
         out.extend(_batch_phase_problems(doc.get("phase")))
+    out.extend(_batch_joined_problems(doc, build_keys))
     tasks = doc.get("tasks")
     if not isinstance(tasks, list) or not tasks:
         out.append("`tasks` must be a non-empty list")
@@ -10004,16 +10071,18 @@ def _batch_from_stdin(stream):
         return None, "cannot read stdin as JSON: %s" % (exc,)
 
 
-def read_batch(path, stream=None):
+def read_batch(path, stream=None, keys_for=None):
     """`(doc, problems)` for the file at `path`, or for stdin when `path` is
     `-`; `problems` non-empty means the batch cannot be written, and `doc` is
     then None. An empty stdin is its own refusal: read as `{}` it would be
-    graded as a batch missing every field, which names the wrong fault."""
+    graded as a batch missing every field, which names the wrong fault.
+    `keys_for(doc)` answers the plan's `meta.buildCommands` keys for the
+    joined-gate reading; without it no gate item reads as joined keys."""
     doc, problem = (_batch_from_stdin(stream) if path == "-"
                     else _batch_from_file(path))
     if problem:
         return None, [problem]
-    problems = batch_problems(doc)
+    problems = batch_problems(doc, keys_for(doc) if keys_for else ())
     return (None, problems) if problems else (doc, [])
 
 
@@ -10058,7 +10127,9 @@ def _cmd_batch_add(args, out):
     if not os.path.isdir(project):
         out("[audit-task] not a directory: %s" % project)
         return E_USAGE
-    doc, problems = read_batch(args.from_file)
+    doc, problems = read_batch(
+        args.from_file, keys_for=lambda doc: _gate_build_keys(
+            args, batch_gate_items(doc)))
     if problems:
         out("[audit-task] REFUSED: %s is not a planning batch this verb can "
             "write -- nothing written:"
@@ -11541,6 +11612,22 @@ _EMPTY_GATE_REFUSAL = ("[audit-task] an empty gate is --gate-clear, which says "
                       "so")
 
 
+def _held_drop_spelling(missing, current):
+    """The per-entry spelling for a `--gate-drop` value that is entries the
+    gate holds joined by commas, or "" when no missing value is. The drop
+    takes the value whole, so a plan's legacy joined entry stays droppable;
+    a value naming held entries joined is the one case where splitting it
+    is what the caller meant."""
+    spelled = [" ".join("--gate-drop %s" % (shlex.quote(p),) for p in parts)
+               for parts in (_phases.joined_entry_parts(
+                   value, lambda part: part in current) for value in missing)
+               if parts]
+    if not spelled:
+        return ""
+    return (" - a comma joins nothing in a drop; to drop the entries it "
+            "holds, pass each on its own: %s" % ("; ".join(spelled),))
+
+
 def _retarget_gate_now(args, current, subject="this phase's testGate"):
     """`(now, refusal)` -- the phase's NEXT `testGate`, or the refusal line,
     for whichever ONE of `--gate` / `--gate-clear` / `--gate-set` /
@@ -11580,10 +11667,10 @@ def _retarget_gate_now(args, current, subject="this phase's testGate"):
         missing = [g for g in args.gate_drop if g not in current]
         if missing:
             return None, (
-                "[audit-task] --gate-drop names %s, which %s not in %s (%s)"
+                "[audit-task] --gate-drop names %s, which %s not in %s (%s)%s"
                 % (_output.some_of(missing, render=repr),
                    "is" if len(missing) == 1 else "are", subject,
-                   json.dumps(current)))
+                   json.dumps(current), _held_drop_spelling(missing, current)))
         drop = set(args.gate_drop)
         now = [g for g in current if g not in drop]
         if not now:
@@ -16279,7 +16366,8 @@ def build_parser():
     # stands (a manifest written before the flag, and again after it).
     p.add_argument("--gate-drop", dest="gate_drop", action="append",
                    default=None,
-                   help=_entry_help("retarget, scope: drop one gate entry"))
+                   help="retarget, scope: drop one gate entry, matched whole; "
+                        "one entry per flag, repeat it for several")
     p.add_argument("--gate-set", dest="gate_set", nargs="*", default=None,
                    help="retarget, scope: replace the gate with these entries, "
                         "one per word - a word whose every comma-joined part "
@@ -16581,7 +16669,18 @@ def option_dests(parser=None):
 #   of its own (a command's argument, a sentence). A value whose every comma
 #   part reads as an entry of that flag (`_phases.joined_entry_parts`) is
 #   refused, naming the spelling once per entry - never split on a guess, and
-#   never stored whole.
+#   never stored whole. Each part has to read as a WHOLE entry, not merely
+#   contain one: the free-text half of an entry may itself hold a comma
+#   followed by a file name, a `word:` or an `x=y`.
+# - `held`: a value naming an entry the field already holds, which stores
+#   nothing - `--gate-drop`. A plan written before the reader existed may hold
+#   a joined entry, and the drop is the way to remove it, so the value is
+#   passed as given and the door that holds the gate answers held or not held.
+#
+# `add --from-file` reads the same table: each list key of the batch carries
+# the reading of the flag that writes it (`batch_list_fields`), and a batch
+# item that reads as several entries is refused naming its field path - the
+# file's list is the separator, so no reading splits a batch item.
 #
 # `list_flag_gaps` holds this table to the parser in both directions, and the
 # suite's `lr1` reports either gap by name, so a list option added later
@@ -16594,43 +16693,66 @@ LIST_FLAG_READINGS = {
     "verified_by": "split", "sources": "split", "phases": "split",
     "fixes": "split", "introduces": "split", "accept": "split",
     "tests_add": "tests-add",
-    "gate": "gate", "gate_add": "gate", "gate_drop": "gate",
+    "gate": "gate", "gate_add": "gate", "gate_drop": "held",
     "gate_set": "gate",
     "waive": "waiver",
     "accept_open": "pair", "carried": "pair",
 }
 
-_PAIR_PART = re.compile(r"\A[^\s=,]+=\S")
+# The key half has the shape a plan's finding ids carry, `<phaseId>-<letters>
+# <n>`: the letters are wider than the `R` sign-off mints, because findings
+# recorded by hand carry others. A reason's own `n=3` has no such key.
+_PAIR_PART = re.compile(r"\A[^\s=,]+-[A-Za-z]+[0-9]+=\S")
 
 
-def _part_names_file(part, _keys):
-    """A `tests.add` part naming a file, in the field's own reading."""
-    return _rules.tests_add_path(part) is not None
+def _joined_tests_add(value, _keys):
+    """`tests.add` entries joined, each part a whole entry."""
+    return _phases.joined_tests_add_parts(value)
 
 
-def _part_is_key(part, keys):
-    """A gate part that is a `meta.buildCommands` key."""
-    return part in keys
+def _joined_gate(value, keys):
+    """`meta.buildCommands` keys joined; a value that is a key is one entry."""
+    if value in keys:
+        return None
+    return _phases.joined_entry_parts(value, lambda part: part in keys)
 
 
-def _part_is_waiver(part, _keys):
-    """A `--waive` part of the `<path>: <why>` shape, its path one word."""
+def _part_is_waiver(part):
+    """A `--waive` part of the `<path>: <why>` shape, its path naming a file."""
     match = _WAIVER.match(part)
-    return bool(match) and not re.search(r"\s", match.group(1).strip())
+    return bool(match) and _rules.tests_add_path(match.group(1)) is not None
 
 
-def _part_is_pair(part, _keys):
-    """A `<findingId>=<text>` part."""
-    return bool(_PAIR_PART.match(part))
+def _joined_waiver(value, _keys):
+    """`<path>: <why>` waivers joined."""
+    return _phases.joined_entry_parts(value, _part_is_waiver)
 
 
-# reading -> (the part predicate, what a part that passes it is)
+def _joined_pair(value, _keys):
+    """`<findingId>=<text>` pairs joined."""
+    return _phases.joined_entry_parts(
+        value, lambda part: bool(_PAIR_PART.match(part)))
+
+
+# reading -> (the parts of a joined value or None, what each part is)
 _ENTRY_READINGS = {
-    "tests-add": (_part_names_file, "each part names a file"),
-    "gate": (_part_is_key, "each part is a meta.buildCommands key"),
-    "waiver": (_part_is_waiver, "each part is a `<path>: <why>` waiver"),
-    "pair": (_part_is_pair, "each part is a `<findingId>=<text>` pair"),
+    "tests-add": (_joined_tests_add, "each part is a whole tests.add entry"),
+    "gate": (_joined_gate, "each part is a meta.buildCommands key"),
+    "waiver": (_joined_waiver, "each part is a `<path>: <why>` waiver"),
+    "pair": (_joined_pair, "each part is a `<findingId>=<text>` pair"),
 }
+
+
+def joined_parts(reading, value, build_keys=()):
+    """The entries `value` holds when it is several of `reading`'s entries
+    joined by commas, else None - the one answer the list-flag reader and
+    the batch reader both ask. A `split` value is several when it splits
+    into two or more parts; a `held` value is never read as joined."""
+    if reading == "split":
+        parts = _split_csv(value) if isinstance(value, str) else []
+        return parts if len(parts) > 1 else None
+    row = _ENTRY_READINGS.get(reading)
+    return row[0](value, build_keys) if row else None
 
 
 def _takes_several(action):
@@ -16700,10 +16822,10 @@ def read_list_flags(args, build_keys=()):
     """`({dest: values}, refusal)` - every list option `args` carries, read
     through its `LIST_FLAG_READINGS` row: a `split` row's values split, any
     other row's values as given. `refusal` is the line for the first value
-    that reads as several entries of a one-entry-per-flag option, and None
-    when there is none. `build_keys` are the plan's `meta.buildCommands`
-    keys, the entries a gate part may name. `args` is not changed; the
-    caller sets what comes back."""
+    that reads as several entries of a one-entry-per-flag option
+    (`joined_parts`), and None when there is none. `build_keys` are the
+    plan's `meta.buildCommands` keys, the entries a gate part may name.
+    `args` is not changed; the caller sets what comes back."""
     values = {}
     for dest, reading in sorted(LIST_FLAG_READINGS.items()):
         raw = getattr(args, dest, None)
@@ -16713,30 +16835,28 @@ def read_list_flags(args, build_keys=()):
         if reading == "split":
             values[dest] = _split_list_values(raw)
             continue
-        names = _ENTRY_READINGS[reading][0]
         for value in raw:
-            if reading == "gate" and value in build_keys:
-                continue
-            parts = _phases.joined_entry_parts(
-                value, lambda part: names(part, build_keys))
+            parts = joined_parts(reading, value, build_keys)
             if parts:
                 return values, _joined_refusal(dest, reading, value, parts)
         values[dest] = raw
     return values, None
 
 
-def _gate_build_keys(args):
-    """The plan's `meta.buildCommands` keys when a gate flag's value holds a
-    comma, else `()` with no read at all.
+def _gate_build_keys(args, gate_values=None):
+    """The plan's `meta.buildCommands` keys when a gate value holds a comma,
+    else `()` with no read at all. The gate values are the gate flags' of
+    `args`, or `gate_values` when given - a batch's gate items.
 
     READ BEFORE THE LOCK AND FOR ONE QUESTION, whether a gate value is keys
     joined by commas; the verb's door reads the plan again under the lock
     for everything it writes. A plan this cannot read gives `()`, so no gate
     value reads as joined keys - the door that follows refuses a missing or
     broken plan in its own words."""
-    gate_values = [v for dest, reading in LIST_FLAG_READINGS.items()
-                   if reading == "gate"
-                   for v in (getattr(args, dest, None) or [])]
+    if gate_values is None:
+        gate_values = [v for dest, reading in LIST_FLAG_READINGS.items()
+                       if reading == "gate"
+                       for v in (getattr(args, dest, None) or [])]
     if not any("," in str(v) for v in gate_values):
         return ()
     try:
