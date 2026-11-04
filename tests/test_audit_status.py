@@ -4259,16 +4259,71 @@ def _worked_elsewhere_cases(check):
         _harness.remove_tree(root)
 
 
+def _session_var(name):
+    """Whether `name` is one of the session's own variables, which a command
+    the main loop starts does not inherit here. One predicate for both sides of
+    a comparison between that command and an in-process render: two spellings
+    of the set would let the two sides read different environments."""
+    return name.startswith("CLAUDE") or name == "AUDIT_LOCK_TOKENS"
+
+
+@_ctx_own.contextmanager
+def _main_loop_env():
+    """This process' environment without the session's own variables for the
+    block, every one put back afterwards: the environment `_cli` hands its
+    child, so an in-process render inside it reads what that child reads."""
+    saved = dict((k, v) for k, v in os.environ.items() if _session_var(k))
+    for k in saved:
+        del os.environ[k]
+    try:
+        yield
+    finally:
+        for k in [k for k in os.environ if _session_var(k)]:
+            del os.environ[k]
+        os.environ.update(saved)
+
+
 def _cli(argv, cwd):
     """`(exit, stdout)` of this command run as the main loop runs it: a process
     started in `cwd`, with the session's own variables dropped."""
-    env = dict((k, v) for k, v in os.environ.items()
-               if not k.startswith("CLAUDE") and k != "AUDIT_LOCK_TOKENS")
+    env = dict((k, v) for k, v in os.environ.items() if not _session_var(k))
     done = subprocess.run(
         [sys.executable, _loader.script_path("audit-status.py")] + argv,
         cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         universal_newlines=True, encoding="utf-8")
     return done.returncode, done.stdout
+
+
+def _entry_views(root, mpath):
+    """`(short, full)`: the `--short` and the bare render `M.main` prints in
+    this process for the plan at `mpath`, its project pinned at `root` - the
+    side `_cli`'s output is compared with, so it is read in the environment
+    `_cli` hands its child (`_main_loop_env`), not in whatever session this
+    suite was started from."""
+    with _main_loop_env():
+        with _own_project(root):
+            return (_in_project(root, [mpath, "--short"])[1],
+                    _in_project(root, [mpath])[1])
+
+
+_PLANTED_SESSION = "audit-status-sl-planted-session"
+
+
+@_ctx_own.contextmanager
+def _planted_session():
+    """`CLAUDE_CODE_SESSION_ID` set to an id no transcript carries for the
+    block, and put back as it was: the variable a run inside a live session
+    hands this process, planted so the cases see it under the sweep too, which
+    drops it."""
+    before = os.environ.get("CLAUDE_CODE_SESSION_ID")
+    os.environ["CLAUDE_CODE_SESSION_ID"] = _PLANTED_SESSION
+    try:
+        yield
+    finally:
+        if before is None:
+            os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
+        else:
+            os.environ["CLAUDE_CODE_SESSION_ID"] = before
 
 
 def _success_line_cases(check):
@@ -4280,9 +4335,7 @@ def _success_line_cases(check):
     mpath = os.path.join(root, "audit-plan.json")
     with open(mpath, "w", encoding="utf-8") as fh:
         json.dump(_fixture(), fh)
-    with _own_project(root):
-        held = _in_project(root, [mpath, "--short"])[1]
-        full = _in_project(root, [mpath])[1]
+    held, full = _entry_views(root, mpath)
     code, short = _cli([mpath, "--short"], root)
     check("sl1 the `--short` entry view prints WHOLE - a payload `/audit:phase` "
           "and the orchestrator print verbatim into a reply - byte for byte "
@@ -4302,6 +4355,25 @@ def _success_line_cases(check):
           % (refused,),
           refused[0] == 2 and refused == _cli([mpath, "--phase", "P9",
                                                "--verbose"], root))
+    # A run inside a live session hands this process a session id; the sweep
+    # drops it, so sl1-sl3 were green there and red in a direct run. Planted
+    # here, the same comparison is made with the variable present wherever the
+    # suite runs. sl5 is what makes sl6 able to fail: were the product to stop
+    # reading the variable, the plant would change nothing and sl6 would pass
+    # over a comparison that no longer tells the two environments apart.
+    with _planted_session():
+        ctx = M.orchestrator_context(_fixture(), mpath, root)
+        p_held, p_full = _entry_views(root, mpath)
+        p_code, p_short = _cli([mpath, "--short"], root)
+        p_bare = _cli([mpath], root)
+    check("sl5 the planted session id reaches the product - its context reading "
+          "is not the no-session answer: %r" % (ctx,),
+          not ctx.get("noSession") and _PLANTED_SESSION in (ctx.get("reason") or ""))
+    check("sl6 ...and with it in the suite's own environment, the `--short` and "
+          "the bare render this process makes are byte for byte what the command "
+          "the main loop starts prints: %r" % (p_held[:160],),
+          p_code == 0 and p_short == p_held and p_bare == (0, p_full)
+          and "orchestrator context" not in p_held + p_full)
 
 
 def _kept_tree_cases(check):

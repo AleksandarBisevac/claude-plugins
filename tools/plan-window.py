@@ -12,7 +12,10 @@ with each merged phase. The window is written as a project of its own under
 project config beside it, so the renderer resolves `<dst>` as the window's
 project the way it resolves the checkout. It then asks the report's evidence
 reader of the plan and of the window, and fails when any subject the window
-keeps reads differently or the chip sets differ.
+keeps reads differently or the chip sets differ. The third place - the
+full-gate verdict the renderer reads per merged phase, a question to git - is
+not part of either reading, and the command names the merged phases it leaves
+uncompared rather than letting its agreement read as covering them.
 
 BOTH READINGS COME FROM ONE SNAPSHOT. The plan, its shards, the ledger and the
 config are copied once into a scratch project, and the selection, the window and
@@ -273,11 +276,29 @@ def write_window(plan_path, plan, keep, dst):
 
 
 def evidence(plan_path):
-    """The reading render-report.py makes of the plan: the same reader, the same
-    boundary."""
+    """The reading render-report.py makes of the plan, through the same reader
+    with the same boundary - every part of it but the third place.
+
+    The renderer also hands the reader `full_run`, a per-merged-phase verdict on
+    whether a recorded full-gate run's head contains the merge, and that is a
+    question to git. Neither the snapshot nor the window is a checkout, so no
+    `full_run` is passed here and neither reading carries a `fullRun` entry; the
+    phases this leaves uncompared are `uncompared_third_place`'s, and the command
+    names them."""
     return _evidence_view.load_evidence(
         _manifest_io.load_manifest(plan_path), plan_path,
         boundary=_evidence_io.boundary_for(plan_path))
+
+
+def uncompared_third_place(manifest):
+    """The ids of the phases in `manifest` the renderer asks the third-place
+    question of - every merged phase, when the plan declares a runnable full
+    gate - which `evidence` does not read. `[]` when the plan declares none,
+    the case where the renderer asks nothing either."""
+    if not _evidence_io.full_gate_commands(manifest):
+        return []
+    return [str(p["id"]) for p in (manifest.get("phases") or [])
+            if _evidence_io.merged_phase(p)]
 
 
 # --- the comparison -----------------------------------------------------------
@@ -311,8 +332,10 @@ def disagreements(full, window):
 # --- the command --------------------------------------------------------------
 def build(snap_plan, dst):
     """Select and write the window of the snapshot at `snap_plan` into `dst`, and
-    read both. Returns `{keep, phases, tasks, keptTasks, full, window, drift}`;
-    every file it reads is the snapshot's or the window's."""
+    read both. Returns `{keep, phases, tasks, keptTasks, full, window, drift,
+    uncompared}`, `uncompared` being the window's phases whose third-place
+    verdict neither reading carries; every file it reads is the snapshot's or the
+    window's."""
     full = evidence(snap_plan)
     plan = _read_json(snap_plan)
     stubs = _phase_stubs(plan)
@@ -328,7 +351,9 @@ def build(snap_plan, dst):
     return {"keep": keep, "phases": len(order), "tasks": sum(tasks.values()),
             "keptTasks": sum(tasks[pid] for pid in keep), "full": full,
             "window": window,
-            "drift": disagreements(full, window)}
+            "drift": disagreements(full, window),
+            "uncompared": uncompared_third_place(
+                _manifest_io.load_manifest(window_plan))}
 
 
 def main(argv):
@@ -350,6 +375,12 @@ def main(argv):
         shutil.rmtree(scratch, ignore_errors=True)
     print("live plan window: %d of %d phases, %d of %d tasks"
           % (len(got["keep"]), got["phases"], got["keptTasks"], got["tasks"]))
+    if got["uncompared"]:
+        print("live plan window: the third-place verdict of %d merged phase(s) "
+              "is not compared (%s) - it asks git whether a full run's head "
+              "contains the merge, and neither the snapshot nor the window is a "
+              "checkout"
+              % (len(got["uncompared"]), ", ".join(got["uncompared"])))
     if got["drift"]:
         sys.stderr.write("live plan window: %d evidence reading(s) differ from the "
                          "full plan's, so the page would not show the plan's "

@@ -30,7 +30,7 @@
     {
       "id": "P156.1",
       "title": "The drive's answers and redo pin: a set-aside sign-off refuses an answer by its own text, decline keeps a human's words, a blocked task's standing patch is not spent",
-      "status": "in_progress",
+      "status": "done",
       "description": "Carried low findings P155-R1, P155-R2, P155-R14 and P155-R15, each recorded in docs/audit/phases/P155.json review.findings with its file, issue and resolution. R1: a case that fails when the set-aside sign-off refusal is deleted (an --answer sign-off --reason would otherwise drive on). R2: through `next`, adding the remedy task and then answering decline --reason must keep the human's words, as decline_answer's docstring says, or the docstring and db2 change to what the drive does. R14: redo_pin_spent must not count a blocked task whose patch still stands as spent, and the stop must not name refs that were deleted. R15: sd9-sd11 must let the status arm decide a case, so `return not patch_stands` goes red. Answer each finding by id.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -55,19 +55,39 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7c88ba53691e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: (R14) redo_pin_spent is now `status in _mio.TERMINAL or not patch_stands`, so a blocked task keeps its pin while its patch stands; its docstring and settle_redo_pins' docstring say why (unblock hands the task back to a step that stops on the patch). redo_left gains an arm for a stop whose tree could not be read while the pin is gone: it names no `<pin>^` or `<pin>` to compare against and offers no removal of the pin. It places a `check` clause, `cd <tree> && git apply --reverse --check <patch>`, the check the patch can answer alone. I checked that command in a scratch repo: exit 0 over a tree that holds the work, exit 1 over one that lacks it. (R2) drive_locked's set-aside branch now takes `--answer decline`: for a decision set aside because a task can run, answer_refusal is asked first and refuses before the pending decision is dropped, so a decline with no --reason leaves the decision there for a second try with words. Otherwise decline_answer records the words in state['declined'], pops phaseGate, and the drive goes on to the runnable task. Every other answer is still refused with the set-aside wording. decline_answer's docstring now names this path. tests/test_drive_phase.py: rf12-rf15 in a new _rf_set_aside_answers (in _ready_first_cases), sd17 and sd18 in a new _pin_under_patch_cases (called from _scope_declared_cases), ar6g after ar6f in _recut_crash_cases. Two small helpers: _stand_patch, and _booting, lifted from _e2e_boot so both cases use one fixture. PLUGIN-BUILD-GUIDE.md: the set-aside sentence now cites rf1 for the dispatch, rf12 for the refusal, rf13-rf15 for decline and rf2 for the blocked twin; the redo-pin sentence states the blocked-with-patch rule (sd17, sd18) and the pin-gone stop (ar6g). Mutation probes ran in a scratch copy (rsync of the worktree, __pycache__ purged between runs, an anchor count of 1 asserted, the source restored in a finally block), over the rf, sd and ar5 blocks: m1 `return not patch_stands` -> FAIL sd17 (47/48); m2 blocked counted spent again -> FAIL sd18; m3 set-aside refusal removed -> FAIL rf12; m4 decline not taken -> FAIL rf13, rf14, rf15; m5 decline refusal moved after the pop -> FAIL rf13, rf14, rf15; m6 the pin-gone arm disabled -> FAIL ar6g. Gate: python3 tools/sweep-selftests.py tests/test_drive_phase.py exit 0, '1/1 files ok, 821 cases'. ruff check on both .py files exit 0. Run in-process: _deps.doc_prose_numbers, _output_lints.prose_number_claims and house_style_violations report nothing for the touched files. Findings: P155-R1 fixed by rf12, which passes with the refusal and goes red without it (m3); it asserts exit 2, the added task's id, the set-aside wording and not 'no decision is pending', no pending in state, the phase not signed off and the task not driven; the guide cites it. P155-R2 fixed by the first option, decline taken on a set-aside decision; db2 and the docstring now describe what `next` does, and rf14 and rf15 are the drive-level cases. P155-R14 fixed both ways: the pin is kept for a blocked task (sd18), and a stop whose pin is gone names no deleted ref (ar6g). P155-R15 fixed by sd17, a cancelled task whose patch stands, so the status arm decides alone; probed with `return not patch_stands` (m1, red). Dependants: drive-phase.py's importers (_worktrees.py, test__filed_returns, test__invariants, test__worktrees, test_audit_status, test_commit_task_work, test_detect_plan_skip, test_stamp_verification) are still correct; grep for redo_pin_spent|redo_left|'is set aside: '|decline_answer|drive_locked|settle_redo_pins across tests/, tools/, plugins/ and .github/ hits only drive-phase.py and test_drive_phase.py. test_drive_phase.py's dependants: .github/sweep-costs.json is not re-recorded; the rf, sd and ar5 blocks each gained cases and so cost more than their recorded figures. The sweep's timeout is the larger of a floor and a multiple of the recorded figure, and the gate passed under it. ci.yml, tools/affected.py, tools/reach-diff.py, test__runner_output, test_run_test_gate and test_stamp_verification name the file by path or use helpers this task did not touch, so they are still correct. PLUGIN-BUILD-GUIDE.md's dependants read it by basename; no tree line or section heading changed, so they are still correct.",
+        "descriptive": "A set-aside sign-off decision now keeps a human's decline and its words, the refusal of other answers is pinned by a case, a blocked task keeps its redo pin while its patch stands, and a stop never names a deleted pin."
       },
       "startedAt": "2026-11-04T11:24:25Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-04T11:51:21Z",
+      "verifiedBy": [
+        "rf12: --answer sign-off on a triage set aside for an added task is refused in the set-aside's words, nothing driven or signed",
+        "rf13: decline with no --reason on a set-aside runtime-boot decision is refused and the decision kept",
+        "rf14: decline --reason on it keeps the words, drops pending and phaseGate, dispatches the added task",
+        "rf15: after the remedy and booted, the summary carries the human's no",
+        "sd17: a cancelled task's pin goes though its patch stands (status arm decides)",
+        "sd18: a blocked task whose patch stands keeps its pin (twin of sd11)",
+        "ar6g: a stop over a patch whose pin is gone names no pin ref to compare against and gives git apply --reverse --check"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-11-04T11:51:17Z.1350b7",
         "status": "passed",
         "at": "2026-11-04T11:51:17Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "7c88ba53691e",
+        "at": "2026-11-04T11:51:21Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-04T11:45:31Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD exited 1 with 5 of 821 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ar6g (house FAIL), rf13 (house FAIL), rf14 (house FAIL), rf15 (house FAIL), sd18 (house FAIL): SELFTEST FAILED: 816/821 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -301,7 +321,12 @@
       "startedAt": "2026-11-04T11:25:15Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-04T11:58:57Z.99089e",
+        "status": "passed",
+        "at": "2026-11-04T11:58:57Z"
+      }
     },
     {
       "id": "P156.7",

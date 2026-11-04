@@ -930,6 +930,10 @@ def select(paths, graph=None, scanners=True):
             # sweep runner - the one file every other suite is run BY - selectable
             # only through an arm written for it by name.
             own = posix.endswith(".py") and posix not in MIGRATED
+            # Whether this file already has its own answer above the chain below:
+            # its own cases, or the suite its cases moved to. The gap line at the
+            # end of the chain is for a file with neither.
+            answered = own
             if posix in MIGRATED:
                 # A DEVELOPMENT MODULE UNDER `tools/` THAT ISN'T A LINT (a demo
                 # generator, a benchmark): its cases are a suite in `tests/`, named
@@ -938,6 +942,7 @@ def select(paths, graph=None, scanners=True):
                 suite = _suite_for(os.path.basename(posix)[:-3].replace("-", "_"))
                 if suite:
                     suites.add(suite)
+                    answered = True
                     reasons.append("%s - a development module: its suite %s"
                                    % (posix, suite))
             if own:
@@ -977,7 +982,7 @@ def select(paths, graph=None, scanners=True):
                     gates.append(TOOL_SELFTEST % (PARITY_TOOL,))
                     reasons.append("%s - the parity tool's own cases run functions "
                                    "cut out of it, so they run" % (posix,))
-            elif not own:
+            elif not answered:
                 # SAID AS A PROPERTY OF THIS FILE, not of the tool. It read "a tool
                 # no suite covers", which is a claim about the tool - and it was
                 # false for every `.py` here and for `ui-checks/` besides. What is
@@ -1512,6 +1517,29 @@ def _cases(check):
           and "test__output.py" in lint["suites"]
           and "NO RULE HERE MATCHES" not in lint_why and not lint["full"]
           and "test__refs.py" in sel("tools/lints/_refs.py")["suites"])
+
+    # Read off the table the sweep and the coverage rule read, so a tool added
+    # to it is asked about here without a row in this file.
+    dev_tools = sorted(_output_lints.posix_rel(p, REPO)
+                       for _k, p in _output_lints.DEV_FILES)
+    dev_wrong = []
+    for rel in dev_tools:
+        own_suite = _suite_for(os.path.basename(rel)[:-3].replace("-", "_"))
+        text = why(rel)
+        if ("NO RULE HERE MATCHES" in text or own_suite is None
+                or own_suite not in sel(rel)["suites"]):
+            dev_wrong.append((rel, own_suite, text))
+    check("a10e a top-level tool whose cases live in tests/ is answered by its "
+          "own suite, and is never ALSO told no rule here matches it - the two "
+          "lines would contradict each other: %d tool(s), wrong %r"
+          % (len(dev_tools), dev_wrong),
+          dev_tools != [] and dev_wrong == [])
+    # THE TWIN, for the mutation that silences the gap line everywhere: a file
+    # under tools/ that no arm reads is still told so.
+    gap = why("tools/redfirst.sh")
+    check("a10f ...and a file under tools/ no arm reads is still told no rule "
+          "here matches it: %r" % (gap,),
+          "NO RULE HERE MATCHES" in gap)
 
     page = sel("docs/demo-large.html")
     check("a10b a published report selects the version-stamp rule as well as the "

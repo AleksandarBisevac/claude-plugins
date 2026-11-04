@@ -2734,7 +2734,9 @@ def _run_live_window(shell, func_text, workdir, cwd=None, executable=None,
 
 def _evidence_of(manifest_path):
     """What the report's evidence reader answers for the plan at the path, read
-    with the boundary render-report.py hands it."""
+    with the boundary render-report.py hands it. The renderer's third-place
+    argument (`full_run`, a question to git) is not passed, as plan-window's own
+    reading does not pass it, so the comparisons below do not cover it."""
     import _evidence_io
     import _evidence_view
     import _manifest_io
@@ -2858,10 +2860,18 @@ def _live_window_cases(check):
 # on posix too: a shell looks a command name with no `/` in it up on PATH.
 _WINDOWS_INTERPRETER = "C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\python3.exe"
 
+# The cases the run half of `_live_window_spelling_cases` holds, each named as
+# skipped where that half cannot run. lw6 holds this tuple to the ids the half
+# really prints, so a case added to it without a row here is red where it runs.
+_LW_RUN_HALF = ("lw5", "lw5w")
 
-def _live_window_spelling_cases(check):
+
+def _live_window_spelling_cases(check, splitdrive=None):
+    """The spelling cases. `splitdrive` stands in for `os.path.splitdrive` so lw6
+    can take the branch a drive-reading path module takes on any platform."""
     from _harness import skip
     from _suite import remove_tree
+    splitdrive = splitdrive or os.path.splitdrive
     mixed = _WINDOWS_INTERPRETER.replace("\\", "/")
     check("lw4 a Windows-shaped interpreter is spelled for the shell in the "
           "forward-slash form `cygpath -m` prints, and a posix path is left as "
@@ -2873,12 +2883,16 @@ def _live_window_spelling_cases(check):
     # The run half needs a directory named like a drive, relative to the cwd, so
     # the forward-slash spelling resolves to a stand-in there. Only a path module
     # that reads `C:` as a drive cannot hold one - and there lw1 runs the real
-    # interpreter in this very spelling.
-    drive_named = os.path.splitdrive(mixed)[0] != ""
+    # interpreter in this very spelling. Both cases the run half holds stand on
+    # that directory, so each is named as skipped: returning after one would
+    # leave its twin with no line at all on exactly the platform that skips.
+    drive_named = splitdrive(mixed)[0] != ""
     if drive_named:
-        skip(check, "lw5", "this platform's path module reads `C:` as a drive, so "
-             "no directory under a scratch root can carry that name; lw1 runs the "
-             "real interpreter through the same spelling here", drive_named)
+        for label in _LW_RUN_HALF:
+            skip(check, label, "this platform's path module reads `C:` as a "
+                 "drive, so no directory under a scratch root can carry that "
+                 "name; lw1 runs the real interpreter through the same spelling "
+                 "here", drive_named)
         return
     shell = _live_window_shell()
     if shell is None:
@@ -2915,6 +2929,41 @@ def _live_window_spelling_cases(check):
               and "ran " not in out_raw)
     finally:
         remove_tree(root)
+
+
+def _case_ids(run):
+    """The case ids `run(check)` reports, in order - the first word of each label,
+    the token a skipped case keeps across platforms."""
+    ids = []
+    run(lambda label, *_rest: ids.append(label.split()[0]))
+    return ids
+
+
+def _live_window_skip_parity_cases(check):
+    """The spelling cases, run for real, and lw6: the branch that skips the run
+    half reports every case id the branch that runs it reports, so no case falls
+    silent on the platform that skips. Taken where the run half can run, since
+    the comparison needs both branches; elsewhere lw6 is itself named skipped."""
+    from _harness import skip
+    real = []
+
+    def recording(label, *rest):
+        real.append(label.split()[0])
+        return check(label, *rest)
+
+    _live_window_spelling_cases(recording)
+    mixed = _WINDOWS_INTERPRETER.replace("\\", "/")
+    if os.path.splitdrive(mixed)[0] != "":
+        skip(check, "lw6", "this platform's path module reads `C:` as a drive, "
+             "so only the skipping branch runs here and there is no running "
+             "branch to compare it with; the posix legs hold it", True)
+        return
+    skipped = _case_ids(lambda c: _live_window_spelling_cases(
+        c, splitdrive=lambda p: ("C:", p[2:])))
+    check("lw6 the branch that skips the run half names every case the running "
+          "branch reports, each as its own line: running %r, skipping %r"
+          % (real, skipped),
+          skipped == real and set(_LW_RUN_HALF) <= set(real))
 
 
 # --- the slices ci.yml runs against the slices verify.sh lists: the cases ------
@@ -4641,7 +4690,7 @@ def _cases(check):
 
     _verify_cleanup_cases(check)
     _live_window_cases(check)
-    _live_window_spelling_cases(check)
+    _live_window_skip_parity_cases(check)
     _slice_cases(check)
     _ci_shape_cases(check)
     _encoding_leg_cases(check)

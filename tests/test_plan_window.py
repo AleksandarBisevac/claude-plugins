@@ -161,10 +161,17 @@ def _write_json(path, data):
         fh.write(json.dumps(data, indent=2))
 
 
-def _write_project(root):
+MERGED = ("P1", "P7")
+
+
+def _write_project(root, full_gate=False, merged=False):
     """The fixture as a project: a record-shaped plan, its shards, a ledger whose
     runs three tasks point at - P8.1's the one failed run, the evidence word that
-    is P8's reason to be kept - and the project config. Returns the plan's path."""
+    is P8's reason to be kept - and the project config. Returns the plan's path.
+
+    With `merged`, the phases in `MERGED` carry the merge stamp; with
+    `full_gate` as well, the plan declares a runnable `meta.fullGate`, so the
+    report asks each of them the third-place question."""
     shards = _shards()
     runs = {"P1": "passed", "P7": "passed", "P8": "failed"}
     for s in shards:
@@ -172,11 +179,18 @@ def _write_project(root):
             s["tasks"][0]["testEvidence"] = {"runId": "R-%s" % (s["id"],),
                                              "status": runs[s["id"]],
                                              "at": "2026-08-01T09:00:00Z"}
+        if merged and s["id"] in MERGED:
+            s["mergedAt"] = "2026-08-01T10:00:00Z"
+            s["mergedHead"] = "abc1234"
     audit = os.path.join(root, "docs", "audit")
     for s in shards:
         _write_json(os.path.join(audit, "phases", "%s.json" % (s["id"],)), s)
     plan_path = os.path.join(audit, "audit-plan.json")
-    _write_json(plan_path, _plan(shards))
+    plan = _plan(shards)
+    if full_gate:
+        plan["meta"]["buildCommands"] = {"unit": "python3 -m pytest"}
+        plan["meta"]["fullGate"] = ["unit"]
+    _write_json(plan_path, plan)
     _write_json(os.path.join(root, ".claude", "audit.config.json"),
                 {"manifestPath": "docs/audit/audit-plan.json"})
     ledger = os.path.join(audit, "evidence", "2026-08.t.jsonl")
@@ -482,6 +496,37 @@ def _cases(check):
               code5 == 0 and win5 in asked5
               and "dangling" not in out5 + err5
               and "evidence reading(s) differ" not in out5 + err5)
+
+        # THE THIRD PLACE IS NOT COMPARED, AND THE COMMAND SAYS SO. The renderer
+        # also hands its evidence reader a per-merged-phase full-gate verdict that
+        # asks git whether a recorded run's head contains the merge; neither the
+        # snapshot nor the window is a checkout, so this tool reads no such
+        # verdict on either side. Agreement on the rest must then name the merged
+        # phases it does not cover rather than read as agreement on them too.
+        # COUNTED, not found: one such line, naming every kept merged phase.
+        src6 = _write_project(os.path.join(tmp, "proj-6"), full_gate=True,
+                              merged=True)
+        code6, out6, err6 = _split(M.main, [src6, os.path.join(tmp, "window-6")])
+        third6 = [ln for ln in out6.splitlines() if "third-place" in ln]
+        check("pw24 a plan declaring a runnable full gate, with merged phases the "
+              "window keeps: the command exits 0 and says, in one line, that the "
+              "third-place verdict of exactly those phases is not compared, and "
+              "why: code=%r lines=%r err=%r" % (code6, third6, err6[-600:]),
+              code6 == 0 and len(third6) == 1
+              and "2 merged phase(s)" in third6[0]
+              and all(p in third6[0] for p in MERGED)
+              and "git" in third6[0])
+        # THE TWIN, for the two mutations that over-say it: the line printed
+        # unconditionally, and the full-gate predicate dropped so every merged
+        # phase is named. The same merged phases with no full gate declared are
+        # phases the renderer asks nothing of, so the run says nothing of them.
+        src7 = _write_project(os.path.join(tmp, "proj-7"), merged=True)
+        code7, out7, err7 = _split(M.main, [src7, os.path.join(tmp, "window-7")])
+        check("pw25 ...and the same merged phases in a plan declaring no full "
+              "gate get no such line: code=%r lines=%r"
+              % (code7, [ln for ln in (out7 + err7).splitlines()
+                         if "third-place" in ln]),
+              code7 == 0 and "third-place" not in out7 + err7)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
