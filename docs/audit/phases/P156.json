@@ -119,16 +119,20 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py (wave tree records); tests/test_drive_phase.py wt2, wt4, wt6, wt6r",
         "issue": "Release-tier CI run 41853969220 at 59e4a5f8 is red on every windows selftests leg: test_drive_phase wt2, wt4, wt6 and wt6r fail because the tree the drive records for a wave member, and dispatches in, is now '\\\\trees\\\\drive-wave-P1.1' where the tree verb handed back '/trees/drive-wave-P1.1'. The native spelling meant for messages reached the stored record, so on Windows the state no longer holds what the tree verb answered.",
-        "resolution": "Keep the tree verb's answer verbatim in every record and dispatch; apply the native spelling only where a path is shown to a human. Prove it under a Windows-shaped path module (ntpath) on posix so the case is red here before the fix.",
-        "fixTask": "P156.16-3st"
+        "resolution": "fixed in P156.16-3st (bcf17feb9d6e): Keep the tree verb's answer verbatim in every record and dispatch; apply the native spelling only where a path is shown to a human. Prove it under a Windows-shaped path module (ntpath) on posix so the case is red here before the fix.",
+        "fixTask": "P156.16-3st",
+        "commit": "bcf17feb9d6e",
+        "status": "fixed"
       },
       {
         "id": "P156-R11",
         "severity": "low",
         "file": "tests/test__config.py st8; plugins/audit/hooks/_config.py (git place questions)",
         "issue": "Release-tier CI run 41853969220 at 59e4a5f8: test__config st8 fails on the windows cp1252 leg. In a bare repository the timed-out first question is followed by a second ask with a 0.012 s remaining budget, which then times out too; on posix the same case is green.",
-        "resolution": "Find whether this is the case's timing assumption (a remaining budget a Windows git cannot meet) or the code asking again; fix whichever is wrong so the case holds on any runner, and say which it was.",
-        "fixTask": "P156.16-3st"
+        "resolution": "fixed in P156.16-3st (bcf17feb9d6e): Find whether this is the case's timing assumption (a remaining budget a Windows git cannot meet) or the code asking again; fix whichever is wrong so the case holds on any runner, and say which it was.",
+        "fixTask": "P156.16-3st",
+        "commit": "bcf17feb9d6e",
+        "status": "fixed"
       },
       {
         "id": "P156-R12",
@@ -139,7 +143,7 @@
         "fixTask": "P156.17-3st"
       }
     ],
-    "outcome": "[findings: 12 - 0 high, 4 med, 8 low; 9 with a recorded fix commit]"
+    "outcome": "[findings: 12 - 0 high, 4 med, 8 low; 11 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1351,7 +1355,7 @@
     {
       "id": "P156.16-3st",
       "title": "A tree the tree verb hands back is recorded verbatim on every platform, and st8 holds on a Windows runner",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix P156-R10 and P156-R11 (docs/audit/phases/P156.json review.findings), both from release-tier CI run 41853969220 at 59e4a5f8 on the windows legs. The failing case lines are copied in <scratchpad>/ci-p156-fails.txt (the orchestrator hands the path). R10: records and dispatch must hold the tree verb's answer verbatim; native spelling only where a human reads a path. R11: decide whether st8's timing assumption or the code is wrong on Windows and fix that one.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1387,14 +1391,21 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "bcf17feb9d6e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "R10 (drive-phase.py): the cause was P156.3 (29a96a42), which ran the tree verb's answer through _worktrees.native_spelling in add_tree before recording it, so on windows the wave record, the dispatch tree and the brief reader's tree became '\\\\trees\\\\...' while the verb answered '/trees/...'. add_tree now records and returns the verb's answer verbatim. A new helper, shown_tree(), applies native spelling only where a stop names a recorded tree: unsettled_said, submit_tree (both stops), record_kept's stops (recorded at, tree x3), redo_left's tree entries (never its cd/apply commands), the kept-tree stop and the unmarked-kept stop. Did-lines and commands keep the recorded spelling, as they did before P156.3. The add_tree docstring now states the rule. Sliced phase brief (the note on this task): brief_submit gains a head argument, and a new read_brief_text() reads a brief or one slice through audit-lookup.py brief --read [--slice n]. When the phase brief read back is an index (its slice n/t: lines), the stop collects the submit block of every slice whose return is not held at the head (slice_return_paths), in slice order, each labelled 'slice n/t:'. A slice that cannot be read, or holds no block, is named as submitWhy. triage passes mark['head']. R11 (_config.py): THE CODE WAS WRONG, not the case's timing. git_place's docstring rule says a timeout is never asked again, but the code enforced it only through a clock reading (left <= 0). The CI line shows the bare-repository second ask was handed 0.012 s, so the windows clock read the timed-out question as ending with time left, and _git_dir_above made the code ask again. _ask_rev_parse gains an unanswered= list, filled when the call raised (a timeout, or git not runnable). git_place skips the second ask whenever that list is non-empty, and the clock check stays for git's own refusals. Tests: test_drive_phase.py: ns1 rewritten (record and return are 'C:/r/wt-P1.1' verbatim; the stop names 'C:\\\\r\\\\wt-P1.1', with no 'C:/'). New ns2 replays _tree_setup_units and _adopt_units (wt1-wt6r) with native_spelling defaulting to ntpath, and requires each case to hold, wt2/wt4/wt6/wt6r present. New ur7: a 3-slice index with slice 1 held prints the blocks of slices 2 and 3 once each, in order, read with --slice 2 and --slice 3, never slice 1's, and no 'holds no submit block'. New ur8 twin: a refused slice read is named with its refusal, and no block is shown. test__config.py: st8's timing_out stub now hands its timeout back at half the budget (a coarse clock's reading) and reports through why and unanswered, and the other stubs accept unanswered. New st12 holds the real _ask_rev_parse to its contract: a 1e-9 s timeout lands in both why and unanswered, and real git's refusal of --show-toplevel in a bare repository lands in why alone. Red on HEAD's code with the new tests (before the fix, in my tree): test_drive_phase 836/840 (ur7, ur8, ns1, ns2 FAIL; ns2 listed exactly wt2, wt4, wt6, wt6r, the windows CI failures) and test__config 404/406 (st8 FAIL with the bare second ask handed 0.094 s; st12 FAIL, the asker takes no unanswered). After the fix: 840/840 and 406/406. Mutations, by scratch exec without touching the tree: (a) the git_place condition with 'or True' turned st5, st9, st10 and st11 red; (b) the unanswered term dropped turned st8 red; (c) shown_tree as identity turned ns1 red; (d) add_tree respelling the record natively again turned ns1 and ns2 red. Commands, all exit 0: the brief's gate python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__config.py tests/test__worktrees.py (3/3 files ok, 1428 cases); the full sweep python3 tools/sweep-selftests.py (195/195 files ok, 18443 cases), run because _config.py is imported by nearly every suite (tools/affected.py named the tree); python3 tools/gate-parity.py; ruff check and vermin -t=3.8- on the four changed .py files. PLUGIN-BUILD-GUIDE.md: the _worktrees spelling paragraph now says the drive records the verb's answer and spells natively only in a stop's words (shown_tree, ns1, ns2), and the drive-phase no-phase-review-return paragraph adds the sliced-brief behaviour (ur7, ur8). Dependants: _worktrees.py and tests/test__worktrees.py are unchanged; native_spelling's contract is the same, the drive calls it from one place (shown_tree), and test__worktrees is green in the gate. tests/test__filed_returns.py, test__invariants.py, test_audit_status.py, test_commit_task_work.py, test_detect_plan_skip.py import drive-phase and are green in the full sweep: no name they use changed signature (brief_submit gained an optional head). The hooks importing _config (guard-*, detect-plan-skip, journal-writes, .claude/hooks/guard-release.py) are unaffected: _ask_rev_parse's new keyword is optional, git_place's signature is the same, and their suites are green in the full sweep. tools/bench-hooks.py, tools/affected.py, tools/reach-diff.py and .github/sweep-costs.json read the suites by path; all green in the sweep. The sweep-costs block figures were not re-recorded, since ns2 adds one replay of seven cases inside an existing block. Docs naming the test files by basename (evals, _doctor_hygiene, test__deps, test__doctor_trail): green in the sweep.",
+        "descriptive": "The drive keeps the tree verb's answer verbatim in its records and dispatch on windows and spells it natively only in stops. A timed-out git question is never asked again, whatever the clock reads. A sliced phase review's missing-return stop prints the submit blocks of its unfiled slices."
       },
       "startedAt": "2026-11-04T16:39:57Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-04T17:14:30Z",
+      "verifiedBy": [
+        "ns1 (rewritten): the tree record and dispatch keep the verb's forward-slash answer under ntpath, and the stop names it natively",
+        "ns2: the wt1-wt6r wave-tree cases replayed under windows path rules all hold",
+        "ur7: a sliced phase review left unfiled prints each unfiled slice's own submit block, in order, read with --slice",
+        "ur8: a slice brief that cannot be read is named with its refusal and no block is shown",
+        "st8 (stub corrected): a timed-out first question reported with time still on the clock is not asked again in a bare repository",
+        "st12: the real _ask_rev_parse reports a timeout in unanswered and git's own refusal in why alone"
+      ],
       "notes": [
         {
           "at": "2026-11-04T15:24:16Z",
@@ -1415,6 +1426,10 @@
         {
           "at": "2026-11-04T16:34:27Z",
           "text": "Also owed: when a phase reviewer brief is cut into slices, the no-phase-review-return stop reads the index file and says its brief holds no submit block; read the submit block from the slice that carries it, with a case."
+        },
+        {
+          "at": "2026-11-04T17:14:30Z",
+          "text": "gate reach at close: a passed run of this task's gate (python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__config.py tests/test__worktrees.py) is no evidence for PLUGIN-BUILD-GUIDE.md (the affected-test derivation selects tests/test__deps.py, tests/test__refs.py for it, and the gate runs none of them)"
         }
       ],
       "fixes": [
@@ -1426,17 +1441,31 @@
         "runId": "2026-11-04T17:14:20Z.3191fe",
         "status": "passed",
         "at": "2026-11-04T17:14:20Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "bcf17feb9d6e",
+        "at": "2026-11-04T17:14:30Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-04T17:08:57Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__config.py tests/test__worktrees.py` in a throwaway tree at HEAD exited 1 with 6 of 840 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - st8 (house FAIL), st12 (house FAIL), ur7 (house FAIL), ur8 (house FAIL), ns1 (house FAIL), ns2 (house FAIL): SELFTEST FAILED: 836/840 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P156.17-3st",
       "title": "The short output of a task verb keeps the warnings it raised about the task it wrote",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fix P156-R12 (docs/audit/phases/P156.json review.findings): the short output drops every warning that does not name the task id, so gate-reach warnings never reach an operator without --verbose.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
         "tests/test_audit_task.py",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tools/release.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -1456,14 +1485,14 @@
       "dependsOn": [
         "P156.15-3st"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-04T17:15:00Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -1486,7 +1515,13 @@
       ],
       "fixes": [
         "P156-R12"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-04T17:31:45Z.d3d6a1",
+        "status": "passed",
+        "at": "2026-11-04T17:31:45Z"
+      }
     }
   ],
   "reviewPerTask": "signals",

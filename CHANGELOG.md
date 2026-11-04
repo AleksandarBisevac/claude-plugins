@@ -44,6 +44,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   task declares, in full or by its basename, with its line and whether that document is among
   the task's files - so an edit that would make a document out of the task's scope stale is
   visible before it is made rather than at submit. A search git could not run says so.
+- **`add`, `scope` and `done` say when a task's gate reaches no suite of a file the task
+  changes.** A passed gate run is evidence only for the files its suites read, so each declared
+  file is asked of the affected-test derivation `run-test-gate.py` uses - the recorded listings,
+  the tree's suites, the Python imports - and compared with what the gate runs. An `add` or a
+  `scope` that sets the gate or the files prints one `WARNING: gate reach: <path> -- <why>` line
+  per file the gate reaches no suite of, short output included, and its `--json` result carries
+  the same answer as `gateReach`; `done` records the gap on the task as one dated note. The
+  reading runs with the index lock released, so another verb taken meanwhile is not refused, and
+  a close whose task's files or gate changed while it read records nothing and says so. It is
+  advisory: a reading that fails leaves the write standing and prints `WARNING: gate reach not
+  asked:` with the reason. A past task's recorded gate is not rewritten.
 
 ### Changed
 - **`audit-task.py scope <id> --gate CMD` refuses a list that leaves out an entry the task's
@@ -131,6 +142,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   invariant accepts that output in a task commit instead of refusing it on history already
   landed. A path another running task's pattern covers is counted as declared and left for that
   task's commit.
+- **A wave runs tasks side by side only when what each may write is disjoint, `outputs`
+  included.** The wave drive read a task's `files` alone, so two tasks whose `outputs` patterns
+  reach one path could be edited in two trees at once; it now reads both halves, the honoured
+  `outputs` patterns beside the `files`. A `files` entry is compared as the literal path it names,
+  whatever characters it holds (`app/[slug]/page.tsx`), and only an `outputs` entry is read as a
+  pattern; two wildcard segments are taken to meet, so a wave may hold back a task it need not.
 - **The plan gate no longer opens an edit through a `fileIndex` row alone.** A `fileIndex` row
   naming a running task for a path its `files` do not list used to open the edit, after which the
   task commit refused the path as undeclared. The plan gate now treats it as undeclared like any
@@ -174,12 +191,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 - **Every `audit-task.py` flag that repeats is read by one reader, so a comma means one thing
   per flag.** The id and path lists (`--files`, `--blocked-by`, `--depends-on`, `--verified-by`,
   `--fixes`, `--introduces`, `--sources`, `--phases`, and now `signoff --accept`) split on
-  commas. `--tests-add`, `--gate`, `--gate-add`, `--gate-drop`, `--gate-set`, `--waive`,
-  `--accept-open` and `--carried` take one entry per flag: a value whose every comma part reads
-  as an entry (a file, a `meta.buildCommands` key, a waiver, a `<findingId>=<text>` pair) is
-  refused before any write, naming the repeated spelling. It used to be stored as one entry -
-  `add --tests-add a.py,b.py` wrote the path `a.py,b.py`, and `add-phase --gate a,b,c` one gate
-  command no shell can find. A comma inside an entry is kept.
+  commas. `--tests-add`, `--gate`, `--gate-add`, `--gate-set`, `--waive`, `--accept-open` and
+  `--carried` take one entry per flag: a value whose every comma part reads as a whole entry (a
+  file, a `meta.buildCommands` key, a waiver, a `<findingId>=<text>` pair) is refused before any
+  write, naming the repeated spelling. It used to be stored as one entry - `add --tests-add
+  a.py,b.py` wrote the path `a.py,b.py`, and `add-phase --gate a,b,c` one gate command no shell
+  can find. A comma inside an entry is kept. `--gate-drop` passes the reader unchanged, so an
+  entry a plan stored joined before the reader existed can still be dropped; a value the gate
+  does not hold is refused by the drop itself, and one joining entries the gate holds separately
+  is refused naming one `--gate-drop` per entry. `add --from-file` reads each list key of the
+  batch the way the flag that writes it does, and refuses a batch item that reads as several
+  entries before any write, naming its field path (`tasks[0].tests.add`, `phase.testGate`): the
+  file's list is the separator, so no batch item is split.
 - **A fix task whose finding leads with a test file is `regression`, not `tdd`.** That finding
   is a fix to the test, so a red run - the strengthened test over HEAD's code - has nothing to
   go red against; the task's note says to show the red by mutation.
@@ -189,6 +212,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   It wrote the added entry alone, so the gate measuring the task shrank to it; it now appends
   to the phase's `testGate` entries, and `--gate-drop` drops from them. A gate cleared on
   purpose is not seeded.
+- **A task verb's short output keeps the warning for a gate entry that is a directory.** Without
+  `--verbose` the short form kept only the warnings naming the id the verb wrote, so this one,
+  which names the entry, never reached an operator; it is kept now, beside the gate-reach lines.
 - **The wide-gate warning prescribes a call `scope` accepts.** Narrowing takes
   `--gate "<command>" --replace`; declaring the wide gate restates the phase's entries.
 - **A task whose work is its own `outputs` can close.** The close's evidence check read the

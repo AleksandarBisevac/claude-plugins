@@ -1745,6 +1745,11 @@ def _unchanged(args, out, ident):
     return 0
 
 
+# The lead of the line `_gate_directory_notes` writes. A constant because the
+# short output keeps a line by its lead (`TASK_WARNING_LEADS`).
+GATE_DIRECTORY_LEAD = "WARNING: gate entry "
+
+
 def _gate_directory_notes(project, entries, meta):
     """A WARNING line for each gate entry that is a DIRECTORY rather than a command.
 
@@ -1765,9 +1770,9 @@ def _gate_directory_notes(project, entries, meta):
                                         or token.split(":", 1)[0] in build):
             continue
         if os.path.isdir(os.path.join(project, token)):
-            notes.append("WARNING: gate entry %r is a directory in the project "
-                         "tree, not a command or a meta.buildCommands key - it "
-                         "names nothing to run" % (token,))
+            notes.append("%s%r is a directory in the project tree, not a "
+                         "command or a meta.buildCommands key - it names "
+                         "nothing to run" % (GATE_DIRECTORY_LEAD, token))
     return notes
 
 
@@ -1860,6 +1865,12 @@ GATE_REACH_LEAD = "WARNING: gate reach: "
 GATE_REACH_NOT_ASKED_LEAD = "WARNING: gate reach not asked: "
 # The line `done` prints when its reading no longer describes the task.
 GATE_REACH_NOT_RECORDED_LEAD = "WARNING: gate reach not recorded: "
+# The warnings a verb raises about the gate and the files of the task it wrote.
+# Each names a path or a gate entry rather than the task's id, so the short
+# output (`_decided_lines`) keeps them by lead: read by the id alone, every one
+# of them was dropped without `--verbose`, and an operator never saw one.
+TASK_WARNING_LEADS = (GATE_DIRECTORY_LEAD, GATE_REACH_LEAD,
+                      GATE_REACH_NOT_ASKED_LEAD, GATE_REACH_NOT_RECORDED_LEAD)
 
 
 def _related_reach(meta, facts, runs):
@@ -7471,12 +7482,12 @@ def _file_once_report(args, project, path, tid, role, text, out, keyed):
 # already warns about done tasks that carry none. A verb that made that state cheap
 # to reach would be a verb that manufactures the finding it exists to prevent.
 #
-# WHICH PUTS THE CALL AT THE END OF STEP 4c, after `git rev-parse HEAD`: the SHA
-# does not exist until the commit does. The manifest write then rides along with the
-# next task's commit or with sign-off, which is exactly what 4c already prescribes
-# for `task.commit` -- so the ordering is the document's rather than a new one, and
-# what changes is that ONE write carries both halves instead of two writes carrying
-# one each.
+# WHICH PUTS THE CALL AT THE END OF `reference/execute-task.md` STEP 4c, taking the
+# SHA `commit-task-work.py` printed for the commit it made: the SHA does not exist
+# until the commit does. The manifest write then rides along with the next task's
+# commit or with sign-off, which is exactly what 4c prescribes for `task.commit` --
+# so the ordering is the document's rather than a new one, and what changes is that
+# ONE write carries both halves instead of two writes carrying one each.
 #
 # THE COMPLETION ROWS ARE NOT THIS VERB'S TO WRITE. `hooks/journal-writes.py`
 # derives `task.complete` and `task.commit` from the write itself, and step 4c says
@@ -17026,13 +17037,18 @@ def _written_ids(headline):
 
 def _decided_lines(body, ids):
     """The lines a write decided and the short form keeps: its gate basis, the
-    command that runs what it wrote, and every warning naming an id it wrote.
-    A warning naming no such id was true before the write and is re-printed by
-    every write; that is what the short form drops."""
+    command that runs what it wrote, every warning about the gate and files of
+    the task it wrote (`TASK_WARNING_LEADS`), and every warning naming an id it
+    wrote. Any other warning - the validator's, about another item or the plan
+    as a whole, re-printed by every write, and a verb's warning about the
+    phase rather than the task - is what the short form drops and `--verbose`
+    prints."""
     kept = []
     for line in body:
         text = line.strip()
         if text.startswith("gate:") or text.startswith("ready now -- "):
+            kept.append(text)
+        elif text.startswith(TASK_WARNING_LEADS):
             kept.append(text)
         elif text.startswith("WARNING:") and ids & set(_HEADLINE_ID.findall(
                 text.split(" - ")[0])):
@@ -17043,9 +17059,9 @@ def _decided_lines(body, ids):
 def success_line(lines):
     """A write's short form: the verb's own headline, which names what was done
     to which id, and every file its `written:` lines name - then, a line each,
-    what the write itself decided (`_decided_lines`). The validator warnings
-    about other ids, re-printed after each write, are what this drops, and
-    `--verbose` keeps."""
+    what the write itself decided (`_decided_lines`). The warnings that reads
+    as not the write's - the validator's about other ids, re-printed after
+    each write, among them - are what this drops, and `--verbose` keeps."""
     body = [ln for ln in lines if ln.strip()]
     heads = [ln for ln in body if ln.startswith("[audit-task]")] or body
     written = [ln.strip()[len("written:"):].strip() for ln in body

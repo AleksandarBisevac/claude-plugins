@@ -5950,7 +5950,10 @@ records the note only if the task still declares the files and gate that reading
 else prints `WARNING: gate reach not recorded:` and writes none. The reading is advisory and
 fails open: an exception in it is one `WARNING: gate reach not asked: <why>` line
 (under `--json`, `gateReachNotAsked` for `add` and `scope`, `gateReachNotRecorded` for
-`done`), never an error for the verb that asked.
+`done`), never an error for the verb that asked. The short output a verb prints without
+`--verbose` keeps a warning naming the id it wrote, and every line opening with a lead in
+`TASK_WARNING_LEADS` - the reach leads above and the gate-directory warning - since each is about that
+task's gate or files and names a path or an entry rather than the id (`_decided_lines`).
 
 **`retarget <phaseId>` is the same verb one noun up** — a phase's gate, area, desired outcome,
 description or title, corrected after `/audit:init` or an ADO pull chose them. The title is

@@ -23297,9 +23297,7 @@ def _gate_reach_cases(check):
                        and k != "AUDIT_LOCK_TOKENS")
             proc = subprocess.Popen(
                 [sys.executable, _loader.script_path("audit-task.py")] + argv
-                # The long form: the terse one keeps only the lines naming
-                # the id it wrote, and a reach line names a path.
-                + ["--project-dir", proj, "--verbose"],
+                + ["--project-dir", proj],
                 cwd=proj, env=env, stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT)
             began = os.path.join(proj, ".slow-started")
@@ -23396,6 +23394,74 @@ def _gate_reach_cases(check):
               and not [n for n in ("_reach_shell", "_reach_facts",
                                    "_reach_tree_files", "_prefetch_listings")
                        if hasattr(M, n)])
+
+        # ---- the short output keeps the reach lines ---------------------------
+        # Without `--verbose` a task verb prints its headline and the lines it
+        # decided about the task it wrote. A reach line names a path rather
+        # than the id, and is still a warning about that task, so the command
+        # line an operator types must show it. Run through the verb's own
+        # `__main__`, which is where the short form is cut.
+        def terse(proj, argv):
+            return _cli_here(argv + ["--project-dir", proj], proj)
+
+        add_argv = ["add", "Reach", "--phase", "P2", "--tests-mode",
+                    "regression", "--files",
+                    "CHANGELOG.md,src/m.py,tests/test_m.py",
+                    "--gate", "python3 tests/test_m.py"]
+        proj, _mp = project("gr-terse-add")
+        code, txt = terse(proj, add_argv)
+        proj, _mp = project("gr-terse-add-long")
+        vcode, vtxt = terse(proj, add_argv + ["--verbose"])
+        head = (txt.splitlines() or [""])[0]
+        check("grt14 `add` without `--verbose` keeps its reach warning in the "
+              "short output - the one line the long form prints, naming the "
+              "document no suite reads: %r" % ((code, txt),),
+              code == 0 and head.startswith("[audit-task] P2.")
+              and " added" in head and len(reach_lines(txt)) == 1
+              and reach_lines(txt) == reach_lines(vtxt)
+              and "CHANGELOG.md" in reach_lines(txt)[0])
+        # For the mutation that keeps every line: a short form that printed
+        # the long form whole would carry the reach line and pass grt14.
+        check("grt15 SECOND-DIRECTION CASE: ...and the short form is still the "
+              "short one - fewer lines than `--verbose`, without the long "
+              "form's indented record lines: %r" % ((code, txt, vcode),),
+              code == 0 and vcode == 0
+              and len(txt.splitlines()) < len(vtxt.splitlines())
+              and "  written: docs/audit/audit-plan.json" in vtxt.splitlines()
+              and "  written: docs/audit/audit-plan.json"
+              not in txt.splitlines())
+
+        proj, _mp = project("gr-terse-scope")
+        code, txt = terse(proj, ["scope", "P2.3", "--files",
+                                 "src/m.py,CHANGELOG.md",
+                                 "--tests-mode", "regression",
+                                 "--gate", "python3 tests/test_m.py"])
+        check("grt16 `scope` without `--verbose` keeps the reach warning for "
+              "the file its new gate reaches no suite of: %r" % ((code, txt),),
+              code == 0 and len(reach_lines(txt)) == 1
+              and "CHANGELOG.md" in reach_lines(txt)[0])
+
+        proj, mp = closing("gr-terse-done", ["CHANGELOG.md", "src/m.py",
+                                             "tests/test_m.py"])
+        code, txt = terse(proj, ["done", "P2.4", "--commit", _PD_SHA]
+                          + _NOT_ASKED)
+        check("grt17 `done` without `--verbose` keeps the reach line for the "
+              "gap it recorded on the task: %r" % ((code, txt),),
+              code == 0
+              and (task_in(mp, "P2.4") or {}).get("status") == "done"
+              and len(reach_lines(txt)) == 1
+              and "CHANGELOG.md" in reach_lines(txt)[0])
+
+        proj, _mp = project("gr-terse-dir")
+        code, txt = terse(proj, ["add", "Dir gate", "--phase", "P2",
+                                 "--tests-mode", "regression",
+                                 "--files", "src/m.py", "--gate", "tests"])
+        dirs = [ln for ln in txt.splitlines()
+                if ln.startswith("WARNING: gate entry ")]
+        check("grt18 the other warning about the task's own gate that names an "
+              "entry rather than the id - a gate entry that is a directory - "
+              "is kept by the short output too: %r" % ((code, txt),),
+              code == 0 and len(dirs) == 1 and "'tests'" in dirs[0])
     finally:
         _harness.remove_tree(tmp)
 
