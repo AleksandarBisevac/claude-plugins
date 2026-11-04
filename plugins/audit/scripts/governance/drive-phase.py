@@ -1641,22 +1641,55 @@ def submit_block_of(text):
     return body[:ends[0] + 1] if ends else None
 
 
-def brief_submit(ctx, node_id, role):
+def read_brief_text(ctx, node_id, role, part=None):
+    """`(text, None)` - `role`'s brief for `node_id`'s current start, or slice
+    `part` of a phase brief, read back through `audit-lookup.py brief --read`
+    - or `(None, why)` when it could not be read."""
+    code, said, err = run_verb(ctx, "audit-lookup.py", [
+        ctx["manifest"], "brief", node_id, "--role", role, "--read"]
+        + (["--slice", str(part)] if part is not None else [])
+        + ["--project", ctx["project"]])
+    if code != 0:
+        return None, (err or said).strip() or "exit %d" % (code,)
+    return said, None
+
+
+def brief_submit(ctx, node_id, role, head=None):
     """The decision fields naming `role`'s submit command for `node_id`'s
     current start - a task's, or a phase's under the `phase` role:
     `{"submit": lines}` read off its brief through `audit-lookup.py brief
     --read`, or `{"submitWhy": why}` when the brief could not be read or holds
-    no block - the gap said, never filled."""
-    code, said, err = run_verb(ctx, "audit-lookup.py", [
-        ctx["manifest"], "brief", node_id, "--role", role, "--read",
-        "--project", ctx["project"]])
-    if code != 0:
-        return {"submitWhy": _clip("its brief could not be read (%s)" % (
-            (err or said).strip() or "exit %d" % (code,),), 200)}
-    block = submit_block_of(said)
-    if block is None:
-        return {"submitWhy": "its brief holds no submit block"}
-    return {"submit": block}
+    no block - the gap said, never filled.
+
+    A PHASE BRIEF CUT INTO SLICES is an index no reviewer reads, holding no
+    block: each slice carries its own. So the blocks are read off the slices
+    whose return is not held at `head` (`slice_return_paths`), in slice order -
+    and when one of those cannot be read, or holds no block, that slice is
+    named as why none is shown."""
+    said, why = read_brief_text(ctx, node_id, role)
+    if said is None:
+        return {"submitWhy": _clip("its brief could not be read (%s)" % (why,), 200)}
+    cut = _BRIEF_SLICE.findall(said) if role == "phase" and head else []
+    if not cut:
+        block = submit_block_of(said)
+        if block is None:
+            return {"submitWhy": "its brief holds no submit block"}
+        return {"submit": block}
+    lines = []
+    for number, total, _path in cut:
+        if os.path.exists(slice_return_paths(ctx, node_id, head, int(number))):
+            continue
+        text, why = read_brief_text(ctx, node_id, role, int(number))
+        block = submit_block_of(text) if text is not None else None
+        if block is None:
+            return {"submitWhy": _clip("slice %s/%s of its brief %s" % (
+                number, total, "could not be read (%s)" % (why,)
+                if text is None else "holds no submit block"), 200)}
+        lines += ["slice %s/%s:" % (number, total)] + block
+    if not lines:
+        return {"submitWhy": "every slice of its brief is filed at head %s"
+                % (head[:12],)}
+    return {"submit": lines}
 
 
 def unfiled_submit_lines(pending, role):
@@ -4766,12 +4799,13 @@ def add_tree(ctx, state, task):
     Once a redo of the task has kept a tree, every tree cut for it goes to a
     fresh path beside the first (`recut_path`), never where one stands.
 
-    The path is recorded in the platform's own spelling
-    (`_worktrees.native_spelling`), and every task tree the drive's state
-    names later - a wave's, a kept one, a recut beside it - is this record or
-    derived from it, so each stop naming one spells it the way the paths the
-    platform builds beside it are spelled, whatever spelling the verb's
-    answer carried."""
+    THE PATH IS RECORDED AS THE VERB ANSWERED IT, and dispatched in and handed
+    to the brief's reader as recorded: every later question about the tree -
+    the verb asked again, a kept tree matched to its marker, a recut beside it
+    - compares against that answer, and a record respelled for a reader is a
+    different string on a platform with two separators. The platform's own
+    spelling (`_worktrees.native_spelling`) is a stop's, applied where the stop
+    names the tree (`shown_tree`)."""
     wave = state["wave"]
     args = ["task-add", ctx["manifest"], task["id"], "--base", wave["base"],
             "--project", ctx["project"], "--json"]
@@ -4785,8 +4819,6 @@ def add_tree(ctx, state, task):
     except ValueError:
         made = {}
     path = made.get("path") if isinstance(made, dict) else None
-    if isinstance(path, str):
-        path = _worktrees.native_spelling(path)
     if code == SETUP_FAILED and path:
         return None, _stopped(ctx, "the tree of %s is made, and its setup did "
                               "not complete - could not run, not red, and no "
@@ -4812,6 +4844,14 @@ def add_tree(ctx, state, task):
     ctx["did"].append("tree for %s%s" % (task["id"], " adopted at %s" % (path,)
                                          if adopted else ""))
     return path, None
+
+
+def shown_tree(tree):
+    """A recorded tree as a stop names it to a reader: in the platform's own
+    spelling (`_worktrees.native_spelling`), the way every path the platform
+    builds beside it is spelled. The record itself keeps the verb's spelling
+    (`add_tree`), and a command carrying the tree carries it as recorded."""
+    return _worktrees.native_spelling(tree) if isinstance(tree, str) else tree
 
 
 def reopen_integration(ctx, task_id):
@@ -4895,7 +4935,7 @@ def unsettled_said(ctx, task_id, tree, left, detail=None):
     is, what the move said, and the verb that puts the work back - the task and
     the verb before any path (`paths_last`), the tree spelled as the copy is
     (`_worktrees.native_spelling`)."""
-    tree = _worktrees.native_spelling(tree)
+    tree = shown_tree(tree)
     if left.get("unsettled") is None:
         return paths_last("whether the tree of %s is settled is not known. Nothing "
                           "runs in that tree until it can be asked" % (task_id,),
@@ -5572,19 +5612,19 @@ def keep_old_tree(ctx, state, task_id):
         return None, _stopped(ctx, paths_last(
             "the tree of %s is not where it is recorded, so there is none to keep; "
             "nothing was recut" % (task_id,),
-            [("recorded at", tree or "no path recorded")]))
+            [("recorded at", shown_tree(tree) or "no path recorded")]))
     held = _worktrees.read_provenance(tree, expect_task=str(task_id))
     if held.get("ours") is not True:
         return None, _stopped(ctx, paths_last(
             "the tree of %s could not be kept; nothing was recut" % (task_id,),
             [("why", held.get("basis") or "its marker could not be read"),
-             ("tree", tree)]))
+             ("tree", shown_tree(tree))]))
     counts, why = _aside_counts(ctx, state, task_id)
     if counts is None:
         return None, _stopped(ctx, paths_last(
             "the tree of %s could not be kept, since no key could be chosen that "
             "no kept tree's marker carries; nothing was recut" % (task_id,),
-            [("why", why), ("tree", tree)]))
+            [("why", why), ("tree", shown_tree(tree))]))
     key = ASIDE_KEY % (task_id, max([0] + counts) + 1)
     _path, why = _worktrees.write_record(tree, dict(held["record"], taskId=key,
                                                     setAsideFrom=str(task_id)))
@@ -5592,7 +5632,7 @@ def keep_old_tree(ctx, state, task_id):
         return None, _stopped(ctx, paths_last(
             "the tree of %s could not be kept: its marker could not name %r; the "
             "tree and its marker are as they were, and nothing was recut"
-            % (task_id, key), [("why", why), ("tree", tree)]))
+            % (task_id, key), [("why", why), ("tree", shown_tree(tree))]))
     record_kept(ctx, state, task_id, key, tree)
     return {"key": key, "path": tree}, None
 
@@ -6444,12 +6484,12 @@ def redo_left(ctx, state, task_id, tree):
                     "put back: %s, then next. No path of it is unmerged there, "
                     "each path the tree's HEAD did not move reads as %s holds "
                     "it, and each it moved is changed there" % (head, away, pin),
-                    [("tree", tree)])
+                    [("tree", shown_tree(tree))])
     if held is False:
         return stop("%s: git apply --3way finishes from it in its tree, which "
                     "lacks it, then %s, and next; nothing runs there until a "
                     "human has, and that may be its only copy" % (head, away),
-                    [("lacking", _clip(why, 200)), ("tree", tree),
+                    [("lacking", _clip(why, 200)), ("tree", shown_tree(tree)),
                      ("finish", apply_in(tree))])
     if not pinned:
         # No ref names the work commit any more, so there is nothing to read
@@ -6465,7 +6505,7 @@ def redo_left(ctx, state, task_id, tree):
                     "neither that check nor git apply --check; there only a "
                     "reading of the file tells"
                     % (head, away),
-                    [("could not read", _clip(why, 200)), ("tree", tree),
+                    [("could not read", _clip(why, 200)), ("tree", shown_tree(tree)),
                      ("check", "cd %s && git apply --reverse --check %s" % (
                          shlex.quote(tree), shlex.quote(kept))),
                      ("finish", apply_in(tree))])
@@ -6476,7 +6516,7 @@ def redo_left(ctx, state, task_id, tree):
                 "it moved holds the work "
                 "merged with the phase's change, so it reads as neither side "
                 "and only a reading of the file tells" % (head, away, pin, pin),
-                [("could not read", _clip(why, 200)), ("tree", tree),
+                [("could not read", _clip(why, 200)), ("tree", shown_tree(tree)),
                  ("finish", apply_in(tree))])
 
 
@@ -7000,7 +7040,7 @@ def unmarked_kept_stop(ctx, state, kept):
         "phase tree without that work. Carry the tree's diff into the phase "
         "tree and remove the tree, then drive the phase again"
         % (", ".join(tid for tid, _path, _why in unmarked),),
-        [("%s's tree" % (tid,), "%s (%s)" % (_worktrees.native_spelling(path), why))
+        [("%s's tree" % (tid,), "%s (%s)" % (shown_tree(path), why))
          for tid, path, why in unmarked]))
 
 
@@ -7018,7 +7058,7 @@ def kept_tree_stop(ctx, state, task):
         "executor.waveWidth 2 or more, which runs it in that tree when its "
         "marker names the task, or carry the tree's diff into the phase tree "
         "and remove the tree" % (task["id"], ctx["phase"]),
-        [("kept tree", path)]))
+        [("kept tree", shown_tree(path))]))
 
 
 def wave_step(ctx, state, manifest, phase, width, basis):
@@ -8130,7 +8170,7 @@ def triage(ctx, state, manifest, phase):
         if review is None:
             return decision(ctx, state, "no-phase-review-return", None,
                             mark["head"][:12],
-                            brief_submit(ctx, phase["id"], "phase"))
+                            brief_submit(ctx, phase["id"], "phase", mark["head"]))
         found = review.get("findings") or []
         if found and not mark.get("findings"):
             stop = record_findings(ctx, phase, found)
@@ -10331,7 +10371,7 @@ def submit_tree(ctx, phase, task):
     if not os.path.isdir(tree):
         return None, _stopped(ctx, paths_last(
             "the wave gave %s a tree, and it is gone. Nothing filed."
-            % (task["id"],), [("tree", tree)]))
+            % (task["id"],), [("tree", shown_tree(tree))]))
     kept = marker_kept_key(tree, task["id"])
     if kept:
         return None, _stopped(ctx, paths_last(
@@ -10339,7 +10379,7 @@ def submit_tree(ctx, phase, task):
             "before recording it, so it is no longer the task's tree. Run next "
             "%s to settle it and cut the task's next tree, then submit from "
             "there. Nothing filed." % (task["id"], kept, ctx["phase"]),
-            [("tree", tree)]))
+            [("tree", shown_tree(tree))]))
     return tree, None
 
 

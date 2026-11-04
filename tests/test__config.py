@@ -3084,9 +3084,10 @@ def _git_standing_cases(check):
     fresh = M._ask_rev_parse
     calls = []
 
-    def counting(cwd, fields, timeout=5, why=None):
+    def counting(cwd, fields, timeout=5, why=None, unanswered=None):
         calls.append((str(cwd), tuple(fields)))
-        return fresh(cwd, fields, timeout, why)
+        return fresh(cwd, fields, timeout, why, **(
+            {} if unanswered is None else {"unanswered": unanswered}))
 
     def git(cwd, *argv):
         return _harness.git(str(cwd) if cwd is not None else None, *argv)
@@ -3224,32 +3225,39 @@ def _git_place_ask_cases(check):
     is not git's answer at all - a timeout, git not runnable - is asked again
     for nothing, and a timeout asked again doubles the wait the caller set.
     The stubs stand in for `_ask_rev_parse` and keep its contract: a reason
-    appended to `why`, None returned."""
+    appended to `why`, and to `unanswered` too where git gave no answer of its
+    own, None returned - the contract st12 holds the real asker to."""
     root = Path(os.path.realpath(_harness.fixture_root("cfg-place-ask-")))
     fresh = M._ask_rev_parse
     seen = []
 
-    def timing_out(cwd, fields, timeout=5, why=None):
+    def timing_out(cwd, fields, timeout=5, why=None, unanswered=None):
         seen.append((str(cwd), tuple(fields), timeout))
-        # A second ask handed a spent budget gets a negative one; it is
-        # counted here, not allowed to crash the suite before st8 reads it.
-        time.sleep(max(timeout, 0))
-        if why is not None:
-            why.append("Command '%r' timed out after %s seconds"
-                       % (["git", "-C", str(cwd), "rev-parse"] + list(fields),
-                          timeout))
+        # The timeout is handed back with time still on the caller's clock: a
+        # coarse clock - a windows runner's ticks - reads a question that
+        # timed out as finishing early, so whether it timed out is the
+        # asker's to say, never the clock's. A second ask handed a spent
+        # budget gets a negative one; it is counted here, not allowed to
+        # crash the suite before st8 reads it.
+        time.sleep(max(timeout, 0) / 2)
+        reason = ("Command '%r' timed out after %s seconds"
+                  % (["git", "-C", str(cwd), "rev-parse"] + list(fields), timeout))
+        for said in (why, unanswered):
+            if said is not None:
+                said.append(reason)
         return None
 
-    def unrunnable(cwd, fields, timeout=5, why=None):
+    def unrunnable(cwd, fields, timeout=5, why=None, unanswered=None):
         seen.append((str(cwd), tuple(fields), timeout))
-        if why is not None:
-            why.append("[Errno 2] No such file or directory: 'git'")
+        for said in (why, unanswered):
+            if said is not None:
+                said.append("[Errno 2] No such file or directory: 'git'")
         return None
 
     def refusing_top(refusal):
         """git's refusal of a top, given after spending `spent` seconds of the
         first question's time, then an answer to the fields alone."""
-        def ask(cwd, fields, timeout=5, why=None):
+        def ask(cwd, fields, timeout=5, why=None, unanswered=None):
             seen.append((str(cwd), tuple(fields), timeout))
             if "--show-toplevel" in fields:
                 time.sleep(spent)
@@ -3309,6 +3317,25 @@ def _git_place_ask_cases(check):
                   and 0 < calls[1][2] <= budget - spent * 0.6
                   and got == (["--git-dir-answer"], "")
                   for _what, got, calls in retried))
+
+        def real(cwd, fields, timeout):
+            why, unanswered = [], []
+            try:
+                got = fresh(cwd, fields, timeout, why, unanswered=unanswered)
+            except TypeError as exc:
+                return "the asker takes no `unanswered` (%s)" % (exc,)
+            return got, why, unanswered
+        timed = real(repo / "a", ["--git-dir"], 1e-9)
+        refused = real(bare, ["--show-toplevel", "--git-dir"], 5)
+        check("st12 the real asker says which refusals are git's own: a "
+              "question that did not finish names its reason in `unanswered` "
+              "as well as in `why`, and git's refusal of a top in a bare "
+              "repository names it in `why` alone: %r" % ((timed, refused),),
+              isinstance(timed, tuple) and timed[0] is None
+              and len(timed[1]) == 1 and timed[2] == timed[1]
+              and "timed out" in timed[1][0]
+              and isinstance(refused, tuple) and refused[0] is None
+              and len(refused[1]) == 1 and refused[2] == [])
     finally:
         M._ask_rev_parse = fresh
         M.forget_git_standing()

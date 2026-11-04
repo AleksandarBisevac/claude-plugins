@@ -109,8 +109,10 @@
         "severity": "low",
         "file": "tools/lints/_deps.py:4140-4167 (_STEP_FORWARD_RE/_STEP_BACKWARD_RE); plugins/audit/scripts/manifest/audit-task.py:5292, :7798",
         "issue": "The step-pointer lint matches only lowercase step/steps, so this codebase's uppercase docstring style escapes it, and two stale pointers survive: audit-task.py:5292 ('reference/orchestrator.md's STEP 2', the promote step is execute-task.md's step 2) and :7798 ('orchestrator.md's STEP 4 ... 4b ... 4c', which orchestrator.md does not hold). The lint's WHAT IT CANNOT SEE does not name case.",
-        "resolution": "Match the step word case-insensitively; repoint both pointers to reference/execute-task.md; an sp case with an uppercase STEP 4c pointer to a document lacking it.",
-        "fixTask": "P156.15-3st"
+        "resolution": "fixed in P156.15-3st (daa6b6c844cc): Match the step word case-insensitively; repoint both pointers to reference/execute-task.md; an sp case with an uppercase STEP 4c pointer to a document lacking it.",
+        "fixTask": "P156.15-3st",
+        "commit": "daa6b6c844cc",
+        "status": "fixed"
       },
       {
         "id": "P156-R10",
@@ -137,7 +139,7 @@
         "fixTask": "P156.17-3st"
       }
     ],
-    "outcome": "[findings: 12 - 0 high, 4 med, 8 low; 8 with a recorded fix commit]"
+    "outcome": "[findings: 12 - 0 high, 4 med, 8 low; 9 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1267,7 +1269,7 @@
     {
       "id": "P156.15-3st",
       "title": "The step-pointer lint reads the step word in any case, and the pointers it then finds are repointed",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix P156-R9 (docs/audit/phases/P156.json review.findings): match step/steps case-insensitively; repoint audit-task.py's uppercase STEP pointers (start and done docstrings) to reference/execute-task.md and any other pointer the widened lint then reports; an uppercase case that must be reported.",
       "files": [
         "tools/lints/_deps.py",
@@ -1299,14 +1301,17 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "daa6b6c844cc",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/lints/_deps.py: new `_STEP_WORD = r\"(?i:steps?)\"` used by both _STEP_FORWARD_RE and _STEP_BACKWARD_RE, so the step word is read in any case while the step token's letter and the joining words (`of`, `and`/`or`) stay lowercase; WHAT IT CANNOT SEE now names that residual (verified: _step_pointers('STEP 2 OF guide.md\\nguide.md STEPS 3 AND 5\\nguide.md Step 4c') -> [(2,'guide.md','3'),(3,'guide.md','4c')]). tests/test__deps.py: sp2c (reader, capitals / plural capitals / capitalised `Step N of <doc>`, plus a capitalised step with no document is no pointer) and sp3c (end to end in its own tree: a docstring's capitalised `STEP 4c` into a guide without 4c convicted, the held capitalised pointer beside it quiet). Diff of reader old vs new over the real scan set: exactly two new pointers, both in audit-task.py (_start_task docstring -> `reference/orchestrator.md` STEP 2, _done_task docstring -> STEP 4/4b/4c); neither was reported by the widened lint because orchestrator.md's Preflight list numbers 1-6 (the documented wrong-list blind spot), so sp5 stayed green - they were repointed by reading: the promote step is execute-task.md step 2 and the close is execute-task.md step 4 (4b/4c). The old docstrings also quoted a 'Set ...' sentence that neither document still carries, so each was rewritten to say only what execute-task.md's step names (status/startedAt/attempts for 2; status, completedAt, outcome, verifiedBy for 4b and the printed SHA into task.commit for 4c) and that the verb replaces a hand edit. After the change no pointer anywhere in the scan set names orchestrator.md. PLUGIN-BUILD-GUIDE.md's step_pointer_violations paragraph now says the word is read in any case. Left: audit-task.py's comment 'WHICH PUTS THE CALL AT THE END OF STEP 4c, after `git rev-parse HEAD`' names no document (no pointer by the lint's reading) and was not in the finding; noted, not changed. Commands, each exit 0: `python3 tools/sweep-selftests.py tests/test__deps.py tests/test_audit_task.py` -> 2/2 files ok, 1538 cases; full `python3 tools/sweep-selftests.py` -> 195/195 files ok, 18441 cases; `python3 tools/prove-gates.py --only step_pointer` -> red row RED (sp3, sp3b, sp4, sp3c), allow row RED (sp3, sp4, sp5); `python3 tools/gate-parity.py` exit 0; ruff and vermin -t=3.8- on the three .py files clean. `python3 tools/lints/_deps.py --selftest` exits 2 with its usage line (the module answers no --selftest; its suite is tests/test__deps.py, run above). Dependants: audit-task.py importers (full-gate.py, run-test-gate.py, test__doctor_trail, test__invariants, test__scoped_commit, test_audit_task, test_close_phase, test_commit_task_work) - still correct, docstring-only change, no name or behaviour moved, all green in the full sweep; _deps.py importers (_manifest_rules, _manifest_vocab, _doctor_policy, test__deps, test__manifest_vocab, test__output, test__panel_paths, prove-gates._block_accessor, before-you-claim evals) - still correct, only two private regexes' word group changed and the new private constant added, group numbering unchanged; test__deps.py readers (sweep-costs.json, test_audit_lookup, gate-parity, prove-gates rows naming sp cases) - still correct, existing case ids kept, sp3c now also appears in prove-gates' red row; test_audit_task.py readers - unchanged file; PLUGIN-BUILD-GUIDE.md readers (enumeration, prose-number and guide lints) - green in the full sweep.",
+        "descriptive": "The step-pointer lint now reads STEP/Step as well as step, and the two capitalised pointers into the wrong document point at execute-task.md's steps 2 and 4."
       },
       "startedAt": "2026-11-04T16:39:44Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-04T17:03:09Z",
+      "verifiedBy": [
+        "sp2c: the pointer reader reads the step word in capitals, plural capitals and capitalised `Step N of <doc>`, and a capitalised step with no document is still no pointer",
+        "sp3c: end to end in a tree of its own, a docstring's capitalised STEP 4c pointer to a document without 4c is convicted while the held capitalised pointer beside it is quiet"
+      ],
       "notes": [
         {
           "at": "2026-11-04T15:18:01Z",
@@ -1329,6 +1334,18 @@
         "runId": "2026-11-04T17:02:58Z.a6ac10",
         "status": "passed",
         "at": "2026-11-04T17:02:58Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "daa6b6c844cc",
+        "at": "2026-11-04T17:03:09Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-04T16:55:01Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__deps.py tests/test_audit_task.py` in a throwaway tree at HEAD exited 1 with 2 of 284 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sp2c (house FAIL), sp3c (house FAIL): SELFTEST FAILED: 282/284 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1404,7 +1421,12 @@
         "P156-R10",
         "P156-R11"
       ],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-04T17:14:20Z.3191fe",
+        "status": "passed",
+        "at": "2026-11-04T17:14:20Z"
+      }
     },
     {
       "id": "P156.17-3st",

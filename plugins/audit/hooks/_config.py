@@ -902,12 +902,15 @@ def git_place(cwd, fields, timeout=5):
     discovery, goes to git every time. Otherwise a kept answer is reused when
     its witness still holds; when not, git is asked for the fields with
     `--show-toplevel` beside them (the top is the witness's anchor) - and, only
-    when that combined question is refused as a top git cannot give
-    (`_top_refused`) while time is left of `timeout`, asked again for the
+    when git itself refused that combined question, as a top it cannot give
+    (`_top_refused`), while time is left of `timeout`, asked again for the
     fields alone with what is left, as a bare repository answers a git dir but
-    no top; that second answer is not kept. A refusal with no repository
-    anywhere above is kept, with that absence as its witness: it holds until a
-    repository appears on the way up."""
+    no top; that second answer is not kept. A question git gave no answer to
+    at all - it did not finish, or git could not be run - is never asked
+    again: the asker says so (`unanswered`), not the clock, since a clock that
+    ticks coarsely reads a question that timed out as ending with time left.
+    A refusal with no repository anywhere above is kept, with that absence as
+    its witness: it holds until a repository appears on the way up."""
     fields = list(fields)
     why = []
     if (not fields or any(f not in _STANDING_FIELDS for f in fields)
@@ -927,14 +930,15 @@ def git_place(cwd, fields, timeout=5):
         _STANDING.pop(key, None)
     asked = fields if "--show-toplevel" in fields else ["--show-toplevel"] + fields
     started = time.monotonic()
-    got = _ask_rev_parse(cwd, asked, timeout, why)
+    unanswered = []
+    got = _ask_rev_parse(cwd, asked, timeout, why, unanswered=unanswered)
     if got is None:
         if _no_repository_above(real):
             _STANDING[key] = (None, None, _why(why))
             return None, _why(why)
         left = (None if timeout is None
                 else timeout - (time.monotonic() - started))
-        if (asked is fields or (left is not None and left <= 0)
+        if (asked is fields or unanswered or (left is not None and left <= 0)
                 or not _top_refused(real, why)):
             return None, _why(why)
         del why[:]
@@ -952,11 +956,12 @@ def _why(reasons):
     return reasons[0] if reasons else ""
 
 
-def _ask_rev_parse(cwd, fields, timeout=5, why=None):
+def _ask_rev_parse(cwd, fields, timeout=5, why=None, unanswered=None):
     """`git rev-parse` answers for `cwd`, one string per field, or None - asked
     of git, every time. A refusal's reason - the first line git wrote on
     stderr, or why it could not be run - is appended to `why` when it is a
-    list.
+    list, and to `unanswered` too, when that is a list, where the reason is
+    not git's own: the call did not finish, or git could not be run.
 
     A LIST of fields because `rev-parse` answers several questions in one process,
     and the caller pays for processes rather than for questions.
@@ -984,6 +989,8 @@ def _ask_rev_parse(cwd, fields, timeout=5, why=None):
                              encoding="utf-8", errors="surrogateescape")
     except Exception as exc:
         said.append("%s" % (exc,))
+        if unanswered is not None:
+            unanswered.append("%s" % (exc,))
         return None
     if out.returncode != 0:
         said.append((out.stderr or "").strip().split("\n")[0]

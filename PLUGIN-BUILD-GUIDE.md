@@ -1189,9 +1189,11 @@ separator rewritten as its own, nothing collapsed or resolved, and a path left a
 posix, where a backslash is a character a name may hold - and `kept_where`, `refuse_unsettled`,
 `tree_unsettled`, `restore_copy` and the drive's `unsettled_said` and `unmarked_kept_stop` spell
 the tree they name the same way, and so do `manage-worktrees.py`'s `remove` and `task-remove` in
-every refusal naming a tree git listed (`ns1` in `tests/test_manage_worktrees.py`); the drive
-records each task tree it is handed through it (`add_tree`), so every later stop naming a tree
-its state holds spells it that way too (`ns1` in `tests/test_drive_phase.py`). `admin_dir` and `kept_where` take the path module as `flavour`, so `sp1` feeds
+every refusal naming a tree git listed (`ns1` in `tests/test_manage_worktrees.py`). The drive
+records each task tree as the tree verb answered it (`add_tree`) and dispatches in that record,
+since every later comparison with the verb's answer reads it, and spells it natively only in
+a stop's words (`shown_tree`) - `ns1` in `tests/test_drive_phase.py` holds both halves, and
+`ns2` replays the cases over a wave member's tree under the windows rules. `admin_dir` and `kept_where` take the path module as `flavour`, so `sp1` feeds
 the windows rules a forward-slash admin directory joined with a backslash on any platform and
 holds every path in the words to one spelling, with the posix twin leaving a backslash alone.
 What catches a new refusal that names a git-spelled path without passing it through
@@ -4771,7 +4773,9 @@ here. A brief that cannot be read is named as the reason the block is missing, n
 by a command the drive spelled itself (`ur1`-`ur4`, `rv9b`). The phase reviewer's stop,
 `no-phase-review-return`, is the same absence and goes through the same helper, reading the
 phase brief (`--role phase`), so it prints the submit block keyed on the head it was dispatched
-for, or why that block is not shown (`ur5`, `ur6`).
+for, or why that block is not shown (`ur5`, `ur6`). A phase brief cut into slices is an index
+that holds no block, so the stop reads the block of each slice whose return is not held at that
+head off the slice itself, in slice order, and names the slice it could not read (`ur7`, `ur8`).
 
 **A scope change is closed only over a run of the scope.** A filing stamped under another file
 list is the `scope-changed` decision, and before it is printed the drive measures the gate

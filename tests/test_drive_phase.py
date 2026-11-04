@@ -13449,6 +13449,86 @@ def _unfiled_phase_review_units(check, M, lookup, lctx):
           and "phase reviewer's submit command is not shown" in gone_text
           and "--role reviewer" not in gone_text
           and "AUDIT_RETURN" not in gone_text and "submit" not in gone)
+    _sliced_phase_review_units(check, M, lookup, lctx)
+
+
+def _sliced_phase_review_units(check, M, lookup, lctx):
+    """A phase brief cut into slices is an index naming the slice files, and
+    no reviewer reads it: each slice carries its own submit block. So the
+    stop over an unfiled sliced review prints the block of every slice whose
+    return is not held at the head, each read off its slice - and says which
+    slice could not be read, when one could not."""
+    head = _HEAD_A
+    index = "\n".join(
+        ["# Brief for %s (reviewer, mode: phase) - sliced" % (PHASE,), "",
+         "The brief outgrew the reader budget and is written as 3 slices, one "
+         "per reviewer; no reviewer reads this file."]
+        + [lookup.SLICE_LINE % (n, 3, ".claude/state/briefs/%s/x.phase.slice%d.md"
+                                % (PHASE, n)) for n in (1, 2, 3)]) + "\n"
+    blocks = dict((n, lookup.submit_command(lctx, PHASE, "reviewer",
+                                            " --head %s --slice %d/3" % (head, n)))
+                  for n in (1, 2, 3))
+
+    def slice_text(n):
+        return "\n".join(["# Brief for %s (reviewer, mode: phase, slice %d/3)"
+                          % (PHASE, n), "", "## Your return",
+                          lookup.PRINTED_FILES_NOTHING, blocks[n], ""])
+
+    def reading(refuse=()):
+        asked = []
+
+        def verb(ctx, script, args, stdin=None, record=False):
+            asked.append(list(args))
+            part = int(args[args.index("--slice") + 1]) if "--slice" in args else None
+            if part is None:
+                return 0, index, ""
+            if part in refuse:
+                return 2, "", "no phase brief slice %d is written" % (part,)
+            return 0, slice_text(part), ""
+        return verb, asked
+
+    held_dir = tempfile.mkdtemp(prefix="drive-sliced-unfiled-")
+    evidence = _evidence_with({})
+    said = []
+    try:
+        ctx_of = lambda: _step_ctx(evidence=evidence, stateDir=held_dir)  # noqa: E731
+        held = M.slice_return_paths(ctx_of(), PHASE, head, 1)
+        os.makedirs(os.path.dirname(held), exist_ok=True)
+        with open(held, "w", encoding="utf-8") as fh:
+            json.dump({"verdict": "clean"}, fh)
+        for refuse in ((), (3,)):
+            M.run_verb, asked = reading(refuse)
+            state = {"phaseReview": {"head": head}}
+            got = _caught(M.triage, ctx_of(), state, {}, _unit_phase())
+            said.append((_text_of(got), state.get("pending") or {}, asked))
+    finally:
+        shutil.rmtree(evidence, ignore_errors=True)
+        shutil.rmtree(held_dir, ignore_errors=True)
+    text, pending, asked = said[0]
+    parts = [a[a.index("--slice") + 1] if "--slice" in a else None for a in asked]
+    submit = pending.get("submit") or []
+    check("ur7 a sliced phase review left unfiled prints the submit block of "
+          "each slice whose return is not held - read off that slice, in slice "
+          "order, each block once - and none for the slice already held, nor "
+          "the index's want of a block: %r" % ((parts, text, pending),),
+          text.startswith("decide no-phase-review-return %s:" % (PHASE,))
+          and parts == [None, "2", "3"]
+          and all("--read" in a for a in asked)
+          and "\n".join(submit).count(blocks[2]) == 1
+          and "\n".join(submit).count(blocks[3]) == 1
+          and "\n".join(submit).index(blocks[2]) < "\n".join(submit).index(blocks[3])
+          and "--slice 1/3" not in "\n".join(submit)
+          and text.count(blocks[2]) == 1 and text.count(blocks[3]) == 1
+          and "holds no submit block" not in text)
+    text, pending, asked = said[1]
+    check("ur8 THE TWIN: a slice whose brief cannot be read is named with its "
+          "refusal as the reason its command is not shown, and no command is "
+          "composed for it: %r" % ((text, pending),),
+          "submit" not in pending
+          and "slice 3/3" in (pending.get("submitWhy") or "")
+          and "no phase brief slice 3 is written" in text
+          and "phase reviewer's submit command is not shown" in text
+          and "AUDIT_RETURN" not in text)
 
 
 def _retry_reason_units(check):
@@ -15329,15 +15409,61 @@ def _wave_unit_cases(check):
     _tree_setup_units(check)
     _adopt_units(check)
     _tree_spelling_units(check)
+    _windows_replay_units(check)
     _writer_off_units(check)
     _skill_units(check)
 
 
+def _windows_spelled(wt):
+    """`wt.native_spelling` as it answers on a windows host - its default path
+    module `ntpath` - so a case run under it meets what the windows runner
+    meets on any platform. -> the replacement; the caller restores."""
+    import ntpath
+    real = wt.native_spelling
+
+    def spelled(path, flavour=None):
+        return real(path, ntpath if flavour is None else flavour)
+    return spelled
+
+
+def _windows_replay_units(check):
+    """The cases over the tree a wave member is dispatched in, run again under
+    the windows path rules. The tree verb's answer is what the drive records,
+    dispatches in and hands the brief's reader - its own spelling, kept - so
+    each must hold as on posix: a record spelled for a reader is a different
+    string from the one the verb answered, and every later comparison with
+    that answer misses."""
+    M, why = _unit_driver("drive_phase_windows_replay")
+    if M is None:
+        check("ns2 the driver loads", False, why)
+        return
+    wt = M._worktrees
+    real = wt.native_spelling
+    seen = []
+
+    def collect(label, ok, detail=None):
+        seen.append((label.split(" ", 1)[0], bool(ok)))
+    wt.native_spelling = _windows_spelled(wt)
+    try:
+        _tree_setup_units(collect)
+        _adopt_units(collect)
+    finally:
+        wt.native_spelling = real
+    red = [cid for cid, ok in seen if not ok]
+    ids = [cid for cid, _ok in seen]
+    check("ns2 under the windows path rules the tree a wave member is "
+          "dispatched in, recorded in the wave and read by the brief's reader "
+          "is the tree verb's answer as it gave it - every case over that tree "
+          "holds as on posix: %r" % ((red, ids),),
+          not red and all(cid in ids for cid in ("wt2", "wt4", "wt6", "wt6r")))
+
+
 def _tree_spelling_units(check):
-    """A tree the drive records is spelled the platform's one way, so every
-    stop naming it later names it so. Fed a windows-shaped answer from the tree
-    verb, as git spells a path there - forward slashes - and spelled under the
-    windows path rules on any platform, so the class is caught on posix too."""
+    """A tree the drive records is the tree verb's answer as it gave it, and a
+    stop naming that tree to a reader names it in the platform's one spelling.
+    Fed a windows-shaped answer from the tree verb, as git spells a path there
+    - forward slashes - and spelled under the windows path rules on any
+    platform, so the class is caught on posix too."""
     import ntpath
     M, why = _unit_driver("drive_phase_tree_spelling")
     if M is None:
@@ -15365,15 +15491,16 @@ def _tree_spelling_units(check):
     finally:
         M._worktrees.native_spelling = real
     native = "C:\\r\\wt-P1.1"
+    answered = "C:/r/wt-P1.1"
     stop = gone[1] if isinstance(gone, tuple) and len(gone) == 2 else None
     text = stop[1] if isinstance(stop, tuple) and len(stop) == 2 else ""
-    check("ns1 the tree the drive records from the tree verb's answer is spelled "
-          "natively - under the windows path rules a git-spelled answer is "
-          "recorded with backslashes - and the stop naming that tree later "
-          "names it so, with no forward slash in it: %r"
-          % ((added, state["wave"]["trees"], gone),),
-          added == (native, None)
-          and state["wave"]["trees"] == {"P1.1": native}
+    check("ns1 the tree the drive records and dispatches in is the tree verb's "
+          "answer as it gave it - under the windows path rules a git-spelled "
+          "answer is recorded with its forward slashes - while the stop naming "
+          "that tree to a reader names it natively, with no forward slash in "
+          "it: %r" % ((added, state["wave"]["trees"], gone),),
+          added == (answered, None)
+          and state["wave"]["trees"] == {"P1.1": answered}
           and native in text and "C:/" not in text
           and ("tree for P1.1" in ctx["did"]))
 
